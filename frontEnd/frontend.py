@@ -1,15 +1,15 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timedelta 
 
 app = Flask(__name__)
 
 # --- Configuration ---
-# Clé secrète fixe pour éviter les déconnexions lors du redémarrage du conteneur
-app.secret_key = os.environ.get('SECRET_KEY', 'cle_de_developpement_fixe_12345')
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 
-# URL du backend (par défaut celui du docker-compose)
+app.permanent_session_lifetime = timedelta(minutes=2) 
+
 BACKEND_URL = os.environ.get('BACKEND_URL', 'http://backend:8080')
 
 @app.route('/')
@@ -19,7 +19,6 @@ def index():
         response = requests.get(f"{BACKEND_URL}/dernier-tournoi")
         if response.status_code == 200:
             data = response.json()
-            # Gestion de compatibilité (liste vs dictionnaire)
             if isinstance(data, list):
                 resultats = data
             else:
@@ -31,6 +30,10 @@ def index():
         print("Erreur de connexion au backend pour /dernier-tournoi")
     
     return render_template("index.html", resultats=resultats)
+
+@app.context_processor
+def inject_session_lifetime():
+    return dict(session_lifetime=app.permanent_session_lifetime.total_seconds())
 
 @app.route('/classement')
 def classement():
@@ -63,7 +66,11 @@ def admin_login():
             if response.status_code == 200:
                 data = response.json()
                 if data.get("status") == "success":
+                    # --- MODIFICATION ICI ---
+                    session.permanent = True
                     session['admin_token'] = data.get("token")
+                    # ------------------------
+                    
                     flash('Connexion réussie', 'success')
                     return redirect(url_for('add_tournament'))
                 else:
@@ -86,16 +93,13 @@ def admin_logout():
 @app.route('/add_tournament', methods=['GET', 'POST'])
 def add_tournament():
     """Page d'ajout de tournoi (nécessite admin)."""
-    # 1. Vérification sécurité
     if 'admin_token' not in session:
         flash('Accès réservé aux administrateurs', 'warning')
         return redirect(url_for('admin_login'))
 
-    # 2. Gestion du formulaire POST (Ajout du tournoi)
     if request.method == 'POST':
         date = request.form.get('date')
-        
-        # Récupération dynamique des joueurs
+
         joueurs_data = []
         i = 1
         while True:
@@ -142,11 +146,7 @@ def add_tournament():
         except requests.exceptions.RequestException as e:
             flash(f'Erreur de connexion au backend: {str(e)}', 'danger')
 
-    # 3. Gestion de l'affichage GET (Autocomplétion des noms)
     try:
-        # --- CORRECTION MAJEURE ICI ---
-        # On utilise /joueurs/noms qui renvoie une liste simple ["Alice", "Bob"]
-        # et non plus /joueurs qui n'existe plus.
         joueurs_response = requests.get(f"{BACKEND_URL}/joueurs/noms")
         
         if joueurs_response.status_code == 200:
@@ -171,16 +171,10 @@ def confirmation():
 def stats_joueurs():
     """Page affichant les statistiques globales des joueurs."""
     try:
-        # On récupère le classement
         response = requests.get(f"{BACKEND_URL}/classement")
         
         if response.status_code == 200:
             joueurs = response.json()
-            
-            # --- CORRECTION CRITIQUE ---
-            # Le template stats_joueurs.html attend des champs (victoires, ratio...)
-            # que l'API /classement ne fournit pas par défaut.
-            # On injecte des valeurs par défaut pour éviter le crash "UndefinedError".
             for joueur in joueurs:
                 joueur.setdefault('victoires', 0)
                 joueur.setdefault('nombre_tournois', 0)
@@ -208,11 +202,9 @@ def stats_tournois():
         response = requests.get(f"{BACKEND_URL}/stats/tournois")
         if response.status_code == 200:
             tournois = response.json()
-            # On s'assure que les champs existent sans les supprimer
             for t in tournois:
                 if 'vainqueur' not in t:
                     t['vainqueur'] = "Inconnu"
-                # On ne touche pas à 'nb_joueurs', le template doit l'utiliser tel quel
         else:
             tournois = []
             flash("Impossible de récupérer la liste des tournois.", "warning")

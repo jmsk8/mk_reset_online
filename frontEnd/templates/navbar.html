@@ -15,7 +15,6 @@
 
     <div id="navbarMenu" class="navbar-menu">
       <div class="navbar-start">
-        <!-- Suppression du lien "Accueil" car redondant avec le logo -->
         
         <a class="navbar-item" href="/classement">
           <span class="icon"><i class="fas fa-trophy"></i></span>
@@ -62,7 +61,6 @@
               <span>Accès Admin</span>
             </a>
             {% endif %}
-            <!-- Bouton thème sombre supprimé car non fonctionnel -->
           </div>
         </div>
       </div>
@@ -83,9 +81,34 @@
   {% endif %}
 {% endwith %}
 
+<div id="session-warning-modal" class="modal">
+  <div class="modal-background"></div>
+  <div class="modal-card">
+    
+    <header class="modal-card-head" style="background-color: var(--primary-color);">
+      <p class="modal-card-title has-text-white">
+        <i class="fas fa-exclamation-triangle"></i> Session bientôt expirée
+      </p>
+    </header>
+    
+    <section class="modal-card-body has-text-dark">
+      <p>Votre session administrateur va expirer dans moins d'une minute.</p>
+      <p>Voulez-vous rester connecté ?</p>
+    </section>
+    <footer class="modal-card-foot">
+      <button class="button is-success" id="btn-extend-session">
+        <i class="fas fa-sync-alt mr-2"></i> Oui, continuer
+      </button>
+      <a href="/admin/logout" class="button is-danger">
+        <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
+      </a>
+    </footer>
+  </div>
+</div>
+
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    // Gestion du burger menu pour mobile
+    // 1. Gestion du burger menu pour mobile
     const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
     if ($navbarBurgers.length > 0) {
       $navbarBurgers.forEach( el => {
@@ -98,7 +121,7 @@
       });
     }
     
-    // Mise en évidence de l'élément actif
+    // 2. Mise en évidence de l'élément actif
     const currentPath = window.location.pathname;
     const navLinks = document.querySelectorAll('.navbar-start .navbar-item');
     navLinks.forEach(link => {
@@ -108,7 +131,7 @@
       }
     });
     
-    // Mise en évidence de la section statistiques active
+    // 3. Mise en évidence de la section statistiques active
     if (currentPath.startsWith('/stats/')) {
       const statsDropdown = document.querySelector('.navbar-link');
       if (statsDropdown) {
@@ -116,12 +139,42 @@
       }
     }
     
-    // Gestion de fermeture des notifications
+    // 4. Gestion de fermeture des notifications
     document.querySelectorAll('.notification .delete').forEach(deleteButton => {
       deleteButton.addEventListener('click', () => {
         const notification = deleteButton.parentNode;
         notification.parentNode.removeChild(notification);
       });
     });
+
+    // --- 5. NOUVEAU : Gestion de l'expiration de session ---
+    // On vérifie si le bouton de déconnexion est présent dans le DOM
+    const logoutBtn = document.querySelector('a[href="/admin/logout"]');
+    
+    if (logoutBtn) {
+      // Récupération de la durée via Jinja2 (avec valeur par défaut de 900s si non définie)
+      const lifetimeSeconds = {{ session_lifetime|default(900)|int }};
+      const warningTimeSeconds = 60; // Prévenir 60 secondes avant la fin
+      
+      // Calcul du délai en millisecondes
+      const timeBeforeWarning = (lifetimeSeconds - warningTimeSeconds) * 1000;
+      
+      if (timeBeforeWarning > 0) {
+        // Lancement du timer
+        setTimeout(() => {
+          const modal = document.getElementById('session-warning-modal');
+          modal.classList.add('is-active');
+        }, timeBeforeWarning);
+      }
+
+      // Clic sur "Oui, continuer"
+      const extendBtn = document.getElementById('btn-extend-session');
+      if (extendBtn) {
+        extendBtn.addEventListener('click', () => {
+          // Recharger la page réinitialise le timer de session côté serveur (Flask) et navigateur
+          location.reload();
+        });
+      }
+    }
   });
 </script>
