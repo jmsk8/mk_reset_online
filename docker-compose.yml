@@ -1,21 +1,23 @@
 services:
   backend:
     build:
-      context: ./backEnd
+      context: ./backEnd  # <-- On pointe vers le dossier backEnd
       dockerfile: Dockerfile.backend
     ports:
       - "8080:8080"
     volumes:
       - pg_data:/var/lib/postgresql/data
     environment:
-      - POSTGRES_USER=username
-      - POSTGRES_PASSWORD=mypassword
-      - POSTGRES_DB=tournament_db
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
     restart: unless-stopped
 
   frontend:
     build:
-      context: ./frontEnd
+      context: ./frontEnd  # <-- On pointe vers le dossier frontEnd
       dockerfile: Dockerfile.frontend
     ports:
       - "5000:5000"

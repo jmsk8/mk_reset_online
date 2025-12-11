@@ -1,3 +1,5 @@
+# Dockerfile.backend (Version nettoyée et préparée pour les ENV Vars)
+
 # Use a PostgreSQL image with Python
 FROM python:3.9-slim-bullseye
 
@@ -10,11 +12,14 @@ RUN apt-get update && apt-get install -y \
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for PostgreSQL
+# Set environment variables for PostgreSQL (Variables par défaut, réécrites par docker-compose)
 ENV POSTGRES_USER=username
 ENV POSTGRES_PASSWORD=mypassword
 ENV POSTGRES_DB=tournament_db
 ENV PGDATA=/var/lib/postgresql/data
+# Ajout de l'ENV pour le HASH et le TOKEN pour clarifier que le script de démarrage en a besoin
+ENV ADMIN_TOKEN=b31c9b1c48c2490189b0f49c7f542a2e
+ENV ADMIN_PASSWORD_HASH=$2b$12$...
 
 # Create work directory
 WORKDIR /app
@@ -22,14 +27,15 @@ WORKDIR /app
 # Copy application files
 COPY requirements.txt .
 COPY backend.py .
-COPY config.py .
+# Ligne 'COPY config.py .' supprimée car on utilise les variables d'environnement
 COPY db.sql .
 
+# Installer les dépendances Python (incluant bcrypt)
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create a startup script
 RUN echo '#!/bin/bash\n\
-# Initialize PostgreSQL if needed\n\
+# Initialisation de PostgreSQL\n\
 if [ ! -d "$PGDATA" ] || [ -z "$(ls -A $PGDATA)" ]; then\n\
     mkdir -p "$PGDATA"\n\
     chown -R postgres:postgres "$PGDATA"\n\
@@ -40,13 +46,12 @@ if [ ! -d "$PGDATA" ] || [ -z "$(ls -A $PGDATA)" ]; then\n\
     sudo service postgresql start\n\
     sleep 3 # Give PostgreSQL time to start\n\
     \n\
-    # Create database and user\n\
+    # Create database and user (utilisation des variables d''environnement)\n\
     sudo -u postgres psql -c "CREATE USER $POSTGRES_USER WITH PASSWORD '\''$POSTGRES_PASSWORD'\'';" || true\n\
     sudo -u postgres psql -c "CREATE DATABASE $POSTGRES_DB WITH OWNER $POSTGRES_USER;" || true\n\
     sudo -u postgres psql -c "ALTER USER $POSTGRES_USER WITH SUPERUSER;" || true\n\
     \n\
     # Configure PostgreSQL to allow password authentication\n\
-    # Make sure pg_hba.conf allows for MD5 auth for all users\n\
     sudo -u postgres sh -c "echo \"host all all 0.0.0.0/0 md5\" >> $PGDATA/pg_hba.conf"\n\
     sudo -u postgres sh -c "echo \"listen_addresses = '\''*'\''\" >> $PGDATA/postgresql.conf"\n\
     \n\
@@ -58,19 +63,9 @@ else\n\
     sleep 3 # Give PostgreSQL time to start\n\
 fi\n\
 \n\
-# Update config.py with correct database settings\n\
-cat > /app/config.py << EOF\n\
-db_config = {\n\
-    "dbname": "$POSTGRES_DB",\n\
-    "user": "$POSTGRES_USER",\n\
-    "password": "$POSTGRES_PASSWORD",\n\
-    "host": "localhost",\n\
-    "port": "5432"\n\
-}\n\
-\n\
-# Admin token for secure access\n\
-ADMIN_TOKEN = "b31c9b1c48c2490189b0f49c7f542a2e"\n\
-EOF\n\
+# Les lignes de création/mise à jour de config.py ont été supprimées ici.\n\
+# Les variables ADMIN_TOKEN et ADMIN_PASSWORD_HASH sont lues directement par backend.py\n\
+# depuis l''environnement Docker.\n\
 \n\
 # Make sure PostgreSQL is configured for password authentication\n\
 sudo service postgresql restart\n\

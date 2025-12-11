@@ -66,6 +66,7 @@
                                     </li>
                                 </ul>
                             </div>
+                            
                             <div class="content">
                                 <div class="level">
                                     <div class="level-left">
@@ -96,7 +97,7 @@
                                     </thead>
                                     <tbody id="tableJoueurs">
                                         {% for joueur in joueurs %}
-                                            <tr class="fade-in joueur-row" style="animation-delay: {{ loop.index * 0.1 }}s" data-nom="{{ joueur[0] }}">
+                                            <tr class="fade-in joueur-row" style="animation-delay: {{ loop.index * 0.1 }}s" data-nom="{{ joueur.nom }}">
                                                 <td>
                                                     {% if loop.index == 1 %}
                                                         <span class="tag is-warning"><i class="fas fa-crown"></i> 1</span>
@@ -110,7 +111,7 @@
                                                 </td>
                                                 <td>
                                                     <div class="player-name">
-                                                        {{ joueur[0] }}
+                                                        {{ joueur.nom }}
                                                         {% if loop.index <= 3 %}
                                                             <span class="icon has-text-warning">
                                                                 <i class="fas fa-star"></i>
@@ -120,32 +121,32 @@
                                                 </td>
                                                 <td>
                                                     <div class="score-bar">
-                                                        {% if joueurs[0][1] > 0 and joueur[1] > 0 %}
-                                                            <div class="score-fill" style="width: {{ (joueur[1] / joueurs[0][1] * 100) }}%">
-                                                                <span>{{ joueur[1] }}</span>
+                                                        {% if joueurs and joueurs[0].score_trueskill > 0 and joueur.score_trueskill > 0 %}
+                                                            <div class="score-fill" style="width: {{ (joueur.score_trueskill / joueurs[0].score_trueskill * 100) }}%">
+                                                                <span>{{ joueur.score_trueskill }}</span>
                                                             </div>
                                                         {% else %}
                                                             <div class="score-fill" style="width: 0%">
-                                                                <span>{{ joueur[1] }}</span>
+                                                                <span>{{ joueur.score_trueskill }}</span>
                                                             </div>
                                                         {% endif %}
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    {% if joueur[2] == 'S' %}
+                                                    {% if joueur.tier == 'S' %}
                                                         <span class="tag is-warning tier-tag">S</span>
-                                                    {% elif joueur[2] == 'A' %}
+                                                    {% elif joueur.tier == 'A' %}
                                                         <span class="tag is-success tier-tag">A</span>
-                                                    {% elif joueur[2] == 'B' %}
+                                                    {% elif joueur.tier == 'B' %}
                                                         <span class="tag is-info tier-tag">B</span>
-                                                    {% elif joueur[2] == 'C' %}
+                                                    {% elif joueur.tier == 'C' %}
                                                         <span class="tag is-primary tier-tag">C</span>
                                                     {% else %}
-                                                        <span class="tag is-light tier-tag">{{ joueur[2] }}</span>
+                                                        <span class="tag is-light tier-tag">{{ joueur.tier }}</span>
                                                     {% endif %}
                                                 </td>
                                                 <td>
-                                                    <a href="/stats/joueur/{{ joueur[0] }}" class="button is-small is-primary is-outlined">
+                                                    <a href="/stats/joueur/{{ joueur.nom }}" class="button is-small is-primary is-outlined">
                                                         <span class="icon">
                                                             <i class="fas fa-chart-pie"></i>
                                                         </span>
@@ -169,14 +170,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="../static/js/script.js"></script>
     <script>
-        // Animation pour les éléments au chargement
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => {
                 elem.classList.add('visible');
             });
             
-            // Recherche de joueur
             const joueurSearch = document.getElementById('joueurSearch');
             const btnSearchJoueur = document.getElementById('btnSearchJoueur');
             

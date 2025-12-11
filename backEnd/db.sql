@@ -2,9 +2,6 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 14.17 (Ubuntu 14.17-0ubuntu0.22.04.1)
--- Dumped by pg_dump version 14.17 (Ubuntu 14.17-0ubuntu0.22.04.1)
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -21,7 +18,7 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: joueurs; Type: TABLE; Schema: public; Owner: zack
+-- Name: joueurs; Type: TABLE; Schema: public; Owner: username
 --
 
 CREATE TABLE public.joueurs (
@@ -35,10 +32,10 @@ CREATE TABLE public.joueurs (
 );
 
 
-ALTER TABLE public.joueurs OWNER TO zack;
+ALTER TABLE public.joueurs OWNER TO username;
 
 --
--- Name: joueurs_id_seq; Type: SEQUENCE; Schema: public; Owner: zack
+-- Name: joueurs_id_seq; Type: SEQUENCE; Schema: public; Owner: username
 --
 
 CREATE SEQUENCE public.joueurs_id_seq
@@ -50,30 +47,36 @@ CREATE SEQUENCE public.joueurs_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.joueurs_id_seq OWNER TO zack;
+ALTER TABLE public.joueurs_id_seq OWNER TO username;
 
 --
--- Name: joueurs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zack
+-- Name: joueurs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: username
 --
 
 ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
 
 
 --
--- Name: participations; Type: TABLE; Schema: public; Owner: zack
+-- Name: participations; Type: TABLE; Schema: public; Owner: username
 --
 
 CREATE TABLE public.participations (
     joueur_id integer NOT NULL,
     tournoi_id integer NOT NULL,
-    score integer NOT NULL
+    score integer NOT NULL,
+    -- Nouveaux champs pour l'historique TrueSkill
+    mu double precision,
+    sigma double precision,
+    new_score_trueskill double precision,
+    new_tier character(1),
+    position integer
 );
 
 
-ALTER TABLE public.participations OWNER TO zack;
+ALTER TABLE public.participations OWNER TO username;
 
 --
--- Name: tournois; Type: TABLE; Schema: public; Owner: zack
+-- Name: tournois; Type: TABLE; Schema: public; Owner: username
 --
 
 CREATE TABLE public.tournois (
@@ -82,10 +85,10 @@ CREATE TABLE public.tournois (
 );
 
 
-ALTER TABLE public.tournois OWNER TO zack;
+ALTER TABLE public.tournois OWNER TO username;
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE; Schema: public; Owner: zack
+-- Name: tournois_id_seq; Type: SEQUENCE; Schema: public; Owner: username
 --
 
 CREATE SEQUENCE public.tournois_id_seq
@@ -97,31 +100,31 @@ CREATE SEQUENCE public.tournois_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.tournois_id_seq OWNER TO zack;
+ALTER TABLE public.tournois_id_seq OWNER TO username;
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zack
+-- Name: tournois_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: username
 --
 
 ALTER SEQUENCE public.tournois_id_seq OWNED BY public.tournois.id;
 
 
 --
--- Name: joueurs id; Type: DEFAULT; Schema: public; Owner: zack
+-- Name: joueurs id; Type: DEFAULT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.joueurs ALTER COLUMN id SET DEFAULT nextval('public.joueurs_id_seq'::regclass);
 
 
 --
--- Name: tournois id; Type: DEFAULT; Schema: public; Owner: zack
+-- Name: tournois id; Type: DEFAULT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.tournois ALTER COLUMN id SET DEFAULT nextval('public.tournois_id_seq'::regclass);
 
 
 --
--- Data for Name: joueurs; Type: TABLE DATA; Schema: public; Owner: zack
+-- Data for Name: joueurs; Type: TABLE DATA; Schema: public; Owner: username
 --
 
 COPY public.joueurs (id, nom, mu, sigma, tier) FROM stdin;
@@ -140,7 +143,7 @@ COPY public.joueurs (id, nom, mu, sigma, tier) FROM stdin;
 
 
 --
--- Data for Name: participations; Type: TABLE DATA; Schema: public; Owner: zack
+-- Data for Name: participations; Type: TABLE DATA; Schema: public; Owner: username
 --
 
 COPY public.participations (joueur_id, tournoi_id, score) FROM stdin;
@@ -163,7 +166,7 @@ COPY public.participations (joueur_id, tournoi_id, score) FROM stdin;
 
 
 --
--- Data for Name: tournois; Type: TABLE DATA; Schema: public; Owner: zack
+-- Data for Name: tournois; Type: TABLE DATA; Schema: public; Owner: username
 --
 
 COPY public.tournois (id, date) FROM stdin;
@@ -175,21 +178,21 @@ COPY public.tournois (id, date) FROM stdin;
 
 
 --
--- Name: joueurs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: zack
+-- Name: joueurs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: username
 --
 
 SELECT pg_catalog.setval('public.joueurs_id_seq', 11, true);
 
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE SET; Schema: public; Owner: zack
+-- Name: tournois_id_seq; Type: SEQUENCE SET; Schema: public; Owner: username
 --
 
 SELECT pg_catalog.setval('public.tournois_id_seq', 5, true);
 
 
 --
--- Name: joueurs joueurs_nom_key; Type: CONSTRAINT; Schema: public; Owner: zack
+-- Name: joueurs joueurs_nom_key; Type: CONSTRAINT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.joueurs
@@ -197,7 +200,7 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
--- Name: joueurs joueurs_pkey; Type: CONSTRAINT; Schema: public; Owner: zack
+-- Name: joueurs joueurs_pkey; Type: CONSTRAINT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.joueurs
@@ -205,7 +208,7 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
--- Name: participations participations_pkey; Type: CONSTRAINT; Schema: public; Owner: zack
+-- Name: participations participations_pkey; Type: CONSTRAINT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.participations
@@ -213,7 +216,7 @@ ALTER TABLE ONLY public.participations
 
 
 --
--- Name: tournois tournois_date_key; Type: CONSTRAINT; Schema: public; Owner: zack
+-- Name: tournois tournois_date_key; Type: CONSTRAINT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.tournois
@@ -221,7 +224,7 @@ ALTER TABLE ONLY public.tournois
 
 
 --
--- Name: tournois tournois_pkey; Type: CONSTRAINT; Schema: public; Owner: zack
+-- Name: tournois tournois_pkey; Type: CONSTRAINT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.tournois
@@ -229,7 +232,7 @@ ALTER TABLE ONLY public.tournois
 
 
 --
--- Name: participations participations_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zack
+-- Name: participations participations_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.participations
@@ -237,14 +240,8 @@ ALTER TABLE ONLY public.participations
 
 
 --
--- Name: participations participations_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zack
+-- Name: participations participations_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: username
 --
 
 ALTER TABLE ONLY public.participations
     ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
-
-
---
--- PostgreSQL database dump complete
---
-
