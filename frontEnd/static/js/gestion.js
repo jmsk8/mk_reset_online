@@ -2,15 +2,15 @@
 
 // Fonction pour mapper le Tier à une classe de couleur Bulma
 // (Déplacée ici pour être accessible partout)
-function getTierColorClass(tier) {
-    if (!tier) return 'is-light'; // Sécurité si tier est null
-    switch(tier.trim().toUpperCase()) {
-        case 'S': return 'is-warning'; // Jaune
-        case 'A': return 'is-success'; // Vert
-        case 'B': return 'is-info';    // Bleu
-        case 'C': return 'is-primary'; // Turquoise
-        default: return 'is-light';    // Gris
-    }
+getTierColor: function(rank) {
+	switch(rank) {
+		case 'S': return 'is-warning'; // Jaune
+		case 'A': return 'is-success'; // Vert
+		case 'B': return 'is-info';    // Bleu
+		case 'C': return 'is-danger';  // Rouge (ou is-primary pour turquoise)
+		case 'U': return 'is-white';   // <--- BLANC pour U
+		default: return 'is-light';    
+	}
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -76,8 +76,8 @@ async function loadPlayers() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="has-text-light font-weight-bold">${p.nom}</td>
-            <td class="has-text-grey-light">${parseFloat(p.mu).toFixed(2)}</td>
-            <td class="has-text-grey-light">${parseFloat(p.sigma).toFixed(2)}</td>
+            <td class="has-text-grey-light">${parseFloat(p.mu).toFixed(3)}</td> 
+            <td class="has-text-grey-light">${parseFloat(p.sigma).toFixed(3)}</td>
             
             <td><span class="tag ${tierClass}">${p.tier}</span></td>
             

@@ -27,8 +27,8 @@ CREATE TABLE public.joueurs (
     mu double precision DEFAULT 25.0,
     sigma double precision DEFAULT 8.333,
     score_trueskill double precision GENERATED ALWAYS AS ((mu - ((3)::double precision * sigma))) STORED,
-    tier character(1) DEFAULT 'C'::bpchar,
-    CONSTRAINT joueurs_tier_check CHECK ((tier = ANY (ARRAY['S'::bpchar, 'A'::bpchar, 'B'::bpchar, 'C'::bpchar])))
+    tier character(1) DEFAULT 'U'::bpchar, -- Par défaut U (Unranked)
+    CONSTRAINT joueurs_tier_check CHECK ((tier = ANY (ARRAY['S'::bpchar, 'A'::bpchar, 'B'::bpchar, 'C'::bpchar, 'U'::bpchar])))
 );
 
 
@@ -128,17 +128,32 @@ ALTER TABLE ONLY public.tournois ALTER COLUMN id SET DEFAULT nextval('public.tou
 --
 
 COPY public.joueurs (id, nom, mu, sigma, tier) FROM stdin;
-1	Bloom	31.675043839695682	6.65574802799859	A
-2	Dead	25.000000000003908	6.207687222180877	B
-3	Lom	18.324956160300392	6.65574802799973	C
-7	Diana	16.79369566862754	6.347890085277039	C
-5	Bob	29.438890907539797	4.5015819828434	S
-6	Charlie	24.06515389997999	4.4349853620504955	A
-8	Kemory	20.87742193879531	5.35308280599353	B
-9	EvoByTheWind	15.610657747204137	6.0385621135883305	C
-10	Kakania	35.21636801768912	6.102430336929139	S
-11	Einrich	30.193304335959336	5.57865331567219	A
-4	Alice	30.68363183906573	4.542891378077342	S
+1	Rosalyan	67.897	3.002	S
+2	J_sk8	57.662	0.858	S
+3	Elite	56.314	0.865	S
+4	Rayou	55.923	1.142	S
+5	Vakaeltraz	54.805	0.788	S
+6	Melwin	52.797	0.838	A
+7	Lu_K	53.467	1.123	A
+8	Clem	50.023	0.884	A
+9	Daytona_69	48.956	1.131	A
+10	JeanCube	50.280	1.956	A
+11	Oleas	56.247	4.235	U
+12	Thaumas	51.464	2.719	B
+13	Ether-Zero	52.986	4.335	U
+14	Ael	44.339	1.818	B
+15	Tomwilson	49.867	4.522	U
+16	Falgo	41.529	2.054	B
+17	Brook1l	42.095	2.266	B
+18	Hardox	40.936	2.108	C
+19	ColorOni	47.302	4.294	U
+20	Camou	42.971	3.181	C
+21	Kemoory	39.060	2.010	C
+22	Fozlo	38.119	1.859	C
+23	McK17	43.013	3.604	C
+24	Kaysuan	43.312	5.890	U
+25	PastPlayer	42.099	5.725	U
+26	Tomy	35.993	4.691	U
 \.
 
 
