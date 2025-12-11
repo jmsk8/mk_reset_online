@@ -6,9 +6,9 @@
     <title>Connexion Administrateur - MK Reset</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../static/css/styles.css">
-    <link rel="stylesheet" href="../static/css/dark-mode.css">
-    <link rel="stylesheet" href="../static/css/animations.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
 </head>
 <body>
     {% include 'navbar.html' %}
@@ -73,9 +73,19 @@
             </div>
         </div>
     </section>
+    
     {% include 'footer.html' %}
+    
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bulma@0.9.4/js/bulma.js"></script>
-    <script src="../static/js/dark-mode.js"></script>
-    <script src="../static/js/animations.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const fadeElems = document.querySelectorAll('.fade-in');
+            fadeElems.forEach(elem => {
+                elem.classList.add('visible');
+            });
+        });
+    </script>
 </body>
+</html>

@@ -535,6 +535,85 @@ def get_tournoi_details(tournoi_id):
         "resultats": resultats
     })
 
+# ... imports existants ...
 
+# Fonction utilitaire pour recalculer le Tier
+def calculate_tier(mu, sigma):
+    score = mu - 3 * sigma
+    if score >= 40: return 'S'
+    elif score >= 30: return 'A'
+    elif score >= 20: return 'B'
+    else: return 'C'
+
+# --- API DE GESTION DES JOUEURS (ADMIN) ---
+
+@app.route('/admin/joueurs', methods=['GET'])
+@admin_required
+def api_get_joueurs():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nom, mu, sigma, tier FROM Joueurs ORDER BY nom ASC")
+    joueurs = [{"id": r[0], "nom": r[1], "mu": r[2], "sigma": r[3], "tier": r[4].strip()} for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify(joueurs)
+
+@app.route('/admin/joueurs', methods=['POST'])
+@admin_required
+def api_add_joueur():
+    data = request.get_json()
+    try:
+        nom = data['nom']
+        mu = float(data.get('mu', 25.0))
+        sigma = float(data.get('sigma', 8.333))
+        tier = calculate_tier(mu, sigma)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, %s, %s, %s) RETURNING id", 
+                    (nom, mu, sigma, tier))
+        new_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "id": new_id, "tier": tier}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/admin/joueurs/<int:id>', methods=['PUT'])
+@admin_required
+def api_update_joueur(id):
+    data = request.get_json()
+    try:
+        mu = float(data['mu'])
+        sigma = float(data['sigma'])
+        nom = data['nom']
+        tier = calculate_tier(mu, sigma)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s, tier=%s WHERE id=%s", 
+                    (nom, mu, sigma, tier, id))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "tier": tier})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route('/admin/joueurs/<int:id>', methods=['DELETE'])
+@admin_required
+def api_delete_joueur(id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM Joueurs WHERE id=%s", (id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)

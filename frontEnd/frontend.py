@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import requests
 import os
 from datetime import datetime, timedelta 
@@ -232,5 +232,58 @@ def stats_tournoi_detail(tournoi_id):
         flash("Erreur serveur", "danger")
         return redirect(url_for('index'))
 
+@app.route('/admin/gestion')
+def admin_gestion():
+    if 'admin_token' not in session:
+        flash('Accès interdit.', 'danger')
+        return redirect(url_for('admin_login'))
+    
+    # On passe le token au template pour que le JS puisse l'utiliser
+    return render_template('gestion_joueurs.html', admin_token=session['admin_token'])
+
+# --- AJOUTER DANS frontend.py ---
+
+# Route relais pour récupérer (GET) ou ajouter (POST) des joueurs
+@app.route('/admin/joueurs', methods=['GET', 'POST'])
+def proxy_joueurs():
+    # Sécurité : On vérifie que l'admin est connecté
+    if 'admin_token' not in session:
+        return jsonify({'error': 'Non autorisé'}), 403
+    
+    headers = {'X-Admin-Token': session['admin_token']}
+    
+    try:
+        if request.method == 'GET':
+            # Le frontend demande la liste au backend
+            resp = requests.get(f"{BACKEND_URL}/admin/joueurs", headers=headers)
+        elif request.method == 'POST':
+            # Le frontend transmet les données d'ajout au backend
+            resp = requests.post(f"{BACKEND_URL}/admin/joueurs", json=request.get_json(), headers=headers)
+            
+        # On renvoie la réponse exacte du backend au navigateur (JSON + Status Code)
+        return jsonify(resp.json()), resp.status_code
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Erreur de connexion backend: {str(e)}'}), 500
+
+# Route relais pour modifier (PUT) ou supprimer (DELETE) un joueur spécifique
+@app.route('/admin/joueurs/<int:id>', methods=['PUT', 'DELETE'])
+def proxy_joueurs_detail(id):
+    if 'admin_token' not in session:
+        return jsonify({'error': 'Non autorisé'}), 403
+
+    headers = {'X-Admin-Token': session['admin_token']}
+
+    try:
+        if request.method == 'PUT':
+            resp = requests.put(f"{BACKEND_URL}/admin/joueurs/{id}", json=request.get_json(), headers=headers)
+        elif request.method == 'DELETE':
+            resp = requests.delete(f"{BACKEND_URL}/admin/joueurs/{id}", headers=headers)
+            
+        return jsonify(resp.json()), resp.status_code
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': f'Erreur de connexion backend: {str(e)}'}), 500
+    
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des Joueurs - Admin</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../static/css/styles.css">
+    <link rel="stylesheet" href="../static/css/dark-mode.css">
+    <link rel="stylesheet" href="../static/css/animations.css">
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <script>const ADMIN_TOKEN = "{{ admin_token }}";</script>
+
+    <section class="section">
+        <div class="container">
+            <h1 class="title has-text-centered glow-text mb-6">Gestion des Joueurs</h1>
+
+            <div class="card glass-card mb-6 fade-in">
+                <div class="card-header">
+                    <p class="card-header-title"><i class="fas fa-user-plus mr-2"></i> Ajouter un nouveau joueur</p>
+                </div>
+                <div class="card-content">
+                    <form id="addPlayerForm">
+                        <div class="columns">
+                            <div class="column is-4">
+                                <div class="field">
+                                    <label class="label">Pseudo</label>
+                                    <div class="control has-icons-left">
+                                        <input class="input" type="text" id="newNom" required placeholder="Ex: Mario">
+                                        <span class="icon is-small is-left"><i class="fas fa-user"></i></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="column is-3">
+                                <div class="field">
+                                    <label class="label">Mu</label>
+                                    <input class="input" type="number" step="0.01" id="newMu" value="25.00" required>
+                                </div>
+                            </div>
+                            <div class="column is-3">
+                                <div class="field">
+                                    <label class="label">Sigma</label>
+                                    <input class="input" type="number" step="0.01" id="newSigma" value="8.333" required>
+                                </div>
+                            </div>
+                            <div class="column is-2">
+                                <div class="field">
+                                    <label class="label">&nbsp;</label>
+                                    <button type="submit" class="button is-success is-fullwidth">
+                                        <i class="fas fa-plus mr-2"></i> Ajouter
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card glass-card fade-in">
+                <div class="card-header">
+                    <p class="card-header-title"><i class="fas fa-users mr-2"></i> Liste des joueurs</p>
+                </div>
+                <div class="card-content">
+                    <div class="table-container">
+                        <table class="table is-fullwidth is-hoverable" style="background: transparent;">
+                            <thead>
+                                <tr>
+                                    <th class="has-text-white">Nom</th>
+                                    <th class="has-text-white">Mu</th>
+                                    <th class="has-text-white">Sigma</th>
+                                    <th class="has-text-white">Tier</th>
+                                    <th class="has-text-white has-text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="playersTableBody">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div id="editModal" class="modal">
+        <div class="modal-background"></div>
+        <div class="modal-card glass-card">
+            <header class="modal-card-head" style="background: rgba(30,41,59,0.9);">
+                <p class="modal-card-title has-text-white">Modifier le joueur</p>
+                <button class="delete" aria-label="close" onclick="closeModal()"></button>
+            </header>
+            <section class="modal-card-body" style="background: rgba(15,23,42,0.9);">
+                <input type="hidden" id="editId">
+                <div class="field">
+                    <label class="label">Pseudo</label>
+                    <input class="input" type="text" id="editNom">
+                </div>
+                <div class="columns">
+                    <div class="column">
+                        <div class="field">
+                            <label class="label">Mu</label>
+                            <input class="input" type="number" step="0.001" id="editMu">
+                        </div>
+                    </div>
+                    <div class="column">
+                        <div class="field">
+                            <label class="label">Sigma</label>
+                            <input class="input" type="number" step="0.001" id="editSigma">
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <footer class="modal-card-foot" style="background: rgba(30,41,59,0.9); border-top: 1px solid #3b82f6;">
+                <button class="button is-success" onclick="saveEdit()">Enregistrer</button>
+                <button class="button" onclick="closeModal()">Annuler</button>
+            </footer>
+        </div>
+    </div>
+
+    {% include 'footer.html' %}
+	<script src="{{ url_for('static', filename='js/gestion.js') }}"></script>
+</body>
+</html>
