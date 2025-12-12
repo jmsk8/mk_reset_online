@@ -99,20 +99,24 @@
                                         {% for joueur in joueurs %}
                                             <tr class="fade-in joueur-row" style="animation-delay: {{ loop.index * 0.1 }}s" data-nom="{{ joueur.nom }}">
                                                 <td>
-                                                    {% if loop.index == 1 %}
-                                                        <span class="tag is-warning"><i class="fas fa-crown"></i> 1</span>
-                                                    {% elif loop.index == 2 %}
-                                                        <span class="tag is-light"><i class="fas fa-medal"></i> 2</span>
-                                                    {% elif loop.index == 3 %}
-                                                        <span class="tag is-danger"><i class="fas fa-medal"></i> 3</span>
+                                                    {% if joueur.tier in ['U', '?', 'Unranked'] %}
+                                                        <span class="tag is-light" style="background: transparent; color: #888; font-weight: bold;">-</span>
                                                     {% else %}
-                                                        <span class="tag is-info">{{ loop.index }}</span>
+                                                        {% if loop.index == 1 %}
+                                                            <span class="tag is-warning"><i class="fas fa-crown"></i> 1</span>
+                                                        {% elif loop.index == 2 %}
+                                                            <span class="tag is-light"><i class="fas fa-medal"></i> 2</span>
+                                                        {% elif loop.index == 3 %}
+                                                            <span class="tag is-danger"><i class="fas fa-medal"></i> 3</span>
+                                                        {% else %}
+                                                            <span class="tag is-info">{{ loop.index }}</span>
+                                                        {% endif %}
                                                     {% endif %}
                                                 </td>
                                                 <td>
                                                     <div class="player-name">
                                                         {{ joueur.nom }}
-                                                        {% if loop.index <= 3 %}
+                                                        {% if loop.index <= 3 and joueur.tier != 'U' %}
                                                             <span class="icon has-text-warning">
                                                                 <i class="fas fa-star"></i>
                                                             </span>
@@ -141,6 +145,8 @@
                                                         <span class="tag is-info tier-tag">B</span>
                                                     {% elif joueur.tier == 'C' %}
                                                         <span class="tag is-primary tier-tag">C</span>
+                                                    {% elif joueur.tier in ['U', '?', 'Unranked'] %}
+                                                        <span class="tag is-white tier-tag">U</span>
                                                     {% else %}
                                                         <span class="tag is-light tier-tag">{{ joueur.tier }}</span>
                                                     {% endif %}

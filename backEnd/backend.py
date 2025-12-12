@@ -70,7 +70,7 @@ def recalculate_tiers(conn):
         sigma = float(sigma)
         score = mu - (3 * sigma)
         
-        new_tier = 'U' # Par défaut U (Unranked)
+        new_tier = 'U'
         
         # On attribue un rang S/A/B/C UNIQUEMENT si sigma <= 4.15
         if float(sigma) <= 4.15:
@@ -79,7 +79,7 @@ def recalculate_tiers(conn):
             elif score > (mean_score - std_dev): new_tier = 'B'
             else:                                new_tier = 'C'
         else:
-            new_tier = 'U' # Si sigma > 4.15, on force U
+            new_tier = 'U'
 
         cur.execute("UPDATE Joueurs SET tier = %s WHERE id = %s", (new_tier, pid))
     

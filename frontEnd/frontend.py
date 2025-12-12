@@ -35,6 +35,10 @@ def index():
 def inject_session_lifetime():
     return dict(session_lifetime=app.permanent_session_lifetime.total_seconds())
 
+# frontend.py
+
+# Dans frontend.py
+
 @app.route('/classement')
 def classement():
     """Page du classement général avec filtres par Tier."""
@@ -45,6 +49,30 @@ def classement():
         response = requests.get(f"{BACKEND_URL}/classement", params=params)
         if response.status_code == 200:
             joueurs = response.json()
+            
+            # ================== DÉBUT DU BLOC À AJOUTER ==================
+            # --- TRI ROBUSTE ---
+            def sort_key(j):
+                # 1. Identifier si le joueur est classé (True) ou non (False)
+                # On considère U, ? et Unranked comme "Non Classé"
+                # On met False pour ceux-là, True pour les autres
+                tier_val = j.get('tier', '').strip() 
+                is_ranked = tier_val not in ['U', '?', 'Unranked']
+                
+                # 2. Sécuriser le score en float
+                try:
+                    score = float(j.get('score_trueskill', 0))
+                except (ValueError, TypeError):
+                    score = 0.0
+                    
+                # Le tri se fait sur :
+                # - D'abord is_ranked (True avant False)
+                # - Ensuite le score (Grand avant Petit)
+                return (is_ranked, score)
+
+            joueurs.sort(key=sort_key, reverse=True)
+            # ================== FIN DU BLOC À AJOUTER ==================
+            
         else:
             joueurs = []
             flash('Erreur lors du chargement du classement', 'warning')
