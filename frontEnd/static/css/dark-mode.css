@@ -1,4 +1,3 @@
-/* Variables pour le mode sombre amélioré avec meilleur contraste */
 :root {
     --background-color: #0f172a;
     --secondary-background: #1e293b;
@@ -13,12 +12,11 @@
     --input-background: #e2e8f0;
     --input-text-color: #1a202c;
     --header-text-color: #f8fafc;
-    --label-color: #f1f5f9; /* Éclaircissement pour meilleure lisibilité */
+    --label-color: #f1f5f9;
     --border-color: rgba(59, 130, 246, 0.3);
     --hover-color: #334155;
 }
 
-/* Appliquer les couleurs du mode sombre */
 body, html {
     background-color: var(--background-color);
     color: var(--text-color);
@@ -28,7 +26,6 @@ body, html {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Navbar styling */
 .navbar {
     background-color: var(--secondary-background) !important;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
@@ -54,7 +51,6 @@ body, html {
     background-color: var(--border-color);
 }
 
-/* Button styling */
 .button {
     border-radius: 6px;
     transition: all 0.3s ease;
@@ -92,7 +88,6 @@ body, html {
     color: white;
 }
 
-/* Input styling */
 .input, .textarea, .select select {
     background-color: var(--input-background);
     color: var(--input-text-color);
@@ -105,7 +100,6 @@ body, html {
     box-shadow: 0 0 0 0.125em rgba(59, 130, 246, 0.25);
 }
 
-/* Card and box styling */
 .box, .card {
     background-color: var(--box-background-color);
     color: var(--text-color);
@@ -113,18 +107,15 @@ body, html {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
-/* Label styling pour meilleure lisibilité */
 .label {
     color: var(--label-color) !important; /* Force l'application de la couleur claire */
     font-weight: 600;
 }
 
-/* Card content styling */
 .card-content {
     color: var(--text-color);
 }
 
-/* Table styling */
 .table {
     background-color: transparent;
     color: var(--text-color);
@@ -146,18 +137,15 @@ body, html {
     background-color: rgba(59, 130, 246, 0.15) !important;
 }
 
-/* Titre et texte */
 .title, .subtitle, .card-header-title {
     color: var(--header-text-color);
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-/* Hero section */
 .hero.is-primary {
     background-color: var(--primary-color);
 }
 
-/* Footer */
 .footer {
     background-color: var(--secondary-background);
     color: var(--text-color);
@@ -165,7 +153,6 @@ body, html {
     margin-top: 3rem;
 }
 
-/* Tags styling */
 .tag {
     border-radius: 20px;
 }
@@ -181,7 +168,6 @@ body, html {
     font-weight: 700;
 }
 
-/* Player name styling */
 .player-name {
     display: flex;
     align-items: center;
@@ -189,30 +175,25 @@ body, html {
     font-weight: 500;
 }
 
-/* Transitions générales */
 a, button, input, .card, .box {
     transition: all 0.3s ease;
 }
 
-/* Amélioration des bordures */
 .card, .box {
     border: 1px solid var(--border-color);
 }
 
-/* Brand item */
 .brand-item {
     font-size: 1.2rem;
     font-weight: 700;
 }
 
-/* Correction des stats-box */
 .stat-box {
     background-color: var(--secondary-background);
     border-radius: 8px;
     padding: 1rem;
 }
 
-/* Tabs */
 .tabs li.is-active a {
     color: var(--primary-color) !important;
     border-color: var(--primary-color) !important;
@@ -226,23 +207,20 @@ a, button, input, .card, .box {
     color: var(--primary-color) !important;
 }
 
-/* Amélioration spécifique pour les cartes en verre */
 .glass-card .card-content {
     color: var(--text-color);
 }
 
-/* Style spécifique pour les labels dans les cartes en verre */
 .glass-card .label {
-    color: #e2e8f0 !important; /* Couleur encore plus claire pour un meilleur contraste */
+    color: #e2e8f0 !important;
 }
 
-/* Style pour améliorer la lisibilité dans les boîtes de joueurs */
 .joueur {
     color: var(--text-color);
 }
 
 .tag.is-bronze {
-    background-color: #753d04; /* Couleur bronze */
+    background-color: #753d04;
     color: white;
   }
   

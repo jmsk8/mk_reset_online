@@ -52,7 +52,6 @@
     <section class="section">
         <div class="container">
             <div class="columns">
-                <!-- Colonne de gauche: Stats générales -->
                 <div class="column is-4">
                     <div class="card glass-card fade-in">
                         <div class="card-header">
@@ -164,9 +163,7 @@
                     </div>
                 </div>
                 
-                <!-- Colonne de droite: Graphiques -->
                 <div class="column is-8">
-                    <!-- Évolution des scores -->
                     <div class="card glass-card fade-in">
                         <div class="card-header">
                             <p class="card-header-title is-centered">
@@ -246,61 +243,52 @@
     <script src="../../static/css/animations.js"></script>
     
     <script>
-    // Script pour le graphique d'évolution des scores
-    document.addEventListener('DOMContentLoaded', function() {
-        var ctx = document.getElementById('scoreChart').getContext('2d');
-        
-        // Récupérer les données pour le graphique
-        var tournois = [
-            {% for tournoi in historique %}
-                {
-                    date: "{{ tournoi.date }}",
-                    score: {{ tournoi.score }},
-                    position: {{ tournoi.position }}
-                }{{ "," if not loop.last }}
-            {% endfor %}
-        ];
-        
-        // Inverser l'ordre pour avoir l'évolution chronologique
-        tournois.reverse();
-        
-        var dates = tournois.map(function(t) { return t.date; });
-        var scores = tournois.map(function(t) { return t.score; });
-        var positions = tournois.map(function(t) { return t.position; });
-        
-        var scoreChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: dates,
-                datasets: [{
-                    label: 'Score',
-                    data: scores,
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    fill: true,
-                    tension: 0.3
-                }]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: false
-                    }
+        document.addEventListener('DOMContentLoaded', () => {
+            const fadeElems = document.querySelectorAll('.fade-in');
+            fadeElems.forEach(elem => {
+                elem.classList.add('visible');
+            });
+        });
+    
+        document.addEventListener('DOMContentLoaded', function() {
+            var ctx = document.getElementById('scoreChart').getContext('2d');
+            
+            var tournois = [
+                {% for tournoi in historique %}
+                    {
+                        date: "{{ tournoi.date }}",
+                        score: {{ tournoi.score }},
+                        position: {{ tournoi.position }}
+                    }{{ "," if not loop.last }}
+                {% endfor %}
+            ];
+            
+            tournois.reverse();
+            
+            var dates = tournois.map(function(t) { return t.date; });
+            var scores = tournois.map(function(t) { return t.score; });
+            
+            var scoreChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Score',
+                        data: scores,
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        fill: true,
+                        tension: 0.3
+                    }]
                 },
-                plugins: {
-                    tooltip: {
-                        callbacks: {
-                            afterLabel: function(context) {
-                                var tournoi = tournois[context.dataIndex];
-                                return 'Position: ' + tournoi.position;
-                            }
-                        }
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: false }
                     }
                 }
-            }
+            });
         });
-    });
-    </script>
+        </script>
 </body>
 </html>

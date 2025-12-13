@@ -1,22 +1,19 @@
-/* frontEnd/static/js/gestion.js */
-
-// Fonction pour mapper le Tier à une classe de couleur Bulma
-// (Déplacée ici pour être accessible partout)
-getTierColor: function(rank) {
-	switch(rank) {
-		case 'S': return 'is-warning'; // Jaune
-		case 'A': return 'is-success'; // Vert
-		case 'B': return 'is-info';    // Bleu
-		case 'C': return 'is-danger';  // Rouge (ou is-primary pour turquoise)
-		case 'U': return 'is-white';   // <--- BLANC pour U
-		default: return 'is-light';    
-	}
+function getTierColor(rank) {
+    const cleanedRank = rank ? rank.trim() : '?';
+    
+    switch(cleanedRank) {
+        case 'S': return 'is-warning';
+        case 'A': return 'is-success';
+        case 'B': return 'is-info';
+        case 'C': return 'is-danger';
+        case 'U': return 'is-white';
+        default: return 'is-light';    
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     loadPlayers();
 
-    // Gestionnaire soumission formulaire Ajout
     const addForm = document.getElementById('addPlayerForm');
     if (addForm) {
         addForm.addEventListener('submit', async (e) => {
@@ -30,14 +27,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await apiCall('/admin/joueurs', 'POST', data);
             if (res.error) alert("Erreur: " + res.error);
             else {
-                document.getElementById('newNom').value = ""; // Reset champ nom
-                loadPlayers(); // Recharger la liste
+                document.getElementById('newNom').value = "";
+                loadPlayers();
             }
         });
     }
 });
 
-// Fonction générique pour les appels API
 async function apiCall(url, method, body = null) {
     const options = {
         method: method,
@@ -50,28 +46,32 @@ async function apiCall(url, method, body = null) {
     
     try {
         const response = await fetch(url, options);
-        return await response.json();
+        const text = await response.text();
+        if (text) {
+            return JSON.parse(text);
+        } else {
+            return { status: response.statusText };
+        }
     } catch (err) {
         return { error: err.message };
     }
 }
 
-// Charger et afficher les joueurs
 async function loadPlayers() {
     const players = await apiCall('/admin/joueurs', 'GET');
     const tbody = document.getElementById('playersTableBody');
-    if (!tbody) return; // Sécurité
+    if (!tbody) return; 
     
     tbody.innerHTML = '';
 
-    if (players.error) {
-        console.error(players.error);
+    if (players.error || !Array.isArray(players)) {
+        console.error("Erreur de l'API ou format inattendu:", players.error || players);
+        tbody.innerHTML = `<tr><td colspan="5" class="has-text-centered has-text-danger">Impossible de charger les données. Vérifiez le backend.</td></tr>`;
         return;
     }
 
     players.forEach(p => {
-        // Appeler la fonction (maintenant accessible)
-        const tierClass = getTierColorClass(p.tier); 
+        const tierClass = getTierColor(p.tier); 
         
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -93,11 +93,9 @@ async function loadPlayers() {
         tbody.appendChild(tr);
     });
     
-    // Réappliquer les animations fade-in
     document.querySelectorAll('.fade-in').forEach(el => el.classList.add('visible'));
 }
 
-// Suppression
 async function deletePlayer(id) {
     if(!confirm("Êtes-vous sûr de vouloir supprimer ce joueur définitivement ?")) return;
     const res = await apiCall(`/admin/joueurs/${id}`, 'DELETE');
@@ -105,7 +103,6 @@ async function deletePlayer(id) {
     else alert("Erreur lors de la suppression");
 }
 
-// Modal Édition
 function openEditModal(player) {
     document.getElementById('editId').value = player.id;
     document.getElementById('editNom').value = player.nom;

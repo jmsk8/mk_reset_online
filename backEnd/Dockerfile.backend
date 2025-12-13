@@ -1,26 +1,21 @@
 # Dockerfile.backend
 FROM python:3.9-slim-bullseye
 
-# On garde un dossier de travail propre
 WORKDIR /app
 
-# Installation des dépendances système minimales pour psycopg2
+
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copie des fichiers de dépendances et installation
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copie du code source
 COPY backend.py .
 
-# Variables d'environnement par défaut
 ENV POSTGRES_HOST=db
 ENV POSTGRES_PORT=5432
 
-# Lancement direct de l'application
 EXPOSE 8080
 CMD ["python", "backend.py"]

@@ -28,7 +28,6 @@
 
     <section class="section">
         <div class="container">
-            <!-- Distribution globale des tiers -->
             <div class="columns">
                 <div class="column is-10 is-offset-1">
                     <div class="card glass-card mb-5">
@@ -228,14 +227,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="../static/js/script.js"></script>
     <script>
-        // Animation pour les éléments au chargement
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => {
                 elem.classList.add('visible');
             });
             
-            // Recherche de joueur
             const joueurSearch = document.getElementById('joueurSearch');
             const btnSearchJoueur = document.getElementById('btnSearchJoueur');
             
@@ -256,7 +253,6 @@
             joueurSearch.addEventListener('keyup', filterJoueurs);
             btnSearchJoueur.addEventListener('click', filterJoueurs);
             
-            // Tri des joueurs
             const btnSort = document.getElementById('btnSort');
             const sortOption = document.getElementById('sortOption');
             
@@ -268,10 +264,9 @@
                 cards.sort((a, b) => {
                     const aValue = parseFloat(a.getAttribute(`data-${sortBy}`));
                     const bValue = parseFloat(b.getAttribute(`data-${sortBy}`));
-                    return bValue - aValue; // Ordre décroissant
+                    return bValue - aValue; 
                 });
                 
-                // Vider et reconstruire le conteneur
                 while (cardsContainer.firstChild) {
                     cardsContainer.removeChild(cardsContainer.firstChild);
                 }

@@ -112,7 +112,6 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    // 1. Gestion du burger menu pour mobile
     const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
     if ($navbarBurgers.length > 0) {
       $navbarBurgers.forEach( el => {
@@ -125,7 +124,6 @@
       });
     }
     
-    // 2. Mise en évidence de l'élément actif
     const currentPath = window.location.pathname;
     const navLinks = document.querySelectorAll('.navbar-start .navbar-item');
     navLinks.forEach(link => {
@@ -135,7 +133,6 @@
       }
     });
     
-    // 3. Mise en évidence de la section statistiques active
     if (currentPath.startsWith('/stats/')) {
       const statsDropdown = document.querySelector('.navbar-link');
       if (statsDropdown) {
@@ -143,7 +140,6 @@
       }
     }
     
-    // 4. Gestion de fermeture des notifications
     document.querySelectorAll('.notification .delete').forEach(deleteButton => {
       deleteButton.addEventListener('click', () => {
         const notification = deleteButton.parentNode;
@@ -151,31 +147,24 @@
       });
     });
 
-    // --- 5. NOUVEAU : Gestion de l'expiration de session ---
-    // On vérifie si le bouton de déconnexion est présent dans le DOM
     const logoutBtn = document.querySelector('a[href="/admin/logout"]');
     
     if (logoutBtn) {
-      // Récupération de la durée via Jinja2 (avec valeur par défaut de 900s si non définie)
       const lifetimeSeconds = {{ session_lifetime|default(900)|int }};
-      const warningTimeSeconds = 60; // Prévenir 60 secondes avant la fin
+      const warningTimeSeconds = 60; 
       
-      // Calcul du délai en millisecondes
       const timeBeforeWarning = (lifetimeSeconds - warningTimeSeconds) * 1000;
       
       if (timeBeforeWarning > 0) {
-        // Lancement du timer
         setTimeout(() => {
           const modal = document.getElementById('session-warning-modal');
           modal.classList.add('is-active');
         }, timeBeforeWarning);
       }
 
-      // Clic sur "Oui, continuer"
       const extendBtn = document.getElementById('btn-extend-session');
       if (extendBtn) {
         extendBtn.addEventListener('click', () => {
-          // Recharger la page réinitialise le timer de session côté serveur (Flask) et navigateur
           location.reload();
         });
       }

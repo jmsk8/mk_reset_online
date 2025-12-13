@@ -1,17 +1,13 @@
-# backend.py
 from flask import Flask, jsonify, request, abort
 import psycopg2
 import os
-import math # Important pour sqrt
+import math
 from trueskill import Rating, rate
-import numpy as np
 import functools
 import bcrypt
-from flask import request, abort
 
 app = Flask(__name__)
 
-# --- Configuration ---
 db_config = {
     'dbname': os.environ.get('POSTGRES_DB', 'tournament_db'),
     'user': os.environ.get('POSTGRES_USER', 'username'),
@@ -38,55 +34,55 @@ def admin_required(f):
 def get_db_connection():
     return psycopg2.connect(**db_config)
 
+def sync_sequences(conn):
+    cur = conn.cursor()
+    tables = ['Joueurs', 'Tournois']
+    for table in tables:
+        try:
+            seq_name = f"public.{table.lower()}_id_seq"
+            query = f"SELECT setval('{seq_name}', (SELECT MAX(id) FROM public.{table}))"
+            cur.execute(query)
+        except Exception:
+            conn.rollback()
+    conn.commit()
+    cur.close()
+
 def recalculate_tiers(conn):
     cur = conn.cursor()
-    
-    # 1. Récupérer tous les joueurs
     cur.execute("SELECT id, mu, sigma FROM Joueurs")
     all_players = cur.fetchall()
     
-    # 2. Filtrer pour le CALCUL (On exclut les U implicitement ici)
     valid_scores = []
     for pid, mu, sigma in all_players:
-        # C'est ici qu'on s'assure que les 'U' ne comptent pas pour le calcul
-        # On ne prend que ceux qui ont un sigma <= 4.15
         if float(sigma) <= 4.15:
             score = float(mu) - (3 * float(sigma))
             valid_scores.append(score)
             
-    # S'il n'y a pas assez de joueurs fiables, on sort
     if len(valid_scores) < 2:
         cur.close()
         return
 
-    # 3. Calcul Moyenne et Écart-Type globaux (basé uniquement sur les joueurs fiables)
     mean_score = sum(valid_scores) / len(valid_scores)
     variance = sum((x - mean_score) ** 2 for x in valid_scores) / len(valid_scores)
     std_dev = math.sqrt(variance)
 
-    # 4. Attribution des Rangs
     for pid, mu, sigma in all_players:
         mu = float(mu)
         sigma = float(sigma)
         score = mu - (3 * sigma)
         
         new_tier = 'U'
-        
-        # On attribue un rang S/A/B/C UNIQUEMENT si sigma <= 4.15
         if float(sigma) <= 4.15:
-            if score > (mean_score + std_dev):   new_tier = 'S'
-            elif score > mean_score:             new_tier = 'A'
+            if score > (mean_score + std_dev): new_tier = 'S'
+            elif score > mean_score: new_tier = 'A'
             elif score > (mean_score - std_dev): new_tier = 'B'
-            else:                                new_tier = 'C'
-        else:
-            new_tier = 'U'
-
+            else: new_tier = 'C'
+        
         cur.execute("UPDATE Joueurs SET tier = %s WHERE id = %s", (new_tier, pid))
     
     conn.commit()
     cur.close()
 
-# --- Routes Auth ---
 @app.route('/admin-auth', methods=['POST'])
 def admin_auth():
     data = request.get_json()
@@ -100,7 +96,6 @@ def admin_auth():
     except ValueError:
         return jsonify({"status": "error", "message": "Erreur configuration"}), 500
 
-# --- Routes Publiques ---
 @app.route('/dernier-tournoi')
 def dernier_tournoi():
     conn = get_db_connection()
@@ -139,12 +134,12 @@ def classement():
     cur.execute(query, params)
     joueurs = []
     for nom, mu, sigma, score_trueskill, tier in cur.fetchall():
-        score_trueskill_arrondi = round(float(score_trueskill), 2) if score_trueskill is not None else 0.00
+        score_ts = round(float(score_trueskill), 2) if score_trueskill is not None else 0.00
         joueurs.append({
             "nom": nom,
             "mu": float(mu),
             "sigma": float(sigma),
-            "score_trueskill": score_trueskill_arrondi,
+            "score_trueskill": score_ts,
             "tier": tier.strip() if tier else "?"
         })
     cur.close()
@@ -161,43 +156,104 @@ def get_joueur_names():
     conn.close()
     return jsonify(noms)
 
-# --- Routes Stats (Simplifiées pour la lisibilité, logique inchangée) ---
 @app.route('/stats/joueur/<nom>')
 def get_joueur_stats(nom):
     conn = get_db_connection()
     cur = conn.cursor()
+    
     cur.execute("SELECT mu, sigma, score_trueskill, tier FROM Joueurs WHERE nom = %s", (nom,))
     current_stats = cur.fetchone()
+
     if not current_stats:
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return jsonify({"error": "Joueur non trouvé"}), 404
+
     mu, sigma, score_trueskill, tier = current_stats
     
     cur.execute("""
-        SELECT t.date, p.new_score_trueskill, p.position
-        FROM Participations p JOIN Tournois t ON p.tournoi_id = t.id JOIN Joueurs j ON p.joueur_id = j.id
-        WHERE j.nom = %s ORDER BY t.date DESC
+        SELECT t.date, p.score, p.position, p.new_score_trueskill
+        FROM Participations p
+        JOIN Tournois t ON p.tournoi_id = t.id
+        JOIN Joueurs j ON p.joueur_id = j.id
+        WHERE j.nom = %s
+        ORDER BY t.date DESC
     """, (nom,))
-    historique_data = []
-    total_pos = 0
-    for date, score, position in cur.fetchall():
-        historique_data.append({"date": date.strftime("%Y-%m-%d"), "score": round(float(score), 2) if score else 0, "position": position})
-        total_pos += position
     
-    nb = len(historique_data)
-    cur.execute("SELECT COUNT(id) FROM Joueurs WHERE score_trueskill <= %s", (score_trueskill,))
+    raw_history = cur.fetchall()
+    
+    historique_data = []
+    scores_bruts = []
+    positions = []
+    victoires = 0
+    
+    for date, score, position, hist_ts in raw_history:
+        s_val = float(score) if score is not None else 0.0
+        p_val = int(position) if position is not None else 0
+        ts_val = float(hist_ts) if hist_ts is not None else 0.0
+        
+        scores_bruts.append(s_val)
+        positions.append(p_val)
+        
+        if p_val == 1:
+            victoires += 1
+            
+        historique_data.append({
+            "date": date.strftime("%Y-%m-%d"),
+            "score": s_val,
+            "position": p_val,
+            "score_trueskill": round(ts_val, 2)
+        })
+
+    nb_tournois = len(scores_bruts)
+    
+    if nb_tournois > 0:
+        score_moyen = sum(scores_bruts) / nb_tournois
+        meilleur_score = max(scores_bruts)
+        position_moyenne = sum(positions) / nb_tournois
+        ratio_victoires = (victoires / nb_tournois) * 100
+        variance = sum((x - score_moyen) ** 2 for x in scores_bruts) / nb_tournois
+        ecart_type_scores = math.sqrt(variance)
+    else:
+        score_moyen = 0
+        meilleur_score = 0
+        position_moyenne = 0
+        ratio_victoires = 0
+        ecart_type_scores = 0
+
+    progression_recente = 0
+    if nb_tournois >= 2:
+        current_ts_val = historique_data[0]['score_trueskill']
+        index_prev = min(4, nb_tournois - 1)
+        prev_ts_val = historique_data[index_prev]['score_trueskill']
+        if prev_ts_val > 0: 
+            progression_recente = current_ts_val - prev_ts_val
+
+    safe_ts = float(score_trueskill) if score_trueskill is not None else 0.0
+    cur.execute("SELECT COUNT(id) FROM Joueurs WHERE score_trueskill <= %s", (safe_ts,))
     rank_count = cur.fetchone()[0]
     cur.execute("SELECT COUNT(id) FROM Joueurs WHERE score_trueskill IS NOT NULL")
-    total = cur.fetchone()[0]
-    percentile = (rank_count / total * 100) if total > 0 else 0
-    
-    cur.close(); conn.close()
+    total_joueurs = cur.fetchone()[0]
+    percentile = (rank_count / total_joueurs * 100) if total_joueurs > 0 else 0
+
+    cur.close()
+    conn.close()
+
     return jsonify({
         "stats": {
-            "mu": round(float(mu), 2), "sigma": round(float(sigma), 2),
-            "score_trueskill": round(float(score_trueskill), 2), "tier": tier.strip() if tier else "?",
-            "position_moyenne": round(total_pos/nb, 2) if nb > 0 else 0,
-            "nb_tournois": nb, "percentile_trueskill": round(percentile, 1)
+            "mu": round(float(mu), 2) if mu else 25.0,
+            "sigma": round(float(sigma), 2) if sigma else 8.333,
+            "score_trueskill": round(safe_ts, 2),
+            "tier": tier.strip() if tier else '?',
+            "nombre_tournois": nb_tournois,
+            "victoires": victoires,
+            "ratio_victoires": round(ratio_victoires, 1),
+            "score_moyen": round(score_moyen, 1),
+            "meilleur_score": meilleur_score,
+            "ecart_type_scores": round(ecart_type_scores, 1),
+            "position_moyenne": round(position_moyenne, 1),
+            "progression_recente": round(progression_recente, 2),
+            "percentile_trueskill": round(percentile, 1)
         },
         "historique": historique_data
     })
@@ -217,7 +273,8 @@ def get_global_joueur_stats():
     
     cur.execute("SELECT tier, COUNT(*) FROM Joueurs WHERE tier IS NOT NULL GROUP BY tier")
     dist = {r[0].strip(): r[1] for r in cur.fetchall()}
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     return jsonify({"progressions": progressions, "distribution_tiers": dist})
 
 @app.route('/stats/tournois')
@@ -233,7 +290,8 @@ def get_tournois_list():
         "id": r[0], "date": r[1].strftime("%Y-%m-%d"), "nb_joueurs": r[2], "participants": r[2],
         "score_max": r[3], "vainqueur": r[4] if r[4] else "Inconnu"
     } for r in cur.fetchall()]
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     return jsonify(tournois)
 
 @app.route('/stats/tournoi/<int:tournoi_id>')
@@ -253,12 +311,10 @@ def get_tournoi_details(tournoi_id):
         "score_trueskill": round(float(r[2]), 2) if r[2] else 0,
         "tier": r[3].strip() if r[3] else "?", "position": r[4]
     } for r in cur.fetchall()]
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     return jsonify({"date": td[0].strftime("%Y-%m-%d"), "resultats": res})
 
-# --- ROUTES ADMIN ---
-
-# 1. Ajout de tournoi (Avec recalcul global)
 @app.route('/add-tournament', methods=['POST'])
 @admin_required
 def add_tournament():
@@ -279,7 +335,6 @@ def add_tournament():
         joueurs_ratings = {}
         joueurs_ids_map = {}
         
-        # Préparation des joueurs
         for joueur in joueurs_data:
             nom = joueur['nom']
             score = joueur['score']
@@ -289,7 +344,7 @@ def add_tournament():
             if res:
                 jid, mu, sigma = res
             else:
-                cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, 25.0, 8.333, 'Unranked') RETURNING id", (nom,))
+                cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, 25.0, 8.333, 'U') RETURNING id", (nom,))
                 jid = cur.fetchone()[0]
                 mu, sigma = 25.0, 8.333
 
@@ -298,7 +353,6 @@ def add_tournament():
             
             cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score) VALUES (%s, %s, %s)", (tournoi_id, jid, score))
 
-        # Calcul TrueSkill
         sorted_joueurs = sorted(joueurs_data, key=lambda x: x['score'], reverse=True)
         ranks = []
         last_s = -1
@@ -311,23 +365,19 @@ def add_tournament():
         teams = [[joueurs_ratings[j['nom']]] for j in sorted_joueurs]
         new_ratings = rate(teams, ranks=ranks)
 
-        # Mise à jour MU/SIGMA uniquement
         for i, j in enumerate(sorted_joueurs):
             nr = new_ratings[i][0]
             cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s WHERE nom=%s", (nr.mu, nr.sigma, j['nom']))
         
         conn.commit()
 
-        # RECALCUL GLOBAL DES TIERS (S/A/B/C selon stats)
         recalculate_tiers(conn)
 
-        # Mise à jour historique avec les NOUVEAUX tiers
         for i, j in enumerate(sorted_joueurs):
             nom = j['nom']
             nr = new_ratings[i][0]
             score_ts = nr.mu - 3 * nr.sigma
             
-            # On va chercher le tier qui vient d'être calculé
             cur.execute("SELECT tier FROM Joueurs WHERE nom = %s", (nom,))
             new_tier = cur.fetchone()[0]
 
@@ -343,9 +393,9 @@ def add_tournament():
         conn.rollback()
         return jsonify({"error": str(e)}), 500
     finally:
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
 
-# 2. Liste Joueurs Admin
 @app.route('/admin/joueurs', methods=['GET'])
 @admin_required
 def api_get_joueurs():
@@ -353,10 +403,10 @@ def api_get_joueurs():
     cur = conn.cursor()
     cur.execute("SELECT id, nom, mu, sigma, tier FROM Joueurs ORDER BY nom ASC")
     joueurs = [{"id": r[0], "nom": r[1], "mu": r[2], "sigma": r[3], "tier": r[4].strip() if r[4] else "?"} for r in cur.fetchall()]
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
     return jsonify(joueurs)
 
-# 3. Ajout Joueur Admin (Avec recalcul)
 @app.route('/admin/joueurs', methods=['POST'])
 @admin_required
 def api_add_joueur():
@@ -368,22 +418,20 @@ def api_add_joueur():
         
         conn = get_db_connection()
         cur = conn.cursor()
-        # On insère "Unranked" temporairement
-        cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, %s, %s, 'Unranked') RETURNING id", 
+        cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, %s, %s, 'U') RETURNING id", 
                     (nom, mu, sigma))
         new_id = cur.fetchone()[0]
         conn.commit()
         
-        # On recalcule tout le monde pour voir où il se place
         recalculate_tiers(conn)
         
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return jsonify({"status": "success", "id": new_id}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-# 4. Modif Joueur Admin (Correction Syntaxe @@ + Recalcul)
-@app.route('/admin/joueurs/<int:id>', methods=['PUT']) # Correction ici
+@app.route('/admin/joueurs/<int:id>', methods=['PUT'])
 @admin_required
 def api_update_joueur(id):
     data = request.get_json()
@@ -397,15 +445,14 @@ def api_update_joueur(id):
         cur.execute("UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s WHERE id=%s", (nom, mu, sigma, id))
         conn.commit()
         
-        # On recalcule tout le monde
         recalculate_tiers(conn)
         
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-# 5. Suppression Joueur
 @app.route('/admin/joueurs/<int:id>', methods=['DELETE'])
 @admin_required
 def api_delete_joueur(id):
@@ -414,25 +461,20 @@ def api_delete_joueur(id):
         cur = conn.cursor()
         cur.execute("DELETE FROM Joueurs WHERE id=%s", (id,))
         conn.commit()
-        # Pas besoin de recalculer forcément, mais on pourrait pour ajuster la moyenne
         recalculate_tiers(conn) 
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
-    
-# --- Lancement du serveur ---
+
 if __name__ == '__main__':
-    # Au démarrage, on force un recalcul immédiat pour être sûr que tout est propre
     try:
-        print("--- DÉMARRAGE : Recalcul des rangs (S/A/B/C) en cours... ---")
         conn = get_db_connection()
+        sync_sequences(conn)
         recalculate_tiers(conn)
         conn.close()
-        print("--- DÉMARRAGE : Rangs mis à jour avec succès ! ---")
-    except Exception as e:
-        print(f"--- ATTENTION : Impossible de recalculer les rangs au démarrage : {e}")
-        # On ne bloque pas le démarrage du site même si le recalcul échoue (ex: DB pas encore prête)
+    except Exception:
+        pass
 
-    # Lancement de l'application Flask
     app.run(host='0.0.0.0', port=8080)

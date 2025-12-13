@@ -1,4 +1,3 @@
-/* static/js/scripts.js */
 let joueurCount = 1;
 
 function ajouterJoueur() {

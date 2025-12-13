@@ -1,13 +1,8 @@
-version: '3.8'
-
 services:
-  # Service Base de données (Nouveau !)
   db:
     image: postgres:13
     volumes:
-      # Stockage persistant des données
       - pg_data:/var/lib/postgresql/data
-      # Importation automatique de ton fichier SQL au premier lancement
       - ./backEnd/db.sql:/docker-entrypoint-initdb.d/init.sql
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
@@ -20,7 +15,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Service Backend (Modifié)
   backend:
     build:
       context: ./backEnd

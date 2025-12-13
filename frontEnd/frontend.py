@@ -1,20 +1,16 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import requests
 import os
-from datetime import datetime, timedelta 
+from datetime import timedelta 
 
 app = Flask(__name__)
 
-# --- Configuration ---
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
-
 app.permanent_session_lifetime = timedelta(minutes=2) 
-
 BACKEND_URL = os.environ.get('BACKEND_URL', 'http://backend:8080')
 
 @app.route('/')
 def index():
-    """Page d'accueil : Affiche le dernier tournoi."""
     try:
         response = requests.get(f"{BACKEND_URL}/dernier-tournoi")
         if response.status_code == 200:
@@ -31,17 +27,8 @@ def index():
     
     return render_template("index.html", resultats=resultats)
 
-@app.context_processor
-def inject_session_lifetime():
-    return dict(session_lifetime=app.permanent_session_lifetime.total_seconds())
-
-# frontend.py
-
-# Dans frontend.py
-
 @app.route('/classement')
 def classement():
-    """Page du classement général avec filtres par Tier."""
     tier = request.args.get('tier')
     params = {'tier': tier} if tier else {}
     
@@ -50,28 +37,18 @@ def classement():
         if response.status_code == 200:
             joueurs = response.json()
             
-            # ================== DÉBUT DU BLOC À AJOUTER ==================
-            # --- TRI ROBUSTE ---
             def sort_key(j):
-                # 1. Identifier si le joueur est classé (True) ou non (False)
-                # On considère U, ? et Unranked comme "Non Classé"
-                # On met False pour ceux-là, True pour les autres
                 tier_val = j.get('tier', '').strip() 
                 is_ranked = tier_val not in ['U', '?', 'Unranked']
                 
-                # 2. Sécuriser le score en float
                 try:
                     score = float(j.get('score_trueskill', 0))
                 except (ValueError, TypeError):
                     score = 0.0
                     
-                # Le tri se fait sur :
-                # - D'abord is_ranked (True avant False)
-                # - Ensuite le score (Grand avant Petit)
                 return (is_ranked, score)
 
             joueurs.sort(key=sort_key, reverse=True)
-            # ================== FIN DU BLOC À AJOUTER ==================
             
         else:
             joueurs = []
@@ -82,22 +59,44 @@ def classement():
         
     return render_template("classement.html", joueurs=joueurs, tier_actif=tier)
 
+@app.route('/stats/joueur/<nom>')
+def stats_joueur_detail(nom):
+    try:
+        response = requests.get(f"{BACKEND_URL}/stats/joueur/{nom}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            return render_template(
+                "stats_joueur.html", 
+                nom=nom,
+                stats=data.get('stats', {}),
+                historique=data.get('historique', [])
+            )
+            
+        elif response.status_code == 404:
+            flash(f"Joueur '{nom}' non trouvé.", "warning")
+            return redirect(url_for('classement'))
+        else:
+            flash("Erreur lors de la récupération des statistiques du joueur.", "danger")
+            
+    except requests.exceptions.RequestException:
+        flash("Erreur de connexion au serveur de statistiques (Backend).", "danger")
+        
+    return redirect(url_for('classement'))
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
-    """Page de connexion administrateur."""
     if request.method == 'POST':
         password = request.form.get('password')
         try:
-            # Authentification via le backend
             response = requests.post(f"{BACKEND_URL}/admin-auth", json={"password": password})
             
             if response.status_code == 200:
                 data = response.json()
                 if data.get("status") == "success":
-                    # --- MODIFICATION ICI ---
                     session.permanent = True
                     session['admin_token'] = data.get("token")
-                    # ------------------------
                     
                     flash('Connexion réussie', 'success')
                     return redirect(url_for('add_tournament'))
@@ -113,14 +112,12 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
-    """Déconnexion."""
     session.pop('admin_token', None)
     flash('Vous avez été déconnecté', 'info')
     return redirect(url_for('index'))
 
 @app.route('/add_tournament', methods=['GET', 'POST'])
 def add_tournament():
-    """Page d'ajout de tournoi (nécessite admin)."""
     if 'admin_token' not in session:
         flash('Accès réservé aux administrateurs', 'warning')
         return redirect(url_for('admin_login'))
@@ -181,23 +178,22 @@ def add_tournament():
             joueurs = joueurs_response.json()
         else:
             print(f"Erreur API Joueurs: {joueurs_response.status_code}")
-            joueurs = [] # Liste vide en cas d'erreur API
+            joueurs = []
             
     except requests.exceptions.RequestException as e:
         print(f"Exception API Joueurs: {e}")
-        joueurs = [] # Liste vide en cas d'erreur Réseau
+        joueurs = []
 
-    return render_template("add_tournament.html", joueurs=joueurs)
+    return render_template("add_tournament.html", 
+                           joueurs=joueurs,
+                           session_lifetime=app.permanent_session_lifetime.total_seconds())
 
 @app.route('/confirmation')
 def confirmation():
     return render_template("confirmation.html")
 
-# --- Code à ajouter vers la fin du fichier frontend.py ---
-
 @app.route('/stats/joueurs')
 def stats_joueurs():
-    """Page affichant les statistiques globales des joueurs."""
     try:
         response = requests.get(f"{BACKEND_URL}/classement")
         
@@ -209,7 +205,6 @@ def stats_joueurs():
                 joueur.setdefault('ratio_victoires', 0)
                 joueur.setdefault('percentile_trueskill', 0)
                 joueur.setdefault('progression_recente', 0)
-            # ---------------------------
             
         else:
             joueurs = []
@@ -221,11 +216,8 @@ def stats_joueurs():
         
     return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers={})
 
-# ---------------------------------------------------------
-
 @app.route('/stats/tournois')
 def stats_tournois():
-    """Liste de l'historique des tournois."""
     try:
         response = requests.get(f"{BACKEND_URL}/stats/tournois")
         if response.status_code == 200:
@@ -245,7 +237,6 @@ def stats_tournois():
 
 @app.route('/stats/tournoi/<int:tournoi_id>')
 def stats_tournoi_detail(tournoi_id):
-    """Détail d'un tournoi spécifique."""
     try:
         response = requests.get(f"{BACKEND_URL}/stats/tournoi/{tournoi_id}")
         if response.status_code == 200:
@@ -266,15 +257,12 @@ def admin_gestion():
         flash('Accès interdit.', 'danger')
         return redirect(url_for('admin_login'))
     
-    # On passe le token au template pour que le JS puisse l'utiliser
-    return render_template('gestion_joueurs.html', admin_token=session['admin_token'])
+    return render_template('gestion_joueurs.html', 
+                           admin_token=session['admin_token'],
+                           session_lifetime=app.permanent_session_lifetime.total_seconds())
 
-# --- AJOUTER DANS frontend.py ---
-
-# Route relais pour récupérer (GET) ou ajouter (POST) des joueurs
 @app.route('/admin/joueurs', methods=['GET', 'POST'])
 def proxy_joueurs():
-    # Sécurité : On vérifie que l'admin est connecté
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
     
@@ -282,19 +270,15 @@ def proxy_joueurs():
     
     try:
         if request.method == 'GET':
-            # Le frontend demande la liste au backend
             resp = requests.get(f"{BACKEND_URL}/admin/joueurs", headers=headers)
         elif request.method == 'POST':
-            # Le frontend transmet les données d'ajout au backend
             resp = requests.post(f"{BACKEND_URL}/admin/joueurs", json=request.get_json(), headers=headers)
             
-        # On renvoie la réponse exacte du backend au navigateur (JSON + Status Code)
         return jsonify(resp.json()), resp.status_code
 
     except requests.exceptions.RequestException as e:
         return jsonify({'error': f'Erreur de connexion backend: {str(e)}'}), 500
 
-# Route relais pour modifier (PUT) ou supprimer (DELETE) un joueur spécifique
 @app.route('/admin/joueurs/<int:id>', methods=['PUT', 'DELETE'])
 def proxy_joueurs_detail(id):
     if 'admin_token' not in session:
