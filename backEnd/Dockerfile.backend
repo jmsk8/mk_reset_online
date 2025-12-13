@@ -16,4 +16,4 @@ ENV POSTGRES_HOST=db
 ENV POSTGRES_PORT=5432
 
 EXPOSE 8080
-CMD ["python", "backend.py"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "backend:app"]

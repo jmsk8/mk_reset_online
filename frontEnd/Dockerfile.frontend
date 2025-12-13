@@ -11,4 +11,4 @@ COPY static/ static/
 
 EXPOSE 5000
 
-CMD ["python", "frontend.py"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "frontend:app"]
