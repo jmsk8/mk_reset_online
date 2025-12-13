@@ -8,12 +8,12 @@ function ajouterJoueur() {
     joueurCount++;
     const joueursContainer = document.getElementById('joueursContainer');
     const newJoueurDiv = document.createElement('div');
-    newJoueurDiv.className = 'box joueur';
+    newJoueurDiv.className = 'box joueur glass-card';
     newJoueurDiv.innerHTML = `
         <div class="field">
             <label class="label" for="nom${joueurCount}">Nom du joueur ${joueurCount}:</label>
             <div class="control has-icons-left">
-                <input type="text" id="nom${joueurCount}" name="nom${joueurCount}" class="input" required>
+                <input type="text" id="nom${joueurCount}" name="nom${joueurCount}" class="input player-name-input" list="existingPlayers" required>
                 <span class="icon is-small is-left">
                     <i class="fas fa-user"></i>
                 </span>
@@ -49,15 +49,30 @@ function renumeroterJoueurs() {
     const joueurs = joueursContainer.getElementsByClassName('joueur');
     for (let i = 0; i < joueurs.length; i++) {
         const joueur = joueurs[i];
-        joueur.querySelector('label[for^="nom"]').setAttribute('for', `nom${i + 1}`);
-        joueur.querySelector('label[for^="nom"]').textContent = `Nom du joueur ${i + 1}:`;
-        joueur.querySelector('input[id^="nom"]').setAttribute('id', `nom${i + 1}`);
-        joueur.querySelector('input[id^="nom"]').setAttribute('name', `nom${i + 1}`);
+        const index = i + 1;
+        
+        const labelNom = joueur.querySelector('label[for^="nom"]');
+        if(labelNom) {
+            labelNom.setAttribute('for', `nom${index}`);
+            labelNom.textContent = `Nom du joueur ${index}:`;
+        }
+        
+        const inputNom = joueur.querySelector('input[id^="nom"]');
+        if(inputNom) {
+            inputNom.setAttribute('id', `nom${index}`);
+            inputNom.setAttribute('name', `nom${index}`);
+        }
 
-        joueur.querySelector('label[for^="score"]').setAttribute('for', `score${i + 1}`);
-        joueur.querySelector('label[for^="score"]').textContent = `Score du joueur ${i + 1}:`;
-        joueur.querySelector('input[id^="score"]').setAttribute('id', `score${i + 1}`);
-        joueur.querySelector('input[id^="score"]').setAttribute('name', `score${i + 1}`);
+        const labelScore = joueur.querySelector('label[for^="score"]');
+        if(labelScore) {
+            labelScore.setAttribute('for', `score${index}`);
+            labelScore.textContent = `Score du joueur ${index}:`;
+        }
+        
+        const inputScore = joueur.querySelector('input[id^="score"]');
+        if(inputScore) {
+            inputScore.setAttribute('id', `score${index}`);
+            inputScore.setAttribute('name', `score${index}`);
+        }
     }
 }
-

@@ -38,6 +38,7 @@
                         </div>
                         <div class="card-content">
                             <form method="POST" action="/admin">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                 <div class="field">
                                     <label class="label">Mot de passe administrateur</label>
                                     <div class="control has-icons-left">
@@ -46,7 +47,6 @@
                                             <i class="fas fa-key"></i>
                                         </span>
                                     </div>
-                                    <p class="help">Contactez l'administrateur système pour obtenir le mot de passe</p>
                                 </div>
                                 <div class="field mt-5">
                                     <div class="control">
@@ -75,10 +75,7 @@
     </section>
     
     {% include 'footer.html' %}
-    
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bulma@0.9.4/js/bulma.js"></script>
-    
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');

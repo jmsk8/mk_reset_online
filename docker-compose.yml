@@ -43,6 +43,7 @@ services:
       - backend
     environment:
       - BACKEND_URL=http://backend:8080
+      - SECRET_KEY=${SECRET_KEY}
     restart: unless-stopped
 
 volumes:

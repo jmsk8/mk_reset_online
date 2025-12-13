@@ -39,6 +39,7 @@
                         </div>
                         <div class="card-content">
                             <form id="tournoiForm" action="/add_tournament" method="post">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                 <div class="field">
                                     <label class="label" for="date">Date du tournoi:</label>
                                     <div class="control has-icons-left">
@@ -81,6 +82,12 @@
                                         </button>
                                     </div>
                                 </div>
+                                
+                                <datalist id="existingPlayers">
+                                    {% for joueur in joueurs %}
+                                        <option value="{{ joueur }}">
+                                    {% endfor %}
+                                </datalist>
 
                                 <div class="field is-grouped mt-4">
                                     <div class="control">
@@ -109,7 +116,6 @@
     </section>
 
     {% include 'footer.html' %}
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="../static/js/script.js"></script>
 </body>

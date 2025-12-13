@@ -47,10 +47,10 @@ async function apiCall(url, method, body = null) {
     try {
         const response = await fetch(url, options);
         const text = await response.text();
-        if (text) {
-            return JSON.parse(text);
-        } else {
-            return { status: response.statusText };
+        try {
+             return JSON.parse(text);
+        } catch(e) {
+             return { status: response.statusText };
         }
     } catch (err) {
         return { error: err.message };
@@ -65,8 +65,8 @@ async function loadPlayers() {
     tbody.innerHTML = '';
 
     if (players.error || !Array.isArray(players)) {
-        console.error("Erreur de l'API ou format inattendu:", players.error || players);
-        tbody.innerHTML = `<tr><td colspan="5" class="has-text-centered has-text-danger">Impossible de charger les données. Vérifiez le backend.</td></tr>`;
+        console.error("Erreur de l'API:", players.error || players);
+        tbody.innerHTML = `<tr><td colspan="5" class="has-text-centered has-text-danger">Impossible de charger les données.</td></tr>`;
         return;
     }
 

@@ -5,7 +5,6 @@
         <i class="fas fa-gamepad"></i>
         <strong class="ml-2">MK Reset</strong>
       </a>
-
       <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarMenu">
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
@@ -15,18 +14,15 @@
 
     <div id="navbarMenu" class="navbar-menu">
       <div class="navbar-start">
-        
         <a class="navbar-item" href="/classement">
           <span class="icon"><i class="fas fa-trophy"></i></span>
           <span>Classement</span>
         </a>
-        
         <div class="navbar-item has-dropdown is-hoverable">
           <a class="navbar-link">
             <span class="icon"><i class="fas fa-chart-bar"></i></span>
             <span>Statistiques</span>
           </a>
-
           <div class="navbar-dropdown">
             <a class="navbar-item" href="/stats/joueurs">
               <span class="icon"><i class="fas fa-users"></i></span>
@@ -38,7 +34,6 @@
             </a>
           </div>
         </div>
-        
         {% if session.get('admin_token') %}
         <a class="navbar-item" href="/add_tournament">
           <span class="icon"><i class="fas fa-plus-circle"></i></span>
@@ -88,13 +83,11 @@
 <div id="session-warning-modal" class="modal">
   <div class="modal-background"></div>
   <div class="modal-card">
-    
     <header class="modal-card-head" style="background-color: var(--primary-color);">
       <p class="modal-card-title has-text-white">
         <i class="fas fa-exclamation-triangle"></i> Session bientôt expirée
       </p>
     </header>
-    
     <section class="modal-card-body has-text-dark">
       <p>Votre session administrateur va expirer dans moins d'une minute.</p>
       <p>Voulez-vous rester connecté ?</p>
@@ -152,7 +145,6 @@
     if (logoutBtn) {
       const lifetimeSeconds = {{ session_lifetime|default(900)|int }};
       const warningTimeSeconds = 60; 
-      
       const timeBeforeWarning = (lifetimeSeconds - warningTimeSeconds) * 1000;
       
       if (timeBeforeWarning > 0) {
