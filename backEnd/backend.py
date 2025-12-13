@@ -5,6 +5,8 @@ import logging
 import functools
 import psycopg2
 import bcrypt
+import subprocess
+from datetime import datetime
 from flask import Flask, jsonify, request, abort
 from psycopg2 import pool
 from trueskill import Rating, rate
@@ -109,6 +111,37 @@ def recalculate_tiers():
         except Exception as e:
             logger.error(f"Erreur recalculate_tiers : {e}")
             conn.rollback()
+
+def run_auto_backup(tournoi_date_str):
+    """
+    Lance une sauvegarde.
+    Nom du fichier : backup_TOURNOI_YYYY-MM-DD_saved_at_HH-MM-SS.sql.gz
+    """
+    try:
+        backup_dir = "/app/backups"
+        
+        if not os.path.exists(backup_dir):
+            os.makedirs(backup_dir, exist_ok=True)
+
+        current_time = datetime.now().strftime("%H-%M-%S")
+        
+        filename = f"{backup_dir}/backup_TOURNOI_{tournoi_date_str}_saved_at_{current_time}.sql.gz"
+
+        db_user = os.getenv('POSTGRES_USER')
+        db_host = os.getenv('POSTGRES_HOST')
+        db_name = os.getenv('POSTGRES_DB')
+        db_password = os.getenv('POSTGRES_PASSWORD')
+
+        env = os.environ.copy()
+        env['PGPASSWORD'] = db_password
+        
+        cmd = f"pg_dump -h {db_host} -U {db_user} {db_name} | gzip > {filename}"
+        
+        subprocess.run(cmd, shell=True, env=env, check=True)
+        print(f"✅ Sauvegarde réussie pour le tournoi du {tournoi_date_str} : {filename}")
+        
+    except Exception as e:
+        print(f"❌ Erreur sauvegarde auto : {e}")
 
 @app.route('/admin-auth', methods=['POST'])
 def admin_auth():
@@ -422,6 +455,7 @@ def add_tournament():
                 
                 conn.commit()
                 recalculate_tiers()
+                run_auto_backup(date_tournoi)
                 return jsonify({"status": "success", "tournoi_id": tournoi_id}), 201
 
             except psycopg2.Error as e:
