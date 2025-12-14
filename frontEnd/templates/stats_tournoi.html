@@ -28,7 +28,6 @@
 
     <section class="section">
         <div class="container">
-            <!-- Podium -->
             <div class="columns mb-5">
                 <div class="column is-10 is-offset-1">
                     <div class="card glass-card fade-in">
@@ -41,7 +40,6 @@
                             <div class="podium-container">
                                 {% if resultats|length >= 3 %}
                                 <div class="columns is-mobile has-text-centered">
-                                    <!-- 2ème place -->
                                     <div class="column is-4">
                                         <div class="podium podium-second">
                                             <div class="podium-player">
@@ -49,15 +47,14 @@
                                                 <div class="podium-name">
                                                     <a href="/stats/joueur/{{ resultats[1].nom }}" class="has-text-primary">{{ resultats[1].nom }}</a>
                                                 </div>
-                                                <div class="podium-score">{{ resultats[1].score }} pts</div>
-                                                <div class="podium-medal">
+                                                <div class="podium-score">{{ resultats[1].score_tournoi }} pts</div>
+                                                <div class="podium-medal has-text-grey-light">
                                                     <i class="fas fa-medal"></i> 2
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <!-- 1er place -->
                                     <div class="column is-4">
                                         <div class="podium podium-first">
                                             <div class="podium-player">
@@ -65,14 +62,14 @@
                                                 <div class="podium-name">
                                                     <a href="/stats/joueur/{{ resultats[0].nom }}" class="has-text-primary">{{ resultats[0].nom }}</a>
                                                 </div>
-                                                <div class="podium-score">{{ resultats[0].score }} pts</div>
-                                                <div class="podium-medal">
-                                                    <i class="fas fa-medal"></i> 1
+                                                <div class="podium-score">{{ resultats[0].score_tournoi }} pts</div>
+                                                <div class="podium-medal has-text-warning">
+                                                    <i class="fas fa-trophy"></i> 1
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                    <!-- 3ème place -->
+                                    
                                     <div class="column is-4">
                                         <div class="podium podium-third">
                                             <div class="podium-player">
@@ -80,8 +77,8 @@
                                                 <div class="podium-name">
                                                     <a href="/stats/joueur/{{ resultats[2].nom }}" class="has-text-primary">{{ resultats[2].nom }}</a>
                                                 </div>
-                                                <div class="podium-score">{{ resultats[2].score }} pts</div>
-                                                <div class="podium-medal">
+                                                <div class="podium-score">{{ resultats[2].score_tournoi }} pts</div>
+                                                <div class="podium-medal" style="color: #cd7f32;">
                                                     <i class="fas fa-medal"></i> 3
                                                 </div>
                                             </div>
@@ -98,9 +95,6 @@
                             </div>
                         </div>
                         <div class="card-footer">
-                            <a href="/add_tournament" class="card-footer-item">
-                                <i class="fas fa-plus"></i> Ajouter un tournoi
-                            </a>
                             <a href="/classement" class="card-footer-item">
                                 <i class="fas fa-list-ol"></i> Voir le classement
                             </a>
@@ -108,7 +102,7 @@
                     </div>
                 </div>
             </div>
-            <!-- Détails du tournoi -->
+
             <div class="columns">
                 <div class="column is-10 is-offset-1">
                     <div class="card glass-card fade-in">
@@ -133,7 +127,7 @@
                                         <td>
                                             <a href="/stats/joueur/{{ joueur.nom }}" class="has-text-primary">{{ joueur.nom }}</a>
                                         </td>
-                                        <td>{{ joueur.score }} pts</td>
+                                        <td>{{ joueur.score_tournoi }} pts</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -152,32 +146,15 @@
     {% include 'footer.html' %}
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="../../static/js/script.js"></script>
-    <script>
-        $(document).ready(function() {
-            $('#tournoisDateSearch').on('change', function() {
-                var selectedDate = $(this).val();
-                $('.tournoi-row').each(function() {
-                    if ($(this).data('date') === selectedDate) {
-                        $(this).show();
-                    } else {
-                        $(this).hide();
-                    }
-                });
-            });
-
-            $('#btnResetSearch').on('click', function() {
-                $('.tournoi-row').show();
-                $('#tournoisDateSearch').val('');
-            });
-        });
-    </script>
+    
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const elements = document.querySelectorAll('.fade-in');
             elements.forEach((element, index) => {
                 element.style.animationDelay = `${index * 0.1}s`;
-                element.classList.add('fade-in');
+                element.classList.add('visible');
             });
         });
     </script>
 </body>
+</html>

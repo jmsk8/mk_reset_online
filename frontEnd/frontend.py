@@ -220,21 +220,17 @@ def confirmation():
 
 @app.route('/stats/joueurs')
 def stats_joueurs():
+    # Appel vers la route corrigée '/classement'
     data, status = backend_request('GET', '/classement')
+    
     joueurs = []
-    if status == 200:
+    if status == 200 and isinstance(data, list):
         joueurs = data
-        for joueur in joueurs:
-            joueur.setdefault('victoires', 0)
-            joueur.setdefault('nombre_tournois', 0)
-            joueur.setdefault('ratio_victoires', 0)
-            joueur.setdefault('percentile_trueskill', 0)
-            joueur.setdefault('progression_recente', 0)
     else:
         flash("Impossible de récupérer la liste des joueurs.", "warning")
         
     data_dist, status_dist = backend_request('GET', '/stats/joueurs')
-    dist = data_dist.get('distribution_tiers', {}) if status_dist == 200 else {}
+    dist = data_dist.get('distribution_tiers', {}) if status_dist == 200 and isinstance(data_dist, dict) else {}
         
     return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist)
 

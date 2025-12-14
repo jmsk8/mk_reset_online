@@ -71,7 +71,7 @@
                                     <div class="level-item has-text-centered">
                                         <div>
                                             <p class="heading">Percentile</p>
-                                            <p class="title">{{ percentile_trueskill }}%</p>
+                                            <p class="title">{{ stats.percentile_trueskill }}%</p>
                                         </div>
                                     </div>
                                 </div>
@@ -104,7 +104,6 @@
                         </div>
                     </div>
                     
-                    <!-- Indicateurs de performance -->
                     <div class="card glass-card mt-4 fade-in">
                         <div class="card-header">
                             <p class="card-header-title is-centered">
@@ -167,7 +166,7 @@
                     <div class="card glass-card fade-in">
                         <div class="card-header">
                             <p class="card-header-title is-centered">
-                                <i class="fas fa-chart-line"></i> Évolution des Scores
+                                <i class="fas fa-chart-line"></i> Évolution TrueSkill
                             </p>
                         </div>
                         <div class="card-content">
@@ -179,7 +178,6 @@
                 </div>
             </div>
             
-            <!-- Historique des tournois -->
             <div class="columns mt-5">
                 <div class="column is-12">
                     <div class="card glass-card fade-in">
@@ -196,15 +194,15 @@
                                             <th>Date</th>
                                             <th>Score</th>
                                             <th>Position</th>
-                                            <th>Performance</th>
+                                            <th class="has-text-centered">Détails</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {% for tournoi in historique %}
                                         <tr class="fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
-                                            <td>{{ tournoi.date }}</td>
-                                            <td>{{ tournoi.score }}</td>
-                                            <td>
+                                            <td style="vertical-align: middle;">{{ tournoi.date }}</td>
+                                            <td style="vertical-align: middle;">{{ tournoi.score }}</td>
+                                            <td style="vertical-align: middle;">
                                                 {% if tournoi.position == 1 %}
                                                     <span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
                                                 {% elif tournoi.position == 2 %}
@@ -215,12 +213,12 @@
                                                     <span class="tag is-info">{{ tournoi.position }}ème</span>
                                                 {% endif %}
                                             </td>
-                                            <td>
-                                                <div class="performance-bar">
-                                                    {% if stats.meilleur_score > 0 %}
-                                                        <div class="performance-fill" style="width: {{ (tournoi.score / stats.meilleur_score * 100)|round }}%"></div>
-                                                    {% endif %}
-                                                </div>
+                                            <td class="has-text-centered" style="vertical-align: middle;">
+                                                <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined">
+                                                    <span class="icon">
+                                                        <i class="fas fa-eye"></i>
+                                                    </span>
+                                                </a>
                                             </td>
                                         </tr>
                                         {% endfor %}
@@ -235,7 +233,6 @@
     </section>
 
     {% include 'footer.html' %}
-
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="../../static/js/script.js"></script>
@@ -257,7 +254,7 @@
                 {% for tournoi in historique %}
                     {
                         date: "{{ tournoi.date }}",
-                        score: {{ tournoi.score }},
+                        trueskill: {{ tournoi.score_trueskill }},
                         position: {{ tournoi.position }}
                     }{{ "," if not loop.last }}
                 {% endfor %}
@@ -266,14 +263,14 @@
             tournois.reverse();
             
             var dates = tournois.map(function(t) { return t.date; });
-            var scores = tournois.map(function(t) { return t.score; });
+            var scores = tournois.map(function(t) { return t.trueskill; });
             
             var scoreChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: dates,
                     datasets: [{
-                        label: 'Score',
+                        label: 'Évolution TrueSkill',
                         data: scores,
                         borderColor: 'rgba(54, 162, 235, 1)',
                         backgroundColor: 'rgba(54, 162, 235, 0.2)',
@@ -284,11 +281,26 @@
                 options: {
                     responsive: true,
                     scales: {
-                        y: { beginAtZero: false }
+                        y: { 
+                            beginAtZero: false,
+                             title: {
+                                display: true,
+                                text: 'Score TrueSkill'
+                            }
+                        }
+                    },
+                     plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'TrueSkill: ' + context.parsed.y;
+                                }
+                            }
+                        }
                     }
                 }
             });
         });
-        </script>
+    </script>
 </body>
 </html>

@@ -185,26 +185,63 @@ def dernier_tournoi():
 def classement():
     try:
         tier_filtre = request.args.get('tier', None)
-        query = "SELECT nom, mu, sigma, score_trueskill, tier FROM Joueurs"
+        
+        # Requête SQL optimisée pour tout calculer d'un coup
+        query = """
+            SELECT 
+                j.nom, j.mu, j.sigma, j.score_trueskill, j.tier,
+                COUNT(p.tournoi_id) as nb_tournois,
+                SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END) as victoires
+            FROM Joueurs j
+            LEFT JOIN Participations p ON j.id = p.joueur_id
+        """
         params = []
         if tier_filtre and tier_filtre.upper() in ['S', 'A', 'B', 'C']:
-            query += " WHERE tier = %s"
+            query += " WHERE j.tier = %s"
             params.append(tier_filtre.upper())
-        query += " ORDER BY score_trueskill DESC"
+            
+        # Groupement nécessaire pour les fonctions d'agrégation (COUNT, SUM)
+        query += " GROUP BY j.id, j.nom, j.mu, j.sigma, j.score_trueskill, j.tier"
+        query += " ORDER BY j.score_trueskill DESC NULLS LAST"
         
         joueurs = []
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params)
-                for nom, mu, sigma, score_trueskill, tier in cur.fetchall():
+                rows = cur.fetchall()
+                total_joueurs = len(rows)
+                
+                for index, row in enumerate(rows):
+                    nom, mu, sigma, score_trueskill, tier, nb_tournois, victoires = row
+                    
                     score_ts = round(float(score_trueskill), 2) if score_trueskill is not None else 0.00
+                    nb = int(nb_tournois)
+                    vic = int(victoires) if victoires else 0
+                    
+                    # Calcul du ratio
+                    ratio = round((vic / nb * 100), 1) if nb > 0 else 0
+                    
+                    # Calcul du percentile
+                    percentile = 0
+                    if total_joueurs > 1:
+                        rank = index + 1
+                        percentile = round(((total_joueurs - rank) / (total_joueurs - 1)) * 100, 1)
+                    elif total_joueurs == 1:
+                        percentile = 100
+
                     joueurs.append({
                         "nom": nom,
                         "mu": float(mu),
                         "sigma": float(sigma),
                         "score_trueskill": score_ts,
-                        "tier": tier.strip() if tier else "?"
+                        "tier": tier.strip() if tier else "?",
+                        "nombre_tournois": nb,
+                        "victoires": vic,
+                        "ratio_victoires": ratio,
+                        "percentile_trueskill": percentile,
+                        "progression_recente": 0
                     })
+                    
         return jsonify(joueurs)
     except Exception as e:
         logger.error(f"Erreur classement : {e}")
@@ -225,7 +262,7 @@ def get_joueur_stats(nom):
                 mu, sigma, score_trueskill, tier = current_stats
                 
                 cur.execute("""
-                    SELECT t.date, p.score, p.position, p.new_score_trueskill
+                    SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill
                     FROM Participations p
                     JOIN Tournois t ON p.tournoi_id = t.id
                     JOIN Joueurs j ON p.joueur_id = j.id
@@ -240,7 +277,7 @@ def get_joueur_stats(nom):
                 positions = []
                 victoires = 0
                 
-                for date, score, position, hist_ts in raw_history:
+                for tid, date, score, position, hist_ts in raw_history:
                     s_val = float(score) if score is not None else 0.0
                     p_val = int(position) if position is not None else 0
                     ts_val = float(hist_ts) if hist_ts is not None else 0.0
@@ -252,6 +289,7 @@ def get_joueur_stats(nom):
                         victoires += 1
                         
                     historique_data.append({
+                        "id": tid,
                         "date": date.strftime("%Y-%m-%d"),
                         "score": s_val,
                         "position": p_val,
