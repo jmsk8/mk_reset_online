@@ -43,7 +43,9 @@ CREATE TABLE public.participations (
     sigma double precision,
     new_score_trueskill double precision,
     new_tier character(1),
-    position integer
+    position integer,
+    old_mu double precision,
+    old_sigma double precision
 );
 
 ALTER TABLE public.participations OWNER TO username;
@@ -99,28 +101,9 @@ COPY public.joueurs (id, nom, mu, sigma, tier) FROM stdin;
 \.
 
 COPY public.participations (joueur_id, tournoi_id, score) FROM stdin;
-1	2	120
-2	2	100
-3	2	50
-4	3	100
-5	3	90
-6	3	80
-7	3	70
-4	4	95
-5	4	85
-6	4	75
-8	4	65
-9	4	15
-10	5	100
-11	5	80
-4	5	75
 \.
 
 COPY public.tournois (id, date) FROM stdin;
-2	1000-12-12
-3	2025-04-15
-4	2025-04-16
-5	2025-05-07
 \.
 
 SELECT pg_catalog.setval('public.joueurs_id_seq', 26, true);
@@ -129,7 +112,6 @@ SELECT pg_catalog.setval('public.tournois_id_seq', 5, true);
 ALTER TABLE ONLY public.joueurs ADD CONSTRAINT joueurs_nom_key UNIQUE (nom);
 ALTER TABLE ONLY public.joueurs ADD CONSTRAINT joueurs_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_pkey PRIMARY KEY (joueur_id, tournoi_id);
-ALTER TABLE ONLY public.tournois ADD CONSTRAINT tournois_date_key UNIQUE (date);
 ALTER TABLE ONLY public.tournois ADD CONSTRAINT tournois_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;

@@ -397,74 +397,127 @@ def add_tournament():
 
     try:
         with get_db_connection() as conn:
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("INSERT INTO Tournois (date) VALUES (%s) RETURNING id", (date_tournoi,))
-                    tournoi_id = cur.fetchone()[0]
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO Tournois (date) VALUES (%s) RETURNING id", (date_tournoi,))
+                tournoi_id = cur.fetchone()[0]
 
-                    joueurs_ratings = {}
-                    joueurs_ids_map = {}
-                    
-                    for joueur in joueurs_data:
-                        nom = joueur['nom']
-                        score = joueur['score']
-                        
-                        cur.execute("SELECT id, mu, sigma FROM Joueurs WHERE nom = %s", (nom,))
-                        res = cur.fetchone()
-                        if res:
-                            jid, mu, sigma = res
-                        else:
-                            cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, 25.0, 8.333, 'U') RETURNING id", (nom,))
-                            jid = cur.fetchone()[0]
-                            mu, sigma = 25.0, 8.333
-
-                        joueurs_ratings[nom] = Rating(mu=float(mu), sigma=float(sigma))
-                        joueurs_ids_map[nom] = jid
-                        
-                        cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score) VALUES (%s, %s, %s)", (tournoi_id, jid, score))
-
-                    sorted_joueurs = sorted(joueurs_data, key=lambda x: x['score'], reverse=True)
-                    ranks = []
-                    last_s = -1
-                    rank = 1
-                    for i, j in enumerate(sorted_joueurs):
-                        if j['score'] < last_s: rank = i + 1
-                        ranks.append(rank)
-                        last_s = j['score']
-                    
-                    teams = [[joueurs_ratings[j['nom']]] for j in sorted_joueurs]
-                    new_ratings = rate(teams, ranks=ranks)
-
-                    for i, j in enumerate(sorted_joueurs):
-                        nr = new_ratings[i][0]
-                        cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s WHERE nom=%s", (nr.mu, nr.sigma, j['nom']))
-
-                    for i, j in enumerate(sorted_joueurs):
-                        nom = j['nom']
-                        nr = new_ratings[i][0]
-                        score_ts = nr.mu - 3 * nr.sigma
-                        
-                        cur.execute("SELECT tier FROM Joueurs WHERE nom = %s", (nom,))
-                        res_tier = cur.fetchone()
-                        new_tier = res_tier[0] if res_tier else 'U'
-
-                        cur.execute("""
-                            UPDATE Participations SET mu=%s, sigma=%s, new_score_trueskill=%s, new_tier=%s, position=%s
-                            WHERE tournoi_id=%s AND joueur_id=%s
-                        """, (nr.mu, nr.sigma, score_ts, new_tier, ranks[i], tournoi_id, joueurs_ids_map[nom]))
+                joueurs_ratings = {}
+                joueurs_ids_map = {}
                 
-                conn.commit()
-                recalculate_tiers()
-                run_auto_backup(date_tournoi)
-                return jsonify({"status": "success", "tournoi_id": tournoi_id}), 201
+                for joueur in joueurs_data:
+                    nom = joueur['nom']
+                    score = joueur['score']
+                    
+                    cur.execute("SELECT id, mu, sigma FROM Joueurs WHERE nom = %s", (nom,))
+                    res = cur.fetchone()
+                    
+                    if res:
+                        jid, mu, sigma = res
+                    else:
+                        cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, 25.0, 8.333, 'U') RETURNING id", (nom,))
+                        jid = cur.fetchone()[0]
+                        mu, sigma = 25.0, 8.333
 
-            except psycopg2.Error as e:
-                conn.rollback()
-                logger.error(f"Erreur SQL add_tournament : {e}")
-                return jsonify({"error": "Erreur base de données"}), 500
+                    current_mu = float(mu)
+                    current_sigma = float(sigma)
+
+                    joueurs_ratings[nom] = Rating(mu=current_mu, sigma=current_sigma)
+                    joueurs_ids_map[nom] = jid
+                    
+                    cur.execute("""
+                        INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma) 
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (tournoi_id, jid, score, current_mu, current_sigma))
+
+                sorted_joueurs = sorted(joueurs_data, key=lambda x: x['score'], reverse=True)
+                ranks = []
+                last_s = -1
+                rank = 1
+                for i, j in enumerate(sorted_joueurs):
+                    if j['score'] < last_s: rank = i + 1
+                    ranks.append(rank)
+                    last_s = j['score']
+                
+                teams = [[joueurs_ratings[j['nom']]] for j in sorted_joueurs]
+                new_ratings = rate(teams, ranks=ranks)
+
+                for i, j in enumerate(sorted_joueurs):
+                    nom = j['nom']
+                    nr = new_ratings[i][0]
+                    
+                    cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s WHERE nom=%s", (nr.mu, nr.sigma, nom))
+
+                    score_ts = nr.mu - 3 * nr.sigma
+                    
+                    cur.execute("SELECT tier FROM Joueurs WHERE nom = %s", (nom,))
+                    res_tier = cur.fetchone()
+                    new_tier = res_tier[0] if res_tier else 'U'
+
+                    cur.execute("""
+                        UPDATE Participations SET mu=%s, sigma=%s, new_score_trueskill=%s, new_tier=%s, position=%s
+                        WHERE tournoi_id=%s AND joueur_id=%s
+                    """, (nr.mu, nr.sigma, score_ts, new_tier, ranks[i], tournoi_id, joueurs_ids_map[nom]))
+            
+            conn.commit()
+            recalculate_tiers()
+            run_auto_backup(date_tournoi)
+            return jsonify({"status": "success", "tournoi_id": tournoi_id}), 201
+
     except Exception as e:
-        logger.error(f"Erreur add_tournament : {e}")
-        return jsonify({"error": "Erreur serveur"}), 500
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/admin/revert-last-tournament', methods=['POST'])
+def revert_last_tournament():
+    token = request.headers.get('Authorization')
+    if token != os.getenv('ADMIN_TOKEN'):
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
+                last_tournoi = cur.fetchone()
+                
+                if not last_tournoi:
+                    return jsonify({"message": "Aucun tournoi à annuler."}), 404
+                
+                tournoi_id = last_tournoi[0]
+                tournoi_date = last_tournoi[1]
+
+                cur.execute("""
+                    SELECT joueur_id, old_mu, old_sigma 
+                    FROM Participations 
+                    WHERE tournoi_id = %s
+                """, (tournoi_id,))
+                
+                participants = cur.fetchall()
+
+                for p in participants:
+                    if p[1] is None or p[2] is None:
+                        return jsonify({
+                            "status": "error", 
+                            "message": "Impossible d'annuler : Ce tournoi est trop ancien et ne contient pas les sauvegardes des scores précédents."
+                        }), 400
+
+                run_auto_backup(f"PRE_REVERT_{tournoi_date}")
+
+                for joueur_id, old_mu, old_sigma in participants:
+                    cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s WHERE id=%s", (old_mu, old_sigma, joueur_id))
+
+                cur.execute("DELETE FROM Participations WHERE tournoi_id = %s", (tournoi_id,))
+                cur.execute("DELETE FROM Tournois WHERE id = %s", (tournoi_id,))
+
+            conn.commit()
+            recalculate_tiers()
+            
+            run_auto_backup(f"POST_REVERT_{tournoi_date}")
+            
+            return jsonify({"status": "success", "message": "Dernier tournoi annulé et scores restaurés."}), 200
+
+    except Exception as e:
+        print(f"Erreur Revert : {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/admin/joueurs', methods=['GET'])
 @admin_required

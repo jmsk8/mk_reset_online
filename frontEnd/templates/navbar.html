@@ -34,6 +34,7 @@
             </a>
           </div>
         </div>
+        
         {% if session.get('admin_token') %}
         <a class="navbar-item" href="/add_tournament">
           <span class="icon"><i class="fas fa-plus-circle"></i></span>
@@ -50,6 +51,12 @@
         <div class="navbar-item">
           <div class="buttons">
             {% if session.get('admin_token') %}
+            
+            <button class="button is-danger is-light" onclick="revertLastTournament()">
+              <span class="icon"><i class="fas fa-undo"></i></span>
+              <span>Annuler dernier tournoi</span>
+            </button>
+
             <a class="button is-danger" href="/admin/logout">
               <span class="icon"><i class="fas fa-sign-out-alt"></i></span>
               <span>Déconnexion Admin</span>
@@ -143,7 +150,6 @@
     });
 
     const warningModal = document.getElementById('session-warning-modal');
-    
     if (warningModal) {
       const lifetimeSeconds = {{ session_lifetime|default(1800)|int }};
       const warningDelaySeconds = 60; 
@@ -163,4 +169,36 @@
       }
     }
   });
+
+  function revertLastTournament() {
+    if (!confirm("⚠️ ATTENTION : Voulez-vous vraiment ANNULER le dernier tournoi enregistré ?\n\nLes scores des joueurs reviendront à leur état précédent.\nCette action est irréversible (mais un backup sera créé).")) {
+        return;
+    }
+
+    document.body.style.cursor = 'wait';
+
+    const csrfToken = "{{ csrf_token() }}";
+
+    fetch('/admin/revert_last', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.body.style.cursor = 'default';
+        if (data.status === 'success') {
+            alert("✅ Succès : " + data.message);
+            window.location.reload();
+        } else {
+            alert("❌ Erreur : " + (data.message || data.error));
+        }
+    })
+    .catch(err => {
+        document.body.style.cursor = 'default';
+        alert("❌ Erreur réseau ou permissions : " + err);
+    });
+  }
 </script>

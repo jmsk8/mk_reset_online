@@ -163,6 +163,20 @@ def add_tournament():
                            joueurs=joueurs,
                            session_lifetime=app.permanent_session_lifetime.total_seconds())
 
+@app.route('/admin/revert_last', methods=['POST'])
+def admin_revert_last():
+    if not session.get('admin_token'):
+        return jsonify({"error": "Non autorisé"}), 401
+    
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}/api/admin/revert-last-tournament",
+            headers={"Authorization": session.get('admin_token')}
+        )
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
 @app.route('/confirmation')
 def confirmation():
     return render_template("confirmation.html")
