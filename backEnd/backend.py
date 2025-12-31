@@ -20,8 +20,8 @@ app = Flask(__name__)
 try:
     POSTGRES_DB = os.environ['POSTGRES_DB']
     POSTGRES_USER = os.environ['POSTGRES_USER']
-    POSTGRES_PASSWORD = os.environ['POSTGRES_PASSWORD']
-    POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'db')
+    POSTGRES_PASSWORD = os.environ.get('POSTGRES_PASSWORD', '')
+    POSTGRES_HOST = os.environ.get('POSTGRES_HOST', '')
     POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432')
     ADMIN_TOKEN = os.environ['ADMIN_TOKEN']
     ADMIN_PASSWORD_HASH_STR = os.environ['ADMIN_PASSWORD_HASH']

@@ -1,1 +1,8 @@
+__pycache__
 env/
+
+pglogfile
+
+data/
+
+result/
