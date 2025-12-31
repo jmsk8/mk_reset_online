@@ -60,7 +60,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           buildInputs = [
-            self.packages.${pkgs.stdenv.hostPlatform.system}.mkReset
+            self.packages.${pkgs.stdenv.hostPlatform.system}.deps
             pkgs.postgresql
           ];
 
@@ -77,21 +77,21 @@
           };
 
           shellHook = ''
-            alias pginit='pg_ctl -D data init;';
-            alias pgstart='pg_ctl -D data -l pglogfile start -o "-k ./"; ';
+            alias pginit='pg_ctl -D ${self}/data init;';
+            alias pgstart='pg_ctl -D ${self}/data -l pglogfile start -o "-k ${self}/"; ';
             alias pgconfigure=${pkgs.writeScript "pgconfigure" configure};
 
             echo "pginit init database"
             echo "pgstart start database"
             echo "pgconfigure create db and user"
 
-            echo "psql -h localhost -U mk_reset -d mk_reset -W -f backEnd/db.sql to populate db"
+            echo "psql -h localhost -U mk_reset -d mk_reset -W -f ${self}/backEnd/db.sql to populate db"
 
             echo Now developping Mario Krade!
 
 
-            alias backend_start='python -c "from backend import sync_sequences, recalculate_tiers; sync_sequences(); recalculate_tiers()" && gunicorn -w 4 -b 0.0.0.0:8080 backend:app;'
-            alias frontend_start='gunicorn -w 4 -b 0.0.0.0:5000 frontend:app'
+            alias backend_start='cd ${self}/backEnd; python -c "from backend import sync_sequences, recalculate_tiers; sync_sequences(); recalculate_tiers()" && gunicorn -w 4 -b 0.0.0.0:8080 backend:app;'
+            alias frontend_start='cd ${self}/frontEnd; gunicorn -w 4 -b 0.0.0.0:5000 frontend:app'
 
             echo "backend_start : start backend"
             echo "frontend_start: start frontend"
