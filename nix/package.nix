@@ -1,6 +1,5 @@
 {
   stdenvNoCC,
-  pkgs,
   lib,
 }:
 stdenvNoCC.mkDerivation {
@@ -23,16 +22,4 @@ stdenvNoCC.mkDerivation {
     mkdir -p $out/
     cp -r . $out/
   '';
-
-  propagatedBuildInputs = with pkgs.python313Packages; [
-    # Allows using it in a writeScript later
-    gunicorn
-    psycopg2-binary
-    trueskill
-    numpy
-    bcrypt
-    flask
-    requests
-    flask-wtf
-  ];
 }

@@ -1,5 +1,6 @@
-{lib, ...}:
-with lib; {
+{ lib, ... }:
+with lib;
+{
   options = {
     services.mkReset = {
       enable = mkEnableOption "Mk Reset (classements)";
@@ -8,7 +9,7 @@ with lib; {
         port = lib.mkOption {
           type = lib.types.str;
           description = "Port for frontend app";
-          default = "8653";
+          default = "8654";
         };
       };
 
@@ -17,6 +18,20 @@ with lib; {
           type = lib.types.str;
           description = "Port for backend app";
           default = "8653";
+        };
+      };
+
+      database = {
+        name = lib.mkOption {
+          type = lib.types.str;
+          description = "DB name";
+          default = "mk_reset";
+        };
+
+        user = lib.mkOption {
+          type = lib.types.str;
+          description = "DB user's username";
+          default = "mk_reset";
         };
       };
 
