@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import requests
+import time
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from datetime import timedelta
 from flask_wtf.csrf import CSRFProtect
@@ -15,7 +16,6 @@ try:
     app.secret_key = os.environ['SECRET_KEY']
     BACKEND_URL = os.environ.get('BACKEND_URL', 'http://backend:8080')
 except KeyError as e:
-    logger.critical(f"Variable d'environnement manquante : {e}")
     sys.exit(1)
 
 app.permanent_session_lifetime = timedelta(minutes=30)
@@ -23,6 +23,17 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 csrf = CSRFProtect(app)
+
+@app.context_processor
+def inject_lifetime():
+    total_lifetime = app.permanent_session_lifetime.total_seconds()
+    
+    if 'token_start_time' in session:
+        elapsed = time.time() - session['token_start_time']
+        remaining = total_lifetime - elapsed
+        return dict(session_lifetime=max(0, remaining))
+    
+    return dict(session_lifetime=total_lifetime)
 
 def backend_request(method, endpoint, data=None, params=None, headers=None):
     url = f"{BACKEND_URL}{endpoint}"
@@ -43,8 +54,7 @@ def backend_request(method, endpoint, data=None, params=None, headers=None):
         except ValueError:
             return response.text, response.status_code
             
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Erreur connexion backend ({endpoint}): {e}")
+    except requests.exceptions.RequestException:
         return None, 503
 
 @app.route('/joueurs/noms')
@@ -52,9 +62,23 @@ def proxy_joueurs_noms():
     try:
         response = requests.get('http://backend:8080/joueurs/noms')
         return jsonify(response.json())
-    except Exception as e:
-        print(f"Erreur proxy joueurs: {e}")
+    except Exception:
         return jsonify([])
+
+@app.route('/admin/refresh', methods=['POST'])
+def proxy_refresh():
+    if not session.get('admin_token'):
+        return jsonify({"error": "No token"}), 401
+    
+    headers = {'X-Admin-Token': session['admin_token']}
+    data, status = backend_request('POST', '/admin/refresh-token', headers=headers)
+    
+    if status == 200 and data.get("status") == "success":
+        session['admin_token'] = data.get("token")
+        session['token_start_time'] = time.time()
+        return jsonify({"status": "success"})
+    
+    return jsonify({"error": "Failed"}), 401
 
 @app.route('/add-tournament', methods=['POST'])
 def proxy_add_tournament():
@@ -73,7 +97,6 @@ def proxy_add_tournament():
         return jsonify(response.json()), response.status_code
 
     except Exception as e:
-        print(f"Erreur proxy add_tournament: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
     
 @app.route('/')
@@ -132,6 +155,7 @@ def admin_login():
         if status == 200 and data.get("status") == "success":
             session.permanent = True
             session['admin_token'] = data.get("token")
+            session['token_start_time'] = time.time()
             flash('Connexion réussie', 'success')
             return redirect(url_for('add_tournament'))
         else:
@@ -141,7 +165,18 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
+    token = session.get('admin_token')
+    
+    if token:
+        try:
+            headers = {'X-Admin-Token': token}
+            requests.post(f"{BACKEND_URL}/admin-logout", headers=headers, timeout=2)
+        except Exception:
+            pass
+
     session.pop('admin_token', None)
+    session.pop('token_start_time', None)
+    session.clear()
     flash('Vous avez été déconnecté', 'info')
     return redirect(url_for('index'))
 
@@ -149,6 +184,14 @@ def admin_logout():
 def add_tournament():
     if 'admin_token' not in session:
         flash('Accès réservé aux administrateurs', 'warning')
+        return redirect(url_for('admin_login'))
+
+    headers = {'X-Admin-Token': session['admin_token']}
+    _, status = backend_request('GET', '/admin/check-token', headers=headers)
+    
+    if status in [401, 403]:
+        session.pop('admin_token', None)
+        flash('Votre session a expiré. Veuillez vous reconnecter.', 'danger')
         return redirect(url_for('admin_login'))
 
     if request.method == 'POST':
@@ -188,9 +231,7 @@ def add_tournament():
     data, status = backend_request('GET', '/joueurs/noms')
     joueurs = data if status == 200 else []
 
-    return render_template("add_tournament.html", 
-                           joueurs=joueurs,
-                           session_lifetime=app.permanent_session_lifetime.total_seconds())
+    return render_template("add_tournament.html", joueurs=joueurs)
 
 @app.route('/admin/revert_last', methods=['POST'])
 def admin_revert_last():
@@ -247,9 +288,16 @@ def admin_gestion():
     if 'admin_token' not in session:
         flash('Accès interdit.', 'danger')
         return redirect(url_for('admin_login'))
-    return render_template('gestion_joueurs.html', 
-                           admin_token=session['admin_token'],
-                           session_lifetime=app.permanent_session_lifetime.total_seconds())
+    
+    headers = {'X-Admin-Token': session['admin_token']}
+    _, status = backend_request('GET', '/admin/check-token', headers=headers)
+    
+    if status in [401, 403]:
+        session.pop('admin_token', None)
+        flash('Session expirée.', 'warning')
+        return redirect(url_for('admin_login'))
+
+    return render_template('gestion_joueurs.html', admin_token=session['admin_token'])
 
 @app.route('/admin/joueurs', methods=['GET', 'POST'])
 @csrf.exempt
@@ -295,6 +343,13 @@ def proxy_config():
         data, status = backend_request('POST', '/admin/config', data=request.get_json(), headers=headers)
     
     return jsonify(data), status
-    
+
+@app.after_request
+def add_header(response):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

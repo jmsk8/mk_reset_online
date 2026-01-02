@@ -7,7 +7,8 @@ import psycopg2
 import bcrypt
 import subprocess
 import trueskill
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, abort
 from psycopg2 import pool
 from contextlib import contextmanager
@@ -23,11 +24,9 @@ try:
     POSTGRES_PASSWORD = os.environ['POSTGRES_PASSWORD']
     POSTGRES_HOST = os.environ.get('POSTGRES_HOST', 'db')
     POSTGRES_PORT = os.environ.get('POSTGRES_PORT', '5432')
-    ADMIN_TOKEN = os.environ['ADMIN_TOKEN']
     ADMIN_PASSWORD_HASH_STR = os.environ['ADMIN_PASSWORD_HASH']
     ADMIN_PASSWORD_HASH = ADMIN_PASSWORD_HASH_STR.encode('utf-8')
 except KeyError as e:
-    logger.critical(f"Variable d'environnement manquante : {e}")
     sys.exit(1)
 
 try:
@@ -40,7 +39,6 @@ try:
         database=POSTGRES_DB
     )
 except (Exception, psycopg2.DatabaseError) as error:
-    logger.critical(f"Erreur lors de la création du pool de connexion : {error}")
     sys.exit(1)
 
 @contextmanager
@@ -55,8 +53,24 @@ def admin_required(f):
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
         token = request.headers.get('X-Admin-Token', None)
-        if not token or token != ADMIN_TOKEN:
+        if not token:
             abort(403)
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT expires_at FROM api_tokens WHERE token = %s", (token,))
+                    res = cur.fetchone()
+                    
+                    if not res:
+                        abort(403)
+                    
+                    expires_at = res[0]
+                    if datetime.now() > expires_at:
+                        cur.execute("DELETE FROM api_tokens WHERE token = %s", (token,))
+                        conn.commit()
+                        abort(403)
+        except Exception:
+            abort(500)
         return f(*args, **kwargs)
     return decorated_function
 
@@ -69,8 +83,7 @@ def get_config_value(key, default_value):
                 if res:
                     return res[0]
                 return default_value
-    except Exception as e:
-        logger.error(f"Erreur lecture config {key}: {e}")
+    except Exception:
         return default_value
 
 def sync_sequences():
@@ -82,8 +95,7 @@ def sync_sequences():
                     seq_name = f"public.{table.lower()}_id_seq"
                     query = f"SELECT setval('{seq_name}', (SELECT MAX(id) FROM public.{table}))"
                     cur.execute(query)
-                except Exception as e:
-                    logger.error(f"Erreur sync_sequences : {e}")
+                except Exception:
                     conn.rollback()
         conn.commit()
 
@@ -107,9 +119,6 @@ def recalculate_tiers():
                 variance = sum((x - mean_score) ** 2 for x in valid_scores) / len(valid_scores)
                 std_dev = math.sqrt(variance)
 
-                print(f"mu = {mean_score:.3f}, sigma = {std_dev:.3f}")
-                print(f"rank S > {(mean_score + std_dev):.3f}, rank A > {mean_score:.3f}, rank B < {mean_score:.3f}, rank c < {(mean_score - std_dev):.3f},")
-
                 for pid, mu, sigma in all_players:
                     mu_val = float(mu)
                     sigma_val = float(sigma)
@@ -128,19 +137,16 @@ def recalculate_tiers():
                     
                     cur.execute("UPDATE Joueurs SET tier = %s WHERE id = %s", (new_tier, pid))
             conn.commit()
-        except Exception as e:
-            logger.error(f"Erreur recalculate_tiers : {e}")
+        except Exception:
             conn.rollback()
 
 def run_auto_backup(tournoi_date_str):
     try:
         backup_dir = "/app/backups"
-        
         if not os.path.exists(backup_dir):
             os.makedirs(backup_dir, exist_ok=True)
 
         current_time = datetime.now().strftime("%H-%M-%S")
-        
         filename = f"{backup_dir}/backup_TOURNOI_{tournoi_date_str}_saved_at_{current_time}.sql.gz"
 
         db_user = os.getenv('POSTGRES_USER')
@@ -152,12 +158,10 @@ def run_auto_backup(tournoi_date_str):
         env['PGPASSWORD'] = db_password
         
         cmd = f"pg_dump -h {db_host} -U {db_user} {db_name} | gzip > {filename}"
-        
         subprocess.run(cmd, shell=True, env=env, check=True)
-        print(f"✅ Sauvegarde réussie pour le tournoi du {tournoi_date_str} : {filename}")
         
-    except Exception as e:
-        print(f"❌ Erreur sauvegarde auto : {e}")
+    except Exception:
+        pass
 
 @app.route('/admin-auth', methods=['POST'])
 def admin_auth():
@@ -166,12 +170,54 @@ def admin_auth():
     password_bytes = password.encode('utf-8')
     try:
         if bcrypt.checkpw(password_bytes, ADMIN_PASSWORD_HASH):
-            return jsonify({"status": "success", "token": ADMIN_TOKEN})
+            new_token = str(uuid.uuid4())
+            expiration = datetime.now() + timedelta(minutes=30)
+            
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM api_tokens WHERE expires_at < NOW()")
+                    cur.execute("INSERT INTO api_tokens (token, expires_at) VALUES (%s, %s)", (new_token, expiration))
+                conn.commit()
+            return jsonify({"status": "success", "token": new_token})
         else:
             return jsonify({"status": "error", "message": "Identifiants invalides"}), 401
-    except ValueError:
-        logger.error("Erreur configuration bcrypt")
+    except Exception:
         return jsonify({"status": "error", "message": "Erreur serveur"}), 500
+
+@app.route('/admin/check-token', methods=['GET'])
+@admin_required
+def check_token():
+    return jsonify({"status": "valid"}), 200
+
+@app.route('/admin/refresh-token', methods=['POST'])
+@admin_required
+def refresh_token():
+    old_token = request.headers.get('X-Admin-Token')
+    new_token = str(uuid.uuid4())
+    expiration = datetime.now() + timedelta(minutes=30)
+    
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM api_tokens WHERE token = %s", (old_token,))
+                cur.execute("INSERT INTO api_tokens (token, expires_at) VALUES (%s, %s)", (new_token, expiration))
+            conn.commit()
+        return jsonify({"status": "success", "token": new_token})
+    except Exception:
+        return jsonify({"error": "Erreur serveur"}), 500
+
+@app.route('/admin-logout', methods=['POST'])
+def admin_logout():
+    token = request.headers.get('X-Admin-Token', None)
+    if token:
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM api_tokens WHERE token = %s", (token,))
+                conn.commit()
+        except Exception:
+            pass
+    return jsonify({"status": "success"})
 
 @app.route('/dernier-tournoi')
 def dernier_tournoi():
@@ -193,15 +239,13 @@ def dernier_tournoi():
                     for nom, score in cur.fetchall():
                         resultats.append({"nom": nom, "score": score})
         return jsonify(resultats)
-    except Exception as e:
-        logger.error(f"Erreur dernier_tournoi : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
 @app.route('/classement')
 def classement():
     try:
         tier_filtre = request.args.get('tier', None)
-        
         query = """
             SELECT 
                 j.nom, j.mu, j.sigma, j.score_trueskill, j.tier,
@@ -227,13 +271,10 @@ def classement():
                 
                 for index, row in enumerate(rows):
                     nom, mu, sigma, score_trueskill, tier, nb_tournois, victoires = row
-                    
                     score_ts = round(float(score_trueskill), 3) if score_trueskill is not None else 0.000
                     nb = int(nb_tournois)
                     vic = int(victoires) if victoires else 0
-                    
                     ratio = round((vic / nb * 100), 1) if nb > 0 else 0
-                    
                     percentile = 0
                     if total_joueurs > 1:
                         rank = index + 1
@@ -253,12 +294,9 @@ def classement():
                         "percentile_trueskill": percentile,
                         "progression_recente": 0
                     })
-                    
         return jsonify(joueurs)
-    except Exception as e:
-        logger.error(f"Erreur classement : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
-
 
 @app.route('/stats/joueur/<nom>')
 def get_joueur_stats(nom):
@@ -293,10 +331,8 @@ def get_joueur_stats(nom):
                     s_val = float(score) if score is not None else 0.0
                     p_val = int(position) if position is not None else 0
                     ts_val = float(hist_ts) if hist_ts is not None else 0.0
-                    
                     scores_bruts.append(s_val)
                     positions.append(p_val)
-                    
                     if p_val == 1:
                         victoires += 1
                         
@@ -357,8 +393,7 @@ def get_joueur_stats(nom):
             },
             "historique": historique_data
         })
-    except Exception as e:
-        logger.error(f"Erreur stats joueur : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
 @app.route('/joueurs/noms')
@@ -369,10 +404,8 @@ def get_joueur_names():
                 cur.execute("SELECT nom FROM Joueurs ORDER BY score_trueskill DESC NULLS LAST")
                 noms = [row[0] for row in cur.fetchall()]
         return jsonify(noms)
-    except Exception as e:
-        logger.error(f"Erreur joueurs/noms : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
-
 
 @app.route('/stats/joueurs')
 def get_global_joueur_stats():
@@ -391,8 +424,7 @@ def get_global_joueur_stats():
                 cur.execute("SELECT tier, COUNT(*) FROM Joueurs WHERE tier IS NOT NULL GROUP BY tier")
                 dist = {r[0].strip(): r[1] for r in cur.fetchall()}
         return jsonify({"progressions": progressions, "distribution_tiers": dist})
-    except Exception as e:
-        logger.error(f"Erreur stats joueurs global : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
 @app.route('/stats/tournois')
@@ -410,8 +442,7 @@ def get_tournois_list():
                     "score_max": r[3], "vainqueur": r[4] if r[4] else "Inconnu"
                 } for r in cur.fetchall()]
         return jsonify(tournois)
-    except Exception as e:
-        logger.error(f"Erreur stats tournois : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
 @app.route('/stats/tournoi/<int:tournoi_id>')
@@ -433,8 +464,7 @@ def get_tournoi_details(tournoi_id):
                     "tier": r[3].strip() if r[3] else "?", "position": r[4]
                 } for r in cur.fetchall()]
         return jsonify({"date": td[0].strftime("%Y-%m-%d"), "resultats": res})
-    except Exception as e:
-        logger.error(f"Erreur details tournoi : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
 @app.route('/add-tournament', methods=['POST'])
@@ -461,7 +491,7 @@ def add_tournament():
                 last_date = last_record[0] if last_record else None
 
                 if last_date and date_tournoi < last_date:
-                    return jsonify({"error": f"Date invalide. Le dernier tournoi enregistré date du {last_date}. Impossible d'insérer un tournoi avant cette date pour préserver l'historique TrueSkill."}), 400
+                    return jsonify({"error": f"Date invalide. Le dernier tournoi enregistré date du {last_date}."}), 400
 
                 cur.execute("INSERT INTO Tournois (date) VALUES (%s) RETURNING id", (date_tournoi_str,))
                 tournoi_id = cur.fetchone()[0]
@@ -540,12 +570,17 @@ def add_tournament():
 @app.route('/api/admin/revert-last-tournament', methods=['POST'])
 def revert_last_tournament():
     token = request.headers.get('Authorization')
-    if token != os.getenv('ADMIN_TOKEN'):
-        return jsonify({"error": "Unauthorized"}), 401
-    
+    if not token:
+         return jsonify({"error": "Unauthorized"}), 401
+
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT expires_at FROM api_tokens WHERE token = %s", (token,))
+                res = cur.fetchone()
+                if not res or datetime.now() > res[0]:
+                    return jsonify({"error": "Unauthorized"}), 401
+
                 cur.execute("SELECT id, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
                 last_tournoi = cur.fetchone()
                 
@@ -567,7 +602,7 @@ def revert_last_tournament():
                     if p[1] is None or p[2] is None:
                         return jsonify({
                             "status": "error", 
-                            "message": "Impossible d'annuler : Ce tournoi est trop ancien et ne contient pas les sauvegardes des scores précédents."
+                            "message": "Impossible d'annuler : Ce tournoi est trop ancien."
                         }), 400
 
                 run_auto_backup(f"PRE_REVERT_{tournoi_date}")
@@ -580,15 +615,12 @@ def revert_last_tournament():
 
             conn.commit()
             recalculate_tiers()
-            
             run_auto_backup(f"POST_REVERT_{tournoi_date}")
             
             return jsonify({"status": "success", "message": "Dernier tournoi annulé et scores restaurés."}), 200
 
     except Exception as e:
-        print(f"Erreur Revert : {e}")
         return jsonify({"error": str(e)}), 500
-
 
 @app.route('/admin/joueurs', methods=['GET'])
 @admin_required
@@ -599,8 +631,7 @@ def api_get_joueurs():
                 cur.execute("SELECT id, nom, mu, sigma, tier FROM Joueurs ORDER BY nom ASC")
                 joueurs = [{"id": r[0], "nom": r[1], "mu": r[2], "sigma": r[3], "tier": r[4].strip() if r[4] else "?"} for r in cur.fetchall()]
         return jsonify(joueurs)
-    except Exception as e:
-        logger.error(f"Erreur admin get joueurs : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
 @app.route('/admin/joueurs', methods=['POST'])
@@ -619,10 +650,8 @@ def api_add_joueur():
                 new_id = cur.fetchone()[0]
             conn.commit()
             recalculate_tiers()
-        
         return jsonify({"status": "success", "id": new_id}), 201
-    except Exception as e:
-        logger.error(f"Erreur admin add joueur : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 400
 
 @app.route('/admin/joueurs/<int:id>', methods=['PUT'])
@@ -640,8 +669,7 @@ def api_update_joueur(id):
             conn.commit()
             recalculate_tiers()
         return jsonify({"status": "success"})
-    except Exception as e:
-        logger.error(f"Erreur admin update joueur : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 400
 
 @app.route('/admin/joueurs/<int:id>', methods=['DELETE'])
@@ -654,8 +682,7 @@ def api_delete_joueur(id):
             conn.commit()
             recalculate_tiers()
         return jsonify({"status": "success"})
-    except Exception as e:
-        logger.error(f"Erreur admin delete joueur : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 400
 
 @app.route('/admin/config', methods=['GET'])
@@ -668,8 +695,7 @@ def get_config():
                 res = cur.fetchone()
                 tau = float(res[0]) if res else 0.083
         return jsonify({"tau": tau})
-    except Exception as e:
-        logger.error(f"Erreur get config : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
 @app.route('/admin/config', methods=['POST'])
@@ -683,14 +709,13 @@ def update_config():
                 cur.execute("INSERT INTO Configuration (key, value) VALUES ('tau', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (str(tau),))
             conn.commit()
         return jsonify({"status": "success"})
-    except Exception as e:
-        logger.error(f"Erreur update config : {e}")
+    except Exception:
         return jsonify({"error": "Erreur serveur"}), 400
 
 if __name__ == '__main__':
     try:
         sync_sequences()
         recalculate_tiers()
-    except Exception as e:
-        logger.error(f"Erreur démarrage : {e}")
+    except Exception:
+        pass
     app.run(host='0.0.0.0', port=8080)

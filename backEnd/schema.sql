@@ -66,3 +66,13 @@ ALTER TABLE public.participations OWNER TO username;
 
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
+
+DROP TABLE IF EXISTS public.api_tokens;
+
+CREATE TABLE public.api_tokens (
+    token character varying(64) NOT NULL PRIMARY KEY,
+    created_at timestamp without time zone DEFAULT now(),
+    expires_at timestamp without time zone NOT NULL
+);
+
+ALTER TABLE public.api_tokens OWNER TO username;

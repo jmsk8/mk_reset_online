@@ -34,79 +34,59 @@
             </a>
           </div>
         </div>
-        
-        {% if session.get('admin_token') %}
-        <a class="navbar-item" href="/add_tournament">
-          <span class="icon"><i class="fas fa-plus-circle"></i></span>
-          <span>Ajouter un Tournoi</span>
-        </a>
-        <a class="navbar-item" href="/admin/gestion">
-          <span class="icon"><i class="fas fa-cogs"></i></span>
-          <span>Gestion Joueurs</span>
-        </a>
-        {% endif %}
       </div>
 
       <div class="navbar-end">
-        <div class="navbar-item">
-          <div class="buttons">
-            {% if session.get('admin_token') %}
-            
-            <button class="button is-danger is-light" onclick="revertLastTournament()">
-              <span class="icon"><i class="fas fa-undo"></i></span>
-              <span>Annuler dernier tournoi</span>
-            </button>
-
-            <a class="button is-danger" href="/admin/logout">
-              <span class="icon"><i class="fas fa-sign-out-alt"></i></span>
-              <span>Déconnexion Admin</span>
-            </a>
-            {% else %}
-            <a class="button is-primary" href="/admin">
+        {% if session.get('admin_token') %}
+          <div class="navbar-item has-dropdown is-hoverable">
+            <a class="navbar-link has-text-warning">
               <span class="icon"><i class="fas fa-user-shield"></i></span>
-              <span>Accès Admin</span>
+              <span>Admin</span>
             </a>
-            {% endif %}
+            <div class="navbar-dropdown is-right">
+              <a class="navbar-item" href="/add_tournament">
+                <i class="fas fa-plus-circle mr-2"></i> Ajouter Tournoi
+              </a>
+              <a class="navbar-item" href="/admin/gestion">
+                <i class="fas fa-users-cog mr-2"></i> Gérer Joueurs
+              </a>
+              <hr class="navbar-divider">
+              <a class="navbar-item has-text-danger" onclick="revertLastTournament()">
+                <i class="fas fa-undo mr-2"></i> Annuler dernier tournoi
+              </a>
+              <hr class="navbar-divider">
+              <a class="navbar-item" href="/admin/logout">
+                <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
+              </a>
+            </div>
           </div>
-        </div>
+        {% else %}
+          <div class="navbar-item">
+            <a class="button is-primary is-small" href="/admin">
+              <span class="icon"><i class="fas fa-lock"></i></span>
+              <span>Connexion</span>
+            </a>
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>
 </nav>
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    <div class="container mt-3">
-      {% for category, message in messages %}
-        <div class="notification is-{{ category }}">
-          <button class="delete"></button>
-          {{ message }}
-        </div>
-      {% endfor %}
-    </div>
-  {% endif %}
-{% endwith %}
-
 {% if session.get('admin_token') %}
 <div id="session-warning-modal" class="modal">
   <div class="modal-background"></div>
   <div class="modal-card">
-    <header class="modal-card-head" style="background-color: var(--primary-color);">
-      <p class="modal-card-title has-text-white">
-        <i class="fas fa-exclamation-triangle"></i> Session bientôt expirée
-      </p>
+    <header class="modal-card-head has-background-warning">
+      <p class="modal-card-title has-text-dark">⚠️ Session expirée bientôt</p>
     </header>
     <section class="modal-card-body has-text-dark">
       <p>Votre session administrateur va expirer dans moins d'une minute.</p>
       <p>Voulez-vous rester connecté ?</p>
     </section>
     <footer class="modal-card-foot">
-      <button class="button is-success" id="btn-extend-session">
-        <i class="fas fa-sync-alt mr-2"></i> Oui, continuer
-      </button>
-      <a href="/admin/logout" class="button is-danger">
-        <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
-      </a>
+      <button class="button is-success" id="btn-extend-session">Rester connecté</button>
+      <a href="/admin/logout" class="button is-danger">Se déconnecter</a>
     </footer>
   </div>
 </div>
@@ -114,6 +94,7 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
+    // Gestion du Menu Burger Mobile
     const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
     if ($navbarBurgers.length > 0) {
       $navbarBurgers.forEach( el => {
@@ -125,58 +106,92 @@
         });
       });
     }
-    
-    const currentPath = window.location.pathname;
-    const navLinks = document.querySelectorAll('.navbar-start .navbar-item');
-    navLinks.forEach(link => {
-      const href = link.getAttribute('href');
-      if (href && (href === currentPath || (href !== '/' && currentPath.startsWith(href)))) {
-        link.classList.add('is-active');
-      }
-    });
-    
-    if (currentPath.startsWith('/stats/')) {
-      const statsDropdown = document.querySelector('.navbar-link');
-      if (statsDropdown) {
-        statsDropdown.classList.add('is-active');
-      }
-    }
-    
-    document.querySelectorAll('.notification .delete').forEach(deleteButton => {
-      deleteButton.addEventListener('click', () => {
-        const notification = deleteButton.parentNode;
-        notification.parentNode.removeChild(notification);
-      });
-    });
 
-    const warningModal = document.getElementById('session-warning-modal');
-    if (warningModal) {
-      const lifetimeSeconds = {{ session_lifetime|default(1800)|int }};
-      const warningDelaySeconds = 60; 
-      const timeBeforeWarning = (lifetimeSeconds - warningDelaySeconds) * 1000;
-      
-      if (timeBeforeWarning > 0) {
-        setTimeout(() => {
-          warningModal.classList.add('is-active');
-        }, timeBeforeWarning);
+    // --- LOGIQUE D'EXPIRATION DE SESSION ---
+    // Récupère le temps restant injecté par Python. Si pas défini, défaut à 1800s (30min)
+    const remainingSeconds = {{ session_lifetime|default(1800)|round|int }};
+    const warningBuffer = 60; // Afficher l'alerte 60s avant la fin
+    
+    // On n'active le timer que si la modale existe (donc si on est admin)
+    if (document.getElementById('session-warning-modal')) {
+      const modal = document.getElementById('session-warning-modal');
+      const btnExtend = document.getElementById('btn-extend-session');
+      let logoutTimer;
+      let warningTimer;
+
+      console.log("Temps de session restant : " + remainingSeconds + " secondes");
+
+      function startTimers(secondsLeft) {
+        // Nettoyage des anciens timers pour éviter les doublons
+        if (logoutTimer) clearTimeout(logoutTimer);
+        if (warningTimer) clearTimeout(warningTimer);
+
+        // 1. Timer de déconnexion forcée (quand le temps arrive à 0)
+        if (secondsLeft > 0) {
+            logoutTimer = setTimeout(() => {
+            window.location.href = '/admin/logout';
+            }, secondsLeft * 1000);
+        } else {
+            window.location.href = '/admin/logout';
+            return;
+        }
+
+        // 2. Timer d'avertissement (60s avant la fin)
+        const timeBeforeWarning = (secondsLeft - warningBuffer) * 1000;
+        
+        if (timeBeforeWarning > 0) {
+          // S'il reste plus de 60s, on attend le bon moment
+          warningTimer = setTimeout(() => {
+            modal.classList.add('is-active');
+          }, timeBeforeWarning);
+        } else {
+          // S'il reste moins de 60s au chargement de la page, on affiche l'alerte tout de suite
+          modal.classList.add('is-active');
+        }
       }
 
-      const extendBtn = document.getElementById('btn-extend-session');
-      if (extendBtn) {
-        extendBtn.addEventListener('click', () => {
-          location.reload();
+      // Lancement initial des timers
+      startTimers(remainingSeconds);
+
+      // Gestion du bouton "Rester connecté"
+      btnExtend.addEventListener('click', () => {
+        btnExtend.classList.add('is-loading');
+        
+        const csrfToken = "{{ csrf_token() }}";
+        // Appel au backend pour renouveler le token
+        fetch('/admin/refresh', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': csrfToken
+          }
+        })
+        .then(res => res.json())
+        .then(data => {
+          btnExtend.classList.remove('is-loading');
+          if (data.status === 'success') {
+            modal.classList.remove('is-active');
+            // On relance les timers pour 30 minutes (1800 secondes) car le token est neuf
+            startTimers(1800); 
+            console.log("Session rafraîchie pour 30 minutes");
+          } else {
+            alert("Erreur lors du rafraîchissement. Redirection...");
+            window.location.href = '/admin/logout';
+          }
+        })
+        .catch(() => {
+          window.location.href = '/admin/logout';
         });
-      }
+      });
     }
   });
 
+  // Fonction pour annuler le dernier tournoi
   function revertLastTournament() {
     if (!confirm("⚠️ ATTENTION : Voulez-vous vraiment ANNULER le dernier tournoi enregistré ?\n\nLes scores des joueurs reviendront à leur état précédent.\nCette action est irréversible (mais un backup sera créé).")) {
         return;
     }
 
     document.body.style.cursor = 'wait';
-
     const csrfToken = "{{ csrf_token() }}";
 
     fetch('/admin/revert_last', {
@@ -198,7 +213,7 @@
     })
     .catch(err => {
         document.body.style.cursor = 'default';
-        alert("❌ Erreur réseau ou permissions : " + err);
+        alert("Erreur réseau");
     });
   }
 </script>

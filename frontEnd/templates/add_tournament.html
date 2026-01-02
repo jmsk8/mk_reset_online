@@ -8,7 +8,24 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/css/styles.css">
     <link rel="stylesheet" href="../static/css/dark-mode.css">
-    </head>
+    <style>
+        .player-item {
+            cursor: pointer;
+            padding: 10px;
+            margin-bottom: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            transition: background 0.2s;
+        }
+        .player-item:hover {
+            background: rgba(59, 130, 246, 0.5);
+        }
+        .player-list-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
 <body>
     {% include 'navbar.html' %}
 
@@ -23,7 +40,7 @@
                     <div class="card glass-card" style="height: 100%;">
                         <div class="card-content">
                             <h3 class="title is-5 has-text-light has-text-centered mb-4">
-                                <i class="fas fa-list-ol"></i> Joueurs
+                                <i class="fas fa-list-ol"></i> Joueurs Disponibles
                             </h3>
                             
                             <div class="field mb-4">
@@ -40,6 +57,20 @@
                             <div id="players-pool" class="player-list-container">
                                 <div class="has-text-centered mt-5">
                                     <i class="fas fa-circle-notch fa-spin fa-2x has-text-grey"></i>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-4 pt-3" style="border-top: 1px solid #555;">
+                                <h6 class="subtitle is-6 has-text-grey mb-2">Nouveau joueur ?</h6>
+                                <div class="field has-addons">
+                                    <div class="control is-expanded">
+                                        <input class="input is-small has-background-dark has-text-light" type="text" id="newPlayerName" placeholder="Nom du nouveau">
+                                    </div>
+                                    <div class="control">
+                                        <button class="button is-small is-info" id="btnAddNewPlayer">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -61,20 +92,23 @@
 
                             <hr style="background-color: #555;">
 
-                            <label class="label has-text-light">Tableau des scores</label>
+                            <label class="label has-text-light">Participants et Scores</label>
                             
                             <div class="table-container">
-                                <table class="table is-fullwidth is-hoverable" id="participantsTable">
+                                <table class="table is-fullwidth is-hoverable has-background-transparent" id="participantsTable">
                                     <thead>
                                         <tr>
-                                            <th>Joueur</th>
-                                            <th style="width: 150px;">Score</th>
+                                            <th class="has-text-light">Joueur</th>
+                                            <th class="has-text-light" style="width: 150px;">Score</th>
                                             <th style="width: 50px;"></th>
                                         </tr>
                                     </thead>
                                     <tbody id="participantsList">
                                     </tbody>
                                 </table>
+                                <p id="emptyMsg" class="has-text-grey has-text-centered mt-4">
+                                    Sélectionnez des joueurs dans la liste de gauche.
+                                </p>
                             </div>
 
                             <div class="field is-grouped is-grouped-centered mt-6">
@@ -94,125 +128,127 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const dateInput = document.getElementById('dateTournoi');
-            const today = new Date().toISOString().split('T')[0];
-            dateInput.value = today;
-            dateInput.max = today;
-
-            const playersPool = document.getElementById('players-pool');
-            const participantsList = document.getElementById('participantsList');
-            const searchInput = document.getElementById('searchPlayer');
+            let availablePlayers = [];
+            let selectedPlayers = [];
             
+            const poolContainer = document.getElementById('players-pool');
+            const tableBody = document.getElementById('participantsList');
+            const searchInput = document.getElementById('searchPlayer');
+            const emptyMsg = document.getElementById('emptyMsg');
+            const btnSubmit = document.getElementById('btnSubmit');
+
             fetch('/joueurs/noms')
-                .then(response => response.json())
-                .then(noms => {
-                    playersPool.innerHTML = '';
-                    noms.forEach((nom, index) => {
-                        const item = document.createElement('div');
-                        item.className = 'player-item';
-                        item.dataset.nom = nom;
-                        
-                        item.innerHTML = `
-                            <span><strong>#${index + 1}</strong> &nbsp; ${nom}</span>
-                            <i class="fas fa-plus has-text-grey-light"></i>
-                        `;
-                        
-                        item.addEventListener('click', () => {
-                            if (!item.classList.contains('is-selected')) {
-                                addParticipant(nom);
-                                item.classList.add('is-selected');
-                            }
-                        });
-                        
-                        playersPool.appendChild(item);
-                    });
+                .then(res => res.json())
+                .then(data => {
+                    availablePlayers = data;
+                    renderPool();
                 })
-                .catch(err => {
-                    playersPool.innerHTML = '<p class="has-text-danger">Erreur de chargement</p>';
-                    console.error(err);
-                });
+                .catch(err => console.error(err));
 
-            function addParticipant(nom) {
-                const row = document.createElement('tr');
-                row.className = 'participant-row';
+            function renderPool() {
+                const filter = searchInput.value.toLowerCase();
+                poolContainer.innerHTML = '';
                 
-                const cellName = document.createElement('td');
-                cellName.innerHTML = `
-                    <span class="has-text-weight-bold has-text-info is-size-5">${nom}</span>
-                    <input type="hidden" class="player-name-input" value="${nom}">
-                `;
-                
-                const cellScore = document.createElement('td');
-                cellScore.innerHTML = `
-                    <div class="control">
-                        <input class="input player-score-input has-background-dark has-text-light" style="border-color: #555;" type="number" placeholder="Score" required>
-                    </div>
-                `;
-
-                const cellAction = document.createElement('td');
-                const btnDelete = document.createElement('button');
-                btnDelete.className = 'delete is-medium has-background-danger';
-                btnDelete.title = "Retirer du tournoi";
-                btnDelete.onclick = () => {
-                    row.remove();
-                    const item = playersPool.querySelector(`.player-item[data-nom="${nom}"]`);
-                    if (item) {
-                        item.classList.remove('is-selected');
+                availablePlayers.forEach(nom => {
+                    if (!selectedPlayers.includes(nom) && nom.toLowerCase().includes(filter)) {
+                        const div = document.createElement('div');
+                        div.className = 'player-item has-text-light';
+                        div.innerHTML = `<i class="fas fa-user mr-2"></i> ${nom}`;
+                        div.onclick = () => selectPlayer(nom);
+                        poolContainer.appendChild(div);
                     }
-                };
-                cellAction.appendChild(btnDelete);
-
-                row.appendChild(cellName);
-                row.appendChild(cellScore);
-                row.appendChild(cellAction);
-                participantsList.appendChild(row);
-
-                row.querySelector('.player-score-input').focus();
+                });
             }
 
-            searchInput.addEventListener('keyup', (e) => {
-                const term = e.target.value.toLowerCase();
-                const items = playersPool.querySelectorAll('.player-item');
-                items.forEach(item => {
-                    const nom = item.dataset.nom.toLowerCase();
-                    item.style.display = nom.includes(term) ? 'flex' : 'none';
-                });
+            window.selectPlayer = function(nom) {
+                selectedPlayers.push(nom);
+                renderPool();
+                addPlayerRow(nom);
+                updateEmptyMsg();
+            };
+
+            function addPlayerRow(nom) {
+                const tr = document.createElement('tr');
+                tr.className = 'fade-in visible';
+                tr.setAttribute('data-nom', nom);
+                
+                tr.innerHTML = `
+                    <td class="has-text-white is-vcentered" style="font-weight:bold;">${nom}</td>
+                    <td>
+                        <input class="input is-small has-background-dark has-text-light score-input" type="number" placeholder="Score" required>
+                    </td>
+                    <td class="is-vcentered">
+                        <button class="button is-small is-danger is-outlined" onclick="removePlayer('${nom}', this)">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </td>
+                `;
+                tableBody.appendChild(tr);
+            }
+
+            window.removePlayer = function(nom, btn) {
+                const row = btn.closest('tr');
+                row.remove();
+                selectedPlayers = selectedPlayers.filter(p => p !== nom);
+                renderPool();
+                updateEmptyMsg();
+            };
+
+            function updateEmptyMsg() {
+                if (selectedPlayers.length === 0) emptyMsg.style.display = 'block';
+                else emptyMsg.style.display = 'none';
+            }
+
+            searchInput.addEventListener('input', renderPool);
+
+            document.getElementById('btnAddNewPlayer').addEventListener('click', () => {
+                const input = document.getElementById('newPlayerName');
+                const nom = input.value.trim();
+                if(nom && !availablePlayers.includes(nom) && !selectedPlayers.includes(nom)) {
+                    selectPlayer(nom);
+                    input.value = '';
+                } else if (selectedPlayers.includes(nom)) {
+                    alert("Ce joueur est déjà dans le tableau !");
+                }
             });
 
-            document.getElementById('btnSubmit').addEventListener('click', () => {
-                const btn = document.getElementById('btnSubmit');
+            btnSubmit.addEventListener('click', () => {
                 const date = document.getElementById('dateTournoi').value;
-                const rows = document.querySelectorAll('#participantsList tr');
-                
-                if (!date) { alert("Veuillez sélectionner une date."); return; }
-                if (rows.length < 2) { alert("Il faut au moins 2 joueurs pour un tournoi."); return; }
+                if (!date) {
+                    alert("⚠️ Veuillez sélectionner une date.");
+                    return;
+                }
 
-                const joueursData = [];
-                let hasError = false;
+                if (selectedPlayers.length < 2) {
+                    alert("⚠️ Il faut au moins 2 joueurs.");
+                    return;
+                }
+
+                const rows = tableBody.querySelectorAll('tr');
+                let joueursData = [];
+                let error = false;
 
                 rows.forEach(row => {
-                    const nameInput = row.querySelector('.player-name-input');
-                    const scoreInput = row.querySelector('.player-score-input');
-                    
-                    const nom = nameInput.value.trim();
+                    const nom = row.getAttribute('data-nom');
+                    const scoreInput = row.querySelector('.score-input');
                     const score = parseInt(scoreInput.value);
 
-                    if (!nom || isNaN(score)) {
-                        hasError = true;
+                    if (isNaN(score)) {
                         scoreInput.classList.add('is-danger');
+                        error = true;
                     } else {
+                        scoreInput.classList.remove('is-danger');
                         joueursData.push({ nom: nom, score: score });
                     }
                 });
 
-                if (hasError) {
-                    alert("Veuillez remplir tous les scores correctement.");
+                if (error) {
+                    alert("⚠️ Vérifiez les scores. Tous les scores doivent être des nombres.");
                     return;
                 }
 
-                btn.classList.add('is-loading');
-                
-                const csrfToken = "{{ csrf_token() }}"; 
+                btnSubmit.classList.add('is-loading');
+                const csrfToken = "{{ csrf_token() }}";
 
                 fetch('/add-tournament', {
                     method: 'POST',
@@ -225,9 +261,16 @@
                         joueurs: joueursData
                     })
                 })
-                .then(res => res.json())
+                .then(res => {
+                    if (res.status === 401 || res.status === 403) {
+                        alert("Session expirée. Veuillez vous reconnecter.");
+                        window.location.href = '/admin/logout';
+                        throw new Error("Session expirée");
+                    }
+                    return res.json();
+                })
                 .then(data => {
-                    btn.classList.remove('is-loading');
+                    btnSubmit.classList.remove('is-loading');
                     if (data.status === 'success') {
                         alert("✅ Tournoi enregistré avec succès !");
                         window.location.href = '/classement';
@@ -236,8 +279,8 @@
                     }
                 })
                 .catch(err => {
-                    btn.classList.remove('is-loading');
-                    alert("❌ Erreur réseau : " + err);
+                    btnSubmit.classList.remove('is-loading');
+                    console.error(err);
                 });
             });
         });

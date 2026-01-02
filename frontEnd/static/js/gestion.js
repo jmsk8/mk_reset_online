@@ -83,6 +83,12 @@ async function apiCall(endpoint, method, body = null) {
     try {
         const response = await fetch(url, options);
         
+        if (response.status === 401 || response.status === 403) {
+            alert("Votre session a expiré. Redirection vers la connexion...");
+            window.location.href = '/admin/logout'; 
+            return { error: "Session expirée" };
+        }
+        
         if (!response.ok) {
             const errorText = await response.text();
             try {
