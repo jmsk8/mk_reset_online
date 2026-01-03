@@ -31,190 +31,113 @@
             <div class="columns">
                 <div class="column is-10 is-offset-1">
                     <div class="card glass-card mb-5">
-                        <div class="card-header">
-                            <p class="card-header-title is-centered">
-                                <i class="fas fa-chart-pie"></i> Distribution des Tiers
-                            </p>
-                        </div>
-                        <div class="card-content">
-                            <div class="level">
-                                {% for tier in ['S', 'A', 'B', 'C'] %}
-                                <div class="level-item has-text-centered">
-                                    <div>
-                                        <p class="heading">Tier {{ tier }}</p>
-                                        <p class="title">
-                                            {{ distribution_tiers.get(tier, 0) }}
-                                            {% if tier == 'S' %}
-                                            <span class="icon has-text-warning">
-                                                <i class="fas fa-trophy"></i>
-                                            </span>
-                                            {% endif %}
-                                        </p>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="columns">
-                <div class="column is-10 is-offset-1">
-                    <div class="card glass-card">
-                        <div class="card-header">
-                            <p class="card-header-title is-centered">
-                                <i class="fas fa-user-chart"></i> Liste des Joueurs
-                            </p>
-                        </div>
                         <div class="card-content">
                             <div class="level">
                                 <div class="level-left">
                                     <div class="level-item">
                                         <div class="field has-addons">
-                                            <div class="control">
-                                                <input class="input" type="text" id="joueurSearch" placeholder="Rechercher un joueur">
-                                            </div>
-                                            <div class="control">
-                                                <button class="button is-primary" id="btnSearchJoueur">
+                                            <p class="control has-icons-left">
+                                                <input class="input" type="text" id="joueurSearch" placeholder="Rechercher un joueur...">
+                                                <span class="icon is-small is-left">
                                                     <i class="fas fa-search"></i>
+                                                </span>
+                                            </p>
+                                            <p class="control">
+                                                <button class="button is-info" id="btnSearchJoueur">
+                                                    Chercher
                                                 </button>
-                                            </div>
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
                                 <div class="level-right">
                                     <div class="level-item">
                                         <div class="field has-addons">
-                                            <div class="control">
-                                                <div class="select">
+                                            <p class="control">
+                                                <span class="select">
                                                     <select id="sortOption">
-                                                        <option value="score">Score TrueSkill</option>
-                                                        <option value="tournois">Nombre de tournois</option>
-                                                        <option value="victoires">Victoires</option>
-                                                        <option value="percentile">Percentile</option>
-                                                        <option value="ratio">Ratio victoires</option>
-                                                        <option value="progression">Progression</option>
+                                                        <option value="trueskill">Trier par TrueSkill</option>
+                                                        <option value="victoires">Trier par Victoires</option>
+                                                        <option value="ratio">Trier par Ratio</option>
+                                                        <option value="nb">Trier par Nb Tournois</option>
                                                     </select>
-                                                </div>
-                                            </div>
-                                            <div class="control">
-                                                <button class="button is-info" id="btnSort">
-                                                    <i class="fas fa-sort"></i> Trier
+                                                </span>
+                                            </p>
+                                            <p class="control">
+                                                <button class="button is-primary" id="btnSort">
+                                                    <span class="icon is-small">
+                                                        <i class="fas fa-sort"></i>
+                                                    </span>
                                                 </button>
-                                            </div>
+                                            </p>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-
-                            <div class="content">
-                                <div class="columns is-multiline">
-                                    {% for joueur in joueurs %}
-                                    <div class="column is-4 fade-in joueur-card" style="animation-delay: {{ loop.index * 0.1 }}s" 
-                                         data-nom="{{ joueur.nom }}"
-                                         data-score="{{ joueur.score_trueskill }}"
-                                         data-tournois="{{ joueur.nombre_tournois }}"
-                                         data-victoires="{{ joueur.victoires }}"
-                                         data-percentile="{{ joueur.percentile_trueskill }}"
-                                         data-ratio="{{ joueur.ratio_victoires }}"
-                                         data-progression="{{ joueur.progression_recente or 0 }}">
-                                        <div class="card glass-card player-card">
-                                            <div class="card-content">
-                                                <div class="content has-text-centered">
-                                                    <div class="player-avatar">
-                                                        <i class="fas fa-user-circle fa-3x"></i>
-                                                    </div>
-                                                    <h3 class="title is-4 mt-3">
-                                                        {{ joueur.nom }}
-                                                        {% if joueur.victoires >= 3 %}
-                                                        <span class="icon has-text-danger">
-                                                            <i class="fas fa-fire" title="{{ joueur.victoires }} victoires"></i>
-                                                        </span>
-                                                        {% endif %}
-                                                    </h3>
-                                                    
-                                                    {% if joueur.tier == 'S' %}
-                                                        <span class="tag tier-s">Tier S</span>
-                                                    {% elif joueur.tier == 'A' %}
-                                                        <span class="tag tier-a">Tier A</span>
-                                                    {% elif joueur.tier == 'B' %}
-                                                        <span class="tag tier-b">Tier B</span>
-                                                    {% elif joueur.tier == 'C' %}
-                                                        <span class="tag tier-c">Tier C</span>
-                                                    {% else %}
-                                                        <span class="tag is-light">Tier {{ joueur.tier }}</span>
-                                                    {% endif %}
-                                                    
-                                                    <hr>
-                                                    <div class="columns is-mobile is-multiline">
-                                                        <div class="column is-6">
-                                                            <div class="has-text-centered">
-                                                                <p class="heading">Score TrueSkill</p>
-                                                                <p class="subtitle">{{ joueur.score_trueskill|round(1) }}</p>
-                                                            </div>
-                                                        </div>
-                                                        <div class="column is-6">
-                                                            <div class="has-text-centered">
-                                                                <p class="heading">Percentile</p>
-                                                                <p class="subtitle">{{ joueur.percentile_trueskill }}%</p>
-                                                            </div>
-                                                        </div>
-                                                        <div class="column is-4">
-                                                            <div class="has-text-centered">
-                                                                <p class="heading">Tournois</p>
-                                                                <p class="subtitle">{{ joueur.nombre_tournois }}</p>
-                                                            </div>
-                                                        </div>
-                                                        <div class="column is-4">
-                                                            <div class="has-text-centered">
-                                                                <p class="heading">Victoires</p>
-                                                                <p class="subtitle">{{ joueur.victoires }}</p>
-                                                            </div>
-                                                        </div>
-                                                        <div class="column is-4">
-                                                            <div class="has-text-centered">
-                                                                <p class="heading">Ratio V/T</p>
-                                                                <p class="subtitle">{{ joueur.ratio_victoires }}%</p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {% if joueur.progression_recente is not none %}
-                                                    <div class="mt-2 mb-3">
-                                                        <span class="heading">Progression récente</span>
-                                                        <div class="mt-1">
-                                                            {% if joueur.progression_recente > 0 %}
-                                                            <span class="tag is-success">
-                                                                <i class="fas fa-arrow-up"></i> +{{ joueur.progression_recente }}
-                                                            </span>
-                                                            {% elif joueur.progression_recente < 0 %}
-                                                            <span class="tag is-danger">
-                                                                <i class="fas fa-arrow-down"></i> {{ joueur.progression_recente }}
-                                                            </span>
-                                                            {% else %}
-                                                            <span class="tag is-light">
-                                                                <i class="fas fa-equals"></i> Stable
-                                                            </span>
-                                                            {% endif %}
-                                                        </div>
-                                                    </div>
-                                                    {% endif %}
-                                                    
-                                                    <a href="/stats/joueur/{{ joueur.nom }}" class="button is-primary is-fullwidth">
-                                                        <span class="icon">
-                                                            <i class="fas fa-chart-pie"></i>
-                                                        </span>
-                                                        <span>Voir détails</span>
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {% endfor %}
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="columns is-multiline">
+                        {% for joueur in joueurs %}
+                        <div class="column is-4 joueur-card fade-in" 
+                             data-nom="{{ joueur.nom }}" 
+                             data-trueskill="{{ joueur.score_trueskill }}" 
+                             data-victoires="{{ joueur.victoires }}" 
+                             data-ratio="{{ joueur.ratio_victoires }}"
+                             data-nb="{{ joueur.nombre_tournois }}">
+                            <div class="card glass-card" style="height: 100%;">
+                                <div class="card-content">
+                                    <div class="media">
+                                        <div class="media-left">
+                                            <figure class="image is-48x48">
+                                                {% if joueur.tier == 'S' %}
+                                                    <span class="tag is-large tier-s">S</span>
+                                                {% elif joueur.tier == 'A' %}
+                                                    <span class="tag is-large tier-a">A</span>
+                                                {% elif joueur.tier == 'B' %}
+                                                    <span class="tag is-large tier-b">B</span>
+                                                {% elif joueur.tier == 'C' %}
+                                                    <span class="tag is-large tier-c">C</span>
+                                                {% else %}
+                                                    <span class="tag is-large is-light">?</span>
+                                                {% endif %}
+                                            </figure>
+                                        </div>
+                                        <div class="media-content">
+                                            <p class="title is-4 has-text-light">{{ joueur.nom }}</p>
+                                            <p class="subtitle is-6 has-text-grey-light">
+                                                TrueSkill: <strong>{{ joueur.score_trueskill }}</strong>
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div class="content has-text-light">
+                                        <div class="columns is-mobile is-gapless has-text-centered mb-2">
+                                            <div class="column">
+                                                <p class="heading">Victoires</p>
+                                                <p class="title is-5 has-text-light">{{ joueur.victoires }}</p>
+                                            </div>
+                                            <div class="column">
+                                                <p class="heading">Tournois</p>
+                                                <p class="title is-5 has-text-light">{{ joueur.nombre_tournois }}</p>
+                                            </div>
+                                            <div class="column">
+                                                <p class="heading">Ratio</p>
+                                                <p class="title is-5 {{ 'has-text-success' if joueur.ratio_victoires >= 30 else 'has-text-warning' }}">
+                                                    {{ joueur.ratio_victoires }}%
+                                                </p>
+                                            </div>
+                                        </div>
+                                        
+                                        <a href="/stats/joueur/{{ joueur.nom }}" class="button is-small is-fullwidth is-primary is-outlined mt-3">
+                                            <span class="icon"><i class="fas fa-chart-line"></i></span>
+                                            <span>Voir détails</span>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
                 </div>
             </div>
@@ -223,9 +146,6 @@
 
     {% include 'footer.html' %}
 
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <script src="../static/js/script.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');

@@ -18,6 +18,7 @@
           <span class="icon"><i class="fas fa-trophy"></i></span>
           <span>Classement</span>
         </a>
+        
         <div class="navbar-item has-dropdown is-hoverable">
           <a class="navbar-link">
             <span class="icon"><i class="fas fa-chart-bar"></i></span>
@@ -31,6 +32,27 @@
             <a class="navbar-item" href="/stats/tournois">
               <span class="icon"><i class="fas fa-calendar-alt"></i></span>
               <span>Par Tournoi</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link">
+            <span class="icon"><i class="fas fa-history"></i></span>
+            <span>Récapitulatif</span>
+          </a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="/recap/automne-2025">
+              <i class="fas fa-leaf mr-2 has-text-warning"></i> Automne 2025
+            </a>
+            <a class="navbar-item" href="/recap/ete-2025">
+              <i class="fas fa-sun mr-2 has-text-warning"></i> Été 2025
+            </a>
+            <a class="navbar-item" href="/recap/printemps-2025">
+              <i class="fas fa-seedling mr-2 has-text-success"></i> Printemps 2025
+            </a>
+            <a class="navbar-item" href="/recap/hiver-2025">
+              <i class="fas fa-snowflake mr-2 has-text-info"></i> Hiver 2025
             </a>
           </div>
         </div>
@@ -94,7 +116,6 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    // Gestion du Menu Burger Mobile
     const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
     if ($navbarBurgers.length > 0) {
       $navbarBurgers.forEach( el => {
@@ -107,12 +128,9 @@
       });
     }
 
-    // --- LOGIQUE D'EXPIRATION DE SESSION ---
-    // Récupère le temps restant injecté par Python. Si pas défini, défaut à 1800s (30min)
     const remainingSeconds = {{ session_lifetime|default(1800)|round|int }};
-    const warningBuffer = 60; // Afficher l'alerte 60s avant la fin
+    const warningBuffer = 60;
     
-    // On n'active le timer que si la modale existe (donc si on est admin)
     if (document.getElementById('session-warning-modal')) {
       const modal = document.getElementById('session-warning-modal');
       const btnExtend = document.getElementById('btn-extend-session');
@@ -122,11 +140,9 @@
       console.log("Temps de session restant : " + remainingSeconds + " secondes");
 
       function startTimers(secondsLeft) {
-        // Nettoyage des anciens timers pour éviter les doublons
         if (logoutTimer) clearTimeout(logoutTimer);
         if (warningTimer) clearTimeout(warningTimer);
 
-        // 1. Timer de déconnexion forcée (quand le temps arrive à 0)
         if (secondsLeft > 0) {
             logoutTimer = setTimeout(() => {
             window.location.href = '/admin/logout';
@@ -136,29 +152,23 @@
             return;
         }
 
-        // 2. Timer d'avertissement (60s avant la fin)
         const timeBeforeWarning = (secondsLeft - warningBuffer) * 1000;
         
         if (timeBeforeWarning > 0) {
-          // S'il reste plus de 60s, on attend le bon moment
           warningTimer = setTimeout(() => {
             modal.classList.add('is-active');
           }, timeBeforeWarning);
         } else {
-          // S'il reste moins de 60s au chargement de la page, on affiche l'alerte tout de suite
           modal.classList.add('is-active');
         }
       }
 
-      // Lancement initial des timers
       startTimers(remainingSeconds);
 
-      // Gestion du bouton "Rester connecté"
       btnExtend.addEventListener('click', () => {
         btnExtend.classList.add('is-loading');
         
         const csrfToken = "{{ csrf_token() }}";
-        // Appel au backend pour renouveler le token
         fetch('/admin/refresh', {
           method: 'POST',
           headers: {
@@ -170,7 +180,6 @@
           btnExtend.classList.remove('is-loading');
           if (data.status === 'success') {
             modal.classList.remove('is-active');
-            // On relance les timers pour 30 minutes (1800 secondes) car le token est neuf
             startTimers(1800); 
             console.log("Session rafraîchie pour 30 minutes");
           } else {
@@ -185,7 +194,6 @@
     }
   });
 
-  // Fonction pour annuler le dernier tournoi
   function revertLastTournament() {
     if (!confirm("⚠️ ATTENTION : Voulez-vous vraiment ANNULER le dernier tournoi enregistré ?\n\nLes scores des joueurs reviendront à leur état précédent.\nCette action est irréversible (mais un backup sera créé).")) {
         return;

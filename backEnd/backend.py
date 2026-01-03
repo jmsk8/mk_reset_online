@@ -184,6 +184,268 @@ def admin_auth():
     except Exception:
         return jsonify({"status": "error", "message": "Erreur serveur"}), 500
 
+@app.route('/stats/recap/<season_slug>')
+def get_recap_season(season_slug):
+    try:
+        slug_map = {
+            "hiver-2025": "Hiver 2025",
+            "printemps-2025": "Printemps 2025",
+            "ete-2025": "Été 2025",
+            "automne-2025": "Automne 2025"
+        }
+        
+        target_season = slug_map.get(season_slug)
+        if not target_season:
+            return jsonify({"error": "Saison inconnue"}), 404
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        t.date,
+                        j.nom,
+                        p.score,
+                        p.position,
+                        p.new_score_trueskill,
+                        p.old_mu,
+                        p.old_sigma,
+                        p.sigma 
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    JOIN Joueurs j ON p.joueur_id = j.id
+                    ORDER BY t.date ASC, t.id ASC
+                """)
+                rows = cur.fetchall()
+
+        season_data = {}
+
+        def get_season(date_obj):
+            d = date_obj.strftime("%Y-%m-%d")
+            if d < "2025-03-20": return "Hiver 2025"
+            if d < "2025-06-26": return "Printemps 2025"
+            if d < "2025-09-29": return "Été 2025"
+            return "Automne 2025"
+
+        for date_obj, nom, score, position, new_ts, old_mu, old_sigma, new_sigma in rows:
+            current_season = get_season(date_obj)
+            
+            if current_season != target_season:
+                continue 
+
+            if nom not in season_data:
+                start_ts_global = 0.0
+                if old_mu is not None and old_sigma is not None:
+                    start_ts_global = float(old_mu) - (3 * float(old_sigma))
+
+                season_data[nom] = {
+                    "nom": nom,
+                    "matchs": 0,
+                    "total_points": 0,
+                    "victoires": 0,
+                    "second_places": 0,
+                    "total_position": 0,
+                    "start_trueskill_global": start_ts_global,
+                    "final_trueskill": 0.0,
+                    "stonks_baseline": None,
+                    "stonks_value": 0.0
+                }
+            
+            stats = season_data[nom]
+            stats["matchs"] += 1
+            stats["total_points"] += score
+            stats["total_position"] += position
+            
+            if position == 1:
+                stats["victoires"] += 1
+            if position == 2:
+                stats["second_places"] += 1
+            
+            current_ts = float(new_ts) if new_ts else 0.0
+            stats["final_trueskill"] = current_ts
+
+            if stats["stonks_baseline"] is not None:
+                stats["stonks_value"] = current_ts - stats["stonks_baseline"]
+            
+            else:
+                if old_sigma is not None and float(old_sigma) < 2.5:
+                    old_ts = float(old_mu) - (3 * float(old_sigma))
+                    stats["stonks_baseline"] = old_ts
+                    stats["stonks_value"] = current_ts - old_ts
+                
+                elif new_sigma is not None and float(new_sigma) < 2.5:
+                    stats["stonks_baseline"] = current_ts
+                    stats["stonks_value"] = 0.0
+
+        table_points = []
+        table_moyenne = []
+        
+        candidates_second = []
+        candidates_points_total = [] 
+        candidates_stonks = []
+        candidates_not_stonks = []
+
+        for nom, s in season_data.items():
+            moyenne_pts = s["total_points"] / s["matchs"] if s["matchs"] > 0 else 0
+            moyenne_pos = s["total_position"] / s["matchs"] if s["matchs"] > 0 else 0
+            
+            delta_ts_global = s["final_trueskill"] - s["start_trueskill_global"]
+
+            base_data = {
+                "nom": nom,
+                "matchs": s["matchs"],
+                "total_points": s["total_points"],
+                "victoires": s["victoires"],
+                "final_trueskill": round(s["final_trueskill"], 3),
+                "delta_trueskill": round(delta_ts_global, 3),
+                "moyenne_points": round(moyenne_pts, 2),
+                "moyenne_position": round(moyenne_pos, 2)
+            }
+            
+            table_points.append(base_data)
+            table_moyenne.append(base_data)
+
+            candidates_second.append({"nom": nom, "val": s["second_places"]})
+            candidates_points_total.append({"nom": nom, "val": s["total_points"]})
+            
+            if s["stonks_baseline"] is not None:
+                candidates_stonks.append({"nom": nom, "val": s["stonks_value"]})
+                candidates_not_stonks.append({"nom": nom, "val": s["stonks_value"]})
+
+        table_points.sort(key=lambda x: (x['total_points'], x['victoires']), reverse=True)
+        table_moyenne.sort(key=lambda x: x['moyenne_points'], reverse=True)
+
+        def get_winner(candidates, reverse=True):
+            if not candidates: return None
+            candidates.sort(key=lambda x: x['val'], reverse=reverse)
+            winner = candidates[0]
+            if winner['val'] == 0 and reverse: return None
+            return winner
+
+        award_second = get_winner(candidates_second, reverse=True)
+        award_stakhanov = get_winner(candidates_points_total, reverse=True)
+        award_stonks = get_winner(candidates_stonks, reverse=True)
+        award_not_stonks = get_winner(candidates_not_stonks, reverse=False)
+
+        if award_not_stonks and award_not_stonks['val'] >= 0:
+            award_not_stonks = None
+
+        return jsonify({
+            "nom_saison": target_season,
+            "classement_points": table_points,
+            "classement_moyenne": table_moyenne,
+            "awards": {
+                "pas_loin": award_second,
+                "stakhanov": award_stakhanov,
+                "stonks": award_stonks,
+                "not_stonks": award_not_stonks
+            }
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/stats/recap')
+def get_recap():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        t.date,
+                        j.nom,
+                        p.score,
+                        p.position,
+                        p.new_score_trueskill
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    JOIN Joueurs j ON p.joueur_id = j.id
+                    ORDER BY t.date ASC, t.id ASC
+                """)
+                rows = cur.fetchall()
+
+        seasons_data = {
+            "Hiver 2025": {},
+            "Printemps 2025": {},
+            "Été 2025": {},
+            "Automne 2025": {}
+        }
+
+        season_order = ["Automne 2025", "Été 2025", "Printemps 2025", "Hiver 2025"]
+
+        def get_season(date_obj):
+            d = date_obj.strftime("%Y-%m-%d")
+            if d < "2025-03-20": return "Hiver 2025"
+            if d < "2025-06-26": return "Printemps 2025"
+            if d < "2025-09-29": return "Été 2025"
+            return "Automne 2025"
+
+        for date_obj, nom, score, position, new_ts in rows:
+            season_name = get_season(date_obj)
+            
+            if season_name not in seasons_data:
+                continue 
+
+            if nom not in seasons_data[season_name]:
+                seasons_data[season_name][nom] = {
+                    "nom": nom,
+                    "matchs": 0,
+                    "total_points": 0,
+                    "victoires": 0,
+                    "total_position": 0,
+                    "final_trueskill": 0.0
+                }
+            
+            stats = seasons_data[season_name][nom]
+            stats["matchs"] += 1
+            stats["total_points"] += score
+            stats["total_position"] += position
+            if position == 1:
+                stats["victoires"] += 1
+            stats["final_trueskill"] = float(new_ts) if new_ts else 0.0
+
+        resultat_final = []
+
+        for season in season_order:
+            players_dict = seasons_data.get(season, {})
+            if not players_dict:
+                continue
+
+            table_points = []
+            table_moyenne = []
+
+            for nom, s in players_dict.items():
+                moyenne_pts = s["total_points"] / s["matchs"] if s["matchs"] > 0 else 0
+                moyenne_pos = s["total_position"] / s["matchs"] if s["matchs"] > 0 else 0
+
+                base_data = {
+                    "nom": nom,
+                    "matchs": s["matchs"],
+                    "total_points": s["total_points"],
+                    "victoires": s["victoires"],
+                    "final_trueskill": round(s["final_trueskill"], 3),
+                    "moyenne_points": round(moyenne_pts, 2),
+                    "moyenne_position": round(moyenne_pos, 2)
+                }
+                
+                table_points.append(base_data)
+                table_moyenne.append(base_data)
+
+            table_points.sort(key=lambda x: (x['total_points'], x['victoires']), reverse=True)
+
+            table_moyenne.sort(key=lambda x: x['moyenne_points'], reverse=True)
+
+            resultat_final.append({
+                "nom_saison": season,
+                "id_ancre": season.lower().replace(" ", "-").replace("é", "e"),
+                "classement_points": table_points,
+                "classement_moyenne": table_moyenne
+            })
+
+        return jsonify(resultat_final)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/admin/check-token', methods=['GET'])
 @admin_required
 def check_token():
@@ -369,11 +631,19 @@ def get_joueur_stats(nom):
                         progression_recente = current_ts_val - prev_ts_val
 
                 safe_ts = float(score_trueskill) if score_trueskill is not None else 0.0
-                cur.execute("SELECT COUNT(id) FROM Joueurs WHERE score_trueskill <= %s", (safe_ts,))
-                rank_count = cur.fetchone()[0]
+                
+                cur.execute("SELECT COUNT(id) FROM Joueurs WHERE score_trueskill > %s", (safe_ts,))
+                better_players_count = cur.fetchone()[0]
+                
                 cur.execute("SELECT COUNT(id) FROM Joueurs WHERE score_trueskill IS NOT NULL")
                 total_joueurs = cur.fetchone()[0]
-                percentile = (rank_count / total_joueurs * 100) if total_joueurs > 0 else 0
+                
+                rank = better_players_count + 1
+                
+                if total_joueurs > 0:
+                    top_percent = (rank / total_joueurs) * 100
+                else:
+                    top_percent = 100
 
         return jsonify({
             "stats": {
@@ -389,7 +659,7 @@ def get_joueur_stats(nom):
                 "ecart_type_scores": round(ecart_type_scores, 3),
                 "position_moyenne": round(position_moyenne, 1),
                 "progression_recente": round(progression_recente, 3),
-                "percentile_trueskill": round(percentile, 1)
+                "percentile_trueskill": round(top_percent, 1)
             },
             "historique": historique_data
         })

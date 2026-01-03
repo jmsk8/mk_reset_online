@@ -57,6 +57,19 @@ def backend_request(method, endpoint, data=None, params=None, headers=None):
     except requests.exceptions.RequestException:
         return None, 503
 
+@app.route('/recap/<season_slug>')
+def recap_season(season_slug):
+    data, status = backend_request('GET', f'/stats/recap/{season_slug}')
+    
+    if status != 200:
+        return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None)
+        
+    return render_template("recap.html", saison=data)
+
+@app.route('/recap')
+def recap_default():
+    return redirect(url_for('recap_season', season_slug='automne-2025'))
+
 @app.route('/joueurs/noms')
 def proxy_joueurs_noms():
     try:

@@ -41,7 +41,7 @@ Classement	Statistiques Joueur	Admin Panel
 1. Cloner le projet
 Bash
 
-git git@github.com:jmsk8/mk_reset_online.git
+git@github.com:jmsk8/mk_reset_online.git
 cd mk_reset_online
 
 2. Configuration (.env)
