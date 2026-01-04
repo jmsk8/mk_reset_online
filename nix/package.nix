@@ -10,7 +10,8 @@ stdenvNoCC.mkDerivation {
     root = ./..;
     fileset = lib.fileset.unions [
       ../backEnd/backend.py
-      ../backEnd/db.sql
+      ../backEnd/schema.sql
+      ../backEnd/seed.sql
 
       ../frontEnd/static
       ../frontEnd/templates
