@@ -103,6 +103,22 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="box glass-card has-text-centered mt-4 fade-in">
+                        <h4 class="title is-5 has-text-warning mb-3"><i class="fas fa-trophy"></i> Palmarès</h4>
+                        {% if awards %}
+                            <div class="tags is-centered are-medium">
+                                {% for award in awards %}
+                                <span class="tag is-dark" title="{{ award.nom }}">
+                                    <span class="is-size-5 mr-1">{{ award.emoji }}</span>
+                                    <span class="has-text-weight-bold">x{{ award.count }}</span>
+                                </span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="has-text-grey is-italic is-size-7">Aucun trophée... pour l'instant !</p>
+                        {% endif %}
+                    </div>
                     
                     <div class="card glass-card mt-4 fade-in">
                         <div class="card-header">

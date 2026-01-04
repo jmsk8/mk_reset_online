@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin - Gestion des Saisons</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../static/css/styles.css">
+    <link rel="stylesheet" href="../static/css/dark-mode.css">
+    <link rel="stylesheet" href="../static/css/animations.css">
+    <style>
+        .checkbox-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: background 0.2s;
+        }
+        .checkbox-card:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .checkbox-card label {
+            cursor: pointer;
+            width: 100%;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    {% include 'navbar.html' %}
+    <script>const ADMIN_TOKEN = "{{ session.get('admin_token') }}";</script>
+
+    <section class="section">
+        <div class="container">
+            <h1 class="title has-text-white">Gestion des Saisons & Awards</h1>
+
+            <div class="columns">
+                <div class="column is-5">
+                    <div class="card glass-card">
+                        <header class="card-header"><p class="card-header-title">Nouvelle Saison</p></header>
+                        <div class="card-content">
+                            <form id="createSeasonForm">
+                                <div class="field">
+                                    <label class="label">Nom</label>
+                                    <input class="input" type="text" id="nomSaison" placeholder="Ex: Hiver 2025" required>
+                                </div>
+                                <div class="columns">
+                                    <div class="column">
+                                        <div class="field">
+                                            <label class="label">Début</label>
+                                            <input class="input" type="date" id="dateDebut" required>
+                                        </div>
+                                    </div>
+                                    <div class="column">
+                                        <div class="field">
+                                            <label class="label">Fin</label>
+                                            <input class="input" type="date" id="dateFin" required>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="field mt-5">
+                                    <label class="label">Awards actifs pour ce récap</label>
+                                    <div id="awardsLoader" class="has-text-grey is-size-7">Chargement des awards...</div>
+                                    <div id="awardsContainer" class="mt-2">
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="button is-success is-fullwidth mt-5">Créer la saison (Brouillon)</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="column is-7">
+                    <div class="card glass-card">
+                        <header class="card-header"><p class="card-header-title">Saisons Existantes</p></header>
+                        <div class="card-content">
+                            <table class="table is-fullwidth has-background-transparent has-text-light">
+                                <thead>
+                                    <tr>
+                                        <th class="has-text-light">Nom</th>
+                                        <th class="has-text-light">Statut</th>
+                                        <th class="has-text-light">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="saisonsList">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script>
+    async function api(url, method, body=null) {
+        const opts = {
+            method: method,
+            headers: {'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN}
+        };
+        if(body) opts.body = JSON.stringify(body);
+        return fetch(url, opts).then(res => res.json());
+    }
+
+    async function loadAwardTypes() {
+        const container = document.getElementById('awardsContainer');
+        const loader = document.getElementById('awardsLoader');
+        try {
+            const types = await api('/admin/types-awards', 'GET');
+            container.innerHTML = '';
+            
+            types.forEach(type => {
+                const div = document.createElement('div');
+                div.className = 'checkbox-card';
+                // Ajout de la description ici
+                div.innerHTML = `
+                    <label class="checkbox has-text-white">
+                        <input type="checkbox" class="award-checkbox mr-2" value="${type.code}" checked>
+                        <span class="is-size-5 mr-1">${type.emoji}</span>
+                        <strong class="has-text-white">${type.nom}</strong>
+                        <span class="is-size-7 has-text-grey-light is-italic ml-2">(${type.description || ''})</span>
+                    </label>
+                `;
+                container.appendChild(div);
+            });
+            loader.style.display = 'none';
+        } catch (e) {
+            loader.innerText = "Erreur chargement awards.";
+        }
+    }
+
+    async function loadSaisons() {
+        const list = await api('/admin/saisons', 'GET');
+        const tbody = document.getElementById('saisonsList');
+        tbody.innerHTML = '';
+        
+        list.forEach(s => {
+            let statusBadge = s.is_active 
+                ? '<span class="tag is-success">Publié</span>' 
+                : '<span class="tag is-warning">Brouillon</span>';
+
+            let publishBtn = s.is_active 
+                ? '' 
+                : `<button onclick="saveAwards(${s.id})" class="button is-primary is-outlined" title="Publier (Rendre visible)">
+                     <i class="fas fa-rocket"></i>&nbsp;Publier
+                   </button>`;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td>
+                        <strong class="has-text-white">${s.nom}</strong><br>
+                        <span class="is-size-7 is-family-code has-text-grey">${s.date_debut} au ${s.date_fin}</span>
+                    </td>
+                    <td style="vertical-align: middle;">${statusBadge}</td>
+                    <td>
+                        <div class="buttons are-small">
+                            <a href="/recap/${s.slug}" target="_blank" class="button is-info is-outlined" title="Voir le récap">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            ${publishBtn}
+                            <button onclick="deleteSaison(${s.id})" class="button is-danger is-outlined" title="Supprimer">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    document.getElementById('createSeasonForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const checkboxes = document.querySelectorAll('.award-checkbox:checked');
+        const activeAwards = Array.from(checkboxes).map(cb => cb.value);
+
+        const data = {
+            nom: document.getElementById('nomSaison').value,
+            date_debut: document.getElementById('dateDebut').value,
+            date_fin: document.getElementById('dateFin').value,
+            active_awards: activeAwards
+        };
+
+        const res = await api('/admin/saisons', 'POST', data);
+        if(res.status === 'success') {
+            document.getElementById('createSeasonForm').reset();
+            loadAwardTypes(); 
+            loadSaisons();
+        } else {
+            alert('Erreur: ' + res.error);
+        }
+    });
+
+    async function deleteSaison(id) {
+        if(!confirm("Supprimer cette saison ?")) return;
+        await api(`/admin/saisons/${id}`, 'DELETE');
+        loadSaisons();
+    }
+
+    async function saveAwards(id) {
+        if(!confirm("Cela va calculer les statistiques, sauvegarder les awards et RENDRE LA SAISON PUBLIQUE. Continuer ?")) return;
+        const res = await api(`/admin/saisons/${id}/save-awards`, 'POST');
+        if(res.status === 'success') {
+            alert(res.message);
+            loadSaisons(); 
+        } else {
+            alert('Erreur: ' + res.error);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadAwardTypes();
+        loadSaisons();
+    });
+    </script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saisons - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../static/css/styles.css">
+    <link rel="stylesheet" href="../static/css/dark-mode.css">
+    <link rel="stylesheet" href="../static/css/animations.css">
+    <style>
+        .season-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            height: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+            background-color: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+        }
+        .season-card:hover {
+            transform: translateY(-5px);
+            background-color: rgba(59, 130, 246, 0.2) !important;
+            border-color: rgba(59, 130, 246, 0.5);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+        
+        .yearly-card {
+            background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(0, 0, 0, 0.8));
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            transform: scale(1);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .yearly-card:hover {
+            border-color: rgba(255, 215, 0, 0.8);
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.15);
+            transform: scale(1.02);
+        }
+        .yearly-icon {
+            font-size: 4rem;
+            background: -webkit-linear-gradient(#FFD700, #FDB931);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0px 0px 5px rgba(255, 215, 0, 0.5));
+        }
+        .yearly-title {
+            font-family: 'Arial', sans-serif; 
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #FFD700 !important;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .season-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.8;
+        }
+        
+        .section-divider {
+            display: flex;
+            align-items: center;
+            margin: 3rem 0 2rem 0;
+            color: #94a3b8;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.9rem;
+        }
+        .section-divider::before, .section-divider::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 0 1rem;
+        }
+    </style>
+</head>
+<body>
+    {% include 'navbar.html' %}
+    
+    <section class="hero is-primary is-small animated-gradient">
+        <div class="hero-body">
+            <div class="container">
+                <h1 class="title is-2 has-text-centered glow-text">
+                    <i class="fas fa-history"></i> Archives des Saisons
+                </h1>
+                <h2 class="subtitle has-text-centered">
+                    Retrouvez l'historique et les palmarès passés
+                </h2>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            {% if saisons %}
+                
+                {% set yearly_seasons = [] %}
+                {% for s in saisons if s.is_yearly %}
+                    {% set _ = yearly_seasons.append(s) %}
+                {% endfor %}
+
+                {% if yearly_seasons %}
+                <div class="columns is-centered mb-6">
+                    {% for s in yearly_seasons %}
+                    <div class="column is-8 fade-in">
+                        <a href="/recap/{{ s.slug }}" style="text-decoration: none;">
+                            <div class="card season-card yearly-card">
+                                <div class="card-content has-text-centered py-6">
+                                    <div class="columns is-vcentered">
+                                        <div class="column is-4">
+                                            <div class="yearly-icon">
+                                                <i class="fas fa-trophy"></i>
+                                            </div>
+                                        </div>
+                                        <div class="column is-8 has-text-left-tablet">
+                                            <p class="heading has-text-warning mb-2">Édition Spéciale</p>
+                                            <p class="title is-2 yearly-title mb-3">{{ s.nom }}</p>
+                                            <p class="subtitle is-6 has-text-light mb-4">
+                                                Le bilan complet de l'année. Qui est le champion ultime ?
+                                            </p>
+                                            <div class="tags">
+                                                <span class="tag is-black is-medium border-light">
+                                                    <i class="far fa-calendar-alt mr-2"></i> {{ s.date_debut }} - {{ s.date_fin }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="section-divider">Saisons Régulières</div>
+                {% endif %}
+
+
+                <div class="columns is-multiline">
+                    {% for s in saisons if not s.is_yearly %}
+                        <div class="column is-4 fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
+                            <a href="/recap/{{ s.slug }}" style="text-decoration: none;">
+                                <div class="card season-card">
+                                    <div class="card-content has-text-centered">
+                                        
+                                        <div class="season-icon has-text-info">
+                                            {% if 'Hiver' in s.nom %}
+                                                <i class="fas fa-snowflake"></i>
+                                            {% elif 'Été' in s.nom or 'Ete' in s.nom %}
+                                                <i class="fas fa-sun"></i>
+                                            {% elif 'Printemps' in s.nom %}
+                                                <i class="fas fa-seedling"></i>
+                                            {% elif 'Automne' in s.nom %}
+                                                <i class="fas fa-leaf"></i>
+                                            {% else %}
+                                                <i class="fas fa-calendar-alt"></i>
+                                            {% endif %}
+                                        </div>
+
+                                        <p class="title is-4 has-text-white mb-4">{{ s.nom }}</p>
+                                        
+                                        <div class="tags is-centered">
+                                            <span class="tag is-dark is-rounded border-light">
+                                                <i class="far fa-calendar mr-2"></i>
+                                                {{ s.date_debut }} <i class="fas fa-arrow-right mx-1 is-size-7"></i> {{ s.date_fin }}
+                                            </span>
+                                        </div>
+
+                                        <button class="button is-small is-primary is-outlined is-rounded mt-5">
+                                            <span>Voir le classement</span>
+                                            <span class="icon is-small">
+                                                <i class="fas fa-chevron-right"></i>
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="box glass-card has-text-centered fade-in">
+                    <div class="icon is-large has-text-grey mb-3">
+                        <i class="fas fa-folder-open fa-3x"></i>
+                    </div>
+                    <p class="title is-4 has-text-grey">Aucune saison publiée pour le moment.</p>
+                    <p class="subtitle is-6 has-text-grey-light">Revenez plus tard pour voir les récapitulatifs !</p>
+                    <a href="/" class="button is-primary is-outlined mt-4">Retour à l'accueil</a>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const fadeElems = document.querySelectorAll('.fade-in');
+            fadeElems.forEach(elem => {
+                elem.classList.add('visible');
+            });
+        });
+    </script>
+</body>
+</html>

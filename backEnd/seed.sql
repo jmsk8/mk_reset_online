@@ -2,10 +2,12 @@ SET statement_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 
+-- Nettoyage des données existantes (pour éviter les conflits) --
 TRUNCATE TABLE public.participations CASCADE;
 TRUNCATE TABLE public.tournois CASCADE;
 TRUNCATE TABLE public.joueurs CASCADE;
 
+-- Mise à jour de la configuration --
 INSERT INTO public.configuration (key, value) VALUES ('tau', '0.083') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 -- 1. INSERTION DES JOUEURS (VALEURS CALCULÉES FINALES) --
@@ -29,15 +31,14 @@ INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (17, 'Brook1l', 42.
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (18, 'Hardox', 40.9360, 2.1080, 'U');
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (19, 'ColorOni', 47.3368, 4.2936, 'U');
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (20, 'Camou', 43.0012, 3.1841, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (21, 'Keemory', 50.0000, 8.3330, 'U');
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (21, 'Kemoory', 39.0615, 2.0106, 'U');
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (22, 'Fozlo', 38.1228, 1.8602, 'U');
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (23, 'McK17', 44.5059, 2.9049, 'U');
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (24, 'Kaysuan', 43.2934, 5.8866, 'U');
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (25, 'PastPlayer', 42.1224, 5.7253, 'U');
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (26, 'Tomy', 35.9934, 4.6909, 'U');
 INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (27, 'Mirijason', 39.0967, 5.6075, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (28, 'Kemoory', 39.0615, 2.0106, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (29, 'Corentin', 42.3310, 4.3881, 'U');
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (28, 'Corentin', 42.3310, 4.3881, 'U');
 
 -- 2. INSERTION DE L'HISTORIQUE --
 INSERT INTO public.tournois (id, date) VALUES (1, '2025-02-06');
@@ -46,7 +47,7 @@ INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (8, 1, 154, 49.3080, 1.3219, 45.3424, 'U', 3, 48.7390, 1.3680);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (7, 1, 152, 53.1909, 2.7652, 44.8953, 'U', 4, 53.8200, 3.3350);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (5, 1, 149, 57.3290, 1.2389, 53.6123, 'U', 5, 58.0460, 1.2730);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (28, 1, 124, 40.4906, 2.2544, 33.7273, 'U', 6, 39.9140, 2.3690);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (21, 1, 124, 40.4906, 2.2544, 33.7273, 'U', 6, 39.9140, 2.3690);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (27, 1, 116, 39.0967, 5.6075, 22.2741, 'U', 7, 50.0000, 8.3330);
 INSERT INTO public.tournois (id, date) VALUES (2, '2025-02-13');
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (1, 2, 197, 61.0680, 5.2987, 45.1718, 'U', 1, 50.0000, 8.3330);
@@ -158,7 +159,7 @@ INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (2, 18, 153, 55.3285, 1.0167, 52.2785, 'U', 4, 55.4446, 1.0369);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (5, 18, 146, 55.7822, 0.9513, 52.9282, 'U', 5, 56.0340, 0.9662);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (4, 18, 144, 51.7737, 2.9987, 42.7777, 'U', 6, 54.9266, 3.6241);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (28, 18, 97, 40.2493, 2.1908, 33.6770, 'U', 7, 40.4906, 2.2544);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (21, 18, 97, 40.2493, 2.1908, 33.6770, 'U', 7, 40.4906, 2.2544);
 INSERT INTO public.tournois (id, date) VALUES (19, '2025-07-03');
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (5, 19, 189, 56.0546, 0.9409, 53.2320, 'U', 1, 55.7822, 0.9513);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (2, 19, 172, 55.4704, 0.9990, 52.4733, 'U', 2, 55.3285, 1.0167);
@@ -166,7 +167,7 @@ INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (4, 19, 145, 52.1769, 2.5408, 44.5545, 'U', 4, 51.7737, 2.9987);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (3, 19, 143, 57.8037, 1.1172, 54.4520, 'U', 5, 58.3340, 1.1446);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (8, 19, 122, 50.4186, 1.0466, 47.2789, 'U', 6, 50.6374, 1.0635);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (28, 19, 113, 40.0091, 2.1286, 33.6233, 'U', 7, 40.2493, 2.1908);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (21, 19, 113, 40.0091, 2.1286, 33.6233, 'U', 7, 40.2493, 2.1908);
 INSERT INTO public.tournois (id, date) VALUES (20, '2025-07-10');
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (7, 20, 196, 53.9302, 1.3669, 49.8296, 'U', 1, 53.5557, 1.3953);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (4, 20, 177, 52.3370, 2.3193, 45.3792, 'U', 2, 52.1769, 2.5408);
@@ -331,7 +332,7 @@ INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (23, 40, 104, 43.0270, 3.6043, 32.2142, 'U', 7, 38.5433, 5.3166);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (14, 40, 103, 44.3609, 1.8183, 38.9061, 'U', 8, 44.6711, 1.9478);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (16, 40, 86, 41.5514, 2.0535, 35.3909, 'U', 9, 42.0855, 2.2322);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (28, 40, 74, 39.0615, 2.0106, 33.0296, 'U', 10, 40.0091, 2.1286);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (21, 40, 74, 39.0615, 2.0106, 33.0296, 'U', 10, 40.0091, 2.1286);
 INSERT INTO public.tournois (id, date) VALUES (41, '2025-12-15');
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (5, 41, 176, 54.9939, 0.7817, 52.6487, 'U', 1, 54.7549, 0.7862);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (2, 41, 154, 57.6944, 0.8469, 55.1537, 'U', 2, 57.6520, 0.8561);
@@ -341,9 +342,19 @@ INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (4, 41, 114, 55.4890, 1.1128, 52.1506, 'U', 6, 55.9139, 1.1419);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (23, 41, 109, 44.5059, 2.9049, 35.7913, 'U', 7, 43.0270, 3.6043);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (14, 41, 98, 44.2377, 1.7144, 39.0947, 'U', 8, 44.3609, 1.8183);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (29, 41, 94, 42.3310, 4.3881, 29.1668, 'U', 9, 50.0000, 8.3330);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (28, 41, 94, 42.3310, 4.3881, 29.1668, 'U', 9, 50.0000, 8.3330);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES (16, 41, 90, 40.5460, 1.9506, 34.6942, 'U', 10, 41.5514, 2.0535);
 
 -- 3. RESET DES SÉQUENCES --
-SELECT pg_catalog.setval('public.joueurs_id_seq', 30, true);
+SELECT pg_catalog.setval('public.joueurs_id_seq', 29, true);
 SELECT pg_catalog.setval('public.tournois_id_seq', 42, true);
+
+-- Initialisation des types d'awards
+-- Initialisation des types d'awards
+TRUNCATE TABLE public.types_awards CASCADE;
+INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
+('pas_loin', 'C''était pas loin', '🥈', 'Le plus de 2ème places'),
+('stakhanov', 'Stakhanoviste', '🔨', 'Le plus de points marqués au total'),
+('stonks', 'Stonks', '📈', 'La plus forte progression de TrueSkill'),
+('not_stonks', 'Not Stonks', '📉', 'La plus forte chute de TrueSkill'),
+('victoires', 'Moai', '🗿', 'Le plus de victoires');

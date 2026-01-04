@@ -25,54 +25,30 @@
         }
 
         .recap-table tbody tr:nth-child(even) {
-            background-color: rgba(255, 255, 255, 0.03) !important;
+            background-color: rgba(255, 255, 255, 0.05) !important;
         }
 
-        .recap-table tbody tr:hover {
-            background-color: rgba(255, 255, 255, 0.1) !important;
-        }
-
-        .rank-cell {
-            font-weight: bold;
-            color: #718096;
-            width: 40px;
-            text-align: center;
-            font-size: 1rem;
-        }
-        .top-1 { color: #f1c40f; text-shadow: 0 0 10px rgba(241, 196, 15, 0.3); font-size: 1.2rem;}
-        .top-2 { color: #bdc3c7; font-size: 1.1rem;}
-        .top-3 { color: #d35400; font-size: 1.1rem;}
-
-        .table-header-custom {
-            background: rgba(0, 0, 0, 0.4);
-            border-radius: 6px 6px 0 0;
-            padding: 10px;
-            margin-bottom: 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .stat-col {
-            width: 100px;
+        .award-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            transition: transform 0.3s ease;
         }
         
-        .player-name-link {
-            font-size: 1rem;
-            font-weight: 600;
+        @keyframes moaiPulse {
+            0%, 100% {
+                filter: drop-shadow(0 0 8px rgba(160, 160, 160, 0.6));
+            }
+            50% {
+                filter: drop-shadow(0 0 25px rgba(255, 255, 255, 1.0));
+            }
         }
 
-        .award-card {
-            height: 100%;
-            transition: transform 0.2s;
-            border: 1px solid rgba(255,255,255,0.05);
+        .moai-icon {
+            display: inline-block;
+            font-size: 3.5rem;
+            animation: moaiPulse 4s ease-in-out infinite;
         }
-        .award-card:hover {
-            transform: translateY(-5px);
-            background: rgba(255,255,255,0.08) !important;
-        }
-        .award-icon {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-        }
+        
         .award-value {
             font-size: 1.5rem;
             font-weight: bold;
@@ -82,189 +58,211 @@
 <body>
     {% include 'navbar.html' %}
 
-    <section class="hero is-info is-small animated-gradient" style="padding-bottom: 1rem; padding-top: 1rem;">
-        <div class="hero-body p-4">
+    <section class="hero is-small is-dark">
+        <div class="hero-body">
             <div class="container has-text-centered">
-                <h1 class="title is-3 glow-text mb-4">
-                    <i class="fas fa-calendar-alt"></i> {{ saison.nom_saison }}
-                </h1>
-                <h2 class="subtitle is-6">
-                    Résultats complets de la saison
-                </h2>
+                {% if saison %}
+                    <h1 class="title is-1 glow-text">{{ saison.nom_saison }}</h1>
+                    <p class="subtitle is-4 has-text-grey-light">Récapitulatif de la saison</p>
+                {% else %}
+                    <h1 class="title is-1 has-text-danger">Saison introuvable</h1>
+                    <a href="/" class="button is-primary mt-4">Retour à l'accueil</a>
+                {% endif %}
             </div>
         </div>
     </section>
 
-    <section class="section pt-4">
+    <section class="section">
         <div class="container">
-            {% if error %}
-                <div class="notification is-danger has-text-centered">
-                    {{ error }}
-                </div>
-            {% elif saison %}
+            {% if saison %}
                 
-                <div class="columns is-centered">
-                    <div class="column is-8"> 
-
-                        <div class="card glass-card fade-in mb-5">
-                            <div class="table-header-custom has-text-centered">
-                                <p class="is-size-5 has-text-warning font-weight-bold">
-                                    <i class="fas fa-star mr-2"></i> Classement Général (Points)
+                <div class="columns is-variable is-6">
+                    <div class="column is-6">
+                        <div class="card glass-card fade-in">
+                            <header class="card-header">
+                                <p class="card-header-title is-centered has-text-warning">
+                                    <i class="fas fa-trophy mr-2"></i> Classement par Points
                                 </p>
-                            </div>
+                            </header>
                             <div class="card-content p-0">
-                                <div class="table-container">
-                                    <table class="table is-fullwidth has-background-transparent text-light recap-table">
-                                        <thead>
-                                            <tr>
-                                                <th class="has-text-grey has-text-centered" style="width: 50px;">#</th>
-                                                <th class="has-text-white">Joueur</th>
-                                                <th class="has-text-right has-text-warning stat-col">Total</th>
-                                                <th class="has-text-right has-text-white stat-col">Matchs</th>
-                                                <th class="has-text-right has-text-grey-light stat-col">TS Fin</th>
-                                                <th class="has-text-right has-text-success stat-col">Gain/Perte</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for joueur in saison.classement_points %}
-                                            <tr>
-                                                <td class="rank-cell {{ 'top-1' if loop.index == 1 else '' }} {{ 'top-2' if loop.index == 2 else '' }} {{ 'top-3' if loop.index == 3 else '' }}">
-                                                    {{ loop.index }}
-                                                </td>
-                                                <td>
-                                                    <a href="/stats/joueur/{{ joueur.nom }}" class="has-text-light player-name-link">{{ joueur.nom }}</a>
-                                                </td>
-                                                <td class="has-text-right has-text-warning font-weight-bold is-size-6">{{ joueur.total_points }}</td>
-                                                <td class="has-text-right has-text-white">{{ joueur.matchs }}</td>
-                                                <td class="has-text-right has-text-grey-light">{{ joueur.final_trueskill }}</td>
-                                                
-                                                <td class="has-text-right font-weight-bold">
-                                                    {% if joueur.delta_trueskill > 0 %}
-                                                        <span class="has-text-success">
-                                                            <i class="fas fa-caret-up"></i> {{ joueur.delta_trueskill }}
-                                                        </span>
-                                                    {% elif joueur.delta_trueskill < 0 %}
-                                                        <span class="has-text-danger">
-                                                            <i class="fas fa-caret-down"></i> {{ joueur.delta_trueskill }}
-                                                        </span>
-                                                    {% else %}
-                                                        <span class="has-text-grey">-</span>
-                                                    {% endif %}
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
+                                <table class="table is-fullwidth recap-table has-text-light">
+                                    <thead>
+                                        <tr>
+                                            <th class="has-text-centered" style="width: 50px;">#</th>
+                                            <th>Joueur</th>
+                                            <th class="has-text-right">Pts</th>
+                                            <th class="has-text-centered">Victoires</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for j in saison.classement_points %}
+                                        <tr>
+                                            <td class="has-text-centered font-weight-bold">
+                                                {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}{% endif %}
+                                            </td>
+                                            <td>{{ j.nom }}</td>
+                                            <td class="has-text-right has-text-weight-bold">{{ j.total_points }}</td>
+                                            <td class="has-text-centered">{{ j.victoires }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="column is-6">
+                        <div class="card glass-card fade-in" style="animation-delay: 0.2s">
+                            <header class="card-header">
+                                <p class="card-header-title is-centered has-text-info">
+                                    <i class="fas fa-chart-line mr-2"></i> Performance Moyenne
+                                </p>
+                            </header>
+                            <div class="card-content p-0">
+                                <table class="table is-fullwidth recap-table has-text-light">
+                                    <thead>
+                                        <tr>
+                                            <th class="has-text-centered" style="width: 50px;">#</th>
+                                            <th>Joueur</th>
+                                            <th class="has-text-right">Moy. Pts</th>
+                                            <th class="has-text-right">Pos. Moy.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for j in saison.classement_moyenne %}
+                                        <tr>
+                                            <td class="has-text-centered font-weight-bold">{{ loop.index }}</td>
+                                            <td>{{ j.nom }}</td>
+                                            <td class="has-text-right has-text-weight-bold">{{ j.moyenne_points }}</td>
+                                            <td class="has-text-right">{{ j.moyenne_position }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="box glass-card mt-6 fade-in" style="animation-delay: 0.4s">
+                    <h2 class="title is-3 has-text-centered has-text-white mb-6">
+                        <i class="fas fa-medal mr-2"></i> Awards de la Saison
+                    </h2>
+                    
+                    <div class="columns is-multiline is-centered">
+                        
+                        {% if 'stakhanov' in saison.awards %}
+                        <div class="column is-4">
+                            <div class="card has-background-transparent border-light h-100">
+                                <div class="card-content has-text-centered">
+                                    <div class="award-icon has-text-warning">
+                                        <i class="fas fa-hammer"></i>
+                                    </div>
+                                    <p class="heading has-text-light">Stakhanoviste</p>
+                                    <p class="is-size-7 mb-2">(Le plus de points marqués)</p>
+                                    {% if saison.awards.stakhanov %}
+                                        <p class="title is-4 has-text-white">{{ saison.awards.stakhanov.nom }}</p>
+                                        <p class="award-value has-text-warning">{{ saison.awards.stakhanov.val }} pts</p>
+                                    {% else %}
+                                        <p class="has-text-grey">-</p>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
+                        {% endif %}
 
-                        <div class="card glass-card fade-in mb-6" style="animation-delay: 0.1s;">
-                            <div class="table-header-custom has-text-centered">
-                                <p class="is-size-5 has-text-info font-weight-bold">
-                                    <i class="fas fa-chart-line mr-2"></i> Performance (Moyenne)
-                                </p>
-                            </div>
-                            <div class="card-content p-0">
-                                <div class="table-container">
-                                    <table class="table is-fullwidth has-background-transparent text-light recap-table">
-                                        <thead>
-                                            <tr>
-                                                <th class="has-text-grey has-text-centered" style="width: 50px;">#</th>
-                                                <th class="has-text-white">Joueur</th>
-                                                <th class="has-text-right has-text-info stat-col">Moyenne</th>
-                                                <th class="has-text-right has-text-warning stat-col">Victoires</th>
-                                                <th class="has-text-right has-text-grey-light stat-col">Pos. Moy</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for joueur in saison.classement_moyenne %}
-                                            <tr>
-                                                <td class="rank-cell {{ 'top-1' if loop.index == 1 else '' }} {{ 'top-2' if loop.index == 2 else '' }} {{ 'top-3' if loop.index == 3 else '' }}">
-                                                    {{ loop.index }}
-                                                </td>
-                                                <td>
-                                                    <a href="/stats/joueur/{{ joueur.nom }}" class="has-text-light player-name-link">{{ joueur.nom }}</a>
-                                                </td>
-                                                <td class="has-text-right has-text-info font-weight-bold is-size-6">{{ joueur.moyenne_points }}</td>
-                                                <td class="has-text-right has-text-warning">{{ joueur.victoires }}</td>
-                                                <td class="has-text-right has-text-grey-light">{{ joueur.moyenne_position }}</td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
+                        {% if 'victoires' in saison.awards %}
+                        <div class="column is-4">
+                            <div class="card has-background-transparent border-light h-100">
+                                <div class="card-content has-text-centered">
+                                    <div class="moai-icon">
+                                        🗿
+                                    </div>
+                                    <p class="heading has-text-light mt-3">Moai</p>
+                                    <p class="is-size-7 mb-2">(Le plus de victoires)</p>
+                                    {% if saison.awards.victoires %}
+                                        <p class="title is-4 has-text-white">{{ saison.awards.victoires.nom }}</p>
+                                        <p class="award-value has-text-grey-lighter">{{ saison.awards.victoires.val }} Victoires</p>
+                                    {% else %}
+                                        <p class="has-text-grey">-</p>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
+                        {% endif %}
 
-                        {% if saison.awards %}
-                        <div class="mb-6 fade-in" style="animation-delay: 0.2s;">
-                            <div class="columns is-multiline">
-                                
-                                <div class="column is-6">
-                                    <div class="card glass-card award-card has-text-centered p-4">
-                                        <div class="award-icon has-text-grey-light">
-                                            <i class="fas fa-medal"></i>
+                        {% if 'pas_loin' in saison.awards %}
+                        <div class="column is-4">
+                            <div class="card has-background-transparent border-light h-100">
+                                <div class="card-content has-text-centered">
+                                    <div class="award-icon has-text-grey-light">
+                                        <i class="fas fa-medal"></i>
+                                    </div>
+                                    <p class="heading has-text-light">C'était pas loin</p>
+                                    <p class="is-size-7 mb-2">(Le plus de 2ème places)</p>
+                                    {% if saison.awards.pas_loin %}
+                                        <p class="title is-4 has-text-white">{{ saison.awards.pas_loin.nom }}</p>
+                                        <p class="award-value has-text-grey-light">{{ saison.awards.pas_loin.val }}x 2ème</p>
+                                    {% else %}
+                                        <p class="has-text-grey">-</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                    </div>
+
+                    <div class="columns is-centered mt-4">
+                        
+                        {% if 'stonks' in saison.awards %}
+                        <div class="column is-5">
+                            <div class="card has-background-transparent border-light">
+                                <div class="card-content">
+                                    <div class="level">
+                                        <div class="level-item has-text-centered">
+                                            <div>
+                                                <div class="award-icon has-text-success">
+                                                    <i class="fas fa-chart-line"></i>
+                                                </div>
+                                                <p class="heading has-text-light">Stonks</p>
+                                                <p class="is-size-7 mb-2">(Meilleure progression TS)</p>
+                                                {% if saison.awards.stonks %}
+                                                    <p class="title is-4 has-text-white">{{ saison.awards.stonks.nom }}</p>
+                                                    <p class="award-value has-text-success">+{{ '%0.3f'| format(saison.awards.stonks.val) }}</p>
+                                                {% else %}
+                                                    <p class="has-text-grey">Aucun éligible</p>
+                                                {% endif %}
+                                            </div>
                                         </div>
-                                        <p class="heading has-text-light">C'était pas loin</p>
-                                        <p class="is-size-7 mb-2">(Plus de 2ème place)</p>
-                                        {% if saison.awards.pas_loin %}
-                                            <p class="title is-4 has-text-white">{{ saison.awards.pas_loin.nom }}</p>
-                                            <p class="award-value has-text-grey-light">{{ saison.awards.pas_loin.val }} fois</p>
-                                        {% else %}
-                                            <p class="has-text-grey">-</p>
-                                        {% endif %}
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                        {% endif %}
 
-                                <div class="column is-6">
-                                    <div class="card glass-card award-card has-text-centered p-4">
-                                        <div class="award-icon has-text-info">
-                                            <i class="fas fa-hammer"></i>
+                        {% if 'not_stonks' in saison.awards %}
+                        <div class="column is-5">
+                            <div class="card has-background-transparent border-light">
+                                <div class="card-content">
+                                    <div class="level">
+                                        <div class="level-item has-text-centered">
+                                            <div>
+                                                <div class="award-icon has-text-danger">
+                                                    <i class="fas fa-chart-line" style="transform: scaleY(-1);"></i>
+                                                </div>
+                                                <p class="heading has-text-light">Not Stonks</p>
+                                                <p class="is-size-7 mb-2">(Plus grosse chute TS)</p>
+                                                {% if saison.awards.not_stonks %}
+                                                    <p class="title is-4 has-text-white">{{ saison.awards.not_stonks.nom }}</p>
+                                                    <p class="award-value has-text-danger">{{ '%0.3f'| format(saison.awards.not_stonks.val) }}</p>
+                                                {% else %}
+                                                    <p class="has-text-grey">Aucun éligible</p>
+                                                {% endif %}
+                                            </div>
                                         </div>
-                                        <p class="heading has-text-light">Stakhanoviste</p>
-                                        <p class="is-size-7 mb-2">(Plus de points marqués)</p>
-                                        {% if saison.awards.stakhanov %}
-                                            <p class="title is-4 has-text-white">{{ saison.awards.stakhanov.nom }}</p>
-                                            <p class="award-value has-text-info">{{ saison.awards.stakhanov.val }} pts</p>
-                                        {% else %}
-                                            <p class="has-text-grey">-</p>
-                                        {% endif %}
                                     </div>
                                 </div>
-
-                                <div class="column is-6">
-                                    <div class="card glass-card award-card has-text-centered p-4">
-                                        <div class="award-icon has-text-success">
-                                            <i class="fas fa-chart-line"></i>
-                                        </div>
-                                        <p class="heading has-text-light">Stonks</p>
-                                        <p class="is-size-7 mb-2">(Le plus de pts TS gagnés)</p>
-                                        {% if saison.awards.stonks %}
-                                            <p class="title is-4 has-text-white">{{ saison.awards.stonks.nom }}</p>
-                                            <p class="award-value has-text-success">+{{ '%0.3f'| format(saison.awards.stonks.val) }}</p>
-                                        {% else %}
-                                            <p class="has-text-grey">-</p>
-                                        {% endif %}
-                                    </div>
-                                </div>
-
-                                <div class="column is-6">
-                                    <div class="card glass-card award-card has-text-centered p-4">
-                                        <div class="award-icon has-text-danger">
-                                            <i class="fas fa-chart-line" style="transform: scaleY(-1);"></i>
-                                        </div>
-                                        <p class="heading has-text-light">Not Stonks</p>
-                                        <p class="is-size-7 mb-2">(Le plus de pts TS perdu)</p>
-                                        {% if saison.awards.not_stonks %}
-                                            <p class="title is-4 has-text-white">{{ saison.awards.not_stonks.nom }}</p>
-                                            <p class="award-value has-text-danger">{{ '%0.3f'| format(saison.awards.not_stonks.val) }}</p>
-                                        {% else %}
-                                            <p class="has-text-grey">-</p>
-                                        {% endif %}
-                                    </div>
-                                </div>
-
                             </div>
                         </div>
                         {% endif %}

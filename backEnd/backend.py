@@ -8,6 +8,9 @@ import bcrypt
 import subprocess
 import trueskill
 import uuid
+import re
+import json
+import unicodedata
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, abort
 from psycopg2 import pool
@@ -49,6 +52,12 @@ def get_db_connection():
     finally:
         db_pool.putconn(conn)
 
+def slugify(value):
+    value = str(value)
+    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+    value = re.sub(r'[^\w\s-]', '', value).strip().lower()
+    return re.sub(r'[-\s]+', '-', value)
+
 def admin_required(f):
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
@@ -60,10 +69,8 @@ def admin_required(f):
                 with conn.cursor() as cur:
                     cur.execute("SELECT expires_at FROM api_tokens WHERE token = %s", (token,))
                     res = cur.fetchone()
-                    
                     if not res:
                         abort(403)
-                    
                     expires_at = res[0]
                     if datetime.now() > expires_at:
                         cur.execute("DELETE FROM api_tokens WHERE token = %s", (token,))
@@ -74,22 +81,10 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def get_config_value(key, default_value):
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT value FROM Configuration WHERE key = %s", (key,))
-                res = cur.fetchone()
-                if res:
-                    return res[0]
-                return default_value
-    except Exception:
-        return default_value
-
 def sync_sequences():
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            tables = ['Joueurs', 'Tournois']
+            tables = ['Joueurs', 'Tournois', 'saisons', 'types_awards', 'awards_obtenus']
             for table in tables:
                 try:
                     seq_name = f"public.{table.lower()}_id_seq"
@@ -159,9 +154,103 @@ def run_auto_backup(tournoi_date_str):
         
         cmd = f"pg_dump -h {db_host} -U {db_user} {db_name} | gzip > {filename}"
         subprocess.run(cmd, shell=True, env=env, check=True)
-        
     except Exception:
         pass
+
+def calculate_season_stats_logic(date_debut, date_fin):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            query = """
+                SELECT 
+                    j.id, j.nom, p.score, p.position, p.new_score_trueskill, 
+                    p.old_mu, p.old_sigma, p.mu, p.sigma
+                FROM Participations p
+                JOIN Tournois t ON p.tournoi_id = t.id
+                JOIN Joueurs j ON p.joueur_id = j.id
+                WHERE t.date >= %s AND t.date <= %s
+                ORDER BY t.date ASC
+            """
+            cur.execute(query, (date_debut, date_fin))
+            rows = cur.fetchall()
+
+    data = {}
+    for pid, nom, score, position, new_ts, old_mu, old_sigma, mu, sigma in rows:
+        if pid not in data:
+            start_ts = (float(old_mu) - 3*float(old_sigma)) if old_mu else 0.0
+            data[pid] = {
+                "id": pid, "nom": nom, "matchs": 0, "total_points": 0,
+                "victoires": 0, "second_places": 0, "total_position": 0,
+                "start_ts": start_ts, "final_ts": 0.0, "final_sigma": 8.333
+            }
+        
+        p = data[pid]
+        p["matchs"] += 1
+        p["total_points"] += score
+        p["total_position"] += position
+        if position == 1: p["victoires"] += 1
+        if position == 2: p["second_places"] += 1
+        
+        current_ts = float(new_ts) if new_ts else 0.0
+        current_sigma = float(sigma) if sigma else 8.333
+        p["final_ts"] = current_ts
+        p["final_sigma"] = current_sigma
+
+    results = {
+        "classement_points": [],
+        "classement_moyenne": [],
+        "awards": {}
+    }
+
+    candidates = {
+        "pas_loin": [], "stakhanov": [], "stonks": [], "not_stonks": [], "victoires": []
+    }
+
+    for pid, d in data.items():
+        moyenne_pts = d["total_points"] / d["matchs"] if d["matchs"] > 0 else 0
+        moyenne_pos = d["total_position"] / d["matchs"] if d["matchs"] > 0 else 0
+        delta_ts = d["final_ts"] - d["start_ts"]
+
+        stat_entry = {
+            "nom": d["nom"],
+            "matchs": d["matchs"],
+            "total_points": d["total_points"],
+            "victoires": d["victoires"],
+            "final_trueskill": round(d["final_ts"], 3),
+            "delta_trueskill": round(delta_ts, 3),
+            "moyenne_points": round(moyenne_pts, 2),
+            "moyenne_position": round(moyenne_pos, 2)
+        }
+        results["classement_points"].append(stat_entry)
+        results["classement_moyenne"].append(stat_entry)
+
+        candidates["pas_loin"].append({"id": pid, "nom": d["nom"], "val": d["second_places"]})
+        candidates["stakhanov"].append({"id": pid, "nom": d["nom"], "val": d["total_points"]})
+        candidates["victoires"].append({"id": pid, "nom": d["nom"], "val": d["victoires"]})
+        
+        if d["final_sigma"] < 2.5:
+            candidates["stonks"].append({"id": pid, "nom": d["nom"], "val": delta_ts})
+            candidates["not_stonks"].append({"id": pid, "nom": d["nom"], "val": delta_ts})
+
+    results["classement_points"].sort(key=lambda x: (x['total_points'], x['victoires']), reverse=True)
+    results["classement_moyenne"].sort(key=lambda x: x['moyenne_points'], reverse=True)
+
+    def get_winner(cat_list, reverse=True, min_val=None):
+        if not cat_list: return None
+        cat_list.sort(key=lambda x: x['val'], reverse=reverse)
+        winner = cat_list[0]
+        if min_val is not None:
+            if reverse and winner['val'] <= min_val: return None
+            if not reverse and winner['val'] >= min_val: return None
+        if winner['val'] == 0 and reverse: return None
+        return winner
+
+    results["awards"]["pas_loin"] = get_winner(candidates["pas_loin"])
+    results["awards"]["stakhanov"] = get_winner(candidates["stakhanov"])
+    results["awards"]["stonks"] = get_winner(candidates["stonks"], min_val=0)
+    results["awards"]["not_stonks"] = get_winner(candidates["not_stonks"], reverse=False, min_val=0)
+    results["awards"]["victoires"] = get_winner(candidates["victoires"])
+
+    return results
 
 @app.route('/admin-auth', methods=['POST'])
 def admin_auth():
@@ -172,7 +261,6 @@ def admin_auth():
         if bcrypt.checkpw(password_bytes, ADMIN_PASSWORD_HASH):
             new_token = str(uuid.uuid4())
             expiration = datetime.now() + timedelta(minutes=30)
-            
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("DELETE FROM api_tokens WHERE expires_at < NOW()")
@@ -184,265 +272,171 @@ def admin_auth():
     except Exception:
         return jsonify({"status": "error", "message": "Erreur serveur"}), 500
 
+@app.route('/admin/types-awards', methods=['GET'])
+@admin_required
+def get_admin_award_types():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT code, nom, emoji, description FROM types_awards ORDER BY nom ASC")
+                awards = [{"code": r[0], "nom": r[1], "emoji": r[2], "description": r[3]} for r in cur.fetchall()]
+        return jsonify(awards)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/saisons', methods=['GET', 'POST'])
+@admin_required
+def admin_saisons():
+    if request.method == 'GET':
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Ajout de is_active dans la requête
+                cur.execute("SELECT id, nom, date_debut, date_fin, slug, config_awards, is_active FROM saisons ORDER BY date_fin DESC")
+                saisons = []
+                for r in cur.fetchall():
+                    config = r[5] if r[5] else {} 
+                    saisons.append({
+                        "id": r[0], "nom": r[1], "date_debut": str(r[2]), 
+                        "date_fin": str(r[3]), "slug": r[4], "config": config,
+                        "is_active": r[6] # Important pour le bouton Publier
+                    })
+        return jsonify(saisons)
+    
+    if request.method == 'POST':
+        data = request.get_json()
+        nom = data.get('nom')
+        d_debut = data.get('date_debut')
+        d_fin = data.get('date_fin')
+        active_awards = data.get('active_awards', []) 
+        
+        slug = slugify(nom)
+        config_json = json.dumps({"active_awards": active_awards})
+
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    # On force is_active à FALSE à la création
+                    cur.execute(
+                        "INSERT INTO saisons (nom, slug, date_debut, date_fin, config_awards, is_active) VALUES (%s, %s, %s, %s, %s, false) RETURNING id",
+                        (nom, slug, d_debut, d_fin, config_json)
+                    )
+                conn.commit()
+            return jsonify({"status": "success"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
+@app.route('/admin/saisons/<int:saison_id>', methods=['DELETE'])
+@admin_required
+def delete_saison(saison_id):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM saisons WHERE id = %s", (saison_id,))
+            conn.commit()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/saisons/<int:saison_id>/save-awards', methods=['POST'])
+@admin_required
+def save_season_awards(saison_id):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT date_debut, date_fin, config_awards FROM saisons WHERE id = %s", (saison_id,))
+                res = cur.fetchone()
+                if not res: return jsonify({"error": "Saison introuvable"}), 404
+                d_debut, d_fin, config = res
+                
+                active_awards = config.get('active_awards') if config else None
+
+                stats = calculate_season_stats_logic(d_debut, d_fin)
+                awards_calcules = stats.get("awards", {})
+
+                cur.execute("SELECT code, id FROM types_awards")
+                types_map = {r[0]: r[1] for r in cur.fetchall()}
+
+                cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (saison_id,))
+                
+                count = 0
+                for code_award, winner_data in awards_calcules.items():
+                    if active_awards is not None and code_award not in active_awards:
+                        continue
+
+                    if winner_data and code_award in types_map:
+                        award_type_id = types_map[code_award]
+                        joueur_id = winner_data['id']
+                        valeur = str(round(winner_data['val'], 2))
+                        
+                        cur.execute("""
+                            INSERT INTO awards_obtenus (joueur_id, saison_id, award_id, valeur)
+                            VALUES (%s, %s, %s, %s)
+                        """, (joueur_id, saison_id, award_type_id, valeur))
+                        count += 1
+                
+                # ICI : ON PASSE LA SAISON EN ACTIF (PUBLIÉ)
+                cur.execute("UPDATE saisons SET is_active = true WHERE id = %s", (saison_id,))
+            conn.commit()
+        return jsonify({"status": "success", "message": f"Saison publiée avec succès ! {count} awards sauvegardés"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/saisons', methods=['GET'])
+def get_public_saisons():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT nom, slug, date_debut, date_fin FROM saisons WHERE is_active = true ORDER BY date_fin DESC")
+                saisons = []
+                for r in cur.fetchall():
+                    nom, slug, d_debut, d_fin = r
+                    
+                    duree = (d_fin - d_debut).days
+                    is_yearly = duree > 300
+                    
+                    saisons.append({
+                        "nom": nom, 
+                        "slug": slug,
+                        "date_debut": str(d_debut),
+                        "date_fin": str(d_fin),
+                        "is_yearly": is_yearly
+                    })
+        return jsonify(saisons)
+    except Exception as e:
+        return jsonify([])
+
 @app.route('/stats/recap/<season_slug>')
 def get_recap_season(season_slug):
     try:
-        slug_map = {
-            "hiver-2025": "Hiver 2025",
-            "printemps-2025": "Printemps 2025",
-            "ete-2025": "Été 2025",
-            "automne-2025": "Automne 2025"
-        }
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Vérifie is_active = true, sauf si c'est pour l'admin (mais ici route publique)
+                # Petite astuce: si on est admin, on pourrait vouloir voir le preview. 
+                # Pour simplifier, on va dire que la route publique nécessite is_active 
+                # SAUF si on connait l'URL exacte? Non, restons simple.
+                cur.execute("SELECT id, nom, date_debut, date_fin, config_awards, is_active FROM saisons WHERE slug = %s", (season_slug,))
+                res = cur.fetchone()
         
-        target_season = slug_map.get(season_slug)
-        if not target_season:
+        if not res:
             return jsonify({"error": "Saison inconnue"}), 404
-
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT 
-                        t.date,
-                        j.nom,
-                        p.score,
-                        p.position,
-                        p.new_score_trueskill,
-                        p.old_mu,
-                        p.old_sigma,
-                        p.sigma 
-                    FROM Participations p
-                    JOIN Tournois t ON p.tournoi_id = t.id
-                    JOIN Joueurs j ON p.joueur_id = j.id
-                    ORDER BY t.date ASC, t.id ASC
-                """)
-                rows = cur.fetchall()
-
-        season_data = {}
-
-        def get_season(date_obj):
-            d = date_obj.strftime("%Y-%m-%d")
-            if d < "2025-03-20": return "Hiver 2025"
-            if d < "2025-06-26": return "Printemps 2025"
-            if d < "2025-09-29": return "Été 2025"
-            return "Automne 2025"
-
-        for date_obj, nom, score, position, new_ts, old_mu, old_sigma, new_sigma in rows:
-            current_season = get_season(date_obj)
-            
-            if current_season != target_season:
-                continue 
-
-            if nom not in season_data:
-                start_ts_global = 0.0
-                if old_mu is not None and old_sigma is not None:
-                    start_ts_global = float(old_mu) - (3 * float(old_sigma))
-
-                season_data[nom] = {
-                    "nom": nom,
-                    "matchs": 0,
-                    "total_points": 0,
-                    "victoires": 0,
-                    "second_places": 0,
-                    "total_position": 0,
-                    "start_trueskill_global": start_ts_global,
-                    "final_trueskill": 0.0,
-                    "stonks_baseline": None,
-                    "stonks_value": 0.0
-                }
-            
-            stats = season_data[nom]
-            stats["matchs"] += 1
-            stats["total_points"] += score
-            stats["total_position"] += position
-            
-            if position == 1:
-                stats["victoires"] += 1
-            if position == 2:
-                stats["second_places"] += 1
-            
-            current_ts = float(new_ts) if new_ts else 0.0
-            stats["final_trueskill"] = current_ts
-
-            if stats["stonks_baseline"] is not None:
-                stats["stonks_value"] = current_ts - stats["stonks_baseline"]
-            
-            else:
-                if old_sigma is not None and float(old_sigma) < 2.5:
-                    old_ts = float(old_mu) - (3 * float(old_sigma))
-                    stats["stonks_baseline"] = old_ts
-                    stats["stonks_value"] = current_ts - old_ts
-                
-                elif new_sigma is not None and float(new_sigma) < 2.5:
-                    stats["stonks_baseline"] = current_ts
-                    stats["stonks_value"] = 0.0
-
-        table_points = []
-        table_moyenne = []
         
-        candidates_second = []
-        candidates_points_total = [] 
-        candidates_stonks = []
-        candidates_not_stonks = []
+        s_id, s_nom, s_debut, s_fin, config, is_active = res
+        
+        # Si pas active, on ne montre rien (sauf si on voulait faire un preview admin, mais ici 404 c'est clean)
+        # Mais pour permettre à l'admin de voir le "preview" via le bouton œil avant de publier, 
+        # on doit laisser passer SI la requête vient de l'admin (compliqué via headers token ici).
+        # On va laisser ouvert mais l'affichage dans la liste publique est bloqué par get_public_saisons.
+        # Donc si quelqu'un devine l'URL, il la voit. C'est acceptable pour ce projet.
+        
+        recap_data = calculate_season_stats_logic(s_debut, s_fin)
+        recap_data["nom_saison"] = s_nom
 
-        for nom, s in season_data.items():
-            moyenne_pts = s["total_points"] / s["matchs"] if s["matchs"] > 0 else 0
-            moyenne_pos = s["total_position"] / s["matchs"] if s["matchs"] > 0 else 0
-            
-            delta_ts_global = s["final_trueskill"] - s["start_trueskill_global"]
+        active_awards = config.get('active_awards') if config else None
+        if active_awards is not None:
+            filtered_awards = {k: v for k, v in recap_data["awards"].items() if k in active_awards}
+            recap_data["awards"] = filtered_awards
 
-            base_data = {
-                "nom": nom,
-                "matchs": s["matchs"],
-                "total_points": s["total_points"],
-                "victoires": s["victoires"],
-                "final_trueskill": round(s["final_trueskill"], 3),
-                "delta_trueskill": round(delta_ts_global, 3),
-                "moyenne_points": round(moyenne_pts, 2),
-                "moyenne_position": round(moyenne_pos, 2)
-            }
-            
-            table_points.append(base_data)
-            table_moyenne.append(base_data)
-
-            candidates_second.append({"nom": nom, "val": s["second_places"]})
-            candidates_points_total.append({"nom": nom, "val": s["total_points"]})
-            
-            if s["stonks_baseline"] is not None:
-                candidates_stonks.append({"nom": nom, "val": s["stonks_value"]})
-                candidates_not_stonks.append({"nom": nom, "val": s["stonks_value"]})
-
-        table_points.sort(key=lambda x: (x['total_points'], x['victoires']), reverse=True)
-        table_moyenne.sort(key=lambda x: x['moyenne_points'], reverse=True)
-
-        def get_winner(candidates, reverse=True):
-            if not candidates: return None
-            candidates.sort(key=lambda x: x['val'], reverse=reverse)
-            winner = candidates[0]
-            if winner['val'] == 0 and reverse: return None
-            return winner
-
-        award_second = get_winner(candidates_second, reverse=True)
-        award_stakhanov = get_winner(candidates_points_total, reverse=True)
-        award_stonks = get_winner(candidates_stonks, reverse=True)
-        award_not_stonks = get_winner(candidates_not_stonks, reverse=False)
-
-        if award_not_stonks and award_not_stonks['val'] >= 0:
-            award_not_stonks = None
-
-        return jsonify({
-            "nom_saison": target_season,
-            "classement_points": table_points,
-            "classement_moyenne": table_moyenne,
-            "awards": {
-                "pas_loin": award_second,
-                "stakhanov": award_stakhanov,
-                "stonks": award_stonks,
-                "not_stonks": award_not_stonks
-            }
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    
-@app.route('/stats/recap')
-def get_recap():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT 
-                        t.date,
-                        j.nom,
-                        p.score,
-                        p.position,
-                        p.new_score_trueskill
-                    FROM Participations p
-                    JOIN Tournois t ON p.tournoi_id = t.id
-                    JOIN Joueurs j ON p.joueur_id = j.id
-                    ORDER BY t.date ASC, t.id ASC
-                """)
-                rows = cur.fetchall()
-
-        seasons_data = {
-            "Hiver 2025": {},
-            "Printemps 2025": {},
-            "Été 2025": {},
-            "Automne 2025": {}
-        }
-
-        season_order = ["Automne 2025", "Été 2025", "Printemps 2025", "Hiver 2025"]
-
-        def get_season(date_obj):
-            d = date_obj.strftime("%Y-%m-%d")
-            if d < "2025-03-20": return "Hiver 2025"
-            if d < "2025-06-26": return "Printemps 2025"
-            if d < "2025-09-29": return "Été 2025"
-            return "Automne 2025"
-
-        for date_obj, nom, score, position, new_ts in rows:
-            season_name = get_season(date_obj)
-            
-            if season_name not in seasons_data:
-                continue 
-
-            if nom not in seasons_data[season_name]:
-                seasons_data[season_name][nom] = {
-                    "nom": nom,
-                    "matchs": 0,
-                    "total_points": 0,
-                    "victoires": 0,
-                    "total_position": 0,
-                    "final_trueskill": 0.0
-                }
-            
-            stats = seasons_data[season_name][nom]
-            stats["matchs"] += 1
-            stats["total_points"] += score
-            stats["total_position"] += position
-            if position == 1:
-                stats["victoires"] += 1
-            stats["final_trueskill"] = float(new_ts) if new_ts else 0.0
-
-        resultat_final = []
-
-        for season in season_order:
-            players_dict = seasons_data.get(season, {})
-            if not players_dict:
-                continue
-
-            table_points = []
-            table_moyenne = []
-
-            for nom, s in players_dict.items():
-                moyenne_pts = s["total_points"] / s["matchs"] if s["matchs"] > 0 else 0
-                moyenne_pos = s["total_position"] / s["matchs"] if s["matchs"] > 0 else 0
-
-                base_data = {
-                    "nom": nom,
-                    "matchs": s["matchs"],
-                    "total_points": s["total_points"],
-                    "victoires": s["victoires"],
-                    "final_trueskill": round(s["final_trueskill"], 3),
-                    "moyenne_points": round(moyenne_pts, 2),
-                    "moyenne_position": round(moyenne_pos, 2)
-                }
-                
-                table_points.append(base_data)
-                table_moyenne.append(base_data)
-
-            table_points.sort(key=lambda x: (x['total_points'], x['victoires']), reverse=True)
-
-            table_moyenne.sort(key=lambda x: x['moyenne_points'], reverse=True)
-
-            resultat_final.append({
-                "nom_saison": season,
-                "id_ancre": season.lower().replace(" ", "-").replace("é", "e"),
-                "classement_points": table_points,
-                "classement_moyenne": table_moyenne
-            })
-
-        return jsonify(resultat_final)
-
+        return jsonify(recap_data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -457,7 +451,6 @@ def refresh_token():
     old_token = request.headers.get('X-Admin-Token')
     new_token = str(uuid.uuid4())
     expiration = datetime.now() + timedelta(minutes=30)
-    
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -530,7 +523,6 @@ def classement():
                 cur.execute(query, params)
                 rows = cur.fetchall()
                 total_joueurs = len(rows)
-                
                 for index, row in enumerate(rows):
                     nom, mu, sigma, score_trueskill, tier, nb_tournois, victoires = row
                     score_ts = round(float(score_trueskill), 3) if score_trueskill is not None else 0.000
@@ -553,8 +545,7 @@ def classement():
                         "nombre_tournois": nb,
                         "victoires": vic,
                         "ratio_victoires": ratio,
-                        "percentile_trueskill": percentile,
-                        "progression_recente": 0
+                        "percentile_trueskill": percentile
                     })
         return jsonify(joueurs)
     except Exception:
@@ -565,13 +556,13 @@ def get_joueur_stats(nom):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT mu, sigma, score_trueskill, tier FROM Joueurs WHERE nom = %s", (nom,))
+                cur.execute("SELECT id, mu, sigma, score_trueskill, tier FROM Joueurs WHERE nom = %s", (nom,))
                 current_stats = cur.fetchone()
 
                 if not current_stats:
                     return jsonify({"error": "Joueur non trouvé"}), 404
 
-                mu, sigma, score_trueskill, tier = current_stats
+                jid, mu, sigma, score_trueskill, tier = current_stats
                 
                 cur.execute("""
                     SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill
@@ -583,7 +574,6 @@ def get_joueur_stats(nom):
                 """, (nom,))
                 
                 raw_history = cur.fetchall()
-                
                 historique_data = []
                 scores_bruts = []
                 positions = []
@@ -597,7 +587,6 @@ def get_joueur_stats(nom):
                     positions.append(p_val)
                     if p_val == 1:
                         victoires += 1
-                        
                     historique_data.append({
                         "id": tid,
                         "date": date.strftime("%Y-%m-%d"),
@@ -607,7 +596,6 @@ def get_joueur_stats(nom):
                     })
 
                 nb_tournois = len(scores_bruts)
-                
                 if nb_tournois > 0:
                     score_moyen = sum(scores_bruts) / nb_tournois
                     meilleur_score = max(scores_bruts)
@@ -631,23 +619,26 @@ def get_joueur_stats(nom):
                         progression_recente = current_ts_val - prev_ts_val
 
                 safe_ts = float(score_trueskill) if score_trueskill is not None else 0.0
-                
                 cur.execute("SELECT COUNT(id) FROM Joueurs WHERE score_trueskill > %s", (safe_ts,))
                 better_players_count = cur.fetchone()[0]
-                
                 cur.execute("SELECT COUNT(id) FROM Joueurs WHERE score_trueskill IS NOT NULL")
                 total_joueurs = cur.fetchone()[0]
                 
                 rank = better_players_count + 1
-                
-                if total_joueurs > 0:
-                    top_percent = (rank / total_joueurs) * 100
-                else:
-                    top_percent = 100
+                top_percent = (rank / total_joueurs * 100) if total_joueurs > 0 else 100
+
+                cur.execute("""
+                    SELECT t.emoji, t.nom, COUNT(o.id)
+                    FROM awards_obtenus o
+                    JOIN types_awards t ON o.award_id = t.id
+                    WHERE o.joueur_id = %s
+                    GROUP BY t.emoji, t.nom
+                """, (jid,))
+                awards_list = [{"emoji": r[0], "nom": r[1], "count": r[2]} for r in cur.fetchall()]
 
         return jsonify({
             "stats": {
-                "mu": round(float(mu), 3) if mu else 25.0,
+                "mu": round(float(mu), 3) if mu else 50.0,
                 "sigma": round(float(sigma), 3) if sigma else 8.333,
                 "score_trueskill": round(safe_ts, 3),
                 "tier": tier.strip() if tier else '?',
@@ -661,7 +652,8 @@ def get_joueur_stats(nom):
                 "progression_recente": round(progression_recente, 3),
                 "percentile_trueskill": round(top_percent, 1)
             },
-            "historique": historique_data
+            "historique": historique_data,
+            "awards": awards_list
         })
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
@@ -690,7 +682,6 @@ def get_global_joueur_stats():
                     SELECT nom, progression, tier FROM JoueurEvolution ORDER BY progression DESC LIMIT 10
                 """)
                 progressions = [{"nom": r[0], "progression": round(float(r[1]), 3), "tier": r[2].strip() if r[2] else "?"} for r in cur.fetchall()]
-                
                 cur.execute("SELECT tier, COUNT(*) FROM Joueurs WHERE tier IS NOT NULL GROUP BY tier")
                 dist = {r[0].strip(): r[1] for r in cur.fetchall()}
         return jsonify({"progressions": progressions, "distribution_tiers": dist})
@@ -750,7 +741,6 @@ def add_tournament():
     try:
         date_tournoi = datetime.strptime(date_tournoi_str, '%Y-%m-%d').date()
         date_jour = datetime.now().date()
-
         if date_tournoi > date_jour:
             return jsonify({"error": "Impossible d'ajouter un tournoi dans le futur."}), 400
 
@@ -759,9 +749,8 @@ def add_tournament():
                 cur.execute("SELECT MAX(date) FROM Tournois")
                 last_record = cur.fetchone()
                 last_date = last_record[0] if last_record else None
-
                 if last_date and date_tournoi < last_date:
-                    return jsonify({"error": f"Date invalide. Le dernier tournoi enregistré date du {last_date}."}), 400
+                    return jsonify({"error": f"Date invalide. Le dernier tournoi date du {last_date}."}), 400
 
                 cur.execute("INSERT INTO Tournois (date) VALUES (%s) RETURNING id", (date_tournoi_str,))
                 tournoi_id = cur.fetchone()[0]
@@ -772,27 +761,20 @@ def add_tournament():
                 for joueur in joueurs_data:
                     nom = joueur['nom']
                     score = joueur['score']
-                    
                     cur.execute("SELECT id, mu, sigma FROM Joueurs WHERE nom = %s", (nom,))
                     res = cur.fetchone()
-                    
                     if res:
                         jid, mu, sigma = res
                     else:
-                        cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, 25.0, 8.333, 'U') RETURNING id", (nom,))
+                        cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, 50.0, 8.333, 'U') RETURNING id", (nom,))
                         jid = cur.fetchone()[0]
-                        mu, sigma = 25.0, 8.333
-
-                    current_mu = float(mu)
-                    current_sigma = float(sigma)
-
-                    joueurs_ratings[nom] = trueskill.Rating(mu=current_mu, sigma=current_sigma)
+                        mu, sigma = 50.0, 8.333
+                    joueurs_ratings[nom] = trueskill.Rating(mu=float(mu), sigma=float(sigma))
                     joueurs_ids_map[nom] = jid
-                    
                     cur.execute("""
                         INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma) 
                         VALUES (%s, %s, %s, %s, %s)
-                    """, (tournoi_id, jid, score, current_mu, current_sigma))
+                    """, (tournoi_id, jid, score, float(mu), float(sigma)))
 
                 sorted_joueurs = sorted(joueurs_data, key=lambda x: x['score'], reverse=True)
                 ranks = []
@@ -804,26 +786,20 @@ def add_tournament():
                     last_s = j['score']
                 
                 teams = [[joueurs_ratings[j['nom']]] for j in sorted_joueurs]
-                
                 cur.execute("SELECT value FROM Configuration WHERE key = 'tau'")
                 tau_res = cur.fetchone()
                 tau_val = float(tau_res[0]) if tau_res else 0.083
-                
-                ts_env = trueskill.TrueSkill(mu=25.0, sigma=8.333, beta=4.167, tau=tau_val, draw_probability=0.1)
+                ts_env = trueskill.TrueSkill(mu=50.0, sigma=8.333, beta=4.167, tau=tau_val, draw_probability=0.1)
                 new_ratings = ts_env.rate(teams, ranks=ranks)
 
                 for i, j in enumerate(sorted_joueurs):
                     nom = j['nom']
                     nr = new_ratings[i][0]
-                    
                     cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s WHERE nom=%s", (nr.mu, nr.sigma, nom))
-
                     score_ts = nr.mu - 3 * nr.sigma
-                    
                     cur.execute("SELECT tier FROM Joueurs WHERE nom = %s", (nom,))
                     res_tier = cur.fetchone()
                     new_tier = res_tier[0] if res_tier else 'U'
-
                     cur.execute("""
                         UPDATE Participations SET mu=%s, sigma=%s, new_score_trueskill=%s, new_tier=%s, position=%s
                         WHERE tournoi_id=%s AND joueur_id=%s
@@ -833,7 +809,6 @@ def add_tournament():
             recalculate_tiers()
             run_auto_backup(date_tournoi_str)
             return jsonify({"status": "success", "tournoi_id": tournoi_id}), 201
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -842,7 +817,6 @@ def revert_last_tournament():
     token = request.headers.get('Authorization')
     if not token:
          return jsonify({"error": "Unauthorized"}), 401
-
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -850,45 +824,26 @@ def revert_last_tournament():
                 res = cur.fetchone()
                 if not res or datetime.now() > res[0]:
                     return jsonify({"error": "Unauthorized"}), 401
-
                 cur.execute("SELECT id, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
                 last_tournoi = cur.fetchone()
-                
                 if not last_tournoi:
                     return jsonify({"message": "Aucun tournoi à annuler."}), 404
-                
                 tournoi_id = last_tournoi[0]
                 tournoi_date = last_tournoi[1]
-
-                cur.execute("""
-                    SELECT joueur_id, old_mu, old_sigma 
-                    FROM Participations 
-                    WHERE tournoi_id = %s
-                """, (tournoi_id,))
-                
+                cur.execute("SELECT joueur_id, old_mu, old_sigma FROM Participations WHERE tournoi_id = %s", (tournoi_id,))
                 participants = cur.fetchall()
-
                 for p in participants:
                     if p[1] is None or p[2] is None:
-                        return jsonify({
-                            "status": "error", 
-                            "message": "Impossible d'annuler : Ce tournoi est trop ancien."
-                        }), 400
-
+                        return jsonify({"status": "error", "message": "Impossible d'annuler : Ce tournoi est trop ancien."}), 400
                 run_auto_backup(f"PRE_REVERT_{tournoi_date}")
-
                 for joueur_id, old_mu, old_sigma in participants:
                     cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s WHERE id=%s", (old_mu, old_sigma, joueur_id))
-
                 cur.execute("DELETE FROM Participations WHERE tournoi_id = %s", (tournoi_id,))
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (tournoi_id,))
-
             conn.commit()
             recalculate_tiers()
             run_auto_backup(f"POST_REVERT_{tournoi_date}")
-            
             return jsonify({"status": "success", "message": "Dernier tournoi annulé et scores restaurés."}), 200
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -910,9 +865,8 @@ def api_add_joueur():
     data = request.get_json()
     try:
         nom = data['nom']
-        mu = float(data.get('mu', 25.0))
+        mu = float(data.get('mu', 50.0))
         sigma = float(data.get('sigma', 8.333))
-        
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier) VALUES (%s, %s, %s, 'U') RETURNING id", 
@@ -932,7 +886,6 @@ def api_update_joueur(id):
         mu = float(data['mu'])
         sigma = float(data['sigma'])
         nom = data['nom']
-        
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s WHERE id=%s", (nom, mu, sigma, id))

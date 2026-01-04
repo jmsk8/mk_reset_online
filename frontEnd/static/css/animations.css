@@ -35,35 +35,17 @@
     animation: gradientAnimation 10s ease infinite;
 }
 
-.glass-card {
-    background: rgba(45, 55, 72, 0.7) !important;
-    backdrop-filter: blur(10px);
-    border-radius: 12px !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    overflow: hidden;
-    margin-bottom: 2rem;
+.player-list-item {
+    transition: all 0.3s ease;
 }
 
-.glass-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+.player-list-item:hover {
+    transform: translateX(10px);
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
-.card-header {
-    background: rgba(26, 32, 44, 0.8) !important;
-    border-bottom: 1px solid rgba(59, 130, 246, 0.5);
-}
-
-.card-header-title {
-    color: white !important;
-    font-weight: 600;
-    font-size: 1.25rem;
-}
-
-.score-bar {
-    background: rgba(30, 41, 59, 0.7);
+.score-bar-container {
+    background-color: rgba(255, 255, 255, 0.1);
     border-radius: 20px;
     height: 24px;
     width: 100%;
@@ -104,37 +86,34 @@
     border-radius: 20px;
     padding-left: 0.75rem;
     padding-right: 0.75rem;
-    color: #1a202c !important; /* Texte sombre pour contraste sur couleurs claires */
+    color: #1a202c;
     font-weight: bold;
     border: 1px solid rgba(255,255,255,0.2);
 }
 
+.tag.is-dark {
+    color: #ffffff !important;
+    background-color: rgba(0, 0, 0, 0.6);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
 .tag.tier-s {
-    background: linear-gradient(45deg, #ff7f7f, #ff9e9e);
-    color: #4a0f0f !important;
+    background: linear-gradient(45deg, #ff7e5f, #feb47b);
+    color: white !important;
+    box-shadow: 0 0 10px rgba(255, 126, 95, 0.5);
 }
 
 .tag.tier-a {
-    background: linear-gradient(45deg, #b3ef78, #d4ff9e);
-    color: #2a3e1a !important;
+    background: linear-gradient(45deg, #0fd194, #185a9d);
+    color: white !important;
 }
 
 .tag.tier-b {
-    background: linear-gradient(45deg, #77ecec, #aaffff);
-    color: #1a3e3e !important;
+    background: linear-gradient(45deg, #3b82f6, #2563eb);
+    color: white !important;
 }
 
 .tag.tier-c {
-    background: linear-gradient(45deg, #b176ed, #d69eff);
-    color: #2e1a3e !important;
-}
-
-.tag.is-light {
-    background: linear-gradient(45deg, #e5e7eb, #f3f4f6);
-    color: #374151 !important;
-}
-
-.tag.is-danger {
-    background: linear-gradient(45deg, #ef4444, #f87171);
+    background: linear-gradient(45deg, #718096, #2d3748);
     color: white !important;
 }

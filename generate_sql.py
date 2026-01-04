@@ -10,7 +10,7 @@ final_targets_order = [
     "Rosalyan", "J_sk8", "Elite", "Rayou", "Vakaeltraz", "Melwin", "Lu_K", 
     "Clem", "Daytona_69", "JeanCube", "Oleas", "Thaumas", "Ether-Zero", 
     "Ael", "Tomwilson", "Falgo", "Brook1l", "Hardox", "ColorOni", "Camou", 
-    "Keemory", "Fozlo", "McK17", "Kaysuan", "PastPlayer", "Tomy", "Mirijason"
+    "Kemoory", "Fozlo", "McK17", "Kaysuan", "PastPlayer", "Tomy", "Mirijason"
 ]
 
 initial_stats = {
