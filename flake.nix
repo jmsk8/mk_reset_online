@@ -85,7 +85,9 @@
             echo "pgstart start database"
             echo "pgconfigure create db and user"
 
-            echo "psql -h localhost -U mk_reset -d mk_reset -W -f ${self}/backEnd/db.sql to populate db"
+            echo "populate db"
+            echo "psql -h localhost -U mk_reset -d mk_reset -W -f ./backEnd/schema.sql 
+            echo "psql -h localhost -U mk_reset -d mk_reset -W -f ./backEnd/seed.sql 
 
             echo Now developping Mario Krade!
 
