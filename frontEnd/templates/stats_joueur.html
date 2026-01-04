@@ -95,6 +95,10 @@
                                             <td class="has-text-right">{{ stats.score_moyen|round(3) }}</td>
                                         </tr>
                                         <tr>
+                                            <td><i class="fas fa-list-ol"></i> Pos. Moyenne</td>
+                                            <td class="has-text-right">{{ stats.position_moyenne }}</td>
+                                        </tr>
+                                        <tr>
                                             <td><i class="fas fa-arrow-up"></i> Meilleur score</td>
                                             <td class="has-text-right">{{ stats.meilleur_score }}</td>
                                         </tr>
@@ -159,18 +163,6 @@
                                         {% else %}
                                             Stable
                                         {% endif %}
-                                    </p>
-                                </div>
-                                
-                                <div class="field">
-                                    <label class="label">Position moyenne</label>
-                                    <progress class="progress is-info" 
-                                              value="{{ (10 - stats.position_moyenne) * 10 if stats.position_moyenne else 0 }}" 
-                                              max="100">
-                                        {{ (10 - stats.position_moyenne) * 10 if stats.position_moyenne else 0 }}%
-                                    </progress>
-                                    <p class="help">
-                                        Position moyenne: {{ stats.position_moyenne|round(1) if stats.position_moyenne else 'N/A' }}
                                     </p>
                                 </div>
                             </div>

@@ -42,11 +42,6 @@
                                                     <i class="fas fa-search"></i>
                                                 </span>
                                             </p>
-                                            <p class="control">
-                                                <button class="button is-info" id="btnSearchJoueur">
-                                                    Chercher
-                                                </button>
-                                            </p>
                                         </div>
                                     </div>
                                 </div>
@@ -58,7 +53,7 @@
                                                     <select id="sortOption">
                                                         <option value="trueskill">Trier par TrueSkill</option>
                                                         <option value="victoires">Trier par Victoires</option>
-                                                        <option value="ratio">Trier par Ratio</option>
+                                                        <option value="score">Trier par Score Moyen</option>
                                                         <option value="nb">Trier par Nb Tournois</option>
                                                     </select>
                                                 </span>
@@ -83,7 +78,7 @@
                              data-nom="{{ joueur.nom }}" 
                              data-trueskill="{{ joueur.score_trueskill }}" 
                              data-victoires="{{ joueur.victoires }}" 
-                             data-ratio="{{ joueur.ratio_victoires }}"
+                             data-score="{{ joueur.score_moyen }}"
                              data-nb="{{ joueur.nombre_tournois }}">
                             <div class="card glass-card" style="height: 100%;">
                                 <div class="card-content">
@@ -104,34 +99,34 @@
                                             </figure>
                                         </div>
                                         <div class="media-content">
-                                            <p class="title is-4 has-text-light">{{ joueur.nom }}</p>
-                                            <p class="subtitle is-6 has-text-grey-light">
-                                                TrueSkill: <strong>{{ joueur.score_trueskill }}</strong>
-                                            </p>
+                                            <p class="title is-4 has-text-light mb-1">{{ joueur.nom }}</p>
+                                            <div class="tags">
+                                                <span class="tag is-dark" style="border: 1px solid rgba(255,255,255,0.2);">
+                                                    TS : <strong class="has-text-warning ml-1">{{ joueur.score_trueskill }}</strong>
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div class="content has-text-light">
-                                        <div class="columns is-mobile is-gapless has-text-centered mb-2">
+                                    <div class="content has-text-light mt-4">
+                                        <div class="columns is-mobile has-text-centered is-vcentered" style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px 0;">
                                             <div class="column">
-                                                <p class="heading">Victoires</p>
+                                                <p class="heading mb-1 is-size-7">Victoires</p>
                                                 <p class="title is-5 has-text-light">{{ joueur.victoires }}</p>
                                             </div>
-                                            <div class="column">
-                                                <p class="heading">Tournois</p>
+                                            <div class="column" style="border-left: 1px solid rgba(255,255,255,0.1); border-right: 1px solid rgba(255,255,255,0.1);">
+                                                <p class="heading mb-1 is-size-7">Tournois</p>
                                                 <p class="title is-5 has-text-light">{{ joueur.nombre_tournois }}</p>
                                             </div>
                                             <div class="column">
-                                                <p class="heading">Ratio</p>
-                                                <p class="title is-5 {{ 'has-text-success' if joueur.ratio_victoires >= 30 else 'has-text-warning' }}">
-                                                    {{ joueur.ratio_victoires }}%
-                                                </p>
+                                                <p class="heading mb-1 is-size-7">Score Moy.</p>
+                                                <p class="title is-5 has-text-success">{{ joueur.score_moyen }}</p>
                                             </div>
                                         </div>
                                         
                                         <a href="/stats/joueur/{{ joueur.nom }}" class="button is-small is-fullwidth is-primary is-outlined mt-3">
                                             <span class="icon"><i class="fas fa-chart-line"></i></span>
-                                            <span>Voir détails</span>
+                                            <span>Voir détails complets</span>
                                         </a>
                                     </div>
                                 </div>
@@ -154,7 +149,6 @@
             });
             
             const joueurSearch = document.getElementById('joueurSearch');
-            const btnSearchJoueur = document.getElementById('btnSearchJoueur');
             
             function filterJoueurs() {
                 const searchText = joueurSearch.value.toLowerCase();
@@ -169,32 +163,32 @@
                     }
                 });
             }
-            
-            joueurSearch.addEventListener('keyup', filterJoueurs);
-            btnSearchJoueur.addEventListener('click', filterJoueurs);
+            if(joueurSearch) joueurSearch.addEventListener('keyup', filterJoueurs);
             
             const btnSort = document.getElementById('btnSort');
             const sortOption = document.getElementById('sortOption');
             
-            btnSort.addEventListener('click', () => {
-                const sortBy = sortOption.value;
-                const cardsContainer = document.querySelector('.columns.is-multiline');
-                const cards = Array.from(document.querySelectorAll('.joueur-card'));
-                
-                cards.sort((a, b) => {
-                    const aValue = parseFloat(a.getAttribute(`data-${sortBy}`));
-                    const bValue = parseFloat(b.getAttribute(`data-${sortBy}`));
-                    return bValue - aValue; 
+            if(btnSort) {
+                btnSort.addEventListener('click', () => {
+                    const sortBy = sortOption.value;
+                    const cardsContainer = document.querySelector('.columns.is-multiline');
+                    const cards = Array.from(document.querySelectorAll('.joueur-card'));
+                    
+                    cards.sort((a, b) => {
+                        const aValue = parseFloat(a.getAttribute(`data-${sortBy}`));
+                        const bValue = parseFloat(b.getAttribute(`data-${sortBy}`));
+                        return bValue - aValue; 
+                    });
+                    
+                    while (cardsContainer.firstChild) {
+                        cardsContainer.removeChild(cardsContainer.firstChild);
+                    }
+                    
+                    cards.forEach(card => {
+                        cardsContainer.appendChild(card);
+                    });
                 });
-                
-                while (cardsContainer.firstChild) {
-                    cardsContainer.removeChild(cardsContainer.firstChild);
-                }
-                
-                cards.forEach(card => {
-                    cardsContainer.appendChild(card);
-                });
-            });
+            }
         });
     </script>
 </body>

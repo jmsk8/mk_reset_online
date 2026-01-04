@@ -668,24 +668,159 @@ def get_joueur_names():
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
-@app.route('/stats/joueurs')
-def get_global_joueur_stats():
+def get_tier_distribution_internal():
+    """Fonction utilitaire pour récupérer la distribution des tiers sans route HTTP"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT tier FROM joueurs")
+                rows = cur.fetchall()
+        
+        dist = {'S': 0, 'A': 0, 'B': 0, 'C': 0, 'U': 0}
+        
+        for row in rows:
+            tier = row[0]
+            if tier in ['Unranked', '?', None, '']:
+                tier = 'U'
+            
+            if tier in dist:
+                dist[tier] += 1
+            else:
+                dist['U'] += 1
+                
+        return dist
+    except Exception as e:
+        print(f"Erreur distribution tiers: {e}")
+        return {'S': 0, 'A': 0, 'B': 0, 'C': 0, 'U': 0}
+    
+
+@app.route('/stats/joueurs', methods=['GET'])
+def stats_joueurs():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    WITH JoueurEvolution AS (
-                        SELECT nom, score_trueskill - 25.0 as progression, tier
-                        FROM Joueurs WHERE score_trueskill IS NOT NULL
-                    )
-                    SELECT nom, progression, tier FROM JoueurEvolution ORDER BY progression DESC LIMIT 10
+                    SELECT 
+                        j.nom, 
+                        j.mu, 
+                        j.sigma, 
+                        j.tier,
+                        COUNT(p.tournoi_id) as nb_tournois,
+                        COALESCE(SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END), 0) as victoires,
+                        AVG(p.score) as score_moyen
+                    FROM joueurs j
+                    LEFT JOIN participations p ON j.id = p.joueur_id
+                    GROUP BY j.id, j.nom, j.mu, j.sigma, j.tier
+                    ORDER BY (j.mu - 3 * j.sigma) DESC;
                 """)
-                progressions = [{"nom": r[0], "progression": round(float(r[1]), 3), "tier": r[2].strip() if r[2] else "?"} for r in cur.fetchall()]
-                cur.execute("SELECT tier, COUNT(*) FROM Joueurs WHERE tier IS NOT NULL GROUP BY tier")
-                dist = {r[0].strip(): r[1] for r in cur.fetchall()}
-        return jsonify({"progressions": progressions, "distribution_tiers": dist})
-    except Exception:
-        return jsonify({"error": "Erreur serveur"}), 500
+                rows = cur.fetchall()
+        
+        joueurs = []
+        for row in rows:
+            mu = row[1]
+            sigma = row[2]
+            ts = mu - 3 * sigma
+            nb_tournois = row[4]
+            victoires = row[5]
+            score_moyen = float(row[6]) if row[6] is not None else 0.0
+            
+            joueurs.append({
+                "nom": row[0],
+                "score_trueskill": round(ts, 3),
+                "tier": row[3],
+                "nombre_tournois": nb_tournois,
+                "victoires": victoires,
+                "score_moyen": round(score_moyen, 1)
+            })
+        
+        dist_data = get_tier_distribution_internal() 
+        return jsonify({"joueurs": joueurs, "distribution_tiers": dist_data})
+
+    except Exception as e:
+        logger.error(f"Erreur stats_joueurs: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/stats/joueur/<nom>', methods=['GET'])
+def stats_joueur_detail(nom):
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, tier, mu, sigma FROM joueurs WHERE nom = %s", (nom,))
+                joueur = cur.fetchone()
+                
+                if not joueur:
+                    return jsonify({"error": "Joueur introuvable"}), 404
+                
+                jid, tier, mu, sigma = joueur
+                ts = mu - 3 * sigma
+                
+                cur.execute("""
+                    SELECT 
+                        COUNT(*), 
+                        COALESCE(SUM(CASE WHEN position = 1 THEN 1 ELSE 0 END), 0),
+                        AVG(position)
+                    FROM participations WHERE joueur_id = %s
+                """, (jid,))
+                
+                stats_row = cur.fetchone()
+                nb_tournois = stats_row[0]
+                victoires = stats_row[1]
+                
+                pos_moy = float(stats_row[2]) if stats_row[2] is not None else 0.0
+
+                cur.execute("""
+                    SELECT t.date, p.score, p.position, p.new_score_trueskill, p.new_tier
+                    FROM participations p
+                    JOIN tournois t ON p.tournoi_id = t.id
+                    WHERE p.joueur_id = %s
+                    ORDER BY t.date ASC
+                """, (jid,))
+                
+                historique = []
+                for row in cur.fetchall():
+                    historique.append({
+                        "date": row[0].isoformat(),
+                        "score_tournoi": row[1],
+                        "position": row[2],
+                        "trueskill": round(float(row[3]), 3),
+                        "tier": row[4].strip() if row[4] else "U"
+                    })
+                
+
+                cur.execute("""
+                    SELECT ta.emoji, ta.nom, ao.valeur, s.nom
+                    FROM awards_obtenus ao
+                    JOIN types_awards ta ON ao.award_id = ta.id
+                    JOIN saisons s ON ao.saison_id = s.id
+                    WHERE ao.joueur_id = %s
+                """, (jid,))
+                
+                awards = []
+                for row in cur.fetchall():
+                    awards.append({
+                        "emoji": row[0], 
+                        "nom": row[1], 
+                        "valeur": row[2], 
+                        "saison": row[3]
+                    })
+
+        return jsonify({
+            "stats": {
+                "nom": nom,
+                "tier": tier.strip() if tier else "U",
+                "trueskill": round(float(ts), 3),
+                "nb_tournois": nb_tournois,
+                "victoires": victoires,
+                "position_moyenne": round(pos_moy, 1)
+            },
+            "historique": historique,
+            "awards": awards
+        })
+
+    except Exception as e:
+        logger.error(f"Erreur CRITIQUE dans stats_joueur_detail: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/stats/tournois')
 def get_tournois_list():

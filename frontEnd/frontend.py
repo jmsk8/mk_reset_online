@@ -274,15 +274,18 @@ def confirmation():
 
 @app.route('/stats/joueurs')
 def stats_joueurs():
-    data, status = backend_request('GET', '/classement')
+    data, status = backend_request('GET', '/stats/joueurs')
+    
     joueurs = []
-    if status == 200 and isinstance(data, list):
-        joueurs = data
+    dist = {}
+
+    if status == 200 and isinstance(data, dict):
+        joueurs = data.get('joueurs', [])
+        dist = data.get('distribution_tiers', {})
     else:
-        flash("Impossible de récupérer la liste des joueurs.", "warning")
+        joueurs = [] 
+        dist = {}
         
-    data_dist, status_dist = backend_request('GET', '/stats/joueurs')
-    dist = data_dist.get('distribution_tiers', {}) if status_dist == 200 and isinstance(data_dist, dict) else {}
     return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist)
 
 @app.route('/stats/tournois')
