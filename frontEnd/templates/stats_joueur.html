@@ -30,7 +30,7 @@
                     {% elif stats.tier == 'C' %}
                         <span class="tag tier-c">Tier C</span>
                     {% else %}
-                        <span class="tag is-light">Tier {{ stats.tier }}</span>
+                        <span class="tag is-white">Tier {{ stats.tier }}</span>
                     {% endif %}
                     
                     {% if stats.victoires >= 3 %}
@@ -75,7 +75,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                
+                               
                                 <table class="table is-fullwidth">
                                     <tbody>
                                         <tr>
@@ -123,7 +123,7 @@
                             <p class="has-text-grey is-italic is-size-7">Aucun trophée... pour l'instant !</p>
                         {% endif %}
                     </div>
-                    
+                   
                     <div class="card glass-card mt-4 fade-in">
                         <div class="card-header">
                             <p class="card-header-title is-centered">
@@ -147,7 +147,7 @@
                                         {% endif %}
                                     </p>
                                 </div>
-                                
+                               
                                 <div class="field">
                                     <label class="label">Progression récente</label>
                                     <progress class="progress {{ 'is-success' if stats.progression_recente > 0 else 'is-danger' if stats.progression_recente < 0 else 'is-light' }}" 
@@ -169,7 +169,7 @@
                         </div>
                     </div>
                 </div>
-                
+               
                 <div class="column is-8">
                     <div class="card glass-card fade-in">
                         <div class="card-header">
@@ -185,7 +185,7 @@
                     </div>
                 </div>
             </div>
-            
+           
             <div class="columns mt-5">
                 <div class="column is-12">
                     <div class="card glass-card fade-in">
@@ -209,25 +209,34 @@
                                         {% for tournoi in historique %}
                                         <tr class="fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
                                             <td style="vertical-align: middle;">{{ tournoi.date }}</td>
-                                            <td style="vertical-align: middle;">{{ tournoi.score }}</td>
-                                            <td style="vertical-align: middle;">
-                                                {% if tournoi.position == 1 %}
-                                                    <span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
-                                                {% elif tournoi.position == 2 %}
-                                                    <span class="tag is-light"><i class="fas fa-medal"></i> 2ème</span>
-                                                {% elif tournoi.position == 3 %}
-                                                    <span class="tag is-danger"><i class="fas fa-medal"></i> 3ème</span>
-                                                {% else %}
-                                                    <span class="tag is-info">{{ tournoi.position }}ème</span>
-                                                {% endif %}
-                                            </td>
-                                            <td class="has-text-centered" style="vertical-align: middle;">
-                                                <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined">
-                                                    <span class="icon">
-                                                        <i class="fas fa-eye"></i>
-                                                    </span>
-                                                </a>
-                                            </td>
+                                            
+                                            {% if tournoi.type == 'absence' %}
+                                                <td style="vertical-align: middle;" class="has-text-grey-light">-</td>
+                                                <td style="vertical-align: middle;">
+                                                    <span class="tag is-danger is-light">Absent (Pénalité)</span>
+                                                </td>
+                                                <td class="has-text-centered" style="vertical-align: middle;">
+                                                    <span class="tag is-dark">N/A</span>
+                                                </td>
+                                            {% else %}
+                                                <td style="vertical-align: middle;">{{ tournoi.score }}</td>
+                                                <td style="vertical-align: middle;">
+                                                    {% if tournoi.position == 1 %}
+                                                        <span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
+                                                    {% elif tournoi.position == 2 %}
+                                                        <span class="tag is-light"><i class="fas fa-medal"></i> 2ème</span>
+                                                    {% elif tournoi.position == 3 %}
+                                                        <span class="tag is-danger"><i class="fas fa-medal"></i> 3ème</span>
+                                                    {% else %}
+                                                        <span class="tag is-info">{{ tournoi.position }}ème</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="has-text-centered" style="vertical-align: middle;">
+                                                    <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined">
+                                                        <span class="icon"><i class="fas fa-eye"></i></span>
+                                                    </a>
+                                                </td>
+                                            {% endif %}
                                         </tr>
                                         {% endfor %}
                                     </tbody>
@@ -243,10 +252,6 @@
     {% include 'footer.html' %}
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <script src="../../static/js/script.js"></script>
-    <script src="../../static/css/dark-mode.js"></script>
-    <script src="../../static/css/animations.js"></script>
-    
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
@@ -257,31 +262,38 @@
     
         document.addEventListener('DOMContentLoaded', function() {
             var ctx = document.getElementById('scoreChart').getContext('2d');
-            
-            var tournois = [
+            var rawData = [
                 {% for tournoi in historique %}
                     {
                         date: "{{ tournoi.date }}",
                         trueskill: {{ tournoi.score_trueskill }},
-                        position: {{ tournoi.position }}
+                        type: "{{ tournoi.type }}" 
                     }{{ "," if not loop.last }}
                 {% endfor %}
             ];
+           
+            var chronoData = rawData.slice().reverse();
+           
+            var labels = chronoData.map(t => t.date);
+            var scores = chronoData.map(t => t.trueskill);
             
-            tournois.reverse();
-            
-            var dates = tournois.map(function(t) { return t.date; });
-            var scores = tournois.map(function(t) { return t.trueskill; });
-            
+            var pointColors = chronoData.map(d => d.type === 'absence' ? '#ef4444' : 'rgba(54, 162, 235, 1)');
+            var pointRadius = chronoData.map(d => d.type === 'absence' ? 5 : 3);
+            var pointStyles = chronoData.map(d => d.type === 'absence' ? 'rectRot' : 'circle');
+           
             var scoreChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: dates,
+                    labels: labels,
                     datasets: [{
                         label: 'Évolution TrueSkill',
                         data: scores,
                         borderColor: 'rgba(54, 162, 235, 1)',
                         backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        pointBackgroundColor: pointColors,
+                        pointBorderColor: pointColors,
+                        pointRadius: pointRadius,
+                        pointStyle: pointStyles,
                         fill: true,
                         tension: 0.3
                     }]
@@ -301,7 +313,10 @@
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return 'TrueSkill: ' + context.parsed.y;
+                                    var idx = context.dataIndex;
+                                    var item = chronoData[idx];
+                                    var suffix = item.type === 'absence' ? ' (Pénalité Absence)' : '';
+                                    return 'TrueSkill: ' + item.trueskill + suffix;
                                 }
                             }
                         }

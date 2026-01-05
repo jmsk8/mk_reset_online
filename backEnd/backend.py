@@ -214,7 +214,7 @@ def calculate_season_stats_logic(date_debut, date_fin):
     }
 
     candidates = {
-        "ez": [], "pas_loin": [], "stakhanov": [], "stonks": [], "not_stonks": [], "champion": [] # champion mapping for safety
+        "ez": [], "pas_loin": [], "stakhanov": [], "stonks": [], "not_stonks": [], "champion": [] 
     }
 
     for pid, d in stats.items():
@@ -242,7 +242,7 @@ def calculate_season_stats_logic(date_debut, date_fin):
 
         candidates["stakhanov"].append({"id": pid, "nom": d["nom"], "val": d["total_points"]})
         candidates["ez"].append({"id": pid, "nom": d["nom"], "val": d["victoires"]})
-        candidates["pas_loin"].append({"id": pid, "nom": d["nom"], "val": d["second_places"]}) # On filtrera après
+        candidates["pas_loin"].append({"id": pid, "nom": d["nom"], "val": d["second_places"]}) 
         
         if is_eligible_stonks:
             candidates["stonks"].append({"id": pid, "nom": d["nom"], "val": delta_ts})
@@ -602,21 +602,30 @@ def get_joueur_stats(nom):
                 jid, mu, sigma, score_trueskill, tier = current_stats
                 
                 cur.execute("""
-                    SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill
+                    SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma
                     FROM Participations p
                     JOIN Tournois t ON p.tournoi_id = t.id
                     JOIN Joueurs j ON p.joueur_id = j.id
                     WHERE j.nom = %s
                     ORDER BY t.date DESC
                 """, (nom,))
-                
                 raw_history = cur.fetchall()
+
+                cur.execute("""
+                    SELECT g.date, g.old_sigma, g.new_sigma, j.mu
+                    FROM ghost_log g
+                    JOIN Joueurs j ON g.joueur_id = j.id
+                    WHERE j.nom = %s
+                    ORDER BY g.date DESC
+                """, (nom,))
+                raw_ghosts = cur.fetchall()
+
                 historique_data = []
                 scores_bruts = []
                 positions = []
                 victoires = 0
                 
-                for tid, date, score, position, hist_ts in raw_history:
+                for tid, date, score, position, hist_ts, h_mu, h_sigma in raw_history:
                     s_val = float(score) if score is not None else 0.0
                     p_val = int(position) if position is not None else 0
                     ts_val = float(hist_ts) if hist_ts is not None else 0.0
@@ -625,12 +634,25 @@ def get_joueur_stats(nom):
                     if p_val == 1:
                         victoires += 1
                     historique_data.append({
+                        "type": "tournoi",
                         "id": tid,
                         "date": date.strftime("%Y-%m-%d"),
                         "score": s_val,
                         "position": p_val,
                         "score_trueskill": round(ts_val, 3)
                     })
+
+                for g_date, old_sig, new_sig, current_mu in raw_ghosts:
+                    ts_ghost = float(current_mu) - 3 * float(new_sig)
+                    historique_data.append({
+                        "type": "absence",
+                        "date": g_date.strftime("%Y-%m-%d"),
+                        "score": 0, 
+                        "position": "-",
+                        "score_trueskill": round(ts_ghost, 3)
+                    })
+                
+                historique_data.sort(key=lambda x: x['date'], reverse=True)
 
                 nb_tournois = len(scores_bruts)
                 if nb_tournois > 0:
@@ -650,9 +672,8 @@ def get_joueur_stats(nom):
                 progression_recente = 0
                 if nb_tournois >= 2:
                     current_ts_val = historique_data[0]['score_trueskill']
-                    index_prev = min(4, nb_tournois - 1)
-                    prev_ts_val = historique_data[index_prev]['score_trueskill']
-                    if prev_ts_val > 0: 
+                    if len(historique_data) > 1:
+                        prev_ts_val = historique_data[1]['score_trueskill']
                         progression_recente = current_ts_val - prev_ts_val
 
                 safe_ts = float(score_trueskill) if score_trueskill is not None else 0.0
@@ -781,84 +802,7 @@ def stats_joueurs():
 
 @app.route('/stats/joueur/<nom>', methods=['GET'])
 def stats_joueur_detail(nom):
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, tier, mu, sigma FROM joueurs WHERE nom = %s", (nom,))
-                joueur = cur.fetchone()
-                
-                if not joueur:
-                    return jsonify({"error": "Joueur introuvable"}), 404
-                
-                jid, tier, mu, sigma = joueur
-                ts = mu - 3 * sigma
-                
-                cur.execute("""
-                    SELECT 
-                        COUNT(*), 
-                        COALESCE(SUM(CASE WHEN position = 1 THEN 1 ELSE 0 END), 0),
-                        AVG(position)
-                    FROM participations WHERE joueur_id = %s
-                """, (jid,))
-                
-                stats_row = cur.fetchone()
-                nb_tournois = stats_row[0]
-                victoires = stats_row[1]
-                
-                pos_moy = float(stats_row[2]) if stats_row[2] is not None else 0.0
-
-                cur.execute("""
-                    SELECT t.date, p.score, p.position, p.new_score_trueskill, p.new_tier
-                    FROM participations p
-                    JOIN tournois t ON p.tournoi_id = t.id
-                    WHERE p.joueur_id = %s
-                    ORDER BY t.date ASC
-                """, (jid,))
-                
-                historique = []
-                for row in cur.fetchall():
-                    historique.append({
-                        "date": row[0].isoformat(),
-                        "score_tournoi": row[1],
-                        "position": row[2],
-                        "trueskill": round(float(row[3]), 3),
-                        "tier": row[4].strip() if row[4] else "U"
-                    })
-                
-
-                cur.execute("""
-                    SELECT ta.emoji, ta.nom, ao.valeur, s.nom
-                    FROM awards_obtenus ao
-                    JOIN types_awards ta ON ao.award_id = ta.id
-                    JOIN saisons s ON ao.saison_id = s.id
-                    WHERE ao.joueur_id = %s
-                """, (jid,))
-                
-                awards = []
-                for row in cur.fetchall():
-                    awards.append({
-                        "emoji": row[0], 
-                        "nom": row[1], 
-                        "valeur": row[2], 
-                        "saison": row[3]
-                    })
-
-        return jsonify({
-            "stats": {
-                "nom": nom,
-                "tier": tier.strip() if tier else "U",
-                "trueskill": round(float(ts), 3),
-                "nb_tournois": nb_tournois,
-                "victoires": victoires,
-                "position_moyenne": round(pos_moy, 1)
-            },
-            "historique": historique,
-            "awards": awards
-        })
-
-    except Exception as e:
-        logger.error(f"Erreur CRITIQUE dans stats_joueur_detail: {e}")
-        return jsonify({"error": str(e)}), 500
+    return get_joueur_stats(nom)
 
 @app.route('/stats/tournois')
 def get_tournois_list():
@@ -964,18 +908,56 @@ def add_tournament():
                 ts_env = trueskill.TrueSkill(mu=50.0, sigma=8.333, beta=4.167, tau=tau_val, draw_probability=0.1)
                 new_ratings = ts_env.rate(teams, ranks=ranks)
 
+                present_player_ids = []
                 for i, j in enumerate(sorted_joueurs):
                     nom = j['nom']
                     nr = new_ratings[i][0]
-                    cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s WHERE nom=%s", (nr.mu, nr.sigma, nom))
+                    jid = joueurs_ids_map[nom]
+                    present_player_ids.append(jid)
+                    
+                    cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s, consecutive_missed=0 WHERE id=%s", (nr.mu, nr.sigma, jid))
+                    
                     score_ts = nr.mu - 3 * nr.sigma
-                    cur.execute("SELECT tier FROM Joueurs WHERE nom = %s", (nom,))
+                    cur.execute("SELECT tier FROM Joueurs WHERE id = %s", (jid,))
                     res_tier = cur.fetchone()
                     new_tier = res_tier[0] if res_tier else 'U'
+                    
                     cur.execute("""
                         UPDATE Participations SET mu=%s, sigma=%s, new_score_trueskill=%s, new_tier=%s, position=%s
                         WHERE tournoi_id=%s AND joueur_id=%s
-                    """, (nr.mu, nr.sigma, score_ts, new_tier, ranks[i], tournoi_id, joueurs_ids_map[nom]))
+                    """, (nr.mu, nr.sigma, score_ts, new_tier, ranks[i], tournoi_id, jid))
+
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('ghost_enabled', 'ghost_penalty')")
+                conf_rows = dict(cur.fetchall())
+                ghost_enabled = (conf_rows.get('ghost_enabled') == 'true')
+                penalty_val = float(conf_rows.get('ghost_penalty', 0.1)) 
+                if ghost_enabled:
+                    if present_player_ids:
+                        format_strings = ','.join(['%s'] * len(present_player_ids))
+                        cur.execute(f"SELECT id, sigma, consecutive_missed FROM Joueurs WHERE id NOT IN ({format_strings})", tuple(present_player_ids))
+                    else:
+                        cur.execute("SELECT id, sigma, consecutive_missed FROM Joueurs")
+                    
+                    absents = cur.fetchall()
+                    
+                    for pid, sig, missed in absents:
+                        sig = float(sig)
+                        missed = int(missed) if missed else 0
+                        new_missed = missed + 1
+                        
+                        new_sig = sig
+                        penalty = 0.0
+                        
+                        if new_missed >= 4:
+                            if sig < 4.0:
+                                penalty = penalty_val
+                                new_sig = sig + penalty
+                                cur.execute("""
+                                    INSERT INTO ghost_log (joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                """, (pid, tournoi_id, date_tournoi_str, sig, new_sig, penalty))
+
+                        cur.execute("UPDATE Joueurs SET sigma=%s, consecutive_missed=%s WHERE id=%s", (new_sig, new_missed, pid))
             
             conn.commit()
             recalculate_tiers()
@@ -1008,8 +990,18 @@ def revert_last_tournament():
                     if p[1] is None or p[2] is None:
                         return jsonify({"status": "error", "message": "Impossible d'annuler : Ce tournoi est trop ancien."}), 400
                 run_auto_backup(f"PRE_REVERT_{tournoi_date}")
+                
                 for joueur_id, old_mu, old_sigma in participants:
                     cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s WHERE id=%s", (old_mu, old_sigma, joueur_id))
+
+                cur.execute("SELECT joueur_id, old_sigma, penalty_applied FROM ghost_log WHERE tournoi_id = %s", (tournoi_id,))
+                ghosts = cur.fetchall()
+                for pid, old_sig, penalty in ghosts:
+                    cur.execute("UPDATE Joueurs SET sigma=%s WHERE id=%s", (old_sig, pid))
+                
+                cur.execute("UPDATE Joueurs SET consecutive_missed = GREATEST(0, consecutive_missed - 1)")
+
+                cur.execute("DELETE FROM ghost_log WHERE tournoi_id = %s", (tournoi_id,))
                 cur.execute("DELETE FROM Participations WHERE tournoi_id = %s", (tournoi_id,))
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (tournoi_id,))
             conn.commit()
@@ -1086,10 +1078,12 @@ def get_config():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT value FROM Configuration WHERE key = 'tau'")
-                res = cur.fetchone()
-                tau = float(res[0]) if res else 0.083
-        return jsonify({"tau": tau})
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty')")
+                rows = dict(cur.fetchall())
+                tau = float(rows.get('tau', 0.083))
+                ghost = rows.get('ghost_enabled', 'false') == 'true'
+                ghost_penalty = float(rows.get('ghost_penalty', 0.1))
+        return jsonify({"tau": tau, "ghost_enabled": ghost, "ghost_penalty": ghost_penalty})
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
@@ -1099,9 +1093,14 @@ def update_config():
     data = request.get_json()
     try:
         tau = float(data.get('tau'))
+        ghost = str(data.get('ghost_enabled', False)).lower()
+        ghost_penalty = float(data.get('ghost_penalty', 0.1))
+        
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("INSERT INTO Configuration (key, value) VALUES ('tau', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (str(tau),))
+                cur.execute("INSERT INTO Configuration (key, value) VALUES ('ghost_enabled', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (ghost,))
+                cur.execute("INSERT INTO Configuration (key, value) VALUES ('ghost_penalty', %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (str(ghost_penalty),))
             conn.commit()
         return jsonify({"status": "success"})
     except Exception:

@@ -110,6 +110,24 @@ CREATE TABLE public.awards_obtenus (
 );
 ALTER TABLE public.awards_obtenus OWNER TO username;
 
+INSERT INTO public.configuration (key, value) VALUES ('ghost_enabled', 'false') ON CONFLICT DO NOTHING;
+
+-- Modification de la table JOUEURS pour suivre le compteur
+ALTER TABLE public.joueurs ADD COLUMN consecutive_missed integer DEFAULT 0;
+
+-- Nouvelle table pour l'historique des pénalités (liée au tournoi pour le revert facile)
+CREATE TABLE public.ghost_log (
+    id serial PRIMARY KEY,
+    joueur_id integer REFERENCES public.joueurs(id) ON DELETE CASCADE,
+    tournoi_id integer REFERENCES public.tournois(id) ON DELETE CASCADE,
+    date date NOT NULL,
+    old_sigma double precision NOT NULL,
+    new_sigma double precision NOT NULL,
+    penalty_applied double precision NOT NULL
+);
+ALTER TABLE public.ghost_log OWNER TO username;
+
+
 -- AWARDS PAR DÉFAUT (MIS À JOUR SELON TES RÈGLES)
 INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
 ('ez', 'EZ', '🥇', 'Le plus de 1ères places'),

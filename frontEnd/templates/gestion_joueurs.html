@@ -21,104 +21,149 @@
 
             <div class="columns is-variable is-6">
                 <div class="column is-8">
-                    <div class="card glass-card mb-6 fade-in" style="height: 100%;">
+                    
+                    <div class="card glass-card mb-6 fade-in">
+                        <div class="card-header">
+                            <p class="card-header-title"><i class="fas fa-cogs mr-2"></i> Configuration Globale</p>
+                        </div>
+                        <div class="card-content">
+                            <form id="configForm">
+                                <div class="columns is-vcentered">
+                                    <div class="column is-3">
+                                        <div class="field">
+                                            <label class="label">Tau (Incertitude)</label>
+                                            <div class="control">
+                                                <input class="input" type="number" step="0.001" id="configTau" placeholder="0.083">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="column is-6">
+                                        <div class="field">
+                                            <label class="label">Pénalité d'absence</label>
+                                            <div class="field is-grouped">
+                                                <div class="control">
+                                                    <label class="checkbox has-text-white mt-2">
+                                                        <input type="checkbox" id="configGhost">
+                                                        Activer
+                                                    </label>
+                                                </div>
+                                                <div class="control is-expanded">
+                                                    <input class="input" type="number" step="0.01" id="configGhostPenalty" placeholder="Sigma par tournoi (ex: 0.1)">
+                                                </div>
+                                            </div>
+                                            <p class="help is-info">Augmentation du Sigma après 3 absences.</p>
+                                        </div>
+                                    </div>
+                                    <div class="column is-3 has-text-right">
+                                        <div class="field">
+                                            <label class="label">&nbsp;</label>
+                                            <button type="submit" class="button is-info">
+                                                <i class="fas fa-save mr-2"></i> Valider
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card glass-card mb-6 fade-in">
                         <div class="card-header">
                             <p class="card-header-title"><i class="fas fa-user-plus mr-2"></i> Ajouter un nouveau joueur</p>
                         </div>
                         <div class="card-content">
                             <form id="addPlayerForm">
                                 <div class="columns">
-                                    <div class="column is-4">
+                                    <div class="column is-5">
                                         <div class="field">
                                             <label class="label">Pseudo</label>
                                             <div class="control has-icons-left">
-                                                <input class="input" type="text" id="newNom" required placeholder="Ex: Mario">
+                                                <input class="input" type="text" id="newNom" placeholder="Nom du joueur" required>
                                                 <span class="icon is-small is-left"><i class="fas fa-user"></i></span>
                                             </div>
                                         </div>
                                     </div>
                                     <div class="column is-3">
                                         <div class="field">
-                                            <label class="label">Mu</label>
-                                            <input class="input" type="number" step="0.001" id="newMu" value="50" required>
+                                            <label class="label">Mu Initial</label>
+                                            <div class="control">
+                                                <input class="input" type="number" step="0.001" id="newMu" value="50.0">
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="column is-3">
                                         <div class="field">
-                                            <label class="label">Sigma</label>
-                                            <input class="input" type="number" step="0.001" id="newSigma" value="8.333" required>
+                                            <label class="label">Sigma Initial</label>
+                                            <div class="control">
+                                                <input class="input" type="number" step="0.001" id="newSigma" value="8.333">
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="column is-2">
+                                    <div class="column is-1">
                                         <div class="field">
                                             <label class="label">&nbsp;</label>
-                                            <button type="submit" class="button is-success is-fullwidth">
-                                                <i class="fas fa-plus mr-2"></i> Ajouter
-                                            </button>
+                                            <div class="control">
+                                                <button type="submit" class="button is-primary"><i class="fas fa-plus"></i></button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </form>
                         </div>
                     </div>
-                </div>
-                
-                <div class="column is-4">
-                    <div class="card glass-card mb-6 fade-in" style="height: 100%;">
+
+                    <div class="card glass-card fade-in">
                         <div class="card-header">
-                            <p class="card-header-title"><i class="fas fa-cogs mr-2"></i> Configuration TrueSkill</p>
+                            <p class="card-header-title"><i class="fas fa-users mr-2"></i> Liste des joueurs existants</p>
                         </div>
                         <div class="card-content">
-                            <form id="configForm">
-                                <div class="field">
-                                    <label class="label">Variable Tau (Dynamisme)</label>
-                                    <div class="field has-addons">
-                                        <div class="control is-expanded">
-                                            <input class="input" type="number" step="0.001" id="configTau" required>
-                                        </div>
-                                        <div class="control">
-                                            <button type="submit" class="button is-info">
-                                                <i class="fas fa-save"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <p class="help">Valeur par défaut: 0.083</p>
-                                </div>
-                            </form>
+                            <div class="table-container">
+                                <table class="table is-fullwidth is-hoverable" style="background-color: transparent;">
+                                    <thead>
+                                        <tr>
+                                            <th class="has-text-white">Nom</th>
+                                            <th class="has-text-white">Mu</th>
+                                            <th class="has-text-white">Sigma</th>
+                                            <th class="has-text-white">Tier</th>
+                                            <th class="has-text-white has-text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="playersTableBody">
+                                        </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="card glass-card fade-in">
-                <div class="card-header">
-                    <p class="card-header-title"><i class="fas fa-users mr-2"></i> Liste des joueurs</p>
-                </div>
-                <div class="card-content">
-                    <div class="table-container">
-                        <table class="table is-fullwidth is-hoverable" style="background: transparent;">
-                            <thead>
-                                <tr>
-                                    <th class="has-text-white">Nom</th>
-                                    <th class="has-text-white">Mu</th>
-                                    <th class="has-text-white">Sigma</th>
-                                    <th class="has-text-white">Tier</th>
-                                    <th class="has-text-white has-text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="playersTableBody">
-                            </tbody>
-                        </table>
+                <div class="column is-4">
+                    <div class="card glass-card fade-in">
+                        <div class="card-content">
+                            <h3 class="title is-5 has-text-white"><i class="fas fa-info-circle mr-2"></i> Aide Mémoire</h3>
+                            <div class="content is-small has-text-grey-light">
+                                <p><strong>Mu :</strong> Niveau moyen estimé du joueur (défaut: 50).</p>
+                                <p><strong>Sigma :</strong> Incertitude sur le niveau (défaut: 8.333). Plus c'est bas, plus le classement est fiable.</p>
+                                <hr class="has-background-grey-dark">
+                                <p><strong>Tier :</strong> Calculé automatiquement.</p>
+                                <ul>
+                                    <li><span class="tag tier-s is-light">S</span> Top Tier</li>
+                                    <li><span class="tag tier-a is-light">A</span> Excellent</li>
+                                    <li><span class="tag tier-b is-light">B</span> Moyen +</li>
+                                    <li><span class="tag tier-c is-light">C</span> Débutant</li>
+                                    <li><span class="tag is-white">U</span> Non classé (Sigma > 4)</li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <div id="editModal" class="modal">
-        <div class="modal-background"></div>
-        <div class="modal-card glass-card">
-            <header class="modal-card-head" style="background: rgba(30,41,59,0.9);">
+    <div class="modal" id="editModal">
+        <div class="modal-background" onclick="closeModal()"></div>
+        <div class="modal-card">
+            <header class="modal-card-head" style="background: rgba(30,41,59,0.9); border-bottom: 1px solid #3b82f6;">
                 <p class="modal-card-title has-text-white">Modifier le joueur</p>
                 <button class="delete" aria-label="close" onclick="closeModal()"></button>
             </header>
@@ -151,6 +196,17 @@
     </div>
 
     {% include 'footer.html' %}
-	<script src="{{ url_for('static', filename='js/gestion.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/gestion.js') }}"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const fadeElems = document.querySelectorAll('.fade-in');
+            fadeElems.forEach(elem => {
+                requestAnimationFrame(() => {
+                    elem.classList.add('visible');
+                });
+            });
+        });
+    </script>
 </body>
 </html>
