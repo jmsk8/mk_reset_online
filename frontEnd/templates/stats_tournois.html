@@ -52,17 +52,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div class="level-right">
-                                    <div class="level-item">
-                                        <button class="button is-info" id="btnResetSearch">
-                                            <span class="icon">
-                                                <i class="fas fa-sync-alt"></i>
-                                            </span>
-                                            <span>Réinitialiser</span>
-                                        </button>
-                                    </div>
                                 </div>
-                            </div>
 
                             <div class="content">
                                 <table class="table is-fullwidth is-hoverable">
@@ -134,7 +124,6 @@
             // Recherche par date
             const dateSearch = document.getElementById('tournoisDateSearch');
             const btnSearchDate = document.getElementById('btnSearchDate');
-            const btnResetSearch = document.getElementById('btnResetSearch');
             
             function filterTournois() {
                 const searchDate = dateSearch.value;
@@ -152,16 +141,7 @@
                 });
             }
             
-            function resetFilter() {
-                dateSearch.value = '';
-                const rows = document.querySelectorAll('.tournoi-row');
-                rows.forEach(row => {
-                    row.style.display = '';
-                });
-            }
-            
             btnSearchDate.addEventListener('click', filterTournois);
-            btnResetSearch.addEventListener('click', resetFilter);
         });
     </script>
 </body>
