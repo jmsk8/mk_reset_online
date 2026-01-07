@@ -66,6 +66,11 @@ in
 
     users.groups.${user}.members = [ user ];
 
+    environment.sessionVariables = {
+      MK_SCHEMA_SQL = "${pkg}/backEnd/schema.sql";
+      MK_SEED_SQL = "${pkg}/backEnd/seed.sql";
+    };
+
     systemd.services = {
       mario-crade-frontend = {
         enable = true;
@@ -108,8 +113,4 @@ in
     };
   };
 
-  environment.sessionVariables = {
-    MK_SCHEMA_SQL = "${pkg}/backEnd/schema.sql";
-    MK_SEED_SQL = "${pkg}/backEnd/seed.sql";
-  };
 }
