@@ -565,10 +565,75 @@ def save_season_awards(id):
             
             d_debut, d_fin, config, vic_cond, is_yearly = row
             
-            # 2. Calcul des stats
+            # 2. Calcul des stats (Logique existante pour GM, EZ, etc.)
             stats = calculate_season_stats_logic(d_debut, d_fin)
             candidates = stats['candidates']
             total_tournois = stats['total_tournois']
+
+            # ==============================================================================
+            # 2.5. INJECTION : RE-CALCUL SPÉCIFIQUE POUR STONKS / NOT STONKS
+            # (Remplace les valeurs calculées par calculate_season_stats_logic)
+            # ==============================================================================
+            
+            # On récupère la liste des joueurs ayant participé à cette saison
+            cur.execute("""
+                SELECT DISTINCT p.joueur_id, j.nom 
+                FROM participations p
+                JOIN tournois t ON p.tournoi_id = t.id
+                JOIN joueurs j ON p.joueur_id = j.id
+                WHERE t.saison_id = %s
+            """, (id,))
+            joueurs_saison = cur.fetchall()
+
+            new_stonks_list = []
+
+            for jid, nom in joueurs_saison:
+                # Récupérer l'historique chronologique
+                cur.execute("""
+                    SELECT p.new_score_trueskill, p.sigma
+                    FROM participations p
+                    JOIN tournois t ON p.tournoi_id = t.id
+                    WHERE p.joueur_id = %s AND t.saison_id = %s
+                    ORDER BY t.date ASC
+                """, (jid, id))
+                
+                historique = cur.fetchall()
+                nb_matchs = len(historique)
+                
+                if nb_matchs == 0: continue
+
+                baseline_ts = None
+                
+                # Trouver le point de départ (premier moment où Sigma < 2.5)
+                for score, sig in historique:
+                    if float(sig) < 2.5:
+                        baseline_ts = float(score)
+                        break 
+                
+                # Si le joueur a été "Ranked" au moins une fois
+                if baseline_ts is not None:
+                    final_ts = float(historique[-1][0])
+                    final_sigma = float(historique[-1][1])
+                    delta = final_ts - baseline_ts
+                    
+                    # On structure l'objet comme le reste du code l'attend
+                    # (avec 'sigma' et 'matchs' pour passer les filtres suivants)
+                    entry = {
+                        'id': jid, 
+                        'nom': nom, 
+                        'val': delta, 
+                        'sigma': final_sigma, 
+                        'matchs': nb_matchs
+                    }
+                    new_stonks_list.append(entry)
+
+            # On écrase les listes génériques par nos listes recalculées précises
+            candidates['stonks'] = new_stonks_list
+            candidates['not_stonks'] = new_stonks_list # Même source, le tri (max/min) se fait plus bas
+
+            # ==============================================================================
+            # FIN DE L'INJECTION
+            # ==============================================================================
 
             # 3. Nettoyer les anciens awards
             cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (id,))
@@ -580,7 +645,6 @@ def save_season_awards(id):
             # --- GESTION DES MOAIS (PODIUM) ---
             top_players = []
             
-            # CORRECTION ICI : On accepte 'grand_master' OU 'Indice de Performance'
             if vic_cond == 'grand_master' or vic_cond == 'Indice de Performance':
                 top_players = candidates['grand_master']
             elif vic_cond == 'ez':
@@ -590,6 +654,8 @@ def save_season_awards(id):
                 sorted_list = sorted(candidates['stakhanov'], key=lambda x: x['val'], reverse=True)
                 top_players = [{"id": x['id'], "final_score": x['val']} for x in sorted_list]
             elif vic_cond == 'stonks':
+                # Ici on utilise notre nouvelle liste. Le filtre sigma < 2.5 est déjà implicite 
+                # car baseline_ts serait None sinon, mais on garde le filtre par sécurité.
                 filtered = [c for c in candidates['stonks'] if float(c['sigma']) < 2.5]
                 sorted_list = sorted(filtered, key=lambda x: x['val'], reverse=True)
                 top_players = [{"id": x['id'], "final_score": x['val']} for x in sorted_list]
@@ -637,14 +703,17 @@ def save_season_awards(id):
                     if raw_list:
                         winners = [sorted(raw_list, key=lambda x: x['val'], reverse=True)[0]]
                 elif code == 'stonks':
+                    # Utilise les valeurs recalculées à l'étape 2.5
+                    # On garde le filtre "matchs >= 50%" si c'était ta volonté initiale, sinon tu peux l'enlever
                     valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c['matchs'] >= (total_tournois * 0.5)]
                     if valid:
                         w = sorted(valid, key=lambda x: x['val'], reverse=True)[0]
                         if w['val'] > 0.001: winners = [w]
                 elif code == 'not_stonks':
+                    # Utilise les valeurs recalculées à l'étape 2.5
                     valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c['matchs'] >= (total_tournois * 0.5)]
                     if valid:
-                        w = sorted(valid, key=lambda x: x['val'], reverse=False)[0]
+                        w = sorted(valid, key=lambda x: x['val'], reverse=False)[0] # Tri croissant (plus petit nombre négatif en premier)
                         if w['val'] < -0.001: winners = [w]
                 elif code == 'chillguy':
                     valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c['matchs'] > (total_tournois * 0.5) and c['val'] < 0.3]
@@ -947,7 +1016,6 @@ def get_joueur_stats(nom):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # 1. Infos principales du joueur
                 cur.execute("SELECT id, mu, sigma, score_trueskill, tier, is_ranked FROM Joueurs WHERE nom = %s", (nom,))
                 current_stats = cur.fetchone()
 
@@ -959,7 +1027,7 @@ def get_joueur_stats(nom):
                 safe_ts = float(score_trueskill) if score_trueskill is not None else 0.0
                 sigma_val = float(sigma)
                 
-                # --- Calcul du Top % (Percentile) ---
+                
                 is_legit = (is_ranked and sigma_val < 4.0)
                 top_percent = "?" 
 
@@ -981,9 +1049,10 @@ def get_joueur_stats(nom):
                         
                         if std_dev > 0.0001:
                             z_score = (safe_ts - mean) / std_dev
-                            # Fonction d'erreur pour la distribution normale cumulée
+                            
                             cdf = 0.5 * (1 + math.erf(z_score / math.sqrt(2)))
                             top_val = (1 - cdf) * 100
+                            
                             top_percent = round(max(top_val, 0.01), 2)
                         else:
                             top_percent = 50.0
@@ -991,7 +1060,6 @@ def get_joueur_stats(nom):
                     elif len(valid_scores) == 1:
                         top_percent = 1.0 
                 
-                # 2. Historique des Tournois
                 cur.execute("""
                     SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma
                     FROM Participations p
@@ -1002,7 +1070,6 @@ def get_joueur_stats(nom):
                 """, (nom,))
                 raw_history = cur.fetchall()
 
-                # 3. Historique des Ghosts (Absences pénalisées)
                 cur.execute("""
                     SELECT g.date, g.old_sigma, g.new_sigma, j.mu
                     FROM ghost_log g
@@ -1044,10 +1111,8 @@ def get_joueur_stats(nom):
                         "score_trueskill": round(ts_ghost, 3)
                     })
                 
-                # Fusion et tri par date
                 historique_data.sort(key=lambda x: x['date'], reverse=True)
 
-                # Calculs statistiques de base
                 nb_tournois = len(scores_bruts)
                 if nb_tournois > 0:
                     score_moyen = sum(scores_bruts) / nb_tournois
@@ -1070,25 +1135,14 @@ def get_joueur_stats(nom):
                         prev_ts_val = historique_data[1]['score_trueskill']
                         progression_recente = current_ts_val - prev_ts_val
 
-                # 4. Récupération des Awards (CORRIGÉ AVEC DESCRIPTION)
                 cur.execute("""
-                    SELECT t.emoji, t.nom, t.description, COUNT(o.id)
+                    SELECT t.emoji, t.nom, COUNT(o.id)
                     FROM awards_obtenus o
                     JOIN types_awards t ON o.award_id = t.id
                     WHERE o.joueur_id = %s
-                    GROUP BY t.emoji, t.nom, t.description
+                    GROUP BY t.emoji, t.nom
                 """, (jid,))
-                
-                # Construction de la liste avec la nouvelle clé 'description'
-                awards_list = [
-                    {
-                        "emoji": r[0], 
-                        "nom": r[1], 
-                        "description": r[2],  # <-- C'est ça qui manquait
-                        "count": r[3]
-                    } 
-                    for r in cur.fetchall()
-                ]
+                awards_list = [{"emoji": r[0], "nom": r[1], "count": r[2]} for r in cur.fetchall()]
 
         return jsonify({
             "stats": {
@@ -1111,7 +1165,7 @@ def get_joueur_stats(nom):
             "awards": awards_list
         })
     except Exception as e:
-        print(f"ERREUR get_joueur_stats: {e}")
+        print(f"ERREUR: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/joueurs/noms')

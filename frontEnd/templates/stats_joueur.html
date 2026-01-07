@@ -19,26 +19,62 @@
             justify-content: center;
             margin: 10px 15px; /* Espacement entre les awards */
             cursor: help; /* Curseur ? pour indiquer qu'il y a une info-bulle */
-            transition: transform 0.2s ease;
+            transition: transform 0.3s ease;
         }
 
         .award-item:hover {
             transform: scale(1.2); /* Léger grossissement au survol */
         }
 
+        /* STYLE NET POUR LES AWARDS NORMAUX (Images PNG) */
         .award-icon-large {
-            height: 50px; /* Taille augmentée (anciennement 24px) */
+            height: 50px;
             width: auto;
-            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.3)); /* Petit effet lumineux */
+            /* Drop-shadow avec très peu de flou (1px) pour un contour net */
+            filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9));
             margin-bottom: 2px;
+            transition: all 0.3s ease;
         }
 
+        /* STYLE NET POUR LES AWARDS NORMAUX (Emojis Texte) */
         .award-text-large {
-            font-size: 3rem; /* Taille augmentée pour les emojis texte */
+            font-size: 3rem;
             line-height: 1;
             margin-bottom: 2px;
-            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+            /* Text-shadow net */
+            text-shadow: 0 0 2px rgba(255, 255, 255, 0.9);
         }
+
+        /* --- ANIMATIONS D'AURA PULSATILE POUR SUPER MOAI --- */
+        /* Définition des keyframes pour la pulsation (Réduit de 25px à 15px) */
+        @keyframes pulseAuraGold {
+            0% { filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6)); }
+            50% { filter: drop-shadow(0 0 15px rgba(255, 215, 0, 1)); }
+            100% { filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6)); }
+        }
+        @keyframes pulseAuraSilver {
+            0% { filter: drop-shadow(0 0 5px rgba(192, 192, 192, 0.6)); }
+            50% { filter: drop-shadow(0 0 15px rgba(255, 255, 255, 1)); }
+            100% { filter: drop-shadow(0 0 5px rgba(192, 192, 192, 0.6)); }
+        }
+        @keyframes pulseAuraBronze {
+            0% { filter: drop-shadow(0 0 5px rgba(205, 127, 50, 0.6)); }
+            50% { filter: drop-shadow(0 0 15px rgba(255, 160, 122, 1)); }
+            100% { filter: drop-shadow(0 0 5px rgba(205, 127, 50, 0.6)); }
+        }
+
+        /* Application des animations aux classes spécifiques */
+        /* L'animation écrase le filtre de base de .award-icon-large */
+        .award-icon-large.super-gold {
+            animation: pulseAuraGold 3s infinite ease-in-out;
+        }
+        .award-icon-large.super-silver {
+            animation: pulseAuraSilver 3s infinite ease-in-out;
+        }
+        .award-icon-large.super-bronze {
+            animation: pulseAuraBronze 3s infinite ease-in-out;
+        }
+        /* -------------------------------------------- */
 
         .award-count {
             font-size: 0.9rem;
@@ -163,24 +199,69 @@
                     </div>
 
                     <div class="box glass-card has-text-centered mt-4 fade-in">
-                        <h4 class="title is-5 has-text-warning mb-3"><i class="fas fa-trophy"></i> Palmarès</h4>
+                        <h4 class="title is-5 has-text-warning mb-3"><i class="fas fa-trophy"></i> Trophées</h4>
+                        {% set ns_trophies = namespace(found=false) %}
                         {% if awards %}
                             <div class="is-flex is-justify-content-center is-flex-wrap-wrap">
                                 {% for award in awards %}
-                                <div class="award-item" title="{{ award.description if award.description else award.nom }}">
-                                    {% if award.emoji.endswith('.png') %}
-                                        <img src="/static/img/{{ award.emoji }}" class="award-icon-large" alt="{{ award.nom }}">
-                                    {% else %}
-                                        <span class="award-text-large">{{ award.emoji }}</span>
+                                    {% if 'moai' in award.emoji %}
+                                        {% set ns_trophies.found = true %}
+                                        
+                                        {# --- Logique de détection de l'aura Super Moai --- #}
+                                        {% set aura_class = '' %}
+                                        {% if 'super' in award.emoji %}
+                                            {% if 'gold' in award.emoji %}{% set aura_class = 'super-gold' %}
+                                            {% elif 'silver' in award.emoji %}{% set aura_class = 'super-silver' %}
+                                            {% elif 'bronze' in award.emoji %}{% set aura_class = 'super-bronze' %}
+                                            {% endif %}
+                                        {% endif %}
+                                        {# -------------------------------------------------- #}
+
+                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}">
+                                            {% if award.emoji.endswith('.png') %}
+                                                {# Ajout de la variable aura_class à la liste des classes de l'image #}
+                                                <img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }}" alt="{{ award.nom }}">
+                                            {% else %}
+                                                <span class="award-text-large">{{ award.emoji }}</span>
+                                            {% endif %}
+                                            <span class="award-count">x{{ award.count }}</span>
+                                        </div>
                                     {% endif %}
-                                    <span class="award-count">x{{ award.count }}</span>
-                                </div>
                                 {% endfor %}
                             </div>
-                        {% else %}
-                            <p class="has-text-grey is-italic is-size-7">Aucun trophée... pour l'instant !</p>
+                        {% endif %}
+                        
+                        {% if not ns_trophies.found %}
+                            <p class="has-text-grey is-italic is-size-7">Aucun trophée de saison.</p>
                         {% endif %}
                     </div>
+
+                    <div class="box glass-card has-text-centered mt-4 fade-in">
+                        <h4 class="title is-5 has-text-info mb-3"><i class="fas fa-medal"></i> Awards</h4>
+                        {% set ns_awards = namespace(found=false) %}
+                        {% if awards %}
+                            <div class="is-flex is-justify-content-center is-flex-wrap-wrap">
+                                {% for award in awards %}
+                                    {% if 'moai' not in award.emoji %}
+                                        {% set ns_awards.found = true %}
+                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}">
+                                            {% if award.emoji.endswith('.png') %}
+                                                <img src="/static/img/{{ award.emoji }}" class="award-icon-large" alt="{{ award.nom }}">
+                                            {% else %}
+                                                <span class="award-text-large">{{ award.emoji }}</span>
+                                            {% endif %}
+                                            <span class="award-count">x{{ award.count }}</span>
+                                        </div>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+
+                        {% if not ns_awards.found %}
+                            <p class="has-text-grey is-italic is-size-7">Aucun award spécial.</p>
+                        {% endif %}
+                    </div>
+
                     <div class="card glass-card mt-4 fade-in">
                         <div class="card-header">
                             <p class="card-header-title is-centered">
