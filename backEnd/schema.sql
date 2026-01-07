@@ -149,7 +149,7 @@ INSERT INTO public.types_awards (code, nom, emoji, description) VALUES
 ('stonks', 'Stonks', 'stonks.png', 'Plus forte progression TrueSkill'),
 ('not_stonks', 'Not Stonks', 'not_stonks.png', 'Plus forte perte TrueSkill'),
 ('stakhanov', 'Stakhanoviste', 'TposingFunky.png', 'Le plus de points marqués au total'),
-('chillguy', 'Chill Guy', 'chillguy.png', 'Le score TrueSkill le plsu stable'),
+('chillguy', 'Chill Guy', 'chillguy.png', 'Le score TrueSkill le plus stable'),
 
 -- Logic mapping (caché, sert pour la victoire)
 ('Indice de Performance', 'Indice de Performance', '🎯', 'Calcul IP');

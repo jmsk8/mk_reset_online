@@ -31,6 +31,104 @@
             border-radius: 8px;
             margin-bottom: 20px;
         }
+        .award-img-icon {
+            height: 24px;
+            width: auto;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        /* --- STYLES DU MENU DÉROULANT PERSONNALISÉ (Pour afficher les images) --- */
+        .custom-select-wrapper {
+            position: relative;
+            user-select: none;
+            width: 100%;
+        }
+        .custom-select-trigger {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1em;
+            font-size: 1rem;
+            height: 2.5em;
+            line-height: 2.5em;
+            background: #e2e8f0; /* Couleur input standard du thème */
+            color: #1a202c;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        .custom-options {
+            position: absolute;
+            display: block;
+            top: 100%;
+            left: 0;
+            right: 0;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-top: 0;
+            background: #1e293b; /* Fond sombre menu */
+            transition: all 0.3s;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            z-index: 100; /* IMPORTANT : Pour passer au dessus des autres éléments */
+            border-radius: 0 0 4px 4px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .custom-select-wrapper.open .custom-options {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: all;
+        }
+        .custom-option {
+            position: relative;
+            display: flex; /* Flex pour aligner image et texte */
+            align-items: center;
+            padding: 0.5em 1em;
+            color: #f1f5f9;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .custom-option:hover {
+            background: rgba(59, 130, 246, 0.3);
+        }
+        .custom-option.selected {
+            background: rgba(59, 130, 246, 0.5);
+            font-weight: bold;
+        }
+        .arrow {
+            position: relative;
+            height: 10px;
+            width: 10px;
+        }
+        .arrow::before, .arrow::after {
+            content: "";
+            position: absolute;
+            bottom: 0px;
+            width: 0.15rem;
+            height: 100%;
+            transition: all 0.3s;
+        }
+        .arrow::before {
+            left: -3px;
+            transform: rotate(-45deg);
+            background-color: #3b82f6;
+        }
+        .arrow::after {
+            left: 3px;
+            transform: rotate(45deg);
+            background-color: #3b82f6;
+        }
+        .open .arrow::before {
+            left: -3px;
+            transform: rotate(45deg);
+        }
+        .open .arrow::after {
+            left: 3px;
+            transform: rotate(-45deg);
+        }
     </style>
 </head>
 <body>
@@ -82,15 +180,21 @@
 
                                 <div class="field mt-4">
                                     <label class="label has-text-warning"><i class="fas fa-trophy mr-1"></i> Condition de Victoire </label>
-                                    <div class="control">
-                                        <div class="select is-fullwidth is-warning">
-                                            <select id="victoryCondition" required>
-                                                <option value="" disabled selected>Choisir l'objectif de saison...</option>
-                                                <option value="Indice de Performance">🎯 Indice de Performance (Algorithme)</option>
-                                            </select>
+                                    
+                                    <select id="victoryCondition" style="display:none;" required>
+                                        <option value="" disabled selected>Choisir...</option>
+                                    </select>
+
+                                    <div class="custom-select-wrapper" id="customVictoryWrapper">
+                                        <div class="custom-select-trigger" id="customVictoryTrigger">
+                                            <span id="triggerContent">Choisir l'objectif de saison...</span>
+                                            <div class="arrow"></div>
                                         </div>
+                                        <div class="custom-options" id="customVictoryOptions">
+                                            </div>
                                     </div>
-                                    <p class="help has-text-grey">Le Top 3 de ce classement remportera les Moais (Or, Argent, Bronze).</p>
+                                    
+                                    <p class="help has-text-grey mt-2">Le Top 3 de ce classement remportera les Moais (Or, Argent, Bronze).</p>
                                 </div>
 
                                 <div class="field mt-5">
@@ -139,40 +243,126 @@
         return fetch(url, opts).then(res => res.json());
     }
 
+    // Gestion de l'ouverture/fermeture du Custom Select
+    const wrapper = document.getElementById('customVictoryWrapper');
+    const trigger = document.getElementById('customVictoryTrigger');
+    const hiddenSelect = document.getElementById('victoryCondition');
+
+    trigger.addEventListener('click', function() {
+        wrapper.classList.toggle('open');
+    });
+
+    // Fermer le select si on clique ailleurs
+    window.addEventListener('click', function(e) {
+        if (!wrapper.contains(e.target)) {
+            wrapper.classList.remove('open');
+        }
+    });
+
     async function loadAwardTypes() {
         const container = document.getElementById('awardsContainer');
-        const selectVictory = document.getElementById('victoryCondition');
+        const customOptionsContainer = document.getElementById('customVictoryOptions');
         const loader = document.getElementById('awardsLoader');
         
         try {
             const types = await api('/admin/types-awards', 'GET');
-            container.innerHTML = '';
-            // Reset options but keep Grand Master which is static
-            selectVictory.innerHTML = '<option value="" disabled selected>Choisir l\'objectif...</option><option value="Indice de Performance">🎯 Indice de Performance </option>';
             
+            // Vidage des conteneurs
+            container.innerHTML = '';
+            hiddenSelect.innerHTML = '<option value="" disabled selected>Choisir...</option>'; // Reset hidden select
+            customOptionsContainer.innerHTML = ''; // Reset custom visual select
+
+            // ---------------------------------------------------------
+            // 1. AJOUT MANUEL : INDICATEUR DE PERFORMANCE (Option 1)
+            // ---------------------------------------------------------
+            
+            // A. Dans le Hidden Select
+            const perfOpt = document.createElement('option');
+            perfOpt.value = "Indice de Performance";
+            perfOpt.text = "Indice de Performance";
+            hiddenSelect.appendChild(perfOpt);
+
+            // B. Dans le Custom Select (Visuel)
+            const perfDiv = document.createElement('div');
+            perfDiv.className = 'custom-option';
+            perfDiv.dataset.value = "Indice de Performance";
+            perfDiv.innerHTML = `<span class="is-size-5 mr-2">🎯</span> Indice de Performance`;
+            perfDiv.onclick = function() {
+                selectOption(this.dataset.value, this.innerHTML);
+            };
+            customOptionsContainer.appendChild(perfDiv);
+
+
+            // ---------------------------------------------------------
+            // 2. BOUCLE SUR LES AWARDS API
+            // ---------------------------------------------------------
             types.forEach(type => {
+                // Filtre doublon indicateur perf
+                if (type.nom === "Indice de Performance" || type.nom === "Indicateur de Performance") return;
+
+                // --- GENERATION DU VISUEL (Image vs Emoji) ---
+                let iconDisplay = '';
+                if (type.emoji && type.emoji.endsWith('.png')) {
+                    // C'est ici qu'on met l'image réelle !
+                    iconDisplay = `<img src="/static/img/${type.emoji}" alt="${type.nom}" class="award-img-icon">`;
+                } else {
+                    iconDisplay = `<span class="is-size-5 mr-2">${type.emoji}</span>`;
+                }
+
+                // --- A. CHECKBOX LIST (Awards Actifs) ---
                 const div = document.createElement('div');
                 div.className = 'checkbox-card';
                 div.innerHTML = `
-                    <label class="checkbox has-text-white">
-                        <input type="checkbox" class="award-checkbox mr-2" value="${type.code}" checked>
-                        ${type.emoji.endsWith('.png') ? '<i class="fas fa-image"></i>' : '<span class="is-size-5 mr-1">'+type.emoji+'</span>'}
-                        <strong class="has-text-white">${type.nom}</strong>
-                        <span class="is-size-7 has-text-grey-light is-italic ml-2">(${type.description || ''})</span>
+                    <label class="checkbox has-text-white" style="display:flex; align-items:center;">
+                        <input type="checkbox" class="award-checkbox mr-3" value="${type.code}" checked>
+                        ${iconDisplay}
+                        <span>
+                            <strong class="has-text-white">${type.nom}</strong>
+                            <span class="is-size-7 has-text-grey-light is-italic ml-2">(${type.description || ''})</span>
+                        </span>
                     </label>
                 `;
                 container.appendChild(div);
 
+                // --- B. HIDDEN SELECT (Valeur réelle) ---
                 const option = document.createElement('option');
                 option.value = type.code;
-                option.text = `${type.nom}`;
-                selectVictory.appendChild(option);
+                option.text = type.nom; // Le select caché n'a besoin que du texte simple
+                hiddenSelect.appendChild(option);
+
+                // --- C. CUSTOM SELECT (Visuel avec Image) ---
+                const customOpt = document.createElement('div');
+                customOpt.className = 'custom-option';
+                customOpt.dataset.value = type.code;
+                // On réutilise iconDisplay pour avoir exactement le même aspect (Image ou Emoji)
+                customOpt.innerHTML = `${iconDisplay} ${type.nom}`;
+                
+                customOpt.onclick = function() {
+                    selectOption(this.dataset.value, this.innerHTML);
+                };
+                customOptionsContainer.appendChild(customOpt);
             });
             
             loader.style.display = 'none';
         } catch (e) {
+            console.error(e);
             loader.innerText = "Erreur chargement awards.";
         }
+    }
+
+    // Fonction déclenchée au clic sur une option du menu personnalisé
+    function selectOption(value, htmlContent) {
+        // 1. Mettre à jour le select caché (pour le formulaire)
+        hiddenSelect.value = value;
+        
+        const triggerContent = document.getElementById('triggerContent');
+        triggerContent.innerHTML = htmlContent;
+        
+        wrapper.classList.remove('open');
+        
+        document.querySelectorAll('.custom-option').forEach(opt => opt.classList.remove('selected'));
+        const selectedOpt = document.querySelector(`.custom-option[data-value="${value}"]`);
+        if(selectedOpt) selectedOpt.classList.add('selected');
     }
 
     async function loadSaisons() {
@@ -224,7 +414,7 @@
         
         const checkboxes = document.querySelectorAll('.award-checkbox:checked');
         const activeAwards = Array.from(checkboxes).map(cb => cb.value);
-        const victoryCondition = document.getElementById('victoryCondition').value;
+        const victoryCondition = hiddenSelect.value;
         const isYearly = document.querySelector('input[name="seasonType"]:checked').value === 'annual';
 
         if (!victoryCondition) {
@@ -244,6 +434,7 @@
         const res = await api('/admin/saisons', 'POST', data);
         if(res.status === 'success') {
             document.getElementById('createSeasonForm').reset();
+            document.getElementById('triggerContent').innerText = "Choisir l'objectif de saison...";
             loadAwardTypes(); 
             loadSaisons();
         } else {

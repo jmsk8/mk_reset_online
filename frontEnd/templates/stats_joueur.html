@@ -167,7 +167,7 @@
                         {% if awards %}
                             <div class="is-flex is-justify-content-center is-flex-wrap-wrap">
                                 {% for award in awards %}
-                                <div class="award-item" title="{{ award.nom }}">
+                                <div class="award-item" title="{{ award.description if award.description else award.nom }}">
                                     {% if award.emoji.endswith('.png') %}
                                         <img src="/static/img/{{ award.emoji }}" class="award-icon-large" alt="{{ award.nom }}">
                                     {% else %}

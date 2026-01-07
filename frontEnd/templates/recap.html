@@ -106,6 +106,15 @@
             font-weight: bold;
             border: 2px solid #fff;
         }
+        
+        /* Style pour les liens des joueurs */
+        a.player-link {
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        a.player-link:hover {
+            color: #3b82f6 !important; /* Bleu primaire au survol */
+        }
     </style>
 </head>
 <body>
@@ -159,7 +168,9 @@
                                             <td class="has-text-centered font-weight-bold">
                                                 {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}{% endif %}
                                             </td>
-                                            <td>{{ j.nom }}</td>
+                                            <td>
+                                                <a href="/stats/joueur/{{ j.nom }}" class="has-text-light player-link"><strong>{{ j.nom }}</strong></a>
+                                            </td>
                                             <td class="has-text-right has-text-weight-bold">{{ j.total_points }}</td>
                                             <td class="has-text-centered">{{ j.victoires }}</td>
                                         </tr>
@@ -191,7 +202,9 @@
                                         {% for j in saison.classement_moyenne %}
                                         <tr>
                                             <td class="has-text-centered font-weight-bold">{{ loop.index }}</td>
-                                            <td>{{ j.nom }}</td>
+                                            <td>
+                                                <a href="/stats/joueur/{{ j.nom }}" class="has-text-light player-link"><strong>{{ j.nom }}</strong></a>
+                                            </td>
                                             <td class="has-text-right has-text-weight-bold">{{ j.moyenne_points }}</td>
                                             <td class="has-text-right">
                                                 {% if j.score_gm is not none %}
@@ -231,7 +244,9 @@
                     <div class="moai-card">
                         <div class="rank-badge" style="background: #C0C0C0; color: #000;">2ème</div>
                         <img src="/static/img/{{ p2.emoji }}" class="moai-img {{ 'super-moai-silver' if 'super' in p2.emoji else '' }}">
-                        <h3 class="title is-4 has-text-white">{{ p2.nom }}</h3>
+                        <h3 class="title is-4">
+                            <a href="/stats/joueur/{{ p2.nom }}" class="has-text-white player-link">{{ p2.nom }}</a>
+                        </h3>
                         <p class="subtitle is-6 has-text-grey-light">{{ p2.val }}</p>
                     </div>
                     {% endif %}
@@ -240,7 +255,9 @@
                     <div class="moai-card moai-gold">
                         <div class="rank-badge" style="background: #FFD700; color: #000; top: -20px; font-size: 1.2rem;">1er</div>
                         <img src="/static/img/{{ p1.emoji }}" class="moai-img {{ 'super-moai-gold' if 'super' in p1.emoji else '' }}">
-                        <h3 class="title is-3 has-text-white glow-text">{{ p1.nom }}</h3>
+                        <h3 class="title is-3 glow-text">
+                            <a href="/stats/joueur/{{ p1.nom }}" class="has-text-white player-link">{{ p1.nom }}</a>
+                        </h3>
                         <p class="subtitle is-5 has-text-warning">{{ p1.val }}</p>
                     </div>
                     {% endif %}
@@ -249,7 +266,9 @@
                     <div class="moai-card">
                         <div class="rank-badge" style="background: #CD7F32; color: #000;">3ème</div>
                         <img src="/static/img/{{ p3.emoji }}" class="moai-img {{ 'super-moai-bronze' if 'super' in p3.emoji else '' }}">
-                        <h3 class="title is-4 has-text-white">{{ p3.nom }}</h3>
+                        <h3 class="title is-4">
+                            <a href="/stats/joueur/{{ p3.nom }}" class="has-text-white player-link">{{ p3.nom }}</a>
+                        </h3>
                         <p class="subtitle is-6 has-text-grey-light">{{ p3.val }}</p>
                     </div>
                     {% endif %}
@@ -270,7 +289,9 @@
                                     <p class="heading has-text-light">EZ</p>
                                     <p class="is-size-7 mb-2">(Le plus de 1ères places)</p>
                                     {% for winner in saison.awards.ez %}
-                                        <p class="title is-4 has-text-white">{{ winner.nom }}</p>
+                                        <p class="title is-4">
+                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
+                                        </p>
                                         <p class="award-value has-text-warning">{{ winner.val }} Victoires</p>
                                     {% endfor %}
                                 </div>
@@ -286,7 +307,9 @@
                                     <p class="heading has-text-light">C'était pas loin</p>
                                     <p class="is-size-7 mb-2">(Le plus de 2èmes places)</p>
                                     {% for winner in saison.awards.pas_loin %}
-                                        <p class="title is-4 has-text-white">{{ winner.nom }}</p>
+                                        <p class="title is-4">
+                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
+                                        </p>
                                         <p class="award-value has-text-grey-light">{{ winner.val }}x 2ème</p>
                                     {% endfor %}
                                 </div>
@@ -302,9 +325,11 @@
                                         <img src="/static/img/TposingFunky.png" class="award-img">
                                     </div>
                                     <p class="heading has-text-light">Stakhanoviste</p>
-                                    <p class="is-size-7 mb-2">(Le plus de points)</p>
+                                    <p class="is-size-7 mb-2">(Le plus de points amassé)</p>
                                     {% for winner in saison.awards.stakhanov %}
-                                        <p class="title is-4 has-text-white">{{ winner.nom }}</p>
+                                        <p class="title is-4">
+                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
+                                        </p>
                                         <p class="award-value has-text-info">{{ winner.val }} pts</p>
                                     {% endfor %}
                                 </div>
@@ -320,9 +345,11 @@
                                         <img src="/static/img/chillguy.png" class="award-img">
                                     </div>
                                     <p class="heading has-text-light">Chill Guy</p>
-                                    <p class="is-size-7 mb-2">(Mouvement TS < 0.3)</p>
+                                    <p class="is-size-7 mb-2">(Le score TS le plus stable)</p>
                                     {% for winner in saison.awards.chillguy %}
-                                        <p class="title is-4 has-text-white">{{ winner.nom }}</p>
+                                        <p class="title is-4">
+                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
+                                        </p>
                                         <p class="award-value has-text-grey-light">{{ winner.val }}</p>
                                     {% endfor %}
                                 </div>
@@ -338,9 +365,11 @@
                                         <img src="/static/img/stonks.png" class="award-img">
                                     </div>
                                     <p class="heading has-text-light">Stonks</p>
-                                    <p class="is-size-7 mb-2">(Meilleure progression)</p>
+                                    <p class="is-size-7 mb-2">(Plus forte progression de points TS)</p>
                                     {% for winner in saison.awards.stonks %}
-                                        <p class="title is-4 has-text-white">{{ winner.nom }}</p>
+                                        <p class="title is-4">
+                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
+                                        </p>
                                         <p class="award-value has-text-success">+{{ '%0.3f'| format(winner.val|float) }}</p>
                                     {% endfor %}
                                 </div>
@@ -356,9 +385,11 @@
                                         <img src="/static/img/not_stonks.png" class="award-img">
                                     </div>
                                     <p class="heading has-text-light">Not Stonks</p>
-                                    <p class="is-size-7 mb-2">(Plus grosse chute)</p>
+                                    <p class="is-size-7 mb-2">(Plus grosse perte de points TS)</p>
                                     {% for winner in saison.awards.not_stonks %}
-                                        <p class="title is-4 has-text-white">{{ winner.nom }}</p>
+                                        <p class="title is-4">
+                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
+                                        </p>
                                         <p class="award-value has-text-danger">{{ '%0.3f'| format(winner.val|float) }}</p>
                                     {% endfor %}
                                 </div>
@@ -369,7 +400,7 @@
                     </div>
                 </div>
 
-            {% endif %}\
+            {% endif %}
         </div>
     </section>
 
