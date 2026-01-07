@@ -107,4 +107,9 @@ in
       };
     };
   };
+
+  environment.sessionVariables = {
+    MK_SCHEMA_SQL = "${pkg}/backEnd/schema.sql";
+    MK_SEED_SQL = "${pkg}/backEnd/seed.sql";
+  };
 }
