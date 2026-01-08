@@ -7,6 +7,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from datetime import timedelta
 from flask_wtf.csrf import CSRFProtect
 
+# CONFIGURATION
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -24,12 +25,10 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 csrf = CSRFProtect(app)
 
+# MIDDLEWARES & CONTEXT PROCESSORS
+
 @app.before_request
 def check_admin_token_validity():
-    """
-    Vérifie à chaque chargement de page si le token admin en session 
-    est toujours valide côté Backend.
-    """
     if request.path.startswith('/static'):
         return
 
@@ -50,7 +49,7 @@ def check_admin_token_validity():
         except Exception as e:
             print(f"⚠️ Erreur vérification token: {e}")
             pass
-        
+
 @app.context_processor
 def inject_lifetime():
     total_lifetime = app.permanent_session_lifetime.total_seconds()
@@ -64,7 +63,6 @@ def inject_lifetime():
 
 @app.context_processor
 def inject_saisons():
-    """Injecte la liste des saisons actives dans toutes les templates (pour la Navbar)"""
     try:
         data, status = backend_request('GET', '/saisons')
         if status == 200:
@@ -72,6 +70,8 @@ def inject_saisons():
     except Exception:
         pass
     return dict(saisons_menu=[])
+
+# HELPER FUNCTIONS
 
 def backend_request(method, endpoint, data=None, params=None, headers=None):
     url = f"{BACKEND_URL}{endpoint}"
@@ -94,6 +94,8 @@ def backend_request(method, endpoint, data=None, params=None, headers=None):
     except requests.exceptions.RequestException:
         return None, 503
 
+# ROUTES : API PROXIES (PUBLIC)
+
 @app.route('/admin/types-awards', methods=['GET'])
 @csrf.exempt
 def proxy_types_awards():
@@ -102,20 +104,6 @@ def proxy_types_awards():
     headers = {'X-Admin-Token': session['admin_token']}
     data, status = backend_request('GET', '/admin/types-awards', headers=headers)
     return jsonify(data), status
-
-@app.route('/recap/<season_slug>')
-def recap_season(season_slug):
-    data, status = backend_request('GET', f'/stats/recap/{season_slug}')
-    if status != 200:
-        return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None)
-    return render_template("recap.html", saison=data)
-
-@app.route('/recap')
-def recap_default():
-    data, status = backend_request('GET', '/saisons')
-    saisons_list = data if status == 200 else []
-    
-    return render_template("recap_list.html", saisons=saisons_list)
 
 @app.route('/joueurs/noms')
 def proxy_joueurs_noms():
@@ -156,12 +144,27 @@ def proxy_add_tournament():
         return jsonify(response.json()), response.status_code
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
-    
+
+# ROUTES : VIEWS (PUBLIC)
+
 @app.route('/')
 def index():
     data, status = backend_request('GET', '/dernier-tournoi')
     resultats = data if status == 200 and isinstance(data, list) else []
     return render_template("index.html", resultats=resultats)
+
+@app.route('/recap/<season_slug>')
+def recap_season(season_slug):
+    data, status = backend_request('GET', f'/stats/recap/{season_slug}')
+    if status != 200:
+        return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None)
+    return render_template("recap.html", saison=data)
+
+@app.route('/recap')
+def recap_default():
+    data, status = backend_request('GET', '/saisons')
+    saisons_list = data if status == 200 else []
+    return render_template("recap_list.html", saisons=saisons_list)
 
 @app.route('/classement')
 def classement():
@@ -201,6 +204,43 @@ def stats_joueur_detail(nom):
     else:
         flash("Erreur lors de la récupération des statistiques.", "danger")
         return redirect(url_for('classement'))
+    
+@app.route('/confirmation')
+def confirmation():
+    return render_template("confirmation.html")
+
+@app.route('/stats/joueurs')
+def stats_joueurs():
+    data, status = backend_request('GET', '/stats/joueurs')
+    
+    joueurs = []
+    dist = {}
+
+    if status == 200 and isinstance(data, dict):
+        joueurs = data.get('joueurs', [])
+        dist = data.get('distribution_tiers', {})
+    else:
+        joueurs = [] 
+        dist = {}
+        
+    return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist)
+
+@app.route('/stats/tournois')
+def stats_tournois():
+    data, status = backend_request('GET', '/stats/tournois')
+    tournois = data if status == 200 else []
+    return render_template("stats_tournois.html", tournois=tournois)
+
+@app.route('/stats/tournoi/<int:tournoi_id>')
+def stats_tournoi_detail(tournoi_id):
+    data, status = backend_request('GET', f'/stats/tournoi/{tournoi_id}')
+    if status == 200:
+        return render_template("stats_tournoi.html", date=data.get('date'), resultats=data.get('resultats', []))
+    else:
+        flash("Tournoi introuvable", "warning")
+        return redirect(url_for('index'))
+
+# ROUTES : ADMIN AUTH
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
@@ -231,6 +271,8 @@ def admin_logout():
     session.clear()
     flash('Vous avez été déconnecté', 'info')
     return redirect(url_for('index'))
+
+# ROUTES : ADMIN ACTIONS (FORMS)
 
 @app.route('/add_tournament', methods=['GET', 'POST'])
 def add_tournament():
@@ -283,53 +325,22 @@ def add_tournament():
     return render_template("add_tournament.html", joueurs=joueurs)
 
 @app.route('/admin/revert_last', methods=['POST'])
+@csrf.exempt
 def admin_revert_last():
     if not session.get('admin_token'):
         return jsonify({"error": "Non autorisé"}), 401
     try:
+        headers = {'X-Admin-Token': session.get('admin_token')}
+        
         resp = requests.post(
             f"{BACKEND_URL}/api/admin/revert-last-tournament",
-            headers={"Authorization": session.get('admin_token')}
+            headers=headers 
         )
         return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
-@app.route('/confirmation')
-def confirmation():
-    return render_template("confirmation.html")
 
-
-@app.route('/stats/joueurs')
-def stats_joueurs():
-    data, status = backend_request('GET', '/stats/joueurs')
-    
-    joueurs = []
-    dist = {}
-
-    if status == 200 and isinstance(data, dict):
-        joueurs = data.get('joueurs', [])
-        dist = data.get('distribution_tiers', {})
-    else:
-        joueurs = [] 
-        dist = {}
-        
-    return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist)
-
-@app.route('/stats/tournois')
-def stats_tournois():
-    data, status = backend_request('GET', '/stats/tournois')
-    tournois = data if status == 200 else []
-    return render_template("stats_tournois.html", tournois=tournois)
-
-@app.route('/stats/tournoi/<int:tournoi_id>')
-def stats_tournoi_detail(tournoi_id):
-    data, status = backend_request('GET', f'/stats/tournoi/{tournoi_id}')
-    if status == 200:
-        return render_template("stats_tournoi.html", date=data.get('date'), resultats=data.get('resultats', []))
-    else:
-        flash("Tournoi introuvable", "warning")
-        return redirect(url_for('index'))
+# ROUTES : ADMIN PAGES
 
 @app.route('/admin/gestion')
 def admin_gestion():
@@ -356,6 +367,8 @@ def admin_saisons_page():
         flash('Session expirée.', 'warning')
         return redirect(url_for('admin_login'))
     return render_template('admin_saisons.html', admin_token=session['admin_token'])
+
+# ROUTES : ADMIN API PROXIES
 
 @app.route('/admin/saisons', methods=['GET', 'POST'])
 @csrf.exempt
@@ -422,6 +435,8 @@ def proxy_config():
     elif request.method == 'POST':
         data, status = backend_request('POST', '/admin/config', data=request.get_json(), headers=headers)
     return jsonify(data), status
+
+# MAIN
 
 @app.after_request
 def add_header(response):
