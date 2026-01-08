@@ -12,6 +12,34 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
+    
+    <style>
+        
+        .media-content {
+            min-width: 0;
+        }
+        .media-content .title.is-4 {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: block;
+            max-width: 100%;
+        }
+
+        .stats-box .column {
+            padding: 0.25rem !important;
+        }
+
+        @media screen and (max-width: 1200px) {
+            .stats-box .title.is-5 {
+                font-size: 1rem !important;
+            }
+            .stats-box .heading {
+                font-size: 0.65rem !important;
+                letter-spacing: 0;
+            }
+        }
+    </style>
 </head>
 <body>
     {% include 'navbar.html' %}
@@ -112,7 +140,7 @@
                                     </div>
 
                                     <div class="content has-text-light mt-4">
-                                        <div class="columns is-mobile has-text-centered is-vcentered" style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px 0;">
+                                        <div class="columns is-mobile has-text-centered is-vcentered stats-box" style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px 0;">
                                             <div class="column">
                                                 <p class="heading mb-1 is-size-7">Victoires</p>
                                                 <p class="title is-5 has-text-light">{{ joueur.victoires }}</p>

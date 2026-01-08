@@ -1,3 +1,55 @@
+<style>
+    @media screen and (max-width: 1023px) {
+        .navbar-menu {
+            background-color: #1e293b !important;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+            padding: 0.75rem;
+        }
+
+        .navbar-item, .navbar-link {
+            color: #e2e8f0 !important;
+        }
+
+        a.navbar-item:hover, a.navbar-item:focus,
+        .navbar-link:hover, .navbar-link:focus {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            color: #ffffff !important;
+        }
+
+        .navbar-item.has-dropdown .navbar-dropdown {
+            background-color: rgba(0, 0, 0, 0.2) !important;
+            border: none !important;
+        }
+        
+        .navbar-link:not(.is-arrowless)::after {
+            border-color: #e2e8f0 !important;
+        }
+    }
+
+    @media screen and (max-width: 768px) {
+        .navbar-brand {
+            min-height: 4rem;
+        }
+        
+        .navbar-burger {
+            height: 4rem;
+            width: 4rem;
+            font-size: 1.2rem;
+        }
+
+        .navbar-item.brand-item {
+            font-size: 1.4rem;
+            padding-left: 1rem;
+        }
+        
+        .navbar-item, .navbar-link {
+            padding-top: 1rem !important;
+            padding-bottom: 1rem !important;
+            font-size: 1.1rem;
+        }
+    }
+</style>
+
 <nav class="navbar is-dark" role="navigation" aria-label="main navigation">
   <div class="container">
     <div class="navbar-brand">
@@ -71,9 +123,9 @@
           </div>
         {% else %}
           <div class="navbar-item">
-            <a class="button is-primary is-small" href="/admin">
+            <a class="button is-primary" href="/admin">
               <span class="icon"><i class="fas fa-lock"></i></span>
-              <span>Connexion</span>
+              <span>Admin</span>
             </a>
           </div>
         {% endif %}

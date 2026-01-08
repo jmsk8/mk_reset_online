@@ -85,6 +85,18 @@
             vertical-align: middle;
             margin-right: 6px;
         }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 450px; 
+        }
+
+        @media screen and (max-width: 768px) {
+            .chart-container {
+                height: 300px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -199,7 +211,6 @@
                                     {% if 'moai' in award.emoji %}
                                         {% set ns_trophies.found = true %}
                                         
-                                        {# --- Logique de détection de l'aura Super Moai --- #}
                                         {% set aura_class = '' %}
                                         {% if 'super' in award.emoji %}
                                             {% if 'gold' in award.emoji %}{% set aura_class = 'super-gold' %}
@@ -207,11 +218,9 @@
                                             {% elif 'bronze' in award.emoji %}{% set aura_class = 'super-bronze' %}
                                             {% endif %}
                                         {% endif %}
-                                        {# -------------------------------------------------- #}
 
                                         <div class="award-item" title="{{ award.description if award.description else award.nom }}">
                                             {% if award.emoji.endswith('.png') %}
-                                                {# Ajout de la variable aura_class à la liste des classes de l'image #}
                                                 <img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }}" alt="{{ award.nom }}">
                                             {% else %}
                                                 <span class="award-text-large">{{ award.emoji }}</span>
@@ -309,7 +318,9 @@
                         </div>
                         <div class="card-content">
                             <div class="content">
-                                <canvas id="scoreChart" height="250"></canvas>
+                                <div class="chart-container">
+                                    <canvas id="scoreChart"></canvas>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -431,6 +442,7 @@
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     scales: {
                         y: { 
                             beginAtZero: false,

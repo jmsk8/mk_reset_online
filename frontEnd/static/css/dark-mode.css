@@ -111,7 +111,7 @@ body, html {
 }
 
 .label {
-    color: var(--label-color) !important; /* Force l'application de la couleur claire */
+    color: var(--label-color) !important;
     font-weight: 600;
 }
 
@@ -176,6 +176,12 @@ body, html {
     align-items: center;
     gap: 0.5rem;
     font-weight: 500;
+    
+    color: #dbd3d4;
+}
+
+.player-name strong {
+    color: #ebe6e6;
 }
 
 a, button, input, .card, .box {

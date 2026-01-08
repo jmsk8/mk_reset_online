@@ -6,12 +6,81 @@
     <title>Classement Mario Kart</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../static/css/styles.css">
-    <link rel="stylesheet" href="../static/css/dark-mode.css">
-    <link rel="stylesheet" href="../static/css/animations.css">
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
+
+    <style>
+        @media screen and (max-width: 516px) {
+            
+            html {
+                font-size: 12px; 
+            }
+
+            .section {
+                padding: 1rem 0.5rem !important;
+            }
+            .card-content {
+                padding: 0.5rem !important;
+            }
+            .container {
+                padding: 0;
+            }
+
+            .table-container {
+                overflow-x: auto;
+            }
+
+            /* --- GESTION DU TABLEAU --- */
+            .table th, .table td {
+                padding: 0.25rem 0.35rem !important; 
+                font-size: 0.9rem;
+                vertical-align: middle !important;
+                text-align: center !important; 
+            }
+
+            .table td:nth-child(2) {
+                max-width: 60px; /* Réduit de 90px à 60px */
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .player-name, .player-name strong {
+                color: #ffffff !important;
+                font-weight: 800 !important;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            }
+
+            .score-bar, .tag, .button {
+                margin-left: auto !important;
+                margin-right: auto !important;
+            }
+
+            /* --- NETTOYAGE VISUEL MOBILE --- */
+            .table th i { display: none; }
+            .player-name .icon { display: none; }
+            
+            .button.is-small span:not(.icon) {
+                display: none; 
+            }
+            .button.is-small {
+                padding: 0 8px;
+            }
+
+            .tabs li a {
+                padding: 0.5em 0.8em;
+            }
+            .tabs i { 
+                display: none;
+            }
+        }
+    </style>
 </head>
 <body>
     {% include 'navbar.html' %}
@@ -33,10 +102,10 @@
         <div class="container">
             <div class="columns">
                 <div class="column is-10 is-offset-1">
-                    <div class="card glass-card">
+                    <div class="card glass-card fade-in">
                         <div class="card-header">
                             <p class="card-header-title is-centered">
-                                <i class="fas fa-chart-line"></i> Classement TrueSkill
+                                <i class="fas fa-chart-line mr-2"></i> Classement TrueSkill
                             </p>
                         </div>
                         <div class="card-content">
@@ -44,27 +113,27 @@
                                 <ul>
                                     <li class="{{ 'is-active' if not tier_actif else '' }}">
                                         <a href="/classement">
-                                            <i class="fas fa-list"></i> Tous les joueurs
+                                            <i class="fas fa-list"></i>&nbsp;Tous
                                         </a>
                                     </li>
                                     <li class="{{ 'is-active' if tier_actif == 'S' else '' }}">
                                         <a href="/classement?tier=S">
-                                            <i class="fas fa-star"></i> Tier S
+                                            <i class="fas fa-star"></i>&nbsp;S
                                         </a>
                                     </li>
                                     <li class="{{ 'is-active' if tier_actif == 'A' else '' }}">
                                         <a href="/classement?tier=A">
-                                            <i class="fas fa-award"></i> Tier A
+                                            <i class="fas fa-award"></i>&nbsp;A
                                         </a>
                                     </li>
                                     <li class="{{ 'is-active' if tier_actif == 'B' else '' }}">
                                         <a href="/classement?tier=B">
-                                            <i class="fas fa-medal"></i> Tier B
+                                            <i class="fas fa-medal"></i>&nbsp;B
                                         </a>
                                     </li>
                                     <li class="{{ 'is-active' if tier_actif == 'C' else '' }}">
                                         <a href="/classement?tier=C">
-                                            <i class="fas fa-medal"></i> Tier C
+                                            <i class="fas fa-medal"></i>&nbsp;C
                                         </a>
                                     </li>
                                 </ul>
@@ -76,7 +145,7 @@
                                         <div class="level-item">
                                             <div class="field has-addons">
                                                 <div class="control">
-                                                    <input class="input" type="text" id="joueurSearch" placeholder="Rechercher un joueur">
+                                                    <input class="input" type="text" id="joueurSearch" placeholder="Rechercher...">
                                                 </div>
                                                 <div class="control">
                                                     <button class="button is-primary" id="btnSearchJoueur">
@@ -88,84 +157,86 @@
                                     </div>
                                 </div>
 
-                                <table class="table is-fullwidth is-hoverable">
-                                    <thead>
-                                        <tr>
-                                            <th><i class="fas fa-hashtag"></i> Rang</th>
-                                            <th><i class="fas fa-user"></i> Nom</th>
-                                            <th><i class="fas fa-chart-line"></i> Score TrueSkill</th>
-                                            <th><i class="fas fa-layer-group"></i> Tier</th>
-                                            <th><i class="fas fa-chart-bar"></i> Statistiques</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tableJoueurs">
-                                        {% for joueur in joueurs %}
-                                            <tr class="fade-in joueur-row" style="animation-delay: {{ loop.index * 0.1 }}s" data-nom="{{ joueur.nom }}">
-                                                <td>
-                                                    {% if joueur.tier in ['U', '?', 'Unranked'] %}
-                                                        <span class="tag is-light" style="background: transparent; color: #888; font-weight: bold;">-</span>
-                                                    {% else %}
-                                                        {% if loop.index == 1 %}
-                                                            <span class="tag is-warning"><i class="fas fa-crown"></i> 1</span>
-                                                        {% elif loop.index == 2 %}
-                                                            <span class="tag is-light"><i class="fas fa-medal"></i> 2</span>
-                                                        {% elif loop.index == 3 %}
-                                                            <span class="tag is-danger"><i class="fas fa-medal"></i> 3</span>
-                                                        {% else %}
-                                                            <span class="tag is-info">{{ loop.index }}</span>
-                                                        {% endif %}
-                                                    {% endif %}
-                                                </td>
-                                                <td>
-                                                    <div class="player-name">
-                                                        {{ joueur.nom }}
-                                                        {% if loop.index <= 3 and joueur.tier != 'U' %}
-                                                            <span class="icon has-text-warning">
-                                                                <i class="fas fa-star"></i>
-                                                            </span>
-                                                        {% endif %}
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    <div class="score-bar">
-                                                        {% if joueurs and joueurs[0].score_trueskill > 0 and joueur.score_trueskill > 0 %}
-                                                            <div class="score-fill" style="width: {{ (joueur.score_trueskill / joueurs[0].score_trueskill * 100) }}%">
-                                                                <span>{{ joueur.score_trueskill }}</span>
-                                                            </div>
-                                                        {% else %}
-                                                            <div class="score-fill" style="width: 0%">
-                                                                <span>{{ joueur.score_trueskill }}</span>
-                                                            </div>
-                                                        {% endif %}
-                                                    </div>
-                                                </td>
-                                                <td>
-                                                    {% if joueur.tier == 'S' %}
-                                                        <span class="tag tier-s tier-tag">S</span>
-                                                    {% elif joueur.tier == 'A' %}
-                                                        <span class="tag tier-a tier-tag">A</span>
-                                                    {% elif joueur.tier == 'B' %}
-                                                        <span class="tag tier-b tier-tag">B</span>
-                                                    {% elif joueur.tier == 'C' %}
-                                                        <span class="tag tier-c tier-tag">C</span>
-                                                    {% elif joueur.tier in ['U', '?', 'Unranked'] %}
-                                                        <span class="tag is-white tier-tag">U</span>
-                                                    {% else %}
-                                                        <span class="tag is-light tier-tag">{{ joueur.tier }}</span>
-                                                    {% endif %}
-                                                </td>
-                                                <td>
-                                                    <a href="/stats/joueur/{{ joueur.nom }}" class="button is-small is-primary is-outlined">
-                                                        <span class="icon">
-                                                            <i class="fas fa-chart-pie"></i>
-                                                        </span>
-                                                        <span>Détails</span>
-                                                    </a>
-                                                </td>
+                                <div class="table-container">
+                                    <table class="table is-fullwidth is-hoverable">
+                                        <thead>
+                                            <tr>
+                                                <th><i class="fas fa-hashtag"></i> Rang</th>
+                                                <th><i class="fas fa-user"></i> Nom</th>
+                                                <th><i class="fas fa-chart-line"></i> TrueSkill</th>
+                                                <th><i class="fas fa-layer-group"></i> Tier</th>
+                                                <th><i class="fas fa-chart-bar"></i> Détails</th>
                                             </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody id="tableJoueurs">
+                                            {% for joueur in joueurs %}
+                                                <tr class="joueur-row" data-nom="{{ joueur.nom }}">
+                                                    <td>
+                                                        {% if joueur.tier in ['U', '?', 'Unranked'] %}
+                                                            <span class="tag is-light" style="background: transparent; color: #888; font-weight: bold;">-</span>
+                                                        {% else %}
+                                                            {% if loop.index == 1 %}
+                                                                <span class="tag is-warning"><i class="fas fa-crown"></i> 1</span>
+                                                            {% elif loop.index == 2 %}
+                                                                <span class="tag is-light"><i class="fas fa-medal"></i> 2</span>
+                                                            {% elif loop.index == 3 %}
+                                                                <span class="tag is-danger"><i class="fas fa-medal"></i> 3</span>
+                                                            {% else %}
+                                                                <span class="tag is-info">{{ loop.index }}</span>
+                                                            {% endif %}
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        <div class="player-name">
+                                                            <strong>{{ joueur.nom }}</strong>
+                                                            {% if loop.index <= 3 and joueur.tier != 'U' %}
+                                                                <span class="icon has-text-warning ml-1">
+                                                                    <i class="fas fa-star"></i>
+                                                                </span>
+                                                            {% endif %}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div class="score-bar">
+                                                            {% if joueurs and joueurs[0].score_trueskill > 0 and joueur.score_trueskill > 0 %}
+                                                                <div class="score-fill" style="width: {{ (joueur.score_trueskill / joueurs[0].score_trueskill * 100) }}%">
+                                                                    <span>{{ "%.3f"|format(joueur.score_trueskill) }}</span>
+                                                                </div>
+                                                            {% else %}
+                                                                <div class="score-fill" style="width: 0%">
+                                                                    <span>{{ "%.3f"|format(joueur.score_trueskill) }}</span>
+                                                                </div>
+                                                            {% endif %}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        {% if joueur.tier == 'S' %}
+                                                            <span class="tag tier-s tier-tag">S</span>
+                                                        {% elif joueur.tier == 'A' %}
+                                                            <span class="tag tier-a tier-tag">A</span>
+                                                        {% elif joueur.tier == 'B' %}
+                                                            <span class="tag tier-b tier-tag">B</span>
+                                                        {% elif joueur.tier == 'C' %}
+                                                            <span class="tag tier-c tier-tag">C</span>
+                                                        {% elif joueur.tier in ['U', '?', 'Unranked'] %}
+                                                            <span class="tag is-white tier-tag">U</span>
+                                                        {% else %}
+                                                            <span class="tag is-light tier-tag">{{ joueur.tier }}</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        <a href="/stats/joueur/{{ joueur.nom }}" class="button is-small is-primary is-outlined">
+                                                            <span class="icon">
+                                                                <i class="fas fa-chart-pie"></i>
+                                                            </span>
+                                                            <span>Détails</span>
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -177,7 +248,7 @@
     {% include 'footer.html' %}
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <script src="../static/js/script.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
@@ -202,8 +273,12 @@
                 });
             }
             
-            joueurSearch.addEventListener('keyup', filterJoueurs);
-            btnSearchJoueur.addEventListener('click', filterJoueurs);
+            if(joueurSearch) {
+                joueurSearch.addEventListener('keyup', filterJoueurs);
+            }
+            if(btnSearchJoueur) {
+                btnSearchJoueur.addEventListener('click', filterJoueurs);
+            }
         });
     </script>
 </body>

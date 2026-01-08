@@ -6,12 +6,69 @@
     <title>Statistiques par Tournoi</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="../static/css/styles.css">
-    <link rel="stylesheet" href="../static/css/dark-mode.css">
-    <link rel="stylesheet" href="../static/css/animations.css">
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
+
+    <style>
+        @media screen and (max-width: 516px) {
+            
+            html {
+                font-size: 12px; 
+            }
+
+            .section {
+                padding: 1rem 0.5rem !important;
+            }
+            .card-content {
+                padding: 0.5rem !important;
+            }
+            .container {
+                padding: 0;
+            }
+
+            .table-container {
+                overflow-x: auto;
+            }
+            .table th, .table td {
+                padding: 0.25rem 0.35rem !important;
+                font-size: 0.9rem;
+                vertical-align: middle !important;
+                text-align: center !important;
+            }
+
+            .table td:nth-child(3) {
+                max-width: 70px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            
+            .table td:nth-child(3) a {
+                color: #ffffff !important;
+                font-weight: 800 !important;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            }
+            
+            .table th i { display: none; }
+            
+            .button.is-small span:not(.icon) {
+                display: none; 
+            }
+            .button.is-small {
+                padding: 0 8px;
+            }
+            
+            .card-header-title {
+                justify-content: center;
+            }
+        }
+    </style>
 </head>
 <body>
     {% include 'navbar.html' %}
@@ -33,14 +90,14 @@
         <div class="container">
             <div class="columns">
                 <div class="column is-10 is-offset-1">
-                    <div class="card glass-card">
+                    <div class="card glass-card fade-in">
                         <div class="card-header">
                             <p class="card-header-title is-centered">
-                                <i class="fas fa-history"></i> Historique des Tournois
+                                <i class="fas fa-history mr-2"></i> Historique des Tournois
                             </p>
                         </div>
                         <div class="card-content">
-                            <div class="level">
+                            <div class="level mb-4">
                                 <div class="level-left">
                                     <div class="level-item">
                                         <div class="field has-addons">
@@ -55,23 +112,21 @@
                                         </div>
                                     </div>
                                 </div>
-                                </div>
+                            </div>
 
-                            <div class="content">
+                            <div class="table-container">
                                 <table class="table is-fullwidth is-hoverable">
                                     <thead>
                                         <tr>
                                             <th><i class="fas fa-calendar-alt"></i> Date</th>
-                                            <th><i class="fas fa-users"></i> Participants</th>
-                                            <th><i class="fas fa-crown"></i> Vainqueur</th>
-                                            <th><i class="fas fa-star"></i> Score max</th>
-                                            <th><i class="fas fa-info-circle"></i> Détails</th>
+                                            <th><i class="fas fa-users"></i> P.</th> <th><i class="fas fa-crown"></i> Vainqueur</th>
+                                            <th><i class="fas fa-star"></i> Top Score</th> <th><i class="fas fa-info-circle"></i> Détails</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {% for tournoi in tournois %}
-                                        <tr class="fade-in tournoi-row" style="animation-delay: {{ loop.index * 0.1 }}s" data-date="{{ tournoi.date }}">
-                                            <td>{{ tournoi.date }}</td>
+                                        <tr class="tournoi-row" data-date="{{ tournoi.date }}">
+                                            <td style="white-space: nowrap;">{{ tournoi.date }}</td>
                                             <td>{{ tournoi.participants }}</td>
                                             <td>
                                                 <a href="/stats/joueur/{{ tournoi.vainqueur }}" class="has-text-primary">
@@ -93,15 +148,13 @@
                                 </table>
                             </div>
 
-                            <nav class="pagination is-centered" role="navigation" aria-label="pagination">
+                            <nav class="pagination is-centered mt-4" role="navigation" aria-label="pagination">
                                 <a class="pagination-previous" disabled>Précédent</a>
                                 <a class="pagination-next">Suivant</a>
                                 <ul class="pagination-list">
                                     <li><a class="pagination-link is-current" aria-label="Page 1" aria-current="page">1</a></li>
                                     <li><a class="pagination-link" aria-label="Page 2">2</a></li>
-                                    <li><a class="pagination-link" aria-label="Page 3">3</a></li>
                                     <li><span class="pagination-ellipsis">&hellip;</span></li>
-                                    <li><a class="pagination-link" aria-label="Page 10">10</a></li>
                                 </ul>
                             </nav>
                         </div>
@@ -113,12 +166,11 @@
 
     {% include 'footer.html' %}
 
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <script src="../static/js/script.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
     <script>
-        // Animation pour les éléments au chargement
         document.addEventListener('DOMContentLoaded', () => {
+            // Animation au chargement
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => {
                 elem.classList.add('visible');
@@ -144,7 +196,9 @@
                 });
             }
             
-            btnSearchDate.addEventListener('click', filterTournois);
+            if(btnSearchDate) {
+                btnSearchDate.addEventListener('click', filterTournois);
+            }
         });
     </script>
 </body>

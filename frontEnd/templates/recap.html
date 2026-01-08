@@ -47,7 +47,6 @@
             filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.5));
         }
 
-        /* Moai Styles */
         .moai-container {
             display: flex;
             justify-content: center;
@@ -110,13 +109,30 @@
             border: 2px solid #fff;
         }
         
-        /* Style pour les liens des joueurs */
         a.player-link {
             text-decoration: none;
             transition: color 0.2s;
         }
         a.player-link:hover {
-            color: #3b82f6 !important; /* Bleu primaire au survol */
+            color: #3b82f6 !important; 
+        }
+
+        @media screen and (max-width: 1200px) {
+            .moai-card .title {
+                font-size: 1.1rem !important;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .moai-card .subtitle {
+                font-size: 0.9rem !important;
+            }
+            .moai-img {
+                max-height: 80px;
+            }
+            .moai-card {
+                padding: 10px;
+            }
         }
     </style>
 </head>
@@ -208,17 +224,17 @@
                                             <td>
                                                 <a href="/stats/joueur/{{ j.nom }}" class="has-text-light player-link"><strong>{{ j.nom }}</strong></a>
                                             </td>
-                                            <td class="has-text-right has-text-weight-bold">{{ j.moyenne_points }}</td>
+                                            <td class="has-text-right has-text-weight-bold">{{ '%0.2f'| format(j.moyenne_points|float) }}</td>
                                             <td class="has-text-right">
                                                 {% if j.score_gm is not none %}
                                                     {% if j.score_gm >= 115 %}
-                                                        <span class="has-text-warning has-text-weight-bold">★ {{ j.score_gm }}</span>
+                                                        <span class="has-text-warning has-text-weight-bold">★ {{ '%0.2f'| format(j.score_gm|float) }}</span>
                                                     {% elif j.score_gm >= 105 %}
-                                                        <span class="has-text-success has-text-weight-bold">{{ j.score_gm }}</span>
+                                                        <span class="has-text-success has-text-weight-bold">{{ '%0.2f'| format(j.score_gm|float) }}</span>
                                                     {% elif j.score_gm >= 95 %}
-                                                        <span class="has-text-white">{{ j.score_gm }}</span>
+                                                        <span class="has-text-white">{{ '%0.2f'| format(j.score_gm|float) }}</span>
                                                     {% else %}
-                                                        <span class="has-text-danger">{{ j.score_gm }}</span>
+                                                        <span class="has-text-danger">{{ '%0.2f'| format(j.score_gm|float) }}</span>
                                                     {% endif %}
                                                 {% else %}
                                                     <span class="has-text-grey-light">-</span>
@@ -250,7 +266,7 @@
                         <h3 class="title is-4">
                             <a href="/stats/joueur/{{ p2.nom }}" class="has-text-white player-link">{{ p2.nom }}</a>
                         </h3>
-                        <p class="subtitle is-6 has-text-grey-light">{{ p2.val }}</p>
+                        <p class="subtitle is-6 has-text-grey-light">{{ '%0.2f'| format(p2.val|float) }}</p>
                     </div>
                     {% endif %}
 
@@ -261,7 +277,7 @@
                         <h3 class="title is-3 glow-text">
                             <a href="/stats/joueur/{{ p1.nom }}" class="has-text-white player-link">{{ p1.nom }}</a>
                         </h3>
-                        <p class="subtitle is-5 has-text-warning">{{ p1.val }}</p>
+                        <p class="subtitle is-5 has-text-warning">{{ '%0.2f'| format(p1.val|float) }}</p>
                     </div>
                     {% endif %}
 
@@ -272,7 +288,7 @@
                         <h3 class="title is-4">
                             <a href="/stats/joueur/{{ p3.nom }}" class="has-text-white player-link">{{ p3.nom }}</a>
                         </h3>
-                        <p class="subtitle is-6 has-text-grey-light">{{ p3.val }}</p>
+                        <p class="subtitle is-6 has-text-grey-light">{{ '%0.2f'| format(p3.val|float) }}</p>
                     </div>
                     {% endif %}
                 </div>
@@ -353,7 +369,7 @@
                                         <p class="title is-4">
                                             <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
                                         </p>
-                                        <p class="award-value has-text-grey-light">{{ winner.val }}</p>
+                                        <p class="award-value has-text-grey-light">{{ '%0.2f'| format(winner.val|float) }}</p>
                                     {% endfor %}
                                 </div>
                             </div>
@@ -373,7 +389,7 @@
                                         <p class="title is-4">
                                             <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
                                         </p>
-                                        <p class="award-value has-text-success">+{{ '%0.3f'| format(winner.val|float) }}</p>
+                                        <p class="award-value has-text-success">+{{ '%0.2f'| format(winner.val|float) }}</p>
                                     {% endfor %}
                                 </div>
                             </div>
@@ -393,7 +409,7 @@
                                         <p class="title is-4">
                                             <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
                                         </p>
-                                        <p class="award-value has-text-danger">{{ '%0.3f'| format(winner.val|float) }}</p>
+                                        <p class="award-value has-text-danger">{{ '%0.2f'| format(winner.val|float) }}</p>
                                     {% endfor %}
                                 </div>
                             </div>
