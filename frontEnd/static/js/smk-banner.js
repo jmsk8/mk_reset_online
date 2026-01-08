@@ -7,32 +7,28 @@ const charactersList = [
     'yoshi', 'bowser', 'dk', 'koopa'
 ];
 
-const shellConfig = {
-    folder: 'green-shell',
-    baseName: 'green-shell',
-    width: 48, 
-    height: 48,
-    animSpeed: 100, 
-    roadSpeedPPS: 182 
+const itemsConfig = {
+    roadSpeedPPS: 182, 
+    lapDistance: 4000, 
+    bananaLifeTime: 20000, 
+    shell: {
+        folder: 'green-shell',
+        baseName: 'green-shell',
+        width: 48, 
+        height: 48,
+        animSpeed: 100
+    },
+    banana: {
+        path: 'static/img/banana.png',
+        width: 32,
+        height: 32
+    }
 };
 
 let kartsData = [];
-let shellData = {
-    active: false,
-    element: null,
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0, 
-    currentFrame: 1,
-    lastAnimTime: 0,
-    shooterId: null 
-};
-
+let activeItems = []; 
 let lastFrameTime = 0;
 let nextAvailableRespawnTime = 0; 
-let nextShellThrowTime = 0; 
-let isFirstShell = true;
 
 /* ==========================================================================
    UTILITAIRES
@@ -43,7 +39,7 @@ function getCharacterPath(charName) {
 }
 
 function getShellPath(frame) {
-    return `static/img/${shellConfig.folder}/${shellConfig.baseName}${frame}.png`;
+    return `static/img/${itemsConfig.shell.folder}/${itemsConfig.shell.baseName}${frame}.png`;
 }
 
 function shuffleArray(array) {
@@ -58,11 +54,11 @@ function randomRange(min, max) {
     return Math.random() * (max - min) + min;
 }
 
-function calculateSpeedPPS(screenWidth, isShell = false) {
+function calculateSpeedPPS(screenWidth, isProjectile = false) {
     const isMobile = window.innerWidth < 769;
     const baseDuration = isMobile ? 4 : 8; 
     
-    if (isShell) {
+    if (isProjectile) {
         const distance = screenWidth + 150;
         const baseSpeed = distance / baseDuration;
         return baseSpeed * 2.0; 
@@ -83,9 +79,7 @@ function initCharacters() {
 
     container.innerHTML = ''; 
     kartsData = [];
-    isFirstShell = true; 
-
-    createShellElement(container);
+    activeItems = []; 
 
     const shuffledChars = shuffleArray([...charactersList]);
 
@@ -95,7 +89,6 @@ function initCharacters() {
         
         const verticalPos = 2 + (index * 3); 
         wrapper.style.bottom = `${verticalPos}%`;
-        
         wrapper.style.zIndex = Math.floor(400 - verticalPos);
         
         const startX = -150;
@@ -109,6 +102,8 @@ function initCharacters() {
         wrapper.appendChild(img);
         container.appendChild(wrapper);
 
+        const firstItemDelay = randomRange(7000, 15000);
+
         kartsData.push({
             id: index,
             element: wrapper,
@@ -118,32 +113,39 @@ function initCharacters() {
             speedPPS: 0, 
             state: 'waiting_initial', 
             charName: charName,
-            hitEndTime: 0 
+            hitEndTime: 0,
+            nextItemTime: Date.now() + firstItemDelay,
+            heldItem: null
         });
     });
 
-    scheduleNextShell();
     spawnNextKart(0);
 }
 
-function createShellElement(container) {
-    const shellDiv = document.createElement('div');
-    shellDiv.id = 'active-green-shell';
-    shellDiv.style.position = 'absolute';
-    shellDiv.style.width = '48px'; 
-    shellDiv.style.zIndex = '400'; 
-    shellDiv.style.display = 'none';
-    shellDiv.style.pointerEvents = 'none';
+function createItemDOM(type, x, y) {
+    const container = document.getElementById('karts-container');
+    const itemDiv = document.createElement('div');
+    itemDiv.style.position = 'absolute';
+    itemDiv.style.zIndex = Math.floor(400 - y); 
+    itemDiv.style.pointerEvents = 'none';
     
-    const shellImg = document.createElement('img');
-    shellImg.src = getShellPath(1);
-    shellImg.style.width = '100%';
+    const img = document.createElement('img');
+    img.style.width = '100%';
     
-    shellDiv.appendChild(shellImg);
-    container.appendChild(shellDiv);
-    
-    shellData.element = shellDiv;
-    shellData.imgElement = shellImg;
+    if (type === 'shell') {
+        itemDiv.style.width = `${itemsConfig.shell.width}px`;
+        img.src = getShellPath(1);
+    } else {
+        itemDiv.style.width = `${itemsConfig.banana.width}px`;
+        img.src = itemsConfig.banana.path;
+    }
+
+    itemDiv.appendChild(img);
+    itemDiv.style.bottom = `${y}%`;
+    itemDiv.style.transform = `translateX(${x}px)`;
+
+    container.appendChild(itemDiv);
+    return { div: itemDiv, img: img };
 }
 
 function spawnNextKart(index) {
@@ -167,11 +169,22 @@ function startKartRun(kart) {
         kart.speedPPS = newTargetSpeed;
     }
 
+    // --- CORRECTION BUG CYCLE ---
+    // Si un temps est déjà prévu dans le futur, on le garde ! 
+    // Sinon on réinitialise (cas du premier spawn ou après un tir réussi)
+    if (!kart.nextItemTime || kart.nextItemTime < Date.now()) {
+        kart.nextItemTime = Date.now() + randomRange(7000, 15000);
+    }
+
     kart.x = -150;
     kart.state = 'running';
-    
     kart.element.style.opacity = '1';
     kart.element.style.filter = 'none';
+    
+    if (kart.heldItem && kart.heldItem.element) {
+        kart.heldItem.element.remove();
+        kart.heldItem = null;
+    }
 }
 
 function scheduleRespawnForHit(kart, delay) {
@@ -182,7 +195,7 @@ function scheduleRespawnForHit(kart, delay) {
         targetTime = nextAvailableRespawnTime;
     }
 
-    nextAvailableRespawnTime = targetTime + 800;
+    nextAvailableRespawnTime = targetTime + 400;
     const actualDelay = targetTime - now;
 
     setTimeout(() => {
@@ -191,130 +204,212 @@ function scheduleRespawnForHit(kart, delay) {
 }
 
 /* ==========================================================================
-   LOGIQUE COQUILLE VERTE
+   LOGIQUE ITEMS INDIVIDUELLE
    ========================================================================== */
 
-function scheduleNextShell() {
-    let delay;
-    if (isFirstShell) {
-        delay = 8000;
-        isFirstShell = false;
-        console.log("⏱️ Timer Shell initial : 8s");
-    } else {
-        delay = randomRange(10000, 20000);
+function tryKartUseItem(kart, containerWidth) {
+    if (kart.x < 50 || kart.x > containerWidth - 50) {
+        // Si on rate le coche, on réessaie très vite (1s)
+        kart.nextItemTime = Date.now() + 1000;
+        return;
     }
-    nextShellThrowTime = Date.now() + delay;
-}
 
-function tryThrowShell(containerWidth) {
-    if (shellData.active) return;
+    // On prépare le chrono pour le PROCHAIN item (dans 7 à 15s)
+    kart.nextItemTime = Date.now() + randomRange(7000, 15000);
 
-    let racers = kartsData
-        .filter(k => k.state === 'running' && k.x > 0 && k.x < (containerWidth - 100))
-        .sort((a, b) => b.x - a.x);
+    // --- DECISION DU TYPE D'ITEM ---
+    let itemType = 'banana';
+    
+    if (Math.random() > 0.5) {
+        itemType = 'banana';
+    } else {
+        const averagePPS = calculateSpeedPPS(containerWidth);
+        const maxGapDistance = averagePPS * 5; 
 
-    if (racers.length < 2) return; 
+        const potentialTargets = kartsData.filter(k => 
+            k.state === 'running' && 
+            k.id !== kart.id && 
+            k.x > kart.x && 
+            (k.x - kart.x) < maxGapDistance
+        );
 
-    const averagePPS = calculateSpeedPPS(containerWidth);
-    const maxGapDistance = averagePPS * 5; 
-
-    let validShooters = [];
-    for (let i = 1; i < racers.length; i++) {
-        const shooter = racers[i];
-        const target = racers[i - 1]; 
-        const gap = target.x - shooter.x;
-
-        if (gap < maxGapDistance) {
-            validShooters.push(shooter);
+        if (potentialTargets.length === 0) {
+            itemType = 'banana';
+        } else {
+            itemType = 'shell';
         }
     }
 
-    if (validShooters.length === 0) {
-        nextShellThrowTime = Date.now() + 2000;
-        return;
-    }
-
-    const shooter = validShooters[Math.floor(Math.random() * validShooters.length)];
+    // --- CORRECTION POSITIONNEMENT (Banane vs Coquille) ---
+    // Banane : Apparaît derrière (-50)
+    // Coquille : Apparaît devant (+50)
+    const offset = (itemType === 'banana') ? -50 : 50;
     
-    shellData.active = true;
-    shellData.shooterId = shooter.id;
-    shellData.x = shooter.x + 70; 
-    shellData.y = shooter.yPercent; 
-    shellData.vx = calculateSpeedPPS(containerWidth, true);
-    shellData.vy = randomRange(-1.5, 1.5); 
-
-    shellData.element.style.display = 'block';
-    shellData.element.style.bottom = `${shellData.y}%`;
-    shellData.element.style.transform = `translateX(${shellData.x}px)`;
+    const startX = kart.x + offset; 
+    const startY = kart.yPercent;
     
-    console.log(`🐢 Green Shell lancée par ${shooter.charName} !`);
+    const dom = createItemDOM(itemType, startX, startY);
+
+    kart.heldItem = {
+        type: itemType,
+        element: dom.div,
+        imgElement: dom.img,
+        spawnTime: Date.now(),
+        offset: offset // On stocke l'offset pour qu'il suive correctement
+    };
 }
 
-function updateShell(deltaTime, containerWidth) {
-    if (!shellData.active) return;
+function activateItem(kart, containerWidth) {
+    const item = kart.heldItem;
+    if (!item) return;
 
-    shellData.x += shellData.vx * deltaTime;
-    shellData.y += shellData.vy * deltaTime; 
+    const newItem = {
+        type: item.type,
+        element: item.element,
+        imgElement: item.imgElement,
+        x: kart.x + item.offset, // Position finale au lâcher
+        y: kart.yPercent,
+        shooterId: kart.id,
+        createdAt: Date.now()
+    };
 
+    if (item.type === 'banana') {
+        newItem.vx = -itemsConfig.roadSpeedPPS;
+        newItem.vy = 0;
+        console.log(`🍌 ${kart.charName} lâche une banane derrière.`);
+    } else {
+        newItem.vx = calculateSpeedPPS(containerWidth, true);
+        newItem.vy = randomRange(-1.5, 1.5);
+        newItem.currentFrame = 1;
+        newItem.lastAnimTime = 0;
+        console.log(`🐢 ${kart.charName} projette une coquille devant !`);
+    }
+
+    activeItems.push(newItem);
+    kart.heldItem = null; 
+}
+
+function updateItems(deltaTime, containerWidth) {
     const now = Date.now();
-    if (now - shellData.lastAnimTime > shellConfig.animSpeed) {
-        shellData.currentFrame++;
-        if (shellData.currentFrame > 3) shellData.currentFrame = 1;
-        shellData.imgElement.src = getShellPath(shellData.currentFrame);
-        shellData.lastAnimTime = now;
+
+    for (let i = activeItems.length - 1; i >= 0; i--) {
+        const item = activeItems[i];
+
+        item.x += item.vx * deltaTime;
+        item.y += item.vy * deltaTime;
+
+        if (item.type === 'shell') {
+            if (now - item.lastAnimTime > itemsConfig.shell.animSpeed) {
+                item.currentFrame++;
+                if (item.currentFrame > 3) item.currentFrame = 1;
+                item.imgElement.src = getShellPath(item.currentFrame);
+                item.lastAnimTime = now;
+            }
+        }
+
+        if (item.type === 'banana') {
+            if (now - item.createdAt > itemsConfig.bananaLifeTime) {
+                removeItem(i);
+                continue;
+            }
+            if (item.x < -200) {
+                item.x += itemsConfig.lapDistance; 
+                item.element.style.transform = `translateX(${item.x}px)`;
+            }
+        } else if (item.type === 'shell') {
+            if (item.x > containerWidth + 200 || item.y < -10 || item.y > 100) {
+                removeItem(i);
+                continue;
+            }
+        }
+
+        const dynamicZ = Math.floor(400 - item.y);
+        item.element.style.zIndex = dynamicZ;
+        item.element.style.transform = `translateX(${item.x}px)`;
+        item.element.style.bottom = `${item.y}%`;
+
+        if (checkItemCollisions(item, i)) {
+            continue;
+        }
     }
-
-    const dynamicZ = Math.floor(400 - shellData.y);
-    shellData.element.style.zIndex = dynamicZ;
-
-    shellData.element.style.transform = `translateX(${shellData.x}px)`;
-    shellData.element.style.bottom = `${shellData.y}%`;
-
-    if (shellData.x > containerWidth + 100 || shellData.y < -10 || shellData.y > 100) {
-        resetShell();
-        scheduleNextShell();
-        return;
-    }
-
-    checkCollisions();
 }
 
-function checkCollisions() {
-    const shellHitX = 50; 
-    const shellHitY = 5;  
+function removeItem(index) {
+    if (activeItems[index]) {
+        if (activeItems[index].element) {
+            activeItems[index].element.remove();
+        }
+        activeItems.splice(index, 1);
+    }
+}
+
+function checkItemCollisions(item, itemIndex) {
+    const hitBoxX = 40; 
+    const hitBoxY = 5;
 
     for (let kart of kartsData) {
-        if (kart.id === shellData.shooterId || kart.state !== 'running') continue;
+        // --- REGLES DE COLLISION ---
+        // 1. Un tireur ne se prend jamais sa propre coquille
+        if (item.type === 'shell' && kart.id === item.shooterId) continue;
+        
+        // 2. CORRECTION : Un tireur ne se prend pas sa banane PENDANT les 2 premières secondes
+        // Cela évite le bug où il la lâche et roule dessus immédiatement.
+        // Après 2s, il peut se la prendre s'il refait un tour.
+        if (item.type === 'banana' && kart.id === item.shooterId) {
+            if (Date.now() - item.createdAt < 2000) {
+                continue;
+            }
+        }
 
-        const deltaX = Math.abs(shellData.x - kart.x);
-        const deltaY = Math.abs(shellData.y - kart.yPercent);
+        if (kart.state !== 'running') continue;
 
-        if (deltaX < shellHitX && deltaY < shellHitY) {
-            handleKartHit(kart);
-            resetShell();
-            scheduleNextShell();
-            break; 
+        const deltaX = Math.abs(item.x - kart.x);
+        const deltaY = Math.abs(item.y - kart.yPercent);
+
+        if (deltaX < hitBoxX && deltaY < hitBoxY) {
+            handleKartHit(kart, item.type);
+            removeItem(itemIndex);
+            return true; 
         }
     }
+
+    if (item.type === 'shell') {
+        for (let j = 0; j < activeItems.length; j++) {
+            if (j === itemIndex) continue;
+            const other = activeItems[j];
+            
+            if (other.type === 'banana') {
+                const dx = Math.abs(item.x - other.x);
+                const dy = Math.abs(item.y - other.y);
+                
+                if (dx < hitBoxX && dy < hitBoxY) {
+                    console.log("💥 Coquille détruit Banane !");
+                    const maxIdx = Math.max(itemIndex, j);
+                    const minIdx = Math.min(itemIndex, j);
+                    removeItem(maxIdx);
+                    removeItem(minIdx);
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
 }
 
-function resetShell() {
-    shellData.active = false;
-    shellData.element.style.display = 'none';
-}
-
-function handleKartHit(kart) {
-    console.log(`💥 ${kart.charName} a été touché !`);
+function handleKartHit(kart, cause) {
+    const emoji = cause === 'banana' ? '🍌' : '🐢';
+    console.log(`💥 ${kart.charName} a percuté ${emoji} !`);
     
     kart.state = 'hit';
-    kart.hitEndTime = Date.now() + 3500; 
+    kart.hitEndTime = Date.now() + 2000; 
     
     kart.element.style.filter = "brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)"; 
     setTimeout(() => { kart.element.style.filter = "none"; }, 300);
 }
 
 /* ==========================================================================
-   BOUCLE D'ANIMATION (CORRIGÉE : SÉCURITÉ TAB INACTIF)
+   BOUCLE D'ANIMATION
    ========================================================================== */
 
 function animateKarts(timestamp) {
@@ -322,7 +417,6 @@ function animateKarts(timestamp) {
 
     let deltaTime = (timestamp - lastFrameTime) / 1000;
     lastFrameTime = timestamp;
-
 
     if (deltaTime > 0.1) {
         deltaTime = 0.016;
@@ -333,14 +427,25 @@ function animateKarts(timestamp) {
     if (container) {
         const screenWidth = container.offsetWidth;
         const limitX = screenWidth + 150;
-
-        if (Date.now() > nextShellThrowTime && !shellData.active) {
-            tryThrowShell(screenWidth);
-        }
-
-        updateShell(deltaTime, screenWidth);
+        const now = Date.now();
 
         kartsData.forEach(kart => {
+            if (kart.state === 'running' && now > kart.nextItemTime && !kart.heldItem) {
+                tryKartUseItem(kart, screenWidth);
+            }
+
+            if (kart.heldItem) {
+                // L'item suit le kart avec le bon offset (devant ou derrière)
+                const holdX = kart.x + kart.heldItem.offset;
+                kart.heldItem.element.style.transform = `translateX(${holdX}px)`;
+                kart.heldItem.element.style.bottom = `${kart.yPercent}%`;
+                kart.heldItem.element.style.zIndex = Math.floor(400 - kart.yPercent);
+
+                if (now - kart.heldItem.spawnTime > 500) {
+                    activateItem(kart, screenWidth);
+                }
+            }
+
             if (kart.state === 'running') {
                 const moveAmount = kart.speedPPS * deltaTime;
                 kart.x += moveAmount;
@@ -360,7 +465,7 @@ function animateKarts(timestamp) {
                 }
             }
             else if (kart.state === 'hit') {
-                const moveAmount = -shellConfig.roadSpeedPPS * deltaTime;
+                const moveAmount = -itemsConfig.roadSpeedPPS * deltaTime;
                 kart.x += moveAmount;
                 kart.element.style.transform = `translateX(${kart.x}px)`;
 
@@ -369,9 +474,8 @@ function animateKarts(timestamp) {
                     kart.state = 'waiting_respawn';
                     
                     const remainingStun = Math.max(0, kart.hitEndTime - Date.now());
-                    const specialDelay = remainingStun * 2;
+                    const specialDelay = remainingStun * 1.5;
                     
-                    console.log(`🔄 Respawn Accident pour ${kart.charName}`);
                     scheduleRespawnForHit(kart, specialDelay);
                 }
                 else if (Date.now() > kart.hitEndTime) {
@@ -380,6 +484,8 @@ function animateKarts(timestamp) {
                 }
             }
         });
+
+        updateItems(deltaTime, screenWidth);
     }
 
     requestAnimationFrame(animateKarts);
@@ -395,7 +501,7 @@ function showLogo() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🏎️ MK Reset Banner : Sécurité Anti-Lag (Tab Inactif) activée.");
+    console.log("🏎️ MK Reset Banner : Correction Banane & Cycle Item appliqués.");
     initCharacters();
     requestAnimationFrame(animateKarts);
     showLogo();
