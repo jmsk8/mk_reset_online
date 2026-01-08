@@ -8,7 +8,7 @@
 let
   cfg = config.services.mkReset;
 
-  user = "mk_reset";
+  inherit (cfg) user;
 
   pkg = self.packages.${pkgs.stdenv.hostPlatform.system}.mkReset;
   depsPkg = self.packages.${pkgs.stdenv.hostPlatform.system}.deps;
@@ -66,6 +66,11 @@ in
 
     users.groups.${user}.members = [ user ];
 
+    environment.sessionVariables = {
+      MK_SCHEMA_SQL = "${pkg}/backEnd/schema.sql";
+      MK_SEED_SQL = "${pkg}/backEnd/seed.sql";
+    };
+
     systemd.services = {
       mario-crade-frontend = {
         enable = true;
@@ -107,4 +112,5 @@ in
       };
     };
   };
+
 }

@@ -48,7 +48,7 @@
               self
               ;
           })
-          // (import ./nix/options.nix { inherit lib; });
+          // (import ./nix/options.nix { inherit lib config; });
       };
 
       packages = forAllSystems (pkgs: {
