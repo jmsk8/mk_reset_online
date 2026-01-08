@@ -30,10 +30,8 @@ let shellData = {
 };
 
 let lastFrameTime = 0;
-let nextAvailableRespawnTime = 0;
+let nextAvailableRespawnTime = 0; 
 let nextShellThrowTime = 0; 
-
-// Nouvelle variable pour gérer le premier lancer fixe
 let isFirstShell = true;
 
 /* ==========================================================================
@@ -85,7 +83,7 @@ function initCharacters() {
 
     container.innerHTML = ''; 
     kartsData = [];
-    isFirstShell = true; // Reset du flag
+    isFirstShell = true; 
 
     createShellElement(container);
 
@@ -97,8 +95,8 @@ function initCharacters() {
         
         const verticalPos = 2 + (index * 3); 
         wrapper.style.bottom = `${verticalPos}%`;
-        // Z-Index initial des karts
-        wrapper.style.zIndex = 350 - index; 
+        
+        wrapper.style.zIndex = Math.floor(400 - verticalPos);
         
         const startX = -150;
         wrapper.style.transform = `translateX(${startX}px)`;
@@ -161,7 +159,14 @@ function startKartRun(kart) {
     if (!container) return;
     const screenWidth = container.offsetWidth;
 
-    kart.speedPPS = calculateSpeedPPS(screenWidth); 
+    const newTargetSpeed = calculateSpeedPPS(screenWidth);
+
+    if (kart.speedPPS > 0) {
+        kart.speedPPS = (kart.speedPPS + newTargetSpeed) / 2;
+    } else {
+        kart.speedPPS = newTargetSpeed;
+    }
+
     kart.x = -150;
     kart.state = 'running';
     
@@ -169,10 +174,9 @@ function startKartRun(kart) {
     kart.element.style.filter = 'none';
 }
 
-function scheduleRespawn(kart, extraDelay = 0) {
+function scheduleRespawnForHit(kart, delay) {
     const now = Date.now();
-    const naturalDelay = randomRange(7500, 9000);
-    let targetTime = now + naturalDelay + extraDelay;
+    let targetTime = now + delay;
 
     if (targetTime < nextAvailableRespawnTime) {
         targetTime = nextAvailableRespawnTime;
@@ -187,75 +191,55 @@ function scheduleRespawn(kart, extraDelay = 0) {
 }
 
 /* ==========================================================================
-   LOGIQUE COQUILLE VERTE (INTELLIGENTE)
+   LOGIQUE COQUILLE VERTE
    ========================================================================== */
 
 function scheduleNextShell() {
     let delay;
-    
-    // 1ere Directive : 8s fixe pour le premier lancer
     if (isFirstShell) {
         delay = 8000;
         isFirstShell = false;
         console.log("⏱️ Timer Shell initial : 8s");
     } else {
         delay = randomRange(10000, 20000);
-        console.log(`⏱️ Prochaine Shell dans : ${(delay/1000).toFixed(1)}s`);
     }
-    
     nextShellThrowTime = Date.now() + delay;
 }
 
 function tryThrowShell(containerWidth) {
     if (shellData.active) return;
 
-    // Récupérer uniquement les karts en course et sur l'écran
-    // On trie par position X décroissante (celui le plus à droite en premier)
-    // Cela nous aide pour trouver "celui de devant"
     let racers = kartsData
         .filter(k => k.state === 'running' && k.x > 0 && k.x < (containerWidth - 100))
         .sort((a, b) => b.x - a.x);
 
-    if (racers.length < 2) return; // Il faut au moins un tireur et une cible
+    if (racers.length < 2) return; 
 
-    // Calculer la distance équivalente à 5 secondes de course
-    // On prend la vitesse moyenne d'un kart pour cette estimation
     const averagePPS = calculateSpeedPPS(containerWidth);
     const maxGapDistance = averagePPS * 5; 
 
-    // Filtrer les tireurs potentiels selon la regle 3 (écart)
     let validShooters = [];
-
-    // On parcourt la liste (qui est triée du premier au dernier)
-    // Un tireur potentiel est quelqu'un qui a un kart devant lui (index inférieur dans le tableau trié)
     for (let i = 1; i < racers.length; i++) {
         const shooter = racers[i];
-        const target = racers[i - 1]; // Le kart juste devant lui
-
+        const target = racers[i - 1]; 
         const gap = target.x - shooter.x;
 
-        // 3eme Directive : Si l'écart est INFÉRIEUR à 5 secondes (distance), c'est validé
         if (gap < maxGapDistance) {
             validShooters.push(shooter);
         }
     }
 
     if (validShooters.length === 0) {
-        console.log("🚫 Pas de tireur valide (trop d'écart entre les karts).");
-        // On retente plus tard rapidement
         nextShellThrowTime = Date.now() + 2000;
         return;
     }
 
-    // Sélection aléatoire parmi les valides
     const shooter = validShooters[Math.floor(Math.random() * validShooters.length)];
     
     shellData.active = true;
     shellData.shooterId = shooter.id;
-    
     shellData.x = shooter.x + 70; 
     shellData.y = shooter.yPercent; 
-
     shellData.vx = calculateSpeedPPS(containerWidth, true);
     shellData.vy = randomRange(-1.5, 1.5); 
 
@@ -272,7 +256,6 @@ function updateShell(deltaTime, containerWidth) {
     shellData.x += shellData.vx * deltaTime;
     shellData.y += shellData.vy * deltaTime; 
 
-    // Animation frames
     const now = Date.now();
     if (now - shellData.lastAnimTime > shellConfig.animSpeed) {
         shellData.currentFrame++;
@@ -281,17 +264,12 @@ function updateShell(deltaTime, containerWidth) {
         shellData.lastAnimTime = now;
     }
 
-    // 2eme Directive : Gestion du Z-Index (Profondeur)
-    // Plus Y est grand (haut dans l'écran), plus Z doit être petit (derrière)
-    // Base 360 permet d'être au dessus de 350 (Y=0) mais dessous si Y augmente
-    const dynamicZ = Math.floor(360 - shellData.y);
+    const dynamicZ = Math.floor(400 - shellData.y);
     shellData.element.style.zIndex = dynamicZ;
 
-    // Mise à jour visuelle
     shellData.element.style.transform = `translateX(${shellData.x}px)`;
     shellData.element.style.bottom = `${shellData.y}%`;
 
-    // Sortie d'écran
     if (shellData.x > containerWidth + 100 || shellData.y < -10 || shellData.y > 100) {
         resetShell();
         scheduleNextShell();
@@ -329,20 +307,26 @@ function handleKartHit(kart) {
     console.log(`💥 ${kart.charName} a été touché !`);
     
     kart.state = 'hit';
-    kart.hitEndTime = Date.now() + 4000; 
+    kart.hitEndTime = Date.now() + 3500; 
     
     kart.element.style.filter = "brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)"; 
     setTimeout(() => { kart.element.style.filter = "none"; }, 300);
 }
 
 /* ==========================================================================
-   BOUCLE D'ANIMATION
+   BOUCLE D'ANIMATION (CORRIGÉE : SÉCURITÉ TAB INACTIF)
    ========================================================================== */
 
 function animateKarts(timestamp) {
     if (!lastFrameTime) lastFrameTime = timestamp;
-    const deltaTime = (timestamp - lastFrameTime) / 1000;
+
+    let deltaTime = (timestamp - lastFrameTime) / 1000;
     lastFrameTime = timestamp;
+
+
+    if (deltaTime > 0.1) {
+        deltaTime = 0.016;
+    }
 
     const container = document.getElementById('karts-container');
     
@@ -363,20 +347,32 @@ function animateKarts(timestamp) {
                 kart.element.style.transform = `translateX(${kart.x}px)`;
 
                 if (kart.x > limitX) {
-                    kart.state = 'waiting_respawn';
-                    scheduleRespawn(kart);
+                    kart.state = 'returning';
+                    kart.element.style.opacity = '0'; 
                 }
             } 
+            else if (kart.state === 'returning') {
+                const moveAmount = kart.speedPPS * deltaTime;
+                kart.x -= moveAmount; 
+                
+                if (kart.x <= -150) {
+                    startKartRun(kart);
+                }
+            }
             else if (kart.state === 'hit') {
                 const moveAmount = -shellConfig.roadSpeedPPS * deltaTime;
                 kart.x += moveAmount;
                 kart.element.style.transform = `translateX(${kart.x}px)`;
 
                 if (kart.x < -150) {
+                    kart.element.style.opacity = '0';
                     kart.state = 'waiting_respawn';
+                    
                     const remainingStun = Math.max(0, kart.hitEndTime - Date.now());
-                    const penaltyDelay = 2000 + remainingStun;
-                    scheduleRespawn(kart, penaltyDelay);
+                    const specialDelay = remainingStun * 2;
+                    
+                    console.log(`🔄 Respawn Accident pour ${kart.charName}`);
+                    scheduleRespawnForHit(kart, specialDelay);
                 }
                 else if (Date.now() > kart.hitEndTime) {
                     kart.state = 'running';
@@ -399,7 +395,7 @@ function showLogo() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("🏎️ MK Reset Banner : Shell IA v2 chargée (8s, Profondeur, Ecart Max).");
+    console.log("🏎️ MK Reset Banner : Sécurité Anti-Lag (Tab Inactif) activée.");
     initCharacters();
     requestAnimationFrame(animateKarts);
     showLogo();

@@ -4,7 +4,6 @@ SET standard_conforming_strings = on;
 SET client_min_messages = warning;
 SET row_security = off;
 
--- Nettoyage complet
 DROP TABLE IF EXISTS public.ghost_log CASCADE;
 DROP TABLE IF EXISTS public.awards_obtenus CASCADE;
 DROP TABLE IF EXISTS public.participations CASCADE;
@@ -20,7 +19,7 @@ CREATE TABLE public.configuration (
     key character varying(50) NOT NULL PRIMARY KEY, 
     value character varying(255) NOT NULL
 );
-ALTER TABLE public.configuration OWNER TO username;
+ALTER TABLE public.configuration OWNER TO mk_reset;
 
 INSERT INTO public.configuration (key, value) VALUES 
 ('tau', '0.083'),
@@ -39,7 +38,7 @@ CREATE TABLE public.joueurs (
     consecutive_missed integer DEFAULT 0,
     is_ranked boolean DEFAULT true
 );
-ALTER TABLE public.joueurs OWNER TO username;
+ALTER TABLE public.joueurs OWNER TO mk_reset;
 
 CREATE SEQUENCE public.joueurs_id_seq AS integer START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
 ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
@@ -50,7 +49,7 @@ CREATE TABLE public.tournois (
     id integer NOT NULL PRIMARY KEY, 
     date date NOT NULL
 );
-ALTER TABLE public.tournois OWNER TO username;
+ALTER TABLE public.tournois OWNER TO mk_reset;
 
 CREATE SEQUENCE public.tournois_id_seq AS integer START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
 ALTER SEQUENCE public.tournois_id_seq OWNED BY public.tournois.id;
@@ -70,12 +69,12 @@ CREATE TABLE public.participations (
     old_sigma double precision, 
     CONSTRAINT participations_pkey PRIMARY KEY (joueur_id, tournoi_id)
 );
-ALTER TABLE public.participations OWNER TO username;
+ALTER TABLE public.participations OWNER TO mk_reset;
 
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
 
--- HISTORIQUE FANTÔME
+-- HISTORIQUE FANTOME
 CREATE TABLE public.ghost_log (
     id serial PRIMARY KEY,
     joueur_id integer REFERENCES public.joueurs(id) ON DELETE CASCADE,
@@ -85,7 +84,7 @@ CREATE TABLE public.ghost_log (
     new_sigma double precision NOT NULL,
     penalty_applied double precision NOT NULL
 );
-ALTER TABLE public.ghost_log OWNER TO username;
+ALTER TABLE public.ghost_log OWNER TO mk_reset;
 
 -- API TOKENS
 CREATE TABLE public.api_tokens (
@@ -93,9 +92,9 @@ CREATE TABLE public.api_tokens (
     created_at timestamp without time zone DEFAULT now(),
     expires_at timestamp without time zone NOT NULL
 );
-ALTER TABLE public.api_tokens OWNER TO username;
+ALTER TABLE public.api_tokens OWNER TO mk_reset;
 
--- SAISONS (Modifiée pour is_yearly)
+-- SAISONS
 CREATE TABLE public.saisons (
     id serial PRIMARY KEY,
     nom character varying(100) NOT NULL,
@@ -107,7 +106,7 @@ CREATE TABLE public.saisons (
     victory_condition character varying(50),
     is_yearly boolean DEFAULT false
 );
-ALTER TABLE public.saisons OWNER TO username;
+ALTER TABLE public.saisons OWNER TO mk_reset;
 
 -- TYPES D'AWARDS
 CREATE TABLE public.types_awards (
@@ -117,7 +116,7 @@ CREATE TABLE public.types_awards (
     emoji character varying(100) NOT NULL,
     description text
 );
-ALTER TABLE public.types_awards OWNER TO username;
+ALTER TABLE public.types_awards OWNER TO mk_reset;
 
 -- AWARDS OBTENUS
 CREATE TABLE public.awards_obtenus (
@@ -129,9 +128,8 @@ CREATE TABLE public.awards_obtenus (
     created_at timestamp DEFAULT now(),
     UNIQUE(joueur_id, saison_id, award_id)
 );
-ALTER TABLE public.awards_obtenus OWNER TO username;
+ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
 
--- NOUVELLE HIÉRARCHIE D'AWARDS
 INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
 -- Récompenses de Saison (Moai)
 ('gold_moai', '1er', 'gold_moai.png', 'Vainqueur de Saison'),

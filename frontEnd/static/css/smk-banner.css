@@ -1,4 +1,4 @@
-/* --- BANNIÈRE STYLE SMK INTRO --- */
+/* --- BANNIÈRE--- */
 .hero.smk-snes-banner {
     position: relative;
     height: 210px; 
@@ -14,7 +14,7 @@
     }
 }
 
-/* --- LOGO (Correction Position & Centrage) --- */
+/* --- LOGO --- */
 .hero-body-content {
     position: absolute;
     top: 0;
@@ -22,14 +22,13 @@
     width: 100%;
     height: 100%;
     
-    /* Flexbox pour centrer parfaitement */
     display: flex;
     flex-direction: column;
-    align-items: center; /* Centre horizontalement */
-    justify-content: center; /* Centre verticalement */
+    align-items: center;
+    justify-content: center;
     
-    z-index: 200; /* Au-dessus des karts */
-    pointer-events: none; /* Permet de cliquer à travers si besoin */
+    z-index: 200;
+    pointer-events: none;
 }
 
 .mk-logo-responsive {
@@ -37,10 +36,8 @@
     height: auto;
     width: auto;
     
-    /* Taille mobile */
     max-width: 280px; 
     
-    /* On le remonte pour qu'il ne touche pas la route */
     transform: translateY(0px); 
     
     filter: drop-shadow(0 0 20px rgba(255,255,255,0.7));
@@ -48,15 +45,12 @@
 
 @media screen and (min-width: 769px) {
     .mk-logo-responsive {
-        /* Taille bureau */
-        max-width: 600px; 
-        
-        /* On le remonte encore plus sur grand écran */
+        max-width: 600px;   
         transform: translateY(+10px); 
     }
 }
 
-/* --- FOND DÉFILANT --- */
+/* --- FOND --- */
 .layer-scrolling-bg {
     position: absolute;
     top: 0;
@@ -99,10 +93,9 @@
     animation: scrollBgFast var(--road-duration, 0.44s) linear infinite;
 }
 
-/* --- KART (MOUVEMENT GÉRÉ PAR JS) --- */
+/* --- KART --- */
 .kart-container-moving {
     position: absolute;
-    /* Z-index géré par JS pour la profondeur */
     left: 0; 
     will-change: transform; 
     width: 50px; 

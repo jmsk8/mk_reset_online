@@ -216,7 +216,6 @@ def _compute_advanced_stonks(conn, d_debut, d_fin):
     Remplace l'ancienne "Injection 2.5".
     """
     with conn.cursor() as cur:
-        # Récupération des joueurs de la saison via la date (CORRECTION DU BUG)
         cur.execute("""
             SELECT DISTINCT p.joueur_id, j.nom 
             FROM participations p
@@ -229,7 +228,6 @@ def _compute_advanced_stonks(conn, d_debut, d_fin):
         stonks_list = []
 
         for jid, nom in joueurs_saison:
-            # Historique chronologique
             cur.execute("""
                 SELECT p.new_score_trueskill, p.sigma
                 FROM participations p
@@ -243,7 +241,6 @@ def _compute_advanced_stonks(conn, d_debut, d_fin):
             if nb_matchs == 0: continue
 
             baseline_ts = None
-            # Trouver le point de départ (premier moment où Sigma < 2.5)
             for score, sig in historique:
                 if float(sig) < 2.5:
                     baseline_ts = float(score)
@@ -270,7 +267,6 @@ def _aggregate_season_stats(d_debut, d_fin):
     Retourne une structure complète avec classements et listes de candidats.
     """
     with get_db_connection() as conn:
-        # 1. Récupération des données brutes
         with conn.cursor() as cur:
             query = """
                 SELECT 
@@ -286,7 +282,6 @@ def _aggregate_season_stats(d_debut, d_fin):
             cur.execute(query, (d_debut, d_fin))
             rows = cur.fetchall()
 
-        # 2. Métadonnées Tournois
         tournoi_meta = {}
         for row in rows:
             tid = row[8]
@@ -299,7 +294,6 @@ def _aggregate_season_stats(d_debut, d_fin):
         for tid, meta in tournoi_meta.items():
             meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1
 
-        # 3. Agrégation par joueur
         stats = {}
         for pid, nom, score, position, new_ts, mu, sigma, t_date, tid, current_sigma in rows:
             if pid not in stats:
@@ -326,37 +320,28 @@ def _aggregate_season_stats(d_debut, d_fin):
             })
             p["final_ts"] = float(new_ts) if new_ts else 0.0
 
-        # 4. Calculs Spéciaux (GM et Stonks Avancé)
         total_tournois = len(tournoi_meta)
         winner_gm, list_gm = _compute_grand_master(stats, total_tournois)
         
-        # Appel à la nouvelle fonction Stonks (remplace l'injection et le calcul basique)
         advanced_stonks_list = _compute_advanced_stonks(conn, d_debut, d_fin)
 
-        # 5. Construction des listes candidates
         candidates = {
             "grand_master": list_gm,
             "stonks": advanced_stonks_list,
-            "not_stonks": advanced_stonks_list, # Même source, tri différent
+            "not_stonks": advanced_stonks_list, 
             "ez": [], "pas_loin": [], "stakhanov": [], "chillguy": []
         }
 
-        # Remplissage des autres listes simples
-        # Note: Stonks/NotStonks sont déjà gérés par advanced_stonks_list
+
         for pid, d in stats.items():
             candidates["ez"].append({"id": pid, "nom": d["nom"], "val": d["victoires"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
             candidates["pas_loin"].append({"id": pid, "nom": d["nom"], "val": d["second_places"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
             candidates["stakhanov"].append({"id": pid, "nom": d["nom"], "val": d["total_points"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
-            # Chillguy (Approximation, peut être affiné si besoin mais restons sur la logique simple delta ici si pas de stonks start dispo)
-            # Pour simplifier et respecter "pas changer calcul", chillguy utilise souvent une logique de delta faible.
-            # Dans le code original, chillguy utilisait start_stonks_ts. On va le dériver de Stonks s'il est dedans.
-            
-            # Recherche si le joueur est dans advanced_stonks pour avoir son delta exact
+
             player_stonks = next((x for x in advanced_stonks_list if x['id'] == pid), None)
             if player_stonks:
                  candidates["chillguy"].append({"id": pid, "nom": d["nom"], "val": abs(player_stonks['val']), "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
 
-        # 6. Formatage résultats pour affichage
         gm_score_map = { item['id']: item['final_score'] for item in list_gm }
         classement_points = []
         classement_moyenne = []
@@ -398,10 +383,9 @@ def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
     Fonction pure qui détermine les gagnants de chaque catégorie (Podium + Spéciaux).
     Applique les filtres et règles d'exclusion.
     """
-    winners_map = {} # {code_award: [list_of_winners]}
-    top_3_players = [] # Pour les Moais
+    winners_map = {} 
+    top_3_players = [] 
 
-    # 1. Déterminer le Podium (Moais)
     if vic_cond == 'grand_master' or vic_cond == 'Indice de Performance':
         top_3_players = candidates.get('grand_master', [])
     elif vic_cond == 'ez':
@@ -415,11 +399,9 @@ def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
         sorted_list = sorted(filtered, key=lambda x: x['val'], reverse=True)
         top_3_players = [{"id": x['id'], "final_score": x['val'], "nom": x['nom']} for x in sorted_list]
     
-    # 2. Déterminer les Awards Spéciaux
     algos = ['ez', 'pas_loin', 'stakhanov', 'stonks', 'not_stonks', 'chillguy']
     
     for code in algos:
-        # Règle: Ignorer si désactivé ou si c'est la condition de victoire
         if (code not in active_awards) or (code == vic_cond):
             continue
         
@@ -432,7 +414,6 @@ def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
                 if m > 0: award_winners = [c for c in raw_list if c['val'] == m]
         
         elif code == 'pas_loin':
-            # Exclusion: Ne pas donner "Pas Loin" à celui qui a gagné "EZ"
             ez_candidates = candidates.get('ez', [])
             if ez_candidates:
                 max_ez = max([x['val'] for x in ez_candidates] or [0])
@@ -450,7 +431,6 @@ def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
                 award_winners = [sorted(raw_list, key=lambda x: x['val'], reverse=True)[0]]
         
         elif code == 'stonks':
-            # Filtres: Sigma < 2.5 et 50% matchs
             valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c['matchs'] >= (total_tournois * 0.5)]
             if valid:
                 w = sorted(valid, key=lambda x: x['val'], reverse=True)[0]
@@ -459,7 +439,7 @@ def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
         elif code == 'not_stonks':
             valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c['matchs'] >= (total_tournois * 0.5)]
             if valid:
-                w = sorted(valid, key=lambda x: x['val'], reverse=False)[0] # Tri croissant (négatif)
+                w = sorted(valid, key=lambda x: x['val'], reverse=False)[0]
                 if w['val'] < -0.001: award_winners = [w]
         
         elif code == 'chillguy':
@@ -477,14 +457,11 @@ def _save_awards_to_db(conn, season_id, top_3, special_winners_map, is_yearly):
     Fonction technique qui écrit les résultats en base.
     """
     with conn.cursor() as cur:
-        # Nettoyage
         cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (season_id,))
         
-        # Récup des IDs types
         cur.execute("SELECT code, id FROM types_awards")
         types_map = {r[0]: r[1] for r in cur.fetchall()}
 
-        # 1. Sauvegarde Podium (Moais)
         moai_codes = ['super_gold_moai', 'super_silver_moai', 'super_bronze_moai'] if is_yearly else ['gold_moai', 'silver_moai', 'bronze_moai']
         
         for i in range(min(3, len(top_3))):
@@ -500,19 +477,16 @@ def _save_awards_to_db(conn, season_id, top_3, special_winners_map, is_yearly):
                     VALUES (%s, %s, %s, %s)
                 """, (player['id'], season_id, types_map[code_award], valeur_str))
 
-        # 2. Sauvegarde Spéciaux
         for code, winners in special_winners_map.items():
             if code in types_map:
                 award_id = types_map[code]
                 for w in winners:
-                    # Formatage valeur: Entier pour compteurs, Float pour scores
                     val_str = str(int(w['val'])) if code in ['ez', 'pas_loin', 'stakhanov'] else str(round(w['val'], 3))
                     cur.execute("""
                         INSERT INTO awards_obtenus (joueur_id, saison_id, award_id, valeur)
                         VALUES (%s, %s, %s, %s)
                     """, (w['id'], season_id, award_id, val_str))
         
-        # Validation Saison
         cur.execute("UPDATE saisons SET is_active = true WHERE id = %s", (season_id,))
     conn.commit()
 
@@ -565,23 +539,19 @@ def get_recap(slug):
     """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            # 1. Infos Saison
             cur.execute("SELECT id, nom, date_debut, date_fin, slug, config_awards, victory_condition, is_yearly FROM saisons WHERE slug = %s", (slug,))
             saison_row = cur.fetchone()
             if not saison_row: return jsonify({"error": "Saison introuvable"}), 404
 
             saison_id, nom, d_debut, d_fin, slug_bdd, config, vic_cond, is_yearly = saison_row
             
-            # 2. Calcul Global (Même moteur que la sauvegarde)
             global_stats = _aggregate_season_stats(d_debut, d_fin)
             
-            # 3. Récupération Awards (BDD ou Simulation)
             cur.execute("SELECT code, nom, emoji, description, id FROM types_awards")
             types_ref = {r[0]: {"nom": r[1], "emoji": r[2], "desc": r[3], "id": r[4]} for r in cur.fetchall()}
 
             awards_data = {}
             
-            # Tente de charger depuis la BDD
             cur.execute("""
                 SELECT t.code, t.nom, t.emoji, j.nom, a.valeur
                 FROM awards_obtenus a
@@ -596,13 +566,11 @@ def get_recap(slug):
                     if code not in awards_data: awards_data[code] = []
                     awards_data[code].append({"nom": player_name, "val": valeur, "emoji": emoji, "award_name": award_name})
             else:
-                # Simulation (Brouillon) : On utilise la logique d'attribution
                 active_list = config.get('active_awards', [])
                 top_3, winners_map = _determine_winners(
                     global_stats['candidates'], vic_cond, active_list, global_stats['total_tournois']
                 )
 
-                # Formatage Moais pour affichage
                 moai_codes = ['super_gold_moai', 'super_silver_moai', 'super_bronze_moai'] if is_yearly else ['gold_moai', 'silver_moai', 'bronze_moai']
                 for i in range(min(3, len(top_3))):
                     p = top_3[i]
@@ -613,7 +581,6 @@ def get_recap(slug):
                         val_fmt = f"{p.get('final_score', 0):.3f}"
                         awards_data[code].append({"nom": p.get('nom', '?'), "val": val_fmt, "emoji": ref['emoji'], "award_name": ref['nom']})
 
-                # Formatage Spéciaux pour affichage
                 for code, winners in winners_map.items():
                     if code in types_ref:
                         ref = types_ref[code]
@@ -713,7 +680,6 @@ def get_joueur_stats(nom):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # 1. Récupération des infos de base du joueur
                 cur.execute("SELECT id, mu, sigma, score_trueskill, tier, is_ranked FROM Joueurs WHERE nom = %s", (nom,))
                 current_stats = cur.fetchone()
 
@@ -725,7 +691,6 @@ def get_joueur_stats(nom):
                 safe_ts = float(score_trueskill) if score_trueskill is not None else 0.0
                 sigma_val = float(sigma)
                 
-                # 2. Calcul du Percentile (Top X%)
                 is_legit = (is_ranked and sigma_val < 4.0)
                 top_percent = "?" 
 
@@ -754,7 +719,6 @@ def get_joueur_stats(nom):
                     elif len(valid_scores) == 1:
                         top_percent = 1.0 
                 
-                # 3. Historique des Tournois
                 cur.execute("""
                     SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma
                     FROM Participations p
@@ -765,7 +729,6 @@ def get_joueur_stats(nom):
                 """, (nom,))
                 raw_history = cur.fetchall()
 
-                # 4. Historique des Ghosts (Absences)
                 cur.execute("""
                     SELECT g.date, g.old_sigma, g.new_sigma, j.mu
                     FROM ghost_log g
@@ -801,7 +764,6 @@ def get_joueur_stats(nom):
                 
                 historique_data.sort(key=lambda x: x['date'], reverse=True)
 
-                # 5. Calcul des moyennes et stats globales
                 nb_tournois = len(scores_bruts)
                 if nb_tournois > 0:
                     score_moyen = sum(scores_bruts) / nb_tournois
@@ -820,8 +782,6 @@ def get_joueur_stats(nom):
                         prev_ts_val = historique_data[1]['score_trueskill']
                         progression_recente = current_ts_val - prev_ts_val
 
-                # 6. Récupération des Awards (CORRECTION ICI)
-                # On ajoute t.description dans le SELECT et le GROUP BY
                 cur.execute("""
                     SELECT t.emoji, t.nom, t.description, COUNT(o.id)
                     FROM awards_obtenus o
@@ -830,7 +790,6 @@ def get_joueur_stats(nom):
                     GROUP BY t.emoji, t.nom, t.description
                 """, (jid,))
                 
-                # Maintenant r[2] existe bien (description)
                 awards_list = [{"emoji": r[0], "nom": r[1], "description": r[2], "count": r[3]} for r in cur.fetchall()]
 
         return jsonify({
@@ -872,7 +831,6 @@ def stats_joueurs():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # Distribution tiers
                 cur.execute("SELECT tier FROM joueurs")
                 tier_rows = cur.fetchall()
                 dist = {'S': 0, 'A': 0, 'B': 0, 'C': 0, 'U': 0}
@@ -881,7 +839,6 @@ def stats_joueurs():
                     if t in dist: dist[t] += 1
                     else: dist['U'] += 1
 
-                # Joueurs
                 cur.execute("""
                     SELECT 
                         j.nom, j.mu, j.sigma, j.tier,
@@ -1157,24 +1114,19 @@ def save_season_awards(id):
     """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            # 1. Récupération Config Saison
             cur.execute("SELECT date_debut, date_fin, config_awards, victory_condition, is_yearly FROM saisons WHERE id = %s", (id,))
             row = cur.fetchone()
             if not row: return jsonify({'error': 'Saison introuvable'}), 404
             
             d_debut, d_fin, config, vic_cond, is_yearly = row
             
-            # 2. Calcul des Stats (Moteur centralisé)
-            # Cette fonction appelle _compute_grand_master et _compute_advanced_stonks en interne
             global_stats = _aggregate_season_stats(d_debut, d_fin)
 
-            # 3. Détermination des Vainqueurs (Logique métier pure)
             active_awards = config.get('active_awards', [])
             top_3, winners_map = _determine_winners(
                 global_stats['candidates'], vic_cond, active_awards, global_stats['total_tournois']
             )
 
-            # 4. Sauvegarde en BDD (Fonction technique)
             _save_awards_to_db(conn, id, top_3, winners_map, is_yearly)
 
     return jsonify({'status': 'success', 'message': 'Saison publiée et awards distribués !'})
@@ -1240,7 +1192,6 @@ def add_tournament():
                     cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s, consecutive_missed=0, is_ranked=true WHERE id=%s", (nr.mu, nr.sigma, jid))
                     cur.execute("UPDATE Participations SET mu=%s, sigma=%s, new_score_trueskill=%s, position=%s WHERE tournoi_id=%s AND joueur_id=%s", (nr.mu, nr.sigma, nr.mu - 3 * nr.sigma, ranks[i], tournoi_id, jid))
 
-                # Gestion Ghost
                 cur.execute("SELECT key, value FROM Configuration WHERE key IN ('ghost_enabled', 'ghost_penalty', 'unranked_threshold')")
                 conf = dict(cur.fetchall())
                 ghost_enabled = (conf.get('ghost_enabled') == 'true')
@@ -1264,7 +1215,6 @@ def add_tournament():
             conn.commit()
             recalculate_tiers()
             
-            # Auto-backup
             try:
                 env = os.environ.copy()
                 env['PGPASSWORD'] = os.environ.get('POSTGRES_PASSWORD', '')
@@ -1312,17 +1262,14 @@ def delete_tournament(id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # Récupération seuil
                 cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
                 res = cur.fetchone()
                 threshold = int(res[0]) if res else 10
 
-                # Revert Ghost
                 cur.execute("SELECT joueur_id, old_sigma FROM ghost_log WHERE tournoi_id = %s", (id,))
                 for pid, old_sig in cur.fetchall():
                     cur.execute("UPDATE Joueurs SET sigma = %s WHERE id = %s", (old_sig, pid))
 
-                # Revert Missed/Ranked
                 cur.execute("SELECT joueur_id FROM Participations WHERE tournoi_id = %s", (id,))
                 parts = [r[0] for r in cur.fetchall()]
                 q_abs = f"SELECT id, consecutive_missed, is_ranked FROM Joueurs WHERE id NOT IN ({','.join(['%s']*len(parts))})" if parts else "SELECT id, consecutive_missed, is_ranked FROM Joueurs"
