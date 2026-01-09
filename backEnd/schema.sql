@@ -88,7 +88,7 @@ CREATE TABLE public.ghost_log (
 ALTER TABLE public.ghost_log OWNER TO mk_reset;
 
 -- HISTORIQUE RESET GLOBAL
-CREATE TABLE IF NOT EXISTS global_resets (
+CREATE TABLE public.global_resets (
     id SERIAL PRIMARY KEY,
     date TIMESTAMP NOT NULL,
     value_applied REAL NOT NULL,
