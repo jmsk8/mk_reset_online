@@ -4,9 +4,7 @@ SET standard_conforming_strings = on;
 SET client_min_messages = warning;
 SET row_security = off;
 
--- NETTOYAGE (Ordre important pour les clés étrangères)
 DROP TABLE IF EXISTS public.ghost_log CASCADE;
-DROP TABLE IF EXISTS public.global_resets CASCADE;
 DROP TABLE IF EXISTS public.awards_obtenus CASCADE;
 DROP TABLE IF EXISTS public.participations CASCADE;
 DROP TABLE IF EXISTS public.tournois CASCADE;
@@ -16,23 +14,21 @@ DROP TABLE IF EXISTS public.saisons CASCADE;
 DROP TABLE IF EXISTS public.types_awards CASCADE;
 DROP TABLE IF EXISTS public.api_tokens CASCADE;
 
--- 1. CONFIGURATION
+-- CONFIGURATION
 CREATE TABLE public.configuration (
     key character varying(50) NOT NULL PRIMARY KEY, 
     value character varying(255) NOT NULL
 );
 ALTER TABLE public.configuration OWNER TO mk_reset;
 
-
 INSERT INTO public.configuration (key, value) VALUES 
 ('tau', '0.083'),
 ('ghost_enabled', 'false'),
 ('ghost_penalty', '0.1'),
-('unranked_threshold', '100'),
-('sigma_threshold', '4.0'); 
+('unranked_threshold', '10');
 
 
--- 2. JOUEURS
+-- JOUEURS
 CREATE TABLE public.joueurs (
     id integer NOT NULL PRIMARY KEY, 
     nom character varying(255) NOT NULL UNIQUE, 
@@ -49,8 +45,7 @@ CREATE SEQUENCE public.joueurs_id_seq AS integer START WITH 1 INCREMENT BY 1 NO 
 ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
 ALTER TABLE ONLY public.joueurs ALTER COLUMN id SET DEFAULT nextval('public.joueurs_id_seq'::regclass);
 
-
--- 3. TOURNOIS
+-- TOURNOIS
 CREATE TABLE public.tournois (
     id integer NOT NULL PRIMARY KEY, 
     date date NOT NULL
@@ -61,8 +56,7 @@ CREATE SEQUENCE public.tournois_id_seq AS integer START WITH 1 INCREMENT BY 1 NO
 ALTER SEQUENCE public.tournois_id_seq OWNED BY public.tournois.id;
 ALTER TABLE ONLY public.tournois ALTER COLUMN id SET DEFAULT nextval('public.tournois_id_seq'::regclass);
 
-
--- 4. PARTICIPATIONS
+-- PARTICIPATIONS
 CREATE TABLE public.participations (
     joueur_id integer NOT NULL, 
     tournoi_id integer NOT NULL, 
@@ -81,8 +75,7 @@ ALTER TABLE public.participations OWNER TO mk_reset;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
 
-
--- 5. HISTORIQUE FANTOME
+-- HISTORIQUE FANTOME
 CREATE TABLE public.ghost_log (
     id serial PRIMARY KEY,
     joueur_id integer REFERENCES public.joueurs(id) ON DELETE CASCADE,
@@ -94,18 +87,16 @@ CREATE TABLE public.ghost_log (
 );
 ALTER TABLE public.ghost_log OWNER TO mk_reset;
 
-
--- 6. HISTORIQUE RESET GLOBAL (NOUVELLE TABLE)
-CREATE TABLE public.global_resets (
+-- HISTORIQUE RESET GLOBAL
+CREATE TABLE IF NOT EXISTS global_resets (
     id SERIAL PRIMARY KEY,
     date TIMESTAMP NOT NULL,
-    sigma_value REAL NOT NULL,
+    value_applied REAL NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE public.global_resets OWNER TO mk_reset;
 
-
--- 7. API TOKENS
+-- API TOKENS
 CREATE TABLE public.api_tokens (
     token character varying(64) NOT NULL PRIMARY KEY,
     created_at timestamp without time zone DEFAULT now(),
@@ -113,8 +104,7 @@ CREATE TABLE public.api_tokens (
 );
 ALTER TABLE public.api_tokens OWNER TO mk_reset;
 
-
--- 8. SAISONS
+-- SAISONS
 CREATE TABLE public.saisons (
     id serial PRIMARY KEY,
     nom character varying(100) NOT NULL,
@@ -128,8 +118,7 @@ CREATE TABLE public.saisons (
 );
 ALTER TABLE public.saisons OWNER TO mk_reset;
 
-
--- 9. TYPES D'AWARDS
+-- TYPES D'AWARDS
 CREATE TABLE public.types_awards (
     id serial PRIMARY KEY,
     code character varying(50) NOT NULL UNIQUE,
@@ -139,8 +128,7 @@ CREATE TABLE public.types_awards (
 );
 ALTER TABLE public.types_awards OWNER TO mk_reset;
 
-
--- 10. AWARDS OBTENUS
+-- AWARDS OBTENUS
 CREATE TABLE public.awards_obtenus (
     id serial PRIMARY KEY,
     joueur_id integer REFERENCES public.joueurs(id) ON DELETE CASCADE,
@@ -152,8 +140,6 @@ CREATE TABLE public.awards_obtenus (
 );
 ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
 
-
--- INSERTION DES DONNÉES DE BASE (AWARDS)
 INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
 -- Récompenses de Saison (Moai)
 ('gold_moai', '1er', 'gold_moai.png', 'Vainqueur de Saison'),
@@ -175,3 +161,6 @@ INSERT INTO public.types_awards (code, nom, emoji, description) VALUES
 
 -- Logic mapping (caché, sert pour la victoire)
 ('Indice de Performance', 'Indice de Performance', '🎯', 'Calcul IP');
+
+-- Sigma min pour le rank par defaut--
+INSERT INTO public.configuration (key, value) VALUES ('sigma_threshold', '4.0') ON CONFLICT (key) DO NOTHING;
