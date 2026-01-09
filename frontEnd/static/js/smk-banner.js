@@ -22,16 +22,26 @@ const itemsConfig = {
         path: 'static/img/banana.png',
         width: 32,
         height: 32
+    },
+    box: {
+        path: 'static/img/item_box.png',
+        // --- TAILLE DES ITEM BOX ---
+        sizePC: 42,
+        sizeMobile: 28,
+        
+        hitboxX: 10,
+        hitboxY: 8
     }
 };
 
 const ROAD_LIMITS = {
-    min: 2,  
-    max: 27  
+    min: 0,   
+    max: 30   
 };
 
 let kartsData = [];
 let activeItems = []; 
+let itemBoxes = [];
 let lastFrameTime = 0;
 let nextAvailableRespawnTime = 0; 
 
@@ -85,6 +95,7 @@ function initCharacters() {
     container.innerHTML = ''; 
     kartsData = [];
     activeItems = []; 
+    itemBoxes = [];
 
     const shuffledChars = shuffleArray([...charactersList]);
 
@@ -111,8 +122,6 @@ function initCharacters() {
         wrapper.appendChild(img);
         container.appendChild(wrapper);
 
-        const firstItemDelay = randomRange(7000, 15000);
-
         kartsData.push({
             id: index,
             element: wrapper,
@@ -131,10 +140,38 @@ function initCharacters() {
             state: 'waiting_initial', 
             charName: charName,
             hitEndTime: 0,
-            nextItemTime: Date.now() + firstItemDelay,
+            throwTime: 0, 
             heldItem: null
         });
     });
+
+    const isMobile = window.innerWidth < 769;
+    const currentBoxSize = isMobile ? itemsConfig.box.sizeMobile : itemsConfig.box.sizePC;
+
+    for(let i = 0; i < 4; i++) {
+        const boxDiv = document.createElement('div');
+        boxDiv.classList.add('item-box');
+        
+        boxDiv.style.width = `${currentBoxSize}px`;
+        boxDiv.style.height = `${currentBoxSize}px`;
+
+        const boxY = ROAD_LIMITS.min + (i * (roadHeight / 3));
+        
+        boxDiv.style.bottom = `${boxY}%`;
+        boxDiv.style.zIndex = Math.floor(400 - boxY);
+        
+        container.appendChild(boxDiv);
+
+        itemBoxes.push({
+            element: boxDiv,
+            x: 4000, 
+            y: boxY,
+            state: 'running', 
+            active: true,
+            reactivateTime: 0,
+            returnSpeed: 0
+        });
+    }
 
     spawnNextKart(0);
 }
@@ -152,11 +189,11 @@ function createItemDOM(type, x, y) {
     const isMobile = window.innerWidth < 769;
 
     if (type === 'shell') {
-        const size = isMobile ? 20 : itemsConfig.shell.width;
+        const size = isMobile ? 20 : itemsConfig.shell.width; 
         itemDiv.style.width = `${size}px`;
         img.src = getShellPath(1);
     } else {
-        const size = isMobile ? 22 : itemsConfig.banana.width;
+        const size = isMobile ? 20 : itemsConfig.banana.width + 4; 
         itemDiv.style.width = `${size}px`;
         img.src = itemsConfig.banana.path;
     }
@@ -188,12 +225,6 @@ function startKartRun(kart) {
         kart.speedPPS = (kart.speedPPS + newTargetSpeed) / 2;
     } else {
         kart.speedPPS = newTargetSpeed;
-    }
-
-    if (!kart.heldItem) {
-        if (!kart.nextItemTime || kart.nextItemTime < Date.now()) {
-            kart.nextItemTime = Date.now() + randomRange(7000, 15000);
-        }
     }
 
     kart.x = -150;
@@ -238,10 +269,19 @@ function updateKartAI(kart, deltaTime) {
 
     for (const item of activeItems) {
         if (!item) continue;
-        if (item.state !== 'active') continue;
+        
+        if (kart.state === 'running' && item.state !== 'active') continue;
+        if (kart.state === 'returning' && item.state !== 'returning') continue;
+
         if (item.type !== 'banana') continue; 
 
-        const distFront = item.x - kart.x;
+        let distFront = 0;
+        if (kart.state === 'running') {
+            distFront = item.x - kart.x;
+        } else {
+            distFront = kart.x - item.x;
+        }
+        
         if (distFront > 0 && distFront < detectionRange) {
             if (Math.abs(item.y - kart.yPercent) < laneWidth) {
                 dangerFound = true;
@@ -310,7 +350,9 @@ function checkKartKartCollisions(kart) {
 
     for (const other of kartsData) {
         if (other.id === kart.id) continue;
-        if (other.state !== 'running') continue;
+        
+        if (other.state !== kart.state) continue;
+        if (other.state !== 'running' && other.state !== 'returning') continue;
 
         const distCmdX = Math.abs(kart.x - other.x);
         const distCmdY = Math.abs(kart.yPercent - other.yPercent);
@@ -337,38 +379,18 @@ function checkKartKartCollisions(kart) {
    LOGIQUE ITEMS INDIVIDUELLE
    ========================================================================== */
 
-function tryKartUseItem(kart, containerWidth) {
-    if (kart.state !== 'running') return; 
-
-    if (kart.x < 50 || kart.x > containerWidth - 50) {
-        kart.nextItemTime = Date.now() + 1000;
-        return;
-    }
+function giveKartItem(kart) {
+    if (kart.heldItem) return;
 
     let itemType = 'banana';
-    
     if (Math.random() > 0.5) {
         itemType = 'banana';
     } else {
-        const averagePPS = calculateSpeedPPS(containerWidth);
-        const maxGapDistance = averagePPS * 5; 
-
-        const potentialTargets = kartsData.filter(k => 
-            k.state === 'running' && 
-            k.id !== kart.id && 
-            k.x > kart.x && 
-            (k.x - kart.x) < maxGapDistance
-        );
-
-        if (potentialTargets.length === 0) {
-            itemType = 'banana';
-        } else {
-            itemType = 'shell';
-        }
+        itemType = 'shell';
     }
 
     const isMobile = window.innerWidth < 769;
-    const offset = isMobile ? -25 : -50; 
+    const offset = isMobile ? -20 : -50; 
     const startX = kart.x + offset; 
     const startY = kart.yPercent;
     
@@ -380,21 +402,26 @@ function tryKartUseItem(kart, containerWidth) {
         imgElement: dom.img,
         spawnTime: Date.now(),
         offset: offset,
-        holdDuration: randomRange(500, 8000) 
     };
+
+    if (kart.state === 'returning') {
+        kart.heldItem.element.style.opacity = '0';
+    } else {
+        kart.heldItem.element.style.opacity = '1';
+    }
+
+    kart.throwTime = Date.now() + randomRange(1000, 5000);
 }
 
 function activateItem(kart, containerWidth) {
     const item = kart.heldItem;
     if (!item) return;
 
-    kart.nextItemTime = Date.now() + randomRange(7000, 15000);
-
     let startX = kart.x + item.offset;
     const isMobile = window.innerWidth < 769;
 
     if (item.type === 'shell') {
-        const shellOffset = isMobile ? 25 : 50;
+        const shellOffset = isMobile ? 20 : 50; 
         startX = kart.x + shellOffset; 
     }
 
@@ -420,8 +447,14 @@ function activateItem(kart, containerWidth) {
     newItem.element.style.opacity = initialOpacity;
 
     if (initialState === 'returning') {
-        newItem.vx = 0; 
-        newItem.vy = 0;
+        if (item.type === 'banana') {
+            newItem.vx = -itemsConfig.roadSpeedPPS;
+            newItem.vy = 0;
+        } else {
+            const shellSpeed = calculateSpeedPPS(containerWidth, true);
+            newItem.vx = -shellSpeed;
+            newItem.vy = randomRange(-1.5, 1.5);
+        }
     } 
     else {
         if (item.type === 'banana') {
@@ -447,29 +480,8 @@ function updateItems(deltaTime, containerWidth) {
         const item = activeItems[i];
         if (!item) continue; 
 
-        if (item.state === 'returning') {
-            const returnSpeed = Math.abs(item.vx) / 2; 
-            item.x -= returnSpeed * deltaTime;
-
-            if (item.x < -150) {
-                item.state = 'active';
-                item.element.style.opacity = '1';
-                
-                if (item.type === 'banana') {
-                    item.vx = -itemsConfig.roadSpeedPPS;
-                    item.vy = 0;
-                } 
-                else if (item.type === 'shell') {
-                    const newTargetSpeed = calculateSpeedPPS(containerWidth, true);
-                    item.vx = (Math.abs(item.vx) + newTargetSpeed) / 2;
-                    item.vy = 0; 
-                }
-            }
-        } 
-        else {
-            item.x += item.vx * deltaTime;
-            item.y += item.vy * deltaTime;
-        }
+        item.x += item.vx * deltaTime;
+        item.y += item.vy * deltaTime;
 
         if (item.type === 'shell') {
             if (now - item.lastAnimTime > itemsConfig.shell.animSpeed) {
@@ -489,10 +501,17 @@ function updateItems(deltaTime, containerWidth) {
                 item.x += itemsConfig.lapDistance; 
                 item.element.style.transform = `translateX(${item.x}px)`;
             }
+            if (item.state === 'returning' && item.x < -200) {
+                 removeItem(i); 
+                 continue;
+            }
         } else if (item.type === 'shell') {
             if (item.state === 'active' && item.x > containerWidth + 200) {
-                item.state = 'returning';
-                item.element.style.opacity = '0'; 
+                removeItem(i);
+                continue;
+            }
+            if (item.state === 'returning' && item.x < -200) {
+                removeItem(i);
                 continue;
             }
             if (item.y < -10 || item.y > 100) {
@@ -506,7 +525,7 @@ function updateItems(deltaTime, containerWidth) {
         item.element.style.transform = `translateX(${item.x}px)`;
         item.element.style.bottom = `${item.y}%`;
 
-        if (item.state === 'active') {
+        if (item.state === 'active' || item.state === 'returning') {
             if (checkItemCollisions(item, i)) {
                 continue;
             }
@@ -529,11 +548,14 @@ function checkHeldItemCollisions() {
 
     for (let i = activeItems.length - 1; i >= 0; i--) {
         const activeItem = activeItems[i];
-        if (!activeItem || activeItem.state !== 'active') continue; 
+        if (!activeItem) continue; 
         
         for (let kart of kartsData) {
             if (!kart.heldItem) continue;
-            if (kart.state !== 'running' && kart.state !== 'hit') continue; 
+            if (kart.state !== 'running' && kart.state !== 'returning') continue; 
+            
+            if (kart.state === 'running' && activeItem.state !== 'active') continue;
+            if (kart.state === 'returning' && activeItem.state !== 'returning') continue;
 
             const heldX = kart.x + kart.heldItem.offset;
             const heldY = kart.yPercent;
@@ -542,7 +564,6 @@ function checkHeldItemCollisions() {
             const dy = Math.abs(activeItem.y - heldY);
 
             if (dx < hitBoxX && dy < hitBoxY) {
-                kart.nextItemTime = Date.now() + randomRange(7000, 15000);
                 removeItem(i);
                 kart.heldItem.element.remove();
                 kart.heldItem = null;
@@ -553,21 +574,21 @@ function checkHeldItemCollisions() {
 
     for (let kartHolder of kartsData) {
         if (!kartHolder.heldItem) continue;
-        if (kartHolder.state !== 'running' && kartHolder.state !== 'hit') continue;
+        if (kartHolder.state !== 'running' && kartHolder.state !== 'returning') continue;
 
         const heldX = kartHolder.x + kartHolder.heldItem.offset;
         const heldY = kartHolder.yPercent;
 
         for (let kartCrasher of kartsData) {
             if (kartCrasher.id === kartHolder.id) continue;
-            if (kartCrasher.state !== 'running') continue;
+            
+            if (kartCrasher.state !== kartHolder.state) continue;
 
             const dx = Math.abs(kartCrasher.x - heldX);
             const dy = Math.abs(kartCrasher.yPercent - heldY);
 
             if (dx < hitBoxX && dy < hitBoxY) {
                 handleKartHit(kartCrasher, kartHolder.heldItem.type);
-                kartHolder.nextItemTime = Date.now() + randomRange(7000, 15000);
                 kartHolder.heldItem.element.remove();
                 kartHolder.heldItem = null;
                 break;
@@ -589,7 +610,10 @@ function checkItemCollisions(item, itemIndex) {
             }
         }
 
-        if (kart.state !== 'running') continue; 
+        if (kart.state !== 'running' && kart.state !== 'returning') continue; 
+
+        if (kart.state === 'running' && item.state !== 'active') continue;
+        if (kart.state === 'returning' && item.state !== 'returning') continue;
 
         const deltaX = Math.abs(item.x - kart.x);
         const deltaY = Math.abs(item.y - kart.yPercent);
@@ -605,7 +629,9 @@ function checkItemCollisions(item, itemIndex) {
         for (let j = 0; j < activeItems.length; j++) {
             if (j === itemIndex) continue;
             const other = activeItems[j];
-            if (!other || other.state !== 'active') continue; 
+            if (!other) continue; 
+
+            if (item.state !== other.state) continue;
             
             if (other.type === 'banana') {
                 const dx = Math.abs(item.x - other.x);
@@ -634,6 +660,81 @@ function handleKartHit(kart, cause) {
     setTimeout(() => { kart.element.style.filter = "none"; }, 300);
 }
 
+function updateItemBoxes(deltaTime, screenWidth) {
+    const now = Date.now();
+    
+    const hitBoxX = itemsConfig.box.hitboxX;
+    const hitBoxY = itemsConfig.box.hitboxY;
+
+    const limitXRight = screenWidth + 150;
+    const limitXLeft = -150;
+
+    const loopTime = itemsConfig.lapDistance / itemsConfig.roadSpeedPPS;
+    const visibleDistance = limitXRight - limitXLeft; 
+    const timeVisible = visibleDistance / itemsConfig.roadSpeedPPS;
+    const timeInvisible = loopTime - timeVisible;
+    const returnSpeed = visibleDistance / timeInvisible;
+
+    itemBoxes.forEach(box => {
+        if (!box.active) {
+            if (now > box.reactivateTime) {
+                box.active = true;
+                box.element.style.display = 'block';
+            } else {
+                box.element.style.display = 'none';
+            }
+        }
+
+        if (box.state === 'running') {
+            box.x -= itemsConfig.roadSpeedPPS * deltaTime;
+            
+            if (box.x < limitXLeft) {
+                box.state = 'returning';
+                box.returnSpeed = returnSpeed;
+            }
+        } else {
+            box.x += box.returnSpeed * deltaTime;
+            
+            if (box.x > limitXRight) {
+                box.state = 'running';
+            }
+        }
+
+        if (box.active) {
+            for (let kart of kartsData) {
+                if (kart.heldItem) continue;
+                if (kart.state !== 'running' && kart.state !== 'returning') continue;
+
+                if (box.state === 'running' && kart.state !== 'running') continue;
+                if (box.state === 'returning' && kart.state !== 'returning') continue;
+
+                const dx = Math.abs(box.x - kart.x);
+                const dy = Math.abs(box.y - kart.yPercent);
+
+                if (dx < hitBoxX && dy < hitBoxY) {
+                    box.active = false;
+                    box.reactivateTime = now + 3000;
+                    
+                    setTimeout(() => {
+                        giveKartItem(kart);
+                    }, 3000);
+                    break;
+                }
+            }
+        }
+
+        if (box.state === 'returning') {
+            box.element.style.opacity = '0';
+        } else {
+            box.element.style.opacity = '1';
+        }
+
+        const floatY = Math.sin(now * 0.003) * 10; 
+        box.element.style.transform = `translateX(${box.x}px) translateY(${floatY}px)`;
+    });
+}
+
+
 /* ==========================================================================
    BOUCLE D'ANIMATION
    ========================================================================== */
@@ -658,16 +759,25 @@ function animateKarts(timestamp) {
         checkHeldItemCollisions();
 
         kartsData.forEach(kart => {
-            if (kart.state === 'running') {
-                if (!kart.heldItem) {
-                    if (kart.nextItemTime && now > kart.nextItemTime) {
-                        tryKartUseItem(kart, screenWidth);
-                    }
+            if (kart.state === 'running' || kart.state === 'returning') {
+                
+                if (kart.heldItem && now > kart.throwTime) {
+                    activateItem(kart, screenWidth);
                 }
+
                 updateKartAI(kart, deltaTime);
-                const moveAmountX = kart.speedPPS * deltaTime;
-                const moveAmountY = kart.vy * deltaTime;
-                kart.x += moveAmountX;
+
+                let moveAmountX = 0;
+                let moveAmountY = kart.vy * deltaTime;
+                
+                if (kart.state === 'running') {
+                    moveAmountX = kart.speedPPS * deltaTime;
+                    kart.x += moveAmountX;
+                } else {
+                    moveAmountX = (kart.speedPPS / 2) * deltaTime;
+                    kart.x -= moveAmountX;
+                }
+                
                 kart.yPercent += moveAmountY;
 
                 if (kart.yPercent > ROAD_LIMITS.max) { kart.yPercent = ROAD_LIMITS.max; kart.vy = 0; }
@@ -680,19 +790,14 @@ function animateKarts(timestamp) {
                 const zVal = Math.floor(400 - kart.yPercent);
                 kart.element.style.zIndex = zVal;
 
-                if (kart.x > limitX) {
+                if (kart.state === 'running' && kart.x > limitX) {
                     kart.state = 'returning';
                     kart.element.style.opacity = '0'; 
                 }
-            } 
-            else if (kart.state === 'returning') {
-                const moveAmount = (kart.speedPPS / 2) * deltaTime;
-                kart.x -= moveAmount; 
-                
-                if (kart.x <= -150) {
+                else if (kart.state === 'returning' && kart.x <= -150) {
                     startKartRun(kart);
                 }
-            }
+            } 
             else if (kart.state === 'hit') {
                 const moveAmount = -itemsConfig.roadSpeedPPS * deltaTime;
                 kart.x += moveAmount;
@@ -717,22 +822,17 @@ function animateKarts(timestamp) {
                 } 
                 else {
                     kart.heldItem.element.style.opacity = '1';
-                    
-                    const holdX = kart.x + kart.heldItem.offset;
-                    kart.heldItem.element.style.transform = `translateX(${holdX}px)`;
-                    kart.heldItem.element.style.bottom = `${kart.yPercent}%`;
-                    kart.heldItem.element.style.zIndex = Math.floor(400 - kart.yPercent);
-
-                    if (kart.state === 'running') {
-                        if (now - kart.heldItem.spawnTime > kart.heldItem.holdDuration) {
-                            activateItem(kart, screenWidth);
-                        }
-                    }
                 }
+                
+                const holdX = kart.x + kart.heldItem.offset;
+                kart.heldItem.element.style.transform = `translateX(${holdX}px)`;
+                kart.heldItem.element.style.bottom = `${kart.yPercent}%`;
+                kart.heldItem.element.style.zIndex = Math.floor(400 - kart.yPercent);
             }
         });
 
         updateItems(deltaTime, screenWidth);
+        updateItemBoxes(deltaTime, screenWidth);
     }
 
     requestAnimationFrame(animateKarts);

@@ -1,7 +1,7 @@
 /* --- BANNIÈRE--- */
 .hero.smk-snes-banner {
     position: relative;
-    height: 210px; 
+    height: 230px;
     overflow: hidden;
     background-color: #f7ce8c; 
     padding: 0 !important;
@@ -36,9 +36,9 @@
     height: auto;
     width: auto;
     
-    max-width: 280px; 
+    max-width: 300px;
     
-    transform: translateY(0px); 
+    transform: translateY(5px); 
     
     filter: drop-shadow(0 0 20px rgba(255,255,255,0.7));
 }
@@ -79,10 +79,10 @@
 .layer-ground::before {
     content: '';
     position: absolute;
-    top: -12px;
+    top: -10px;
     left: 0;
-    width: 100%;
-    height: 12px;
+    width: 120%;
+    height: 10px;
     background-image: 
         repeating-linear-gradient(90deg, 
             #cc0000 0px, #cc0000 40px,
@@ -97,11 +97,10 @@
 .layer-finish-line {
     position: absolute;
     bottom: 0;
-    left: 100%; /* depart sur le bord droit de l'ecran */
+    left: 100%; 
     height: 35%; 
     width: 60px; 
     
-    /* Damier */
     background-color: #ffffff;
     background-image:
         linear-gradient(45deg, #000000 25%, transparent 25%, transparent 75%, #000000 75%, #000000),
@@ -112,15 +111,24 @@
     z-index: 5; 
     box-shadow: -2px 0 5px rgba(0,0,0,0.3);
     
-    /* 22s pour 4000px = meme vitesse que le fond (2000px en 11s) */
     animation: scrollFinishLine 22s linear infinite;
 }
 
+/* --- ITEM BOX --- */
+.item-box {
+    position: absolute;
+    background-image: url('../img/item_box.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+    z-index: 100;
+}
+
+/* --- KART --- */
 .kart-container-moving {
     position: absolute;
     left: 0; 
     will-change: transform; 
-    width: 50px; 
+    width: 50px;
 }
 
 @media screen and (min-width: 769px) {
@@ -136,6 +144,7 @@
     animation: snesBounce 0.15s infinite alternate ease-in-out;
 }
 
+/* --- KEYFRAMES --- */
 @keyframes scrollBackgroundInfinite {
     from { background-position: 0 0; }
     to { background-position: -2000px 0; }

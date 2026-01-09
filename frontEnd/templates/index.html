@@ -17,6 +17,71 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+
+<style>
+        :root {
+            --score-offset-y: -2px; 
+
+            --section-padding: 3rem 1.5rem;
+            --card-padding: 1.5rem;
+            --table-font-size: 1rem;
+            --cell-padding: 0.5rem 0.75rem;
+            --tag-size: 0.75rem;
+            --tag-height: 2em;
+            --score-height: 19px;
+            --score-text: 11px;
+        }
+
+        /* === RÉGLAGES UTILISATEUR MOBILE === */
+        @media screen and (max-width: 768px) {
+            :root {
+                --score-offset-y: 0px; 
+
+                --section-padding: 1rem 0.5rem;
+                --card-padding: 0.75rem;
+                --table-font-size: 0.75rem;
+                --cell-padding: 0.25rem;
+                --tag-size: 0.7rem;
+                --tag-height: 1.5em;
+                --score-height: 10px;
+                --score-text: 9px;
+            }
+        }
+
+        /* === APPLICATION === */
+        .section {
+            padding: var(--section-padding) !important;
+        }
+        
+        .card-content {
+            padding: var(--card-padding) !important;
+        }
+
+        .table {
+            font-size: var(--table-font-size);
+        }
+        
+        .table th, .table td {
+            padding: var(--cell-padding) !important;
+            vertical-align: middle !important; 
+        }
+
+        .tag {
+            font-size: var(--tag-size) !important;
+            height: var(--tag-height) !important;
+            padding: 0 0.5em !important;
+        }
+
+        .score-bar {
+            height: var(--score-height) !important;
+            position: relative;
+            top: var(--score-offset-y);
+        }
+
+        .score-bar span {
+            font-size: var(--score-text);
+        }
+    </style>
 </head>
 <body>
     {% include 'navbar.html' %}
