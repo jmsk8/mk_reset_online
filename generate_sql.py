@@ -96,7 +96,6 @@ tournaments = [
     ("2025-12-15", {"J_sk8": 154, "Melwin": 149, "Rayou": 114, "Vakaeltraz": 176, "Elite": 119, "Clem": 133, "Ael": 98, "Falgo": 90, "McK17": 109, "Corentin": 94})
 ]
 
-# === 1. INITIALISATION DES IDs ===
 player_ids = {}
 next_pid = 1
 next_tid = 1
@@ -116,10 +115,8 @@ for _, results in tournaments:
             player_ids[pname] = next_pid
             next_pid += 1
 
-# === 2. SIMULATION ET GÉNÉRATION DE SEED ===
 seed_sql = []
 
-# En-têtes et Nettoyage
 seed_sql.append("SET statement_timeout = 0;")
 seed_sql.append("SET client_encoding = 'UTF8';")
 seed_sql.append("SET standard_conforming_strings = on;")
@@ -130,12 +127,10 @@ seed_sql.append("TRUNCATE TABLE public.tournois CASCADE;")
 seed_sql.append("TRUNCATE TABLE public.joueurs CASCADE;")
 seed_sql.append("")
 
-# Mise à jour de la configuration pour matcher la simulation
 seed_sql.append("-- Mise à jour de la configuration --")
 seed_sql.append(f"INSERT INTO public.configuration (key, value) VALUES ('tau', '{env.tau}') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;")
 seed_sql.append("")
 
-# Génération des données de tournois
 history_sql = []
 for date_str, results in tournaments:
     tid = next_tid
@@ -176,7 +171,6 @@ for date_str, results in tournaments:
             tier = 'U'
             history_sql.append(f"INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma) VALUES ({pid}, {tid}, {score}, {new_r.mu:.4f}, {new_r.sigma:.4f}, {ts_score:.4f}, '{tier}', {ranks[i]}, {old_r.mu:.4f}, {old_r.sigma:.4f});")
 
-# Insertion des joueurs (avec leurs stats finales issues de la simulation)
 seed_sql.append("-- 1. INSERTION DES JOUEURS (VALEURS CALCULÉES FINALES) --")
 for pname, pid in player_ids.items():
     rating = current_ratings.get(pname, env.create_rating())
@@ -193,7 +187,6 @@ seed_sql.append("-- 3. RESET DES SÉQUENCES --")
 seed_sql.append(f"SELECT pg_catalog.setval('public.joueurs_id_seq', {next_pid}, true);")
 seed_sql.append(f"SELECT pg_catalog.setval('public.tournois_id_seq', {next_tid}, true);")
 
-# Écriture du fichier SEED seulement
 with open("seed.sql", "w", encoding="utf-8") as f:
     f.write("\n".join(seed_sql))
 

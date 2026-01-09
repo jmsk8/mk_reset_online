@@ -12,32 +12,31 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
-    
+        
     <style>
         
+        .card, .card-content, .media, .media-content, .media-left {
+            overflow: visible !important;
+            touch-action: pan-y !important;
+            transform: none !important;
+        }
+
         .media-content {
-            min-width: 0;
-        }
-        .media-content .title.is-4 {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: block;
-            max-width: 100%;
+            flex-basis: auto !important;
+            width: auto !important;
         }
 
-        .stats-box .column {
-            padding: 0.25rem !important;
+        .title.is-4 {
+            white-space: normal !important;
+            word-break: break-word !important;
         }
 
-        @media screen and (max-width: 1200px) {
-            .stats-box .title.is-5 {
-                font-size: 1rem !important;
-            }
-            .stats-box .heading {
-                font-size: 0.65rem !important;
-                letter-spacing: 0;
-            }
+        .tag:not(a), .title {
+            pointer-events: none; 
+        }
+        
+        a.tag, button.tag {
+            pointer-events: auto;
         }
     </style>
 </head>
@@ -125,7 +124,7 @@
                                                 {% elif joueur.tier == 'C' %}
                                                     <span class="tag is-large tier-c">C</span>
                                                 {% else %}
-                                                    <span class="tag is-large is-light">?</span>
+                                                    <span class="tag is-large is-light">U</span>
                                                 {% endif %}
                                             </figure>
                                         </div>

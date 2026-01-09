@@ -132,6 +132,12 @@
                         <i class="fas fa-star mr-1"></i> Top {{ stats.percentile_trueskill }}%
                     </span>
                     {% endif %}
+
+                    {% if stats.consecutive_missed > 10 %}
+                    <span class="tag is-info is-light ml-2">
+                        <i class="fas fa-ghost mr-1"></i> Absent.e depuis {{ stats.consecutive_missed }} tournois
+                    </span>
+                    {% endif %}
                 </h2>
             </div>
         </div>
@@ -354,7 +360,17 @@
                                             {% if tournoi.type == 'absence' %}
                                                 <td style="vertical-align: middle;" class="has-text-grey-light">-</td>
                                                 <td style="vertical-align: middle;">
-                                                    <span class="tag is-danger is-light">Absent (Pénalité)</span>
+                                                    <span class="tag is-danger is-light">Absence prolongée (-{{ tournoi.valeur }} sigma)</span>
+                                                </td>
+                                                <td class="has-text-centered" style="vertical-align: middle;">
+                                                    <span class="tag is-dark">N/A</span>
+                                                </td>
+                                            {% elif tournoi.type == 'reset' %}
+                                                <td style="vertical-align: middle;" class="has-text-grey-light">-</td>
+                                                <td style="vertical-align: middle;">
+                                                    <span class="tag is-primary is-light" style="background-color: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe;">
+                                                        <i class="fas fa-magic mr-1"></i> Reset Global (+{{ tournoi.valeur }})
+                                                    </span>
                                                 </td>
                                                 <td class="has-text-centered" style="vertical-align: middle;">
                                                     <span class="tag is-dark">N/A</span>
@@ -397,32 +413,55 @@
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => {
-                elem.classList.add('visible');
+                requestAnimationFrame(() => {
+                    elem.classList.add('visible');
+                });
             });
         });
-    
+
         document.addEventListener('DOMContentLoaded', function() {
             var ctx = document.getElementById('scoreChart').getContext('2d');
-           
+            
             var rawData = [
                 {% for tournoi in historique %}
                     {
                         date: "{{ tournoi.date }}",
-                        trueskill: {{ tournoi.score_trueskill }},
-                        type: "{{ tournoi.type }}" 
+                        trueskill: {{ tournoi.score_trueskill if tournoi.score_trueskill is not none else 'null' }},
+                        type: "{{ tournoi.type }}",
+                        valeur: "{{ tournoi.valeur if tournoi.valeur else '' }}"
                     }{{ "," if not loop.last }}
                 {% endfor %}
             ];
-           
+                
             var chronoData = rawData.slice().reverse();
-           
+            
+            for (let i = 0; i < chronoData.length; i++) {
+                if (chronoData[i].trueskill === null) {
+                    chronoData[i].trueskill = 0; 
+                }
+            }
+            
             var labels = chronoData.map(t => t.date);
             var scores = chronoData.map(t => t.trueskill);
-           
-            var pointColors = chronoData.map(d => d.type === 'absence' ? '#ef4444' : 'rgba(54, 162, 235, 1)');
-            var pointRadius = chronoData.map(d => d.type === 'absence' ? 5 : 3);
-            var pointStyles = chronoData.map(d => d.type === 'absence' ? 'rectRot' : 'circle');
-           
+            
+            var pointColors = chronoData.map(d => {
+                if (d.type === 'absence') return '#ef4444'; 
+                if (d.type === 'reset') return '#8b5cf6';   
+                return 'rgba(54, 162, 235, 1)';             
+            });
+            
+            var pointRadius = chronoData.map(d => {
+                if (d.type === 'reset') return 5; 
+                if (d.type === 'absence') return 5;
+                return 3;
+            });
+            
+            var pointStyles = chronoData.map(d => {
+                if (d.type === 'reset') return 'circle'; 
+                if (d.type === 'absence') return 'rectRot';
+                return 'circle';
+            });
+        
             var scoreChart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -443,24 +482,49 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'nearest',
+                        intersect: true
+                    },
                     scales: {
                         y: { 
                             beginAtZero: false,
-                             title: {
-                                display: true,
-                                text: 'Score TrueSkill'
-                            }
+                            title: { display: true, text: 'Score TrueSkill' }
                         }
                     },
-                     plugins: {
+                    plugins: {
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
                                     var idx = context.dataIndex;
                                     var item = chronoData[idx];
-                                    var suffix = item.type === 'absence' ? ' (Pénalité Absence)' : '';
-                                    return 'TrueSkill: ' + item.trueskill + suffix;
+                                    var tsVal = parseFloat(item.trueskill).toFixed(3);
+                                    
+                                    if (item.type === 'reset') {
+                                        return 'TrueSkill : ' + tsVal + ' (Reset Global)';
+                                    } else if (item.type === 'absence') {
+                                        return 'Absence prolongée (-' + item.valeur + ' sigma)';
+                                    }
+                                    return 'TrueSkill : ' + tsVal;
+                                },
+                                afterLabel: function(context) {
+                                    var idx = context.dataIndex;
+                                    var item = chronoData[idx];
+                                    
+                                    if (item.type === 'reset') {
+                                        return 'Impact : +' + item.valeur + ' sigma';
+                                    }
+                                    return null;
                                 }
+                            }
+                        }
+                    },
+                    onClick: (e, activeEls) => {
+                        if (activeEls.length > 0) {
+                            var idx = activeEls[0].index;
+                            var item = chronoData[idx];
+                            if (item.type === 'reset') {
+                                alert("ℹ️ Information Reset :\n\nÀ cette date, un reset global de +" + item.valeur + " sigma a été effectué.\n\nVotre TrueSkill est passé mathématiquement à " + parseFloat(item.trueskill).toFixed(3) + " à ce moment précis.");
                             }
                         }
                     }

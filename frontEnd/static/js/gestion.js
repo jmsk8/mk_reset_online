@@ -48,8 +48,22 @@ function getTierColor(rank) {
 
 
 document.addEventListener('DOMContentLoaded', () => {
+    // --- CORRECTION : Afficher l'interface immédiatement ---
+    const fadeElems = document.querySelectorAll('.fade-in');
+    fadeElems.forEach(elem => {
+        requestAnimationFrame(() => {
+            elem.classList.add('visible');
+        });
+    });
+
+    // Ensuite, on charge les données
     loadPlayers();
     loadConfig();
+
+    const dateInput = document.getElementById('globalResetDate');
+    if (dateInput) {
+        dateInput.valueAsDate = new Date();
+    }
 
     const addForm = document.getElementById('addPlayerForm');
     if (addForm) {
@@ -93,16 +107,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const ghost = document.getElementById('configGhost').checked;
             const ghostPenalty = parseFloat(document.getElementById('configGhostPenalty').value);
             const unrankedLimit = parseInt(document.getElementById('configUnrankedLimit').value);
+            const sigmaThreshold = parseFloat(document.getElementById('configSigmaLimit').value);
             
             if (isNaN(tau)) { alert("Erreur: Tau invalide."); return; }
             if (isNaN(ghostPenalty)) { alert("Erreur: Pénalité invalide."); return; }
             if (isNaN(unrankedLimit)) { alert("Erreur: Limite Unranked invalide."); return; }
+            if (isNaN(sigmaThreshold)) { alert("Erreur: Limite Sigma invalide."); return; }
             
             const res = await apiCall('/admin/config', 'POST', { 
                 tau: tau, 
                 ghost_enabled: ghost,
                 ghost_penalty: ghostPenalty,
-                unranked_threshold: unrankedLimit
+                unranked_threshold: unrankedLimit,
+                sigma_threshold: sigmaThreshold
             });
             
             if (res.error) alert("Erreur: " + res.error);
@@ -122,7 +139,7 @@ async function loadPlayers() {
     tbody.innerHTML = '';
 
     if (res.error) {
-        tbody.innerHTML = `<tr><td colspan="5" class="has-text-danger has-text-centered">Erreur: ${res.error}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="has-text-danger has-text-centered">Erreur Backend: ${res.error}</td></tr>`;
         return;
     }
     
@@ -142,8 +159,12 @@ async function loadPlayers() {
         const rowOpacity = (player.is_ranked === false) ? 'style="opacity: 0.6;"' : '';
 
         tr.innerHTML = `
+            <td class="has-text-centered">${player.is_ranked 
+                ? '<span class="icon has-text-success"><i class="fas fa-square-check"></i></span>' 
+                : '<span class="icon has-text-danger"><i class="fas fa-square-xmark"></i></span>'}
+            </td>
             <td class="has-text-white font-weight-bold" ${rowOpacity}>
-                ${player.nom || 'Inconnu'} ${rankedStatusIcon}
+                ${player.nom || 'Inconnu'}
             </td>
             <td class="has-text-grey-light" ${rowOpacity}>
                 ${player.mu ? parseFloat(player.mu).toFixed(3) : '0.000'}
@@ -155,7 +176,8 @@ async function loadPlayers() {
                 <span class="tag ${tierClass}">${player.tier || '?'}</span>
             </td>
             <td class="has-text-right">
-                <button class="button is-small is-info is-outlined mr-2" onclick='openEditModal(${JSON.stringify(player)})'>
+                <button class="button is-small is-info is-outlined mr-1" 
+                    onclick="openEditModal(${player.id}, '${player.nom.replace(/'/g, "\\'")}', ${player.mu}, ${player.sigma}, ${player.is_ranked}, ${player.consecutive_missed})">
                     <i class="fas fa-edit"></i>
                 </button>
                 <button class="button is-small is-danger is-outlined" onclick="deletePlayer(${player.id})">
@@ -164,13 +186,8 @@ async function loadPlayers() {
             </td>
         `;
         tbody.appendChild(tr);
-    });
-    
-    const fadeElems = document.querySelectorAll('.fade-in');
-    fadeElems.forEach(elem => {
-        requestAnimationFrame(() => {
-            elem.classList.add('visible');
-        });
+        // Animation pour les lignes du tableau
+        requestAnimationFrame(() => tr.classList.add('visible'));
     });
 }
 
@@ -181,6 +198,12 @@ async function loadConfig() {
         if (res.ghost_enabled !== undefined) document.getElementById('configGhost').checked = res.ghost_enabled;
         if (res.ghost_penalty !== undefined) document.getElementById('configGhostPenalty').value = res.ghost_penalty;
         if (res.unranked_threshold !== undefined) document.getElementById('configUnrankedLimit').value = res.unranked_threshold;
+        
+        // Sécurité si le backend n'est pas encore à jour avec la nouvelle colonne
+        const sigmaInput = document.getElementById('configSigmaLimit');
+        if (sigmaInput && res.sigma_threshold !== undefined) {
+            sigmaInput.value = res.sigma_threshold;
+        }
     }
 }
 
@@ -195,16 +218,38 @@ async function deletePlayer(id) {
     }
 }
 
-function openEditModal(player) {
-    document.getElementById('editId').value = player.id;
-    document.getElementById('editNom').value = player.nom;
-    document.getElementById('editMu').value = parseFloat(player.mu).toFixed(3);
-    document.getElementById('editSigma').value = parseFloat(player.sigma).toFixed(3);
+function openEditModal(id, nom, mu, sigma, isRanked, missed) {
+    document.getElementById('editId').value = id;
+    document.getElementById('editNom').value = nom;
+    document.getElementById('editMu').value = parseFloat(mu).toFixed(3);
+    document.getElementById('editSigma').value = parseFloat(sigma).toFixed(3);
+    document.getElementById('editMissed').value = missed !== undefined ? missed : 0;
     
-    const isRanked = (player.is_ranked !== false); 
-    document.getElementById('editIsRanked').checked = isRanked;
+    updateRankedVisuals(isRanked);
 
     document.getElementById('editModal').classList.add('is-active');
+}
+
+function toggleRankedStatus() {
+    const currentVal = document.getElementById('editIsRankedValue').value === 'true';
+    updateRankedVisuals(!currentVal);
+}
+
+function updateRankedVisuals(isRanked) {
+    document.getElementById('editIsRankedValue').value = isRanked;
+    const btn = document.getElementById('rankedToggleBtn');
+    const icon = document.getElementById('rankedIcon');
+    const text = document.getElementById('rankedText');
+
+    if (isRanked) {
+        btn.className = 'button is-success is-fullwidth';
+        icon.innerHTML = '<i class="fas fa-check"></i>';
+        text.innerText = 'Joueur Classé (Actif)';
+    } else {
+        btn.className = 'button is-danger is-outlined is-fullwidth';
+        icon.innerHTML = '<i class="fas fa-times"></i>';
+        text.innerText = 'Non Classé (Inactif)';
+    }
 }
 
 
@@ -219,7 +264,8 @@ async function saveEdit() {
         nom: document.getElementById('editNom').value,
         mu: parseFloat(document.getElementById('editMu').value),
         sigma: parseFloat(document.getElementById('editSigma').value),
-        is_ranked: document.getElementById('editIsRanked').checked
+        is_ranked: document.getElementById('editIsRankedValue').value === 'true',
+        consecutive_missed: parseInt(document.getElementById('editMissed').value)
     };
     
     if (isNaN(data.mu) || isNaN(data.sigma)) {
@@ -234,5 +280,56 @@ async function saveEdit() {
         loadPlayers();
     } else {
         alert("Erreur: " + (res.error || "Erreur inconnue"));
+    }
+}
+
+async function applyGlobalReset() {
+    const val = document.getElementById('globalResetValue').value;
+    const dateStr = document.getElementById('globalResetDate').value;
+
+    if (!dateStr) {
+        alert("Veuillez sélectionner une date.");
+        return;
+    }
+
+    if (!confirm(`Es-tu sûr de vouloir ajouter ${val} de Sigma à TOUS les joueurs en date du ${dateStr} ?\n\nAttention : Cela sera refusé si un tournoi existe déjà à cette date ou après.`)) return;
+
+    try {
+        const res = await fetch('/admin/global-reset', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN},
+            body: JSON.stringify({
+                value: val,
+                date: dateStr
+            })
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert("✅ " + data.message);
+            loadPlayers();
+        } else {
+            alert("⛔ Erreur : " + data.error);
+        }
+    } catch (e) {
+        alert("Erreur de connexion au serveur");
+    }
+}
+
+async function revertGlobalReset() {
+    if (!confirm("Annuler le dernier reset global ?\n\nCela ne fonctionnera que si aucun tournoi n'a été joué depuis ce reset.")) return;
+
+    try {
+        const res = await fetch('/admin/revert-global-reset', { method: 'POST', headers: {'X-Admin-Token': ADMIN_TOKEN} });
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert("✅ " + data.message);
+            loadPlayers();
+        } else {
+            alert("⛔ " + data.error);
+        }
+    } catch (e) {
+        alert("Erreur de connexion au serveur");
     }
 }

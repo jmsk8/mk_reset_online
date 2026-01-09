@@ -11,34 +11,34 @@ TRUNCATE TABLE public.joueurs CASCADE;
 INSERT INTO public.configuration (key, value) VALUES ('tau', '0.083') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 
 -- 1. INSERTION DES JOUEURS (VALEURS CALCULÉES FINALES) --
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (1, 'Rosalyan', 67.8806, 3.0063, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (2, 'J_sk8', 57.6944, 0.8469, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (3, 'Elite', 56.1382, 0.8543, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (4, 'Rayou', 55.4890, 1.1128, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (5, 'Vakaeltraz', 54.9939, 0.7817, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (6, 'Melwin', 52.9230, 0.8283, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (7, 'Lu_K', 53.3663, 1.1230, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (8, 'Clem', 50.2836, 0.8693, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (9, 'Daytona_69', 49.0428, 1.1335, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (10, 'JeanCube', 50.2921, 1.9559, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (11, 'Oleas', 56.2470, 4.2350, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (12, 'Thaumas', 51.4640, 2.7190, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (13, 'Ether-Zero', 52.9860, 4.3350, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (14, 'Ael', 44.2377, 1.7144, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (15, 'Tomwilson', 49.8670, 4.5220, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (16, 'Falgo', 40.5460, 1.9506, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (17, 'Brook1l', 42.0951, 2.2660, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (18, 'Hardox', 40.9360, 2.1080, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (19, 'ColorOni', 47.3368, 4.2936, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (20, 'Camou', 43.0012, 3.1841, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (21, 'Kemoory', 39.0615, 2.0106, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (22, 'Fozlo', 38.1228, 1.8602, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (23, 'McK17', 44.5059, 2.9049, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (24, 'Kaysuan', 43.2934, 5.8866, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (25, 'PastPlayer', 42.1224, 5.7253, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (26, 'Tomy', 35.9934, 4.6909, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (27, 'Mirijason', 39.0967, 5.6075, 'U');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES (28, 'Corentin', 42.3310, 4.3881, 'U');
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (1, 'Rosalyan', 67.8806, 3.0063, 'U', 24);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (2, 'J_sk8', 57.6944, 0.8469, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (3, 'Elite', 56.1382, 0.8543, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (4, 'Rayou', 55.4890, 1.1128, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (5, 'Vakaeltraz', 54.9939, 0.7817, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (6, 'Melwin', 52.9230, 0.8283, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (7, 'Lu_K', 53.3663, 1.1230, 'U', 3);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (8, 'Clem', 50.2836, 0.8693, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (9, 'Daytona_69', 49.0428, 1.1335, 'U', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (10, 'JeanCube', 50.2921, 1.9559, 'U', 18);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (11, 'Oleas', 56.2470, 4.2350, 'U', 41);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (12, 'Thaumas', 51.4640, 2.7190, 'U', 41);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (13, 'Ether-Zero', 52.9860, 4.3350, 'U', 41);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (14, 'Ael', 44.2377, 1.7144, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (15, 'Tomwilson', 49.8670, 4.5220, 'U', 41);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (16, 'Falgo', 40.5460, 1.9506, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (17, 'Brook1l', 42.0951, 2.2660, 'U', 19);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (18, 'Hardox', 40.9360, 2.1080, 'U', 41);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (19, 'ColorOni', 47.3368, 4.2936, 'U', 18);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (20, 'Camou', 43.0012, 3.1841, 'U', 29);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (21, 'Kemoory', 39.0615, 2.0106, 'U', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (22, 'Fozlo', 38.1228, 1.8602, 'U', 5);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (23, 'McK17', 44.5059, 2.9049, 'U', 0);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (24, 'Kaysuan', 43.2934, 5.8866, 'U', 16);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (25, 'PastPlayer', 42.1224, 5.7253, 'U', 26);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (26, 'Tomy', 35.9934, 4.6909, 'U', 34);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (27, 'Mirijason', 39.0967, 5.6075, 'U', 40);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed) VALUES (28, 'Corentin', 42.3310, 4.3881, 'U', 0);
 
 -- 2. INSERTION DE L'HISTORIQUE --
 INSERT INTO public.tournois (id, date) VALUES (1, '2025-02-06');
@@ -348,4 +348,3 @@ INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_
 -- 3. RESET DES SÉQUENCES --
 SELECT pg_catalog.setval('public.joueurs_id_seq', 29, true);
 SELECT pg_catalog.setval('public.tournois_id_seq', 42, true);
-

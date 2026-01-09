@@ -7,43 +7,99 @@ const charactersList = [
     'yoshi', 'bowser', 'dk', 'koopa'
 ];
 
-const itemsConfig = {
-    roadSpeedPPS: 182, 
-    lapDistance: 4000, 
-    bananaLifeTime: 20000, 
-    shell: {
-        folder: 'green-shell',
-        baseName: 'green-shell',
-        width: 48, 
-        height: 48,
-        animSpeed: 100
+/**
+ * GAME_CONFIG : 
+ * Centralise tous les paramètres du jeu. 
+ * Modifie ces valeurs pour ajuster le gameplay.
+ */
+const GAME_CONFIG = {
+    // --- VITESSES ET DISTANCES ---
+    speeds: {
+        roadPPS: 182,            // Vitesse de défilement de la route (Pixels Par Seconde)
+        lapDistance: 4000,       // Distance pour "boucler" un tour
+        kartBaseSpeedPC: 8,      // Diviseur de vitesse (plus petit = plus vite) sur PC
+        kartBaseSpeedMobile: 4,  // Diviseur de vitesse sur Mobile
+        projectileSpeedMult: 2.0,// Multiplicateur de vitesse des carapaces
+        returnLaneSpeed: 20      // Vitesse à laquelle un kart revient sur sa ligne après esquive
     },
-    banana: {
-        path: 'static/img/banana.png',
-        width: 32,
-        height: 32
+
+    // --- TEMPS ET DÉLAIS (RESTAURÉ ICI !) ---
+    delays: {
+        stunDuration: 2000,      // Temps d'immobilisation après un choc
+        boxRespawn: 2000,        // Temps de désactivation d'une Item Box après contact
+        itemGrant: 3000,         // Temps d'attente pour obtenir l'objet après la boîte
+        bananaLife: 40000,       // Durée de vie d'une banane au sol
+        invincibilityOwnItem: 2000 // Temps invulnérabilité propre banane
     },
-    box: {
-        path: 'static/img/item_box.png',
-        // --- TAILLE DES ITEM BOX ---
-        sizePC: 42,
-        sizeMobile: 28,
+
+    // --- INTELLIGENCE ARTIFICIELLE (FUSIONNÉE) ---
+    ai: {
+        // Gestion de l'item (tir/pose)
+        holdItemMin: 500,        
+        holdItemMax: 8000,       
         
-        hitboxX: 10,
-        hitboxY: 8
+        // Détection Danger (Bananes) - PRIORITÉ 1
+        detectionRange: 250,     
+        dodgeIntensityMin: 20,   
+        dodgeIntensityMax: 50,   
+
+        // Overtaking (Dépassement) - PRIORITÉ 2
+        overtakeDetectionRange: 120, // Distance pour commencer à se décaler si un kart est devant
+        overtakeMinDistance: 12,     // Distance verticale min à respecter entre 2 karts
+        overtakeSideSpeed: 10,       // Vitesse latérale pour doubler
+
+        // Détection Boîtes - PRIORITÉ 3
+        boxDetectionRange: 400,  
+        boxSeekIntensity: 25,     
+
+        // Wandering (Flânerie / Décalage aléatoire) - PRIORITÉ 4
+        wanderIntervalMin: 2000,     // Temps min entre deux décalages aléatoires
+        wanderIntervalMax: 6000,     // Temps max entre deux décalages aléatoires
+        wanderDurationMin: 500,      // Durée du décalage
+        wanderDurationMax: 1500,     // Durée max du décalage
+        wanderSpeed: 4               // Vitesse douce du décalage
+    },
+
+    // --- HITBOXES (Zones de collision) ---
+    hitboxes: {
+        // Collision Kart contre Kart
+        kartVsKart: { x: 60, y: 5 },
+        
+        // Collision Objet contre Kart (ou Objet contre Objet)
+        itemVsKart: { x: 40, y: 5 }, 
+
+        // Collision Kart contre Item Box
+        itemBox: { 
+            toleranceX: 10,
+            toleranceY: 8
+        }
+    },
+
+    // --- VISUELS ITEMS ---
+    visuals: {
+        shell: {
+            width: 48,
+            widthMobile: 20,
+            animSpeed: 100
+        },
+        banana: {
+            width: 32,
+            widthMobile: 20 
+        },
+        box: {
+            sizePC: 42,
+            sizeMobile: 28
+        }
     }
 };
 
-const ROAD_LIMITS = {
-    min: 0,   
-    max: 30   
-};
-
+/* --- VARIABLES D'ÉTAT (NE PAS TOUCHER) --- */
 let kartsData = [];
 let activeItems = []; 
 let itemBoxes = [];
 let lastFrameTime = 0;
 let nextAvailableRespawnTime = 0; 
+let animationId = null; // Pour gérer la pause/reprise
 
 /* ==========================================================================
    UTILITAIRES
@@ -54,7 +110,7 @@ function getCharacterPath(charName) {
 }
 
 function getShellPath(frame) {
-    return `static/img/${itemsConfig.shell.folder}/${itemsConfig.shell.baseName}${frame}.png`;
+    return `static/img/green-shell/green-shell${frame}.png`;
 }
 
 function shuffleArray(array) {
@@ -71,12 +127,12 @@ function randomRange(min, max) {
 
 function calculateSpeedPPS(screenWidth, isProjectile = false) {
     const isMobile = window.innerWidth < 769;
-    const baseDuration = isMobile ? 4 : 8; 
+    const baseDuration = isMobile ? GAME_CONFIG.speeds.kartBaseSpeedMobile : GAME_CONFIG.speeds.kartBaseSpeedPC; 
     
     if (isProjectile) {
         const distance = screenWidth + 150;
         const baseSpeed = distance / baseDuration;
-        return baseSpeed * 2.0; 
+        return baseSpeed * GAME_CONFIG.speeds.projectileSpeedMult; 
     }
 
     const variation = randomRange(0.93, 1.07);
@@ -98,6 +154,7 @@ function initCharacters() {
     itemBoxes = [];
 
     const shuffledChars = shuffleArray([...charactersList]);
+    const ROAD_LIMITS = { min: 0, max: 30 };
 
     const roadHeight = ROAD_LIMITS.max - ROAD_LIMITS.min;
     const step = roadHeight / (shuffledChars.length - 1 || 1);
@@ -141,12 +198,15 @@ function initCharacters() {
             charName: charName,
             hitEndTime: 0,
             throwTime: 0, 
-            heldItem: null
+            heldItem: null,
+            nextWanderTime: Date.now() + randomRange(1000, 5000),
+            wanderEndTime: 0,
+            wanderVy: 0
         });
     });
 
     const isMobile = window.innerWidth < 769;
-    const currentBoxSize = isMobile ? itemsConfig.box.sizeMobile : itemsConfig.box.sizePC;
+    const currentBoxSize = isMobile ? GAME_CONFIG.visuals.box.sizeMobile : GAME_CONFIG.visuals.box.sizePC;
 
     for(let i = 0; i < 4; i++) {
         const boxDiv = document.createElement('div');
@@ -189,13 +249,13 @@ function createItemDOM(type, x, y) {
     const isMobile = window.innerWidth < 769;
 
     if (type === 'shell') {
-        const size = isMobile ? 20 : itemsConfig.shell.width; 
+        const size = isMobile ? GAME_CONFIG.visuals.shell.widthMobile : GAME_CONFIG.visuals.shell.width; 
         itemDiv.style.width = `${size}px`;
         img.src = getShellPath(1);
     } else {
-        const size = isMobile ? 20 : itemsConfig.banana.width + 4; 
+        const size = isMobile ? GAME_CONFIG.visuals.banana.widthMobile : GAME_CONFIG.visuals.banana.width + 4; 
         itemDiv.style.width = `${size}px`;
-        img.src = itemsConfig.banana.path;
+        img.src = 'static/img/banana.png';
     }
 
     itemDiv.appendChild(img);
@@ -235,8 +295,15 @@ function startKartRun(kart) {
     kart.element.style.opacity = '1';
     kart.element.style.filter = 'none';
     
+    // ROBUSTESSE : Si le kart a un item en revenant en jeu, on s'assure
+    // qu'il est prêt à être affiché correctement (mais l'opacité sera gérée par animateKarts)
     if (kart.heldItem && kart.heldItem.element) {
-        kart.heldItem.element.style.opacity = '1';
+        // On ne force pas l'opacité ici, on laisse animateKarts le faire
+        // au moment où le kart entrera vraiment sur l'écran.
+        // Mais on peut repousser légèrement le tir pour éviter un tir immédiat au spawn
+        if (kart.throwTime < Date.now()) {
+            kart.throwTime = Date.now() + randomRange(1000, 3000);
+        }
     }
 }
 
@@ -261,66 +328,156 @@ function scheduleRespawnForHit(kart, delay) {
    ========================================================================== */
 
 function updateKartAI(kart, deltaTime) {
-    const detectionRange = 250; 
+    const aiConfig = GAME_CONFIG.ai;
     const laneWidth = 12; 
+    const ROAD_LIMITS = { min: 0, max: 30 };
+    const now = Date.now();
     
+    // --- 1. DETECTION DES DANGERS (Bananes) - PRIORITÉ ABSOLUE ---
     let dangerFound = false;
     let avoidDirection = 0; 
 
     for (const item of activeItems) {
         if (!item) continue;
-        
         if (kart.state === 'running' && item.state !== 'active') continue;
         if (kart.state === 'returning' && item.state !== 'returning') continue;
-
         if (item.type !== 'banana') continue; 
 
-        let distFront = 0;
-        if (kart.state === 'running') {
-            distFront = item.x - kart.x;
-        } else {
-            distFront = kart.x - item.x;
-        }
+        let distFront = (kart.state === 'running') ? item.x - kart.x : kart.x - item.x;
         
-        if (distFront > 0 && distFront < detectionRange) {
+        if (distFront > 0 && distFront < aiConfig.detectionRange) {
             if (Math.abs(item.y - kart.yPercent) < laneWidth) {
                 dangerFound = true;
-                
                 let naturalDir = (item.y > kart.yPercent) ? -1 : 1;
                 const safetyMargin = 2; 
 
+                // Logique pour ne pas sortir de la route en esquivant
                 if (naturalDir === 1) { 
-                    if (kart.yPercent > ROAD_LIMITS.max - safetyMargin) {
-                        avoidDirection = -1;
-                    } else {
-                        avoidDirection = 1;
-                    }
+                    avoidDirection = (kart.yPercent > ROAD_LIMITS.max - safetyMargin) ? -1 : 1;
                 } else { 
-                    if (kart.yPercent < ROAD_LIMITS.min + safetyMargin) {
-                        avoidDirection = 1;
-                    } else {
-                        avoidDirection = -1;
-                    }
+                    avoidDirection = (kart.yPercent < ROAD_LIMITS.min + safetyMargin) ? 1 : -1;
                 }
                 break; 
             }
         }
     }
     
+    // SI DANGER : On coupe court, on esquive et on sort de la fonction
     if (dangerFound) {
         if (kart.aiState !== 'dodging') {
             kart.aiState = 'dodging';
-            kart.originalLaneY = kart.yPercent;
-            kart.willReturnToLane = Math.random() > 0.5;
-            kart.dodgeIntensity = randomRange(20, 50); 
+            kart.originalLaneY = kart.yPercent; // On mémorise où on était
+            kart.dodgeIntensity = randomRange(aiConfig.dodgeIntensityMin, aiConfig.dodgeIntensityMax); 
         }
         kart.targetVy = avoidDirection * kart.dodgeIntensity;
+        // Application lissée
+        kart.vy += (kart.targetVy - kart.vy) * 5 * deltaTime;
+        return; // FIN DE L'IA POUR CETTE FRAME
+    } 
+
+    // --- 2. GESTION DU DÉPASSEMENT (OVERTAKING) ---
+    // Si pas de danger, on vérifie si on va rentrer dans un autre kart
+    let overtakeFound = false;
+    
+    if (kart.state === 'running') { // On ne gère le dépassement qu'en course normale
+        for (const other of kartsData) {
+            if (other.id === kart.id) continue;
+            if (other.state !== 'running') continue;
+
+            const distX = other.x - kart.x;
+            const distY = Math.abs(other.yPercent - kart.yPercent);
+
+            // Si le kart est juste devant (0 à detectionRange) ET trop proche verticalement
+            if (distX > 0 && distX < aiConfig.overtakeDetectionRange && distY < aiConfig.overtakeMinDistance) {
+                overtakeFound = true;
+                kart.aiState = 'overtaking';
+                
+                // On décide si on passe par le haut ou le bas
+                // Si on est déjà un peu au dessus, on va en haut, sinon en bas
+                let dir = (kart.yPercent > other.yPercent) ? 1 : -1;
+                
+                // Vérif limites route
+                if (kart.yPercent > ROAD_LIMITS.max - 5) dir = -1;
+                if (kart.yPercent < ROAD_LIMITS.min + 5) dir = 1;
+
+                kart.targetVy = dir * aiConfig.overtakeSideSpeed;
+                break; // On gère un dépassement à la fois
+            }
+        }
+    }
+
+    if (overtakeFound) {
+        kart.originalLaneY = kart.yPercent; // On met à jour notre nouvelle ligne de ref
+        kart.vy += (kart.targetVy - kart.vy) * 5 * deltaTime;
+        return;
+    }
+
+    // --- 3. RECHERCHE D'ITEM BOX ---
+    // Si pas danger et pas dépassement
+    let boxTargetFound = false;
+    if (!kart.heldItem) {
+        for (const box of itemBoxes) {
+            if (!box.active) continue;
+            if (kart.state === 'running' && box.state !== 'running') continue;
+            if (kart.state === 'returning' && box.state !== 'returning') continue;
+
+            let distToBox = (kart.state === 'running') ? box.x - kart.x : kart.x - box.x;
+
+            if (distToBox > 0 && distToBox < aiConfig.boxDetectionRange) {
+                const diffY = box.y - kart.yPercent;
+                if (Math.abs(diffY) > 2) {
+                    kart.aiState = 'seeking_box';
+                    boxTargetFound = true;
+                    kart.targetVy = (diffY > 0) ? aiConfig.boxSeekIntensity : -aiConfig.boxSeekIntensity;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (boxTargetFound) {
+        kart.vy += (kart.targetVy - kart.vy) * 5 * deltaTime;
+        return;
+    }
+
+    // --- 4. FLÂNERIE (WANDERING) ---
+    // Si rien de tout ça, on peut se balader un peu
+    
+    // Est-il temps de lancer un nouveau mouvement aléatoire ?
+    if (now > kart.nextWanderTime) {
+        // Calcul du prochain temps
+        kart.nextWanderTime = now + randomRange(aiConfig.wanderIntervalMin, aiConfig.wanderIntervalMax);
+        
+        // Définition du mouvement
+        kart.wanderEndTime = now + randomRange(aiConfig.wanderDurationMin, aiConfig.wanderDurationMax);
+        
+        // Choix direction (Haut ou Bas)
+        let dir = (Math.random() > 0.5) ? 1 : -1;
+
+        // CONTRAINTE : Si en haut -> Bas obligatoire. Si en bas -> Haut obligatoire.
+        if (kart.yPercent > ROAD_LIMITS.max - 8) dir = -1;
+        if (kart.yPercent < ROAD_LIMITS.min + 8) dir = 1;
+
+        kart.wanderVy = dir * aiConfig.wanderSpeed;
+        kart.aiState = 'wandering';
+    }
+
+    // Est-on en cours de flânerie ?
+    if (now < kart.wanderEndTime) {
+        kart.targetVy = kart.wanderVy;
+        // Pendant qu'on flâne, on met à jour "originalLaneY" pour ne pas que le kart revienne en arrière quand c'est fini
+        kart.originalLaneY = kart.yPercent; 
     } 
     else {
+        // --- 5. RETOUR AU CALME (CRUISING) ---
+        // Si aucun événement, on se stabilise
+        
+        // Si on sortait d'une esquive (dodging), on essaie de revenir à la ligne d'origine
         if (kart.aiState === 'dodging') {
             kart.aiState = 'returning';
         }
-
+        
+        // État de retour à la ligne (après esquive seulement)
         if (kart.aiState === 'returning') {
             if (kart.willReturnToLane) {
                 const diff = kart.originalLaneY - kart.yPercent;
@@ -329,7 +486,7 @@ function updateKartAI(kart, deltaTime) {
                     kart.yPercent = kart.originalLaneY; 
                     kart.aiState = 'cruising';
                 } else {
-                    const returnSpeed = 15;
+                    const returnSpeed = GAME_CONFIG.speeds.returnLaneSpeed;
                     kart.targetVy = (diff > 0 ? 1 : -1) * returnSpeed;
                 }
             } else {
@@ -338,15 +495,19 @@ function updateKartAI(kart, deltaTime) {
                 kart.originalLaneY = kart.yPercent;
             }
         } else {
+            // Mode croisière standard
             kart.targetVy = 0;
+            kart.aiState = 'cruising';
+            kart.originalLaneY = kart.yPercent;
         }
     }
 
+    // Application finale de la vélocité avec inertie
     kart.vy += (kart.targetVy - kart.vy) * 5 * deltaTime;
 }
 
 function checkKartKartCollisions(kart) {
-    const hitboxSize = 5; 
+    const hitboxSize = GAME_CONFIG.hitboxes.kartVsKart.y; 
 
     for (const other of kartsData) {
         if (other.id === kart.id) continue;
@@ -357,7 +518,7 @@ function checkKartKartCollisions(kart) {
         const distCmdX = Math.abs(kart.x - other.x);
         const distCmdY = Math.abs(kart.yPercent - other.yPercent);
 
-        if (distCmdX < 60 && distCmdY < hitboxSize) {
+        if (distCmdX < GAME_CONFIG.hitboxes.kartVsKart.x && distCmdY < hitboxSize) {
             const pushForce = 0.5; 
             
             if (kart.yPercent > other.yPercent) {
@@ -410,27 +571,28 @@ function giveKartItem(kart) {
         kart.heldItem.element.style.opacity = '1';
     }
 
-    kart.throwTime = Date.now() + randomRange(1000, 5000);
+    kart.throwTime = Date.now() + randomRange(GAME_CONFIG.ai.holdItemMin, GAME_CONFIG.ai.holdItemMax);
 }
 
 function activateItem(kart, containerWidth) {
     const item = kart.heldItem;
     if (!item) return;
 
+    // --- 1. DEFINITION DE L'ETAT INITIAL ---
+    // L'item hérite de l'état du kart.
+    // Si le kart est en mode retour (invisible), l'item naît en mode retour.
+    let initialState = 'active';
+    if (kart.state === 'returning' || kart.state === 'waiting_respawn') {
+        initialState = 'returning';
+    }
+
+    // Calcul de la position de départ
     let startX = kart.x + item.offset;
     const isMobile = window.innerWidth < 769;
 
     if (item.type === 'shell') {
         const shellOffset = isMobile ? 20 : 50; 
         startX = kart.x + shellOffset; 
-    }
-
-    let initialState = 'active';
-    let initialOpacity = '1';
-    
-    if (kart.state === 'returning') {
-        initialState = 'returning';
-        initialOpacity = '0';
     }
 
     const newItem = {
@@ -441,29 +603,36 @@ function activateItem(kart, containerWidth) {
         x: startX, 
         y: kart.yPercent,
         shooterId: kart.id,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        
+        // NOUVEAU : On stocke la vitesse de retour pour plus tard (sera écrasée par le calcul dynamique)
+        returnSpeed: 0 
     };
     
-    newItem.element.style.opacity = initialOpacity;
-
+    // Application de la visibilité initiale
     if (initialState === 'returning') {
-        if (item.type === 'banana') {
-            newItem.vx = -itemsConfig.roadSpeedPPS;
-            newItem.vy = 0;
-        } else {
-            const shellSpeed = calculateSpeedPPS(containerWidth, true);
-            newItem.vx = -shellSpeed;
-            newItem.vy = randomRange(-1.5, 1.5);
-        }
+        newItem.element.style.opacity = '0';
+    } else {
+        newItem.element.style.opacity = '1';
+    }
+
+    // --- 2. VITESSE INITIALE ---
+    if (item.type === 'banana') {
+        // La banane est statique par rapport à la route, donc elle recule à la vitesse de la route
+        // (Sauf si elle est en mode returning, voir updateItems)
+        newItem.vx = -GAME_CONFIG.speeds.roadPPS;
+        newItem.vy = 0;
     } 
     else {
-        if (item.type === 'banana') {
-            newItem.vx = -itemsConfig.roadSpeedPPS;
-            newItem.vy = 0;
+        // Logique des coquilles (projectiles)
+        const shellSpeed = calculateSpeedPPS(containerWidth, true);
+        if (initialState === 'returning') {
+            // Si tirée par un fantôme, elle part vers la gauche (sens du retour)
+            newItem.vx = -shellSpeed;
         } else {
-            newItem.vx = calculateSpeedPPS(containerWidth, true);
-            newItem.vy = randomRange(-1.5, 1.5);
+            newItem.vx = shellSpeed;
         }
+        newItem.vy = randomRange(-1.5, 1.5);
     }
 
     newItem.currentFrame = 1;
@@ -475,16 +644,69 @@ function activateItem(kart, containerWidth) {
 
 function updateItems(deltaTime, containerWidth) {
     const now = Date.now();
+    
+    // --- CALCUL DES LIMITES POUR LE CYCLE (Comme pour les Item Boxes) ---
+    const limitXRight = containerWidth + 150;
+    const limitXLeft = -150;
+
+    // Calcul mathématique précis pour que la banane reste synchronisée avec le sol
+    const loopTime = GAME_CONFIG.speeds.lapDistance / GAME_CONFIG.speeds.roadPPS;
+    const visibleDistance = limitXRight - limitXLeft;
+    const timeVisible = visibleDistance / GAME_CONFIG.speeds.roadPPS;
+    const timeInvisible = loopTime - timeVisible;
+    
+    // C'est la vitesse à laquelle la banane doit voyager dans le monde invisible
+    // pour réapparaître exactement au même endroit au tour suivant.
+    const bananaReturnSpeed = visibleDistance / timeInvisible;
+
 
     for (let i = activeItems.length - 1; i >= 0; i--) {
         const item = activeItems[i];
         if (!item) continue; 
 
-        item.x += item.vx * deltaTime;
-        item.y += item.vy * deltaTime;
+        // --- GESTION DU MOUVEMENT EN FONCTION DU TYPE ---
 
+        if (item.type === 'banana') {
+            // LOGIQUE DE CYCLE (BOUCLE INFINIE)
+            
+            if (item.state === 'active') {
+                // Monde Visible : Elle recule avec la route
+                item.vx = -GAME_CONFIG.speeds.roadPPS;
+                item.x += item.vx * deltaTime;
+
+                // Sortie à gauche -> Passage dans le monde invisible
+                if (item.x < limitXLeft) {
+                    item.state = 'returning';
+                    // Elle est maintenant au bout gauche, elle va repartir vers la droite
+                }
+            } 
+            else if (item.state === 'returning') {
+                // Monde Invisible : Elle voyage vers la droite pour boucler le tour
+                item.vx = bananaReturnSpeed;
+                item.x += item.vx * deltaTime;
+
+                // Arrivée à droite -> Retour dans le monde visible
+                if (item.x > limitXRight) {
+                    item.state = 'active';
+                }
+            }
+
+            // Durée de vie globale (sécurité)
+            if (now - item.createdAt > GAME_CONFIG.delays.bananaLife) {
+                removeItem(i);
+                continue;
+            }
+
+        } else {
+            // LOGIQUE COQUILLES (Projectiles classiques)
+            // Elles ne bouclent pas (trop dangereux), elles sont détruites aux bords
+            item.x += item.vx * deltaTime;
+            item.y += item.vy * deltaTime;
+        }
+
+        // --- ANIMATION VISUELLE (COQUILLES) ---
         if (item.type === 'shell') {
-            if (now - item.lastAnimTime > itemsConfig.shell.animSpeed) {
+            if (now - item.lastAnimTime > GAME_CONFIG.visuals.shell.animSpeed) {
                 item.currentFrame++;
                 if (item.currentFrame > 3) item.currentFrame = 1;
                 item.imgElement.src = getShellPath(item.currentFrame);
@@ -492,43 +714,36 @@ function updateItems(deltaTime, containerWidth) {
             }
         }
 
-        if (item.type === 'banana') {
-            if (now - item.createdAt > itemsConfig.bananaLifeTime) {
-                removeItem(i);
-                continue;
-            }
-            if (item.state === 'active' && item.x < -200) {
-                item.x += itemsConfig.lapDistance; 
-                item.element.style.transform = `translateX(${item.x}px)`;
-            }
-            if (item.state === 'returning' && item.x < -200) {
-                 removeItem(i); 
-                 continue;
-            }
-        } else if (item.type === 'shell') {
-            if (item.state === 'active' && item.x > containerWidth + 200) {
-                removeItem(i);
-                continue;
-            }
-            if (item.state === 'returning' && item.x < -200) {
-                removeItem(i);
-                continue;
-            }
-            if (item.y < -10 || item.y > 100) {
+        // --- NETTOYAGE HORS CADRE (Seulement pour les coquilles) ---
+        if (item.type === 'shell') {
+            if (item.x > limitXRight + 200 || item.x < limitXLeft - 200 || item.y < -10 || item.y > 100) {
                 removeItem(i);
                 continue;
             }
         }
 
+        // --- GESTION DE L'AFFICHAGE ---
         const dynamicZ = Math.floor(400 - item.y);
         item.element.style.zIndex = dynamicZ;
         item.element.style.transform = `translateX(${item.x}px)`;
         item.element.style.bottom = `${item.y}%`;
 
-        if (item.state === 'active' || item.state === 'returning') {
+        // Gestion de l'opacité (Visible ou Invisible selon l'état)
+        if (item.state === 'returning') {
+            item.element.style.opacity = '0';
+        } else {
+            item.element.style.opacity = '1';
+            // Collisions actives seulement si visible
             if (checkItemCollisions(item, i)) {
                 continue;
             }
+        }
+        
+        // Note : Si l'item est returning, on peut aussi vouloir vérifier les collisions
+        // avec les karts qui sont EUX AUSSI en returning (collisions dans le monde invisible).
+        // Si tu veux ça, ajoute ce bloc :
+        if (item.state === 'returning') {
+             checkItemCollisions(item, i); 
         }
     }
 }
@@ -543,8 +758,9 @@ function removeItem(index) {
 }
 
 function checkHeldItemCollisions() {
-    const hitBoxX = 40; 
-    const hitBoxY = 5;
+    // Utilisation des nouvelles variables de hitbox
+    const hitBoxX = GAME_CONFIG.hitboxes.itemVsKart.x; 
+    const hitBoxY = GAME_CONFIG.hitboxes.itemVsKart.y;
 
     for (let i = activeItems.length - 1; i >= 0; i--) {
         const activeItem = activeItems[i];
@@ -598,14 +814,14 @@ function checkHeldItemCollisions() {
 }
 
 function checkItemCollisions(item, itemIndex) {
-    const hitBoxX = 40; 
-    const hitBoxY = 5;
+    const hitBoxX = GAME_CONFIG.hitboxes.itemVsKart.x; 
+    const hitBoxY = GAME_CONFIG.hitboxes.itemVsKart.y;
 
     for (let kart of kartsData) {
         if (item.type === 'shell' && kart.id === item.shooterId) continue;
         
         if (item.type === 'banana' && kart.id === item.shooterId) {
-            if (Date.now() - item.createdAt < 2000) {
+            if (Date.now() - item.createdAt < GAME_CONFIG.delays.invincibilityOwnItem) {
                 continue;
             }
         }
@@ -654,8 +870,20 @@ function checkItemCollisions(item, itemIndex) {
 function handleKartHit(kart, cause) {
     kart.state = 'hit';
     kart.vy = 0; 
-    kart.hitEndTime = Date.now() + 2000; 
     
+    // On définit la fin du stunt
+    const stunDuration = GAME_CONFIG.delays.stunDuration;
+    kart.hitEndTime = Date.now() + stunDuration; 
+    
+    // --- MODIFICATION ICI ---
+    // Si le kart tient un item, IL LE GARDE.
+    // MAIS on repousse le moment où il a le droit de tirer.
+    // Le tir sera autorisé seulement 1 seconde après qu'il ait fini de tourner.
+    if (kart.heldItem) {
+        kart.throwTime = Date.now() + stunDuration + 1000;
+    }
+    // ------------------------
+
     kart.element.style.filter = "brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)"; 
     setTimeout(() => { kart.element.style.filter = "none"; }, 300);
 }
@@ -663,15 +891,16 @@ function handleKartHit(kart, cause) {
 function updateItemBoxes(deltaTime, screenWidth) {
     const now = Date.now();
     
-    const hitBoxX = itemsConfig.box.hitboxX;
-    const hitBoxY = itemsConfig.box.hitboxY;
+    // Récupération des réglages de hitbox depuis la nouvelle config
+    const hitBoxX = GAME_CONFIG.hitboxes.itemBox.toleranceX;
+    const hitBoxY = GAME_CONFIG.hitboxes.itemBox.toleranceY;
 
     const limitXRight = screenWidth + 150;
     const limitXLeft = -150;
 
-    const loopTime = itemsConfig.lapDistance / itemsConfig.roadSpeedPPS;
+    const loopTime = GAME_CONFIG.speeds.lapDistance / GAME_CONFIG.speeds.roadPPS;
     const visibleDistance = limitXRight - limitXLeft; 
-    const timeVisible = visibleDistance / itemsConfig.roadSpeedPPS;
+    const timeVisible = visibleDistance / GAME_CONFIG.speeds.roadPPS;
     const timeInvisible = loopTime - timeVisible;
     const returnSpeed = visibleDistance / timeInvisible;
 
@@ -686,7 +915,7 @@ function updateItemBoxes(deltaTime, screenWidth) {
         }
 
         if (box.state === 'running') {
-            box.x -= itemsConfig.roadSpeedPPS * deltaTime;
+            box.x -= GAME_CONFIG.speeds.roadPPS * deltaTime;
             
             if (box.x < limitXLeft) {
                 box.state = 'returning';
@@ -713,11 +942,12 @@ function updateItemBoxes(deltaTime, screenWidth) {
 
                 if (dx < hitBoxX && dy < hitBoxY) {
                     box.active = false;
-                    box.reactivateTime = now + 3000;
+                    // Utilisation des délais configurables
+                    box.reactivateTime = now + GAME_CONFIG.delays.boxRespawn;
                     
                     setTimeout(() => {
                         giveKartItem(kart);
-                    }, 3000);
+                    }, GAME_CONFIG.delays.itemGrant);
                     break;
                 }
             }
@@ -750,6 +980,7 @@ function animateKarts(timestamp) {
     }
 
     const container = document.getElementById('karts-container');
+    const ROAD_LIMITS = { min: 0, max: 30 };
     
     if (container) {
         const screenWidth = container.offsetWidth;
@@ -759,9 +990,11 @@ function animateKarts(timestamp) {
         checkHeldItemCollisions();
 
         kartsData.forEach(kart => {
+            // --- LOGIQUE DE DEPLACEMENT ---
             if (kart.state === 'running' || kart.state === 'returning') {
                 
-                if (kart.heldItem && now > kart.throwTime) {
+                // On ne permet le tir QUE si le kart est en course active (pas en retour)
+                if (kart.state === 'running' && kart.heldItem && now > kart.throwTime) {
                     activateItem(kart, screenWidth);
                 }
 
@@ -790,6 +1023,7 @@ function animateKarts(timestamp) {
                 const zVal = Math.floor(400 - kart.yPercent);
                 kart.element.style.zIndex = zVal;
 
+                // Gestion des sorties d'écran
                 if (kart.state === 'running' && kart.x > limitX) {
                     kart.state = 'returning';
                     kart.element.style.opacity = '0'; 
@@ -799,13 +1033,13 @@ function animateKarts(timestamp) {
                 }
             } 
             else if (kart.state === 'hit') {
-                const moveAmount = -itemsConfig.roadSpeedPPS * deltaTime;
+                const moveAmount = -GAME_CONFIG.speeds.roadPPS * deltaTime;
                 kart.x += moveAmount;
                 kart.element.style.transform = `translateX(${kart.x}px)`;
 
                 if (kart.x < -150) {
                     kart.element.style.opacity = '0';
-                    kart.state = 'waiting_respawn';
+                    kart.state = 'waiting_respawn'; // Le kart devient invisible ici
                     const remainingStun = Math.max(0, kart.hitEndTime - Date.now());
                     const specialDelay = remainingStun * 1.5;
                     scheduleRespawnForHit(kart, specialDelay);
@@ -816,18 +1050,27 @@ function animateKarts(timestamp) {
                 }
             }
 
-            if (kart.heldItem && kart.heldItem.element) {
-                if (kart.state === 'returning') {
-                    kart.heldItem.element.style.opacity = '0';
-                } 
-                else {
-                    kart.heldItem.element.style.opacity = '1';
-                }
+            // --- GESTION ROBUSTE DE L'ITEM TENU ---
+                if (kart.heldItem && kart.heldItem.element) {
+                // Règle de visibilité stricte :
+                // L'item est visible SI ET SEULEMENT SI le kart est visible.
+                // Le kart est visible quand il court ou est touché, ET qu'il est dans l'écran (x > -100).
                 
-                const holdX = kart.x + kart.heldItem.offset;
-                kart.heldItem.element.style.transform = `translateX(${holdX}px)`;
-                kart.heldItem.element.style.bottom = `${kart.yPercent}%`;
-                kart.heldItem.element.style.zIndex = Math.floor(400 - kart.yPercent);
+                const isKartVisible = (kart.state === 'running' || kart.state === 'hit') && kart.x > -100;
+
+                if (isKartVisible) {
+                    // On affiche l'item
+                    kart.heldItem.element.style.opacity = '1';
+                    
+                    // On colle l'item au kart
+                    const holdX = kart.x + kart.heldItem.offset;
+                    kart.heldItem.element.style.transform = `translateX(${holdX}px)`;
+                    kart.heldItem.element.style.bottom = `${kart.yPercent}%`;
+                    kart.heldItem.element.style.zIndex = Math.floor(400 - kart.yPercent);
+                } else {
+                    // Si le kart est caché (waiting_respawn, returning...) on cache l'item
+                    kart.heldItem.element.style.opacity = '0';
+                }
             }
         });
 
@@ -835,7 +1078,7 @@ function animateKarts(timestamp) {
         updateItemBoxes(deltaTime, screenWidth);
     }
 
-    requestAnimationFrame(animateKarts);
+    animationId = requestAnimationFrame(animateKarts);
 }
 
 function showLogo() {
@@ -847,8 +1090,35 @@ function showLogo() {
     });
 }
 
+/* ==========================================================================
+   GESTION DU DEMARRAGE ET DE LA VISIBILITÉ (TAB ACTIVE/INACTIVE)
+   ========================================================================== */
+
+function handleVisibilityChange() {
+    if (document.hidden) {
+        if (animationId) {
+            cancelAnimationFrame(animationId);
+            animationId = null;
+        }
+
+        const container = document.getElementById('karts-container');
+        if (container) container.innerHTML = '';
+        
+        kartsData = [];
+        activeItems = [];
+        itemBoxes = [];
+        
+    } else {
+        lastFrameTime = 0;
+        initCharacters();
+        animateKarts(0);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     initCharacters();
-    requestAnimationFrame(animateKarts);
+    animateKarts(0);
     showLogo();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 });

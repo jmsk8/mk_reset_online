@@ -27,6 +27,7 @@ INSERT INTO public.configuration (key, value) VALUES
 ('ghost_penalty', '0.1'),
 ('unranked_threshold', '10');
 
+
 -- JOUEURS
 CREATE TABLE public.joueurs (
     id integer NOT NULL PRIMARY KEY, 
@@ -85,6 +86,15 @@ CREATE TABLE public.ghost_log (
     penalty_applied double precision NOT NULL
 );
 ALTER TABLE public.ghost_log OWNER TO mk_reset;
+
+-- HISTORIQUE RESET GLOBAL
+CREATE TABLE public.global_resets (
+    id serial PRIMARY KEY,
+    date date NOT NULL DEFAULT CURRENT_DATE,
+    value_applied double precision NOT NULL,
+    created_at timestamp DEFAULT now()
+);
+ALTER TABLE public.global_resets OWNER TO mk_reset;
 
 -- API TOKENS
 CREATE TABLE public.api_tokens (
@@ -151,3 +161,6 @@ INSERT INTO public.types_awards (code, nom, emoji, description) VALUES
 
 -- Logic mapping (caché, sert pour la victoire)
 ('Indice de Performance', 'Indice de Performance', '🎯', 'Calcul IP');
+
+-- Sigma min pour le rank par defaut--
+INSERT INTO public.configuration (key, value) VALUES ('sigma_threshold', '4.0') ON CONFLICT (key) DO NOTHING;

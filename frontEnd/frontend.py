@@ -404,13 +404,24 @@ def proxy_saisons_save_awards(id):
 @csrf.exempt
 def proxy_joueurs():
     if 'admin_token' not in session:
-        return jsonify({'error': 'Non autorisé'}), 403
+        return jsonify({'error': 'Non autorisé : Session expirée'}), 403
+
     headers = {'X-Admin-Token': session['admin_token']}
+
     if request.method == 'GET':
         data, status = backend_request('GET', '/admin/joueurs', headers=headers)
+        return jsonify(data), status
+
     elif request.method == 'POST':
-        data, status = backend_request('POST', '/admin/joueurs', data=request.get_json(), headers=headers)
-    return jsonify(data), status
+        payload = request.get_json(silent=True)
+        
+        if payload is None:
+            return jsonify({'error': 'Données invalides ou manquantes (JSON requis)'}), 400
+            
+        data, status = backend_request('POST', '/admin/joueurs', data=payload, headers=headers)
+        return jsonify(data), status
+
+    return jsonify({'error': 'Méthode non autorisée'}), 405
 
 @app.route('/admin/joueurs/<int:id>', methods=['PUT', 'DELETE'])
 @csrf.exempt
@@ -434,6 +445,24 @@ def proxy_config():
         data, status = backend_request('GET', '/admin/config', headers=headers)
     elif request.method == 'POST':
         data, status = backend_request('POST', '/admin/config', data=request.get_json(), headers=headers)
+    return jsonify(data), status
+
+@app.route('/admin/global-reset', methods=['POST'])
+@csrf.exempt
+def proxy_global_reset():
+    if not session.get('admin_token'):
+        return jsonify({"error": "Non autorisé"}), 401
+    headers = {'X-Admin-Token': session.get('admin_token')}
+    data, status = backend_request('POST', '/api/admin/global-reset', data=request.get_json(), headers=headers)
+    return jsonify(data), status
+
+@app.route('/admin/revert-global-reset', methods=['POST'])
+@csrf.exempt
+def proxy_revert_global_reset():
+    if not session.get('admin_token'):
+        return jsonify({"error": "Non autorisé"}), 401
+    headers = {'X-Admin-Token': session.get('admin_token')}
+    data, status = backend_request('POST', '/api/admin/revert-global-reset', headers=headers)
     return jsonify(data), status
 
 # MAIN

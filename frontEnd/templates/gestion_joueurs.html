@@ -27,52 +27,117 @@
                     
                     <div class="card glass-card mb-6 fade-in">
                         <div class="card-header">
+                            <p class="card-header-title">
+                                <span class="icon is-medium mr-2"><i class="fas fa-magic has-text-warning"></i></span>
+                                Reset Global du Sigma
+                            </p>
+                        </div>
+                        <div class="card-content">
+                            <div class="content has-text-grey-light is-small mb-4">
+                                <p><i class="fas fa-info-circle"></i> Cette action ajoute de l'incertitude (Sigma) à <strong>tous</strong> les joueurs.</p>
+                            </div>
+                            
+                            <div class="columns is-multiline">
+                                <div class="column is-6">
+                                    <div class="field">
+                                        <label class="label has-text-white">Date d'application</label>
+                                        <div class="control has-icons-left">
+                                            <input class="input" type="date" id="globalResetDate">
+                                            <span class="icon is-small is-left">
+                                                <i class="fas fa-calendar"></i>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="column is-6">
+                                    <div class="field">
+                                        <label class="label has-text-white">Valeur Sigma à ajouter</label>
+                                        <div class="control has-icons-left">
+                                            <input class="input" type="number" id="globalResetValue" placeholder="0.3" step="0.01" value="0.3">
+                                            <span class="icon is-small is-left">
+                                                <i class="fas fa-chart-line"></i>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="column is-12">
+                                    <div class="buttons is-right">
+                                        <button onclick="revertGlobalReset()" class="button is-danger is-outlined is-small">
+                                            <i class="fas fa-undo mr-2"></i> Annuler le dernier reset
+                                        </button>
+                                        <button onclick="applyGlobalReset()" class="button is-warning">
+                                            <i class="fas fa-bolt mr-2"></i> Activer le Reset
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card glass-card mb-6 fade-in">
+                        <div class="card-header">
                             <p class="card-header-title"><i class="fas fa-cogs mr-2"></i> Configuration Globale</p>
                         </div>
                         <div class="card-content">
                             <form id="configForm">
-                                <div class="columns is-vcentered is-multiline">
-                                    <div class="column is-3">
+                                <div class="columns is-multiline is-variable is-4">
+                                    <div class="column is-4">
                                         <div class="field">
-                                            <label class="label">Tau</label>
+                                            <label class="label has-text-white">Valeur Tau</label>
                                             <div class="control">
                                                 <input class="input" type="number" step="0.001" id="configTau" placeholder="0.083">
                                             </div>
-                                            <p class="help">Incertitude (défaut: 0.083)</p>
+                                            <p class="help has-text-grey-light">Incertitude dynamique</p>
                                         </div>
                                     </div>
                                     
-                                    <div class="column is-3">
+                                    <div class="column is-4">
                                         <div class="field">
-                                            <label class="label">Limite Unranked</label>
+                                            <label class="label has-text-white">Limite Unranked</label>
                                             <div class="control">
                                                 <input class="input" type="number" step="1" id="configUnrankedLimit" placeholder="10">
                                             </div>
-                                            <p class="help">Nb tournois manqués pour passer Unranked</p>
+                                            <p class="help has-text-grey-light">Tournois manqués</p>
                                         </div>
                                     </div>
 
-                                    <div class="column is-6">
+                                    <div class="column is-4">
                                         <div class="field">
-                                            <label class="label">Pénalité d'absence</label>
-                                            <div class="field is-grouped">
-                                                <div class="control">
-                                                    <label class="checkbox has-text-white mt-2">
-                                                        <input type="checkbox" id="configGhost">
-                                                        Activer
-                                                    </label>
+                                            <label class="label has-text-white">Rang Sigma</label>
+                                            <div class="control">
+                                                <input class="input" type="number" step="0.01" id="configSigmaLimit" placeholder="4.0">
+                                            </div>
+                                            <p class="help has-text-grey-light">Sigma max pour Rank</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="column is-12">
+                                        <div class="box has-background-dark" style="border: 1px solid #3b82f6;">
+                                            <label class="label has-text-white mb-3">Gestion des Absences (Ghost)</label>
+                                            <div class="level is-mobile">
+                                                <div class="level-left">
+                                                    <div class="field">
+                                                        <input type="checkbox" id="configGhost" class="switch is-rounded is-info">
+                                                        <label for="configGhost" class="has-text-white ml-2">4 tournois manqués = sigma++ </label>
+                                                    </div>
                                                 </div>
-                                                <div class="control is-expanded">
-                                                    <input class="input" type="number" step="0.01" id="configGhostPenalty" placeholder="Sigma">
+                                                <div class="level-right">
+                                                    <div class="field has-addons">
+                                                        <p class="control">
+                                                            <a class="button is-static is-small">Sigma +</a>
+                                                        </p>
+                                                        <p class="control">
+                                                            <input class="input is-small" type="number" step="0.01" id="configGhostPenalty" placeholder="0.1" style="width: 80px;">
+                                                        </p>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <p class="help is-info">Hausse du sigma après 4 absences.</p>
                                         </div>
                                     </div>
                                     
-                                    <div class="column is-12 has-text-right pt-0">
-                                        <button type="submit" class="button is-info is-small">
-                                            <i class="fas fa-save mr-2"></i> Valider tout
+                                    <div class="column is-12 has-text-right">
+                                        <button type="submit" class="button is-info">
+                                            <i class="fas fa-save mr-2"></i> Enregistrer la configuration
                                         </button>
                                     </div>
                                 </div>
@@ -134,6 +199,7 @@
                                 <table class="table is-fullwidth is-hoverable" style="background-color: transparent;">
                                     <thead>
                                         <tr>
+                                            <th class="has-text-white has-text-centered" style="width: 60px;">Status</th>
                                             <th class="has-text-white">Nom</th>
                                             <th class="has-text-white">Mu</th>
                                             <th class="has-text-white">Sigma</th>
@@ -176,57 +242,67 @@
     <div class="modal" id="editModal">
         <div class="modal-background" onclick="closeModal()"></div>
         <div class="modal-card">
-            <header class="modal-card-head" style="background: rgba(30,41,59,0.9); border-bottom: 1px solid #3b82f6;">
+            <header class="modal-card-head" style="background: rgba(30,41,59,0.95); border-bottom: 1px solid #3b82f6;">
                 <p class="modal-card-title has-text-white">Modifier le joueur</p>
                 <button class="delete" aria-label="close" onclick="closeModal()"></button>
             </header>
-            <section class="modal-card-body" style="background: rgba(15,23,42,0.9);">
+            <section class="modal-card-body" style="background: rgba(15,23,42,0.95);">
                 <input type="hidden" id="editId">
-                <div class="field">
-                    <label class="label">Pseudo</label>
-                    <input class="input" type="text" id="editNom">
+                <input type="hidden" id="editIsRankedValue">
+                
+                <div class="field mb-5">
+                    <label class="label has-text-info">Pseudo du joueur</label>
+                    <div class="control has-icons-left">
+                        <input class="input is-medium" type="text" id="editNom">
+                        <span class="icon is-left"><i class="fas fa-user"></i></span>
+                    </div>
                 </div>
-                <div class="columns">
-                    <div class="column">
+
+                <div class="columns is-multiline">
+                    <div class="column is-6">
                         <div class="field">
-                            <label class="label">Mu</label>
+                            <label class="label has-text-white">Mu (Niveau)</label>
                             <input class="input" type="number" step="0.001" id="editMu">
                         </div>
                     </div>
-                    <div class="column">
+                    <div class="column is-6">
                         <div class="field">
-                            <label class="label">Sigma</label>
+                            <label class="label has-text-white">Sigma (Incertitude)</label>
                             <input class="input" type="number" step="0.001" id="editSigma">
                         </div>
                     </div>
+                    <div class="column is-12">
+                        <div class="field">
+                            <label class="label has-text-white">Absences consécutives</label>
+                            <div class="control has-icons-left">
+                                <input class="input" type="number" step="1" min="0" id="editMissed">
+                                <span class="icon is-left"><i class="fas fa-user-clock"></i></span>
+                            </div>
+                            <p class="help has-text-grey">Nombre total de tournois manqués d'affilée.</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="field">
-                    <label class="checkbox has-text-white">
-                        <input type="checkbox" id="editIsRanked">
-                        <strong>Joueur Classé (Ranked Status)</strong>
-                    </label>
-                    <p class="help has-text-grey-light">Si décoché, le joueur passe en Tier U (Unranked).</p>
+
+                <div class="field mt-4">
+                    <label class="label has-text-white mb-2">Statut Classé</label>
+                    <div class="control" onclick="toggleRankedStatus()" style="cursor: pointer;">
+                        <div id="rankedToggleBtn" class="button is-fullwidth transition-all">
+                            <span class="icon" id="rankedIcon"></span>
+                            <span id="rankedText" class="has-text-weight-bold"></span>
+                        </div>
+                    </div>
                 </div>
+
             </section>
-            <footer class="modal-card-foot" style="background: rgba(30,41,59,0.9); border-top: 1px solid #3b82f6;">
-                <button class="button is-success" onclick="saveEdit()">Enregistrer</button>
-                <button class="button" onclick="closeModal()">Annuler</button>
+            <footer class="modal-card-foot" style="background: rgba(30,41,59,0.95); border-top: 1px solid #3b82f6; justify-content: flex-end;">
+                <button class="button is-danger is-outlined" onclick="closeModal()">Annuler</button>
+                <button class="button is-success" onclick="saveEdit()">Valider</button>
             </footer>
         </div>
     </div>
 
     {% include 'footer.html' %}
-    <script src="{{ url_for('static', filename='js/gestion.js') }}"></script>
     
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const fadeElems = document.querySelectorAll('.fade-in');
-            fadeElems.forEach(elem => {
-                requestAnimationFrame(() => {
-                    elem.classList.add('visible');
-                });
-            });
-        });
-    </script>
+    <script src="../static/js/gestion.js"></script>
 </body>
 </html>
