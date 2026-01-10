@@ -1,4 +1,3 @@
-/* --- BANNIÈRE--- */
 .hero.smk-snes-banner {
     position: relative;
     height: 230px;
@@ -14,19 +13,16 @@
     }
 }
 
-/* --- LOGO --- */
 .hero-body-content {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    
     z-index: 200;
     pointer-events: none;
 }
@@ -35,11 +31,8 @@
     display: block;
     height: auto;
     width: auto;
-    
     max-width: 300px;
-    
     transform: translateY(5px); 
-    
     filter: drop-shadow(0 0 20px rgba(255,255,255,0.7));
 }
 
@@ -50,7 +43,6 @@
     }
 }
 
-/* --- FOND --- */
 .layer-scrolling-bg {
     position: absolute;
     top: 0;
@@ -59,13 +51,12 @@
     height: 65%; 
     z-index: 1; 
     background-image: url('../img/index-banner.png');
-    background-size: 2000px 100%;
+    background-size: 3072px 100%; 
     background-repeat: repeat-x;
     image-rendering: pixelated;
-    animation: scrollBackgroundInfinite 11s linear infinite;
+    will-change: background-position;
 }
 
-/* --- SOL / BITUME --- */
 .layer-ground {
     position: absolute;
     bottom: 0;
@@ -75,7 +66,6 @@
     background-color: #333333;
 }
 
-/* --- VIBREUR --- */
 .layer-ground::before {
     content: '';
     position: absolute;
@@ -83,47 +73,38 @@
     left: 0;
     width: 120%;
     height: 10px;
-    background-image: 
-        repeating-linear-gradient(90deg, 
-            #cc0000 0px, #cc0000 40px,
-            #ffffff 40px, #ffffff 80px
-        );
+    background-image: repeating-linear-gradient(90deg, #cc0000 0px, #cc0000 40px, #ffffff 40px, #ffffff 80px);
     z-index: 4;
     box-shadow: 0 2px 4px rgba(0,0,0,0.5); 
-    animation: scrollBgFast var(--road-duration, 0.44s) linear infinite;
+    animation: scrollBgFast var(--road-anim-duration, 0.32s) linear infinite;
 }
 
-/* --- LIGNE D'ARRIVÉE --- */
 .layer-finish-line {
     position: absolute;
     bottom: 0;
-    left: 100%; 
+    left: 0; 
     height: 35%; 
     width: 60px; 
-    
     background-color: #ffffff;
     background-image:
         linear-gradient(45deg, #000000 25%, transparent 25%, transparent 75%, #000000 75%, #000000),
         linear-gradient(45deg, #000000 25%, transparent 25%, transparent 75%, #000000 75%, #000000);
     background-position: 0 0, 15px 15px;
     background-size: 30px 30px;
-    
     z-index: 5; 
     box-shadow: -2px 0 5px rgba(0,0,0,0.3);
-    
-    animation: scrollFinishLine 22s linear infinite;
+    will-change: transform;
 }
 
-/* --- ITEM BOX --- */
 .item-box {
     position: absolute;
     background-image: url('../img/item_box.png');
     background-size: contain;
     background-repeat: no-repeat;
     z-index: 100;
+    will-change: transform;
 }
 
-/* --- KART --- */
 .kart-container-moving {
     position: absolute;
     left: 0; 
@@ -144,12 +125,6 @@
     animation: snesBounce 0.15s infinite alternate ease-in-out;
 }
 
-/* --- KEYFRAMES --- */
-@keyframes scrollBackgroundInfinite {
-    from { background-position: 0 0; }
-    to { background-position: -2000px 0; }
-}
-
 @keyframes scrollBgFast { 
     0% { background-position: 0 0; } 
     100% { background-position: -80px 0; } 
@@ -160,7 +135,48 @@
     100% { transform: translateY(-3px); }
 }
 
-@keyframes scrollFinishLine {
-    from { transform: translateX(0); }
-    to { transform: translateX(-4000px); } 
+#debug-hud {
+    position: fixed;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 800px;
+    height: 60px;
+    background-color: rgba(0, 0, 0, 0.85);
+    border: 2px solid #00ff00;
+    z-index: 9999;
+    font-family: monospace;
+    overflow: hidden;
+    box-shadow: 0 0 10px #00ff00;
+    display: none;
 }
+
+/* CHANGEMENT ICI : Class au lieu d'ID pour gérer le split */
+.debug-camera-view {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border: 2px solid #ff0000;
+    background-color: rgba(255, 0, 0, 0.2);
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.debug-entity {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 12px;
+    font-weight: bold;
+    color: white;
+    text-align: center;
+    line-height: 14px;
+    border-radius: 50%;
+}
+
+.debug-kart { background-color: blue; z-index: 10; }
+.debug-itembox { width: 8px; height: 8px; background-color: yellow; border-radius: 0; top: 30%; }
+.debug-finish { width: 2px; height: 100%; background-color: white; top: 0; transform: none; border-radius: 0; }

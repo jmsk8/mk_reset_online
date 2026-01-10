@@ -96,6 +96,51 @@
             .chart-container {
                 height: 300px;
             }
+
+            .mobile-card-table table, 
+            .mobile-card-table thead, 
+            .mobile-card-table tbody, 
+            .mobile-card-table th, 
+            .mobile-card-table td, 
+            .mobile-card-table tr { 
+                display: block; 
+            }
+            
+            .mobile-card-table thead tr { 
+                position: absolute;
+                top: -9999px;
+                left: -9999px;
+            }
+            
+            .mobile-card-table tr { 
+                margin-bottom: 1rem;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 8px;
+                padding: 10px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            }
+            
+            .mobile-card-table td { 
+                border: none !important;
+                position: relative;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                padding-top: 5px !important;
+                padding-bottom: 5px !important;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                text-align: right;
+            }
+            
+            .mobile-card-table td:before { 
+                content: attr(data-label);
+                font-weight: bold;
+                text-align: left;
+                padding-right: 15px;
+                color: #e0e0e0;
+            }
         }
     </style>
 </head>
@@ -342,7 +387,7 @@
                             </p>
                         </div>
                         <div class="card-content">
-                            <div class="content">
+                            <div class="content mobile-card-table">
                                 <table class="table is-fullwidth is-hoverable">
                                     <thead>
                                         <tr>
@@ -355,29 +400,29 @@
                                     <tbody>
                                         {% for tournoi in historique %}
                                         <tr class="fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
-                                            <td style="vertical-align: middle;">{{ tournoi.date }}</td>
+                                            <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
                                            
                                             {% if tournoi.type == 'absence' %}
-                                                <td style="vertical-align: middle;" class="has-text-grey-light">-</td>
-                                                <td style="vertical-align: middle;">
+                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
+                                                <td style="vertical-align: middle;" data-label="Position">
                                                     <span class="tag is-danger is-light">Absence prolongée (-{{ tournoi.valeur }} sigma)</span>
                                                 </td>
-                                                <td class="has-text-centered" style="vertical-align: middle;">
+                                                <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
                                                     <span class="tag is-dark">N/A</span>
                                                 </td>
                                             {% elif tournoi.type == 'reset' %}
-                                                <td style="vertical-align: middle;" class="has-text-grey-light">-</td>
-                                                <td style="vertical-align: middle;">
+                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
+                                                <td style="vertical-align: middle;" data-label="Position">
                                                     <span class="tag is-primary is-light" style="background-color: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe;">
                                                         <i class="fas fa-magic mr-1"></i> Reset Global (+{{ tournoi.valeur }})
                                                     </span>
                                                 </td>
-                                                <td class="has-text-centered" style="vertical-align: middle;">
+                                                <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
                                                     <span class="tag is-dark">N/A</span>
                                                 </td>
                                             {% else %}
-                                                <td style="vertical-align: middle;">{{ tournoi.score }}</td>
-                                                <td style="vertical-align: middle;">
+                                                <td style="vertical-align: middle;" data-label="Score">{{ tournoi.score }}</td>
+                                                <td style="vertical-align: middle;" data-label="Position">
                                                     {% if tournoi.position == 1 %}
                                                         <span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
                                                     {% elif tournoi.position == 2 %}
@@ -388,7 +433,7 @@
                                                         <span class="tag is-info">{{ tournoi.position }}ème</span>
                                                     {% endif %}
                                                 </td>
-                                                <td class="has-text-centered" style="vertical-align: middle;">
+                                                <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
                                                     <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined">
                                                         <span class="icon"><i class="fas fa-eye"></i></span>
                                                     </a>
