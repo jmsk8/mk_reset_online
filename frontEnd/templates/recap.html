@@ -468,17 +468,17 @@
                                                         </p>
                                                         <p class="award-text-detail {{ 'has-text-success' if award_code=='stonks' else 'has-text-danger' if award_code=='not_stonks' else 'has-text-info' }}">
                                                             {% if award_code == 'ez' %}
-                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> {{ '1ère place' if val|int < 2 else '1ères places' }}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> {{ 'première place' if val|int < 2 else 'premières places' }}
                                                             {% elif award_code == 'pas_loin' %}
-                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> {{ '2ème place' if val|int < 2 else '2èmes places' }}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> {{ 'deuxième place' if val|int < 2 else 'deuxièmes places' }}
                                                             {% elif award_code == 'chillguy' %}
                                                                 +/- <span class="has-text-weight-bold is-size-6">{{ val }}</span> point{{ 's' if val|float|abs >= 2 else '' }} TS
                                                             {% elif award_code == 'stonks' %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val }}</span> point{{ 's' if val|float >= 2 else '' }} TS gagné{{ 's' if val|float >= 2 else '' }}
                                                             {% elif award_code == 'not_stonks' %}
-                                                                <span class="has-text-weight-bold is-size-6">{{ val|string|replace('-', '') }}</span> point{{ 's' if val|float|abs >= 2 else '' }} TS perdu{{ 's' if val|float|abs >= 2 else '' }}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|string|replace('-', '') }}</span> points{{ 's' if val|float|abs >= 2 else '' }} TS perdu{{ 's' if val|float|abs >= 2 else '' }}
                                                             {% elif award_code == 'stakhanov' %}
-                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> point{{ 's' if val|int >= 2 else '' }} {{ 'totaux' if val|int >= 2 else 'total' }}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> points{{ 's' if val|int >= 2 else '' }} {{ 'totaux' if val|int >= 2 else 'total' }}
                                                             {% else %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val }}</span>
                                                             {% endif %}
