@@ -602,7 +602,7 @@ def get_recap(slug):
             awards_data = {}
 
             cur.execute("""
-                SELECT t.code, t.nom, t.emoji, j.nom, a.valeur
+                SELECT t.code, t.nom, t.emoji, t.description, j.nom, a.valeur
                 FROM awards_obtenus a
                 JOIN types_awards t ON a.award_id = t.id
                 JOIN joueurs j ON a.joueur_id = j.id
@@ -611,12 +611,13 @@ def get_recap(slug):
             saved_rows = cur.fetchall()
 
             if saved_rows:
-                for code, award_name, emoji, player_name, valeur in saved_rows:
+                for code, award_name, emoji, desc, player_name, valeur in saved_rows:
                     awards_data.setdefault(code, []).append({
                         "nom": player_name,
                         "val": valeur,
                         "emoji": emoji,
-                        "award_name": award_name
+                        "award_name": award_name,
+                        "description": desc
                     })
             else:
                 active_list = config.get('active_awards', [])
@@ -642,7 +643,8 @@ def get_recap(slug):
                             "nom": p.get("nom", "?"),
                             "val": f"{p.get('final_score', 0):.3f}",
                             "emoji": ref["emoji"],
-                            "award_name": ref["nom"]
+                            "award_name": ref["nom"],
+                            "description": ref["desc"]
                         })
 
                 for code, winners in winners_map.items():
@@ -658,7 +660,8 @@ def get_recap(slug):
                                 "nom": w["nom"],
                                 "val": val_fmt,
                                 "emoji": ref["emoji"],
-                                "award_name": ref["nom"]
+                                "award_name": ref["nom"],
+                                "description": ref["desc"]
                             })
 
             cur.execute("""
@@ -1631,13 +1634,6 @@ def add_tournament():
             
             conn.commit()
             recalculate_tiers()
-            
-            try:
-                env = os.environ.copy()
-                env['PGPASSWORD'] = os.environ.get('POSTGRES_PASSWORD', '')
-                cmd = f"pg_dump -h {os.environ.get('POSTGRES_HOST')} -U {os.environ.get('POSTGRES_USER')} {os.environ.get('POSTGRES_DB')} | gzip > /app/backups/backup_TOURNOI_{date_tournoi_str}_{datetime.now().strftime('%H-%M-%S')}.sql.gz"
-                subprocess.run(cmd, shell=True, env=env)
-            except Exception: pass
             
             return jsonify({"status": "success", "tournoi_id": tournoi_id}), 201
     except Exception as e:

@@ -72,6 +72,12 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            cursor: help;
+            transition: transform 0.2s;
+        }
+
+        .award-icon:hover {
+            transform: scale(1.1);
         }
         
         .award-img {
@@ -137,6 +143,13 @@
             width: 30%;
             min-width: 200px; 
             position: relative;
+            cursor: help;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .moai-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
         }
         
         .moai-img {
@@ -147,6 +160,8 @@
         }
 
         .moai-gold { transform: scale(1.1); z-index: 2; border-color: rgba(255, 215, 0, 0.5); box-shadow: 0 0 30px rgba(255, 215, 0, 0.1); }
+        .moai-gold:hover { transform: scale(1.15) translateY(-5px); }
+
         .rank-badge {
             position: absolute;
             top: -15px;
@@ -329,7 +344,11 @@
                                             data-val="{{ j.score_gm if j.score_gm is not none else -1 }}"
                                             data-eligible="{{ 'true' if j.is_eligible_gm else 'false' }}">
                                             {% if j.score_gm is not none %}
-                                                {% if j.is_eligible_gm %}
+                                                {% if j.is_eligible_gm == false %}
+                                                    <span class="has-text-danger" style="opacity: 0.9;" title="Participation insuffisante">
+                                                        {{ '%0.2f'|format(j.score_gm|float) }}
+                                                    </span>
+                                                {% else %}
                                                     {% if j.score_gm >= 115 %}
                                                         <span class="has-text-warning has-text-weight-bold">★ {{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% elif j.score_gm >= 105 %}
@@ -337,12 +356,8 @@
                                                     {% elif j.score_gm >= 95 %}
                                                         <span class="has-text-white">{{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% else %}
-                                                        <span class="has-text-white" style="opacity: 0.8;">{{ '%0.2f'|format(j.score_gm|float) }}</span>
+                                                        <span class="has-text-white" style="opacity: 0.6;">{{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% endif %}
-                                                {% else %}
-                                                    <span class="has-text-danger" style="opacity: 0.9;" title="Participation insuffisante">
-                                                        {{ '%0.2f'|format(j.score_gm|float) }}
-                                                    </span>
                                                 {% endif %}
                                             {% else %}
                                                 <span class="has-text-grey-light">-</span>
@@ -372,11 +387,11 @@
                     {% set p3 = list_bronze[0] if list_bronze else none %}
 
                     {% if p2 %}
-                    <div class="moai-card">
+                    <div class="moai-card" onclick="showAwardInfo('{{ p2.award_name|replace("'", "\\'") }}', '{{ p2.description|replace("'", "\\'") }}')" title="{{ p2.description }}">
                         <div class="rank-badge" style="background: #C0C0C0; color: #000;">2ème</div>
                         <img src="/static/img/{{ p2.emoji }}" class="moai-img">
                         <h3 class="title is-4">
-                            <a href="/stats/joueur/{{ p2.nom }}" class="has-text-white player-link">{{ p2.nom }}</a>
+                            <a href="/stats/joueur/{{ p2.nom }}" class="has-text-white player-link" onclick="event.stopPropagation()">{{ p2.nom }}</a>
                         </h3>
                         <p class="subtitle is-6 has-text-grey-light">
                             {% if saison.victory_condition == 'stakhanov' %}
@@ -389,11 +404,11 @@
                     {% endif %}
 
                     {% if p1 %}
-                    <div class="moai-card moai-gold">
+                    <div class="moai-card moai-gold" onclick="showAwardInfo('{{ p1.award_name|replace("'", "\\'") }}', '{{ p1.description|replace("'", "\\'") }}')" title="{{ p1.description }}">
                         <div class="rank-badge" style="background: #FFD700; color: #000; top: -20px; font-size: 1.2rem;">1er</div>
                         <img src="/static/img/{{ p1.emoji }}" class="moai-img">
                         <h3 class="title is-3 glow-text">
-                            <a href="/stats/joueur/{{ p1.nom }}" class="has-text-white player-link">{{ p1.nom }}</a>
+                            <a href="/stats/joueur/{{ p1.nom }}" class="has-text-white player-link" onclick="event.stopPropagation()">{{ p1.nom }}</a>
                         </h3>
                         <p class="subtitle is-5 has-text-warning">
                             {% if saison.victory_condition == 'stakhanov' %}
@@ -406,11 +421,11 @@
                     {% endif %}
 
                     {% if p3 %}
-                    <div class="moai-card">
+                    <div class="moai-card" onclick="showAwardInfo('{{ p3.award_name|replace("'", "\\'") }}', '{{ p3.description|replace("'", "\\'") }}')" title="{{ p3.description }}">
                         <div class="rank-badge" style="background: #CD7F32; color: #000;">3ème</div>
                         <img src="/static/img/{{ p3.emoji }}" class="moai-img">
                         <h3 class="title is-4">
-                            <a href="/stats/joueur/{{ p3.nom }}" class="has-text-white player-link">{{ p3.nom }}</a>
+                            <a href="/stats/joueur/{{ p3.nom }}" class="has-text-white player-link" onclick="event.stopPropagation()">{{ p3.nom }}</a>
                         </h3>
                         <p class="subtitle is-6 has-text-grey-light">
                             {% if saison.victory_condition == 'stakhanov' %}
@@ -434,14 +449,15 @@
                                 <div class="column is-4">
                                     <div class="card has-background-transparent border-light h-100">
                                         <div class="card-content has-text-centered">
-                                            <div class="award-icon">
-                                                {% if saison.awards[award_code][0].emoji and '.png' in saison.awards[award_code][0].emoji %}
-                                                    <img src="/static/img/{{ saison.awards[award_code][0].emoji }}" class="award-img">
+                                            {% set info_award = saison.awards[award_code][0] %}
+                                            <div class="award-icon" onclick="showAwardInfo('{{ info_award.award_name|replace("'", "\\'") }}', '{{ info_award.description|replace("'", "\\'") }}')" title="{{ info_award.description }}">
+                                                {% if info_award.emoji and '.png' in info_award.emoji %}
+                                                    <img src="/static/img/{{ info_award.emoji }}" class="award-img">
                                                 {% else %}
-                                                    {{ saison.awards[award_code][0].emoji }}
+                                                    {{ info_award.emoji }}
                                                 {% endif %}
                                             </div>
-                                            <p class="heading has-text-light mb-4">{{ saison.awards[award_code][0].award_name }}</p>
+                                            <p class="heading has-text-light mb-4">{{ info_award.award_name }}</p>
                                             
                                             <div class="winners-container">
                                                 {% for winner in saison.awards[award_code] %}
@@ -542,6 +558,20 @@
         </div>
     </div>
 
+    <div class="modal" id="infoModal">
+        <div class="modal-background" onclick="closeInfoModal()"></div>
+        <div class="modal-content modal-content-glass">
+            <div class="box has-background-transparent has-text-centered">
+                <button class="delete is-large is-pulled-right" onclick="closeInfoModal()"></button>
+                <h3 class="title is-3 has-text-warning mb-4" id="infoModalTitle">Titre</h3>
+                <p class="content has-text-light is-size-5" id="infoModalContent">Description...</p>
+                <div class="has-text-centered mt-5">
+                    <button class="button is-primary is-outlined is-rounded" onclick="closeInfoModal()">Compris</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal" id="rulesModal">
         <div class="modal-background" onclick="closeRulesModal()"></div>
         <div class="modal-content modal-content-glass">
@@ -626,9 +656,9 @@
         }
 
         const rulesDescriptions = {
-            'stakhanov': `<p><strong class="has-text-warning">Le Stakhanoviste</strong></p><p>Le vainqueur est déterminé par le cumul total des points marqués durant toute la saison.</p>`,
-            'Indice de Performance': `<p><strong class="has-text-info">L'Indice de Performance (IP)</strong></p><p>Récompense la domination relative et la régularité.</p>`,
-            'grand_master': `<p><strong class="has-text-info">L'Indice de Performance (Grand Master)</strong></p><p>Récompense la domination relative et la régularité.</p>`,
+            'stakhanov': `<p><strong class="has-text-warning">Le Stakhanoviste</strong></p><p>Récompense le volume de points accumulés. Chaque score est ajusté selon la densité du salon via la formule : <strong>Score × (Nb Joueurs / 12)</strong>. Marquer des points dans un salon complet (12 joueurs) rapporte 100% de leur valeur, contre 50% dans un salon de 6 joueurs.</p>`,
+            'Indice de Performance': `<p><strong class="has-text-info">L'Indice de Performance (IP)</strong></p><p>Évalue la dominance relative et la régularité. L'IP compare votre score à la moyenne du lobby, pondéré par le nombre de participants. Une base de <strong>100</strong> représente la moyenne. Un <strong>bonus d'assiduité de +0,3 pt</strong> est ajouté pour chaque tournoi joué au-delà du seuil de qualification de 40%.</p>`,
+            'grand_master': `<p><strong class="has-text-info">L'Indice de Performance (Grand Master)</strong></p><p>Évalue la dominance relative et la régularité. L'IP compare votre score à la moyenne du lobby, pondéré par le nombre de participants. Une base de <strong>100</strong> représente la moyenne. Un <strong>bonus d'assiduité de +0,3 pt</strong> est ajouté pour chaque tournoi joué au-delà du seuil de qualification de 40%.</p>`,
             'default': `<p>Le vainqueur est déterminé selon les règles spécifiques configurées pour cette saison.</p>`
         };
 
@@ -639,6 +669,16 @@
             if (condition === 'grand_master') htmlContent = rulesDescriptions['Indice de Performance'];
             contentDiv.innerHTML = htmlContent;
             modal.classList.add('is-active');
+        }
+
+        function showAwardInfo(title, description) {
+            document.getElementById('infoModalTitle').innerText = title;
+            document.getElementById('infoModalContent').innerHTML = description;
+            document.getElementById('infoModal').classList.add('is-active');
+        }
+
+        function closeInfoModal() {
+            document.getElementById('infoModal').classList.remove('is-active');
         }
 
         function closeRulesModal() { document.getElementById('rulesModal').classList.remove('is-active'); }
@@ -681,7 +721,7 @@
                     ds.borderColor = c.replace('rgb', 'rgba').replace(')', ', 0.1)').replace('rgbaa', 'rgba'); 
                 }
             });
-            evoChartInstance.update('none');
+            evoChartInstance.update('none'); 
         }
 
         function resetLines() {
@@ -699,7 +739,7 @@
             const ds = distChartInstance.data.datasets[1];
             ds.pointRadius = 6; 
             ds.pointBorderWidth = 1;
-            distChartInstance.update('none');
+            distChartInstance.update('none'); 
             hideTooltip();
         }
 
@@ -715,7 +755,7 @@
             newBorderWidths[playerIndex] = 3;
             ds.pointBorderWidth = newBorderWidths;
             
-            distChartInstance.update('none');
+            distChartInstance.update('none'); 
         }
 
         function showMiniTooltip(index, playerObj) {
@@ -727,7 +767,7 @@
             const tooltipEl = document.getElementById('chartTooltip');
 
             if (point && tooltipEl) {
-                tooltipEl.innerHTML = `<strong>${playerObj.nom}</strong><br>${playerObj.x.toFixed(3)} pts TS, Top ${playerObj.top_percent}%`;
+                tooltipEl.innerHTML = `<strong>${playerObj.nom}</strong><br>${playerObj.x.toFixed(3)} pts TS<br>Top ${playerObj.top_percent}%`;
                 tooltipEl.style.left = point.x + 'px';
                 tooltipEl.style.top = (point.y - 10) + 'px';
                 tooltipEl.style.opacity = 1;
@@ -816,7 +856,7 @@
                             fill: true, 
                             backgroundColor: 'rgba(255, 255, 255, 0.02)', 
                             tension: 0.4,
-                            animation: false
+                            animation: false 
                         }, 
                         { 
                             type: 'scatter', 

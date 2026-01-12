@@ -92,10 +92,24 @@
             height: 450px; 
         }
 
+        /* Styles pour la modale d'info */
+        .modal-content-glass { 
+            background: rgba(15, 23, 42, 0.95); 
+            backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255,255,255,0.1); 
+            border-radius: 12px; 
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+            width: 400px; 
+            max-width: 90%; 
+            margin: 0 auto;
+        }
+
         @media screen and (max-width: 768px) {
             .chart-container {
                 height: 300px;
             }
+
+            .modal-content-glass { width: 90% !important; }
 
             .mobile-card-table table, 
             .mobile-card-table thead, 
@@ -270,7 +284,9 @@
                                             {% endif %}
                                         {% endif %}
 
-                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}">
+                                        <div class="award-item" 
+                                             title="{{ award.description if award.description else award.nom }}"
+                                             onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
                                             {% if award.emoji.endswith('.png') %}
                                                 <img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }}" alt="{{ award.nom }}">
                                             {% else %}
@@ -296,7 +312,9 @@
                                 {% for award in awards %}
                                     {% if 'moai' not in award.emoji %}
                                         {% set ns_awards.found = true %}
-                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}">
+                                        <div class="award-item" 
+                                             title="{{ award.description if award.description else award.nom }}"
+                                             onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
                                             {% if award.emoji.endswith('.png') %}
                                                 <img src="/static/img/{{ award.emoji }}" class="award-icon-large" alt="{{ award.nom }}">
                                             {% else %}
@@ -451,6 +469,20 @@
         </div>
     </section>
 
+    <div class="modal" id="infoModal">
+        <div class="modal-background" onclick="closeInfoModal()"></div>
+        <div class="modal-content modal-content-glass">
+            <div class="box has-background-transparent has-text-centered">
+                <button class="delete is-large is-pulled-right" onclick="closeInfoModal()"></button>
+                <h3 class="title is-3 has-text-warning mb-4" id="infoModalTitle">Titre</h3>
+                <p class="content has-text-light is-size-5" id="infoModalContent">Description...</p>
+                <div class="has-text-centered mt-5">
+                    <button class="button is-primary is-outlined is-rounded" onclick="closeInfoModal()">Compris</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% include 'footer.html' %}
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
@@ -463,6 +495,16 @@
                 });
             });
         });
+
+        function showAwardInfo(title, description) {
+            document.getElementById('infoModalTitle').innerText = title;
+            document.getElementById('infoModalContent').innerHTML = description;
+            document.getElementById('infoModal').classList.add('is-active');
+        }
+
+        function closeInfoModal() {
+            document.getElementById('infoModal').classList.remove('is-active');
+        }
 
         document.addEventListener('DOMContentLoaded', function() {
             var ctx = document.getElementById('scoreChart').getContext('2d');

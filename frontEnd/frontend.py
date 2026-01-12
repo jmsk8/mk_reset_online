@@ -25,6 +25,13 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 csrf = CSRFProtect(app)
 
+APP_VERSION = "1.0.0"
+
+@app.context_processor
+def inject_version():
+    """Injecte la version dans tous les templates HTML"""
+    return dict(app_version=APP_VERSION)
+
 # MIDDLEWARES & CONTEXT PROCESSORS
 
 @app.before_request
