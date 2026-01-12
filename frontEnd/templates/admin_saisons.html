@@ -41,7 +41,7 @@
             margin-right: 8px;
         }
 
-        /* --- STYLES DU MENU DÉROULANT PERSONNALISÉ (Pour afficher les images) --- */
+        /* --- STYLES DU MENU DÉROULANT PERSONNALISÉ --- */
         .custom-select-wrapper {
             position: relative;
             user-select: none;
@@ -56,7 +56,7 @@
             font-size: 1rem;
             height: 2.5em;
             line-height: 2.5em;
-            background: #e2e8f0; /* Couleur input standard du thème */
+            background: #e2e8f0; 
             color: #1a202c;
             border-radius: 4px;
             cursor: pointer;
@@ -70,12 +70,12 @@
             right: 0;
             border: 1px solid rgba(59, 130, 246, 0.3);
             border-top: 0;
-            background: #1e293b; /* Fond sombre menu */
+            background: #1e293b;
             transition: all 0.3s;
             opacity: 0;
             visibility: hidden;
             pointer-events: none;
-            z-index: 100; /* IMPORTANT : Pour passer au dessus des autres éléments */
+            z-index: 100; 
             border-radius: 0 0 4px 4px;
             max-height: 250px;
             overflow-y: auto;
@@ -87,7 +87,7 @@
         }
         .custom-option {
             position: relative;
-            display: flex; /* Flex pour aligner image et texte */
+            display: flex;
             align-items: center;
             padding: 0.5em 1em;
             color: #f1f5f9;
@@ -246,7 +246,6 @@
         return fetch(url, opts).then(res => res.json());
     }
 
-    // Gestion de l'ouverture/fermeture du Custom Select
     const wrapper = document.getElementById('customVictoryWrapper');
     const trigger = document.getElementById('customVictoryTrigger');
     const hiddenSelect = document.getElementById('victoryCondition');
@@ -255,7 +254,6 @@
         wrapper.classList.toggle('open');
     });
 
-    // Fermer le select si on clique ailleurs
     window.addEventListener('click', function(e) {
         if (!wrapper.contains(e.target)) {
             wrapper.classList.remove('open');
@@ -270,22 +268,19 @@
         try {
             const types = await api('/admin/types-awards', 'GET');
             
-            // Vidage des conteneurs
             container.innerHTML = '';
-            hiddenSelect.innerHTML = '<option value="" disabled selected>Choisir...</option>'; // Reset hidden select
-            customOptionsContainer.innerHTML = ''; // Reset custom visual select
+            hiddenSelect.innerHTML = '<option value="" disabled selected>Choisir...</option>';
+            customOptionsContainer.innerHTML = ''; 
 
             // ---------------------------------------------------------
             // 1. AJOUT MANUEL : INDICATEUR DE PERFORMANCE (Option 1)
             // ---------------------------------------------------------
             
-            // A. Dans le Hidden Select
             const perfOpt = document.createElement('option');
             perfOpt.value = "Indice de Performance";
             perfOpt.text = "Indice de Performance";
             hiddenSelect.appendChild(perfOpt);
 
-            // B. Dans le Custom Select (Visuel)
             const perfDiv = document.createElement('div');
             perfDiv.className = 'custom-option';
             perfDiv.dataset.value = "Indice de Performance";
@@ -300,19 +295,15 @@
             // 2. BOUCLE SUR LES AWARDS API
             // ---------------------------------------------------------
             types.forEach(type => {
-                // Filtre doublon indicateur perf
                 if (type.nom === "Indice de Performance" || type.nom === "Indicateur de Performance") return;
 
-                // --- GENERATION DU VISUEL (Image vs Emoji) ---
                 let iconDisplay = '';
                 if (type.emoji && type.emoji.endsWith('.png')) {
-                    // C'est ici qu'on met l'image réelle !
                     iconDisplay = `<img src="/static/img/${type.emoji}" alt="${type.nom}" class="award-img-icon">`;
                 } else {
                     iconDisplay = `<span class="is-size-5 mr-2">${type.emoji}</span>`;
                 }
 
-                // --- A. CHECKBOX LIST (Awards Actifs) ---
                 const div = document.createElement('div');
                 div.className = 'checkbox-card';
                 div.innerHTML = `
@@ -327,17 +318,14 @@
                 `;
                 container.appendChild(div);
 
-                // --- B. HIDDEN SELECT (Valeur réelle) ---
                 const option = document.createElement('option');
                 option.value = type.code;
-                option.text = type.nom; // Le select caché n'a besoin que du texte simple
+                option.text = type.nom;
                 hiddenSelect.appendChild(option);
 
-                // --- C. CUSTOM SELECT (Visuel avec Image) ---
                 const customOpt = document.createElement('div');
                 customOpt.className = 'custom-option';
                 customOpt.dataset.value = type.code;
-                // On réutilise iconDisplay pour avoir exactement le même aspect (Image ou Emoji)
                 customOpt.innerHTML = `${iconDisplay} ${type.nom}`;
                 
                 customOpt.onclick = function() {
@@ -353,9 +341,7 @@
         }
     }
 
-    // Fonction déclenchée au clic sur une option du menu personnalisé
     function selectOption(value, htmlContent) {
-        // 1. Mettre à jour le select caché (pour le formulaire)
         hiddenSelect.value = value;
         
         const triggerContent = document.getElementById('triggerContent');

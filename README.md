@@ -1,111 +1,64 @@
-🏁 Mario Kart Reset Online
+# 🏁 Mario Kart Reset Online `v1.0.0`
 
-Mario Kart Reset Online est une application web compétitive conçue pour suivre, classer et analyser les performances des joueurs lors de tournois Mario Kart.
+> **La plateforme de compétition ultime pour Mario Kart, pilotée par la science du classement.**
 
-Elle se distingue par l'utilisation de l'algorithme TrueSkill™ pour un classement équitable, une interface Dark Mode "Glassmorphism" moderne, et un panel d'administration sécurisé.
-📸 Aperçu
-Classement	Statistiques Joueur	Admin Panel
-		
-🚀 Fonctionnalités
-👤 Côté Utilisateur
+Mario Kart Reset Online est une application web de gestion de tournois conçue pour offrir un suivi rigoureux et une analyse profonde des performances. Elle se distingue par l'utilisation de l'algorithme **TrueSkill™** pour garantir un classement équitable, même avec des effectifs de joueurs variables.
 
-    🏆 Classement TrueSkill : Système de rang (S, A, B, C) basé sur le Mu et Sigma (incertitude) de chaque joueur.
+---
 
-    📊 Statistiques Avancées : Graphiques interactifs montrant l'évolution du niveau, ratio victoires/défaites, et historique complet.
+## 🌟 Points Forts du Projet
 
-    🎨 Interface Immersive : Design sombre avec effets de transparence (Glassmorphism) et animations fluides.
+### 📈 Intelligence du Classement
+Contrairement aux systèmes ELO classiques, notre moteur calcule deux variables pour chaque joueur afin de définir son niveau réel :
+* **$\mu$ (Mu) :** La performance moyenne estimée.
+* **$\sigma$ (Sigma) :** L'indice d'incertitude du système (plus tu joues, plus le système est sûr de ton niveau).
+* **Score Final :** Ton rang est calculé selon la formule $$R = \mu - 3\sigma$$ garantissant une progression basée sur la régularité et la preuve de niveau.
 
-    📱 Responsive : Accessible sur mobile et desktop.
+### 🎨 Expérience Utilisateur (UX)
+* **Design Glassmorphism :** Interface moderne avec effets de transparence, flous directionnels et animations fluides.
+* **Bannière Rétro SNES :** Un script JavaScript personnalisé simulant une course interactive de *Super Mario Kart* en haut de page.
+* **Ergonomie des Awards :** Descriptions interactives des trophées et des distinctions de saison (Stakhanov, Stonks, etc.).
 
-🛡️ Côté Administrateur
+### 🛠️ Robustesse & DevOps
+* **Déploiement Isomorphe :** Utilisation de **Nix Flakes** pour garantir que l'environnement de développement est identique au serveur de production.
+* **Gestion des "Ghosts" :** Système automatique de pénalité d'incertitude ($\sigma$) pour les joueurs absents, évitant que les classements ne stagnent.
 
-    🔐 Authentification Forte : Système de login sécurisé par hashage (Bcrypt) et tokens de session dynamiques.
+---
 
-    📝 Gestion des Tournois : Ajout rapide de tournois avec recherche dynamique de joueurs et calcul immédiat des nouveaux scores.
+## 🚀 Fonctionnalités
 
-    undo Annulation (Revert) : Possibilité d'annuler le dernier tournoi en cas d'erreur (restauration des scores précédents).
+### 👤 Interface Joueurs
+* **Système de Tiers :** Répartition automatique en classes (S, A, B, C, U) basée sur la distribution statistique (moyenne et écart-type) de la population active.
+* **Profils Personnalisés :** Graphiques de progression temporelle via **Chart.js**, historique des tournois et vitrine de trophées.
+* **Recaps de Saisons :** Archivage complet des saisons passées avec podiums et statistiques globales.
 
-    💾 Backups Automatiques : Sauvegarde de la base de données à chaque modification critique via script shell.
+### 🛡️ Panneau d'Administration
+* **Saisie Optimisée :** Ajout rapide de tournois (jusqu'à 12 joueurs) avec recherche prédictive.
+* **Contrôle Total :** Annulation du dernier tournoi (Revert), modification manuelle des profils, et reset global du Sigma pour les nouvelles saisons.
+* **Sécurité :** Authentification Bcrypt, protection contre les failles CSRF et gestion de sessions sécurisées.
 
-🛠️ Stack Technique
+---
 
-    Frontend : Python (Flask, Jinja2), Bulma CSS, Chart.js, Vanilla JS.
+## 🛠️ Stack Technique
 
-    Backend : Python (Flask), Algorithme TrueSkill, Bcrypt.
+| Composant | Technologie |
+| :--- | :--- |
+| **Frontend** | Python (Flask), Jinja2, Bulma CSS, Vanilla JS |
+| **Backend** | Python 3.10+, API RESTful, TrueSkill Engine |
+| **Base de données** | PostgreSQL 13 (Relationnel) |
+| **Infra** | Docker, Docker Compose, Nginx (Reverse Proxy) |
+| **DevOps** | Nix (Flakes), Gunicorn, Shell Scripting |
 
-    Base de données : PostgreSQL.
+---
 
-    Infra : Docker, Docker Compose, Nginx (Reverse Proxy).
+## ⚙️ Installation et Démarrage
 
-⚙️ Installation et Démarrage
-1. Cloner le projet
-Bash
-
-git@github.com:jmsk8/mk_reset_online.git
+### 1. Cloner le projet
+```bash
+git clone [https://github.com/votre-compte/mk_reset_online.git](https://github.com/votre-compte/mk_reset_online.git)
 cd mk_reset_online
 
-2. Configuration (.env)
+---
 
-Créez un fichier .env à la racine basé sur le modèle ci-dessous.
+## Configuration .env
 
-Note : Le mot de passe admin doit être hashé.
-Bash
-
-# Configuration PostgreSQL
-POSTGRES_USER=mon_user
-POSTGRES_PASSWORD=mon_password
-POSTGRES_DB=tournament_db
-POSTGRES_HOST=db
-
-# Configuration Sécurité Flask
-SECRET_KEY=une_chaine_aleatoire_tres_longue
-
-# Configuration Admin
-# Générez le hash via le script python ci-dessous
-ADMIN_PASSWORD_HASH=$$2b$$12$$ExempleDeHashBcrypt...
-
-    Astuce : Pour générer le hash de votre mot de passe admin, lancez cette commande Python :
-    Python
-
-    python3 -c "import bcrypt; print(bcrypt.hashpw(b'VOTRE_MOT_DE_PASSE', bcrypt.gensalt()).decode())"
-
-3. Lancement avec Docker
-
-L'application est entièrement conteneurisée. Assurez-vous que Docker est lancé.
-Bash
-
-# Construire et lancer les conteneurs (en arrière-plan)
-docker-compose up --build -d
-
-L'application sera accessible sur : http://localhost
-4. Commandes Utiles
-
-Arrêter l'application :
-Bash
-
-docker-compose down
-
-Gérer les sauvegardes (Backup/Restore) : Le projet inclut un script backup.sh à la racine.
-Bash
-
-# Créer une sauvegarde manuelle
-./backup.sh save
-
-# Restaurer une sauvegarde (ex: 2025-01-02)
-./backup.sh restore 2025-01-02
-
-📂 Architecture
-
-mk_reset_online/
-├── backEnd/             # API Flask, Logique TrueSkill
-│   ├── backend.py
-│   ├── schema.sql       # Structure DB
-│   └── ...
-├── frontEnd/            # Serveur Web & UI
-│   ├── templates/       # HTML (Jinja2)
-│   ├── static/          # CSS, JS, Images
-│   └── frontend.py
-├── backups/             # Dossier de stockage des dumps SQL
-├── nginx.conf           # Configuration du Reverse Proxy
-├── docker-compose.yml   # Orchestration
-└── backup.sh            # Script de maintenance
