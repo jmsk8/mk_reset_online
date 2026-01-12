@@ -98,22 +98,22 @@
 }
 
 .tag.tier-s {
-    background: linear-gradient(45deg, #ff7e5f, #feb47b);
+    background: linear-gradient(45deg, #f77b7b, #e98282);
     color: white !important;
     box-shadow: 0 0 10px rgba(255, 126, 95, 0.5);
 }
 
 .tag.tier-a {
-    background: linear-gradient(45deg, #0fd194, #185a9d);
+    background: linear-gradient(45deg, #9cda74, #aeee89);
     color: white !important;
 }
 
 .tag.tier-b {
-    background: linear-gradient(45deg, #3b82f6, #2563eb);
+    background: linear-gradient(45deg, #7fe6ee, #80ecfa);
     color: white !important;
 }
 
 .tag.tier-c {
-    background: linear-gradient(45deg, #718096, #2d3748);
+    background: linear-gradient(45deg, #ae6ce4, #c069e9);
     color: white !important;
 }

@@ -9,32 +9,65 @@
     <link rel="stylesheet" href="/static/css/styles.css">
     <link rel="stylesheet" href="/static/css/dark-mode.css">
     <link rel="stylesheet" href="/static/css/animations.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
     <style>
+        .recap-table-container {
+            overflow-x: auto;
+            border-radius: 6px;
+        }
+
         .recap-table th, 
         .recap-table td {
-            padding: 0.35rem 0.5rem !important; 
-            font-size: 0.9rem;
+            padding: 0.5rem 0.75rem !important; 
+            font-size: 0.95rem;
             vertical-align: middle !important;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
-            height: 40px;
+            height: 45px;
+            white-space: nowrap; 
         }
 
         .recap-table {
             background-color: transparent !important;
             margin-bottom: 0 !important;
+            width: 100%;
         }
 
         .recap-table tbody tr:nth-child(even) {
-            background-color: rgba(255, 255, 255, 0.05) !important;
+            background-color: rgba(255, 255, 255, 0.03) !important;
+        }
+
+        .recap-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.2s, background-color 0.2s;
+        }
+
+        .recap-table th.sortable:hover {
+            color: #3b82f6; 
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .recap-table th i {
+            margin-left: 5px;
+            font-size: 0.8em;
+            color: rgba(255,255,255,0.3);
+        }
+
+        .recap-table th.active-sort {
+            color: #3b82f6 !important;
+        }
+        
+        .recap-table th.active-sort i {
+            color: #3b82f6 !important;
+            opacity: 1;
         }
 
         .award-icon {
             font-size: 3rem;
-            margin-bottom: 1rem;
-            transition: transform 0.3s ease;
+            margin-bottom: 0.5rem;
             height: 60px;
             display: flex;
             align-items: center;
@@ -47,12 +80,52 @@
             filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.5));
         }
 
+        .winners-container {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            align-items: stretch;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .winner-block {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 5px;
+        }
+
+        .winner-block:not(:last-child) {
+            border-right: 1px solid rgba(255,255,255,0.1);
+            padding-right: 10px;
+        }
+
+        .player-link {
+            display: inline-block;
+            text-decoration: none;
+            transition: color 0.2s;
+            border: 1px solid transparent; 
+        }
+        .player-link:hover {
+            color: #3b82f6 !important;
+            text-decoration: none;
+        }
+
+        .award-text-detail {
+            font-size: 0.85rem;
+            color: #94a3b8; 
+            margin-top: -5px;
+            margin-bottom: 5px;
+        }
+
         .moai-container {
             display: flex;
             justify-content: center;
             align-items: flex-end;
             gap: 20px;
             margin-bottom: 40px;
+            flex-wrap: wrap;
         }
 
         .moai-card {
@@ -62,6 +135,7 @@
             padding: 20px;
             text-align: center;
             width: 30%;
+            min-width: 200px; 
             position: relative;
         }
         
@@ -71,31 +145,8 @@
             margin-bottom: 15px;
             transition: transform 0.3s;
         }
-        
-        .moai-gold {
-            transform: scale(1.1);
-            z-index: 2;
-            border-color: rgba(255, 215, 0, 0.5);
-            box-shadow: 0 0 30px rgba(255, 215, 0, 0.1);
-        }
-        
-        .super-moai-gold {
-            filter: drop-shadow(0 0 15px rgba(255, 215, 0, 0.8));
-            animation: pulseGold 3s infinite;
-        }
-        .super-moai-silver {
-            filter: drop-shadow(0 0 15px rgba(192, 192, 192, 0.8));
-            animation: pulseSilver 3s infinite;
-        }
-        .super-moai-bronze {
-            filter: drop-shadow(0 0 15px rgba(205, 127, 50, 0.8));
-            animation: pulseBronze 3s infinite;
-        }
 
-        @keyframes pulseGold { 0% { filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.6)); } 50% { filter: drop-shadow(0 0 25px rgba(255, 215, 0, 1)); } 100% { filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.6)); } }
-        @keyframes pulseSilver { 0% { filter: drop-shadow(0 0 10px rgba(192, 192, 192, 0.6)); } 50% { filter: drop-shadow(0 0 25px rgba(255, 255, 255, 0.9)); } 100% { filter: drop-shadow(0 0 10px rgba(192, 192, 192, 0.6)); } }
-        @keyframes pulseBronze { 0% { filter: drop-shadow(0 0 10px rgba(205, 127, 50, 0.6)); } 50% { filter: drop-shadow(0 0 25px rgba(255, 160, 100, 0.9)); } 100% { filter: drop-shadow(0 0 10px rgba(205, 127, 50, 0.6)); } }
-
+        .moai-gold { transform: scale(1.1); z-index: 2; border-color: rgba(255, 215, 0, 0.5); box-shadow: 0 0 30px rgba(255, 215, 0, 0.1); }
         .rank-badge {
             position: absolute;
             top: -15px;
@@ -108,31 +159,68 @@
             font-weight: bold;
             border: 2px solid #fff;
         }
+
+        .chart-container-wrapper { display: flex; align-items: stretch; height: 400px; }
+        .chart-legend { width: 200px; overflow-y: auto; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.1); margin-right: 15px; }
+        .chart-legend::-webkit-scrollbar { width: 5px; }
+        .chart-legend::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+        .legend-item { display: flex; align-items: center; padding: 6px 8px; margin-bottom: 4px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+        .legend-item:hover { background: rgba(255,255,255,0.1); }
+        .legend-color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; flex-shrink: 0; }
+        .legend-name { font-size: 0.85rem; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .legend-val { font-size: 0.75rem; color: #94a3b8; margin-left: auto; }
+        .chart-area { flex-grow: 1; position: relative; }
         
-        a.player-link {
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-        a.player-link:hover {
-            color: #3b82f6 !important; 
+        .modal-content-glass { 
+            background: rgba(15, 23, 42, 0.95); 
+            backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255,255,255,0.1); 
+            border-radius: 12px; 
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+            width: 400px; 
+            max-width: 90%; 
+            margin: 0 auto;
         }
 
-        @media screen and (max-width: 1200px) {
-            .moai-card .title {
-                font-size: 1.1rem !important;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .moai-card .subtitle {
-                font-size: 0.9rem !important;
-            }
-            .moai-img {
-                max-height: 80px;
-            }
-            .moai-card {
-                padding: 10px;
-            }
+        .speech-bubble {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.95);
+            color: #000;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 10;
+            transform: translate(-50%, -130%);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            white-space: nowrap;
+            text-align: center;
+            border: 1px solid #ccc;
+        }
+        
+        .speech-bubble::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -6px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: rgba(255, 255, 255, 0.95) transparent transparent transparent;
+        }
+
+        @media screen and (max-width: 768px) {
+            .chart-container-wrapper { flex-direction: column; height: auto; }
+            .chart-legend { width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; max-height: 150px; display: flex; flex-wrap: wrap; }
+            .legend-item { width: 50%; }
+            .chart-area { height: 300px; }
+            .moai-card { width: 100%; margin-bottom: 20px; }
+            .moai-container { flex-direction: column; align-items: center; }
+            .moai-container .moai-gold { order: -1; }
+            .recap-table th, .recap-table td { font-size: 0.8rem; padding: 0.4rem !important; }
+            .modal-content-glass { width: 90% !important; }
         }
     </style>
 </head>
@@ -144,13 +232,27 @@
             <div class="container has-text-centered">
                 {% if saison %}
                     <h1 class="title is-1 glow-text">{{ saison.nom_saison }}</h1>
-                    <p class="subtitle is-4 has-text-grey-light">
-                        {% if saison.victory_condition == 'grand_master' %}
-                            Course au Grand Master
-                        {% else %}
-                            Compétition {{ saison.victory_condition|capitalize }}
-                        {% endif %}
-                    </p>
+                    
+                    <div class="subtitle is-4 has-text-grey-light is-flex is-justify-content-center is-align-items-center" style="gap: 10px;">
+                        <span>
+                            {% if saison.victory_condition == 'stakhanov' %}
+                                Compétition Stakhanoviste
+                            {% elif saison.victory_condition == 'Indice de Performance' or saison.victory_condition == 'grand_master' %}
+                                Compétition Indice de Performance (IP)
+                            {% else %}
+                                Compétition {{ saison.victory_condition|capitalize }}
+                            {% endif %}
+                        </span>
+
+                        <span class="icon is-small has-text-info is-clickable" 
+                              style="cursor: pointer; transition: transform 0.2s;"
+                              onmouseover="this.style.transform='scale(1.2)'"
+                              onmouseout="this.style.transform='scale(1)'"
+                              onclick="openRulesModal('{{ saison.victory_condition }}')">
+                            <i class="far fa-question-circle"></i>
+                        </span>
+                    </div>
+
                 {% else %}
                     <h1 class="title is-1 has-text-danger">Saison introuvable</h1>
                     <a href="/" class="button is-primary mt-4">Retour à l'accueil</a>
@@ -163,94 +265,104 @@
         <div class="container">
             {% if saison %}
                 
-                <div class="columns is-variable is-6 mb-6">
-                    <div class="column is-6">
-                        <div class="card glass-card fade-in">
-                            <header class="card-header">
-                                <p class="card-header-title is-centered has-text-warning">
-                                    <i class="fas fa-trophy mr-2"></i> Classement par Points
-                                </p>
-                            </header>
-                            <div class="card-content p-0">
-                                <table class="table is-fullwidth recap-table has-text-light">
-                                    <thead>
-                                        <tr>
-                                            <th class="has-text-centered" style="width: 50px;">#</th>
-                                            <th>Joueur</th>
-                                            <th class="has-text-right">Pts</th>
-                                            <th class="has-text-centered">Victoires</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for j in saison.classement_points %}
-                                        <tr>
-                                            <td class="has-text-centered font-weight-bold">
-                                                {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}{% endif %}
-                                            </td>
-                                            <td>
-                                                <a href="/stats/joueur/{{ j.nom }}" class="has-text-light player-link"><strong>{{ j.nom }}</strong></a>
-                                            </td>
-                                            <td class="has-text-right has-text-weight-bold">{{ j.total_points }}</td>
-                                            <td class="has-text-centered">{{ j.victoires }}</td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="column is-6">
-                        <div class="card glass-card fade-in" style="animation-delay: 0.2s">
-                            <header class="card-header">
-                                <p class="card-header-title is-centered has-text-info">
-                                    <i class="fas fa-chart-bar mr-2"></i> Indice Performance (IP)
-                                </p>
-                            </header>
-                            <div class="card-content p-0">
-                                <table class="table is-fullwidth recap-table has-text-light">
-                                    <thead>
-                                        <tr>
-                                            <th class="has-text-centered" style="width: 50px;">#</th>
-                                            <th>Joueur</th>
-                                            <th class="has-text-right">Moy. Pts</th>
-                                            <th class="has-text-right" title="Moyenne pondérée (Base 100) + Bonus">IP Final</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for j in saison.classement_moyenne %}
-                                        <tr>
-                                            <td class="has-text-centered font-weight-bold">{{ loop.index }}</td>
-                                            <td>
-                                                <a href="/stats/joueur/{{ j.nom }}" class="has-text-light player-link"><strong>{{ j.nom }}</strong></a>
-                                            </td>
-                                            <td class="has-text-right has-text-weight-bold">{{ '%0.2f'| format(j.moyenne_points|float) }}</td>
-                                            <td class="has-text-right">
-                                                {% if j.score_gm is not none %}
+                <div class="card glass-card fade-in mb-6">
+                    <header class="card-header">
+                        <p class="card-header-title is-centered has-text-warning">
+                            <i class="fas fa-list-ol mr-2"></i> Classement Général
+                        </p>
+                    </header>
+                    <div class="card-content p-0">
+                        <div class="recap-table-container">
+                            <table class="table is-fullwidth recap-table has-text-light" id="mainTable">
+                                <thead>
+                                    <tr>
+                                        <th class="has-text-centered" style="width: 50px;">#</th>
+                                        <th>Joueur</th>
+                                        
+                                        <th class="has-text-right sortable" onclick="sortTable('moy', this)" title="Moyenne de points par tournoi">
+                                            Moy. Pts <i class="fas fa-sort"></i>
+                                        </th>
+                                        
+                                        <th class="has-text-right sortable" onclick="sortTable('total', this)" title="Total des points accumulés">
+                                            Total Pts <i class="fas fa-sort"></i>
+                                        </th>
+                                        
+                                        <th class="has-text-centered sortable" onclick="sortTable('part', this)" title="Nombre de tournois joués">
+                                            Part. <span class="has-text-grey-light is-size-7">/{{ saison.total_tournois }}</span> <i class="fas fa-sort"></i>
+                                        </th>
+                                        
+                                        <th class="has-text-centered sortable" onclick="sortTable('vic', this)" title="Nombre de victoires (1ère place)">
+                                            Vict. <i class="fas fa-sort"></i>
+                                        </th>
+                                        
+                                        <th class="has-text-right sortable active-sort" onclick="sortTable('ip', this)" title="Indice de Performance">
+                                            IP <i class="fas fa-sort-down"></i>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for j in saison.classement_moyenne %}
+                                    <tr>
+                                        <td class="has-text-centered font-weight-bold rank-cell">{{ loop.index }}</td>
+                                        
+                                        <td>
+                                            <a href="/stats/joueur/{{ j.nom }}" class="has-text-light player-link"><strong>{{ j.nom }}</strong></a>
+                                        </td>
+                                        
+                                        <td class="has-text-right" data-val="{{ j.moyenne_points }}">
+                                            {{ '%0.2f'|format(j.moyenne_points|float) }}
+                                        </td>
+                                        
+                                        <td class="has-text-right has-text-weight-bold" data-val="{{ j.total_points }}">
+                                            {{ j.total_points }}
+                                        </td>
+                                        
+                                        <td class="has-text-centered" data-val="{{ j.matchs }}">
+                                            {{ j.matchs }}
+                                        </td>
+                                        
+                                        <td class="has-text-centered" data-val="{{ j.victoires }}">
+                                            {{ j.victoires }}
+                                        </td>
+                                        
+                                        <td class="has-text-right" 
+                                            data-val="{{ j.score_gm if j.score_gm is not none else -1 }}"
+                                            data-eligible="{{ 'true' if j.is_eligible_gm else 'false' }}">
+                                            {% if j.score_gm is not none %}
+                                                {% if j.is_eligible_gm %}
                                                     {% if j.score_gm >= 115 %}
-                                                        <span class="has-text-warning has-text-weight-bold">★ {{ '%0.2f'| format(j.score_gm|float) }}</span>
+                                                        <span class="has-text-warning has-text-weight-bold">★ {{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% elif j.score_gm >= 105 %}
-                                                        <span class="has-text-success has-text-weight-bold">{{ '%0.2f'| format(j.score_gm|float) }}</span>
+                                                        <span class="has-text-success has-text-weight-bold">{{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% elif j.score_gm >= 95 %}
-                                                        <span class="has-text-white">{{ '%0.2f'| format(j.score_gm|float) }}</span>
+                                                        <span class="has-text-white">{{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% else %}
-                                                        <span class="has-text-danger">{{ '%0.2f'| format(j.score_gm|float) }}</span>
+                                                        <span class="has-text-white" style="opacity: 0.8;">{{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% endif %}
                                                 {% else %}
-                                                    <span class="has-text-grey-light">-</span>
+                                                    <span class="has-text-danger" style="opacity: 0.9;" title="Participation insuffisante">
+                                                        {{ '%0.2f'|format(j.score_gm|float) }}
+                                                    </span>
                                                 {% endif %}
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
+                                            {% else %}
+                                                <span class="has-text-grey-light">-</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="px-3 pb-2">
+                            <p class="is-size-7 has-text-grey-light mt-2 has-text-right">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                Les indices de performance en <span class="has-text-danger">rouge</span> indiquent que le joueur n'a pas atteint le nombre de participation requis pour obtenir un indice de performance fiable.
+                            </p>
                         </div>
                     </div>
                 </div>
 
                 <div class="moai-container fade-in" style="animation-delay: 0.3s">
-                    
                     {% set list_gold = saison.awards.get('super_gold_moai') or saison.awards.get('gold_moai') %}
                     {% set list_silver = saison.awards.get('super_silver_moai') or saison.awards.get('silver_moai') %}
                     {% set list_bronze = saison.awards.get('super_bronze_moai') or saison.awards.get('bronze_moai') %}
@@ -262,33 +374,51 @@
                     {% if p2 %}
                     <div class="moai-card">
                         <div class="rank-badge" style="background: #C0C0C0; color: #000;">2ème</div>
-                        <img src="/static/img/{{ p2.emoji }}" class="moai-img {{ 'super-moai-silver' if 'super' in p2.emoji else '' }}">
+                        <img src="/static/img/{{ p2.emoji }}" class="moai-img">
                         <h3 class="title is-4">
                             <a href="/stats/joueur/{{ p2.nom }}" class="has-text-white player-link">{{ p2.nom }}</a>
                         </h3>
-                        <p class="subtitle is-6 has-text-grey-light">{{ '%0.2f'| format(p2.val|float) }}</p>
+                        <p class="subtitle is-6 has-text-grey-light">
+                            {% if saison.victory_condition == 'stakhanov' %}
+                                {{ p2.val|float|int }} points
+                            {% else %}
+                                {{ '%0.2f'|format(p2.val|float) }} points
+                            {% endif %}
+                        </p>
                     </div>
                     {% endif %}
 
                     {% if p1 %}
                     <div class="moai-card moai-gold">
                         <div class="rank-badge" style="background: #FFD700; color: #000; top: -20px; font-size: 1.2rem;">1er</div>
-                        <img src="/static/img/{{ p1.emoji }}" class="moai-img {{ 'super-moai-gold' if 'super' in p1.emoji else '' }}">
+                        <img src="/static/img/{{ p1.emoji }}" class="moai-img">
                         <h3 class="title is-3 glow-text">
                             <a href="/stats/joueur/{{ p1.nom }}" class="has-text-white player-link">{{ p1.nom }}</a>
                         </h3>
-                        <p class="subtitle is-5 has-text-warning">{{ '%0.2f'| format(p1.val|float) }}</p>
+                        <p class="subtitle is-5 has-text-warning">
+                            {% if saison.victory_condition == 'stakhanov' %}
+                                {{ p1.val|float|int }} points
+                            {% else %}
+                                {{ '%0.2f'|format(p1.val|float) }} points
+                            {% endif %}
+                        </p>
                     </div>
                     {% endif %}
 
                     {% if p3 %}
                     <div class="moai-card">
                         <div class="rank-badge" style="background: #CD7F32; color: #000;">3ème</div>
-                        <img src="/static/img/{{ p3.emoji }}" class="moai-img {{ 'super-moai-bronze' if 'super' in p3.emoji else '' }}">
+                        <img src="/static/img/{{ p3.emoji }}" class="moai-img">
                         <h3 class="title is-4">
                             <a href="/stats/joueur/{{ p3.nom }}" class="has-text-white player-link">{{ p3.nom }}</a>
                         </h3>
-                        <p class="subtitle is-6 has-text-grey-light">{{ '%0.2f'| format(p3.val|float) }}</p>
+                        <p class="subtitle is-6 has-text-grey-light">
+                            {% if saison.victory_condition == 'stakhanov' %}
+                                {{ p3.val|float|int }} points
+                            {% else %}
+                                {{ '%0.2f'|format(p3.val|float) }} points
+                            {% endif %}
+                        </p>
                     </div>
                     {% endif %}
                 </div>
@@ -299,138 +429,451 @@
                     </h2>
                     
                     <div class="columns is-multiline is-centered">
-                        
-                        {% if 'ez' in saison.awards %}
-                        <div class="column is-4">
-                            <div class="card has-background-transparent border-light h-100">
-                                <div class="card-content has-text-centered">
-                                    <div class="award-icon">🥇</div>
-                                    <p class="heading has-text-light">EZ</p>
-                                    <p class="is-size-7 mb-2">(Le plus de 1ères places)</p>
-                                    {% for winner in saison.awards.ez %}
-                                        <p class="title is-4">
-                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
-                                        </p>
-                                        <p class="award-value has-text-warning">{{ winner.val }} Victoires</p>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
+                        {% for award_code in ['ez', 'pas_loin', 'stakhanov', 'chillguy', 'stonks', 'not_stonks'] %}
+                            {% if award_code in saison.awards %}
+                                <div class="column is-4">
+                                    <div class="card has-background-transparent border-light h-100">
+                                        <div class="card-content has-text-centered">
+                                            <div class="award-icon">
+                                                {% if saison.awards[award_code][0].emoji and '.png' in saison.awards[award_code][0].emoji %}
+                                                    <img src="/static/img/{{ saison.awards[award_code][0].emoji }}" class="award-img">
+                                                {% else %}
+                                                    {{ saison.awards[award_code][0].emoji }}
+                                                {% endif %}
+                                            </div>
+                                            <p class="heading has-text-light mb-4">{{ saison.awards[award_code][0].award_name }}</p>
+                                            
+                                            <div class="winners-container">
+                                                {% for winner in saison.awards[award_code] %}
+                                                    {% set val = winner.val %}
+                                                    <div class="winner-block" style="{{ 'font-size: 0.9em;' if saison.awards[award_code]|length > 1 else '' }}">
+                                                        <p class="title is-4 mb-1">
+                                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
+                                                        </p>
+                                                        <p class="award-text-detail {{ 'has-text-success' if award_code=='stonks' else 'has-text-danger' if award_code=='not_stonks' else 'has-text-info' }}">
+                                                            {% if award_code == 'ez' %}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> {{ '1ère place' if val|int < 2 else '1ères places' }}
+                                                            {% elif award_code == 'pas_loin' %}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> {{ '2ème place' if val|int < 2 else '2èmes places' }}
+                                                            {% elif award_code == 'chillguy' %}
+                                                                +/- <span class="has-text-weight-bold is-size-6">{{ val }}</span> point{{ 's' if val|float|abs >= 2 else '' }} TS
+                                                            {% elif award_code == 'stonks' %}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val }}</span> point{{ 's' if val|float >= 2 else '' }} TS gagné{{ 's' if val|float >= 2 else '' }}
+                                                            {% elif award_code == 'not_stonks' %}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|string|replace('-', '') }}</span> point{{ 's' if val|float|abs >= 2 else '' }} TS perdu{{ 's' if val|float|abs >= 2 else '' }}
+                                                            {% elif award_code == 'stakhanov' %}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> point{{ 's' if val|int >= 2 else '' }} {{ 'totaux' if val|int >= 2 else 'total' }}
+                                                            {% else %}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val }}</span>
+                                                            {% endif %}
+                                                        </p>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
 
-                        {% if 'pas_loin' in saison.awards %}
-                        <div class="column is-4">
-                            <div class="card has-background-transparent border-light h-100">
-                                <div class="card-content has-text-centered">
-                                    <div class="award-icon">🥈</div>
-                                    <p class="heading has-text-light">C'était pas loin</p>
-                                    <p class="is-size-7 mb-2">(Le plus de 2èmes places)</p>
-                                    {% for winner in saison.awards.pas_loin %}
-                                        <p class="title is-4">
-                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
-                                        </p>
-                                        <p class="award-value has-text-grey-light">{{ winner.val }}x 2ème</p>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
-
-                        {% if 'stakhanov' in saison.awards %}
-                        <div class="column is-4">
-                            <div class="card has-background-transparent border-light h-100">
-                                <div class="card-content has-text-centered">
-                                    <div class="award-icon">
-                                        <img src="/static/img/TposingFunky.png" class="award-img">
+                                        </div>
                                     </div>
-                                    <p class="heading has-text-light">Stakhanoviste</p>
-                                    <p class="is-size-7 mb-2">(Le plus de points amassé)</p>
-                                    {% for winner in saison.awards.stakhanov %}
-                                        <p class="title is-4">
-                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
-                                        </p>
-                                        <p class="award-value has-text-info">{{ winner.val }} pts</p>
-                                    {% endfor %}
                                 </div>
-                            </div>
-                        </div>
-                        {% endif %}
-
-                        {% if 'chillguy' in saison.awards %}
-                        <div class="column is-4">
-                            <div class="card has-background-transparent border-light h-100">
-                                <div class="card-content has-text-centered">
-                                    <div class="award-icon">
-                                        <img src="/static/img/chillguy.png" class="award-img">
-                                    </div>
-                                    <p class="heading has-text-light">Chill Guy</p>
-                                    <p class="is-size-7 mb-2">(Le score TS le plus stable)</p>
-                                    {% for winner in saison.awards.chillguy %}
-                                        <p class="title is-4">
-                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
-                                        </p>
-                                        <p class="award-value has-text-grey-light">{{ '%0.2f'| format(winner.val|float) }}</p>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
-
-                        {% if 'stonks' in saison.awards %}
-                        <div class="column is-4">
-                            <div class="card has-background-transparent border-light h-100">
-                                <div class="card-content has-text-centered">
-                                    <div class="award-icon">
-                                        <img src="/static/img/stonks.png" class="award-img">
-                                    </div>
-                                    <p class="heading has-text-light">Stonks</p>
-                                    <p class="is-size-7 mb-2">(Plus forte progression de points TS)</p>
-                                    {% for winner in saison.awards.stonks %}
-                                        <p class="title is-4">
-                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
-                                        </p>
-                                        <p class="award-value has-text-success">+{{ '%0.2f'| format(winner.val|float) }}</p>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
-
-                        {% if 'not_stonks' in saison.awards %}
-                        <div class="column is-4">
-                            <div class="card has-background-transparent border-light h-100">
-                                <div class="card-content has-text-centered">
-                                    <div class="award-icon">
-                                        <img src="/static/img/not_stonks.png" class="award-img">
-                                    </div>
-                                    <p class="heading has-text-light">Not Stonks</p>
-                                    <p class="is-size-7 mb-2">(Plus grosse perte de points TS)</p>
-                                    {% for winner in saison.awards.not_stonks %}
-                                        <p class="title is-4">
-                                            <a href="/stats/joueur/{{ winner.nom }}" class="has-text-white player-link">{{ winner.nom }}</a>
-                                        </p>
-                                        <p class="award-value has-text-danger">{{ '%0.2f'| format(winner.val|float) }}</p>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endif %}
-
+                            {% endif %}
+                        {% endfor %}
                     </div>
                 </div>
+
+                {% if saison.chart_data %}
+                <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.5s">
+                    <header class="card-header">
+                        <p class="card-header-title is-centered has-text-white">
+                            <i class="fas fa-chart-line mr-2"></i> Évolution TrueSkill
+                        </p>
+                    </header>
+                    <div class="card-content">
+                        <div class="chart-container-wrapper">
+                            <div class="chart-legend" id="evolutionLegend"></div>
+                            <div class="chart-area">
+                                <canvas id="evolutionChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if saison.distribution_data and saison.distribution_data.players|length > 1 %}
+                <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.6s">
+                    <header class="card-header">
+                        <p class="card-header-title is-centered has-text-white">
+                            <i class="fas fa-chart-area mr-2"></i> Distribution TrueSkill (Loi Normale)
+                        </p>
+                    </header>
+                    <div class="card-content">
+                        <div class="chart-container-wrapper">
+                            <div class="chart-legend" id="distributionLegend"></div>
+                            <div class="chart-area">
+                                <div id="chartTooltip" class="speech-bubble"></div>
+                                <canvas id="distributionChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
 
             {% endif %}
         </div>
     </section>
 
+    <div class="modal" id="playerInfoModal">
+        <div class="modal-background" onclick="closePlayerModal()"></div>
+        <div class="modal-content modal-content-glass">
+            <div class="box has-background-transparent has-text-centered">
+                <button class="delete is-large is-pulled-right" onclick="closePlayerModal()"></button>
+                <h3 class="title is-3 has-text-white mb-2" id="modalPlayerName">Nom</h3>
+                <div class="is-flex is-justify-content-center mb-4">
+                    <span class="tag is-dark is-medium" id="modalPercentile">Top ?%</span>
+                </div>
+                <div class="columns is-mobile mt-4">
+                    <div class="column">
+                        <p class="heading has-text-grey-light">Score TrueSkill</p>
+                        <p class="title is-4 has-text-info" id="modalScore">0.000</p>
+                    </div>
+                </div>
+                <a id="modalProfileLink" href="#" class="button is-fullwidth is-primary is-outlined mt-4">
+                    Voir le profil complet
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="rulesModal">
+        <div class="modal-background" onclick="closeRulesModal()"></div>
+        <div class="modal-content modal-content-glass">
+            <div class="box has-background-transparent">
+                <button class="delete is-large is-pulled-right" onclick="closeRulesModal()"></button>
+                <h3 class="title is-3 has-text-white has-text-centered mb-4">
+                    <i class="fas fa-info-circle mr-2"></i> Règles de Victoire
+                </h3>
+                <div id="rulesContent" class="content has-text-light has-text-centered is-size-5"></div>
+                <div class="has-text-centered mt-5">
+                    <button class="button is-primary is-outlined is-rounded" onclick="closeRulesModal()">Compris !</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% include 'footer.html' %}
 
     <script>
+        const sortDirections = {
+            'moy': true, 'total': true, 'part': true, 'vic': true, 'ip': true
+        };
+
+        function sortTable(columnKey, headerElem) {
+            const table = document.getElementById("mainTable");
+            const tbody = table.querySelector("tbody");
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+            
+            const isDesc = sortDirections[columnKey];
+            sortDirections[columnKey] = !isDesc; 
+
+            const allHeaders = table.querySelectorAll("th.sortable");
+            allHeaders.forEach(th => {
+                th.classList.remove("active-sort");
+                const icon = th.querySelector("i");
+                if(icon) icon.className = "fas fa-sort";
+            });
+
+            headerElem.classList.add("active-sort");
+            const icon = headerElem.querySelector("i");
+            if(icon) icon.className = isDesc ? "fas fa-sort-down" : "fas fa-sort-up";
+            
+            rows.sort((rowA, rowB) => {
+                let cellIndex = 0;
+                if(columnKey === 'moy') cellIndex = 2;
+                if(columnKey === 'total') cellIndex = 3;
+                if(columnKey === 'part') cellIndex = 4;
+                if(columnKey === 'vic') cellIndex = 5;
+                if(columnKey === 'ip') cellIndex = 6;
+
+                const cellA = rowA.children[cellIndex];
+                const cellB = rowB.children[cellIndex];
+
+                if (columnKey === 'ip') {
+                    const attrA = cellA.getAttribute('data-eligible');
+                    const attrB = cellB.getAttribute('data-eligible');
+                    const eligA = (attrA === 'true');
+                    const eligB = (attrB === 'true');
+
+                    if (eligA !== eligB) {
+                        return eligA ? -1 : 1;
+                    }
+                }
+
+                const valA = parseFloat(cellA.getAttribute('data-val')) || 0;
+                const valB = parseFloat(cellB.getAttribute('data-val')) || 0;
+
+                if (isDesc) {
+                    return valB - valA;
+                } else {
+                    return valA - valB;
+                }
+            });
+
+            rows.forEach((row, index) => {
+                tbody.appendChild(row);
+                const rankCell = row.querySelector(".rank-cell");
+                if (rankCell) {
+                    rankCell.textContent = index + 1;
+                }
+            });
+        }
+
+        const rulesDescriptions = {
+            'stakhanov': `<p><strong class="has-text-warning">Le Stakhanoviste</strong></p><p>Le vainqueur est déterminé par le cumul total des points marqués durant toute la saison.</p>`,
+            'Indice de Performance': `<p><strong class="has-text-info">L'Indice de Performance (IP)</strong></p><p>Récompense la domination relative et la régularité.</p>`,
+            'grand_master': `<p><strong class="has-text-info">L'Indice de Performance (Grand Master)</strong></p><p>Récompense la domination relative et la régularité.</p>`,
+            'default': `<p>Le vainqueur est déterminé selon les règles spécifiques configurées pour cette saison.</p>`
+        };
+
+        function openRulesModal(condition) {
+            const contentDiv = document.getElementById('rulesContent');
+            const modal = document.getElementById('rulesModal');
+            let htmlContent = rulesDescriptions[condition] || rulesDescriptions['default'];
+            if (condition === 'grand_master') htmlContent = rulesDescriptions['Indice de Performance'];
+            contentDiv.innerHTML = htmlContent;
+            modal.classList.add('is-active');
+        }
+
+        function closeRulesModal() { document.getElementById('rulesModal').classList.remove('is-active'); }
+        
+        function closePlayerModal() { 
+            document.getElementById('playerInfoModal').classList.remove('is-active'); 
+            resetPoints();
+        }
+
+        function openPlayerModal(name, score, percentile) {
+            document.getElementById('modalPlayerName').innerText = name;
+            document.getElementById('modalScore').innerText = score;
+            document.getElementById('modalPercentile').innerText = "Top " + percentile + "%";
+            const badge = document.getElementById('modalPercentile');
+            const pVal = parseFloat(percentile);
+            badge.className = 'tag is-medium';
+            if (pVal <= 10) badge.classList.add('is-warning');
+            else if (pVal <= 25) badge.classList.add('is-success');
+            else if (pVal <= 50) badge.classList.add('is-info');
+            else badge.classList.add('is-dark');
+            document.getElementById('modalProfileLink').href = "/stats/joueur/" + name;
+            document.getElementById('playerInfoModal').classList.add('is-active');
+        }
+
+        let evoChartInstance = null;
+        let distChartInstance = null;
+
+        function highlightLine(index) {
+            if (!evoChartInstance) return;
+            const datasets = evoChartInstance.data.datasets;
+            
+            datasets.forEach((ds, i) => {
+                if (i === index) {
+                    ds.borderWidth = 4;
+                    ds.borderColor = ds.backgroundColor; 
+                    ds.oldColor = ds.borderColor; 
+                } else {
+                    ds.borderWidth = 1;
+                    const c = ds.backgroundColor; 
+                    ds.borderColor = c.replace('rgb', 'rgba').replace(')', ', 0.1)').replace('rgbaa', 'rgba'); 
+                }
+            });
+            evoChartInstance.update('none');
+        }
+
+        function resetLines() {
+            if (!evoChartInstance) return;
+            const datasets = evoChartInstance.data.datasets;
+            datasets.forEach(ds => {
+                ds.borderWidth = 2;
+                ds.borderColor = ds.backgroundColor; 
+            });
+            evoChartInstance.update('none');
+        }
+
+        function resetPoints() {
+            if (!distChartInstance) return;
+            const ds = distChartInstance.data.datasets[1];
+            ds.pointRadius = 6; 
+            ds.pointBorderWidth = 1;
+            distChartInstance.update('none');
+            hideTooltip();
+        }
+
+        function highlightPoint(playerIndex) {
+            if (!distChartInstance) return;
+            const ds = distChartInstance.data.datasets[1];
+            
+            const newRadii = ds.data.map(() => 6);
+            newRadii[playerIndex] = 15; 
+            ds.pointRadius = newRadii;
+            
+            const newBorderWidths = ds.data.map(() => 1);
+            newBorderWidths[playerIndex] = 3;
+            ds.pointBorderWidth = newBorderWidths;
+            
+            distChartInstance.update('none');
+        }
+
+        function showMiniTooltip(index, playerObj) {
+            const chart = distChartInstance;
+            if (!chart) return;
+
+            const meta = chart.getDatasetMeta(1);
+            const point = meta.data[index];
+            const tooltipEl = document.getElementById('chartTooltip');
+
+            if (point && tooltipEl) {
+                tooltipEl.innerHTML = `<strong>${playerObj.nom}</strong><br>${playerObj.x.toFixed(3)} pts TS, Top ${playerObj.top_percent}%`;
+                tooltipEl.style.left = point.x + 'px';
+                tooltipEl.style.top = (point.y - 10) + 'px';
+                tooltipEl.style.opacity = 1;
+            }
+        }
+
+        function hideTooltip() {
+            const tooltipEl = document.getElementById('chartTooltip');
+            if (tooltipEl) tooltipEl.style.opacity = 0;
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
-            fadeElems.forEach(elem => {
-                elem.classList.add('visible');
+            fadeElems.forEach(elem => elem.classList.add('visible'));
+
+            {% if saison.chart_data %}
+            const ctxEvo = document.getElementById('evolutionChart').getContext('2d');
+            const evoData = {{ saison.chart_data | tojson }};
+            const legendEvo = document.getElementById('evolutionLegend');
+            
+            evoData.datasets.forEach((ds, index) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                const lastVal = ds.data.filter(v => v !== null).slice(-1)[0] || 0;
+                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${ds.borderColor}; border: 1px solid #fff;"></div><span class="legend-name">${ds.label}</span><span class="legend-val">${lastVal}</span>`;
+                
+                item.onmouseenter = () => highlightLine(index);
+                item.onmouseleave = () => resetLines();
+                item.onclick = () => highlightLine(index);
+
+                legendEvo.appendChild(item);
             });
+
+            evoChartInstance = new Chart(ctxEvo, {
+                type: 'line', data: evoData,
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.05)' } }, y: { grid: { color: 'rgba(255, 255, 255, 0.05)' } } }, elements: { point: { radius: 0, hoverRadius: 6 }, line: { tension: 0.3 } } }
+            });
+            {% endif %}
+
+            {% if saison.distribution_data and saison.distribution_data.players|length > 1 %}
+            const ctxDist = document.getElementById('distributionChart').getContext('2d');
+            const distDataRaw = {{ saison.distribution_data | tojson }};
+            const curvePoints = distDataRaw.curve.map(pt => ({ x: pt.x, y: pt.y }));
+            const playerPoints = distDataRaw.players.map(p => ({ x: p.x, y: p.y, name: p.nom, percentile: p.top_percent, color: p.color }));
+            const legendDist = document.getElementById('distributionLegend');
+            
+            distDataRaw.players.forEach((p, index) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${p.color}; border: 1px solid #fff;"></div><span class="legend-name">${p.nom}</span><span class="legend-val">${p.top_percent}%</span>`;
+                
+                item.onmouseenter = () => {
+                    highlightPoint(index);
+                };
+                
+                item.onmouseleave = () => {
+                    resetPoints();
+                };
+
+                item.onclick = (e) => {
+                    if (window.innerWidth < 768) {
+                        highlightPoint(index);
+                        showMiniTooltip(index, p);
+                    } else {
+                        highlightPoint(index);
+                        openPlayerModal(p.nom, p.x.toFixed(3), p.top_percent);
+                    }
+                };
+                
+                legendDist.appendChild(item);
+            });
+
+            distChartInstance = new Chart(ctxDist, {
+                type: 'scatter',
+                data: { 
+                    datasets: [
+                        { 
+                            type: 'line', 
+                            label: 'Distribution', 
+                            data: curvePoints, 
+                            borderColor: 'rgba(255, 255, 255, 0.2)', 
+                            borderWidth: 2, 
+                            pointRadius: 0, 
+                            pointHoverRadius: 0, 
+                            pointHitRadius: 0,   
+                            fill: true, 
+                            backgroundColor: 'rgba(255, 255, 255, 0.02)', 
+                            tension: 0.4,
+                            animation: false
+                        }, 
+                        { 
+                            type: 'scatter', 
+                            label: 'Joueurs', 
+                            data: playerPoints, 
+                            backgroundColor: playerPoints.map(p => p.color), 
+                            borderColor: '#fff', 
+                            borderWidth: 1, 
+                            pointRadius: 6, 
+                            pointHoverRadius: 9 
+                        }
+                    ] 
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    onClick: (e, elements) => { 
+                        if (elements.length > 0) { 
+                            const index = elements[0].index; 
+                            if (elements[0].datasetIndex === 1) { 
+                                const pData = playerPoints[index]; 
+                                if (window.innerWidth < 768) {
+                                    highlightPoint(index);
+                                    showMiniTooltip(index, pData);
+                                } else {
+                                    highlightPoint(index);
+                                    openPlayerModal(pData.name, pData.x.toFixed(3), pData.percentile); 
+                                }
+                            } 
+                        } 
+                    }, 
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    const point = context[0].raw;
+                                    return point.name || "Joueur";
+                                },
+                                label: function(context) {
+                                    const point = context.raw;
+                                    return `${point.x.toFixed(3)} pts TS, Top ${point.percentile}%`;
+                                }
+                            }
+                        }
+                    }, 
+                    scales: { 
+                        x: { 
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            min: Math.min(...curvePoints.map(p => p.x)),
+                            max: Math.max(...curvePoints.map(p => p.x))
+                        }, 
+                        y: { display: false } 
+                    } 
+                } 
+            });
+            {% endif %}
         });
     </script>
 </body>

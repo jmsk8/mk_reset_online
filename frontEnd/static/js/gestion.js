@@ -48,7 +48,6 @@ function getTierColor(rank) {
 
 
 document.addEventListener('DOMContentLoaded', () => {
-    // --- CORRECTION : Afficher l'interface immédiatement ---
     const fadeElems = document.querySelectorAll('.fade-in');
     fadeElems.forEach(elem => {
         requestAnimationFrame(() => {
@@ -56,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Ensuite, on charge les données
     loadPlayers();
     loadConfig();
 
@@ -73,6 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const newMu = parseFloat(document.getElementById('newMu').value);
             const newSigma = parseFloat(document.getElementById('newSigma').value);
             const nom = document.getElementById('newNom').value;
+            const newColor = document.getElementById('newColor').value;
             
             if (isNaN(newMu) || isNaN(newSigma)) {
                 alert("Erreur: Mu et Sigma doivent être des nombres.");
@@ -82,7 +81,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = {
                 nom: nom,
                 mu: newMu,
-                sigma: newSigma
+                sigma: newSigma,
+                color: newColor
             };
 
             const res = await apiCall('/admin/joueurs', 'POST', data);
@@ -93,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('newNom').value = "";
                 document.getElementById('newMu').value = "50"; 
                 document.getElementById('newSigma').value = "8.333";
+                document.getElementById('newColor').value = "#ffffff";
                 loadPlayers();
             }
         });
@@ -152,10 +153,6 @@ async function loadPlayers() {
         const tr = document.createElement('tr');
         const tierClass = getTierColor(player.tier);
         
-        const rankedStatusIcon = (player.is_ranked === false) 
-            ? '<span class="icon has-text-danger ml-2" title="Joueur Non Classé (Inactif)"><i class="fas fa-user-slash"></i></span>' 
-            : '';
-
         const rowOpacity = (player.is_ranked === false) ? 'style="opacity: 0.6;"' : '';
 
         tr.innerHTML = `
@@ -164,6 +161,7 @@ async function loadPlayers() {
                 : '<span class="icon has-text-danger"><i class="fas fa-square-xmark"></i></span>'}
             </td>
             <td class="has-text-white font-weight-bold" ${rowOpacity}>
+                <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background-color:${player.color || '#fff'}; margin-right:8px; border:1px solid #555;"></span>
                 ${player.nom || 'Inconnu'}
             </td>
             <td class="has-text-grey-light" ${rowOpacity}>
@@ -177,7 +175,7 @@ async function loadPlayers() {
             </td>
             <td class="has-text-right">
                 <button class="button is-small is-info is-outlined mr-1" 
-                    onclick="openEditModal(${player.id}, '${player.nom.replace(/'/g, "\\'")}', ${player.mu}, ${player.sigma}, ${player.is_ranked}, ${player.consecutive_missed})">
+                    onclick="openEditModal(${player.id}, '${player.nom.replace(/'/g, "\\'")}', ${player.mu}, ${player.sigma}, ${player.is_ranked}, ${player.consecutive_missed}, '${player.color || '#ffffff'}')">
                     <i class="fas fa-edit"></i>
                 </button>
                 <button class="button is-small is-danger is-outlined" onclick="deletePlayer(${player.id})">
@@ -186,7 +184,6 @@ async function loadPlayers() {
             </td>
         `;
         tbody.appendChild(tr);
-        // Animation pour les lignes du tableau
         requestAnimationFrame(() => tr.classList.add('visible'));
     });
 }
@@ -199,7 +196,6 @@ async function loadConfig() {
         if (res.ghost_penalty !== undefined) document.getElementById('configGhostPenalty').value = res.ghost_penalty;
         if (res.unranked_threshold !== undefined) document.getElementById('configUnrankedLimit').value = res.unranked_threshold;
         
-        // Sécurité si le backend n'est pas encore à jour avec la nouvelle colonne
         const sigmaInput = document.getElementById('configSigmaLimit');
         if (sigmaInput && res.sigma_threshold !== undefined) {
             sigmaInput.value = res.sigma_threshold;
@@ -218,12 +214,13 @@ async function deletePlayer(id) {
     }
 }
 
-function openEditModal(id, nom, mu, sigma, isRanked, missed) {
+function openEditModal(id, nom, mu, sigma, isRanked, missed, color) {
     document.getElementById('editId').value = id;
     document.getElementById('editNom').value = nom;
     document.getElementById('editMu').value = parseFloat(mu).toFixed(3);
     document.getElementById('editSigma').value = parseFloat(sigma).toFixed(3);
     document.getElementById('editMissed').value = missed !== undefined ? missed : 0;
+    document.getElementById('editColor').value = color || '#ffffff';
     
     updateRankedVisuals(isRanked);
 
@@ -265,7 +262,8 @@ async function saveEdit() {
         mu: parseFloat(document.getElementById('editMu').value),
         sigma: parseFloat(document.getElementById('editSigma').value),
         is_ranked: document.getElementById('editIsRankedValue').value === 'true',
-        consecutive_missed: parseInt(document.getElementById('editMissed').value)
+        consecutive_missed: parseInt(document.getElementById('editMissed').value),
+        color: document.getElementById('editColor').value
     };
     
     if (isNaN(data.mu) || isNaN(data.sigma)) {

@@ -5,6 +5,43 @@ from datetime import datetime
 # === CONFIGURATION ===
 env = trueskill.TrueSkill(mu=50.0, sigma=8.333, beta=4.167, tau=0.083, draw_probability=0.1)
 
+# === COULEURS===
+PLAYER_COLORS = {
+    "Rosalyan": "#4285F4",   # Bleu
+    "Elite": "#EA4335",      # Rouge
+    "J_sk8": "#FBBC05",      # Jaune
+    "Vakaeltraz": "#34A853", # Vert
+    "Lu_K": "#FF6D01",       # Orange foncé
+    "Rayou": "#00BCD4",      # Cyan
+    
+    "Melwin": "#64B5F6",     # Bleu clair
+    "Clem": "#E57373",       # Rouge clair
+    "JeanCube": "#FFF176",   # Jaune clair
+    "Daytona_69": "#81C784", # Vert clair
+    "Oleas": "#FF9800",      # Orange
+    "Thaumas": "#4DD0E1",    # Cyan clair
+    
+    "Ether-Zero": "#7986CB", # Indigo clair
+    "Tomwilson": "#F06292",  # Rose
+    "Brook1l": "#FFF59D",    # Jaune pâle
+    "Hardox": "#AED581",     # Vert pâle
+    "ColorOni": "#FFB74D",   # Orange pâle
+    "Kemoory": "#B2DFDB",    # Teal pâle
+    
+    "Camou": "#E3F2FD",      # Bleu très pâle
+    "Daudy": "#FFEBEE",      # Rouge très pâle
+    "Kaysuan": "#FFFDE7",    # Jaune très pâle
+    "PastPlayer": "#E8F5E9", # Vert très pâle
+    
+    "Ael": "#9C27B0",        # Violet
+    "Falgo": "#795548",      # Marron
+    "McK17": "#607D8B",      # Gris bleu
+    "Corentin": "#3F51B5",   # Indigo
+    "Mirijason": "#009688",  # Teal
+    "Tomy": "#CDDC39",       # Lime
+    "Fozlo": "#E91E63"       # Rose vif
+}
+
 # === CIBLES (ORDRE DES IDs) ===
 final_targets_order = [
     "Rosalyan", "J_sk8", "Elite", "Rayou", "Vakaeltraz", "Melwin", "Lu_K", 
@@ -100,20 +137,23 @@ player_ids = {}
 next_pid = 1
 next_tid = 1
 
+# Génération des IDs pour tous les joueurs
+all_known_players = set(final_targets_order) | set(initial_stats.keys())
+for _, results in tournaments:
+    all_known_players.update(results.keys())
+
+# Préservation de l'ordre spécifié dans final_targets_order pour les premiers IDs
 for pname in final_targets_order:
     player_ids[pname] = next_pid
     next_pid += 1
 
-for pname in initial_stats:
+for pname in all_known_players:
     if pname not in player_ids:
         player_ids[pname] = next_pid
         next_pid += 1
 
-for _, results in tournaments:
-    for pname in results:
-        if pname not in player_ids:
-            player_ids[pname] = next_pid
-            next_pid += 1
+# Suivi des absences consécutives
+consecutive_missed = {pname: 0 for pname in player_ids}
 
 seed_sql = []
 
@@ -122,6 +162,7 @@ seed_sql.append("SET client_encoding = 'UTF8';")
 seed_sql.append("SET standard_conforming_strings = on;")
 seed_sql.append("")
 seed_sql.append("-- Nettoyage des données existantes (pour éviter les conflits) --")
+seed_sql.append("TRUNCATE TABLE public.saisons CASCADE;")
 seed_sql.append("TRUNCATE TABLE public.participations CASCADE;")
 seed_sql.append("TRUNCATE TABLE public.tournois CASCADE;")
 seed_sql.append("TRUNCATE TABLE public.joueurs CASCADE;")
@@ -138,6 +179,13 @@ for date_str, results in tournaments:
     
     history_sql.append(f"INSERT INTO public.tournois (id, date) VALUES ({tid}, '{date_str}');")
     
+    participants = results.keys()
+    for pname in player_ids:
+        if pname in participants:
+            consecutive_missed[pname] = 0
+        else:
+            consecutive_missed[pname] += 1
+
     match_players = []
     match_scores = []
     sorted_results = sorted(results.items(), key=lambda item: item[1], reverse=True)
@@ -176,62 +224,124 @@ for pname, pid in player_ids.items():
     rating = current_ratings.get(pname, env.create_rating())
     mu, sigma = rating.mu, rating.sigma
     tier = 'U'
-    seed_sql.append(f"INSERT INTO public.joueurs (id, nom, mu, sigma, tier) VALUES ({pid}, '{pname}', {mu:.4f}, {sigma:.4f}, '{tier}');")
+    missed = consecutive_missed.get(pname, 0)
+    color = PLAYER_COLORS.get(pname, "#FFFFFF") 
+    
+    seed_sql.append(f"INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES ({pid}, '{pname}', {mu:.4f}, {sigma:.4f}, '{tier}', {missed}, '{color}');")
 
 seed_sql.append("")
 seed_sql.append("-- 2. INSERTION DE L'HISTORIQUE --")
 seed_sql.extend(history_sql)
 
+# === AJOUT AUTOMATIQUE DES SAISONS ===
+saisons_data = [
+    {
+        "nom": "Hiver 2025",
+        "slug": "hiver-2025",
+        "debut": "2025-02-06",
+        "fin": "2025-03-13",
+        "victoire": "stakhanov",
+        "yearly": False
+    },
+    {
+        "nom": "Printemps 2025",
+        "slug": "printemps-2025",
+        "debut": "2025-03-20",
+        "fin": "2025-06-19",
+        "victoire": "stakhanov",
+        "yearly": False
+    },
+    {
+        "nom": "Été 2025",
+        "slug": "ete-2025",
+        "debut": "2025-06-26",
+        "fin": "2025-09-18",
+        "victoire": "stakhanov",
+        "yearly": False
+    },
+    {
+        "nom": "Automne 2025",
+        "slug": "automne-2025",
+        "debut": "2025-09-29",
+        "fin": "2025-12-15",
+        "victoire": "stakhanov",
+        "yearly": False
+    },
+    {
+        "nom": "Année 2025",
+        "slug": "annee-2025",
+        "debut": "2025-02-06",
+        "fin": "2025-12-15",
+        "victoire": "Indice de Performance",
+        "yearly": True
+    }
+]
+
+default_awards_config = '{"active_awards": ["ez", "pas_loin", "stonks", "not_stonks", "chillguy"]}'
+
 seed_sql.append("")
-seed_sql.append("-- 3. RESET DES SÉQUENCES --")
+seed_sql.append("-- 4. INSERTION DES SAISONS --")
+sid = 1
+for s in saisons_data:
+    is_yearly_str = 'true' if s['yearly'] else 'false'
+    seed_sql.append(f"INSERT INTO public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly) VALUES ({sid}, '{s['nom']}', '{s['slug']}', '{s['debut']}', '{s['fin']}', true, '{default_awards_config}', '{s['victoire']}', {is_yearly_str});")
+    sid += 1
+
+seed_sql.append("")
+seed_sql.append("-- 5. RESET DES SÉQUENCES --")
 seed_sql.append(f"SELECT pg_catalog.setval('public.joueurs_id_seq', {next_pid}, true);")
 seed_sql.append(f"SELECT pg_catalog.setval('public.tournois_id_seq', {next_tid}, true);")
+seed_sql.append(f"SELECT pg_catalog.setval('public.saisons_id_seq', {sid}, true);")
 
 with open("seed.sql", "w", encoding="utf-8") as f:
     f.write("\n".join(seed_sql))
 
-print("✅ seed.sql généré avec succès")
+print("✅ seed.sql généré avec succès avec les joueurs, historique et saisons !")
 
 # tournaments = [
-#("2025-02-06", {"Clem": 154, "Elite": 173, "J_sk8": 180, "Kemoory": 124, "Lu_K": 152, "Mirijason": 116, "Vakaeltraz": 149}),
-#("2025-02-13", {"Clem": 154, "Elite": 142, "Lu_K": 138, "Rosalyan": 197, "Vakaeltraz": 143}),
-#("2025-02-20", {"Elite": 175, "Fozlo": 73, "J_sk8": 163, "Lu_K": 159, "Vakaeltraz": 199}),
-#("2025-02-27", {"Camou": 94, "Clem": 128, "Elite": 172, "Fozlo": 111, "J_sk8": 134, "JeanCube": 150, "Lu_K": 144, "Melwin": 127, "Tomy": 69, "Vakaeltraz": 116}),
-#("2025-03-06", {"Lu_K": 178, "Rayou": 195, "Rosalyan": 219}),
-#("2025-03-13", {"Clem": 164, "Melwin": 157, "Rosalyan": 227, "Vakaeltraz": 173}),
-#("2025-03-20", {"Brook1l": 127, "Elite": 175, "Lu_K": 174, "Rosalyan": 202, "Tomy": 111, "Vakaeltraz": 164}),
-#("2025-03-27", {"Clem": 134, "Elite": 166, "J_sk8": 158, "JeanCube": 154, "Lu_K": 145, "Melwin": 152, "Vakaeltraz": 143}),
-#("2025-04-03", {"Clem": 185, "Daytona_69": 171, "Lu_K": 189, "Vakaeltraz": 185}),
-#("2025-04-10", {"Daytona_69": 153, "Fozlo": 107, "J_sk8": 150, "Lu_K": 156, "Melwin": 142, "Rosalyan": 194, "Vakaeltraz": 149}),
-#("2025-04-17", {"Clem": 167, "Elite": 179, "JeanCube": 163, "Melwin": 148, "Vakaeltraz": 194}),
-#("2025-04-24", {"Camou": 117, "Clem": 123, "Daytona_69": 128, "Elite": 150, "J_sk8": 157, "Melwin": 157, "Rosalyan": 215}),
-#("2025-05-08", {"Clem": 179, "Elite": 180, "Melwin": 175, "Vakaeltraz": 180}),
-#("2025-05-15", {"Lu_K": 162, "Melwin": 171, "Rosalyan": 207, "Vakaeltraz": 183}),
-#("2025-05-22", {"Clem": 141, "J_sk8": 191, "JeanCube": 162, "Lu_K": 171, "PastPlayer": 113, "Vakaeltraz": 170}),
-#("2025-06-12", {"Clem": 199, "Elite": 103, "Melwin": 181, "Vakaeltraz": 193}),
-## Note : Dates du 04/06 et 05/06 ignorées (erreurs/pas de tournoi)
-#("2025-06-19", {"Elite": 146, "J_sk8": 173, "Lu_K": 147, "Rayou": 148, "Rosalyan": 186, "Vakaeltraz": 158}),
-#("2025-06-26", {"Elite": 178, "J_sk8": 153, "Kemoory": 97, "Lu_K": 161, "Melwin": 162, "Rayou": 144, "Vakaeltraz": 146}),
-#("2025-07-03", {"Clem": 122, "Elite": 143, "J_sk8": 172, "Kemoory": 113, "Melwin": 159, "Rayou": 145, "Vakaeltraz": 189}),
-#("2025-07-10", {"Fozlo": 168, "Lu_K": 196, "Melwin": 176, "Rayou": 177}),
-#("2025-07-17", {"Clem": 170, "Elite": 184, "Melwin": 187, "Vakaeltraz": 183}),
-#("2025-07-24", {"Brook1l": 122, "Elite": 170, "Fozlo": 128, "J_sk8": 201, "Melwin": 162, "Rayou": 188}),
-#("2025-07-31", {"Clem": 161, "ColorOni": 123, "Daytona_69": 128, "Elite": 148, "J_sk8": 140, "JeanCube": 113, "Rayou": 169, "Vakaeltraz": 148}),
-#("2025-08-07", {"Clem": 177, "Melwin": 174, "Rayou": 181, "Vakaeltraz": 173}),
-#("2025-08-14", {"Elite": 177, "Kaysuan": 113, "Lu_K": 184, "Melwin": 158, "Rayou": 144, "Vakaeltraz": 162}),
-#("2025-08-21", {"Elite": 164, "J_sk8": 188, "Lu_K": 162, "Melwin": 163, "Rayou": 58, "Vakaeltraz": 159}),
-#("2025-08-28", {"Daytona_69": 158, "Elite": 170, "J_sk8": 165, "Lu_K": 143, "Melwin": 161, "Vakaeltraz": 166}),
-#("2025-09-04", {"Elite": 181, "J_sk8": 196, "Lu_K": 147, "Rayou": 157, "Vakaeltraz": 164}),
-#("2025-09-18", {"Clem": 139, "Daytona_69": 150, "Elite": 149, "J_sk8": 160, "Melwin": 116, "Rayou": 169, "Vakaeltraz": 152}),
-#("2025-09-29", {"Ael": 108, "Clem": 131, "Daytona_69": 157, "Elite": 159, "Falgo": 104, "J_sk8": 163, "Melwin": 156, "Vakaeltraz": 158}),
-#("2025-10-06", {"Ael": 152, "Daytona_69": 180, "Elite": 184, "Falgo": 118, "Melwin": 151, "Vakaeltraz": 164}),
-#("2025-10-13", {"Ael": 132, "Clem": 144, "Daytona_69": 169, "Elite": 171, "Falgo": 109, "Melwin": 135, "Rayou": 160}),
-#("2025-10-20", {"Ael": 118, "Clem": 142, "Daytona_69": 147,"Falgo": 91, "Lu_K": 153, "Melwin": 157, "Rayou": 161, "Vakaeltraz": 148}),
-#("2025-10-27", {"Clem": 152, "Daytona_69": 147, "Elite": 156, "J_sk8": 187, "Melwin": 161, "Rayou": 160,}),
-#("2025-11-03", {"Clem": 150, "Elite": 154, "Fozlo": 109, "J_sk8": 177, "Melwin": 157, "Rayou": 160, "Vakaeltraz": 155}),
-#("2025-11-10", {"Daytona_69": 121, "Elite": 150, "Falgo": 123, "Fozlo": 62, "J_sk8": 175, "Melwin": 167, "Rayou": 174, "Vakaeltraz": 140,}),
-#("2025-11-17", {"Ael": 120, "Clem": 118, "Daytona_69": 114, "Elite": 119, "Falgo": 86, "J_sk8": 151, "Lu_K": 125, "Melwin": 127, "Rayou": 149, "Vakaeltraz": 133}),
-#("2025-11-24", {"Ael": 110, "Daytona_69": 110, "Falgo": 112, "J_sk8": 184, "Lu_K": 151, "Melwin": 171, "Rayou": 128, "Vakaeltraz": 163}),
-#("2025-12-01", {"Ael": 87, "Clem": 128, "Daytona_69": 142, "Elite": 142, "Falgo": 102, "J_sk8": 140, "McK17": 68, "Melwin": 137, "Rayou": 155, "Vakaeltraz": 126}),
-#("2025-12-08", {"Ael": 103, "Clem": 132, "Elite": 115, "Falgo": 86, "J_sk8": 151, "Kemoory": 74, "McK17": 104, "Melwin": 145, "Rayou": 150, "Vakaeltraz": 140})
-#] 
+#     # === HIVER 2025 ===
+#     ("2025-02-06", {"Clem": 154, "Elite": 173, "J_sk8": 180, "Kemoory": 124, "Lu_K": 152, "Mirijason": 116, "Vakaeltraz": 149}),
+#     ("2025-02-13", {"Clem": 154, "Elite": 142, "Lu_K": 138, "Rosalyan": 197, "Vakaeltraz": 143}),
+#     ("2025-02-20", {"Elite": 175, "Fozlo": 73, "J_sk8": 163, "Lu_K": 159, "Vakaeltraz": 199}),
+#     ("2025-02-27", {"Camou": 94, "Clem": 128, "Elite": 172, "Fozlo": 111, "J_sk8": 134, "JeanCube": 150, "Lu_K": 144, "Melwin": 127, "Tomy": 69, "Vakaeltraz": 116}),
+#     ("2025-03-06", {"Lu_K": 178, "Rayou": 195, "Rosalyan": 219}),
+#     ("2025-03-13", {"Clem": 164, "Melwin": 157, "Rosalyan": 227, "Vakaeltraz": 173}),
+#      # === PRINTEMPS 2025 ===
+#     ("2025-03-20", {"Brook1l": 127, "Elite": 175, "Lu_K": 174, "Rosalyan": 202, "Tomy": 111, "Vakaeltraz": 164}),
+#     ("2025-03-27", {"Clem": 134, "Elite": 166, "J_sk8": 158, "JeanCube": 154, "Lu_K": 145, "Melwin": 152, "Vakaeltraz": 143}),
+#     ("2025-04-03", {"Clem": 185, "Daytona_69": 171, "Lu_K": 189, "Vakaeltraz": 185}),
+#     ("2025-04-10", {"Daytona_69": 153, "Fozlo": 107, "J_sk8": 150, "Lu_K": 156, "Melwin": 142, "Rosalyan": 194, "Vakaeltraz": 149}),
+#     ("2025-04-17", {"Clem": 167, "Elite": 179, "JeanCube": 163, "Melwin": 148, "Vakaeltraz": 194}),
+#     ("2025-04-24", {"Camou": 117, "Clem": 123, "Daytona_69": 128, "Elite": 150, "J_sk8": 157, "Melwin": 157, "Rosalyan": 215}),
+#     ("2025-05-08", {"Clem": 179, "Elite": 180, "Melwin": 175, "Vakaeltraz": 180}),
+#     ("2025-05-15", {"Lu_K": 162, "Melwin": 171, "Rosalyan": 207, "Vakaeltraz": 183}),
+#     ("2025-05-22", {"Clem": 141, "J_sk8": 191, "JeanCube": 162, "Lu_K": 171, "PastPlayer": 113, "Vakaeltraz": 170}),
+#     ("2025-06-12", {"Clem": 199, "Elite": 103, "Melwin": 181, "Vakaeltraz": 193}),
+#     ("2025-06-19", {"Elite": 146, "J_sk8": 173, "Lu_K": 147, "Rayou": 148, "Rosalyan": 186, "Vakaeltraz": 158}),
+#         # === ÉTÉ 2025 ===
+#     ("2025-06-26", {"Elite": 178, "J_sk8": 153, "Kemoory": 97, "Lu_K": 161, "Melwin": 162, "Rayou": 144, "Vakaeltraz": 146}),
+#     ("2025-07-03", {"Clem": 122, "Elite": 143, "J_sk8": 172, "Kemoory": 113, "Melwin": 159, "Rayou": 145, "Vakaeltraz": 189}),
+#     ("2025-07-10", {"Fozlo": 168, "Lu_K": 196, "Melwin": 176, "Rayou": 177}),
+#     ("2025-07-17", {"Clem": 170, "Elite": 184, "Melwin": 187, "Vakaeltraz": 183}),
+#     ("2025-07-24", {"Brook1l": 122, "Elite": 170, "Fozlo": 128, "J_sk8": 201, "Melwin": 162, "Rayou": 188}),
+#     ("2025-07-31", {"Clem": 161, "ColorOni": 123, "Daytona_69": 128, "Elite": 148, "J_sk8": 140, "JeanCube": 113, "Rayou": 169, "Vakaeltraz": 148}),
+#     ("2025-08-07", {"Clem": 177, "Melwin": 174, "Rayou": 181, "Vakaeltraz": 173}),
+#     ("2025-08-14", {"Elite": 177, "Kaysuan": 113, "Lu_K": 184, "Melwin": 158, "Rayou": 144, "Vakaeltraz": 162}),
+#     ("2025-08-21", {"Elite": 164, "J_sk8": 188, "Lu_K": 162, "Melwin": 163, "Rayou": 58, "Vakaeltraz": 159}),
+#     ("2025-08-28", {"Daytona_69": 158, "Elite": 170, "J_sk8": 165, "Lu_K": 143, "Melwin": 161, "Vakaeltraz": 166}),
+#     ("2025-09-04", {"Elite": 181, "J_sk8": 196, "Lu_K": 147, "Rayou": 157, "Vakaeltraz": 164}),
+#     ("2025-09-18", {"Clem": 139, "Daytona_69": 150, "Elite": 149, "J_sk8": 160, "Melwin": 116, "Rayou": 169, "Vakaeltraz": 152}),
+#         # === AUTOMNE 2025 ===
+#     ("2025-09-29", {"Ael": 108, "Clem": 131, "Daytona_69": 157, "Elite": 159, "Falgo": 104, "J_sk8": 163, "Melwin": 156, "Vakaeltraz": 158}),
+#     ("2025-10-06", {"Ael": 152, "Daytona_69": 180, "Elite": 184, "Falgo": 118, "Melwin": 151, "Vakaeltraz": 164}),
+#     ("2025-10-13", {"Ael": 132, "Clem": 144, "Daytona_69": 169, "Elite": 171, "Falgo": 109, "Melwin": 135, "Rayou": 160}),
+#     ("2025-10-20", {"Ael": 118, "Clem": 142, "Daytona_69": 147,"Falgo": 91, "Lu_K": 153, "Melwin": 157, "Rayou": 161, "Vakaeltraz": 148}),
+#     ("2025-10-27", {"Clem": 152, "Daytona_69": 147, "Elite": 156, "J_sk8": 187, "Melwin": 161, "Rayou": 160,}),
+#     ("2025-11-03", {"Clem": 150, "Elite": 154, "Fozlo": 109, "J_sk8": 177, "Melwin": 157, "Rayou": 160, "Vakaeltraz": 155}),
+#     ("2025-11-10", {"Daytona_69": 121, "Elite": 150, "Falgo": 123, "Fozlo": 62, "J_sk8": 175, "Melwin": 167, "Rayou": 174, "Vakaeltraz": 140,}),
+#     ("2025-11-17", {"Ael": 120, "Clem": 118, "Daytona_69": 114, "Elite": 119, "Falgo": 86, "J_sk8": 151, "Lu_K": 125, "Melwin": 127, "Rayou": 149, "Vakaeltraz": 133}),
+#     ("2025-11-24", {"Ael": 110, "Daytona_69": 110, "Falgo": 112, "J_sk8": 184, "Lu_K": 151, "Melwin": 171, "Rayou": 128, "Vakaeltraz": 163}),
+#     ("2025-12-01", {"Ael": 87, "Clem": 128, "Daytona_69": 142, "Elite": 142, "Falgo": 102, "J_sk8": 140, "McK17": 68, "Melwin": 137, "Rayou": 155, "Vakaeltraz": 126}),
+#     ("2025-12-08", {"Ael": 103, "Clem": 132, "Elite": 115, "Falgo": 86, "J_sk8": 151, "Kemoory": 74, "McK17": 104, "Melwin": 145, "Rayou": 150, "Vakaeltraz": 140}),
+#     ("2025-12-15", {"J_sk8": 154, "Melwin": 149, "Rayou": 114, "Vakaeltraz": 176, "Elite": 119, "Clem": 133, "Ael": 98, "Falgo": 90, "McK17": 109, "Corentin": 94})
+# ]

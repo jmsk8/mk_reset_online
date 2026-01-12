@@ -17,6 +17,16 @@
     --hover-color: #334155;
 }
 
+
+* {
+    -webkit-tap-highlight-color: transparent;
+}
+
+*:focus {
+    outline: none;
+}
+
+
 body, html {
     background-color: var(--background-color);
     color: var(--text-color);
@@ -30,7 +40,6 @@ body, html {
     background-color: var(--secondary-background) !important;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     margin-bottom: 0 !important;
-    
     position: relative;
     z-index: 1000 !important;
 }
@@ -38,16 +47,30 @@ body, html {
 .navbar-item, .navbar-link {
     color: var(--text-color) !important;
     transition: all 0.3s ease;
+    background-color: transparent !important;
 }
 
-.navbar-item:hover, .navbar-link:hover, .navbar-item.is-active {
+.navbar-item:hover, 
+.navbar-link:hover, 
+.navbar-item.is-active,
+.navbar-item:focus,
+.navbar-item:active,
+.navbar-link:focus, 
+.navbar-link:active {
     background-color: var(--primary-color) !important;
     color: white !important;
+    background-image: none !important;
 }
 
 .navbar-dropdown {
     background-color: var(--secondary-background);
     border-top: 2px solid var(--primary-color);
+}
+
+.navbar-item.has-dropdown:hover .navbar-link,
+.navbar-item.has-dropdown.is-active .navbar-link {
+    background-color: var(--secondary-background) !important;
+    color: var(--primary-color) !important;
 }
 
 .navbar-divider {
@@ -62,12 +85,19 @@ body, html {
 .button.is-primary {
     background-color: var(--primary-color);
     border-color: transparent;
+    color: white;
 }
 
-.button.is-primary:hover {
-    background-color: var(--secondary-color);
+.button.is-primary:hover,
+.button.is-primary:focus,
+.button.is-primary:active {
+    background-color: var(--secondary-color) !important;
+    color: white !important;
     box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
-    transform: translateY(-2px);
+}
+
+.button.is-primary:active {
+    transform: translateY(1px);
 }
 
 .button.is-light {
@@ -76,8 +106,11 @@ body, html {
     border-color: var(--border-color);
 }
 
-.button.is-light:hover {
-    background-color: var(--hover-color);
+.button.is-light:hover, 
+.button.is-light:focus, 
+.button.is-light:active {
+    background-color: var(--hover-color) !important;
+    color: var(--text-color) !important;
 }
 
 .button.is-outlined {
@@ -86,21 +119,24 @@ body, html {
     color: var(--primary-color);
 }
 
-.button.is-outlined:hover {
-    background-color: var(--primary-color);
-    color: white;
+.button.is-outlined:hover,
+.button.is-outlined:focus,
+.button.is-outlined:active {
+    background-color: var(--primary-color) !important;
+    color: white !important;
 }
 
 .input, .textarea, .select select {
-    background-color: var(--input-background);
-    color: var(--input-text-color);
+    background-color: var(--input-background) !important;
+    color: var(--input-text-color) !important;
     border-color: var(--border-color);
     border-radius: 6px;
 }
 
-.input:focus, .textarea:focus, .select select:focus {
+.input:focus, .textarea:focus, .select select:focus, .input:active {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 0.125em rgba(59, 130, 246, 0.25);
+    background-color: var(--input-background) !important; 
 }
 
 .box, .card {
@@ -176,7 +212,6 @@ body, html {
     align-items: center;
     gap: 0.5rem;
     font-weight: 500;
-    
     color: #dbd3d4;
 }
 
@@ -206,14 +241,18 @@ a, button, input, .card, .box {
 .tabs li.is-active a {
     color: var(--primary-color) !important;
     border-color: var(--primary-color) !important;
+    background-color: transparent !important;
 }
 
 .tabs a {
     color: var(--text-color) !important;
+    border-bottom-color: var(--border-color);
 }
 
-.tabs a:hover {
+.tabs a:hover, .tabs a:focus, .tabs a:active {
     color: var(--primary-color) !important;
+    background-color: rgba(59, 130, 246, 0.1) !important; 
+    border-bottom-color: var(--primary-color);
 }
 
 .glass-card .card-content {
@@ -231,5 +270,4 @@ a, button, input, .card, .box {
 .tag.is-bronze {
     background-color: #753d04;
     color: white;
-  }
-  
+}

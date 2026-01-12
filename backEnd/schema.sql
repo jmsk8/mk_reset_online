@@ -37,7 +37,8 @@ CREATE TABLE public.joueurs (
     score_trueskill double precision GENERATED ALWAYS AS ((mu - ((3)::double precision * sigma))) STORED, 
     tier character(1) DEFAULT 'U'::bpchar,
     consecutive_missed integer DEFAULT 0,
-    is_ranked boolean DEFAULT true
+    is_ranked boolean DEFAULT true,
+    color character varying(7) DEFAULT '#FFFFFF'
 );
 ALTER TABLE public.joueurs OWNER TO mk_reset;
 

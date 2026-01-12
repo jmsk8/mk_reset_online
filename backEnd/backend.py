@@ -162,64 +162,8 @@ def recalculate_tiers():
 # LOGIQUE MÉTIER : CALCULS DES AWARDS (FONCTIONS DÉDIÉES)
 # -----------------------------------------------------------------------------
 
-def _compute_grand_master(stats_dict, total_tournois):
-    """
-    Calcule l'Indice de Performance (IP) pondéré avec Base Fixe.
-    NE PAS MODIFIER CETTE FONCTION.
-    """
-    seuil_participation = total_tournois * 0.50
-    bonus_par_tournoi_extra = 0.3 
-    BASE_POIDS = 5.0
-    
-    candidates = []
-
-    for pid, d in stats_dict.items():
-        if d["matchs"] >= seuil_participation:
-            num_total = 0.0
-            denom_total = 0.0
-            matches = d.get("gm_history", [])
-            for m in matches:
-                S_i = m['score']
-                M_barre_i = m['avg_score']
-                N_i = m['count']
-                poids = N_i + BASE_POIDS
-                ratio = min(1.5, S_i / M_barre_i) if M_barre_i > 0 else 0
-                weighted_val = ratio * poids
-                num_total += weighted_val
-                denom_total += poids
-
-            ip_base = (num_total / denom_total) * 100 if denom_total > 0 else 0
-            matchs_extra = max(0, d["matchs"] - seuil_participation)
-            bonus = matchs_extra * bonus_par_tournoi_extra
-            final_score = ip_base + bonus
-
-            candidates.append({
-                "id": pid,
-                "nom": d["nom"],
-                "nb_matchs": d["matchs"],
-                "ip_base": ip_base,
-                "bonus": bonus,
-                "final_score": final_score
-            })
-    
-    if not candidates:
-        return None, []
-
-    candidates.sort(key=lambda x: x["final_score"], reverse=True)
-    winner_data = {
-        "id": candidates[0]["id"],
-        "nom": candidates[0]["nom"],
-        "val": candidates[0]["final_score"], 
-        "details": candidates[0]
-    }
-    return winner_data, candidates
 
 def _compute_advanced_stonks(conn, d_debut, d_fin):
-    """
-    Calcule précisément les candidats Stonks/Not Stonks
-    en regardant l'historique et en trouvant le point de départ "Ranked".
-    Remplace l'ancienne "Injection 2.5".
-    """
     with conn.cursor() as cur:
         cur.execute("""
             SELECT DISTINCT p.joueur_id, j.nom 
@@ -266,11 +210,88 @@ def _compute_advanced_stonks(conn, d_debut, d_fin):
         
         return stonks_list
 
+def _compute_grand_master(stats_dict, total_tournois):
+    if total_tournois <= 0:
+        return None, []
+
+    seuil_participation = total_tournois * 0.4
+    BASE_POIDS = 5.0
+    
+    candidates = []
+
+    for pid, d in stats_dict.items():
+        num_total = 0.0
+        denom_total = 0.0
+        matches = d.get("gm_history", [])
+        
+        for m in matches:
+            S_i = float(m['score'])
+            M_barre_i = float(m['avg_score'])
+            N_i = float(m['count'])
+            
+            poids = N_i + BASE_POIDS
+            ratio = min(1.5, S_i / M_barre_i) if M_barre_i > 0 else 0
+            weighted_val = ratio * poids
+            
+            num_total += weighted_val
+            denom_total += poids
+
+        ip_base = (num_total / denom_total) * 100 if denom_total > 0 else 0
+        
+        nb_matchs_joueur = d.get("matchs", 0)
+        matchs_extra = max(0, nb_matchs_joueur - seuil_participation)
+        bonus = matchs_extra * 0.3 
+        
+        final_score = ip_base + bonus
+        is_eligible = (nb_matchs_joueur >= seuil_participation)
+
+        candidates.append({
+            "id": pid,
+            "nom": d["nom"],
+            "nb_matchs": nb_matchs_joueur,
+            "ip_base": ip_base,
+            "bonus": bonus,
+            "final_score": final_score,
+            "eligible": is_eligible
+        })
+    
+    if not candidates:
+        return None, []
+
+    candidates.sort(key=lambda x: x["final_score"], reverse=True)
+    
+    eligible_candidates = [c for c in candidates if c['eligible']]
+    
+    winner_data = None
+    if eligible_candidates:
+        winner_data = {
+            "id": eligible_candidates[0]["id"],
+            "nom": eligible_candidates[0]["nom"],
+            "val": eligible_candidates[0]["final_score"], 
+            "details": eligible_candidates[0]
+        }
+        
+    return winner_data, candidates
+
+def _calculate_adjusted_total_points(match_history):
+    total = 0.0
+    for m in match_history:
+        score = float(m['score'])
+        nb_joueurs = float(m['count'])
+        valeur_ponderee = score * (nb_joueurs / 12.0)
+        total += valeur_ponderee
+    return total
+
+def _calculate_adjusted_total_points(match_history):
+    total = 0.0
+    for m in match_history:
+        score = float(m['score'])
+        nb_joueurs = float(m['count'])
+        valeur_ponderee = score * (nb_joueurs / 12.0)
+        total += valeur_ponderee
+    return total
+
 def _aggregate_season_stats(d_debut, d_fin):
-    """
-    Fonction principale d'agrégation des statistiques brutes d'une saison.
-    Retourne une structure complète avec classements et listes de candidats.
-    """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             query = """
@@ -290,21 +311,27 @@ def _aggregate_season_stats(d_debut, d_fin):
         tournoi_meta = {}
         for row in rows:
             tid = row[8]
-            score = row[2]
+            score = float(row[2])
             if tid not in tournoi_meta:
-                tournoi_meta[tid] = {"sum_score": 0, "count": 0}
+                tournoi_meta[tid] = {"sum_score": 0.0, "count": 0}
             tournoi_meta[tid]["count"] += 1
             tournoi_meta[tid]["sum_score"] += score
 
         for tid, meta in tournoi_meta.items():
-            meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1
+            meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1.0
+
+        total_tournois = len(tournoi_meta)
+        min_participation_req = total_tournois * 0.4
 
         stats = {}
         for pid, nom, score, position, new_ts, mu, sigma, t_date, tid, current_sigma in rows:
             if pid not in stats:
                 stats[pid] = {
                     "id": pid, "nom": nom,
-                    "matchs": 0, "total_points": 0, "total_position": 0,
+                    "matchs": 0, 
+                    "raw_total_points": 0.0,
+                    "total_points": 0.0,
+                    "total_position": 0,
                     "victoires": 0, "second_places": 0,
                     "final_ts": 0.0,
                     "sigma_actuel": float(current_sigma),
@@ -313,8 +340,8 @@ def _aggregate_season_stats(d_debut, d_fin):
             
             p = stats[pid]
             p["matchs"] += 1
-            p["total_points"] += score
-            p["total_position"] += position
+            p["raw_total_points"] += float(score) 
+            p["total_position"] += int(position)
             if position == 1: p["victoires"] += 1
             if position == 2: p["second_places"] += 1
             
@@ -325,9 +352,10 @@ def _aggregate_season_stats(d_debut, d_fin):
             })
             p["final_ts"] = float(new_ts) if new_ts else 0.0
 
-        total_tournois = len(tournoi_meta)
+        for pid, d in stats.items():
+            d["total_points"] = _calculate_adjusted_total_points(d["gm_history"])
+
         winner_gm, list_gm = _compute_grand_master(stats, total_tournois)
-        
         advanced_stonks_list = _compute_advanced_stonks(conn, d_debut, d_fin)
 
         candidates = {
@@ -337,40 +365,50 @@ def _aggregate_season_stats(d_debut, d_fin):
             "ez": [], "pas_loin": [], "stakhanov": [], "chillguy": []
         }
 
-
         for pid, d in stats.items():
             candidates["ez"].append({"id": pid, "nom": d["nom"], "val": d["victoires"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
             candidates["pas_loin"].append({"id": pid, "nom": d["nom"], "val": d["second_places"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
             candidates["stakhanov"].append({"id": pid, "nom": d["nom"], "val": d["total_points"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
-
+            
             player_stonks = next((x for x in advanced_stonks_list if x['id'] == pid), None)
             if player_stonks:
                  candidates["chillguy"].append({"id": pid, "nom": d["nom"], "val": abs(player_stonks['val']), "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
 
         gm_score_map = { item['id']: item['final_score'] for item in list_gm }
+        
         classement_points = []
         classement_moyenne = []
 
         for pid, d in stats.items():
-            moyenne_pts = d["total_points"] / d["matchs"] if d["matchs"] > 0 else 0
-            moyenne_pos = d["total_position"] / d["matchs"] if d["matchs"] > 0 else 0
+            moyenne_pts = d["raw_total_points"] / d["matchs"] if d["matchs"] > 0 else 0.0
+            moyenne_pos = d["total_position"] / d["matchs"] if d["matchs"] > 0 else 0.0
+            
             score_gm_val = gm_score_map.get(pid)
+            is_eligible_val = (d["matchs"] >= min_participation_req)
             
             entry = {
                 "nom": d["nom"],
                 "matchs": d["matchs"],
-                "total_points": d["total_points"],
+                "total_points": int(round(d["total_points"])),
                 "victoires": d["victoires"],
                 "final_trueskill": round(d["final_ts"], 3),
                 "moyenne_points": round(moyenne_pts, 2),
                 "moyenne_position": round(moyenne_pos, 2),
-                "score_gm": round(score_gm_val, 2) if score_gm_val is not None else None
+                "score_gm": round(score_gm_val, 2) if score_gm_val is not None else None,
+                "is_eligible_gm": bool(is_eligible_val)
             }
             classement_points.append(entry)
             classement_moyenne.append(entry)
 
         classement_points.sort(key=lambda x: (x['total_points'], x['victoires']), reverse=True)
-        classement_moyenne.sort(key=lambda x: (x['score_gm'] if x['score_gm'] is not None else -1), reverse=True)
+        
+        classement_moyenne.sort(
+            key=lambda x: (
+                x['is_eligible_gm'], 
+                (x['score_gm'] if x['score_gm'] is not None else -1)
+            ), 
+            reverse=True
+        )
 
         return {
             "classement_points": classement_points,
@@ -378,21 +416,17 @@ def _aggregate_season_stats(d_debut, d_fin):
             "candidates": candidates,
             "total_tournois": total_tournois
         }
-
 # -----------------------------------------------------------------------------
 # LOGIQUE MÉTIER : ATTRIBUTION FINALE DES AWARDS (SAUVEGARDE)
 # -----------------------------------------------------------------------------
 
 def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
-    """
-    Fonction pure qui détermine les gagnants de chaque catégorie (Podium + Spéciaux).
-    Applique les filtres et règles d'exclusion.
-    """
     winners_map = {} 
     top_3_players = [] 
 
     if vic_cond == 'grand_master' or vic_cond == 'Indice de Performance':
-        top_3_players = candidates.get('grand_master', [])
+        raw_list = candidates.get('grand_master', [])
+        top_3_players = [c for c in raw_list if c.get('eligible', False)]
     elif vic_cond == 'ez':
         sorted_list = sorted(candidates.get('ez', []), key=lambda x: x['val'], reverse=True)
         top_3_players = [{"id": x['id'], "final_score": x['val'], "nom": x['nom']} for x in sorted_list]
@@ -458,9 +492,6 @@ def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
     return top_3_players, winners_map
 
 def _save_awards_to_db(conn, season_id, top_3, special_winners_map, is_yearly):
-    """
-    Fonction technique qui écrit les résultats en base.
-    """
     with conn.cursor() as cur:
         cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (season_id,))
         
@@ -538,25 +569,38 @@ def recap_list():
 
 @app.route('/stats/recap/<slug>')
 def get_recap(slug):
-    """
-    Génère le récapitulatif d'une saison.
-    Utilise le moteur de calcul refactorisé pour assurer la cohérence.
-    """
+    import math
+    import statistics
+    from math import erf, sqrt
+
+    def normal_top_percent(score, mean, stdev):
+        z = (score - mean) / stdev
+        percentile = 0.5 * (1 + erf(z / sqrt(2))) * 100
+        return round(100 - percentile, 1)
+
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, nom, date_debut, date_fin, slug, config_awards, victory_condition, is_yearly FROM saisons WHERE slug = %s", (slug,))
+            cur.execute("""
+                SELECT id, nom, date_debut, date_fin, slug,
+                       config_awards, victory_condition, is_yearly
+                FROM saisons
+                WHERE slug = %s
+            """, (slug,))
             saison_row = cur.fetchone()
-            if not saison_row: return jsonify({"error": "Saison introuvable"}), 404
+            if not saison_row:
+                return jsonify({"error": "Saison introuvable"}), 404
 
             saison_id, nom, d_debut, d_fin, slug_bdd, config, vic_cond, is_yearly = saison_row
-            
             global_stats = _aggregate_season_stats(d_debut, d_fin)
-            
+
             cur.execute("SELECT code, nom, emoji, description, id FROM types_awards")
-            types_ref = {r[0]: {"nom": r[1], "emoji": r[2], "desc": r[3], "id": r[4]} for r in cur.fetchall()}
+            types_ref = {
+                r[0]: {"nom": r[1], "emoji": r[2], "desc": r[3], "id": r[4]}
+                for r in cur.fetchall()
+            }
 
             awards_data = {}
-            
+
             cur.execute("""
                 SELECT t.code, t.nom, t.emoji, j.nom, a.valeur
                 FROM awards_obtenus a
@@ -568,39 +612,199 @@ def get_recap(slug):
 
             if saved_rows:
                 for code, award_name, emoji, player_name, valeur in saved_rows:
-                    if code not in awards_data: awards_data[code] = []
-                    awards_data[code].append({"nom": player_name, "val": valeur, "emoji": emoji, "award_name": award_name})
+                    awards_data.setdefault(code, []).append({
+                        "nom": player_name,
+                        "val": valeur,
+                        "emoji": emoji,
+                        "award_name": award_name
+                    })
             else:
                 active_list = config.get('active_awards', [])
                 top_3, winners_map = _determine_winners(
-                    global_stats['candidates'], vic_cond, active_list, global_stats['total_tournois']
+                    global_stats['candidates'],
+                    vic_cond,
+                    active_list,
+                    global_stats['total_tournois']
                 )
 
-                moai_codes = ['super_gold_moai', 'super_silver_moai', 'super_bronze_moai'] if is_yearly else ['gold_moai', 'silver_moai', 'bronze_moai']
+                moai_codes = (
+                    ['super_gold_moai', 'super_silver_moai', 'super_bronze_moai']
+                    if is_yearly else
+                    ['gold_moai', 'silver_moai', 'bronze_moai']
+                )
+
                 for i in range(min(3, len(top_3))):
                     p = top_3[i]
                     code = moai_codes[i]
                     if code in types_ref:
                         ref = types_ref[code]
-                        if code not in awards_data: awards_data[code] = []
-                        val_fmt = f"{p.get('final_score', 0):.3f}"
-                        awards_data[code].append({"nom": p.get('nom', '?'), "val": val_fmt, "emoji": ref['emoji'], "award_name": ref['nom']})
+                        awards_data.setdefault(code, []).append({
+                            "nom": p.get("nom", "?"),
+                            "val": f"{p.get('final_score', 0):.3f}",
+                            "emoji": ref["emoji"],
+                            "award_name": ref["nom"]
+                        })
 
                 for code, winners in winners_map.items():
                     if code in types_ref:
                         ref = types_ref[code]
-                        if code not in awards_data: awards_data[code] = []
                         for w in winners:
-                            val_fmt = str(int(w['val'])) if code in ['ez', 'pas_loin', 'stakhanov'] else str(round(w['val'], 3))
-                            awards_data[code].append({"nom": w['nom'], "val": val_fmt, "emoji": ref['emoji'], "award_name": ref['nom']})
+                            val_fmt = (
+                                str(int(w["val"]))
+                                if code in ['ez', 'pas_loin', 'stakhanov']
+                                else str(round(w["val"], 3))
+                            )
+                            awards_data.setdefault(code, []).append({
+                                "nom": w["nom"],
+                                "val": val_fmt,
+                                "emoji": ref["emoji"],
+                                "award_name": ref["nom"]
+                            })
+
+            cur.execute("""
+                SELECT id, date
+                FROM Tournois
+                WHERE date >= %s AND date <= %s
+                ORDER BY date ASC
+            """, (d_debut, d_fin))
+            tournois = cur.fetchall()
+
+            labels = [t[1].strftime("%d/%m") for t in tournois]
+            tournoi_ids = [t[0] for t in tournois]
+
+            cur.execute("SELECT id, nom, color FROM Joueurs")
+            player_colors = {
+                r[0]: {"nom": r[1], "color": r[2] or "#FFFFFF"}
+                for r in cur.fetchall()
+            }
+
+            datasets = []
+
+            if tournoi_ids:
+                cur.execute("""
+                    SELECT DISTINCT j.id
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    JOIN Joueurs j ON p.joueur_id = j.id
+                    WHERE t.date >= %s AND t.date <= %s
+                """, (d_debut, d_fin))
+                joueurs_ids = [r[0] for r in cur.fetchall()]
+
+                for jid in joueurs_ids:
+                    p_info = player_colors.get(jid)
+                    cur.execute("""
+                        SELECT tournoi_id, new_score_trueskill, old_mu, old_sigma
+                        FROM Participations
+                        WHERE joueur_id = %s AND tournoi_id = ANY(%s)
+                    """, (jid, tournoi_ids))
+                    rows = cur.fetchall()
+
+                    parts_map = {}
+                    first_idx = 9999
+                    initial_score = None
+
+                    for tid, new_score, old_mu, old_sigma in rows:
+                        parts_map[tid] = float(new_score)
+                        try:
+                            idx = tournoi_ids.index(tid)
+                            if idx < first_idx and old_mu is not None and old_sigma is not None:
+                                first_idx = idx
+                                initial_score = float(old_mu) - 3 * float(old_sigma)
+                        except ValueError:
+                            pass
+
+                    data = []
+                    current = initial_score
+
+                    for tid in tournoi_ids:
+                        if tid in parts_map:
+                            current = round(parts_map[tid], 2)
+                            data.append(current)
+                        else:
+                            data.append(round(current, 2) if current is not None else None)
+
+                    datasets.append({
+                        "label": p_info["nom"],
+                        "data": data,
+                        "borderColor": p_info["color"],
+                        "backgroundColor": p_info["color"],
+                        "borderWidth": 2,
+                        "fill": False,
+                        "tension": 0.3,
+                        "pointRadius": 0,
+                        "spanGaps": True
+                    })
+
+                datasets.sort(
+                    key=lambda d: next((v for v in reversed(d["data"]) if v is not None), 0),
+                    reverse=True
+                )
+
+            final_scores = [
+                p["final_trueskill"]
+                for p in global_stats["classement_points"]
+                if p["matchs"] > 0
+            ]
+
+            dist_data = {"curve": [], "players": []}
+
+            if len(final_scores) > 1:
+                mean = statistics.mean(final_scores)
+                stdev = statistics.stdev(final_scores) or 1.0
+
+                x_min = mean - 3.5 * stdev
+                x_max = mean + 3.5 * stdev
+                step = (x_max - x_min) / 120
+
+                x = x_min
+                while x <= x_max:
+                    y = (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(
+                        -0.5 * ((x - mean) / stdev) ** 2
+                    )
+                    dist_data["curve"].append({"x": round(x, 2), "y": y})
+                    x += step
+
+                for p in global_stats["classement_points"]:
+                    if p["matchs"] == 0:
+                        continue
+
+                    score = p["final_trueskill"]
+                    y_pos = (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(
+                        -0.5 * ((score - mean) / stdev) ** 2
+                    )
+
+                    top_pct = normal_top_percent(score, mean, stdev)
+
+                    color = "#FFFFFF"
+                    for info in player_colors.values():
+                        if info["nom"] == p["nom"]:
+                            color = info["color"]
+                            break
+
+                    dist_data["players"].append({
+                        "nom": p["nom"],
+                        "x": score,
+                        "y": y_pos,
+                        "color": color,
+                        "top_percent": top_pct
+                    })
+
+                dist_data["players"].sort(key=lambda k: k["x"], reverse=True)
 
             return jsonify({
                 "nom_saison": nom,
                 "classement_points": global_stats["classement_points"],
                 "classement_moyenne": global_stats["classement_moyenne"],
+                "total_tournois": global_stats["total_tournois"],
                 "awards": awards_data,
-                "victory_condition": vic_cond
+                "victory_condition": vic_cond,
+                "chart_data": {
+                    "labels": labels,
+                    "datasets": datasets
+                },
+                "distribution_data": dist_data
             })
+
 
 @app.route('/dernier-tournoi')
 def dernier_tournoi():
@@ -633,7 +837,8 @@ def classement():
             SELECT 
                 j.nom, j.mu, j.sigma, j.score_trueskill, j.tier,
                 COUNT(p.tournoi_id) as nb_tournois,
-                SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END) as victoires
+                SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END) as victoires,
+                j.color
             FROM Joueurs j
             LEFT JOIN Participations p ON j.id = p.joueur_id
         """
@@ -652,7 +857,7 @@ def classement():
                 rows = cur.fetchall()
                 total_joueurs = len(rows)
                 for index, row in enumerate(rows):
-                    nom, mu, sigma, score_trueskill, tier, nb_tournois, victoires = row
+                    nom, mu, sigma, score_trueskill, tier, nb_tournois, victoires, color = row
                     score_ts = round(float(score_trueskill), 3) if score_trueskill is not None else 0.000
                     nb = int(nb_tournois)
                     vic = int(victoires) if victoires else 0
@@ -674,7 +879,8 @@ def classement():
                         "nombre_tournois": nb,
                         "victoires": vic,
                         "ratio_victoires": ratio,
-                        "percentile_trueskill": percentile
+                        "percentile_trueskill": percentile,
+                        "color": color if color else "#FFFFFF"
                     })
         return jsonify(joueurs)
     except Exception:
@@ -760,13 +966,13 @@ def get_joueur_stats(nom):
                 res_conf = cur.fetchone()
                 threshold = float(res_conf[0]) if res_conf else 4.0
 
-                cur.execute("SELECT id, mu, sigma, score_trueskill, tier, is_ranked, consecutive_missed FROM Joueurs WHERE nom = %s", (nom,))
+                cur.execute("SELECT id, mu, sigma, score_trueskill, tier, is_ranked, consecutive_missed, color FROM Joueurs WHERE nom = %s", (nom,))
                 current_stats = cur.fetchone()
 
                 if not current_stats:
                     return jsonify({"error": "Joueur non trouvé"}), 404
 
-                jid, mu, sigma, score_trueskill, tier, is_ranked, consecutive_missed = current_stats
+                jid, mu, sigma, score_trueskill, tier, is_ranked, consecutive_missed, color = current_stats
                 
                 safe_ts = float(score_trueskill) if score_trueskill is not None else 0.0
                 sigma_val = float(sigma)
@@ -944,7 +1150,8 @@ def get_joueur_stats(nom):
                 "ecart_type_scores": round(ecart_type_scores, 3),
                 "position_moyenne": round(position_moyenne, 1),
                 "progression_recente": round(progression_recente, 3),
-                "percentile_trueskill": top_percent 
+                "percentile_trueskill": top_percent,
+                "color": color if color else "#FFFFFF"
             },
             "historique": historique_data,
             "awards": awards_list
@@ -981,7 +1188,8 @@ def stats_joueurs():
                         j.nom, j.mu, j.sigma, j.tier,
                         COUNT(p.tournoi_id) as nb_tournois,
                         COALESCE(SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END), 0) as victoires,
-                        AVG(p.score) as score_moyen
+                        AVG(p.score) as score_moyen,
+                        j.color
                     FROM joueurs j
                     LEFT JOIN participations p ON j.id = p.joueur_id
                     GROUP BY j.id, j.nom, j.mu, j.sigma, j.tier
@@ -999,7 +1207,8 @@ def stats_joueurs():
                 "tier": row[3],
                 "nombre_tournois": row[4],
                 "victoires": row[5],
-                "score_moyen": round(float(row[6]), 1) if row[6] else 0.0
+                "score_moyen": round(float(row[6]), 1) if row[6] else 0.0,
+                "color": row[7] if row[7] else "#FFFFFF"
             })
         
         return jsonify({"joueurs": joueurs, "distribution_tiers": dist})
@@ -1033,14 +1242,15 @@ def get_tournoi_details(tournoi_id):
                 td = cur.fetchone()
                 if not td: abort(404)
                 cur.execute("""
-                    SELECT j.nom, p.score, p.new_score_trueskill, p.new_tier, p.position
+                    SELECT j.nom, p.score, p.new_score_trueskill, p.new_tier, p.position, j.color
                     FROM Participations p JOIN Joueurs j ON p.joueur_id = j.id
                     WHERE p.tournoi_id = %s ORDER BY p.position ASC
                 """, (tournoi_id,))
                 res = [{
                     "nom": r[0], "score_tournoi": r[1],
                     "score_trueskill": round(float(r[2]), 3) if r[2] else 0,
-                    "tier": r[3].strip() if r[3] else "?", "position": r[4]
+                    "tier": r[3].strip() if r[3] else "?", "position": r[4],
+                    "color": r[5] if r[5] else "#FFFFFF"
                 } for r in cur.fetchall()]
         return jsonify({"date": td[0].strftime("%Y-%m-%d"), "resultats": res})
     except Exception:
@@ -1165,11 +1375,20 @@ def api_get_joueurs():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, nom, mu, sigma, tier, is_ranked, consecutive_missed FROM Joueurs ORDER BY nom ASC")
-                joueurs = [{"id": r[0], "nom": r[1], "mu": r[2], "sigma": r[3], "tier": r[4].strip() if r[4] else "?", "is_ranked": r[5], "consecutive_missed": r[6] if r[6] is not None else 0} for r in cur.fetchall()]
+                cur.execute("SELECT id, nom, mu, sigma, tier, is_ranked, consecutive_missed, color FROM Joueurs ORDER BY nom ASC")
+                joueurs = [{
+                    "id": r[0], 
+                    "nom": r[1], 
+                    "mu": r[2], 
+                    "sigma": r[3], 
+                    "tier": r[4].strip() if r[4] else "?", 
+                    "is_ranked": r[5], 
+                    "consecutive_missed": r[6] if r[6] is not None else 0,
+                    "color": r[7] if r[7] else "#FFFFFF"
+                } for r in cur.fetchall()]
         return jsonify(joueurs)
-    except Exception:
-        return jsonify({"error": "Erreur serveur"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/admin/joueurs/<int:id>', methods=['PUT'])
 @admin_required
@@ -1179,15 +1398,16 @@ def api_update_joueur(id):
         mu, sigma, nom = float(data['mu']), float(data['sigma']), data['nom']
         is_ranked = bool(data.get('is_ranked', True))
         consecutive_missed = int(data.get('consecutive_missed', 0))
+        color = data.get('color', '#FFFFFF')
         
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s, is_ranked=%s, consecutive_missed=%s WHERE id=%s", (nom, mu, sigma, is_ranked, consecutive_missed, id))
+                cur.execute("UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s, is_ranked=%s, consecutive_missed=%s, color=%s WHERE id=%s", (nom, mu, sigma, is_ranked, consecutive_missed, color, id))
             conn.commit()
             recalculate_tiers()
         return jsonify({"status": "success"})
-    except Exception:
-        return jsonify({"error": "Erreur serveur"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @app.route('/admin/joueurs/<int:id>', methods=['DELETE'])
 @admin_required
@@ -1267,9 +1487,6 @@ def delete_saison(saison_id):
 @app.route('/admin/saisons/<int:id>/save-awards', methods=['POST'])
 @admin_required
 def save_season_awards(id):
-    """
-    Fonction mère d'attribution et de sauvegarde des awards.
-    """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT date_debut, date_fin, config_awards, victory_condition, is_yearly FROM saisons WHERE id = %s", (id,))
@@ -1297,6 +1514,7 @@ def api_add_joueur():
         nom = data.get('nom')
         mu = float(data.get('mu', 50.0))
         sigma = float(data.get('sigma', 8.333))
+        color = data.get('color', '#FFFFFF')
 
         if not nom:
             return jsonify({"error": "Le nom du joueur est requis"}), 400
@@ -1308,9 +1526,9 @@ def api_add_joueur():
                     return jsonify({"error": "Ce nom de joueur existe déjà"}), 409
 
                 cur.execute(
-                    """INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked, consecutive_missed) 
-                       VALUES (%s, %s, %s, 'U', true, 0)""", 
-                    (nom, mu, sigma)
+                    """INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked, consecutive_missed, color) 
+                       VALUES (%s, %s, %s, 'U', true, 0, %s)""", 
+                    (nom, mu, sigma, color)
                 )
             conn.commit()
             

@@ -18,7 +18,7 @@
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
 
-<style>
+    <style>
         :root {
             --score-offset-y: -2px; 
 
@@ -32,7 +32,6 @@
             --score-text: 11px;
         }
 
-        /* === RÉGLAGES UTILISATEUR MOBILE === */
         @media screen and (max-width: 768px) {
             :root {
                 --score-offset-y: 0px; 
@@ -48,7 +47,6 @@
             }
         }
 
-        /* === APPLICATION === */
         .section {
             padding: var(--section-padding) !important;
         }
@@ -80,6 +78,79 @@
 
         .score-bar span {
             font-size: var(--score-text);
+        }
+
+        .discord-glass-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(88, 101, 242, 0.15);
+            border: 1px solid rgba(88, 101, 242, 0.3);
+            border-radius: 50px;
+            padding: 12px 25px;
+            color: white;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+            width: fit-content;
+            margin: 0 auto;
+            gap: 15px;
+        }
+
+        .discord-glass-btn:hover {
+            background: rgba(88, 101, 242, 0.4);
+            border-color: rgba(88, 101, 242, 0.8);
+            box-shadow: 0 0 20px rgba(88, 101, 242, 0.3);
+            transform: translateY(-2px);
+            color: white;
+        }
+
+        .discord-icon-container {
+            font-size: 1.8rem;
+            color: #5865F2;
+            display: flex;
+            align-items: center;
+        }
+
+        .discord-glass-btn:hover .discord-icon-container {
+            color: white;
+            animation: pulse 1s infinite;
+        }
+
+        .discord-info {
+            text-align: left;
+            line-height: 1.2;
+        }
+
+        .discord-title {
+            font-weight: bold;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: block;
+        }
+
+        .discord-status {
+            font-size: 0.75rem;
+            color: #b9bbbe;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .status-dot {
+            height: 8px;
+            width: 8px;
+            background-color: #3ba55c;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 5px #3ba55c;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
         }
     </style>
 </head>
@@ -118,7 +189,7 @@
                     <div class="card glass-card">
                         <div class="card-header">
                             <p class="card-header-title is-centered">
-                                <i class="fas fa-flag-checkered"></i> Résultats du Dernier Tournoi
+                                <i class="fas fa-flag-checkered mr-2"></i> Résultats du Dernier Tournoi
                             </p>
                         </div>
                         <div class="card-content">
@@ -166,9 +237,55 @@
                         </div>
                         <div class="card-footer">
                             <a href="/classement" class="card-footer-item">
-                                <i class="fas fa-list-ol"></i> Voir le classement
+                                <i class="fas fa-list-ol mr-2"></i> Voir le classement
                             </a>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section pt-0">
+        <div class="container">
+            <div class="column is-6 is-offset-3">
+                <div class="box glass-card fade-in py-4 px-4" style="animation-delay: 0.3s">
+                    <div class="columns is-vcentered is-desktop">
+                        
+                        <div class="column">
+                            <p class="title is-6 has-text-white mb-2 is-uppercase">
+                                À propos de la Team
+                            </p>
+                            <div class="content has-text-light is-size-7">
+                                <p class="mb-1">
+                                    Salutations, jeune pilote ! Sur mkreset.gg, on partage nos stats de tournois Mario Kart 8 Deluxe hebdomadaires, on affiche nos skills en pilotage, mais surtout, on s'éclate comme des petits fous !
+                                </p>
+                                <p class="mb-1">
+                                    Tous rencontrés lors de tournois IRL au Reset Bar, nous avons décidé de poursuivre notre passion pour les jeux de courses Nintendo en organisant nous-mêmes nos propres tournois online.
+                                </p>
+                                <p class="mb-1">
+                                    Et pour ne pas faire les choses à moitié, on a pondu ce site (plus pratique qu'un fichier .csv), a.k.a reflet numérique de notre super commu  Je te laisse le parcourir un peu afin de découvrir notre univers ainsi que notre système de ranked, et si ça te tente, tu peux rejoindre notre Discord !
+                                </p>
+                                <p class="is-italic mt-1 has-text-grey-light">
+                                    À plus, au sein de la Team MKReset .
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="column is-narrow has-text-centered ml-2-desktop">
+                            <a href="#" target="_blank" id="discordWidgetLink" class="discord-glass-btn">
+                                <div class="discord-icon-container">
+                                    <i class="fab fa-discord"></i>
+                                </div>
+                                <div class="discord-info">
+                                    <span class="discord-title">Discord</span>
+                                    <span class="discord-status" id="discordStatus">
+                                        <span class="status-dot"></span> <span id="onlineCount">...</span> en ligne
+                                    </span>
+                                </div>
+                            </a>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -181,5 +298,29 @@
     
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
     <script src="{{ url_for('static', filename='js/smk-banner.js') }}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const guildId = '1240353798753620039';
+            fetch(`https://discord.com/api/guilds/${guildId}/widget.json`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.instant_invite) {
+                        document.getElementById('discordWidgetLink').href = data.instant_invite;
+                    }
+                    if (data.presence_count) {
+                        document.getElementById('onlineCount').innerText = data.presence_count;
+                    } else {
+                         document.getElementById('onlineCount').innerText = "Top";
+                    }
+                })
+                .catch(err => {
+                    console.error("Erreur chargement Discord:", err);
+                    document.getElementById('onlineCount').innerText = "+";
+                    document.getElementById('discordWidgetLink').href = "https://discord.gg/mkreset"; 
+                });
+        });
+    </script>
+
 </body>
 </html>
