@@ -86,6 +86,14 @@ const GAME_CONFIG = {
     }
 };
 
+
+let globalTimeOffset = 0;
+let pauseStartTime = 0;
+
+function getGameTime() {
+    return Date.now() - globalTimeOffset;
+}
+
 let worldState = {
     cameraX: 0,
     karts: [],
@@ -184,7 +192,7 @@ function initWorld() {
     worldState.items = [];
     worldState.itemBoxes = [];
     worldState.cameraX = 0;
-    worldState.nextSpawnTime = Date.now() + 500; 
+    worldState.nextSpawnTime = getGameTime() + 500; 
 
     syncRoadAnimation();
 
@@ -262,8 +270,9 @@ function initWorld() {
             hitEndTime: 0,
             heldItem: null,
             throwTime: 0,
+            pendingItemGrantTime: 0,
             
-            nextWanderTime: Date.now() + randomRange(1000, 5000),
+            nextWanderTime: getGameTime() + randomRange(1000, 5000),
             wanderEndTime: 0,
             wanderVy: 0
         });
@@ -288,7 +297,7 @@ function handleSpawns(now) {
 function updateAI(kart, deltaTime) {
     if (kart.state !== 'running') return;
 
-    const now = Date.now();
+    const now = getGameTime();
     let dangerFound = false;
     let avoidDirection = 0;
 
@@ -429,7 +438,7 @@ function giveKartItem(kart) {
         offset: offset
     };
 
-    kart.throwTime = Date.now() + randomRange(GAME_CONFIG.ai.holdItemMin, GAME_CONFIG.ai.holdItemMax);
+    kart.throwTime = getGameTime() + randomRange(GAME_CONFIG.ai.holdItemMin, GAME_CONFIG.ai.holdItemMax);
 }
 
 function activateItem(kart) {
@@ -458,7 +467,7 @@ function activateItem(kart) {
         vx: itemAbsVelX,
         vy: (held.type === 'shell') ? randomRange(-GAME_CONFIG.speeds.shellVertical, GAME_CONFIG.speeds.shellVertical) : 0,
         shooterId: kart.id,
-        createdAt: Date.now(),
+        createdAt: getGameTime(),
         currentFrame: 1,
         lastAnimTime: 0
     };
@@ -473,7 +482,8 @@ function animate(timestamp) {
     lastFrameTime = timestamp;
     if (deltaTime > 0.1) deltaTime = 0.016;
 
-    handleSpawns(Date.now());
+    const gameNow = getGameTime();
+    handleSpawns(gameNow);
 
     const bg = document.querySelector('.layer-scrolling-bg');
     const container = document.getElementById('karts-container');
@@ -497,7 +507,7 @@ function animate(timestamp) {
         }
 
         worldState.itemBoxes.forEach(box => {
-            if (!box.active && Date.now() > box.reactivateTime) {
+            if (!box.active && gameNow > box.reactivateTime) {
                 box.active = true;
                 box.element.style.display = 'block';
             }
@@ -516,15 +526,15 @@ function animate(timestamp) {
                         const dy = Math.abs(box.y - kart.yPercent);
                         if (Math.abs(dist) < GAME_CONFIG.hitboxes.itemBox.x && dy < GAME_CONFIG.hitboxes.itemBox.y) {
                             box.active = false;
-                            box.reactivateTime = Date.now() + GAME_CONFIG.delays.boxRespawn;
-                            setTimeout(() => giveKartItem(kart), GAME_CONFIG.delays.itemGrant);
+                            box.reactivateTime = gameNow + GAME_CONFIG.delays.boxRespawn;
+                            kart.pendingItemGrantTime = gameNow + GAME_CONFIG.delays.itemGrant;
                         }
                     }
                 }
             } else {
                 box.element.style.display = 'none';
             }
-            const floatY = Math.sin(Date.now() * GAME_CONFIG.physics.floatSpeed) * GAME_CONFIG.physics.floatAmplitude;
+            const floatY = Math.sin(gameNow * GAME_CONFIG.physics.floatSpeed) * GAME_CONFIG.physics.floatAmplitude;
             box.element.style.transform += ` translateY(${floatY}px)`;
         });
 
@@ -536,6 +546,11 @@ function animate(timestamp) {
             }
 
             if (kart.state === 'running') {
+                if (kart.pendingItemGrantTime && gameNow > kart.pendingItemGrantTime) {
+                    giveKartItem(kart);
+                    kart.pendingItemGrantTime = 0;
+                }
+
                 updateAI(kart, deltaTime);
                 
                 kart.worldX += kart.absoluteVelocity * deltaTime;
@@ -565,14 +580,14 @@ function animate(timestamp) {
                     }
                 }
 
-                if (kart.heldItem && Date.now() > kart.throwTime) activateItem(kart);
+                if (kart.heldItem && gameNow > kart.throwTime) activateItem(kart);
 
             } else if (kart.state === 'hit') {
                 kart.worldX += (GAME_CONFIG.speeds.roadPPS * 0.5) * deltaTime; 
                 if (kart.worldX >= GAME_CONFIG.world.width) {
                     kart.worldX -= GAME_CONFIG.world.width;
                 }
-                if (Date.now() > kart.hitEndTime) {
+                if (gameNow > kart.hitEndTime) {
                     kart.state = 'running';
                     kart.absoluteVelocity = getInitialKartSpeed();
                 }
@@ -616,13 +631,13 @@ function animate(timestamp) {
             if (item.worldX < 0) item.worldX += GAME_CONFIG.world.width;
 
             if (item.type === 'shell') {
-                 if (Date.now() - item.lastAnimTime > GAME_CONFIG.visuals.shell.animSpeed) {
+                 if (gameNow - item.lastAnimTime > GAME_CONFIG.visuals.shell.animSpeed) {
                     item.currentFrame = (item.currentFrame % 3) + 1;
                     item.imgElement.src = GAME_CONFIG.resources.paths.shell(item.currentFrame);
-                    item.lastAnimTime = Date.now();
+                    item.lastAnimTime = gameNow;
                 }
             }
-            if (item.type === 'banana' && Date.now() - item.createdAt > GAME_CONFIG.delays.bananaLife) {
+            if (item.type === 'banana' && gameNow - item.createdAt > GAME_CONFIG.delays.bananaLife) {
                 item.element.remove();
                 worldState.items.splice(i, 1);
                 continue;
@@ -638,7 +653,7 @@ function animate(timestamp) {
                 item.element.style.zIndex = getZIndex(item.y);
 
                 for (const kart of worldState.karts) {
-                    if (item.type === 'banana' && kart.id === item.shooterId && Date.now() - item.createdAt < GAME_CONFIG.delays.invincibilityOwnItem) continue;
+                    if (item.type === 'banana' && kart.id === item.shooterId && gameNow - item.createdAt < GAME_CONFIG.delays.invincibilityOwnItem) continue;
                     if (item.type === 'shell' && kart.id === item.shooterId) continue;
                     if (kart.state !== 'running') continue;
 
@@ -648,7 +663,7 @@ function animate(timestamp) {
 
                     if (dx < GAME_CONFIG.hitboxes.itemVsKart.x && dy < GAME_CONFIG.hitboxes.itemVsKart.y) {
                         kart.state = 'hit';
-                        kart.hitEndTime = Date.now() + GAME_CONFIG.delays.stunDuration;
+                        kart.hitEndTime = gameNow + GAME_CONFIG.delays.stunDuration;
                         if (kart.heldItem) kart.throwTime = kart.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
                         item.element.remove();
                         worldState.items.splice(i, 1);
@@ -757,9 +772,26 @@ function updateDebugHUD() {
 }
 
 function handleVisibilityChange() {
+    const pauseOverlay = document.getElementById('pause-overlay');
+    
     if (document.hidden) {
         if (animationId) cancelAnimationFrame(animationId);
+        
+        pauseStartTime = Date.now();
+        
+        if (pauseOverlay) pauseOverlay.style.display = 'flex';
+        
     } else {
+        if (pauseStartTime > 0) {
+            const pauseDuration = Date.now() - pauseStartTime;
+            
+            globalTimeOffset += pauseDuration;
+            
+            pauseStartTime = 0;
+        }
+        
+        if (pauseOverlay) pauseOverlay.style.display = 'none';
+        
         lastFrameTime = 0;
         animationId = requestAnimationFrame(animate);
     }

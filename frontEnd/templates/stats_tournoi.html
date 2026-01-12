@@ -42,17 +42,45 @@
                         <div class="card-content">
                             <div class="podium-container">
                                 {% if resultats|length >= 3 %}
+                                    {# Calcul des rangs pour le top 3 #}
+                                    {% set p1 = resultats[0] %}
+                                    {% set p2 = resultats[1] %}
+                                    {% set p3 = resultats[2] %}
+                                    
+                                    {# Rang 1 est toujours 1 #}
+                                    {% set r1 = 1 %}
+                                    
+                                    {# Rang 2 : Si score P2 == Score P1, alors P2 est 1er aussi. Sinon il est 2ème #}
+                                    {% set r2 = 1 if p2.score_tournoi == p1.score_tournoi else 2 %}
+                                    
+                                    {# Rang 3 : Dépend des scores précédents #}
+                                    {% if p3.score_tournoi == p2.score_tournoi %}
+                                        {% set r3 = r2 %}
+                                    {% else %}
+                                        {% set r3 = 3 %}
+                                    {% endif %}
+
+                                    {# Définition des classes CSS pour les couleurs de médailles #}
+                                    {% macro get_medal_class(rank) %}
+                                        {% if rank == 1 %}has-text-warning{% elif rank == 2 %}has-text-grey-light{% elif rank == 3 %}style="color: #cd7f32;"{% endif %}
+                                    {% endmacro %}
+
+                                    {% macro get_medal_icon(rank) %}
+                                        {% if rank == 1 %}fa-trophy{% else %}fa-medal{% endif %}
+                                    {% endmacro %}
+
                                 <div class="columns is-mobile has-text-centered">
+                                    
                                     <div class="column is-4">
                                         <div class="podium podium-second">
                                             <div class="podium-player">
                                                 <i class="fas fa-user-circle fa-3x"></i>
                                                 <div class="podium-name">
-                                                    <a href="/stats/joueur/{{ resultats[1].nom }}" class="has-text-primary">{{ resultats[1].nom }}</a>
+                                                    <a href="/stats/joueur/{{ p2.nom }}" class="has-text-primary">{{ p2.nom }}</a>
                                                 </div>
-                                                <div class="podium-score">{{ resultats[1].score_tournoi }} pts</div>
-                                                <div class="podium-medal has-text-grey-light">
-                                                    <i class="fas fa-medal"></i> 2
+                                                <div class="podium-score">{{ p2.score_tournoi }} pts</div>
+                                                <div class="podium-medal {{ get_medal_class(r2) }}">
+                                                    <i class="fas {{ get_medal_icon(r2) }}"></i> {{ r2 }}
                                                 </div>
                                             </div>
                                         </div>
@@ -63,11 +91,11 @@
                                             <div class="podium-player">
                                                 <i class="fas fa-user-circle fa-4x"></i>
                                                 <div class="podium-name">
-                                                    <a href="/stats/joueur/{{ resultats[0].nom }}" class="has-text-primary">{{ resultats[0].nom }}</a>
+                                                    <a href="/stats/joueur/{{ p1.nom }}" class="has-text-primary">{{ p1.nom }}</a>
                                                 </div>
-                                                <div class="podium-score">{{ resultats[0].score_tournoi }} pts</div>
-                                                <div class="podium-medal has-text-warning">
-                                                    <i class="fas fa-trophy"></i> 1
+                                                <div class="podium-score">{{ p1.score_tournoi }} pts</div>
+                                                <div class="podium-medal {{ get_medal_class(r1) }}">
+                                                    <i class="fas {{ get_medal_icon(r1) }}"></i> {{ r1 }}
                                                 </div>
                                             </div>
                                         </div>
@@ -78,11 +106,11 @@
                                             <div class="podium-player">
                                                 <i class="fas fa-user-circle fa-3x"></i>
                                                 <div class="podium-name">
-                                                    <a href="/stats/joueur/{{ resultats[2].nom }}" class="has-text-primary">{{ resultats[2].nom }}</a>
+                                                    <a href="/stats/joueur/{{ p3.nom }}" class="has-text-primary">{{ p3.nom }}</a>
                                                 </div>
-                                                <div class="podium-score">{{ resultats[2].score_tournoi }} pts</div>
-                                                <div class="podium-medal" style="color: #cd7f32;">
-                                                    <i class="fas fa-medal"></i> 3
+                                                <div class="podium-score">{{ p3.score_tournoi }} pts</div>
+                                                <div class="podium-medal {{ get_medal_class(r3) }}">
+                                                    <i class="fas {{ get_medal_icon(r3) }}"></i> {{ r3 }}
                                                 </div>
                                             </div>
                                         </div>
@@ -119,11 +147,35 @@
                                     </tr>
                                 </thead>
                                 <tbody>
+                                    {# Initialisation des variables pour la boucle #}
+                                    {% set ns = namespace(rank=0, prev_score=-1, display_rank=0) %}
+                                    
                                     {% for joueur in resultats %}
+                                        {# Si le score est différent du précédent, le rang affiché devient l'index actuel de la boucle #}
+                                        {# Sinon, le rang affiché reste le même (ex aequo) #}
+                                        {% if joueur.score_tournoi != ns.prev_score %}
+                                            {% set ns.display_rank = loop.index %}
+                                        {% endif %}
+                                        
+                                        {% set ns.prev_score = joueur.score_tournoi %}
+                                        
+                                        {# Icones seulement pour le top 3, mais PAS de changement de couleur de fond #}
+                                        {% if ns.display_rank == 1 %}
+                                            {% set icon_html = '<i class="fas fa-trophy has-text-warning"></i>' %}
+                                        {% elif ns.display_rank == 2 %}
+                                            {% set icon_html = '<i class="fas fa-medal has-text-grey-light"></i>' %}
+                                        {% elif ns.display_rank == 3 %}
+                                            {% set icon_html = '<i class="fas fa-medal" style="color: #cd7f32;"></i>' %}
+                                        {% else %}
+                                            {% set icon_html = '' %}
+                                        {% endif %}
+
                                     <tr>
-                                        <td>{{ loop.index }}</td>
+                                        <td class="is-vcentered font-weight-bold">
+                                            {{ ns.display_rank }} {{ icon_html|safe }}
+                                        </td>
                                         <td>
-                                            <a href="/stats/joueur/{{ joueur.nom }}" class="has-text-primary">{{ joueur.nom }}</a>
+                                            <a href="/stats/joueur/{{ joueur.nom }}" class="has-text-primary font-weight-bold">{{ joueur.nom }}</a>
                                         </td>
                                         <td>{{ joueur.score_tournoi }} pts</td>
                                     </tr>
