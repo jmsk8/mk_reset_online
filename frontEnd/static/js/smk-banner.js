@@ -28,7 +28,7 @@ const GAME_CONFIG = {
         maxY: 30,
         laneTolerance: 12, 
         edgeSafetyMargin: 2, 
-        overtakeMargin: 5,
+        overtakeMargin: 5, 
         wanderMargin: 8 
     },
     physics: {
@@ -86,9 +86,14 @@ const GAME_CONFIG = {
     }
 };
 
+// === VARIABLES GLOBALES ===
 
 let globalTimeOffset = 0;
 let pauseStartTime = 0;
+
+let cachedBg = null;
+let cachedContainer = null;
+let cachedIsMobile = false;
 
 function getGameTime() {
     return Date.now() - globalTimeOffset;
@@ -106,9 +111,11 @@ let worldState = {
 let lastFrameTime = 0;
 let animationId = null;
 
+// === UTILITAIRES ===
+
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = (Math.random() * (i + 1)) | 0;
         [array[i], array[j]] = [array[j], array[i]];
     }
     return array;
@@ -119,11 +126,12 @@ function randomRange(min, max) {
 }
 
 function getZIndex(yPercent) {
-    return Math.floor(GAME_CONFIG.rendering.zIndexBase - yPercent);
+    return (GAME_CONFIG.rendering.zIndexBase - yPercent) | 0;
 }
 
-function isMobile() {
-    return window.innerWidth < GAME_CONFIG.rendering.mobileBreakpoint;
+function updateMobileStatus() {
+    cachedIsMobile = window.innerWidth < GAME_CONFIG.rendering.mobileBreakpoint;
+    return cachedIsMobile;
 }
 
 function getInitialKartSpeed() {
@@ -142,8 +150,8 @@ function getNewKartSpeed(currentSpeed) {
 function getShortestDistance(fromX, toX) {
     const w = GAME_CONFIG.world.width;
     let diff = fromX - toX;
-    if (diff < -w / 2) diff += w;
-    if (diff > w / 2) diff -= w;
+    if (diff < -w * 0.5) diff += w;
+    if (diff > w * 0.5) diff -= w;
     return diff;
 }
 
@@ -170,6 +178,8 @@ function getScreenPosition(worldX, cameraX, screenWidth) {
     return rawDiff;
 }
 
+// === INITIALISATION ===
+
 function syncRoadAnimation() {
     const groundLayer = document.querySelector('.layer-ground');
     if (!groundLayer) return;
@@ -184,9 +194,11 @@ function syncRoadAnimation() {
 }
 
 function initWorld() {
-    const container = document.getElementById('karts-container');
-    if (!container) return;
-    container.innerHTML = '';
+    cachedContainer = document.getElementById('karts-container');
+    if (!cachedContainer) return;
+    cachedContainer.innerHTML = '';
+    
+    updateMobileStatus();
     
     worldState.karts = [];
     worldState.items = [];
@@ -204,7 +216,7 @@ function initWorld() {
         };
     }
 
-    const currentBoxSize = isMobile() ? GAME_CONFIG.visuals.box.sizeMobile : GAME_CONFIG.visuals.box.sizePC;
+    const currentBoxSize = cachedIsMobile ? GAME_CONFIG.visuals.box.sizeMobile : GAME_CONFIG.visuals.box.sizePC;
     const roadHeight = GAME_CONFIG.road.maxY - GAME_CONFIG.road.minY;
 
     for (let i = 0; i < GAME_CONFIG.world.itemBoxCount; i++) {
@@ -217,7 +229,7 @@ function initWorld() {
         boxDiv.style.bottom = `${boxY}%`;
         boxDiv.style.zIndex = getZIndex(boxY);
         
-        container.appendChild(boxDiv);
+        cachedContainer.appendChild(boxDiv);
         
         worldState.itemBoxes.push({
             element: boxDiv,
@@ -246,7 +258,7 @@ function initWorld() {
         img.classList.add('kart-static-png');
         
         wrapper.appendChild(img);
-        container.appendChild(wrapper);
+        cachedContainer.appendChild(wrapper);
 
         worldState.karts.push({
             id: index,
@@ -278,8 +290,12 @@ function initWorld() {
         });
     });
 
+    cachedBg = document.querySelector('.layer-scrolling-bg');
+
     if (GAME_CONFIG.debugMode) initDebugHUD();
 }
+
+// === LOGIQUE DE JEU & IA ===
 
 function handleSpawns(now) {
     if (now > worldState.nextSpawnTime) {
@@ -301,7 +317,9 @@ function updateAI(kart, deltaTime) {
     let dangerFound = false;
     let avoidDirection = 0;
 
-    for (const item of worldState.items) {
+    const itemsLen = worldState.items.length;
+    for (let i = 0; i < itemsLen; i++) {
+        const item = worldState.items[i];
         if (item.type !== 'banana') continue;
         
         let dist = getShortestDistance(item.worldX, kart.worldX); 
@@ -329,7 +347,9 @@ function updateAI(kart, deltaTime) {
     }
 
     let overtakeFound = false;
-    for (const other of worldState.karts) {
+    const kartsLen = worldState.karts.length;
+    for (let i = 0; i < kartsLen; i++) {
+        const other = worldState.karts[i];
         if (other.id === kart.id || other.state !== 'running') continue;
         
         let dist = getShortestDistance(other.worldX, kart.worldX);
@@ -353,7 +373,9 @@ function updateAI(kart, deltaTime) {
 
     let boxTargetFound = false;
     if (!kart.heldItem) {
-        for (const box of worldState.itemBoxes) {
+        const boxesLen = worldState.itemBoxes.length;
+        for (let i = 0; i < boxesLen; i++) {
+            const box = worldState.itemBoxes[i];
             if (!box.active) continue;
             let dist = getShortestDistance(box.worldX, kart.worldX);
             if (dist > 0 && dist < GAME_CONFIG.ai.boxDetectionRange) {
@@ -403,12 +425,14 @@ function updateAI(kart, deltaTime) {
     kart.vy += (kart.targetVy - kart.vy) * GAME_CONFIG.physics.smoothingFactor * deltaTime;
 }
 
+// === GESTION DES ITEMS ===
+
 function giveKartItem(kart) {
     if (kart.heldItem) return;
 
     let itemType = (Math.random() > 0.5) ? 'banana' : 'shell';
     
-    const container = document.getElementById('karts-container');
+    if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     const itemDiv = document.createElement('div');
     itemDiv.style.position = 'absolute';
     itemDiv.style.pointerEvents = 'none';
@@ -416,20 +440,20 @@ function giveKartItem(kart) {
     const img = document.createElement('img');
     img.style.width = '100%';
     
-    let offset = isMobile() ? GAME_CONFIG.offsets.heldItem.mobile : GAME_CONFIG.offsets.heldItem.pc; 
+    let offset = cachedIsMobile ? GAME_CONFIG.offsets.heldItem.mobile : GAME_CONFIG.offsets.heldItem.pc; 
     
     if (itemType === 'shell') {
-        const size = isMobile() ? GAME_CONFIG.visuals.shell.widthMobile : GAME_CONFIG.visuals.shell.width;
+        const size = cachedIsMobile ? GAME_CONFIG.visuals.shell.widthMobile : GAME_CONFIG.visuals.shell.width;
         itemDiv.style.width = `${size}px`;
         img.src = GAME_CONFIG.resources.paths.shell(1);
     } else {
-        const size = isMobile() ? GAME_CONFIG.visuals.banana.widthMobile : GAME_CONFIG.visuals.banana.width + 4;
+        const size = cachedIsMobile ? GAME_CONFIG.visuals.banana.widthMobile : GAME_CONFIG.visuals.banana.width + 4;
         itemDiv.style.width = `${size}px`;
         img.src = GAME_CONFIG.resources.paths.banana;
     }
 
     itemDiv.appendChild(img);
-    container.appendChild(itemDiv);
+    cachedContainer.appendChild(itemDiv);
 
     kart.heldItem = {
         type: itemType,
@@ -447,7 +471,7 @@ function activateItem(kart) {
 
     let startX = kart.worldX + held.offset;
     if (held.type === 'shell') {
-        const shellOffset = isMobile() ? GAME_CONFIG.offsets.shellSpawn.mobile : GAME_CONFIG.offsets.shellSpawn.pc; 
+        const shellOffset = cachedIsMobile ? GAME_CONFIG.offsets.shellSpawn.mobile : GAME_CONFIG.offsets.shellSpawn.pc; 
         startX = kart.worldX + shellOffset;
     }
 
@@ -469,12 +493,15 @@ function activateItem(kart) {
         shooterId: kart.id,
         createdAt: getGameTime(),
         currentFrame: 1,
-        lastAnimTime: 0
+        lastAnimTime: 0,
+        isDead: false 
     };
 
     worldState.items.push(newItem);
     kart.heldItem = null;
 }
+
+// === BOUCLE D'ANIMATION ===
 
 function animate(timestamp) {
     if (!lastFrameTime) lastFrameTime = timestamp;
@@ -483,13 +510,13 @@ function animate(timestamp) {
     if (deltaTime > 0.1) deltaTime = 0.016;
 
     const gameNow = getGameTime();
+    updateMobileStatus();
     handleSpawns(gameNow);
 
-    const bg = document.querySelector('.layer-scrolling-bg');
-    const container = document.getElementById('karts-container');
+    if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     
-    if (container) {
-        const screenWidth = container.offsetWidth;
+    if (cachedContainer) {
+        const screenWidth = cachedContainer.offsetWidth;
         const renderMargin = GAME_CONFIG.rendering.bufferZone;
         
         worldState.cameraX += GAME_CONFIG.speeds.roadPPS * deltaTime;
@@ -497,16 +524,22 @@ function animate(timestamp) {
             worldState.cameraX -= GAME_CONFIG.world.width;
         }
 
-        if (bg) {
-            bg.style.backgroundPosition = `-${worldState.cameraX}px 0px`;
+        if (cachedBg) {
+            cachedBg.style.backgroundPosition = `-${worldState.cameraX}px 0px`;
+        } else {
+            cachedBg = document.querySelector('.layer-scrolling-bg');
         }
 
         if (worldState.finishLine && worldState.finishLine.element) {
             const rx = getScreenPosition(worldState.finishLine.worldX, worldState.cameraX, screenWidth);
-            worldState.finishLine.element.style.transform = `translateX(${rx}px)`;
+            worldState.finishLine.element.style.transform = `translate3d(${rx}px, 0, 0)`;
         }
 
-        worldState.itemBoxes.forEach(box => {
+        const boxesLen = worldState.itemBoxes.length;
+        const floatY = Math.sin(gameNow * GAME_CONFIG.physics.floatSpeed) * GAME_CONFIG.physics.floatAmplitude;
+
+        for (let i = 0; i < boxesLen; i++) {
+            const box = worldState.itemBoxes[i];
             if (!box.active && gameNow > box.reactivateTime) {
                 box.active = true;
                 box.element.style.display = 'block';
@@ -516,33 +549,39 @@ function animate(timestamp) {
             const rx = getScreenPosition(box.worldX, worldState.cameraX, screenWidth);
             
             if (rx > -renderMargin && rx < screenWidth + renderMargin) {
-                box.element.style.transform = `translateX(${rx}px)`;
+                box.element.style.transform = `translate3d(${rx}px, ${floatY}px, 0)`;
                 if (box.active) {
                     box.element.style.display = 'block';
                     
-                    for (const kart of worldState.karts) {
-                        if (kart.state !== 'running' || kart.heldItem) continue;
+                    const kartsLen = worldState.karts.length;
+                    for (let k = 0; k < kartsLen; k++) {
+                        const kart = worldState.karts[k];
+                        if (kart.state !== 'running' && kart.state !== 'hit') continue; 
+                        
                         const dist = getShortestDistance(box.worldX, kart.worldX);
                         const dy = Math.abs(box.y - kart.yPercent);
                         if (Math.abs(dist) < GAME_CONFIG.hitboxes.itemBox.x && dy < GAME_CONFIG.hitboxes.itemBox.y) {
                             box.active = false;
                             box.reactivateTime = gameNow + GAME_CONFIG.delays.boxRespawn;
-                            kart.pendingItemGrantTime = gameNow + GAME_CONFIG.delays.itemGrant;
+                            if (!kart.heldItem) {
+                                kart.pendingItemGrantTime = gameNow + GAME_CONFIG.delays.itemGrant;
+                            }
                         }
                     }
                 }
             } else {
                 box.element.style.display = 'none';
             }
-            const floatY = Math.sin(gameNow * GAME_CONFIG.physics.floatSpeed) * GAME_CONFIG.physics.floatAmplitude;
-            box.element.style.transform += ` translateY(${floatY}px)`;
-        });
+        }
 
-        worldState.karts.forEach(kart => {
+        const kartsLen = worldState.karts.length;
+        for (let i = 0; i < kartsLen; i++) {
+            const kart = worldState.karts[i];
+
             if (kart.state === 'pending') {
                 kart.element.style.display = 'none';
                 if (kart.heldItem) kart.heldItem.element.style.display = 'none';
-                return;
+                continue;
             }
 
             if (kart.state === 'running') {
@@ -568,7 +607,8 @@ function animate(timestamp) {
                 if (kart.yPercent > GAME_CONFIG.road.maxY) { kart.yPercent = GAME_CONFIG.road.maxY; kart.vy = 0; }
                 if (kart.yPercent < GAME_CONFIG.road.minY) { kart.yPercent = GAME_CONFIG.road.minY; kart.vy = 0; }
 
-                for (const other of worldState.karts) {
+                for (let j = 0; j < kartsLen; j++) {
+                    const other = worldState.karts[j];
                     if (other.id === kart.id || other.state !== 'running') continue;
                     const dx = Math.abs(getShortestDistance(other.worldX, kart.worldX));
                     const dy = Math.abs(other.yPercent - kart.yPercent);
@@ -577,6 +617,36 @@ function animate(timestamp) {
                          const bounceY = GAME_CONFIG.physics.collisionBounceY;
                          if (kart.yPercent > other.yPercent) { kart.yPercent += pushForce; kart.vy = bounceY; }
                          else { kart.yPercent -= pushForce; kart.vy = -bounceY; }
+                    }
+                }
+
+                if (kart.heldItem && kart.state === 'running') {
+                    let itemWorldX = kart.worldX + kart.heldItem.offset;
+                    if (itemWorldX < 0) itemWorldX += GAME_CONFIG.world.width;
+                    if (itemWorldX >= GAME_CONFIG.world.width) itemWorldX -= GAME_CONFIG.world.width;
+
+                    const itemY = kart.yPercent;
+
+                    for (let j = 0; j < kartsLen; j++) {
+                        const victim = worldState.karts[j];
+                        if (victim.id === kart.id || victim.state !== 'running') continue;
+
+                        const dx = Math.abs(getShortestDistance(itemWorldX, victim.worldX));
+                        const dy = Math.abs(itemY - victim.yPercent);
+
+                        const hitThresholdY = 8; 
+
+                        if (dx < GAME_CONFIG.hitboxes.itemVsKart.x && dy < hitThresholdY) {
+                            kart.heldItem.element.remove();
+                            kart.heldItem = null;
+                            
+                            victim.state = 'hit';
+                            victim.hitEndTime = gameNow + GAME_CONFIG.delays.stunDuration;
+                            if (victim.heldItem) {
+                                victim.throwTime = victim.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
+                            }
+                            break;
+                        }
                     }
                 }
 
@@ -600,31 +670,62 @@ function animate(timestamp) {
 
             if (isVisibleNow) {
                 kart.element.style.display = 'block';
-                kart.element.style.transform = `translateX(${rx}px)`;
+                kart.element.style.transform = `translate3d(${rx}px, 0, 0)`;
                 kart.element.style.bottom = `${kart.yPercent}%`;
-                kart.element.style.zIndex = getZIndex(kart.yPercent);
-                if (kart.state === 'hit') kart.element.style.filter = "brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)";
-                else kart.element.style.filter = "none";
+                
+                const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
+                if (kart.element.style.zIndex != zVal) kart.element.style.zIndex = zVal;
+
+                if (kart.state === 'hit') {
+                     if (kart.element.style.filter !== "brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)") {
+                         kart.element.style.filter = "brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)";
+                     }
+                } else {
+                     if (kart.element.style.filter !== "none") kart.element.style.filter = "none";
+                }
                 
                 if (kart.heldItem) {
                     kart.heldItem.element.style.display = 'block';
                     const hx = rx + kart.heldItem.offset;
-                    kart.heldItem.element.style.transform = `translateX(${hx}px)`;
+                    kart.heldItem.element.style.transform = `translate3d(${hx}px, 0, 0)`;
                     kart.heldItem.element.style.bottom = `${kart.yPercent}%`;
-                    kart.heldItem.element.style.zIndex = getZIndex(kart.yPercent);
+                    if (kart.heldItem.element.style.zIndex != zVal) kart.heldItem.element.style.zIndex = zVal;
                 }
             } else {
                 kart.element.style.display = 'none';
                 if (kart.heldItem) kart.heldItem.element.style.display = 'none';
             }
-        });
+        }
 
         for (let i = worldState.items.length - 1; i >= 0; i--) {
             const item = worldState.items[i];
             
+            for (let j = i - 1; j >= 0; j--) {
+                const other = worldState.items[j];
+                const dx = Math.abs(getShortestDistance(item.worldX, other.worldX));
+                const dy = Math.abs(item.y - other.y);
+                if (dx < GAME_CONFIG.hitboxes.itemVsKart.x && dy < GAME_CONFIG.hitboxes.itemVsKart.y) {
+                    item.isDead = true;
+                    other.isDead = true;
+                }
+            }
+        }
+
+        for (let i = worldState.items.length - 1; i >= 0; i--) {
+            const item = worldState.items[i];
+            if (item.isDead) continue;
+
             if (item.type !== 'banana') {
                 item.worldX += item.vx * deltaTime;
                 item.y += item.vy * deltaTime;
+
+                if (item.y > GAME_CONFIG.road.maxY) {
+                    item.y = GAME_CONFIG.road.maxY;
+                    item.vy = -item.vy; 
+                } else if (item.y < GAME_CONFIG.road.minY) {
+                    item.y = GAME_CONFIG.road.minY;
+                    item.vy = -item.vy; 
+                }
             }
 
             if (item.worldX >= GAME_CONFIG.world.width) item.worldX -= GAME_CONFIG.world.width;
@@ -638,44 +739,68 @@ function animate(timestamp) {
                 }
             }
             if (item.type === 'banana' && gameNow - item.createdAt > GAME_CONFIG.delays.bananaLife) {
-                item.element.remove();
-                worldState.items.splice(i, 1);
-                continue;
+                item.isDead = true;
             }
 
             const rx = getScreenPosition(item.worldX, worldState.cameraX, screenWidth);
             const isVisible = (rx > -renderMargin && rx < screenWidth + renderMargin);
 
-            if (isVisible) {
+            if (isVisible && !item.isDead) {
                 item.element.style.display = 'block';
-                item.element.style.transform = `translateX(${rx}px)`;
+                item.element.style.transform = `translate3d(${rx}px, 0, 0)`;
                 item.element.style.bottom = `${item.y}%`;
-                item.element.style.zIndex = getZIndex(item.y);
+                
+                const zVal = (GAME_CONFIG.rendering.zIndexBase - item.y) | 0;
+                if (item.element.style.zIndex != zVal) item.element.style.zIndex = zVal;
 
-                for (const kart of worldState.karts) {
+                const kartsLen = worldState.karts.length;
+                for (let k = 0; k < kartsLen; k++) {
+                    const kart = worldState.karts[k];
                     if (item.type === 'banana' && kart.id === item.shooterId && gameNow - item.createdAt < GAME_CONFIG.delays.invincibilityOwnItem) continue;
                     if (item.type === 'shell' && kart.id === item.shooterId) continue;
-                    if (kart.state !== 'running') continue;
+                    if (kart.state !== 'running' && kart.state !== 'hit') continue;
 
-                    const kx = getScreenPosition(kart.worldX, worldState.cameraX, screenWidth);
-                    const dx = Math.abs(rx - kx);
-                    const dy = Math.abs(item.y - kart.yPercent);
+                    let hitHeldItem = false;
+                    if (kart.heldItem) {
+                        let hX = kart.worldX + kart.heldItem.offset;
+                        if (hX < 0) hX += GAME_CONFIG.world.width;
+                        if (hX >= GAME_CONFIG.world.width) hX -= GAME_CONFIG.world.width;
 
-                    if (dx < GAME_CONFIG.hitboxes.itemVsKart.x && dy < GAME_CONFIG.hitboxes.itemVsKart.y) {
-                        kart.state = 'hit';
-                        kart.hitEndTime = gameNow + GAME_CONFIG.delays.stunDuration;
-                        if (kart.heldItem) kart.throwTime = kart.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
-                        item.element.remove();
-                        worldState.items.splice(i, 1);
+                        const dh = Math.abs(getShortestDistance(item.worldX, hX));
+                        const dhy = Math.abs(item.y - kart.yPercent);
+                        
+                        if (dh < GAME_CONFIG.hitboxes.itemVsKart.x && dhy < GAME_CONFIG.hitboxes.itemVsKart.y) {
+                             kart.heldItem.element.remove();
+                             kart.heldItem = null;
+                             item.isDead = true;
+                             hitHeldItem = true;
+                        }
+                    }
+
+                    if (hitHeldItem) break;
+
+                    const dk = Math.abs(getShortestDistance(item.worldX, kart.worldX));
+                    const dky = Math.abs(item.y - kart.yPercent);
+
+                    if (dk < GAME_CONFIG.hitboxes.itemVsKart.x && dky < GAME_CONFIG.hitboxes.itemVsKart.y) {
+                        if (kart.state === 'running') {
+                            kart.state = 'hit';
+                            kart.hitEndTime = gameNow + GAME_CONFIG.delays.stunDuration;
+                            if (kart.heldItem) kart.throwTime = kart.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
+                        }
+                        item.isDead = true;
                         break;
                     }
                 }
             } else {
                 item.element.style.display = 'none';
-                if (item.type === 'shell') {
-                    item.element.remove();
-                    worldState.items.splice(i, 1);
-                }
+            }
+        }
+
+        for (let i = worldState.items.length - 1; i >= 0; i--) {
+            if (worldState.items[i].isDead) {
+                worldState.items[i].element.remove();
+                worldState.items.splice(i, 1);
             }
         }
     }
@@ -683,6 +808,8 @@ function animate(timestamp) {
     if (GAME_CONFIG.debugMode) updateDebugHUD();
     animationId = requestAnimationFrame(animate);
 }
+
+// === DEBUG HUD ===
 
 function initDebugHUD() {
     let hud = document.getElementById('debug-hud');
@@ -732,8 +859,8 @@ function updateDebugHUD() {
     const hud = document.getElementById('debug-hud');
     if (!hud) return;
 
-    const container = document.getElementById('karts-container');
-    const screenWidth = container ? container.offsetWidth : window.innerWidth;
+    if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
+    const screenWidth = cachedContainer ? cachedContainer.offsetWidth : window.innerWidth;
     
     const camViews = hud.getElementsByClassName('debug-camera-view');
     if (camViews.length < 2) return;
@@ -770,6 +897,8 @@ function updateDebugHUD() {
         }
     });
 }
+
+// === GESTION EVENEMENTS ===
 
 function handleVisibilityChange() {
     const pauseOverlay = document.getElementById('pause-overlay');
