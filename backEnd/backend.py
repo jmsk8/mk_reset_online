@@ -282,15 +282,6 @@ def _calculate_adjusted_total_points(match_history):
         total += valeur_ponderee
     return total
 
-def _calculate_adjusted_total_points(match_history):
-    total = 0.0
-    for m in match_history:
-        score = float(m['score'])
-        nb_joueurs = float(m['count'])
-        valeur_ponderee = score * (nb_joueurs / 12.0)
-        total += valeur_ponderee
-    return total
-
 def _aggregate_season_stats(d_debut, d_fin):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -1066,6 +1057,7 @@ def get_joueur_stats(nom):
                     })
                 
                 for r_date, val in raw_resets:
+                    # MODIFICATION ICI : Récupérer l'état du joueur AVANT le reset
                     cur.execute("""
                         SELECT p.mu, p.sigma, t.date FROM Participations p
                         JOIN Tournois t ON p.tournoi_id = t.id
@@ -1082,8 +1074,9 @@ def get_joueur_stats(nom):
                     """, (jid, r_date))
                     last_ghost = cur.fetchone()
 
-                    ref_mu = 50.0
-                    ref_sigma = 8.333
+                    # CORRECTION : Utiliser les valeurs ACTUELLES du joueur si aucun historique
+                    ref_mu = float(mu)  # mu du joueur actuel
+                    ref_sigma = float(sigma)  # sigma du joueur actuel
                     
                     if last_tournoi and last_ghost:
                         if last_tournoi[2] >= last_ghost[2]:
@@ -1094,8 +1087,11 @@ def get_joueur_stats(nom):
                         ref_mu, ref_sigma = float(last_tournoi[0]), float(last_tournoi[1])
                     elif last_ghost:
                         ref_mu, ref_sigma = float(last_ghost[0]), float(last_ghost[1])
+                    # SINON : on garde les valeurs actuelles du joueur
                     
-                    ts_reset_calc = ref_mu - 3 * (ref_sigma + float(val))
+                    # CORRECTION : Calculer le TrueSkill AVANT le reset (sans la valeur ajoutée)
+                    sigma_before_reset = max(0.001, ref_sigma - float(val))  # On soustrait le reset pour retrouver l'état d'avant
+                    ts_reset_calc = ref_mu - 3 * sigma_before_reset
 
                     historique_data.append({
                         "type": "reset",
@@ -1624,7 +1620,7 @@ def add_tournament():
                 for pid, sig, missed, is_r in cur.fetchall():
                     new_missed = (missed or 0) + 1
                     new_sig = float(sig)
-                    if ghost_enabled and new_missed >= 4 and new_sig < 4.0:
+                    if ghost_enabled and new_missed >= 4 and new_sig < 3.5:
                         new_sig += penalty_val
                         cur.execute("INSERT INTO ghost_log (joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) VALUES (%s, %s, %s, %s, %s, %s)", (pid, tournoi_id, date_tournoi_str, sig, new_sig, penalty_val))
                     

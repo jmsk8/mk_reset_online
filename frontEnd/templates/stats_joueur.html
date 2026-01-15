@@ -422,7 +422,7 @@
                                             {% if tournoi.type == 'absence' %}
                                                 <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
                                                 <td style="vertical-align: middle;" data-label="Position">
-                                                    <span class="tag is-danger is-light">Absence prolongée (-{{ tournoi.valeur }} sigma)</span>
+                                                    <span class="tag is-danger is-light">Absence prolongée (+{{ tournoi.valeur }} sigma)</span>
                                                 </td>
                                                 <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
                                                     <span class="tag is-dark">N/A</span>
@@ -589,7 +589,8 @@
                                     if (item.type === 'reset') {
                                         return 'TrueSkill : ' + tsVal + ' (Reset Global)';
                                     } else if (item.type === 'absence') {
-                                        return 'Absence prolongée (-' + item.valeur + ' sigma)';
+                                        // MODIFICATION ICI: Affichage du TS + pénalité en positif
+                                        return 'TrueSkill : ' + tsVal + ' (Pénalité : +' + item.valeur + ' sigma)';
                                     }
                                     return 'TrueSkill : ' + tsVal;
                                 },

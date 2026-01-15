@@ -15,8 +15,18 @@ app = Flask(__name__)
 
 try:
     app.secret_key = os.environ['SECRET_KEY']
-    BACKEND_URL = os.environ.get('BACKEND_URL', 'http://backend:8080')
+    # Récupérer BACKEND_URL avec fallback intelligent
+    BACKEND_URL = os.environ.get('BACKEND_URL')
+    
+    # Si pas défini ou si contient 'backend' sans être en Docker
+    if not BACKEND_URL or ('backend' in BACKEND_URL and not os.path.exists('/.dockerenv')):
+        logger.warning("⚠️ BACKEND_URL non défini ou invalide, utilisation de localhost:8080")
+        BACKEND_URL = 'http://localhost:8080'
+    
+    logger.info(f"✅ BACKEND_URL configuré : {BACKEND_URL}")
+    
 except KeyError as e:
+    logger.error(f"❌ Variable d'environnement manquante : {e}")
     sys.exit(1)
 
 app.permanent_session_lifetime = timedelta(minutes=30)
