@@ -1057,7 +1057,6 @@ def get_joueur_stats(nom):
                     })
                 
                 for r_date, val in raw_resets:
-                    # MODIFICATION ICI : Récupérer l'état du joueur AVANT le reset
                     cur.execute("""
                         SELECT p.mu, p.sigma, t.date FROM Participations p
                         JOIN Tournois t ON p.tournoi_id = t.id
@@ -1074,33 +1073,36 @@ def get_joueur_stats(nom):
                     """, (jid, r_date))
                     last_ghost = cur.fetchone()
 
-                    # CORRECTION : Utiliser les valeurs ACTUELLES du joueur si aucun historique
-                    ref_mu = float(mu)  # mu du joueur actuel
-                    ref_sigma = float(sigma)  # sigma du joueur actuel
+                    ref_mu = 50.0
+                    ref_sigma = 8.333
                     
+                    has_history = False
                     if last_tournoi and last_ghost:
+                        has_history = True
                         if last_tournoi[2] >= last_ghost[2]:
                             ref_mu, ref_sigma = float(last_tournoi[0]), float(last_tournoi[1])
                         else:
                             ref_mu, ref_sigma = float(last_ghost[0]), float(last_ghost[1])
                     elif last_tournoi:
+                        has_history = True
                         ref_mu, ref_sigma = float(last_tournoi[0]), float(last_tournoi[1])
                     elif last_ghost:
+                        has_history = True
                         ref_mu, ref_sigma = float(last_ghost[0]), float(last_ghost[1])
-                    # SINON : on garde les valeurs actuelles du joueur
                     
-                    # CORRECTION : Calculer le TrueSkill AVANT le reset (sans la valeur ajoutée)
-                    sigma_before_reset = max(0.001, ref_sigma - float(val))  # On soustrait le reset pour retrouver l'état d'avant
-                    ts_reset_calc = ref_mu - 3 * sigma_before_reset
 
-                    historique_data.append({
-                        "type": "reset",
-                        "date": r_date.strftime("%Y-%m-%d"),
-                        "score": 0,
-                        "position": "-",
-                        "score_trueskill": round(ts_reset_calc, 3), 
-                        "valeur": val
-                    })
+                    sigma_after_reset = ref_sigma + float(val)
+                    ts_reset_calc = ref_mu - 3 * sigma_after_reset
+
+                    if has_history or len(raw_history) > 0:
+                         historique_data.append({
+                            "type": "reset",
+                            "date": r_date.strftime("%Y-%m-%d"),
+                            "score": 0,
+                            "position": "-",
+                            "score_trueskill": round(ts_reset_calc, 3), 
+                            "valeur": val
+                        })
 
                 historique_data.sort(key=lambda x: x['date'], reverse=True)
 
