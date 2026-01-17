@@ -8,9 +8,9 @@
     <link rel="stylesheet" href="../static/css/styles.css">
     <link rel="stylesheet" href="../static/css/dark-mode.css">
     <link rel="stylesheet" href="../static/css/animations.css">
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario-static.png') }}">
-    <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario-static.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <style>
         .checkbox-card {
             background: rgba(255,255,255,0.05);
@@ -260,7 +260,7 @@
         }
     });
 
-    async function loadAwardTypes() {
+async function loadAwardTypes() {
         const container = document.getElementById('awardsContainer');
         const customOptionsContainer = document.getElementById('customVictoryOptions');
         const loader = document.getElementById('awardsLoader');
@@ -268,14 +268,22 @@
         try {
             const types = await api('/admin/types-awards', 'GET');
             
+            // --- MODIFICATION ICI : TRI PERSONNALISÉ ---
+            types.sort((a, b) => {
+                // Si 'a' est Stakhanoviste, il passe devant (-1)
+                if (a.code === 'stakhanov' || a.nom === 'Stakhanoviste') return -1;
+                // Si 'b' est Stakhanoviste, il passe devant (1)
+                if (b.code === 'stakhanov' || b.nom === 'Stakhanoviste') return 1;
+                // Le reste ne change pas d'ordre
+                return 0;
+            });
+            // -------------------------------------------
+
             container.innerHTML = '';
             hiddenSelect.innerHTML = '<option value="" disabled selected>Choisir...</option>';
             customOptionsContainer.innerHTML = ''; 
 
-            // ---------------------------------------------------------
-            // 1. AJOUT MANUEL : INDICATEUR DE PERFORMANCE (Option 1)
-            // ---------------------------------------------------------
-            
+            // 1. AJOUT MANUEL : INDICE DE PERFORMANCE (Toujours en #1)
             const perfOpt = document.createElement('option');
             perfOpt.value = "Indice de Performance";
             perfOpt.text = "Indice de Performance";
@@ -290,10 +298,7 @@
             };
             customOptionsContainer.appendChild(perfDiv);
 
-
-            // ---------------------------------------------------------
-            // 2. BOUCLE SUR LES AWARDS API
-            // ---------------------------------------------------------
+            // 2. BOUCLE SUR LES AWARDS (Stakhanoviste arrivera en premier grâce au tri)
             types.forEach(type => {
                 if (type.nom === "Indice de Performance" || type.nom === "Indicateur de Performance") return;
 
@@ -304,6 +309,7 @@
                     iconDisplay = `<span class="is-size-5 mr-2">${type.emoji}</span>`;
                 }
 
+                // Création des cases à cocher pour "Autres Awards actifs"
                 const div = document.createElement('div');
                 div.className = 'checkbox-card';
                 div.innerHTML = `
@@ -318,11 +324,13 @@
                 `;
                 container.appendChild(div);
 
+                // Ajout dans le select caché
                 const option = document.createElement('option');
                 option.value = type.code;
                 option.text = type.nom;
                 hiddenSelect.appendChild(option);
 
+                // Ajout dans le menu déroulant personnalisé
                 const customOpt = document.createElement('div');
                 customOpt.className = 'custom-option';
                 customOpt.dataset.value = type.code;

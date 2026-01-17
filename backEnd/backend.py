@@ -956,6 +956,7 @@ def get_joueur_stats(nom):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # 1. Récupération de la configuration et des stats actuelles du joueur
                 cur.execute("SELECT value FROM Configuration WHERE key = 'sigma_threshold'")
                 res_conf = cur.fetchone()
                 threshold = float(res_conf[0]) if res_conf else 4.0
@@ -972,6 +973,7 @@ def get_joueur_stats(nom):
                 sigma_val = float(sigma)
                 missed_val = int(consecutive_missed) if consecutive_missed is not None else 0
                 
+                # 2. Calcul du Percentile (Top X%)
                 is_legit = (is_ranked and sigma_val <= threshold)
                 top_percent = "?" 
 
@@ -1000,6 +1002,7 @@ def get_joueur_stats(nom):
                     elif len(valid_scores) == 1:
                         top_percent = 1.0 
                 
+                # 3. Récupération des historiques (Matchs, Ghosts, Resets)
                 cur.execute("""
                     SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma
                     FROM Participations p
@@ -1027,6 +1030,7 @@ def get_joueur_stats(nom):
                 positions = []
                 victoires = 0
                 
+                # 4. Traitement des Matchs
                 for tid, date, score, position, hist_ts, h_mu, h_sigma in raw_history:
                     s_val = float(score) if score is not None else 0.0
                     p_val = int(position) if position is not None else 0
@@ -1044,6 +1048,7 @@ def get_joueur_stats(nom):
                         "score_trueskill": round(ts_val, 3)
                     })
 
+                # 5. Traitement des Ghosts (Absences pénalisées)
                 for g_date, old_sig, new_sig, current_mu in raw_ghosts:
                     ts_ghost = float(current_mu) - 3 * float(new_sig)
                     penalty_val = round(float(new_sig) - float(old_sig), 3)
@@ -1056,7 +1061,9 @@ def get_joueur_stats(nom):
                         "valeur": penalty_val
                     })
                 
+                # 6. Traitement des Resets Globaux (CORRIGÉ)
                 for r_date, val in raw_resets:
+                    # On cherche le dernier tournoi AVANT le reset
                     cur.execute("""
                         SELECT p.mu, p.sigma, t.date FROM Participations p
                         JOIN Tournois t ON p.tournoi_id = t.id
@@ -1065,6 +1072,7 @@ def get_joueur_stats(nom):
                     """, (jid, r_date))
                     last_tournoi = cur.fetchone()
 
+                    # On cherche le dernier ghost AVANT le reset
                     cur.execute("""
                         SELECT j.mu, g.new_sigma, g.date FROM ghost_log g
                         JOIN Joueurs j ON g.joueur_id = j.id
@@ -1075,8 +1083,9 @@ def get_joueur_stats(nom):
 
                     ref_mu = 50.0
                     ref_sigma = 8.333
-                    
                     has_history = False
+                    
+                    # Déterminer l'état (mu, sigma) du joueur au moment du reset
                     if last_tournoi and last_ghost:
                         has_history = True
                         if last_tournoi[2] >= last_ghost[2]:
@@ -1090,11 +1099,12 @@ def get_joueur_stats(nom):
                         has_history = True
                         ref_mu, ref_sigma = float(last_ghost[0]), float(last_ghost[1])
                     
-
+                    # Calcul de l'impact théorique
                     sigma_after_reset = ref_sigma + float(val)
                     ts_reset_calc = ref_mu - 3 * sigma_after_reset
 
-                    if has_history or len(raw_history) > 0:
+                    # [CORRECTION] : On n'ajoute le reset QUE si le joueur avait un historique avant cette date.
+                    if has_history:
                          historique_data.append({
                             "type": "reset",
                             "date": r_date.strftime("%Y-%m-%d"),
@@ -1106,6 +1116,7 @@ def get_joueur_stats(nom):
 
                 historique_data.sort(key=lambda x: x['date'], reverse=True)
 
+                # 7. Calculs statistiques agrégés
                 nb_tournois = len(scores_bruts)
                 if nb_tournois > 0:
                     score_moyen = sum(scores_bruts) / nb_tournois
@@ -1125,6 +1136,7 @@ def get_joueur_stats(nom):
                         prev_ts_val = tournois_only[1]['score_trueskill']
                         progression_recente = current_ts_val - prev_ts_val
 
+                # 8. Récupération des Awards
                 cur.execute("""
                     SELECT t.emoji, t.nom, t.description, COUNT(o.id)
                     FROM awards_obtenus o
