@@ -1975,49 +1975,46 @@ def draft_simulation():
                         "unassigned": unassigned
                     })
 
-                # MODE CRÉATION AUTO (Algorithme existant)
+                # MODE CRÉATION AUTO (Recalcul de zéro)
                 else:
+                    # Récupérer TOUS les joueurs classés (is_ranked = true), triés par TrueSkill
                     cur.execute("""
-                        SELECT id, nom, score_trueskill, is_ranked 
-                        FROM Joueurs 
+                        SELECT id, nom, score_trueskill
+                        FROM Joueurs
+                        WHERE is_ranked = true
                         ORDER BY score_trueskill DESC NULLS LAST
                     """)
-                    all_players = cur.fetchall()
+                    ranked_players = [{"id": r[0], "nom": r[1], "score": float(r[2]) if r[2] else 0.0} for r in cur.fetchall()]
 
-                    actives = []
-                    inactives = []
+                    # Récupérer les joueurs non classés (pour les mettre dans unassigned)
+                    cur.execute("""
+                        SELECT id, nom, score_trueskill
+                        FROM Joueurs
+                        WHERE is_ranked = false
+                        ORDER BY score_trueskill DESC NULLS LAST
+                    """)
+                    unranked_players = [{"id": r[0], "nom": r[1], "score": float(r[2]) if r[2] else 0.0} for r in cur.fetchall()]
 
-                    for r in all_players:
-                        p = {"id": r[0], "nom": r[1], "score": float(r[2]) if r[2] else 0.0}
-                        if r[3]: # is_ranked
-                            actives.append(p)
-                        else:
-                            inactives.append(p)
-                    
                     draft = []
-                    total_actives = len(actives)
+                    total = len(ranked_players)
+                    colors = ["#FFD700", "#C0C0C0", "#CD7F32", "#48C9B0", "#9B59B6"]
 
-                    if total_actives > 0:
-                        if total_actives <= 15:
-                            split = 8 if total_actives >= 8 else total_actives
-                            draft.append({"nom": "Ligue 0", "couleur": "#FFD700", "joueurs": actives[:split]})
-                            if total_actives > 8:
-                                draft.append({"nom": "Ligue 1", "couleur": "#C0C0C0", "joueurs": actives[split:]})
-                        else:
-                            nb_ligues = min(math.ceil(total_actives / 10), 5)
-                            chunk = math.ceil(total_actives / nb_ligues)
-                            colors = ["#FFD700", "#C0C0C0", "#CD7F32", "#48C9B0", "#9B59B6"]
-                            
-                            for i in range(nb_ligues):
-                                start = i * chunk
-                                end = start + chunk
+                    if total > 0:
+                        # Calculer le nombre de ligues : 1 ligue par tranche de 8 joueurs, min 1, max 5
+                        nb_ligues = max(1, min(math.ceil(total / 8), 5))
+                        chunk = math.ceil(total / nb_ligues)
+
+                        for i in range(nb_ligues):
+                            start = i * chunk
+                            end = min(start + chunk, total)
+                            if start < total:  # S'assurer qu'il y a des joueurs à ajouter
                                 col = colors[i] if i < len(colors) else "#FFFFFF"
-                                draft.append({"nom": f"Ligue {i}", "couleur": col, "joueurs": actives[start:end]})
-                    
+                                draft.append({"nom": f"Ligue {i}", "couleur": col, "joueurs": ranked_players[start:end]})
+
                     return jsonify({
                         "mode": "creation",
                         "ligues": draft,
-                        "unassigned": inactives
+                        "unassigned": unranked_players
                     })
 
     except Exception as e:
