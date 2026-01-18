@@ -1415,29 +1415,31 @@ def update_config():
         unranked_threshold = int(data.get('unranked_threshold', 10))
         sigma_threshold = float(data.get('sigma_threshold', 4.0))
 
-        league_mode = str(data.get('league_mode_enabled', 'false')).lower()
-        
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 configs = [
-                    ('tau', str(tau)), 
-                    ('ghost_enabled', ghost), 
-                    ('ghost_penalty', str(ghost_penalty)), 
+                    ('tau', str(tau)),
+                    ('ghost_enabled', ghost),
+                    ('ghost_penalty', str(ghost_penalty)),
                     ('unranked_threshold', str(unranked_threshold)),
                     ('sigma_threshold', str(sigma_threshold)),
-                    ('league_mode_enabled', league_mode)
                 ]
-                
+
+                # Ne mettre à jour league_mode_enabled que si explicitement fourni
+                if 'league_mode_enabled' in data:
+                    league_mode = str(data.get('league_mode_enabled')).lower()
+                    configs.append(('league_mode_enabled', league_mode))
+
+                    if league_mode == 'false':
+                        cur.execute("UPDATE Joueurs SET ligue_id = NULL")
+                        cur.execute("DELETE FROM Ligues")
+
                 for k, v in configs:
                     cur.execute("""
-                        INSERT INTO Configuration (key, value) 
-                        VALUES (%s, %s) 
+                        INSERT INTO Configuration (key, value)
+                        VALUES (%s, %s)
                         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                     """, (k, v))
-                
-                if league_mode == 'false':
-                    cur.execute("UPDATE Joueurs SET ligue_id = NULL")
-                    cur.execute("DELETE FROM Ligues")
 
                 cur.execute("""
                     UPDATE Joueurs 
