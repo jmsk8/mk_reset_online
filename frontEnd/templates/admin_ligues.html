@@ -116,6 +116,32 @@
                 </div>
             </div>
 
+            <div id="interLeagueConfig" class="box glass-card has-text-centered mb-6 fade-in" style="display: none;">
+                <div class="columns is-vcentered is-centered">
+                    <div class="column is-narrow">
+                        <span class="heading has-text-grey-light mb-1">
+                            <i class="fas fa-exchange-alt mr-1"></i> Mouvements Inter-Ligue
+                        </span>
+                        <div class="field has-addons is-justify-content-center mt-2">
+                            <div class="control">
+                                <input class="input has-text-centered" type="number"
+                                       id="interLeagueMoves" min="0" max="10" value="0"
+                                       style="width: 80px;">
+                            </div>
+                            <div class="control">
+                                <button class="button is-info" onclick="saveInterLeagueMoves()" title="Sauvegarder">
+                                    <span class="icon"><i class="fas fa-save"></i></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="help has-text-grey-light mt-2">
+                            Joueurs promus/relégués entre ligues adjacentes à chaque fin de saison<br>
+                            <small>(0 = désactivé)</small>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             <div id="leagueManagementArea" style="display: none;" class="fade-in">
                 <div class="level">
                     <div class="level-left">
@@ -214,8 +240,9 @@
     
     <script>
         let isLeagueEnabled = false;
-        let draftData = []; 
-        let unassignedPlayers = []; 
+        let interLeagueMoves = 0;
+        let draftData = [];
+        let unassignedPlayers = [];
 
         document.addEventListener('DOMContentLoaded', () => {
             loadConfigAndUI();
@@ -227,12 +254,30 @@
             const res = await apiCall('/admin/config', 'GET');
             if (res && !res.error) {
                 isLeagueEnabled = res.league_mode_enabled;
+                interLeagueMoves = res.inter_league_moves || 0;
+                document.getElementById('interLeagueMoves').value = interLeagueMoves;
                 updateToggleUI();
                 if (isLeagueEnabled) {
                     loadCurrentLeagues();
                 } else {
                     document.getElementById('currentLeaguesDisplay').innerHTML = '';
                 }
+            }
+        }
+
+        async function saveInterLeagueMoves() {
+            const newValue = parseInt(document.getElementById('interLeagueMoves').value) || 0;
+            const currentConfig = await apiCall('/admin/config', 'GET');
+            if (currentConfig.error) return;
+
+            const payload = { ...currentConfig, inter_league_moves: newValue };
+            const res = await apiCall('/admin/config', 'POST', payload);
+
+            if (res.status === 'success') {
+                interLeagueMoves = newValue;
+                alert('Configuration sauvegardée !');
+            } else {
+                alert('Erreur : ' + (res.error || 'Inconnue'));
             }
         }
 
@@ -268,7 +313,8 @@
             const btn = document.getElementById('toggleLeagueBtn');
             const statusDisplay = document.getElementById('statusDisplay');
             const area = document.getElementById('leagueManagementArea');
-            
+            const interLeagueConfig = document.getElementById('interLeagueConfig');
+
             btn.classList.remove('is-loading');
 
             if (isLeagueEnabled) {
@@ -276,11 +322,13 @@
                 btn.className = "button is-medium is-danger is-outlined";
                 btn.innerHTML = '<span class="icon is-small mr-2"><i class="fas fa-power-off"></i></span><span>Désactiver le mode ligue</span>';
                 area.style.display = "block";
+                interLeagueConfig.style.display = "block";
             } else {
                 statusDisplay.innerHTML = '<span class="has-text-danger"><i class="fas fa-times-circle"></i> INACTIF</span>';
                 btn.className = "button is-medium is-success";
                 btn.innerHTML = '<span class="icon is-small mr-2"><i class="fas fa-power-off"></i></span><span>Activer le mode ligue</span>';
                 area.style.display = "none";
+                interLeagueConfig.style.display = "none";
             }
         }
 

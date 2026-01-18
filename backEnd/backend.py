@@ -289,20 +289,52 @@ def _calculate_adjusted_total_points(match_history):
         total += valeur_ponderee
     return total
 
-def _aggregate_season_stats(d_debut, d_fin):
+def _aggregate_season_stats(d_debut, d_fin, recap_mode=None):
+    """
+    Agrège les stats de saison.
+    recap_mode: None = tous les tournois, 'league' = uniquement ligue, 'classic' = uniquement hors ligue
+    """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            query = """
-                SELECT 
-                    j.id, j.nom, p.score, p.position, 
-                    p.new_score_trueskill, p.mu, p.sigma,
-                    t.date, p.tournoi_id, j.sigma, t.ligue_id
-                FROM Participations p
-                JOIN Tournois t ON p.tournoi_id = t.id
-                JOIN Joueurs j ON p.joueur_id = j.id
-                WHERE t.date >= %s AND t.date <= %s
-                ORDER BY t.date ASC, p.tournoi_id ASC
-            """
+            if recap_mode == 'league':
+                # Uniquement les tournois avec une ligue_id
+                query = """
+                    SELECT
+                        j.id, j.nom, p.score, p.position,
+                        p.new_score_trueskill, p.mu, p.sigma,
+                        t.date, p.tournoi_id, j.sigma, t.ligue_id
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    JOIN Joueurs j ON p.joueur_id = j.id
+                    WHERE t.date >= %s AND t.date <= %s AND t.ligue_id IS NOT NULL
+                    ORDER BY t.date ASC, p.tournoi_id ASC
+                """
+            elif recap_mode == 'classic':
+                # Uniquement les tournois sans ligue_id
+                query = """
+                    SELECT
+                        j.id, j.nom, p.score, p.position,
+                        p.new_score_trueskill, p.mu, p.sigma,
+                        t.date, p.tournoi_id, j.sigma, t.ligue_id
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    JOIN Joueurs j ON p.joueur_id = j.id
+                    WHERE t.date >= %s AND t.date <= %s AND t.ligue_id IS NULL
+                    ORDER BY t.date ASC, p.tournoi_id ASC
+                """
+            else:
+                # Tous les tournois
+                query = """
+                    SELECT
+                        j.id, j.nom, p.score, p.position,
+                        p.new_score_trueskill, p.mu, p.sigma,
+                        t.date, p.tournoi_id, j.sigma, t.ligue_id
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    JOIN Joueurs j ON p.joueur_id = j.id
+                    WHERE t.date >= %s AND t.date <= %s
+                    ORDER BY t.date ASC, p.tournoi_id ASC
+                """
             cur.execute(query, (d_debut, d_fin))
             rows = cur.fetchall()
 
@@ -565,6 +597,83 @@ def _save_awards_to_db(conn, season_id, top_3, special_winners_map, is_yearly):
         
         cur.execute("UPDATE saisons SET is_active = true WHERE id = %s", (season_id,))
     conn.commit()
+
+def _apply_inter_league_moves(conn, moves_count, ranking_data):
+    """
+    Applique les mouvements inter-ligue (promotions/relégations).
+
+    Args:
+        conn: connexion DB
+        moves_count: nombre de joueurs à échanger entre ligues adjacentes
+        ranking_data: dict {joueur_id: rang} où rang=1 est le meilleur
+
+    Returns:
+        list: mouvements effectués [{joueur_id, nom, from, to, direction}]
+    """
+    if moves_count <= 0:
+        return []
+
+    movements = []
+
+    with conn.cursor() as cur:
+        # Récupérer ligues triées par niveau (0 = meilleure ligue)
+        cur.execute("SELECT id, nom, niveau FROM Ligues ORDER BY niveau ASC")
+        ligues = cur.fetchall()
+
+        if len(ligues) < 2:
+            return []
+
+        for i in range(len(ligues) - 1):
+            ligue_haute_id, ligue_haute_nom, _ = ligues[i]
+            ligue_basse_id, ligue_basse_nom, _ = ligues[i + 1]
+
+            # Joueurs de la ligue haute
+            cur.execute("SELECT id, nom FROM Joueurs WHERE ligue_id = %s", (ligue_haute_id,))
+            joueurs_haute = cur.fetchall()
+
+            # Trier par rang décroissant (les pires en premier pour relégation)
+            # Un joueur sans rang dans ranking_data (n'a pas participé) est considéré comme le pire
+            joueurs_haute_sorted = sorted(
+                joueurs_haute,
+                key=lambda j: ranking_data.get(j[0], float('inf')),
+                reverse=True
+            )
+            relegues = joueurs_haute_sorted[:moves_count]
+
+            # Joueurs de la ligue basse
+            cur.execute("SELECT id, nom FROM Joueurs WHERE ligue_id = %s", (ligue_basse_id,))
+            joueurs_basse = cur.fetchall()
+
+            # Trier par rang croissant (les meilleurs en premier pour promotion)
+            joueurs_basse_sorted = sorted(
+                joueurs_basse,
+                key=lambda j: ranking_data.get(j[0], float('inf'))
+            )
+            promus = joueurs_basse_sorted[:moves_count]
+
+            # Appliquer les relégations
+            for jid, jnom in relegues:
+                cur.execute("UPDATE Joueurs SET ligue_id = %s WHERE id = %s", (ligue_basse_id, jid))
+                movements.append({
+                    "joueur_id": jid,
+                    "nom": jnom,
+                    "from": ligue_haute_nom,
+                    "to": ligue_basse_nom,
+                    "direction": "relegation"
+                })
+
+            # Appliquer les promotions
+            for jid, jnom in promus:
+                cur.execute("UPDATE Joueurs SET ligue_id = %s WHERE id = %s", (ligue_haute_id, jid))
+                movements.append({
+                    "joueur_id": jid,
+                    "nom": jnom,
+                    "from": ligue_basse_nom,
+                    "to": ligue_haute_nom,
+                    "direction": "promotion"
+                })
+
+    return movements
 
 # -----------------------------------------------------------------------------
 # ROUTES : PUBLIC
@@ -929,8 +1038,9 @@ def dernier_tournoi():
 def classement():
     try:
         tier_filtre = request.args.get('tier', None)
+        ligue_filtre = request.args.get('ligue', None)
         query = """
-            SELECT 
+            SELECT
                 j.nom, j.mu, j.sigma, j.score_trueskill, j.tier,
                 COUNT(p.tournoi_id) as nb_tournois,
                 SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END) as victoires,
@@ -939,9 +1049,22 @@ def classement():
             LEFT JOIN Participations p ON j.id = p.joueur_id
         """
         params = []
+        conditions = []
+
         if tier_filtre and tier_filtre.upper() in ['S', 'A', 'B', 'C']:
-            query += " WHERE j.tier = %s"
+            conditions.append("j.tier = %s")
             params.append(tier_filtre.upper())
+
+        if ligue_filtre:
+            try:
+                ligue_id_int = int(ligue_filtre)
+                conditions.append("j.ligue_id = %s")
+                params.append(ligue_id_int)
+            except ValueError:
+                pass
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
             
         query += " GROUP BY j.id, j.nom, j.mu, j.sigma, j.score_trueskill, j.tier"
         query += " ORDER BY j.score_trueskill DESC NULLS LAST"
@@ -1401,15 +1524,16 @@ def get_config():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled')")
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled', 'inter_league_moves')")
                 rows = dict(cur.fetchall())
         return jsonify({
-            "tau": float(rows.get('tau', 0.083)), 
-            "ghost_enabled": rows.get('ghost_enabled', 'false') == 'true', 
+            "tau": float(rows.get('tau', 0.083)),
+            "ghost_enabled": rows.get('ghost_enabled', 'false') == 'true',
             "ghost_penalty": float(rows.get('ghost_penalty', 0.1)),
             "unranked_threshold": int(rows.get('unranked_threshold', 10)),
             "sigma_threshold": float(rows.get('sigma_threshold', 4.0)),
-            "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true'
+            "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true',
+            "inter_league_moves": int(rows.get('inter_league_moves', 0))
         })
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
@@ -1443,6 +1567,11 @@ def update_config():
                     if league_mode == 'false':
                         cur.execute("UPDATE Joueurs SET ligue_id = NULL")
                         cur.execute("DELETE FROM Ligues")
+
+                # Ne mettre à jour inter_league_moves que si explicitement fourni
+                if 'inter_league_moves' in data:
+                    inter_league_moves = int(data.get('inter_league_moves', 0))
+                    configs.append(('inter_league_moves', str(inter_league_moves)))
 
                 for k, v in configs:
                     cur.execute("""
@@ -1585,18 +1714,72 @@ def delete_saison(saison_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/admin/saisons/<int:id>/count-tournois', methods=['GET'])
+@admin_required
+def count_tournois_by_mode(id):
+    """Compte les tournois ligue et classique pour une saison donnée."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT date_debut, date_fin FROM saisons WHERE id = %s", (id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({'error': 'Saison introuvable'}), 404
+
+            d_debut, d_fin = row
+
+            # Compter les tournois avec ligue_id (mode ligue)
+            cur.execute("""
+                SELECT COUNT(*) FROM Tournois
+                WHERE date >= %s AND date <= %s AND ligue_id IS NOT NULL
+            """, (d_debut, d_fin))
+            league_count = cur.fetchone()[0]
+
+            # Compter les tournois sans ligue_id (mode classique)
+            cur.execute("""
+                SELECT COUNT(*) FROM Tournois
+                WHERE date >= %s AND date <= %s AND ligue_id IS NULL
+            """, (d_debut, d_fin))
+            classic_count = cur.fetchone()[0]
+
+    return jsonify({
+        'league_count': league_count,
+        'classic_count': classic_count
+    })
+
 @app.route('/admin/saisons/<int:id>/save-awards', methods=['POST'])
 @admin_required
 def save_season_awards(id):
+    data = request.get_json() or {}
+    move_criterion = data.get('move_criterion')  # "ip" ou "trueskill" ou None
+    recap_mode = data.get('recap_mode')  # "league", "classic" ou None (tous)
+
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT date_debut, date_fin, config_awards, victory_condition, is_yearly FROM saisons WHERE id = %s", (id,))
             row = cur.fetchone()
             if not row: return jsonify({'error': 'Saison introuvable'}), 404
-            
+
             d_debut, d_fin, config, vic_cond, is_yearly = row
-            
-            global_stats = _aggregate_season_stats(d_debut, d_fin)
+
+            # Valider qu'il y a des tournois pour le mode choisi
+            if recap_mode == 'league':
+                cur.execute("""
+                    SELECT COUNT(*) FROM Tournois
+                    WHERE date >= %s AND date <= %s AND ligue_id IS NOT NULL
+                """, (d_debut, d_fin))
+                count = cur.fetchone()[0]
+                if count == 0:
+                    return jsonify({'error': 'Aucun tournoi en mode ligue pendant cette période'}), 400
+            elif recap_mode == 'classic':
+                cur.execute("""
+                    SELECT COUNT(*) FROM Tournois
+                    WHERE date >= %s AND date <= %s AND ligue_id IS NULL
+                """, (d_debut, d_fin))
+                count = cur.fetchone()[0]
+                if count == 0:
+                    return jsonify({'error': 'Aucun tournoi en mode classique pendant cette période'}), 400
+
+            global_stats = _aggregate_season_stats(d_debut, d_fin, recap_mode)
 
             active_awards = config.get('active_awards', [])
             top_3, winners_map = _determine_winners(
@@ -1605,7 +1788,40 @@ def save_season_awards(id):
 
             _save_awards_to_db(conn, id, top_3, winners_map, is_yearly)
 
-    return jsonify({'status': 'success', 'message': 'Saison publiée et awards distribués !'})
+            # Vérifier si on doit appliquer les mouvements inter-ligue
+            movements = []
+            if move_criterion:
+                cur.execute("SELECT value FROM Configuration WHERE key = 'league_mode_enabled'")
+                league_row = cur.fetchone()
+                league_enabled = (league_row[0] == 'true') if league_row else False
+
+                cur.execute("SELECT value FROM Configuration WHERE key = 'inter_league_moves'")
+                moves_row = cur.fetchone()
+                moves_count = int(moves_row[0]) if moves_row else 0
+
+                if league_enabled and moves_count > 0:
+                    # Construire le ranking selon le critère
+                    if move_criterion == "ip":
+                        # Utiliser le classement IP (grand_master) déjà calculé
+                        gm_list = global_stats['candidates'].get('grand_master', [])
+                        # Trier par final_score décroissant, rang = position dans la liste triée
+                        gm_sorted = sorted(gm_list, key=lambda x: x.get('final_score', 0), reverse=True)
+                        ranking_data = {p['id']: rank for rank, p in enumerate(gm_sorted, 1)}
+                    else:  # trueskill
+                        # Utiliser le score TrueSkill actuel des joueurs en ligue
+                        cur.execute("SELECT id, score_trueskill FROM Joueurs WHERE ligue_id IS NOT NULL ORDER BY score_trueskill DESC")
+                        ranking_data = {r[0]: rank for rank, r in enumerate(cur.fetchall(), 1)}
+
+                    movements = _apply_inter_league_moves(conn, moves_count, ranking_data)
+
+        conn.commit()
+
+    response = {'status': 'success', 'message': 'Saison publiée et awards distribués !'}
+    if movements:
+        response['movements'] = movements
+        response['message'] += f' {len(movements)} mouvements inter-ligue effectués.'
+
+    return jsonify(response)
 
 @app.route('/admin/joueurs', methods=['POST'])
 @admin_required

@@ -109,11 +109,18 @@
                         <div class="card-content">
                             <div class="tabs is-centered is-boxed">
                                 <ul>
-                                    <li class="{{ 'is-active' if not tier_actif else '' }}">
+                                    <li class="{{ 'is-active' if not tier_actif and not ligue_active else '' }}">
                                         <a href="/classement">
                                             <i class="fas fa-list"></i>&nbsp;Tous
                                         </a>
                                     </li>
+                                    {% for ligue in ligues %}
+                                    <li class="{{ 'is-active' if ligue_active == ligue.id|string else '' }}">
+                                        <a href="/classement?ligue={{ ligue.id }}" style="border-bottom: 3px solid {{ ligue.couleur or '#3b82f6' }};">
+                                            <i class="fas fa-shield-alt" style="color: {{ ligue.couleur or '#3b82f6' }};"></i>&nbsp;{{ ligue.nom }}
+                                        </a>
+                                    </li>
+                                    {% endfor %}
                                     <li class="{{ 'is-active' if tier_actif == 'S' else '' }}">
                                         <a href="/classement?tier=S">
                                             <i class="fas fa-star"></i>&nbsp;S

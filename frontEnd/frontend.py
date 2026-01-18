@@ -186,7 +186,14 @@ def recap_default():
 @app.route('/classement')
 def classement():
     tier = request.args.get('tier')
-    params = {'tier': tier} if tier else {}
+    ligue_id = request.args.get('ligue')
+
+    params = {}
+    if tier:
+        params['tier'] = tier
+    if ligue_id:
+        params['ligue'] = ligue_id
+
     data, status = backend_request('GET', '/classement', params=params)
     if status == 200 and isinstance(data, list):
         joueurs = data
@@ -202,7 +209,14 @@ def classement():
     else:
         joueurs = []
         flash('Erreur lors du chargement du classement', 'warning')
-    return render_template("classement.html", joueurs=joueurs, tier_actif=tier)
+
+    # Récupérer les ligues pour les onglets
+    ligues = []
+    ligues_data, ligues_status = backend_request('GET', '/ligues')
+    if ligues_status == 200 and isinstance(ligues_data, list):
+        ligues = ligues_data
+
+    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues)
 
 @app.route('/stats/joueur/<nom>')
 def stats_joueur_detail(nom):
@@ -408,13 +422,23 @@ def proxy_saisons_delete(id):
     data, status = backend_request('DELETE', f'/admin/saisons/{id}', headers=headers)
     return jsonify(data), status
 
+@app.route('/admin/saisons/<int:id>/count-tournois', methods=['GET'])
+@csrf.exempt
+def proxy_saisons_count_tournois(id):
+    if 'admin_token' not in session:
+        return jsonify({'error': 'Non autorisé'}), 403
+    headers = {'X-Admin-Token': session['admin_token']}
+    data, status = backend_request('GET', f'/admin/saisons/{id}/count-tournois', headers=headers)
+    return jsonify(data), status
+
 @app.route('/admin/saisons/<int:id>/save-awards', methods=['POST'])
 @csrf.exempt
 def proxy_saisons_save_awards(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
     headers = {'X-Admin-Token': session['admin_token']}
-    data, status = backend_request('POST', f'/admin/saisons/{id}/save-awards', headers=headers)
+    payload = request.get_json(silent=True) or {}
+    data, status = backend_request('POST', f'/admin/saisons/{id}/save-awards', data=payload, headers=headers)
     return jsonify(data), status
 
 @app.route('/admin/joueurs', methods=['GET', 'POST'])

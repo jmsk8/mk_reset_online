@@ -22,13 +22,14 @@ CREATE TABLE public.configuration (
 );
 ALTER TABLE public.configuration OWNER TO mk_reset;
 
-INSERT INTO public.configuration (key, value) VALUES 
+INSERT INTO public.configuration (key, value) VALUES
 ('tau', '0.083'),
 ('ghost_enabled', 'false'),
 ('ghost_penalty', '0.1'),
 ('unranked_threshold', '10'),
 ('sigma_threshold', '4.0'),
-('league_mode_enabled', 'false');
+('league_mode_enabled', 'false'),
+('inter_league_moves', '0');
 
 -- LIGUES (Déplacé avant pour les références)
 CREATE TABLE public.ligues (
