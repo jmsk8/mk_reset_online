@@ -110,6 +110,13 @@ def sync_sequences():
         conn.commit()
 
 
+def extract_league_number(nom):
+    match = re.search(r'(\d+)', nom)
+    if match:
+        return int(match.group(1))
+    return None
+
+
 def recalculate_tiers():
     with get_db_connection() as conn:
         try:
@@ -1093,10 +1100,10 @@ def get_joueur_stats(nom):
                         else: top_percent = 50.0
                     elif len(valid_scores) == 1: top_percent = 1.0 
                 
-                # 3. Historique (MODIFIÉ : Récupération de l'archive COALESCE(t.ligue_nom, l.nom))
                 cur.execute("""
-                    SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma, 
-                           COALESCE(t.ligue_nom, l.nom)
+                    SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma,
+                           COALESCE(t.ligue_nom, l.nom),
+                           COALESCE(t.ligue_couleur, l.couleur)
                     FROM Participations p
                     JOIN Tournois t ON p.tournoi_id = t.id
                     JOIN Joueurs j ON p.joueur_id = j.id
@@ -1117,22 +1124,23 @@ def get_joueur_stats(nom):
                 positions = []
                 victoires = 0
                 
-                for tid, date, score, position, hist_ts, h_mu, h_sigma, hist_ligue_nom in raw_history:
+                for tid, date, score, position, hist_ts, h_mu, h_sigma, hist_ligue_nom, hist_ligue_couleur in raw_history:
                     s_val = float(score) if score is not None else 0.0
                     p_val = int(position) if position is not None else 0
                     ts_val = float(hist_ts) if hist_ts is not None else 0.0
                     scores_bruts.append(s_val)
                     positions.append(p_val)
                     if p_val == 1: victoires += 1
-                    
+
                     historique_data.append({
-                        "type": "tournoi", 
-                        "id": tid, 
+                        "type": "tournoi",
+                        "id": tid,
                         "date": date.strftime("%Y-%m-%d"),
-                        "score": s_val, 
-                        "position": p_val, 
+                        "score": s_val,
+                        "position": p_val,
                         "score_trueskill": round(ts_val, 3),
-                        "ligue": hist_ligue_nom if hist_ligue_nom else "N/A"
+                        "ligue": hist_ligue_nom if hist_ligue_nom else "N/A",
+                        "ligue_couleur": hist_ligue_couleur if hist_ligue_couleur else None
                     })
 
                 # ... (Traitement Ghost et Reset inchangé) ...
@@ -1153,7 +1161,7 @@ def get_joueur_stats(nom):
 
                     # Chercher le dernier tournoi AVANT le reset pour ce joueur
                     reset_ts = None
-                    for tid, t_date, score, position, hist_ts, _, _, hist_ligue_nom in raw_history:
+                    for tid, t_date, score, position, hist_ts, _, _, _, _ in raw_history:
                         if t_date <= r_date_only and hist_ts is not None:
                             # Le reset augmente sigma de `val`, donc le TrueSkill conservatif diminue de val*3
                             reset_ts = float(hist_ts) - val_float * 3
@@ -1282,21 +1290,23 @@ def get_tournois_list():
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT t.id, t.date, COUNT(p.joueur_id), MAX(p.score), 
-                           COALESCE(t.ligue_nom, l.nom) as nom_ligue
-                    FROM Tournois t 
-                    JOIN Participations p ON t.id = p.tournoi_id 
+                    SELECT t.id, t.date, COUNT(p.joueur_id), MAX(p.score),
+                           COALESCE(t.ligue_nom, l.nom),
+                           COALESCE(t.ligue_couleur, l.couleur)
+                    FROM Tournois t
+                    JOIN Participations p ON t.id = p.tournoi_id
                     LEFT JOIN Ligues l ON t.ligue_id = l.id
-                    GROUP BY t.id, t.date, t.ligue_nom, l.nom 
+                    GROUP BY t.id, t.date, t.ligue_nom, t.ligue_couleur, l.nom, l.couleur
                     ORDER BY t.date DESC
                 """)
                 tournois = [{
-                    "id": r[0], 
-                    "date": r[1].strftime("%Y-%m-%d"), 
-                    "nb_joueurs": r[2], 
+                    "id": r[0],
+                    "date": r[1].strftime("%Y-%m-%d"),
+                    "nb_joueurs": r[2],
                     "participants": r[2],
-                    "score_max": r[3], 
-                    "ligue_nom": r[4] if r[4] else "N/A"
+                    "score_max": r[3],
+                    "ligue_nom": r[4] if r[4] else "N/A",
+                    "ligue_couleur": r[5] if r[5] else None
                 } for r in cur.fetchall()]
         return jsonify(tournois)
     except Exception:
@@ -1844,86 +1854,63 @@ def get_ligues_public():
 def setup_ligues():
     data = request.get_json()
     ligues_data = data.get('ligues', [])
-    
-    # Validation basique
+
     if not ligues_data:
         return jsonify({"error": "Aucune donnée de ligue reçue"}), 400
 
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # 1. Activer le mode ligue
                 cur.execute("UPDATE Configuration SET value = 'true' WHERE key = 'league_mode_enabled'")
-                
-                # 2. Récupérer les IDs des ligues existantes pour les conserver (Smart Sync)
-                cur.execute("SELECT id FROM Ligues ORDER BY id ASC")
-                existing_ids = [row[0] for row in cur.fetchall()]
-                
-                # 3. Traitement des ligues envoyées par le frontend
-                # On va mettre à jour les existantes et créer les nouvelles
-                current_league_ids_used = []
 
-                for index, l_data in enumerate(ligues_data):
-                    nom = l_data.get('nom')
-                    couleur = l_data.get('couleur')
+                cur.execute("SELECT id FROM Ligues")
+                existing_ids = set(row[0] for row in cur.fetchall())
+
+                ids_in_use = set()
+                all_assigned_players = []
+
+                for l_data in ligues_data:
+                    nom = l_data.get('nom', '')
+                    couleur = l_data.get('couleur', '#FFFFFF')
                     joueurs_ids = l_data.get('joueurs_ids', [])
-                    niveau = index + 1 # Niveau basé sur l'ordre
 
-                    if index < len(existing_ids):
-                        # --- MISE À JOUR (On garde l'ID existant pour ne pas casser l'historique) ---
-                        ligue_id = existing_ids[index]
-                        cur.execute("""
-                            UPDATE Ligues 
-                            SET nom = %s, couleur = %s, niveau = %s 
-                            WHERE id = %s
-                        """, (nom, couleur, niveau, ligue_id))
+                    ligue_num = extract_league_number(nom)
+                    if ligue_num is None or ligue_num < 0 or ligue_num > 9:
+                        continue
+
+                    ligue_id = ligue_num + 1
+                    ids_in_use.add(ligue_id)
+
+                    if ligue_id in existing_ids:
+                        cur.execute(
+                            "UPDATE Ligues SET nom = %s, couleur = %s, niveau = %s WHERE id = %s",
+                            (nom, couleur, ligue_num, ligue_id)
+                        )
                     else:
-                        # --- INSERTION (Nouvelle ligue ajoutée) ---
-                        cur.execute("""
-                            INSERT INTO Ligues (nom, couleur, niveau) 
-                            VALUES (%s, %s, %s) 
-                            RETURNING id
-                        """, (nom, couleur, niveau))
-                        ligue_id = cur.fetchone()[0]
-                    
-                    current_league_ids_used.append(ligue_id)
+                        cur.execute(
+                            "INSERT INTO Ligues (id, nom, couleur, niveau) VALUES (%s, %s, %s, %s)",
+                            (ligue_id, nom, couleur, ligue_num)
+                        )
 
-                    # Mise à jour des joueurs pour cette ligue
                     if joueurs_ids:
-                        # On met à jour le ligue_id pour ces joueurs
                         placeholders = ",".join(["%s"] * len(joueurs_ids))
                         cur.execute(f"UPDATE Joueurs SET ligue_id = %s WHERE id IN ({placeholders})", (ligue_id, *joueurs_ids))
+                        all_assigned_players.extend(joueurs_ids)
 
-                # 4. Gestion des joueurs "Sans Ligue" (Ceux qui ne sont pas dans la liste reçue)
-                # On récupère tous les IDs de joueurs traités ci-dessus
-                all_assigned_players = []
-                for l in ligues_data:
-                    all_assigned_players.extend(l.get('joueurs_ids', []))
-                
+                ids_to_remove = existing_ids - ids_in_use
+                if ids_to_remove:
+                    placeholders = ",".join(["%s"] * len(ids_to_remove))
+                    cur.execute(f"UPDATE Joueurs SET ligue_id = NULL WHERE ligue_id IN ({placeholders})", tuple(ids_to_remove))
+                    cur.execute(f"DELETE FROM Ligues WHERE id IN ({placeholders})", tuple(ids_to_remove))
+
                 if all_assigned_players:
-                    # Mettre à NULL le ligue_id des joueurs qui ne sont plus assignés
-                    placeholders_assigned = ",".join(["%s"] * len(all_assigned_players))
-                    cur.execute(f"UPDATE Joueurs SET ligue_id = NULL WHERE id NOT IN ({placeholders_assigned})", tuple(all_assigned_players))
+                    placeholders = ",".join(["%s"] * len(all_assigned_players))
+                    cur.execute(f"UPDATE Joueurs SET ligue_id = NULL WHERE id NOT IN ({placeholders})", tuple(all_assigned_players))
                 else:
-                    # Cas extrême : aucun joueur assigné nulle part
                     cur.execute("UPDATE Joueurs SET ligue_id = NULL")
 
-                # 5. Nettoyage Optionnel : Supprimer les ligues en trop ?
-                # Si on avait 5 ligues et qu'on passe à 3.
-                # ATTENTION : Si on supprime les ligues 4 et 5, leurs anciens tournois perdront leur lien.
-                # Pour respecter ta demande "ne doit rien changer", on ne supprime PAS les ligues en trop, 
-                # ou alors on accepte que l'historique de la ligue supprimée disparaisse.
-                # -> Choix sécurisé : On supprime uniquement les ligues qui ne sont plus dans la liste, 
-                #    ce qui est logique (si la ligue n'existe plus, le tournoi devient orphelin).
-                #    Mais comme tu veux "Ajouter" une ligue, ce bloc ne sera pas déclenché.
-                if len(current_league_ids_used) < len(existing_ids):
-                    ids_to_remove = [lid for lid in existing_ids if lid not in current_league_ids_used]
-                    if ids_to_remove:
-                        placeholders_remove = ",".join(["%s"] * len(ids_to_remove))
-                        cur.execute(f"DELETE FROM Ligues WHERE id IN ({placeholders_remove})", tuple(ids_to_remove))
-
             conn.commit()
-            return jsonify({"status": "success", "message": "Configuration des ligues sauvegardée (Historique conservé)"})
+            return jsonify({"status": "success", "message": "Configuration des ligues sauvegardée"})
 
     except Exception as e:
         print(f"Erreur setup_ligues: {e}")

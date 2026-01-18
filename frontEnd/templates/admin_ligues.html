@@ -361,10 +361,34 @@
         }
 
         function addManualLeague() {
+            const existingNumbers = draftData.map(l => {
+                const match = l.nom.match(/Ligue\s*(\d+)/i);
+                return match ? parseInt(match[1]) : -1;
+            }).filter(n => n >= 0 && n <= 9);
+
+            let nextNum = 0;
+            for (let i = 0; i <= 9; i++) {
+                if (!existingNumbers.includes(i)) {
+                    nextNum = i;
+                    break;
+                }
+            }
+
+            if (existingNumbers.length >= 10) {
+                alert("Maximum 10 ligues (Ligue 0 à Ligue 9)");
+                return;
+            }
+
+            const colors = ["#FFD700", "#C0C0C0", "#CD7F32", "#48C9B0", "#9B59B6", "#E74C3C", "#3498DB", "#2ECC71", "#F39C12", "#9B59B6"];
             draftData.push({
-                nom: "Nouvelle Ligue",
-                couleur: "#cccccc",
+                nom: `Ligue ${nextNum}`,
+                couleur: colors[nextNum] || "#cccccc",
                 joueurs: []
+            });
+            draftData.sort((a, b) => {
+                const numA = parseInt(a.nom.match(/\d+/)?.[0] ?? 99);
+                const numB = parseInt(b.nom.match(/\d+/)?.[0] ?? 99);
+                return numA - numB;
             });
             renderDraftBoard();
         }
@@ -385,6 +409,12 @@
         function renderDraftBoard() {
             const container = document.getElementById('draftContainer');
             container.innerHTML = '';
+
+            draftData.sort((a, b) => {
+                const numA = parseInt(a.nom.match(/\d+/)?.[0] ?? 99);
+                const numB = parseInt(b.nom.match(/\d+/)?.[0] ?? 99);
+                return numA - numB;
+            });
 
             draftData.forEach((ligue, index) => {
                 const col = document.createElement('div');
@@ -407,7 +437,7 @@
                         </span>
 
                         <div class="league-header">
-                            <input class="input-league-name" value="${ligue.nom}" onchange="updateLeagueName(${index}, this.value)">
+                            <span class="input-league-name" style="cursor: default;">${ligue.nom}</span>
                             <div class="control mt-2 mb-2">
                                 <input type="color" value="${ligue.couleur}" onchange="updateLeagueColor(${index}, this.value)" style="width:100%; height:25px; cursor:pointer;">
                             </div>
@@ -484,7 +514,6 @@
             }
         }
 
-        function updateLeagueName(index, val) { draftData[index].nom = val; }
         function updateLeagueColor(index, val) { draftData[index].couleur = val; }
 
         async function confirmLeaguesCreation() {

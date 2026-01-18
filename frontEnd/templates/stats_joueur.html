@@ -219,9 +219,12 @@
                                                 
                                                 <td style="vertical-align: middle;" data-label="Ligue">
                                                     {% if tournoi.ligue != 'N/A' %}
-                                                        <span class="tag is-info is-light is-small">{{ tournoi.ligue }}</span>
+                                                        <span class="tag is-small" style="background-color: {{ tournoi.ligue_couleur or '#3298dc' }}; color: #222; font-weight: bold; border: 1px solid rgba(0,0,0,0.2);">
+                                                            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: #fff; margin-right: 5px; border: 1px solid rgba(0,0,0,0.3);"></span>
+                                                            {{ tournoi.ligue }}
+                                                        </span>
                                                     {% else %}
-                                                        <span class="has-text-grey-light is-size-7">N/A</span>
+                                                        <span class="has-text-grey-light is-size-7">-</span>
                                                     {% endif %}
                                                 </td>
 

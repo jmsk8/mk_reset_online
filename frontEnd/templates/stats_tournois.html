@@ -88,9 +88,11 @@
                                             <td>{{ tournoi.participants }}</td>
                                             <td>
                                                 {% if tournoi.ligue_nom and tournoi.ligue_nom != 'N/A' %}
-                                                    <span class="tag is-info is-light">{{ tournoi.ligue_nom }}</span>
+                                                    <span class="tag is-small" style="background-color: {{ tournoi.ligue_couleur or '#3298dc' }}; color: #222; font-weight: bold; border: 1px solid rgba(0,0,0,0.2);">
+                                                        {{ tournoi.ligue_nom }}
+                                                    </span>
                                                 {% else %}
-                                                    <span class="has-text-grey">N/A</span>
+                                                    <span class="has-text-grey">-</span>
                                                 {% endif %}
                                             </td>
                                             <td>{{ tournoi.score_max }}</td>
