@@ -1146,11 +1146,27 @@ def get_joueur_stats(nom):
                     })
                 
                 for r_date, val in raw_resets:
-                    # Logique reset simplifiée pour la réponse (similaire à l'original)
+                    # Calculer le TrueSkill au moment du reset en trouvant le tournoi juste avant
+                    # raw_history est trié par date DESC, donc on cherche le premier tournoi avec date <= r_date
+                    val_float = float(val)
+                    r_date_only = r_date.date() if hasattr(r_date, 'date') else r_date
+
+                    # Chercher le dernier tournoi AVANT le reset pour ce joueur
+                    reset_ts = None
+                    for tid, t_date, score, position, hist_ts, _, _, hist_ligue_nom in raw_history:
+                        if t_date <= r_date_only and hist_ts is not None:
+                            # Le reset augmente sigma de `val`, donc le TrueSkill conservatif diminue de val*3
+                            reset_ts = float(hist_ts) - val_float * 3
+                            break
+
+                    # Si pas de tournoi avant le reset, ne pas ajouter cette entrée dans l'historique
+                    if reset_ts is None:
+                        continue
+
                     historique_data.append({
-                        "type": "reset", "date": r_date.strftime("%Y-%m-%d"),
-                        "score": 0, "position": "-", "score_trueskill": 0, 
-                        "valeur": val, "ligue": "-"
+                        "type": "reset", "date": r_date_only.strftime("%Y-%m-%d"),
+                        "score": 0, "position": "-", "score_trueskill": round(reset_ts, 3),
+                        "valeur": val_float, "ligue": "-"
                     })
 
                 historique_data.sort(key=lambda x: x['date'], reverse=True)
