@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Gestion des Ligues - Admin</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    <style>
+        .league-column {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem;
+            min-height: 200px;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            transition: background 0.3s;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        .unassigned-column {
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px dashed #485fc7;
+            border-radius: 8px;
+            padding: 1rem;
+            min-height: 120px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .player-draggable {
+            background: rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(59, 130, 246, 0.5);
+            padding: 6px 10px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            cursor: grab;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+        .player-draggable:active {
+            cursor: grabbing;
+            background: rgba(59, 130, 246, 0.4);
+        }
+        .player-draggable.is-inactive {
+            background: rgba(100, 116, 139, 0.2);
+            border-color: #64748b;
+            color: #cbd5e1;
+        }
+        .league-header {
+            font-weight: bold;
+            color: #fbbf24;
+            margin-bottom: 0.5rem;
+            text-align: center;
+        }
+        .drag-over {
+            background: rgba(59, 130, 246, 0.15) !important;
+            border-color: #3b82f6;
+        }
+        .input-league-name {
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid #555;
+            color: #fbbf24;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            width: 80%;
+        }
+        .input-league-name:focus {
+            outline: none;
+            border-bottom-color: #fbbf24;
+        }
+        .players-list {
+            flex-grow: 1;
+        }
+        .delete-league-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            cursor: pointer;
+            color: #ef4444;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+        }
+        .delete-league-btn:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    {% include 'navbar.html' %}
+    <script>const ADMIN_TOKEN = "{{ session.get('admin_token', '') }}";</script>
+
+    <section class="section">
+        <div class="container">
+            <h1 class="title has-text-centered glow-text mb-6">Gestion des Ligues</h1>
+
+            <div class="box glass-card has-text-centered mb-6 fade-in">
+                <div class="columns is-vcentered is-centered">
+                    <div class="column is-narrow">
+                        <span class="heading has-text-grey-light mb-1">État actuel</span>
+                        <div id="statusDisplay" class="is-size-4 has-text-weight-bold">
+                            Chargement...
+                        </div>
+                    </div>
+                    <div class="column is-narrow">
+                        <button id="toggleLeagueBtn" class="button is-rounded is-loading" onclick="toggleLeagueMode()">
+                            Chargement...
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="leagueManagementArea" style="display: none;" class="fade-in">
+                <div class="level">
+                    <div class="level-left">
+                        <h2 class="title is-4 has-text-white">Configuration Actuelle</h2>
+                    </div>
+                    <div class="level-right">
+                        <button class="button is-info" onclick="openDraftModal(false)">
+                            <span class="icon"><i class="fas fa-edit"></i></span>
+                            <span>Création / Modification de Ligues</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="currentLeaguesDisplay" class="columns is-multiline">
+                    </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="modal" id="draftModal">
+        <div class="modal-background" onclick="closeDraftModal()"></div>
+        <div class="modal-card" style="width: 95%; max-width: 1600px; height: 95vh;">
+            <header class="modal-card-head" style="background-color: #1e293b; border-bottom: 1px solid #3b82f6;">
+                <p class="modal-card-title has-text-white" id="draftModalTitle">Édition des Ligues</p>
+                <button class="delete" aria-label="close" onclick="closeDraftModal()"></button>
+            </header>
+            
+            <section class="modal-card-body" style="background-color: #0f172a; overflow-y: hidden; display: flex; flex-direction: column;">
+                
+                <div class="level mb-2 px-2 mt-2" style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                    <div class="level-left">
+                        <div class="tags has-addons">
+                            <span class="tag is-dark">Mode</span>
+                            <span class="tag is-primary" id="draftModeLabel">Chargement...</span>
+                        </div>
+                    </div>
+                    <div class="level-right">
+                        <button class="button is-small is-warning is-outlined mr-3" onclick="openDraftModal(true)">
+                            <span class="icon"><i class="fas fa-magic"></i></span>
+                            <span>Recalculer (Auto-Draft)</span>
+                        </button>
+
+                        <button class="button is-small is-success is-outlined is-rounded" onclick="addManualLeague()">
+                            <span class="icon is-small"><i class="fas fa-plus"></i></span>
+                            <span>Ajouter une ligue vide</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div style="flex-grow: 1; overflow-y: auto; padding-bottom: 20px;">
+                    <div class="columns is-multiline" id="draftContainer">
+                        </div>
+                </div>
+
+                <div style="height: 2px; background-color: #333; margin: 10px 0;"></div>
+
+                <div style="height: 250px; min-height: 250px; display: flex; flex-direction: column;">
+                    <div class="level mb-2 is-mobile px-2">
+                        <div class="level-left">
+                            <h4 class="title is-5 has-text-grey-light mb-0">
+                                <i class="fas fa-users mr-2"></i> Joueurs Disponibles / Non assignés
+                            </h4>
+                        </div>
+                        <div class="level-right">
+                            <span class="tag is-dark" id="unassignedCount">0 joueurs</span>
+                        </div>
+                    </div>
+                    
+                    <div class="unassigned-column" 
+                         id="unassigned-drop-zone"
+                         ondrop="drop(event, -1)" 
+                         ondragover="allowDrop(event)"
+                         ondragenter="dragEnter(event)"
+                         ondragleave="dragLeave(event)"
+                         style="flex-grow: 1; max-height: none;">
+                         
+                        <div id="unassignedContainer" class="is-flex is-flex-wrap-wrap" style="gap: 10px;">
+                            </div>
+                    </div>
+                </div>
+
+            </section>
+
+            <footer class="modal-card-foot" style="background-color: #1e293b; border-top: 1px solid #3b82f6;">
+                <button class="button is-success" onclick="confirmLeaguesCreation()">
+                    <span class="icon"><i class="fas fa-save"></i></span>
+                    <span>Sauvegarder les modifications</span>
+                </button>
+                <button class="button is-dark" onclick="closeDraftModal()">Annuler</button>
+            </footer>
+        </div>
+    </div>
+
+    {% include 'footer.html' %}
+    <script src="{{ url_for('static', filename='js/gestion.js') }}"></script>
+    
+    <script>
+        let isLeagueEnabled = false;
+        let draftData = []; 
+        let unassignedPlayers = []; 
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadConfigAndUI();
+        });
+
+        // --- 1. CONFIGURATION & UI ---
+
+        async function loadConfigAndUI() {
+            const res = await apiCall('/admin/config', 'GET');
+            if (res && !res.error) {
+                isLeagueEnabled = res.league_mode_enabled;
+                updateToggleUI();
+                if (isLeagueEnabled) {
+                    loadCurrentLeagues();
+                } else {
+                    document.getElementById('currentLeaguesDisplay').innerHTML = '';
+                }
+            }
+        }
+
+        async function toggleLeagueMode() {
+            const newState = !isLeagueEnabled;
+
+            if (isLeagueEnabled === true && newState === false) {
+                if (!confirm("⚠️ ATTENTION : Désactiver le mode ligue supprimera DÉFINITIVEMENT toutes les ligues existantes.\n\nVoulez-vous vraiment continuer ?")) {
+                    return; 
+                }
+            }
+
+            const currentConfig = await apiCall('/admin/config', 'GET');
+            if(currentConfig.error) return;
+
+            const fullPayload = { ...currentConfig, league_mode_enabled: newState };
+            const res = await apiCall('/admin/config', 'POST', fullPayload);
+            
+            if (res.status === 'success') {
+                isLeagueEnabled = newState; 
+                updateToggleUI();
+                if (isLeagueEnabled) {
+                    loadCurrentLeagues();
+                } else {
+                    document.getElementById('currentLeaguesDisplay').innerHTML = '';
+                }
+            } else {
+                alert("Erreur : " + res.error);
+            }
+        }
+
+        function updateToggleUI() {
+            const btn = document.getElementById('toggleLeagueBtn');
+            const statusDisplay = document.getElementById('statusDisplay');
+            const area = document.getElementById('leagueManagementArea');
+            
+            btn.classList.remove('is-loading');
+
+            if (isLeagueEnabled) {
+                statusDisplay.innerHTML = '<span class="has-text-success"><i class="fas fa-check-circle"></i> ACTIF</span>';
+                btn.className = "button is-medium is-danger is-outlined";
+                btn.innerHTML = '<span class="icon is-small mr-2"><i class="fas fa-power-off"></i></span><span>Désactiver le mode ligue</span>';
+                area.style.display = "block";
+            } else {
+                statusDisplay.innerHTML = '<span class="has-text-danger"><i class="fas fa-times-circle"></i> INACTIF</span>';
+                btn.className = "button is-medium is-success";
+                btn.innerHTML = '<span class="icon is-small mr-2"><i class="fas fa-power-off"></i></span><span>Activer le mode ligue</span>';
+                area.style.display = "none";
+            }
+        }
+
+        // --- 2. AFFICHAGE DES LIGUES (Lecture seule) ---
+
+        async function loadCurrentLeagues() {
+            const res = await apiCall('/api/ligues', 'GET');
+            const container = document.getElementById('currentLeaguesDisplay');
+            container.innerHTML = '';
+            
+            if (!Array.isArray(res) || res.length === 0) {
+                container.innerHTML = '<div class="column is-12"><div class="notification is-dark has-text-centered">Aucune ligue configurée. Cliquez sur "Création / Modification" pour commencer.</div></div>';
+                return;
+            }
+
+            res.forEach(ligue => {
+                let rows = '';
+                ligue.joueurs.forEach(j => {
+                    rows += `
+                        <tr class="has-text-grey-light" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                            <td>${j.nom}</td>
+                            <td class="has-text-right is-family-monospace">${j.score ? j.score.toFixed(3) : '-'}</td>
+                        </tr>`;
+                });
+
+                container.innerHTML += `
+                    <div class="column is-3">
+                        <div class="box glass-card" style="border-top: 4px solid ${ligue.couleur || '#fff'}">
+                            <div class="has-text-centered mb-4">
+                                <h3 class="title is-4 mb-2" style="color:${ligue.couleur}">${ligue.nom}</h3>
+                                <span class="tag is-dark is-rounded border-light">${ligue.joueurs.length} Joueurs</span>
+                            </div>
+                            <div class="table-container">
+                                <table class="table is-fullwidth is-narrow has-background-transparent">
+                                    <tbody>${rows}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        // --- 3. LOGIQUE DRAFT & MODIFICATION ---
+
+        async function openDraftModal(forceReset = false) {
+            
+            if (forceReset) {
+                if(!confirm("⚠️ Attention : Cela va effacer vos ligues actuelles pour recalculer une répartition automatique basée sur le classement.\n\nContinuer ?")) return;
+            }
+
+            let url = '/admin/ligues/draft-simulation';
+            if (forceReset) url += '?force_reset=true';
+
+            const res = await apiCall(url, 'GET');
+            
+            if (res && !res.error) {
+                draftData = res.ligues || []; 
+                unassignedPlayers = res.unassigned || []; 
+                
+                const modeLabel = document.getElementById('draftModeLabel');
+                if (res.mode === 'edition') {
+                    modeLabel.innerText = "Édition Manuelle";
+                    modeLabel.className = "tag is-info";
+                } else {
+                    modeLabel.innerText = "Auto-Draft (Brouillon)";
+                    modeLabel.className = "tag is-warning";
+                }
+
+                renderDraftBoard();
+                document.getElementById('draftModal').classList.add('is-active');
+            } else {
+                alert("Erreur lors de la récupération des données : " + (res.error || "Inconnue"));
+            }
+        }
+
+        function closeDraftModal() {
+            document.getElementById('draftModal').classList.remove('is-active');
+        }
+
+        function addManualLeague() {
+            draftData.push({
+                nom: "Nouvelle Ligue",
+                couleur: "#cccccc",
+                joueurs: []
+            });
+            renderDraftBoard();
+        }
+
+        function deleteLeague(index) {
+            const ligue = draftData[index];
+            if (ligue.joueurs.length > 0) {
+                if(!confirm(`Cette ligue contient ${ligue.joueurs.length} joueurs. Ils seront déplacés vers "Non assignés". Continuer ?`)) {
+                    return;
+                }
+                unassignedPlayers.push(...ligue.joueurs);
+                unassignedPlayers.sort((a,b) => a.nom.localeCompare(b.nom));
+            }
+            draftData.splice(index, 1);
+            renderDraftBoard();
+        }
+
+        function renderDraftBoard() {
+            const container = document.getElementById('draftContainer');
+            container.innerHTML = '';
+
+            draftData.forEach((ligue, index) => {
+                const col = document.createElement('div');
+                col.className = 'column is-3'; 
+                
+                let playerItems = '';
+                ligue.joueurs.forEach(p => {
+                    playerItems += createPlayerHTML(p, false);
+                });
+
+                col.innerHTML = `
+                    <div class="league-column" 
+                         ondrop="drop(event, ${index})" 
+                         ondragover="allowDrop(event)"
+                         ondragenter="dragEnter(event)"
+                         ondragleave="dragLeave(event)">
+                        
+                        <span class="icon is-small delete-league-btn" onclick="deleteLeague(${index})" title="Supprimer la ligue">
+                            <i class="fas fa-times"></i>
+                        </span>
+
+                        <div class="league-header">
+                            <input class="input-league-name" value="${ligue.nom}" onchange="updateLeagueName(${index}, this.value)">
+                            <div class="control mt-2 mb-2">
+                                <input type="color" value="${ligue.couleur}" onchange="updateLeagueColor(${index}, this.value)" style="width:100%; height:25px; cursor:pointer;">
+                            </div>
+                        </div>
+                        
+                        <div class="players-list">
+                            ${playerItems}
+                        </div>
+                        
+                        <div class="has-text-centered mt-3 pt-2" style="border-top: 1px solid rgba(255,255,255,0.1)">
+                            <span class="tag is-black">${ligue.joueurs.length}</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(col);
+            });
+
+            const unassignedContainer = document.getElementById('unassignedContainer');
+            unassignedContainer.innerHTML = '';
+            document.getElementById('unassignedCount').innerText = unassignedPlayers.length + " joueurs";
+
+            unassignedPlayers.forEach(p => {
+                unassignedContainer.innerHTML += createPlayerHTML(p, true);
+            });
+        }
+
+        function createPlayerHTML(p, isUnassigned) {
+            const inactiveClass = isUnassigned ? 'is-inactive' : '';
+            return `
+                <div class="player-draggable ${inactiveClass}" draggable="true" data-id="${p.id}" ondragstart="drag(event)">
+                    <span class="has-text-weight-bold mr-2">${p.nom}</span>
+                    <span class="tag is-dark is-small">${p.score.toFixed(2)}</span>
+                </div>
+            `;
+        }
+
+        function allowDrop(ev) { ev.preventDefault(); }
+        function drag(ev) { ev.dataTransfer.setData("text", ev.target.dataset.id); }
+        function dragEnter(ev) { ev.currentTarget.classList.add('drag-over'); }
+        function dragLeave(ev) { ev.currentTarget.classList.remove('drag-over'); }
+
+        function drop(ev, targetIndex) {
+            ev.preventDefault();
+            ev.currentTarget.classList.remove('drag-over');
+
+            const playerId = parseInt(ev.dataTransfer.getData("text"));
+            let playerObj = null;
+
+            for(let i=0; i<draftData.length; i++) {
+                const idx = draftData[i].joueurs.findIndex(p => p.id === playerId);
+                if (idx !== -1) {
+                    playerObj = draftData[i].joueurs[idx];
+                    draftData[i].joueurs.splice(idx, 1);
+                    break;
+                }
+            }
+            if (!playerObj) {
+                const idx = unassignedPlayers.findIndex(p => p.id === playerId);
+                if (idx !== -1) {
+                    playerObj = unassignedPlayers[idx];
+                    unassignedPlayers.splice(idx, 1);
+                }
+            }
+
+            if (playerObj) {
+                if (targetIndex === -1) {
+                    unassignedPlayers.push(playerObj);
+                    unassignedPlayers.sort((a,b) => a.nom.localeCompare(b.nom));
+                } else {
+                    draftData[targetIndex].joueurs.push(playerObj);
+                    draftData[targetIndex].joueurs.sort((a,b) => b.score - a.score);
+                }
+                renderDraftBoard();
+            }
+        }
+
+        function updateLeagueName(index, val) { draftData[index].nom = val; }
+        function updateLeagueColor(index, val) { draftData[index].couleur = val; }
+
+        async function confirmLeaguesCreation() {
+            if(!confirm("Valider cette configuration ?")) return;
+
+            const payload = {
+                ligues: draftData.map((l, i) => ({
+                    nom: l.nom,
+                    niveau: i, 
+                    couleur: l.couleur,
+                    joueurs_ids: l.joueurs.map(j => j.id)
+                }))
+            };
+
+            const res = await apiCall('/admin/ligues/setup', 'POST', payload);
+            
+            if (res.status === 'success') {
+                closeDraftModal();
+                loadCurrentLeagues();
+                alert("✅ Ligues mises à jour !");
+            } else {
+                alert("⛔ Erreur : " + (res.error || "Erreur inconnue"));
+            }
+        }
+    </script>
+</body>
+</html>

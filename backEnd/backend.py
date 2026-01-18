@@ -951,6 +951,7 @@ def revert_global_reset():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# Remplacer la fonction get_joueur_stats existante (C'est la grosse fonction)
 @app.route('/stats/joueur/<nom>')
 def get_joueur_stats(nom):
     try:
@@ -961,13 +962,20 @@ def get_joueur_stats(nom):
                 res_conf = cur.fetchone()
                 threshold = float(res_conf[0]) if res_conf else 4.0
 
-                cur.execute("SELECT id, mu, sigma, score_trueskill, tier, is_ranked, consecutive_missed, color FROM Joueurs WHERE nom = %s", (nom,))
+                # MODIFICATION ICI : Ajout du JOIN pour la ligue
+                cur.execute("""
+                    SELECT j.id, j.mu, j.sigma, j.score_trueskill, j.tier, j.is_ranked, j.consecutive_missed, j.color,
+                           l.nom, l.couleur
+                    FROM Joueurs j
+                    LEFT JOIN Ligues l ON j.ligue_id = l.id
+                    WHERE j.nom = %s
+                """, (nom,))
                 current_stats = cur.fetchone()
 
                 if not current_stats:
                     return jsonify({"error": "Joueur non trouvé"}), 404
 
-                jid, mu, sigma, score_trueskill, tier, is_ranked, consecutive_missed, color = current_stats
+                jid, mu, sigma, score_trueskill, tier, is_ranked, consecutive_missed, color, ligue_nom, ligue_color = current_stats
                 
                 safe_ts = float(score_trueskill) if score_trueskill is not None else 0.0
                 sigma_val = float(sigma)
@@ -1002,7 +1010,7 @@ def get_joueur_stats(nom):
                     elif len(valid_scores) == 1:
                         top_percent = 1.0 
                 
-                # 3. Récupération des historiques (Matchs, Ghosts, Resets)
+                # 3. Récupération des historiques
                 cur.execute("""
                     SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma
                     FROM Participations p
@@ -1048,7 +1056,7 @@ def get_joueur_stats(nom):
                         "score_trueskill": round(ts_val, 3)
                     })
 
-                # 5. Traitement des Ghosts (Absences pénalisées)
+                # 5. Traitement des Ghosts
                 for g_date, old_sig, new_sig, current_mu in raw_ghosts:
                     ts_ghost = float(current_mu) - 3 * float(new_sig)
                     penalty_val = round(float(new_sig) - float(old_sig), 3)
@@ -1061,9 +1069,8 @@ def get_joueur_stats(nom):
                         "valeur": penalty_val
                     })
                 
-                # 6. Traitement des Resets Globaux (CORRIGÉ)
+                # 6. Traitement des Resets Globaux
                 for r_date, val in raw_resets:
-                    # On cherche le dernier tournoi AVANT le reset
                     cur.execute("""
                         SELECT p.mu, p.sigma, t.date FROM Participations p
                         JOIN Tournois t ON p.tournoi_id = t.id
@@ -1072,7 +1079,6 @@ def get_joueur_stats(nom):
                     """, (jid, r_date))
                     last_tournoi = cur.fetchone()
 
-                    # On cherche le dernier ghost AVANT le reset
                     cur.execute("""
                         SELECT j.mu, g.new_sigma, g.date FROM ghost_log g
                         JOIN Joueurs j ON g.joueur_id = j.id
@@ -1085,7 +1091,6 @@ def get_joueur_stats(nom):
                     ref_sigma = 8.333
                     has_history = False
                     
-                    # Déterminer l'état (mu, sigma) du joueur au moment du reset
                     if last_tournoi and last_ghost:
                         has_history = True
                         if last_tournoi[2] >= last_ghost[2]:
@@ -1099,13 +1104,10 @@ def get_joueur_stats(nom):
                         has_history = True
                         ref_mu, ref_sigma = float(last_ghost[0]), float(last_ghost[1])
                     
-                    # Calcul de l'impact théorique
-                    sigma_after_reset = ref_sigma + float(val)
-                    ts_reset_calc = ref_mu - 3 * sigma_after_reset
-
-                    # [CORRECTION] : On n'ajoute le reset QUE si le joueur avait un historique avant cette date.
                     if has_history:
-                         historique_data.append({
+                        sigma_after_reset = ref_sigma + float(val)
+                        ts_reset_calc = ref_mu - 3 * sigma_after_reset
+                        historique_data.append({
                             "type": "reset",
                             "date": r_date.strftime("%Y-%m-%d"),
                             "score": 0,
@@ -1116,7 +1118,7 @@ def get_joueur_stats(nom):
 
                 historique_data.sort(key=lambda x: x['date'], reverse=True)
 
-                # 7. Calculs statistiques agrégés
+                # 7. Calculs statistiques
                 nb_tournois = len(scores_bruts)
                 if nb_tournois > 0:
                     score_moyen = sum(scores_bruts) / nb_tournois
@@ -1136,7 +1138,7 @@ def get_joueur_stats(nom):
                         prev_ts_val = tournois_only[1]['score_trueskill']
                         progression_recente = current_ts_val - prev_ts_val
 
-                # 8. Récupération des Awards
+                # 8. Awards
                 cur.execute("""
                     SELECT t.emoji, t.nom, t.description, COUNT(o.id)
                     FROM awards_obtenus o
@@ -1144,7 +1146,6 @@ def get_joueur_stats(nom):
                     WHERE o.joueur_id = %s
                     GROUP BY t.emoji, t.nom, t.description
                 """, (jid,))
-                
                 awards_list = [{"emoji": r[0], "nom": r[1], "description": r[2], "count": r[3]} for r in cur.fetchall()]
 
         return jsonify({
@@ -1164,7 +1165,8 @@ def get_joueur_stats(nom):
                 "position_moyenne": round(position_moyenne, 1),
                 "progression_recente": round(progression_recente, 3),
                 "percentile_trueskill": top_percent,
-                "color": color if color else "#FFFFFF"
+                "color": color if color else "#FFFFFF",
+                "ligue": {"nom": ligue_nom, "couleur": ligue_color} if ligue_nom else None
             },
             "historique": historique_data,
             "awards": awards_list
@@ -1327,20 +1329,23 @@ def admin_logout():
 def check_token():
     return jsonify({"status": "valid"}), 200
 
+# Dans backend.py
+
 @app.route('/admin/config', methods=['GET'])
 @admin_required
 def get_config():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'unranked_threshold', 'sigma_threshold')")
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled')")
                 rows = dict(cur.fetchall())
         return jsonify({
             "tau": float(rows.get('tau', 0.083)), 
             "ghost_enabled": rows.get('ghost_enabled', 'false') == 'true', 
             "ghost_penalty": float(rows.get('ghost_penalty', 0.1)),
             "unranked_threshold": int(rows.get('unranked_threshold', 10)),
-            "sigma_threshold": float(rows.get('sigma_threshold', 4.0))
+            "sigma_threshold": float(rows.get('sigma_threshold', 4.0)),
+            "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true'
         })
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
@@ -1350,11 +1355,13 @@ def get_config():
 def update_config():
     data = request.get_json()
     try:
-        tau = float(data.get('tau'))
-        ghost = str(data.get('ghost_enabled', False)).lower()
+        tau = float(data.get('tau', 0.083))
+        ghost = str(data.get('ghost_enabled', 'false')).lower()
         ghost_penalty = float(data.get('ghost_penalty', 0.1))
         unranked_threshold = int(data.get('unranked_threshold', 10))
         sigma_threshold = float(data.get('sigma_threshold', 4.0))
+
+        league_mode = str(data.get('league_mode_enabled', 'false')).lower()
         
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -1363,19 +1370,27 @@ def update_config():
                     ('ghost_enabled', ghost), 
                     ('ghost_penalty', str(ghost_penalty)), 
                     ('unranked_threshold', str(unranked_threshold)),
-                    ('sigma_threshold', str(sigma_threshold))
+                    ('sigma_threshold', str(sigma_threshold)),
+                    ('league_mode_enabled', league_mode)
                 ]
                 
                 for k, v in configs:
-                    cur.execute("INSERT INTO Configuration (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (k, v))
+                    cur.execute("""
+                        INSERT INTO Configuration (key, value) 
+                        VALUES (%s, %s) 
+                        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                    """, (k, v))
                 
+                if league_mode == 'false':
+                    cur.execute("UPDATE Joueurs SET ligue_id = NULL")
+                    cur.execute("DELETE FROM Ligues")
+
                 cur.execute("""
                     UPDATE Joueurs 
                     SET is_ranked = (COALESCE(consecutive_missed, 0) < %s)
                 """, (unranked_threshold,))
                 
             conn.commit()
-            
             recalculate_tiers()
             
         return jsonify({"status": "success"})
@@ -1388,7 +1403,13 @@ def api_get_joueurs():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, nom, mu, sigma, tier, is_ranked, consecutive_missed, color FROM Joueurs ORDER BY nom ASC")
+                cur.execute("""
+                    SELECT j.id, j.nom, j.mu, j.sigma, j.tier, j.is_ranked, j.consecutive_missed, j.color, 
+                           l.id, l.nom, l.couleur
+                    FROM Joueurs j
+                    LEFT JOIN Ligues l ON j.ligue_id = l.id
+                    ORDER BY j.nom ASC
+                """)
                 joueurs = [{
                     "id": r[0], 
                     "nom": r[1], 
@@ -1397,7 +1418,8 @@ def api_get_joueurs():
                     "tier": r[4].strip() if r[4] else "?", 
                     "is_ranked": r[5], 
                     "consecutive_missed": r[6] if r[6] is not None else 0,
-                    "color": r[7] if r[7] else "#FFFFFF"
+                    "color": r[7] if r[7] else "#FFFFFF",
+                    "ligue": { "id": r[8], "nom": r[9], "couleur": r[10] } if r[8] else None
                 } for r in cur.fetchall()]
         return jsonify(joueurs)
     except Exception as e:
@@ -1708,6 +1730,170 @@ def delete_tournament(id):
             conn.commit()
             recalculate_tiers()
         return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# A AJOUTER A LA FIN DE BACKEND.PY (avant le main)
+
+@app.route('/ligues', methods=['GET'])
+def get_ligues_public():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # 1. Récupérer les définitions de ligues
+                cur.execute("SELECT id, nom, niveau, couleur FROM Ligues ORDER BY niveau ASC")
+                ligues_rows = cur.fetchall()
+                
+                ligues = []
+                for lid, nom, niv, coul in ligues_rows:
+                    # 2. Récupérer les joueurs de cette ligue
+                    cur.execute("""
+                        SELECT nom, score_trueskill, tier 
+                        FROM Joueurs 
+                        WHERE ligue_id = %s 
+                        ORDER BY score_trueskill DESC
+                    """, (lid,))
+                    joueurs = [{"nom": r[0], "score": r[1], "tier": r[2]} for r in cur.fetchall()]
+                    
+                    ligues.append({
+                        "id": lid, "nom": nom, "niveau": niv, "couleur": coul,
+                        "joueurs": joueurs
+                    })
+        return jsonify(ligues)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/ligues/setup', methods=['POST'])
+@admin_required
+def setup_ligues():
+    data = request.get_json()
+    ligues_data = data.get('ligues', [])
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # 1. Nettoyage complet
+                cur.execute("UPDATE Joueurs SET ligue_id = NULL")
+                cur.execute("DELETE FROM Ligues")
+                
+                # 2. Création des nouvelles ligues
+                for ligue in ligues_data:
+                    nom = ligue['nom']
+                    niveau = int(ligue['niveau'])
+                    couleur = ligue.get('couleur', '#FFFFFF')
+                    ids_joueurs = ligue.get('joueurs_ids', [])
+                    
+                    cur.execute("""
+                        INSERT INTO Ligues (nom, niveau, couleur) 
+                        VALUES (%s, %s, %s) 
+                        RETURNING id
+                    """, (nom, niveau, couleur))
+                    new_ligue_id = cur.fetchone()[0]
+                    
+                    # 3. Assignation des joueurs
+                    if ids_joueurs:
+                        cur.execute("""
+                            UPDATE Joueurs 
+                            SET ligue_id = %s 
+                            WHERE id = ANY(%s)
+                        """, (new_ligue_id, ids_joueurs))
+                        
+            conn.commit()
+        return jsonify({"status": "success", "message": "Ligues configurées avec succès"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/admin/ligues/draft-simulation', methods=['GET'])
+@admin_required
+def draft_simulation():
+    """
+    Si 'force_reset' est true : Génère une nouvelle proposition auto.
+    Sinon, si des ligues existent : Renvoie la configuration actuelle pour édition.
+    Sinon : Génère une nouvelle proposition auto.
+    """
+    force_reset = request.args.get('force_reset') == 'true'
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                
+                # 1. Vérifier si des ligues existent déjà
+                cur.execute("SELECT COUNT(*) FROM Ligues")
+                count_ligues = cur.fetchone()[0]
+
+                # MODE ÉDITION : Si des ligues existent et qu'on ne force pas le reset
+                if count_ligues > 0 and not force_reset:
+                    # A. Récupérer les ligues existantes
+                    cur.execute("SELECT id, nom, niveau, couleur FROM Ligues ORDER BY niveau ASC")
+                    ligues_db = cur.fetchall()
+                    
+                    draft_ligues = []
+                    for lid, lnom, lniv, lcoul in ligues_db:
+                        # Joueurs de cette ligue
+                        cur.execute("SELECT id, nom, score_trueskill FROM Joueurs WHERE ligue_id = %s ORDER BY score_trueskill DESC", (lid,))
+                        j_list = [{"id": r[0], "nom": r[1], "score": float(r[2]) if r[2] else 0.0} for r in cur.fetchall()]
+                        
+                        draft_ligues.append({
+                            "nom": lnom,
+                            "couleur": lcoul,
+                            "joueurs": j_list
+                        })
+                    
+                    # B. Récupérer les joueurs non assignés (ligue_id IS NULL)
+                    cur.execute("SELECT id, nom, score_trueskill FROM Joueurs WHERE ligue_id IS NULL ORDER BY score_trueskill DESC NULLS LAST")
+                    unassigned = [{"id": r[0], "nom": r[1], "score": float(r[2]) if r[2] else 0.0} for r in cur.fetchall()]
+                    
+                    return jsonify({
+                        "mode": "edition",
+                        "ligues": draft_ligues,
+                        "unassigned": unassigned
+                    })
+
+                # MODE CRÉATION AUTO (Algorithme existant)
+                else:
+                    cur.execute("""
+                        SELECT id, nom, score_trueskill, is_ranked 
+                        FROM Joueurs 
+                        ORDER BY score_trueskill DESC NULLS LAST
+                    """)
+                    all_players = cur.fetchall()
+
+                    actives = []
+                    inactives = []
+
+                    for r in all_players:
+                        p = {"id": r[0], "nom": r[1], "score": float(r[2]) if r[2] else 0.0}
+                        if r[3]: # is_ranked
+                            actives.append(p)
+                        else:
+                            inactives.append(p)
+                    
+                    draft = []
+                    total_actives = len(actives)
+
+                    if total_actives > 0:
+                        if total_actives <= 15:
+                            split = 8 if total_actives >= 8 else total_actives
+                            draft.append({"nom": "Ligue 0", "couleur": "#FFD700", "joueurs": actives[:split]})
+                            if total_actives > 8:
+                                draft.append({"nom": "Ligue 1", "couleur": "#C0C0C0", "joueurs": actives[split:]})
+                        else:
+                            nb_ligues = min(math.ceil(total_actives / 10), 5)
+                            chunk = math.ceil(total_actives / nb_ligues)
+                            colors = ["#FFD700", "#C0C0C0", "#CD7F32", "#48C9B0", "#9B59B6"]
+                            
+                            for i in range(nb_ligues):
+                                start = i * chunk
+                                end = start + chunk
+                                col = colors[i] if i < len(colors) else "#FFFFFF"
+                                draft.append({"nom": f"Ligue {i}", "couleur": col, "joueurs": actives[start:end]})
+                    
+                    return jsonify({
+                        "mode": "creation",
+                        "ligues": draft,
+                        "unassigned": inactives
+                    })
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

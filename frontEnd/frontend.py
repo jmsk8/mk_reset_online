@@ -482,6 +482,50 @@ def proxy_revert_global_reset():
     data, status = backend_request('POST', '/api/admin/revert-global-reset', headers=headers)
     return jsonify(data), status
 
+# Dans frontend.py
+
+@app.route('/api/ligues', methods=['GET'])
+def proxy_get_ligues_public():
+    data, status = backend_request('GET', '/ligues')
+    return jsonify(data), status
+
+@app.route('/admin/ligues/setup', methods=['POST'])
+@csrf.exempt
+def proxy_setup_ligues():
+    if 'admin_token' not in session:
+        return jsonify({'error': 'Non autorisé'}), 403
+    
+    headers = {'X-Admin-Token': session['admin_token']}
+    data, status = backend_request('POST', '/admin/ligues/setup', data=request.get_json(), headers=headers)
+    return jsonify(data), status
+
+@app.route('/admin/ligues/draft-simulation', methods=['GET'])
+@csrf.exempt
+def proxy_draft_simulation():
+    if 'admin_token' not in session:
+        return jsonify({'error': 'Non autorisé'}), 403
+    headers = {'X-Admin-Token': session['admin_token']}
+    data, status = backend_request('GET', '/admin/ligues/draft-simulation', headers=headers)
+    return jsonify(data), status
+
+# Dans frontend.py
+
+@app.route('/admin/ligues')
+def admin_ligues_page():
+    if 'admin_token' not in session:
+        flash('Accès interdit.', 'danger')
+        return redirect(url_for('admin_login'))
+    
+    # Vérification de sécurité standard
+    headers = {'X-Admin-Token': session['admin_token']}
+    _, status = backend_request('GET', '/admin/check-token', headers=headers)
+    if status in [401, 403]:
+        session.pop('admin_token', None)
+        flash('Session expirée.', 'warning')
+        return redirect(url_for('admin_login'))
+        
+    return render_template('admin_ligues.html', admin_token=session['admin_token'])
+
 # MAIN
 
 @app.after_request

@@ -178,6 +178,12 @@
                     {% else %}
                         <span class="tag is-white">Tier {{ stats.tier }}</span>
                     {% endif %}
+
+                    {% if stats.ligue %}
+                    <span class="tag ml-2" style="background-color: {{ stats.ligue.couleur }}; color: #333; font-weight: bold; border: 1px solid rgba(255,255,255,0.5);">
+                        <i class="fas fa-shield-alt mr-1"></i> {{ stats.ligue.nom }}
+                    </span>
+                    {% endif %}
                    
                     {% if stats.victoires >= 3 %}
                     <span class="tag is-danger ml-2">
@@ -589,7 +595,6 @@
                                     if (item.type === 'reset') {
                                         return 'TrueSkill : ' + tsVal + ' (Reset Global)';
                                     } else if (item.type === 'absence') {
-                                        // MODIFICATION ICI: Affichage du TS + pénalité en positif
                                         return 'TrueSkill : ' + tsVal + ' (Pénalité : +' + item.valeur + ' sigma)';
                                     }
                                     return 'TrueSkill : ' + tsVal;

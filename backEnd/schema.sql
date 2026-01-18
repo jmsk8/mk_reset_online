@@ -165,3 +165,22 @@ INSERT INTO public.types_awards (code, nom, emoji, description) VALUES
 
 -- Sigma min pour le rank par defaut--
 INSERT INTO public.configuration (key, value) VALUES ('sigma_threshold', '4.0') ON CONFLICT (key) DO NOTHING;
+
+-- 1. Configuration : Ajout du flag pour activer/désactiver le mode ligue
+INSERT INTO public.configuration (key, value) 
+VALUES ('league_mode_enabled', 'false') 
+ON CONFLICT (key) DO NOTHING;
+
+-- 2. Création de la table Ligues
+CREATE TABLE public.ligues (
+    id SERIAL PRIMARY KEY,
+    nom VARCHAR(100) NOT NULL,
+    niveau INTEGER NOT NULL, -- 1 pour Ligue 1, 2 pour Ligue 2, etc.
+    couleur VARCHAR(20) DEFAULT '#FFFFFF'
+);
+ALTER TABLE public.ligues OWNER TO mk_reset;
+
+-- 3. Mise à jour de la table Joueurs pour ajouter la référence (Clé étrangère)
+-- On utilise ON DELETE SET NULL pour que si on supprime une ligue, le joueur redevienne "Sans ligue"
+ALTER TABLE public.joueurs 
+ADD COLUMN ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL;
