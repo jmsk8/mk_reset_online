@@ -93,6 +93,20 @@
                                 </div>
                             </div>
 
+                            <div class="field" id="leagueSelectField" style="display: none;">
+                                <label class="label has-text-light">Ligue</label>
+                                <div class="control has-icons-left">
+                                    <div class="select is-fullwidth has-background-dark has-text-light">
+                                        <select id="selectLigue" class="has-background-dark has-text-light" style="border-color: #555;">
+                                            <option value="" disabled selected>Choisir une ligue...</option>
+                                        </select>
+                                    </div>
+                                    <span class="icon is-small is-left">
+                                        <i class="fas fa-shield-alt"></i>
+                                    </span>
+                                </div>
+                            </div>
+
                             <hr style="background-color: #555;">
 
                             <label class="label has-text-light">Participants et Scores</label>
@@ -129,16 +143,46 @@
         </div>
     </section>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
+<script>
+        document.addEventListener('DOMContentLoaded', async () => {
             let availablePlayers = [];
             let selectedPlayers = [];
+            let isLeagueMode = false;
+            let currentLeagueId = null;
             
             const poolContainer = document.getElementById('players-pool');
             const tableBody = document.getElementById('participantsList');
             const searchInput = document.getElementById('searchPlayer');
             const emptyMsg = document.getElementById('emptyMsg');
             const btnSubmit = document.getElementById('btnSubmit');
+            const selectLigue = document.getElementById('selectLigue');
+
+            try {
+                const confRes = await fetch('/admin/config', { 
+                    headers: {'X-Admin-Token': "{{ session.get('admin_token') }}"} 
+                });
+                const conf = await confRes.json();
+                
+                if (conf.league_mode_enabled) {
+                    isLeagueMode = true;
+                    document.getElementById('leagueSelectField').style.display = 'block';
+                    
+                    const liguesRes = await fetch('/api/ligues');
+                    const ligues = await liguesRes.json();
+                    
+                    ligues.forEach(l => {
+                        const opt = document.createElement('option');
+                        opt.value = l.id;
+                        opt.innerText = l.nom;
+                        selectLigue.appendChild(opt);
+                    });
+
+                    selectLigue.addEventListener('change', (e) => {
+                        currentLeagueId = e.target.value ? parseInt(e.target.value) : null;
+                        renderPool();
+                    });
+                }
+            } catch (e) { console.error(e); }
 
             fetch('/joueurs/noms')
                 .then(res => res.json())
@@ -149,18 +193,29 @@
                 .catch(err => console.error(err));
 
             function renderPool() {
-                const filter = searchInput.value.toLowerCase();
+                const filterText = searchInput.value.toLowerCase();
                 poolContainer.innerHTML = '';
                 
-                availablePlayers.forEach(nom => {
-                    if (!selectedPlayers.includes(nom) && nom.toLowerCase().includes(filter)) {
-                        const div = document.createElement('div');
-                        div.className = 'player-item has-text-light';
-                        div.innerHTML = `<i class="fas fa-user mr-2"></i> ${nom}`;
-                        div.onclick = () => selectPlayer(nom);
-                        poolContainer.appendChild(div);
+                availablePlayers.forEach(player => {
+                    const nom = player.nom;
+                    const ligueId = player.ligue_id;
+
+                    if (!nom.toLowerCase().includes(filterText)) return;
+                    if (selectedPlayers.includes(nom)) return;
+                    if (currentLeagueId !== null) {
+                        if (ligueId !== currentLeagueId) return;
                     }
+
+                    const div = document.createElement('div');
+                    div.className = 'player-item has-text-light';
+                    div.innerHTML = `<i class="fas fa-user mr-2"></i> ${nom}`;
+                    div.onclick = () => selectPlayer(nom);
+                    poolContainer.appendChild(div);
                 });
+
+                if (poolContainer.children.length === 0) {
+                    poolContainer.innerHTML = '<p class="has-text-grey has-text-centered is-size-7 mt-2">Aucun joueur correspondant (vérifiez la ligue)</p>';
+                }
             }
 
             window.selectPlayer = function(nom) {
@@ -207,11 +262,16 @@
             document.getElementById('btnAddNewPlayer').addEventListener('click', () => {
                 const input = document.getElementById('newPlayerName');
                 const nom = input.value.trim();
-                if(nom && !availablePlayers.includes(nom) && !selectedPlayers.includes(nom)) {
+                
+                const exists = availablePlayers.some(p => p.nom === nom);
+
+                if(nom && !exists && !selectedPlayers.includes(nom)) {
                     selectPlayer(nom);
                     input.value = '';
                 } else if (selectedPlayers.includes(nom)) {
                     alert("Ce joueur est déjà dans le tableau !");
+                } else if (exists) {
+                    alert("Ce joueur existe déjà (peut-être dans une autre ligue ?).");
                 }
             });
 
@@ -219,6 +279,13 @@
                 const date = document.getElementById('dateTournoi').value;
                 if (!date) {
                     alert("⚠️ Veuillez sélectionner une date.");
+                    return;
+                }
+                
+                const ligueId = isLeagueMode ? selectLigue.value : null;
+
+                if (isLeagueMode && !ligueId) {
+                    alert("⚠️ Mode Ligue activé : Veuillez sélectionner une ligue.");
                     return;
                 }
 
@@ -261,7 +328,8 @@
                     },
                     body: JSON.stringify({
                         date: date,
-                        joueurs: joueursData
+                        joueurs: joueursData,
+                        ligue_id: ligueId
                     })
                 })
                 .then(res => {
@@ -288,5 +356,3 @@
             });
         });
     </script>
-</body>
-</html>

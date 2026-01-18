@@ -14,146 +14,28 @@
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <style>
-        .award-item {
-            display: inline-flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            margin: 10px 15px; 
-            cursor: help;
-            transition: transform 0.3s ease;
-        }
-
-        .award-item:hover {
-            transform: scale(1.2);
-        }
-
-        .award-icon-large {
-            height: 50px;
-            width: auto;
-            filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9));
-            margin-bottom: 2px;
-            transition: all 0.3s ease;
-        }
-
-        .award-text-large {
-            font-size: 3rem;
-            line-height: 1;
-            margin-bottom: 2px;
-            text-shadow: 0 0 2px rgba(255, 255, 255, 0.9);
-        }
-
-        @keyframes pulseAuraGold {
-            0% { filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6)); }
-            50% { filter: drop-shadow(0 0 15px rgba(255, 215, 0, 1)); }
-            100% { filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6)); }
-        }
-        @keyframes pulseAuraSilver {
-            0% { filter: drop-shadow(0 0 5px rgba(192, 192, 192, 0.6)); }
-            50% { filter: drop-shadow(0 0 15px rgba(255, 255, 255, 1)); }
-            100% { filter: drop-shadow(0 0 5px rgba(192, 192, 192, 0.6)); }
-        }
-        @keyframes pulseAuraBronze {
-            0% { filter: drop-shadow(0 0 5px rgba(205, 127, 50, 0.6)); }
-            50% { filter: drop-shadow(0 0 15px rgba(255, 160, 122, 1)); }
-            100% { filter: drop-shadow(0 0 5px rgba(205, 127, 50, 0.6)); }
-        }
-
-        .award-icon-large.super-gold {
-            animation: pulseAuraGold 3s infinite ease-in-out;
-        }
-        .award-icon-large.super-silver {
-            animation: pulseAuraSilver 3s infinite ease-in-out;
-        }
-        .award-icon-large.super-bronze {
-            animation: pulseAuraBronze 3s infinite ease-in-out;
-        }
-
-        .award-count {
-            font-size: 0.9rem;
-            color: #fff;
-            font-weight: bold;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
-            background-color: rgba(0,0,0,0.3);
-            padding: 0 6px;
-            border-radius: 10px;
-        }
-
-        .trophy-icon {
-            max-height: 24px;
-            width: auto;
-            vertical-align: middle;
-            margin-right: 6px;
-        }
-
-        .chart-container {
-            position: relative;
-            width: 100%;
-            height: 450px; 
-        }
-
-        .modal-content-glass { 
-            background: rgba(15, 23, 42, 0.95); 
-            backdrop-filter: blur(10px); 
-            border: 1px solid rgba(255,255,255,0.1); 
-            border-radius: 12px; 
-            box-shadow: 0 0 40px rgba(0,0,0,0.5);
-            width: 400px; 
-            max-width: 90%; 
-            margin: 0 auto;
-        }
-
+        /* (Styles existants inchangés) */
+        .award-item { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; margin: 10px 15px; cursor: help; transition: transform 0.3s ease; }
+        .award-item:hover { transform: scale(1.2); }
+        .award-icon-large { height: 50px; width: auto; filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.9)); margin-bottom: 2px; transition: all 0.3s ease; }
+        .award-text-large { font-size: 3rem; line-height: 1; margin-bottom: 2px; text-shadow: 0 0 2px rgba(255, 255, 255, 0.9); }
+        @keyframes pulseAuraGold { 0% { filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6)); } 50% { filter: drop-shadow(0 0 15px rgba(255, 215, 0, 1)); } 100% { filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6)); } }
+        @keyframes pulseAuraSilver { 0% { filter: drop-shadow(0 0 5px rgba(192, 192, 192, 0.6)); } 50% { filter: drop-shadow(0 0 15px rgba(255, 255, 255, 1)); } 100% { filter: drop-shadow(0 0 5px rgba(192, 192, 192, 0.6)); } }
+        @keyframes pulseAuraBronze { 0% { filter: drop-shadow(0 0 5px rgba(205, 127, 50, 0.6)); } 50% { filter: drop-shadow(0 0 15px rgba(255, 160, 122, 1)); } 100% { filter: drop-shadow(0 0 5px rgba(205, 127, 50, 0.6)); } }
+        .award-icon-large.super-gold { animation: pulseAuraGold 3s infinite ease-in-out; }
+        .award-icon-large.super-silver { animation: pulseAuraSilver 3s infinite ease-in-out; }
+        .award-icon-large.super-bronze { animation: pulseAuraBronze 3s infinite ease-in-out; }
+        .award-count { font-size: 0.9rem; color: #fff; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); background-color: rgba(0,0,0,0.3); padding: 0 6px; border-radius: 10px; }
+        .chart-container { position: relative; width: 100%; height: 450px; }
+        .modal-content-glass { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; box-shadow: 0 0 40px rgba(0,0,0,0.5); width: 400px; max-width: 90%; margin: 0 auto; }
         @media screen and (max-width: 768px) {
-            .chart-container {
-                height: 300px;
-            }
-
+            .chart-container { height: 300px; }
             .modal-content-glass { width: 90% !important; }
-
-            .mobile-card-table table, 
-            .mobile-card-table thead, 
-            .mobile-card-table tbody, 
-            .mobile-card-table th, 
-            .mobile-card-table td, 
-            .mobile-card-table tr { 
-                display: block; 
-            }
-            
-            .mobile-card-table thead tr { 
-                position: absolute;
-                top: -9999px;
-                left: -9999px;
-            }
-            
-            .mobile-card-table tr { 
-                margin-bottom: 1rem;
-                background: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                border-radius: 8px;
-                padding: 10px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            }
-            
-            .mobile-card-table td { 
-                border: none !important;
-                position: relative;
-                padding-left: 0 !important;
-                padding-right: 0 !important;
-                padding-top: 5px !important;
-                padding-bottom: 5px !important;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                text-align: right;
-            }
-            
-            .mobile-card-table td:before { 
-                content: attr(data-label);
-                font-weight: bold;
-                text-align: left;
-                padding-right: 15px;
-                color: #e0e0e0;
-            }
+            .mobile-card-table table, .mobile-card-table thead, .mobile-card-table tbody, .mobile-card-table th, .mobile-card-table td, .mobile-card-table tr { display: block; }
+            .mobile-card-table thead tr { position: absolute; top: -9999px; left: -9999px; }
+            .mobile-card-table tr { margin-bottom: 1rem; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+            .mobile-card-table td { border: none !important; position: relative; padding-left: 0 !important; padding-right: 0 !important; padding-top: 5px !important; padding-bottom: 5px !important; display: flex; justify-content: space-between; align-items: center; text-align: right; }
+            .mobile-card-table td:before { content: attr(data-label); font-weight: bold; text-align: left; padding-right: 15px; color: #e0e0e0; }
         }
     </style>
 </head>
@@ -163,21 +45,13 @@
     <section class="hero is-primary is-small animated-gradient">
         <div class="hero-body">
             <div class="container">
-                <h1 class="title is-2 has-text-centered glow-text">
-                    <i class="fas fa-user"></i> {{ nom }}
-                </h1>
+                <h1 class="title is-2 has-text-centered glow-text"><i class="fas fa-user"></i> {{ nom }}</h1>
                 <h2 class="subtitle has-text-centered">
-                    {% if stats.tier == 'S' %}
-                        <span class="tag tier-s">Tier S</span>
-                    {% elif stats.tier == 'A' %}
-                        <span class="tag tier-a">Tier A</span>
-                    {% elif stats.tier == 'B' %}
-                        <span class="tag tier-b">Tier B</span>
-                    {% elif stats.tier == 'C' %}
-                        <span class="tag tier-c">Tier C</span>
-                    {% else %}
-                        <span class="tag is-white">Tier {{ stats.tier }}</span>
-                    {% endif %}
+                    {% if stats.tier == 'S' %}<span class="tag tier-s">Tier S</span>
+                    {% elif stats.tier == 'A' %}<span class="tag tier-a">Tier A</span>
+                    {% elif stats.tier == 'B' %}<span class="tag tier-b">Tier B</span>
+                    {% elif stats.tier == 'C' %}<span class="tag tier-c">Tier C</span>
+                    {% else %}<span class="tag is-white">Tier {{ stats.tier }}</span>{% endif %}
 
                     {% if stats.ligue %}
                     <span class="tag ml-2" style="background-color: {{ stats.ligue.couleur }}; color: #333; font-weight: bold; border: 1px solid rgba(255,255,255,0.5);">
@@ -185,23 +59,9 @@
                     </span>
                     {% endif %}
                    
-                    {% if stats.victoires >= 3 %}
-                    <span class="tag is-danger ml-2">
-                        <i class="fas fa-trophy"></i>&nbsp;{{ stats.victoires }} victoires
-                    </span>
-                    {% endif %}
-                   
-                    {% if stats.percentile_trueskill != '?' and stats.percentile_trueskill <= 20 %}
-                    <span class="tag is-warning ml-2">
-                        <i class="fas fa-star mr-1"></i> Top {{ stats.percentile_trueskill }}%
-                    </span>
-                    {% endif %}
-
-                    {% if stats.consecutive_missed > 10 %}
-                    <span class="tag is-info is-light ml-2">
-                        <i class="fas fa-ghost mr-1"></i> Absent.e depuis {{ stats.consecutive_missed }} tournois
-                    </span>
-                    {% endif %}
+                    {% if stats.victoires >= 3 %}<span class="tag is-danger ml-2"><i class="fas fa-trophy"></i>&nbsp;{{ stats.victoires }} victoires</span>{% endif %}
+                    {% if stats.percentile_trueskill != '?' and stats.percentile_trueskill <= 20 %}<span class="tag is-warning ml-2"><i class="fas fa-star mr-1"></i> Top {{ stats.percentile_trueskill }}%</span>{% endif %}
+                    {% if stats.consecutive_missed > 10 %}<span class="tag is-info is-light ml-2"><i class="fas fa-ghost mr-1"></i> Absent.e depuis {{ stats.consecutive_missed }} tournois</span>{% endif %}
                 </h2>
             </div>
         </div>
@@ -213,59 +73,26 @@
                 <div class="column is-4">
                     <div class="card glass-card fade-in">
                         <div class="card-header">
-                            <p class="card-header-title is-centered">
-                                <i class="fas fa-chart-line"></i>  Statistiques Générales
-                            </p>
+                            <p class="card-header-title is-centered"><i class="fas fa-chart-line"></i>  Statistiques Générales</p>
                         </div>
                         <div class="card-content">
                             <div class="content">
                                 <div class="level is-mobile">
                                     <div class="level-item has-text-centered">
-                                        <div>
-                                            <p class="heading">TrueSkill</p>
-                                            <p class="title">{{ stats.score_trueskill|round(3) }}</p>
-                                        </div>
+                                        <div><p class="heading">TrueSkill</p><p class="title">{{ stats.score_trueskill|round(3) }}</p></div>
                                     </div>
                                     <div class="level-item has-text-centered">
-                                        <div>
-                                            <p class="heading">Top</p>
-                                            <p class="title">
-                                                {% if stats.percentile_trueskill != '?' %}
-                                                    {{ stats.percentile_trueskill }}%
-                                                {% else %}
-                                                    <span class="has-text-grey is-size-5">N/A</span>
-                                                {% endif %}
-                                            </p>
-                                        </div>
+                                        <div><p class="heading">Top</p><p class="title">{% if stats.percentile_trueskill != '?' %}{{ stats.percentile_trueskill }}%{% else %}<span class="has-text-grey is-size-5">N/A</span>{% endif %}</p></div>
                                     </div>
                                 </div>
-                              
                                 <table class="table is-fullwidth">
                                     <tbody>
-                                        <tr>
-                                            <td><i class="fas fa-trophy"></i> Tournois</td>
-                                            <td class="has-text-right">{{ stats.nombre_tournois }}</td>
-                                        </tr>
-                                        <tr>
-                                            <td><i class="fas fa-medal"></i> Victoires</td>
-                                            <td class="has-text-right">{{ stats.victoires }}</td>
-                                        </tr>
-                                        <tr>
-                                            <td><i class="fas fa-percentage"></i> Ratio V/T</td>
-                                            <td class="has-text-right">{{ (stats.victoires / stats.nombre_tournois * 100)|round(1) if stats.nombre_tournois > 0 else 0 }}%</td>
-                                        </tr>
-                                        <tr>
-                                            <td><i class="fas fa-calculator"></i> Score moyen</td>
-                                            <td class="has-text-right">{{ stats.score_moyen|round(3) }}</td>
-                                        </tr>
-                                        <tr>
-                                            <td><i class="fas fa-list-ol"></i> Pos. Moyenne</td>
-                                            <td class="has-text-right">{{ stats.position_moyenne }}</td>
-                                        </tr>
-                                        <tr>
-                                            <td><i class="fas fa-arrow-up"></i> Meilleur score</td>
-                                            <td class="has-text-right">{{ stats.meilleur_score }}</td>
-                                        </tr>
+                                        <tr><td><i class="fas fa-trophy"></i> Tournois</td><td class="has-text-right">{{ stats.nombre_tournois }}</td></tr>
+                                        <tr><td><i class="fas fa-medal"></i> Victoires</td><td class="has-text-right">{{ stats.victoires }}</td></tr>
+                                        <tr><td><i class="fas fa-percentage"></i> Ratio V/T</td><td class="has-text-right">{{ (stats.victoires / stats.nombre_tournois * 100)|round(1) if stats.nombre_tournois > 0 else 0 }}%</td></tr>
+                                        <tr><td><i class="fas fa-calculator"></i> Score moyen</td><td class="has-text-right">{{ stats.score_moyen|round(3) }}</td></tr>
+                                        <tr><td><i class="fas fa-list-ol"></i> Pos. Moyenne</td><td class="has-text-right">{{ stats.position_moyenne }}</td></tr>
+                                        <tr><td><i class="fas fa-arrow-up"></i> Meilleur score</td><td class="has-text-right">{{ stats.meilleur_score }}</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -280,7 +107,6 @@
                                 {% for award in awards %}
                                     {% if 'moai' in award.emoji %}
                                         {% set ns_trophies.found = true %}
-                                        
                                         {% set aura_class = '' %}
                                         {% if 'super' in award.emoji %}
                                             {% if 'gold' in award.emoji %}{% set aura_class = 'super-gold' %}
@@ -288,25 +114,15 @@
                                             {% elif 'bronze' in award.emoji %}{% set aura_class = 'super-bronze' %}
                                             {% endif %}
                                         {% endif %}
-
-                                        <div class="award-item" 
-                                             title="{{ award.description if award.description else award.nom }}"
-                                             onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
-                                            {% if award.emoji.endswith('.png') %}
-                                                <img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }}" alt="{{ award.nom }}">
-                                            {% else %}
-                                                <span class="award-text-large">{{ award.emoji }}</span>
-                                            {% endif %}
+                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
+                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }}" alt="{{ award.nom }}">{% else %}<span class="award-text-large">{{ award.emoji }}</span>{% endif %}
                                             <span class="award-count">x{{ award.count }}</span>
                                         </div>
                                     {% endif %}
                                 {% endfor %}
                             </div>
                         {% endif %}
-                        
-                        {% if not ns_trophies.found %}
-                            <p class="has-text-grey is-italic is-size-7">Aucun trophée de saison.</p>
-                        {% endif %}
+                        {% if not ns_trophies.found %}<p class="has-text-grey is-italic is-size-7">Aucun trophée de saison.</p>{% endif %}
                     </div>
 
                     <div class="box glass-card has-text-centered mt-4 fade-in">
@@ -317,66 +133,30 @@
                                 {% for award in awards %}
                                     {% if 'moai' not in award.emoji %}
                                         {% set ns_awards.found = true %}
-                                        <div class="award-item" 
-                                             title="{{ award.description if award.description else award.nom }}"
-                                             onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
-                                            {% if award.emoji.endswith('.png') %}
-                                                <img src="/static/img/{{ award.emoji }}" class="award-icon-large" alt="{{ award.nom }}">
-                                            {% else %}
-                                                <span class="award-text-large">{{ award.emoji }}</span>
-                                            {% endif %}
+                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
+                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large" alt="{{ award.nom }}">{% else %}<span class="award-text-large">{{ award.emoji }}</span>{% endif %}
                                             <span class="award-count">x{{ award.count }}</span>
                                         </div>
                                     {% endif %}
                                 {% endfor %}
                             </div>
                         {% endif %}
-
-                        {% if not ns_awards.found %}
-                            <p class="has-text-grey is-italic is-size-7">Aucun award spécial.</p>
-                        {% endif %}
+                        {% if not ns_awards.found %}<p class="has-text-grey is-italic is-size-7">Aucun award spécial.</p>{% endif %}
                     </div>
 
                     <div class="card glass-card mt-4 fade-in">
-                        <div class="card-header">
-                            <p class="card-header-title is-centered">
-                                <i class="fas fa-tachometer-alt"></i> Indicateurs de Performance
-                            </p>
-                        </div>
+                        <div class="card-header"><p class="card-header-title is-centered"><i class="fas fa-tachometer-alt"></i> Indicateurs de Performance</p></div>
                         <div class="card-content">
                             <div class="content">
                                 <div class="field">
                                     <label class="label">Constance (écart-type)</label>
-                                    <progress class="progress is-primary" 
-                                              value="{{ 100 - (stats.ecart_type_scores / stats.score_moyen * 100)|round if stats.score_moyen > 0 and stats.ecart_type_scores else 0 }}" 
-                                              max="100">
-                                        {{ 100 - (stats.ecart_type_scores / stats.score_moyen * 100)|round if stats.score_moyen > 0 and stats.ecart_type_scores else 0 }}%
-                                    </progress>
-                                    <p class="help">
-                                        {% if stats.ecart_type_scores and stats.score_moyen %}
-                                            Écart-type de {{ stats.ecart_type_scores|round(3) }} ({{ (stats.ecart_type_scores / stats.score_moyen * 100)|round }}% de la moyenne)
-                                        {% else %}
-                                            Données insuffisantes
-                                        {% endif %}
-                                    </p>
+                                    <progress class="progress is-primary" value="{{ 100 - (stats.ecart_type_scores / stats.score_moyen * 100)|round if stats.score_moyen > 0 and stats.ecart_type_scores else 0 }}" max="100"></progress>
+                                    <p class="help">{% if stats.ecart_type_scores and stats.score_moyen %}Écart-type de {{ stats.ecart_type_scores|round(3) }} ({{ (stats.ecart_type_scores / stats.score_moyen * 100)|round }}% de la moyenne){% else %}Données insuffisantes{% endif %}</p>
                                 </div>
-                              
                                 <div class="field">
                                     <label class="label">Progression récente</label>
-                                    <progress class="progress {{ 'is-success' if stats.progression_recente > 0 else 'is-danger' if stats.progression_recente < 0 else 'is-light' }}" 
-                                              value="{{ (50 + stats.progression_recente * 5)|round if stats.progression_recente else 50 }}" 
-                                              max="100">
-                                        {{ (50 + stats.progression_recente * 5)|round if stats.progression_recente else 50 }}%
-                                    </progress>
-                                    <p class="help">
-                                        {% if stats.progression_recente > 0 %}
-                                            En amélioration (+{{ stats.progression_recente|round(3) }} points)
-                                        {% elif stats.progression_recente < 0 %}
-                                            En déclin ({{ stats.progression_recente|round(3) }} points)
-                                        {% else %}
-                                            Stable
-                                        {% endif %}
-                                    </p>
+                                    <progress class="progress {{ 'is-success' if stats.progression_recente > 0 else 'is-danger' if stats.progression_recente < 0 else 'is-light' }}" value="{{ (50 + stats.progression_recente * 5)|round if stats.progression_recente else 50 }}" max="100"></progress>
+                                    <p class="help">{% if stats.progression_recente > 0 %}En amélioration (+{{ stats.progression_recente|round(3) }} points){% elif stats.progression_recente < 0 %}En déclin ({{ stats.progression_recente|round(3) }} points){% else %}Stable{% endif %}</p>
                                 </div>
                             </div>
                         </div>
@@ -385,16 +165,10 @@
               
                 <div class="column is-8">
                     <div class="card glass-card fade-in">
-                        <div class="card-header">
-                            <p class="card-header-title is-centered">
-                                <i class="fas fa-chart-line"></i> Évolution TrueSkill
-                            </p>
-                        </div>
+                        <div class="card-header"><p class="card-header-title is-centered"><i class="fas fa-chart-line"></i> Évolution TrueSkill</p></div>
                         <div class="card-content">
                             <div class="content">
-                                <div class="chart-container">
-                                    <canvas id="scoreChart"></canvas>
-                                </div>
+                                <div class="chart-container"><canvas id="scoreChart"></canvas></div>
                             </div>
                         </div>
                     </div>
@@ -405,9 +179,7 @@
                 <div class="column is-12">
                     <div class="card glass-card fade-in">
                         <div class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-history"></i> Historique des tournois
-                            </p>
+                            <p class="card-header-title"><i class="fas fa-history"></i> Historique des tournois</p>
                         </div>
                         <div class="card-content">
                             <div class="content mobile-card-table">
@@ -416,6 +188,7 @@
                                         <tr>
                                             <th>Date</th>
                                             <th>Score</th>
+                                            <th>Ligue</th>
                                             <th>Position</th>
                                             <th class="has-text-centered">Détails</th>
                                         </tr>
@@ -427,39 +200,39 @@
                                            
                                             {% if tournoi.type == 'absence' %}
                                                 <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
+                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
                                                 <td style="vertical-align: middle;" data-label="Position">
                                                     <span class="tag is-danger is-light">Absence prolongée (+{{ tournoi.valeur }} sigma)</span>
                                                 </td>
-                                                <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
-                                                    <span class="tag is-dark">N/A</span>
-                                                </td>
+                                                <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails"><span class="tag is-dark">N/A</span></td>
                                             {% elif tournoi.type == 'reset' %}
                                                 <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
+                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
                                                 <td style="vertical-align: middle;" data-label="Position">
                                                     <span class="tag is-primary is-light" style="background-color: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe;">
                                                         <i class="fas fa-magic mr-1"></i> Reset Global (+{{ tournoi.valeur }})
                                                     </span>
                                                 </td>
-                                                <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
-                                                    <span class="tag is-dark">N/A</span>
-                                                </td>
+                                                <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails"><span class="tag is-dark">N/A</span></td>
                                             {% else %}
                                                 <td style="vertical-align: middle;" data-label="Score">{{ tournoi.score }}</td>
-                                                <td style="vertical-align: middle;" data-label="Position">
-                                                    {% if tournoi.position == 1 %}
-                                                        <span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
-                                                    {% elif tournoi.position == 2 %}
-                                                        <span class="tag is-light"><i class="fas fa-medal"></i> 2ème</span>
-                                                    {% elif tournoi.position == 3 %}
-                                                        <span class="tag is-danger"><i class="fas fa-medal"></i> 3ème</span>
+                                                
+                                                <td style="vertical-align: middle;" data-label="Ligue">
+                                                    {% if tournoi.ligue != 'N/A' %}
+                                                        <span class="tag is-info is-light is-small">{{ tournoi.ligue }}</span>
                                                     {% else %}
-                                                        <span class="tag is-info">{{ tournoi.position }}ème</span>
+                                                        <span class="has-text-grey-light is-size-7">N/A</span>
                                                     {% endif %}
                                                 </td>
+
+                                                <td style="vertical-align: middle;" data-label="Position">
+                                                    {% if tournoi.position == 1 %}<span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
+                                                    {% elif tournoi.position == 2 %}<span class="tag is-light"><i class="fas fa-medal"></i> 2ème</span>
+                                                    {% elif tournoi.position == 3 %}<span class="tag is-danger"><i class="fas fa-medal"></i> 3ème</span>
+                                                    {% else %}<span class="tag is-info">{{ tournoi.position }}ème</span>{% endif %}
+                                                </td>
                                                 <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
-                                                    <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined">
-                                                        <span class="icon"><i class="fas fa-eye"></i></span>
-                                                    </a>
+                                                    <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined"><span class="icon"><i class="fas fa-eye"></i></span></a>
                                                 </td>
                                             {% endif %}
                                         </tr>
@@ -481,131 +254,66 @@
                 <button class="delete is-large is-pulled-right" onclick="closeInfoModal()"></button>
                 <h3 class="title is-3 has-text-warning mb-4" id="infoModalTitle">Titre</h3>
                 <p class="content has-text-light is-size-5" id="infoModalContent">Description...</p>
-                <div class="has-text-centered mt-5">
-                    <button class="button is-primary is-outlined is-rounded" onclick="closeInfoModal()">Compris</button>
-                </div>
+                <div class="has-text-centered mt-5"><button class="button is-primary is-outlined is-rounded" onclick="closeInfoModal()">Compris</button></div>
             </div>
         </div>
     </div>
 
     {% include 'footer.html' %}
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
-            fadeElems.forEach(elem => {
-                requestAnimationFrame(() => {
-                    elem.classList.add('visible');
-                });
-            });
+            fadeElems.forEach(elem => { requestAnimationFrame(() => { elem.classList.add('visible'); }); });
         });
-
         function showAwardInfo(title, description) {
             document.getElementById('infoModalTitle').innerText = title;
             document.getElementById('infoModalContent').innerHTML = description;
             document.getElementById('infoModal').classList.add('is-active');
         }
-
-        function closeInfoModal() {
-            document.getElementById('infoModal').classList.remove('is-active');
-        }
+        function closeInfoModal() { document.getElementById('infoModal').classList.remove('is-active'); }
 
         document.addEventListener('DOMContentLoaded', function() {
             var ctx = document.getElementById('scoreChart').getContext('2d');
-            
             var rawData = [
                 {% for tournoi in historique %}
-                    {
-                        date: "{{ tournoi.date }}",
-                        trueskill: {{ tournoi.score_trueskill if tournoi.score_trueskill is not none else 'null' }},
-                        type: "{{ tournoi.type }}",
-                        valeur: "{{ tournoi.valeur if tournoi.valeur else '' }}"
-                    }{{ "," if not loop.last }}
+                    { date: "{{ tournoi.date }}", trueskill: {{ tournoi.score_trueskill if tournoi.score_trueskill is not none else 'null' }}, type: "{{ tournoi.type }}", valeur: "{{ tournoi.valeur if tournoi.valeur else '' }}" }{{ "," if not loop.last }}
                 {% endfor %}
             ];
-                
             var chronoData = rawData.slice().reverse();
-            
-            for (let i = 0; i < chronoData.length; i++) {
-                if (chronoData[i].trueskill === null) {
-                    chronoData[i].trueskill = 0; 
-                }
-            }
+            for (let i = 0; i < chronoData.length; i++) { if (chronoData[i].trueskill === null) chronoData[i].trueskill = 0; }
             
             var labels = chronoData.map(t => t.date);
             var scores = chronoData.map(t => t.trueskill);
-            
-            var pointColors = chronoData.map(d => {
-                if (d.type === 'absence') return '#ef4444'; 
-                if (d.type === 'reset') return '#8b5cf6';   
-                return 'rgba(54, 162, 235, 1)';             
-            });
-            
-            var pointRadius = chronoData.map(d => {
-                if (d.type === 'reset') return 5; 
-                if (d.type === 'absence') return 5;
-                return 3;
-            });
-            
-            var pointStyles = chronoData.map(d => {
-                if (d.type === 'reset') return 'circle'; 
-                if (d.type === 'absence') return 'rectRot';
-                return 'circle';
-            });
+            var pointColors = chronoData.map(d => { if (d.type === 'absence') return '#ef4444'; if (d.type === 'reset') return '#8b5cf6'; return 'rgba(54, 162, 235, 1)'; });
+            var pointRadius = chronoData.map(d => { if (d.type === 'reset' || d.type === 'absence') return 5; return 3; });
+            var pointStyles = chronoData.map(d => { if (d.type === 'reset' || d.type === 'absence') return 'rectRot'; return 'circle'; });
         
             var scoreChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Évolution TrueSkill',
-                        data: scores,
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                        pointBackgroundColor: pointColors,
-                        pointBorderColor: pointColors,
-                        pointRadius: pointRadius,
-                        pointStyle: pointStyles,
-                        fill: true,
-                        tension: 0.3
+                        label: 'Évolution TrueSkill', data: scores, borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        pointBackgroundColor: pointColors, pointBorderColor: pointColors, pointRadius: pointRadius, pointStyle: pointStyles, fill: true, tension: 0.3
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'nearest',
-                        intersect: true
-                    },
-                    scales: {
-                        y: { 
-                            beginAtZero: false,
-                            title: { display: true, text: 'Score TrueSkill' }
-                        }
-                    },
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'nearest', intersect: true },
+                    scales: { y: { beginAtZero: false, title: { display: true, text: 'Score TrueSkill' } } },
                     plugins: {
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    var idx = context.dataIndex;
-                                    var item = chronoData[idx];
-                                    var tsVal = parseFloat(item.trueskill).toFixed(3);
-                                    
-                                    if (item.type === 'reset') {
-                                        return 'TrueSkill : ' + tsVal + ' (Reset Global)';
-                                    } else if (item.type === 'absence') {
-                                        return 'TrueSkill : ' + tsVal + ' (Pénalité : +' + item.valeur + ' sigma)';
-                                    }
+                                    var idx = context.dataIndex; var item = chronoData[idx]; var tsVal = parseFloat(item.trueskill).toFixed(3);
+                                    if (item.type === 'reset') return 'TrueSkill : ' + tsVal + ' (Reset Global)';
+                                    else if (item.type === 'absence') return 'TrueSkill : ' + tsVal + ' (Pénalité : +' + item.valeur + ' sigma)';
                                     return 'TrueSkill : ' + tsVal;
                                 },
                                 afterLabel: function(context) {
-                                    var idx = context.dataIndex;
-                                    var item = chronoData[idx];
-                                    
-                                    if (item.type === 'reset') {
-                                        return 'Impact : +' + item.valeur + ' sigma';
-                                    }
+                                    var idx = context.dataIndex; var item = chronoData[idx];
+                                    if (item.type === 'reset') return 'Impact : +' + item.valeur + ' sigma';
                                     return null;
                                 }
                             }
@@ -613,11 +321,8 @@
                     },
                     onClick: (e, activeEls) => {
                         if (activeEls.length > 0) {
-                            var idx = activeEls[0].index;
-                            var item = chronoData[idx];
-                            if (item.type === 'reset') {
-                                alert("ℹ️ Information Reset :\n\nÀ cette date, un reset global de +" + item.valeur + " sigma a été effectué.\n\nVotre TrueSkill est passé mathématiquement à " + parseFloat(item.trueskill).toFixed(3) + " à ce moment précis.");
-                            }
+                            var idx = activeEls[0].index; var item = chronoData[idx];
+                            if (item.type === 'reset') alert("ℹ️ Information Reset :\n\nÀ cette date, un reset global de +" + item.valeur + " sigma a été effectué.\n\nVotre TrueSkill est passé mathématiquement à " + parseFloat(item.trueskill).toFixed(3) + " à ce moment précis.");
                         }
                     }
                 }

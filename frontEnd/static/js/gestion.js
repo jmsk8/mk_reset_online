@@ -15,7 +15,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
         if (response.status === 401 || response.status === 403) {
             console.warn("⛔ Session expirée ou non autorisée");
             alert("Votre session a expiré. Redirection vers la connexion...");
-            window.location.href = '/admin_login.html'; 
+            window.location.href = '/admin'; 
             return { error: "Non autorisé" };
         }
 

@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS public.configuration CASCADE;
 DROP TABLE IF EXISTS public.saisons CASCADE;
 DROP TABLE IF EXISTS public.types_awards CASCADE;
 DROP TABLE IF EXISTS public.api_tokens CASCADE;
+DROP TABLE IF EXISTS public.ligues CASCADE;
 
 -- CONFIGURATION
 CREATE TABLE public.configuration (
@@ -25,8 +26,18 @@ INSERT INTO public.configuration (key, value) VALUES
 ('tau', '0.083'),
 ('ghost_enabled', 'false'),
 ('ghost_penalty', '0.1'),
-('unranked_threshold', '10');
+('unranked_threshold', '10'),
+('sigma_threshold', '4.0'),
+('league_mode_enabled', 'false');
 
+-- LIGUES (Déplacé avant pour les références)
+CREATE TABLE public.ligues (
+    id SERIAL PRIMARY KEY,
+    nom VARCHAR(100) NOT NULL,
+    niveau INTEGER NOT NULL,
+    couleur VARCHAR(20) DEFAULT '#FFFFFF'
+);
+ALTER TABLE public.ligues OWNER TO mk_reset;
 
 -- JOUEURS
 CREATE TABLE public.joueurs (
@@ -38,7 +49,8 @@ CREATE TABLE public.joueurs (
     tier character(1) DEFAULT 'U'::bpchar,
     consecutive_missed integer DEFAULT 0,
     is_ranked boolean DEFAULT true,
-    color character varying(7) DEFAULT '#FFFFFF'
+    color character varying(7) DEFAULT '#FFFFFF',
+    ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL
 );
 ALTER TABLE public.joueurs OWNER TO mk_reset;
 
@@ -47,9 +59,13 @@ ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
 ALTER TABLE ONLY public.joueurs ALTER COLUMN id SET DEFAULT nextval('public.joueurs_id_seq'::regclass);
 
 -- TOURNOIS
+-- Mise à jour : Ajout des colonnes pour l'archivage (snapshot)
 CREATE TABLE public.tournois (
     id integer NOT NULL PRIMARY KEY, 
-    date date NOT NULL
+    date date NOT NULL,
+    ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
+    ligue_nom character varying(100),    -- Archive du nom au moment du tournoi
+    ligue_couleur character varying(20)  -- Archive de la couleur
 );
 ALTER TABLE public.tournois OWNER TO mk_reset;
 
@@ -142,45 +158,16 @@ CREATE TABLE public.awards_obtenus (
 ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
 
 INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
--- Récompenses de Saison (Moai)
 ('gold_moai', '1er', 'gold_moai.png', 'Vainqueur de Saison'),
 ('silver_moai', '2ème', 'silver_moai.png', '2ème de Saison'),
 ('bronze_moai', '3ème', 'bronze_moai.png', '3ème de Saison'),
-
--- Récompenses Annuelles (Super Moai)
 ('super_gold_moai', '1er', 'super_gold_moai.png', 'Vainqueur de l''année'),
 ('super_silver_moai', '2ème', 'super_silver_moai.png', '2ème de l''année'),
 ('super_bronze_moai', '3ème', 'super_bronze_moai.png', '3ème de l''année'),
-
--- Awards Normaux
 ('ez', 'EZ', '🥇', 'Le plus de 1ères places'),
 ('pas_loin', 'C''était pas loin', '🥈', 'Le plus de 2ème places'),
 ('stonks', 'Stonks', 'stonks.png', 'Plus forte progression TrueSkill'),
 ('not_stonks', 'Not Stonks', 'not_stonks.png', 'Plus forte perte TrueSkill'),
 ('stakhanov', 'Stakhanoviste', 'TposingFunky.png', 'Le plus de points marqués au total'),
 ('chillguy', 'Chill Guy', 'chillguy.png', 'Le score TrueSkill le plus stable'),
-
--- Logic mapping (caché, sert pour la victoire)
 ('Indice de Performance', 'Indice de Performance', '🎯', 'Calcul IP');
-
--- Sigma min pour le rank par defaut--
-INSERT INTO public.configuration (key, value) VALUES ('sigma_threshold', '4.0') ON CONFLICT (key) DO NOTHING;
-
--- 1. Configuration : Ajout du flag pour activer/désactiver le mode ligue
-INSERT INTO public.configuration (key, value) 
-VALUES ('league_mode_enabled', 'false') 
-ON CONFLICT (key) DO NOTHING;
-
--- 2. Création de la table Ligues
-CREATE TABLE public.ligues (
-    id SERIAL PRIMARY KEY,
-    nom VARCHAR(100) NOT NULL,
-    niveau INTEGER NOT NULL, -- 1 pour Ligue 1, 2 pour Ligue 2, etc.
-    couleur VARCHAR(20) DEFAULT '#FFFFFF'
-);
-ALTER TABLE public.ligues OWNER TO mk_reset;
-
--- 3. Mise à jour de la table Joueurs pour ajouter la référence (Clé étrangère)
--- On utilise ON DELETE SET NULL pour que si on supprime une ligue, le joueur redevienne "Sans ligue"
-ALTER TABLE public.joueurs 
-ADD COLUMN ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL;
