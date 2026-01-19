@@ -171,7 +171,6 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    // Gestion du menu Burger mobile
     const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
     if ($navbarBurgers.length > 0) {
       $navbarBurgers.forEach( el => {
@@ -184,7 +183,6 @@
       });
     }
 
-    // Gestion de l'expiration de session
     const remainingSeconds = {{ session_lifetime|default(1800)|round|int }};
     const warningBuffer = 60;
     

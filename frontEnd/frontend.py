@@ -15,10 +15,8 @@ app = Flask(__name__)
 
 try:
     app.secret_key = os.environ['SECRET_KEY']
-    # Récupérer BACKEND_URL avec fallback intelligent
     BACKEND_URL = os.environ.get('BACKEND_URL')
     
-    # Si pas défini ou si contient 'backend' sans être en Docker
     if not BACKEND_URL or ('backend' in BACKEND_URL and not os.path.exists('/.dockerenv')):
         logger.warning("⚠️ BACKEND_URL non défini ou invalide, utilisation de localhost:8080")
         BACKEND_URL = 'http://localhost:8080'
@@ -35,11 +33,10 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 csrf = CSRFProtect(app)
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 @app.context_processor
 def inject_version():
-    """Injecte la version dans tous les templates HTML"""
     return dict(app_version=APP_VERSION)
 
 # MIDDLEWARES & CONTEXT PROCESSORS
@@ -172,11 +169,9 @@ def index():
 
 @app.route('/recap/<season_slug>')
 def recap_season(season_slug):
-    # Récupérer les paramètres de query string
     ligue_id = request.args.get('ligue_id')
     view_mode = request.args.get('view')
 
-    # Construire l'URL avec les paramètres
     url = f'/stats/recap/{season_slug}'
     params = []
     if ligue_id:
@@ -188,7 +183,6 @@ def recap_season(season_slug):
     if status != 200:
         return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None, view_mode=None, new_leagues_data=None)
 
-    # Si on demande la vue "nouvelles ligues"
     new_leagues_data = None
     if view_mode == 'new-leagues' and data.get('is_league_recap'):
         nl_data, nl_status = backend_request('GET', f'/stats/recap/{season_slug}/new-leagues')
@@ -230,7 +224,6 @@ def classement():
         joueurs = []
         flash('Erreur lors du chargement du classement', 'warning')
 
-    # Récupérer les ligues pour les onglets
     ligues = []
     ligues_data, ligues_status = backend_request('GET', '/ligues')
     if ligues_status == 200 and isinstance(ligues_data, list):
@@ -526,8 +519,6 @@ def proxy_revert_global_reset():
     data, status = backend_request('POST', '/api/admin/revert-global-reset', headers=headers)
     return jsonify(data), status
 
-# Dans frontend.py
-
 @app.route('/api/ligues', methods=['GET'])
 def proxy_get_ligues_public():
     data, status = backend_request('GET', '/ligues')
@@ -552,15 +543,12 @@ def proxy_draft_simulation():
     data, status = backend_request('GET', '/admin/ligues/draft-simulation', headers=headers)
     return jsonify(data), status
 
-# Dans frontend.py
-
 @app.route('/admin/ligues')
 def admin_ligues_page():
     if 'admin_token' not in session:
         flash('Accès interdit.', 'danger')
         return redirect(url_for('admin_login'))
     
-    # Vérification de sécurité standard
     headers = {'X-Admin-Token': session['admin_token']}
     _, status = backend_request('GET', '/admin/check-token', headers=headers)
     if status in [401, 403]:

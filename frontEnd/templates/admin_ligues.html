@@ -248,8 +248,6 @@
             loadConfigAndUI();
         });
 
-        // --- 1. CONFIGURATION & UI ---
-
         async function loadConfigAndUI() {
             const res = await apiCall('/admin/config', 'GET');
             if (res && !res.error) {
@@ -332,8 +330,6 @@
             }
         }
 
-        // --- 2. AFFICHAGE DES LIGUES (Lecture seule) ---
-
         async function loadCurrentLeagues() {
             const res = await apiCall('/api/ligues', 'GET');
             const container = document.getElementById('currentLeaguesDisplay');
@@ -370,9 +366,6 @@
                     </div>`;
             });
         }
-
-        // --- 3. LOGIQUE DRAFT & MODIFICATION ---
-
         async function openDraftModal(forceReset = false) {
             
             if (forceReset) {

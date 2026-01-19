@@ -339,23 +339,16 @@ async function loadAwardTypes() {
         
         try {
             const types = await api('/admin/types-awards', 'GET');
-            
-            // --- MODIFICATION ICI : TRI PERSONNALISÉ ---
             types.sort((a, b) => {
-                // Si 'a' est Stakhanoviste, il passe devant (-1)
                 if (a.code === 'stakhanov' || a.nom === 'Stakhanoviste') return -1;
-                // Si 'b' est Stakhanoviste, il passe devant (1)
                 if (b.code === 'stakhanov' || b.nom === 'Stakhanoviste') return 1;
-                // Le reste ne change pas d'ordre
                 return 0;
             });
-            // -------------------------------------------
 
             container.innerHTML = '';
             hiddenSelect.innerHTML = '<option value="" disabled selected>Choisir...</option>';
             customOptionsContainer.innerHTML = ''; 
 
-            // 1. AJOUT MANUEL : INDICE DE PERFORMANCE (Toujours en #1)
             const perfOpt = document.createElement('option');
             perfOpt.value = "Indice de Performance";
             perfOpt.text = "Indice de Performance";
@@ -370,7 +363,6 @@ async function loadAwardTypes() {
             };
             customOptionsContainer.appendChild(perfDiv);
 
-            // 2. BOUCLE SUR LES AWARDS (Stakhanoviste arrivera en premier grâce au tri)
             types.forEach(type => {
                 if (type.nom === "Indice de Performance" || type.nom === "Indicateur de Performance") return;
 
@@ -381,7 +373,6 @@ async function loadAwardTypes() {
                     iconDisplay = `<span class="is-size-5 mr-2">${type.emoji}</span>`;
                 }
 
-                // Création des cases à cocher pour "Autres Awards actifs"
                 const div = document.createElement('div');
                 div.className = 'checkbox-card';
                 div.innerHTML = `
@@ -396,13 +387,11 @@ async function loadAwardTypes() {
                 `;
                 container.appendChild(div);
 
-                // Ajout dans le select caché
                 const option = document.createElement('option');
                 option.value = type.code;
                 option.text = type.nom;
                 hiddenSelect.appendChild(option);
 
-                // Ajout dans le menu déroulant personnalisé
                 const customOpt = document.createElement('div');
                 customOpt.className = 'custom-option';
                 customOpt.dataset.value = type.code;
@@ -448,13 +437,10 @@ async function loadAwardTypes() {
                 ? '<span class="tag is-warning is-light">Annuel</span>'
                 : '<span class="tag is-info is-light">Saison</span>';
 
-            // Badge de ligue selon le type
             let ligueBadge = '';
             if (s.is_league_recap) {
-                // Nouveau format: récap unifié de ligue
                 ligueBadge = '<span class="tag ml-1 is-warning"><i class="fas fa-layer-group mr-1"></i>Mode Ligue</span>';
             } else if (s.ligue_nom) {
-                // Ancien format: récap d'une ligue spécifique
                 const couleur = s.ligue_couleur || '#3b82f6';
                 ligueBadge = `<span class="tag ml-1" style="background-color: ${couleur}; color: white;">${s.ligue_nom}</span>`;
             }
@@ -537,7 +523,6 @@ async function loadAwardTypes() {
     let currentIsLeagueRecap = false;
 
     async function saveAwards(id, isLeagueRecap = false, ligueId = null, ligueNom = null) {
-        // Charger la config pour savoir si le mode ligue est actif
         const config = await api('/admin/config', 'GET');
         currentIsLeagueRecap = isLeagueRecap;
         if (config.error) {
@@ -549,8 +534,6 @@ async function loadAwardTypes() {
         interLeagueMovesCount = config.inter_league_moves || 0;
         currentPublishSaisonId = id;
         currentSaisonLigueId = ligueId;
-
-        // Mettre à jour la description selon le type de récap
         const descEl = document.getElementById('publishDescription');
         if (isLeagueRecap) {
             descEl.innerHTML = `Publication du récap <strong style="color: #f59e0b;">Mode Ligue</strong>.<br>
@@ -562,7 +545,6 @@ async function loadAwardTypes() {
             descEl.innerHTML = `Cela va calculer les statistiques, sauvegarder les awards et <strong>rendre la saison publique</strong>.`;
         }
 
-        // Afficher/masquer la section inter-ligue (pour les récaps de ligue)
         const section = document.getElementById('interLeagueMoveSection');
         if ((isLeagueRecap || ligueId) && leagueModeEnabled && interLeagueMovesCount > 0) {
             section.style.display = 'block';
@@ -571,7 +553,6 @@ async function loadAwardTypes() {
             section.style.display = 'none';
         }
 
-        // Ouvrir la modale
         document.getElementById('publishModal').classList.add('is-active');
     }
 
@@ -588,7 +569,6 @@ async function loadAwardTypes() {
         const saisonId = currentPublishSaisonId;
         const payload = {};
 
-        // Si c'est un récap de ligue (unifié ou ancien format) et qu'il y a des mouvements configurés
         if ((currentIsLeagueRecap || currentSaisonLigueId) && leagueModeEnabled && interLeagueMovesCount > 0) {
             const criterion = document.querySelector('input[name="moveCriterion"]:checked').value;
             payload.move_criterion = criterion;

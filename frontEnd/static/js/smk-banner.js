@@ -47,7 +47,7 @@ const GAME_CONFIG = {
         speedVariationMin: 0.80, 
         speedVariationMax: 1.20,
         
-        projectileSpeed: 600, 
+        projectileSpeed: 700, 
         
         returnLane: 20,
         shellVertical: 1.5
