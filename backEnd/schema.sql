@@ -132,7 +132,10 @@ CREATE TABLE public.saisons (
     is_active boolean DEFAULT false,
     config_awards jsonb DEFAULT '{}'::jsonb,
     victory_condition character varying(50),
-    is_yearly boolean DEFAULT false
+    is_yearly boolean DEFAULT false,
+    ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
+    ligue_nom character varying(100),
+    ligue_couleur character varying(20)
 );
 ALTER TABLE public.saisons OWNER TO mk_reset;
 

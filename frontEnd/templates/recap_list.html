@@ -145,11 +145,13 @@
                     {% for s in saisons if not s.is_yearly %}
                         <div class="column is-4 fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
                             <a href="/recap/{{ s.slug }}" style="text-decoration: none;">
-                                <div class="card season-card">
+                                <div class="card season-card" {% if s.ligue_couleur %}style="border-left: 4px solid {{ s.ligue_couleur }};"{% endif %}>
                                     <div class="card-content has-text-centered">
-                                        
-                                        <div class="season-icon has-text-info">
-                                            {% if 'Hiver' in s.nom %}
+
+                                        <div class="season-icon" {% if s.ligue_couleur %}style="color: {{ s.ligue_couleur }};"{% else %}class="has-text-info"{% endif %}>
+                                            {% if s.ligue_nom %}
+                                                <i class="fas fa-shield-alt"></i>
+                                            {% elif 'Hiver' in s.nom %}
                                                 <i class="fas fa-snowflake"></i>
                                             {% elif 'Été' in s.nom or 'Ete' in s.nom %}
                                                 <i class="fas fa-sun"></i>
@@ -163,7 +165,15 @@
                                         </div>
 
                                         <p class="title is-4 has-text-white mb-4">{{ s.nom }}</p>
-                                        
+
+                                        {% if s.ligue_nom %}
+                                        <div class="tags is-centered mb-3">
+                                            <span class="tag" style="background-color: {{ s.ligue_couleur or '#3b82f6' }}; color: white;">
+                                                <i class="fas fa-shield-alt mr-1"></i> {{ s.ligue_nom }}
+                                            </span>
+                                        </div>
+                                        {% endif %}
+
                                         <div class="tags is-centered">
                                             <span class="tag is-dark is-rounded border-light">
                                                 <i class="far fa-calendar mr-2"></i>
@@ -171,7 +181,7 @@
                                             </span>
                                         </div>
 
-                                        <button class="button is-small is-primary is-outlined is-rounded mt-5">
+                                        <button class="button is-small is-outlined is-rounded mt-5" {% if s.ligue_couleur %}style="border-color: {{ s.ligue_couleur }}; color: {{ s.ligue_couleur }};"{% else %}class="is-primary"{% endif %}>
                                             <span>Voir le classement</span>
                                             <span class="icon is-small">
                                                 <i class="fas fa-chevron-right"></i>

@@ -289,15 +289,30 @@ def _calculate_adjusted_total_points(match_history):
         total += valeur_ponderee
     return total
 
-def _aggregate_season_stats(d_debut, d_fin, recap_mode=None):
+def _aggregate_season_stats(d_debut, d_fin, recap_mode=None, specific_ligue_id=None):
     """
     Agrège les stats de saison.
     recap_mode: None = tous les tournois, 'league' = uniquement ligue, 'classic' = uniquement hors ligue
+    specific_ligue_id: si fourni avec recap_mode='league', filtre uniquement cette ligue
     """
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            if recap_mode == 'league':
-                # Uniquement les tournois avec une ligue_id
+            if recap_mode == 'league' and specific_ligue_id:
+                # Uniquement les tournois d'une ligue spécifique
+                query = """
+                    SELECT
+                        j.id, j.nom, p.score, p.position,
+                        p.new_score_trueskill, p.mu, p.sigma,
+                        t.date, p.tournoi_id, j.sigma, t.ligue_id
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    JOIN Joueurs j ON p.joueur_id = j.id
+                    WHERE t.date >= %s AND t.date <= %s AND t.ligue_id = %s
+                    ORDER BY t.date ASC, p.tournoi_id ASC
+                """
+                cur.execute(query, (d_debut, d_fin, specific_ligue_id))
+            elif recap_mode == 'league':
+                # Uniquement les tournois avec une ligue_id (toutes ligues)
                 query = """
                     SELECT
                         j.id, j.nom, p.score, p.position,
@@ -309,6 +324,7 @@ def _aggregate_season_stats(d_debut, d_fin, recap_mode=None):
                     WHERE t.date >= %s AND t.date <= %s AND t.ligue_id IS NOT NULL
                     ORDER BY t.date ASC, p.tournoi_id ASC
                 """
+                cur.execute(query, (d_debut, d_fin))
             elif recap_mode == 'classic':
                 # Uniquement les tournois sans ligue_id
                 query = """
@@ -322,6 +338,7 @@ def _aggregate_season_stats(d_debut, d_fin, recap_mode=None):
                     WHERE t.date >= %s AND t.date <= %s AND t.ligue_id IS NULL
                     ORDER BY t.date ASC, p.tournoi_id ASC
                 """
+                cur.execute(query, (d_debut, d_fin))
             else:
                 # Tous les tournois
                 query = """
@@ -335,7 +352,7 @@ def _aggregate_season_stats(d_debut, d_fin, recap_mode=None):
                     WHERE t.date >= %s AND t.date <= %s
                     ORDER BY t.date ASC, p.tournoi_id ASC
                 """
-            cur.execute(query, (d_debut, d_fin))
+                cur.execute(query, (d_debut, d_fin))
             rows = cur.fetchall()
 
         tournoi_meta = {}
@@ -684,16 +701,19 @@ def get_public_saisons():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT nom, slug, date_debut, date_fin FROM saisons WHERE is_active = true ORDER BY date_fin DESC")
+                cur.execute("""
+                    SELECT nom, slug, date_debut, date_fin, is_yearly, ligue_id, ligue_nom, ligue_couleur
+                    FROM saisons WHERE is_active = true
+                    ORDER BY date_fin DESC, ligue_id ASC NULLS FIRST
+                """)
                 saisons = []
                 for r in cur.fetchall():
-                    nom, slug, d_debut, d_fin = r
-                    duree = (d_fin - d_debut).days
-                    is_yearly = duree > 300 
+                    nom, slug, d_debut, d_fin, is_yearly, ligue_id, ligue_nom, ligue_couleur = r
                     saisons.append({
                         "nom": nom, "slug": slug,
                         "date_debut": str(d_debut), "date_fin": str(d_fin),
-                        "is_yearly": is_yearly
+                        "is_yearly": is_yearly,
+                        "ligue_id": ligue_id, "ligue_nom": ligue_nom, "ligue_couleur": ligue_couleur
                     })
         return jsonify(saisons)
     except Exception:
@@ -1670,34 +1690,109 @@ def admin_saisons():
     if request.method == 'GET':
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, nom, date_debut, date_fin, slug, config_awards, is_active, victory_condition, is_yearly FROM saisons ORDER BY date_fin DESC")
+                cur.execute("""
+                    SELECT id, nom, date_debut, date_fin, slug, config_awards, is_active,
+                           victory_condition, is_yearly, ligue_id, ligue_nom, ligue_couleur
+                    FROM saisons ORDER BY date_fin DESC, ligue_id ASC NULLS FIRST
+                """)
                 saisons = []
                 for r in cur.fetchall():
                     saisons.append({
                         "id": r[0], "nom": r[1], "date_debut": str(r[2]), "date_fin": str(r[3]),
                         "slug": r[4], "config": r[5] if r[5] else {}, "is_active": r[6],
-                        "victory_condition": r[7], "is_yearly": r[8]
+                        "victory_condition": r[7], "is_yearly": r[8],
+                        "ligue_id": r[9], "ligue_nom": r[10], "ligue_couleur": r[11]
                     })
         return jsonify(saisons)
-    
+
     if request.method == 'POST':
         data = request.get_json()
         nom, d_debut, d_fin = data.get('nom'), data.get('date_debut'), data.get('date_fin')
         victory_cond = data.get('victory_condition')
         is_yearly = bool(data.get('is_yearly', False))
-        slug = slugify(nom)
+        recap_mode = data.get('recap_mode', 'classic')
         config_json = json.dumps({"active_awards": data.get('active_awards', [])})
 
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        """INSERT INTO saisons (nom, slug, date_debut, date_fin, config_awards, is_active, victory_condition, is_yearly) 
-                           VALUES (%s, %s, %s, %s, %s, false, %s, %s) RETURNING id""",
-                        (nom, slug, d_debut, d_fin, config_json, victory_cond, is_yearly)
-                    )
-                conn.commit()
-            return jsonify({"status": "success"})
+                    if recap_mode == 'league':
+                        # Récupérer les ligues existantes
+                        cur.execute("SELECT id, nom, couleur FROM Ligues ORDER BY niveau ASC")
+                        ligues = cur.fetchall()
+
+                        if not ligues:
+                            return jsonify({"error": "Aucune ligue configurée. Créez d'abord des ligues."}), 400
+
+                        # Vérifier qu'il y a des tournois en mode ligue pour cette période
+                        cur.execute("""
+                            SELECT COUNT(*) FROM Tournois
+                            WHERE date >= %s AND date <= %s AND ligue_id IS NOT NULL
+                        """, (d_debut, d_fin))
+                        league_count = cur.fetchone()[0]
+
+                        if league_count == 0:
+                            return jsonify({"error": "Aucun tournoi en mode ligue pendant cette période."}), 400
+
+                        # Créer un récap par ligue
+                        created_count = 0
+                        for ligue_id, ligue_nom, ligue_couleur in ligues:
+                            # Vérifier qu'il y a des tournois pour cette ligue spécifique
+                            cur.execute("""
+                                SELECT COUNT(*) FROM Tournois
+                                WHERE date >= %s AND date <= %s AND ligue_id = %s
+                            """, (d_debut, d_fin, ligue_id))
+                            if cur.fetchone()[0] == 0:
+                                continue  # Pas de tournois pour cette ligue, on skip
+
+                            saison_nom = f"{nom} - {ligue_nom}"
+                            slug = slugify(saison_nom)
+
+                            # Assurer l'unicité du slug
+                            base_slug = slug
+                            counter = 1
+                            while True:
+                                cur.execute("SELECT id FROM saisons WHERE slug = %s", (slug,))
+                                if not cur.fetchone():
+                                    break
+                                slug = f"{base_slug}-{counter}"
+                                counter += 1
+
+                            cur.execute(
+                                """INSERT INTO saisons (nom, slug, date_debut, date_fin, config_awards, is_active,
+                                   victory_condition, is_yearly, ligue_id, ligue_nom, ligue_couleur)
+                                   VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s)""",
+                                (saison_nom, slug, d_debut, d_fin, config_json, victory_cond, is_yearly,
+                                 ligue_id, ligue_nom, ligue_couleur)
+                            )
+                            created_count += 1
+
+                        conn.commit()
+                        return jsonify({
+                            "status": "success",
+                            "message": f"{created_count} récap(s) de ligue créé(s) en brouillon."
+                        })
+                    else:
+                        # Mode classique : un seul récap
+                        slug = slugify(nom)
+
+                        # Assurer l'unicité du slug
+                        base_slug = slug
+                        counter = 1
+                        while True:
+                            cur.execute("SELECT id FROM saisons WHERE slug = %s", (slug,))
+                            if not cur.fetchone():
+                                break
+                            slug = f"{base_slug}-{counter}"
+                            counter += 1
+
+                        cur.execute(
+                            """INSERT INTO saisons (nom, slug, date_debut, date_fin, config_awards, is_active, victory_condition, is_yearly)
+                               VALUES (%s, %s, %s, %s, %s, false, %s, %s) RETURNING id""",
+                            (nom, slug, d_debut, d_fin, config_json, victory_cond, is_yearly)
+                        )
+                        conn.commit()
+                        return jsonify({"status": "success"})
         except Exception as e:
             return jsonify({"error": str(e)}), 400
 
@@ -1751,26 +1846,31 @@ def count_tournois_by_mode(id):
 def save_season_awards(id):
     data = request.get_json() or {}
     move_criterion = data.get('move_criterion')  # "ip" ou "trueskill" ou None
-    recap_mode = data.get('recap_mode')  # "league", "classic" ou None (tous)
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT date_debut, date_fin, config_awards, victory_condition, is_yearly FROM saisons WHERE id = %s", (id,))
+            cur.execute("""
+                SELECT date_debut, date_fin, config_awards, victory_condition, is_yearly, ligue_id
+                FROM saisons WHERE id = %s
+            """, (id,))
             row = cur.fetchone()
             if not row: return jsonify({'error': 'Saison introuvable'}), 404
 
-            d_debut, d_fin, config, vic_cond, is_yearly = row
+            d_debut, d_fin, config, vic_cond, is_yearly, saison_ligue_id = row
 
-            # Valider qu'il y a des tournois pour le mode choisi
-            if recap_mode == 'league':
+            # Déterminer le mode de récap basé sur ligue_id de la saison
+            if saison_ligue_id:
+                # Récap de ligue : filtrer par cette ligue spécifique
                 cur.execute("""
                     SELECT COUNT(*) FROM Tournois
-                    WHERE date >= %s AND date <= %s AND ligue_id IS NOT NULL
-                """, (d_debut, d_fin))
+                    WHERE date >= %s AND date <= %s AND ligue_id = %s
+                """, (d_debut, d_fin, saison_ligue_id))
                 count = cur.fetchone()[0]
                 if count == 0:
-                    return jsonify({'error': 'Aucun tournoi en mode ligue pendant cette période'}), 400
-            elif recap_mode == 'classic':
+                    return jsonify({'error': 'Aucun tournoi pour cette ligue pendant cette période'}), 400
+                global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', saison_ligue_id)
+            else:
+                # Récap classique : tournois sans ligue
                 cur.execute("""
                     SELECT COUNT(*) FROM Tournois
                     WHERE date >= %s AND date <= %s AND ligue_id IS NULL
@@ -1778,8 +1878,7 @@ def save_season_awards(id):
                 count = cur.fetchone()[0]
                 if count == 0:
                     return jsonify({'error': 'Aucun tournoi en mode classique pendant cette période'}), 400
-
-            global_stats = _aggregate_season_stats(d_debut, d_fin, recap_mode)
+                global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic')
 
             active_awards = config.get('active_awards', [])
             top_3, winners_map = _determine_winners(

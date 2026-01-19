@@ -168,6 +168,23 @@
                                 </div>
 
                                 <div class="field mt-4 type-selector">
+                                    <label class="label mb-3">Mode de Récap</label>
+                                    <div class="control">
+                                        <label class="radio has-text-white mr-4">
+                                            <input type="radio" name="recapModeCreate" value="classic" checked>
+                                            <span class="tag is-info is-light ml-1">Classique</span>
+                                            Un seul récap (tournois hors ligue)
+                                        </label>
+                                        <label class="radio has-text-warning mt-2" id="leagueModeCreateLabel">
+                                            <input type="radio" name="recapModeCreate" value="league" id="leagueModeCreateRadio">
+                                            <span class="tag is-warning is-light ml-1">Ligue</span>
+                                            Un récap par ligue
+                                        </label>
+                                    </div>
+                                    <p class="help has-text-grey mt-2" id="recapModeCreateHelp"></p>
+                                </div>
+
+                                <div class="field mt-4 type-selector">
                                     <label class="label mb-3">Type de Récompense</label>
                                     <div class="control">
                                         <label class="radio has-text-white mr-4">
@@ -247,31 +264,9 @@
                 <button class="delete" aria-label="close" onclick="closePublishModal()"></button>
             </header>
             <section class="modal-card-body" style="background-color: #0f172a;">
-                <p class="has-text-white mb-4">
+                <p class="has-text-white mb-4" id="publishDescription">
                     Cela va calculer les statistiques, sauvegarder les awards et <strong>rendre la saison publique</strong>.
                 </p>
-
-                <!-- Choix du mode de récap -->
-                <div class="field">
-                    <label class="label has-text-white">
-                        <i class="fas fa-filter mr-2"></i> Type de récap
-                    </label>
-                    <div class="control">
-                        <label class="radio has-text-white">
-                            <input type="radio" name="recapMode" value="classic" checked>
-                            <span class="tag is-info is-light ml-1 mr-2">Classique</span>
-                            Tournois hors mode ligue
-                            <span id="classicCountBadge" class="tag is-dark ml-2">0</span>
-                        </label><br>
-                        <label class="radio has-text-white mt-2" id="leagueModeRadioLabel">
-                            <input type="radio" name="recapMode" value="league" id="leagueModeRadio">
-                            <span class="tag is-warning is-light ml-1 mr-2">Ligue</span>
-                            Tournois en mode ligue uniquement
-                            <span id="leagueCountBadge" class="tag is-dark ml-2">0</span>
-                        </label>
-                    </div>
-                    <p class="help has-text-grey mt-2" id="recapModeHelp"></p>
-                </div>
 
                 <div id="interLeagueMoveSection" style="display: none;">
                     <hr style="background-color: #3b82f6;">
@@ -443,26 +438,33 @@ async function loadAwardTypes() {
         const list = await api('/admin/saisons', 'GET');
         const tbody = document.getElementById('saisonsList');
         tbody.innerHTML = '';
-        
+
         list.forEach(s => {
-            let statusBadge = s.is_active 
-                ? '<span class="tag is-success">Publié</span>' 
+            let statusBadge = s.is_active
+                ? '<span class="tag is-success">Publié</span>'
                 : '<span class="tag is-warning">Brouillon</span>';
-            
+
             let typeBadge = s.is_yearly
                 ? '<span class="tag is-warning is-light">Annuel</span>'
                 : '<span class="tag is-info is-light">Saison</span>';
 
-            let publishBtn = s.is_active 
-                ? '' 
-                : `<button onclick="saveAwards(${s.id})" class="button is-primary is-outlined" title="Publier">
+            // Badge de ligue si présent
+            let ligueBadge = '';
+            if (s.ligue_nom) {
+                const couleur = s.ligue_couleur || '#3b82f6';
+                ligueBadge = `<span class="tag ml-1" style="background-color: ${couleur}; color: white;">${s.ligue_nom}</span>`;
+            }
+
+            let publishBtn = s.is_active
+                ? ''
+                : `<button onclick="saveAwards(${s.id}, ${s.ligue_id || 'null'}, ${s.ligue_nom ? "'" + s.ligue_nom + "'" : 'null'})" class="button is-primary is-outlined" title="Publier">
                      <i class="fas fa-rocket"></i>&nbsp;Publier
                    </button>`;
 
             tbody.innerHTML += `
                 <tr>
                     <td>
-                        <strong class="has-text-white">${s.nom}</strong><br>
+                        <strong class="has-text-white">${s.nom}</strong>${ligueBadge}<br>
                         <span class="is-size-7 is-family-code has-text-grey">${s.date_debut} au ${s.date_fin}</span>
                     </td>
                     <td>${typeBadge}</td>
@@ -485,11 +487,12 @@ async function loadAwardTypes() {
 
     document.getElementById('createSeasonForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         const checkboxes = document.querySelectorAll('.award-checkbox:checked');
         const activeAwards = Array.from(checkboxes).map(cb => cb.value);
         const victoryCondition = hiddenSelect.value;
         const isYearly = document.querySelector('input[name="seasonType"]:checked').value === 'annual';
+        const recapMode = document.querySelector('input[name="recapModeCreate"]:checked').value;
 
         if (!victoryCondition) {
             alert("Veuillez choisir une condition de victoire !");
@@ -502,15 +505,19 @@ async function loadAwardTypes() {
             date_fin: document.getElementById('dateFin').value,
             active_awards: activeAwards,
             victory_condition: victoryCondition,
-            is_yearly: isYearly
+            is_yearly: isYearly,
+            recap_mode: recapMode
         };
 
         const res = await api('/admin/saisons', 'POST', data);
         if(res.status === 'success') {
             document.getElementById('createSeasonForm').reset();
             document.getElementById('triggerContent').innerText = "Choisir l'objectif de saison...";
-            loadAwardTypes(); 
+            loadAwardTypes();
             loadSaisons();
+            if (res.message) {
+                alert(res.message);
+            }
         } else {
             alert('Erreur: ' + res.error);
         }
@@ -522,7 +529,9 @@ async function loadAwardTypes() {
         loadSaisons();
     }
 
-    async function saveAwards(id) {
+    let currentSaisonLigueId = null;
+
+    async function saveAwards(id, ligueId = null, ligueNom = null) {
         // Charger la config pour savoir si le mode ligue est actif
         const config = await api('/admin/config', 'GET');
         if (config.error) {
@@ -530,72 +539,28 @@ async function loadAwardTypes() {
             return;
         }
 
-        // Charger le nombre de tournois par mode pour cette saison
-        const counts = await api(`/admin/saisons/${id}/count-tournois`, 'GET');
-        if (counts.error) {
-            alert('Erreur: ' + counts.error);
-            return;
-        }
-
         leagueModeEnabled = config.league_mode_enabled;
         interLeagueMovesCount = config.inter_league_moves || 0;
         currentPublishSaisonId = id;
+        currentSaisonLigueId = ligueId;
 
-        // Mettre à jour les badges de comptage
-        document.getElementById('classicCountBadge').textContent = counts.classic_count + ' tournoi(s)';
-        document.getElementById('leagueCountBadge').textContent = counts.league_count + ' tournoi(s)';
-
-        // Gérer l'état des radio buttons selon la disponibilité
-        const leagueRadio = document.getElementById('leagueModeRadio');
-        const leagueLabel = document.getElementById('leagueModeRadioLabel');
-        const classicRadio = document.querySelector('input[name="recapMode"][value="classic"]');
-        const helpText = document.getElementById('recapModeHelp');
-
-        // Réinitialiser les états
-        leagueRadio.disabled = false;
-        classicRadio.disabled = false;
-        leagueLabel.style.opacity = '1';
-        helpText.textContent = '';
-
-        if (counts.league_count === 0) {
-            leagueRadio.disabled = true;
-            leagueLabel.style.opacity = '0.5';
-            classicRadio.checked = true;
-        }
-        if (counts.classic_count === 0) {
-            classicRadio.disabled = true;
-            classicRadio.parentElement.style.opacity = '0.5';
-            if (counts.league_count > 0) {
-                leagueRadio.checked = true;
-            }
+        // Mettre à jour la description selon le type de récap
+        const descEl = document.getElementById('publishDescription');
+        if (ligueNom) {
+            descEl.innerHTML = `Publication du récap <strong style="color: #f59e0b;">${ligueNom}</strong>.<br>
+                Cela va calculer les statistiques, sauvegarder les awards et <strong>rendre la saison publique</strong>.`;
         } else {
-            classicRadio.parentElement.style.opacity = '1';
+            descEl.innerHTML = `Cela va calculer les statistiques, sauvegarder les awards et <strong>rendre la saison publique</strong>.`;
         }
 
-        if (counts.league_count === 0 && counts.classic_count === 0) {
-            helpText.textContent = 'Aucun tournoi pendant cette période !';
-            helpText.classList.add('has-text-danger');
-        } else {
-            helpText.classList.remove('has-text-danger');
-        }
-
-        // Afficher/masquer la section inter-ligue (seulement si mode ligue sélectionné)
+        // Afficher/masquer la section inter-ligue (seulement pour les récaps de ligue)
         const section = document.getElementById('interLeagueMoveSection');
-        const updateInterLeagueVisibility = () => {
-            const selectedMode = document.querySelector('input[name="recapMode"]:checked').value;
-            if (selectedMode === 'league' && leagueModeEnabled && interLeagueMovesCount > 0) {
-                section.style.display = 'block';
-                document.getElementById('movesCountDisplay').textContent = interLeagueMovesCount;
-            } else {
-                section.style.display = 'none';
-            }
-        };
-
-        // Mettre à jour quand on change de mode
-        document.querySelectorAll('input[name="recapMode"]').forEach(radio => {
-            radio.onchange = updateInterLeagueVisibility;
-        });
-        updateInterLeagueVisibility();
+        if (ligueId && leagueModeEnabled && interLeagueMovesCount > 0) {
+            section.style.display = 'block';
+            document.getElementById('movesCountDisplay').textContent = interLeagueMovesCount;
+        } else {
+            section.style.display = 'none';
+        }
 
         // Ouvrir la modale
         document.getElementById('publishModal').classList.add('is-active');
@@ -604,19 +569,17 @@ async function loadAwardTypes() {
     function closePublishModal() {
         document.getElementById('publishModal').classList.remove('is-active');
         currentPublishSaisonId = null;
+        currentSaisonLigueId = null;
     }
 
     async function confirmPublish() {
         if (!currentPublishSaisonId) return;
 
         const saisonId = currentPublishSaisonId;
-        const recapMode = document.querySelector('input[name="recapMode"]:checked').value;
-        const payload = {
-            recap_mode: recapMode
-        };
+        const payload = {};
 
-        // Si le mode ligue est actif, qu'on a choisi le mode ligue, et qu'il y a des mouvements configurés
-        if (recapMode === 'league' && leagueModeEnabled && interLeagueMovesCount > 0) {
+        // Si c'est un récap de ligue et qu'il y a des mouvements configurés
+        if (currentSaisonLigueId && leagueModeEnabled && interLeagueMovesCount > 0) {
             const criterion = document.querySelector('input[name="moveCriterion"]:checked').value;
             payload.move_criterion = criterion;
         }
