@@ -145,6 +145,39 @@
                     {% for s in saisons if not s.is_yearly %}
                         <div class="column is-4 fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
                             <a href="/recap/{{ s.slug }}" style="text-decoration: none;">
+                                {% if s.is_league_recap %}
+                                {# Récap de ligue unifié (nouveau format) #}
+                                <div class="card season-card" style="border: 2px solid #f59e0b; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(0, 0, 0, 0.8));">
+                                    <div class="card-content has-text-centered">
+                                        <div class="season-icon has-text-warning">
+                                            <i class="fas fa-layer-group"></i>
+                                        </div>
+
+                                        <p class="title is-4 has-text-white mb-4">{{ s.nom }}</p>
+
+                                        <div class="tags is-centered mb-3">
+                                            <span class="tag is-warning is-light">
+                                                <i class="fas fa-shield-alt mr-1"></i> Mode Ligue
+                                            </span>
+                                        </div>
+
+                                        <div class="tags is-centered">
+                                            <span class="tag is-dark is-rounded border-light">
+                                                <i class="far fa-calendar mr-2"></i>
+                                                {{ s.date_debut }} <i class="fas fa-arrow-right mx-1 is-size-7"></i> {{ s.date_fin }}
+                                            </span>
+                                        </div>
+
+                                        <button class="button is-small is-outlined is-rounded is-warning mt-5">
+                                            <span>Voir les ligues</span>
+                                            <span class="icon is-small">
+                                                <i class="fas fa-chevron-right"></i>
+                                            </span>
+                                        </button>
+                                    </div>
+                                </div>
+                                {% else %}
+                                {# Récap classique ou ancien format ligue #}
                                 <div class="card season-card" {% if s.ligue_couleur %}style="border-left: 4px solid {{ s.ligue_couleur }};"{% endif %}>
                                     <div class="card-content has-text-centered">
 
@@ -189,6 +222,7 @@
                                         </button>
                                     </div>
                                 </div>
+                                {% endif %}
                             </a>
                         </div>
                     {% endfor %}

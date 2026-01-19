@@ -172,10 +172,30 @@ def index():
 
 @app.route('/recap/<season_slug>')
 def recap_season(season_slug):
-    data, status = backend_request('GET', f'/stats/recap/{season_slug}')
+    # Récupérer les paramètres de query string
+    ligue_id = request.args.get('ligue_id')
+    view_mode = request.args.get('view')
+
+    # Construire l'URL avec les paramètres
+    url = f'/stats/recap/{season_slug}'
+    params = []
+    if ligue_id:
+        params.append(f'ligue_id={ligue_id}')
+    if params:
+        url += '?' + '&'.join(params)
+
+    data, status = backend_request('GET', url)
     if status != 200:
-        return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None)
-    return render_template("recap.html", saison=data)
+        return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None, view_mode=None, new_leagues_data=None)
+
+    # Si on demande la vue "nouvelles ligues"
+    new_leagues_data = None
+    if view_mode == 'new-leagues' and data.get('is_league_recap'):
+        nl_data, nl_status = backend_request('GET', f'/stats/recap/{season_slug}/new-leagues')
+        if nl_status == 200:
+            new_leagues_data = nl_data
+
+    return render_template("recap.html", saison=data, view_mode=view_mode, new_leagues_data=new_leagues_data)
 
 @app.route('/recap')
 def recap_default():

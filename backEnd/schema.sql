@@ -135,9 +135,24 @@ CREATE TABLE public.saisons (
     is_yearly boolean DEFAULT false,
     ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
     ligue_nom character varying(100),
-    ligue_couleur character varying(20)
+    ligue_couleur character varying(20),
+    is_league_recap boolean DEFAULT false
 );
 ALTER TABLE public.saisons OWNER TO mk_reset;
+
+-- MOUVEMENTS INTER-LIGUES (stockage des promotions/relégations)
+CREATE TABLE public.league_movements (
+    id SERIAL PRIMARY KEY,
+    saison_id INTEGER REFERENCES public.saisons(id) ON DELETE CASCADE,
+    joueur_id INTEGER REFERENCES public.joueurs(id) ON DELETE CASCADE,
+    from_ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
+    to_ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
+    from_ligue_nom character varying(100),
+    to_ligue_nom character varying(100),
+    direction character varying(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public.league_movements OWNER TO mk_reset;
 
 -- TYPES D'AWARDS
 CREATE TABLE public.types_awards (
