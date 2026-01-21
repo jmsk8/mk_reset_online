@@ -1,5 +1,5 @@
 const GAME_CONFIG = {
-    debugMode: false, 
+    debugMode: true, 
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
@@ -11,12 +11,10 @@ const GAME_CONFIG = {
         }
     },
     world: {
-        width: 3072,
-        finishLineX: 1152, 
+        width: 3840,
+        finishLineX: 1440,
         itemBoxX: 3456,
-        itemBoxCount: 4,
-        spawnStartX: 0, 
-        spawnSpacing: 0 
+        itemBoxCount: 4
     },
     rendering: {
         bufferZone: 200, 
@@ -39,11 +37,11 @@ const GAME_CONFIG = {
         floatSpeed: 0.003
     },
     speeds: {
-        roadPPS: 170,            
+        roadPPS: 250,
         
-        kartBaseSpeed: 400, 
-        kartMinSpeed: 380, 
-        kartMaxSpeed: 420,
+        kartBaseSpeed: 500, 
+        kartMinSpeed: 480, 
+        kartMaxSpeed: 520,
         speedVariationMin: 0.80, 
         speedVariationMax: 1.20,
         
@@ -94,6 +92,9 @@ let pauseStartTime = 0;
 let cachedBg = null;
 let cachedContainer = null;
 let cachedIsMobile = false;
+
+// Cache d'images préchargées
+const imageCache = {};
 
 function getGameTime() {
     return Date.now() - globalTimeOffset;
@@ -179,6 +180,20 @@ function getScreenPosition(worldX, cameraX, screenWidth) {
 }
 
 // === INITIALISATION ===
+
+function preloadImages() {
+    // Précharger les 3 frames de shell
+    for (let i = 1; i <= 3; i++) {
+        const img = new Image();
+        img.src = GAME_CONFIG.resources.paths.shell(i);
+        imageCache[`shell_${i}`] = img;
+    }
+
+    // Précharger la banana
+    const banana = new Image();
+    banana.src = GAME_CONFIG.resources.paths.banana;
+    imageCache['banana'] = banana;
+}
 
 function syncRoadAnimation() {
     const groundLayer = document.querySelector('.layer-ground');
@@ -267,26 +282,29 @@ function initWorld() {
             imgElement: img,
             worldX: startWorldX,
             yPercent: verticalPos,
-            
+
             absoluteVelocity: getInitialKartSpeed(),
             vy: 0,
             targetVy: 0,
-            
-            state: 'pending', 
-            isVisible: false,
-            
+
+            state: 'pending',
+
             aiState: 'cruising',
             originalLaneY: verticalPos,
             dodgeIntensity: 30,
-            
+
             hitEndTime: 0,
             heldItem: null,
             throwTime: 0,
             pendingItemGrantTime: 0,
-            
+
             nextWanderTime: getGameTime() + randomRange(1000, 5000),
             wanderEndTime: 0,
-            wanderVy: 0
+            wanderVy: 0,
+
+            // Compteur de tours (debug)
+            lapCount: 0,
+            hasPassedFinishLine: false
         });
     });
 
@@ -431,25 +449,27 @@ function giveKartItem(kart) {
     if (kart.heldItem) return;
 
     let itemType = (Math.random() > 0.5) ? 'banana' : 'shell';
-    
+
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     const itemDiv = document.createElement('div');
     itemDiv.style.position = 'absolute';
     itemDiv.style.pointerEvents = 'none';
-    
+
     const img = document.createElement('img');
     img.style.width = '100%';
-    
-    let offset = cachedIsMobile ? GAME_CONFIG.offsets.heldItem.mobile : GAME_CONFIG.offsets.heldItem.pc; 
-    
+
+    let offset = cachedIsMobile ? GAME_CONFIG.offsets.heldItem.mobile : GAME_CONFIG.offsets.heldItem.pc;
+
     if (itemType === 'shell') {
         const size = cachedIsMobile ? GAME_CONFIG.visuals.shell.widthMobile : GAME_CONFIG.visuals.shell.width;
         itemDiv.style.width = `${size}px`;
-        img.src = GAME_CONFIG.resources.paths.shell(1);
+        // Utiliser le cache pour éviter le rechargement
+        img.src = imageCache['shell_1'] ? imageCache['shell_1'].src : GAME_CONFIG.resources.paths.shell(1);
     } else {
         const size = cachedIsMobile ? GAME_CONFIG.visuals.banana.widthMobile : GAME_CONFIG.visuals.banana.width + 4;
         itemDiv.style.width = `${size}px`;
-        img.src = GAME_CONFIG.resources.paths.banana;
+        // Utiliser le cache pour éviter le rechargement
+        img.src = imageCache['banana'] ? imageCache['banana'].src : GAME_CONFIG.resources.paths.banana;
     }
 
     itemDiv.appendChild(img);
@@ -525,7 +545,9 @@ function animate(timestamp) {
         }
 
         if (cachedBg) {
-            cachedBg.style.backgroundPosition = `-${worldState.cameraX}px 0px`;
+            // Utiliser modulo pour un défilement infini sans à-coup
+            const bgX = worldState.cameraX % GAME_CONFIG.world.width;
+            cachedBg.style.backgroundPosition = `-${bgX}px 0px`;
         } else {
             cachedBg = document.querySelector('.layer-scrolling-bg');
         }
@@ -592,8 +614,19 @@ function animate(timestamp) {
 
                 updateAI(kart, deltaTime);
                 
+                const prevWorldX = kart.worldX;
                 kart.worldX += kart.absoluteVelocity * deltaTime;
                 kart.yPercent += kart.vy * deltaTime;
+
+                // Détection passage ligne d'arrivée (pour compteur de tours debug)
+                const finishX = GAME_CONFIG.world.finishLineX;
+                if (prevWorldX < finishX && kart.worldX >= finishX) {
+                    if (kart.hasPassedFinishLine) {
+                        kart.lapCount++;
+                    } else {
+                        kart.hasPassedFinishLine = true;
+                    }
+                }
 
                 if (kart.worldX >= GAME_CONFIG.world.width) {
                     kart.worldX -= GAME_CONFIG.world.width;
@@ -666,8 +699,6 @@ function animate(timestamp) {
             const rx = getScreenPosition(kart.worldX, worldState.cameraX, screenWidth);
             const isVisibleNow = (rx > -renderMargin && rx < screenWidth + renderMargin);
 
-            kart.isVisible = isVisibleNow;
-
             if (isVisibleNow) {
                 kart.element.style.display = 'block';
                 kart.element.style.transform = `translate3d(${rx}px, 0, 0)`;
@@ -734,7 +765,9 @@ function animate(timestamp) {
             if (item.type === 'shell') {
                  if (gameNow - item.lastAnimTime > GAME_CONFIG.visuals.shell.animSpeed) {
                     item.currentFrame = (item.currentFrame % 3) + 1;
-                    item.imgElement.src = GAME_CONFIG.resources.paths.shell(item.currentFrame);
+                    // Utiliser le cache pour éviter les requêtes réseau
+                    const cachedShell = imageCache[`shell_${item.currentFrame}`];
+                    item.imgElement.src = cachedShell ? cachedShell.src : GAME_CONFIG.resources.paths.shell(item.currentFrame);
                     item.lastAnimTime = gameNow;
                 }
             }
@@ -849,10 +882,38 @@ function initDebugHUD() {
     hud.appendChild(camView);
 
     const camViewLoop = document.createElement('div');
-    camViewLoop.className = 'debug-camera-view'; 
+    camViewLoop.className = 'debug-camera-view';
     camViewLoop.id = 'debug-camera-view-loop';
     camViewLoop.style.display = 'none';
     hud.appendChild(camViewLoop);
+
+    // Panneau de classement fixe
+    const leaderboard = document.createElement('div');
+    leaderboard.id = 'debug-leaderboard';
+    leaderboard.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px 15px;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 14px;
+        z-index: 9999;
+        min-width: 120px;
+    `;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight: bold; margin-bottom: 8px; text-align: center; border-bottom: 1px solid #555; padding-bottom: 5px;';
+    title.innerText = '🏁 Classement';
+    leaderboard.appendChild(title);
+
+    const list = document.createElement('div');
+    list.id = 'debug-leaderboard-list';
+    leaderboard.appendChild(list);
+
+    document.body.appendChild(leaderboard);
 }
 
 function updateDebugHUD() {
@@ -894,8 +955,30 @@ function updateDebugHUD() {
             el.style.left = `${kPct}%`;
             el.style.backgroundColor = (kart.state === 'hit') ? 'red' : 'blue';
             if (kart.state === 'pending') el.style.backgroundColor = 'gray';
+            el.innerText = GAME_CONFIG.resources.initials[kart.charName] || '?';
         }
     });
+
+    // Mise à jour du panneau de classement
+    const leaderboardList = document.getElementById('debug-leaderboard-list');
+    if (leaderboardList) {
+        // Trier les karts par position (tours + position sur le circuit)
+        const sortedKarts = [...worldState.karts]
+            .filter(k => k.state !== 'pending')
+            .sort((a, b) => {
+                // D'abord par nombre de tours (décroissant)
+                if (b.lapCount !== a.lapCount) return b.lapCount - a.lapCount;
+                // Ensuite par position sur le circuit (décroissant)
+                return b.worldX - a.worldX;
+            });
+
+        leaderboardList.innerHTML = sortedKarts.map((kart, index) => {
+            const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+            const name = kart.charName.charAt(0).toUpperCase() + kart.charName.slice(1);
+            const laps = kart.lapCount;
+            return `<div style="padding: 3px 0; ${index === 0 ? 'color: gold;' : ''}">${medal} ${name} <span style="float: right; color: #aaa;">T${laps}</span></div>`;
+        }).join('');
+    }
 }
 
 // === GESTION EVENEMENTS ===
@@ -927,6 +1010,7 @@ function handleVisibilityChange() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    preloadImages();
     initWorld();
     animate(0);
     const fadeElements = document.querySelectorAll('.fade-in');
