@@ -2185,9 +2185,11 @@ def add_tournament():
 
                 joueurs_ratings = {}
                 joueurs_ids_map = {}
-                
+                joueurs_exclude_ts = {}
+
                 for joueur in joueurs_data:
                     nom, score = joueur['nom'], joueur['score']
+                    exclude_ts = joueur.get('exclude_from_ts', False)
                     cur.execute("SELECT id, mu, sigma FROM Joueurs WHERE nom = %s", (nom,))
                     res = cur.fetchone()
                     if res:
@@ -2197,28 +2199,50 @@ def add_tournament():
                         jid, mu, sigma = cur.fetchone()[0], 50.0, 8.333
                     joueurs_ratings[nom] = trueskill.Rating(mu=float(mu), sigma=float(sigma))
                     joueurs_ids_map[nom] = jid
-                    cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma) VALUES (%s, %s, %s, %s, %s)", (tournoi_id, jid, score, float(mu), float(sigma)))
+                    joueurs_exclude_ts[nom] = exclude_ts
+                    cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma, exclude_from_ts) VALUES (%s, %s, %s, %s, %s, %s)", (tournoi_id, jid, score, float(mu), float(sigma), exclude_ts))
 
                 sorted_joueurs = sorted(joueurs_data, key=lambda x: x['score'], reverse=True)
-                ranks = []
+
+                ts_joueurs = [j for j in sorted_joueurs if not joueurs_exclude_ts.get(j['nom'], False)]
+                ts_ranks = []
                 last_s, rank = -1, 1
-                for i, j in enumerate(sorted_joueurs):
+                for i, j in enumerate(ts_joueurs):
                     if j['score'] < last_s: rank = i + 1
-                    ranks.append(rank)
+                    ts_ranks.append(rank)
                     last_s = j['score']
-                
+
                 cur.execute("SELECT value FROM Configuration WHERE key = 'tau'")
                 tau_val = float(cur.fetchone()[0])
                 ts_env = trueskill.TrueSkill(mu=50.0, sigma=8.333, beta=4.167, tau=tau_val, draw_probability=0.1)
-                new_ratings = ts_env.rate([[joueurs_ratings[j['nom']]] for j in sorted_joueurs], ranks=ranks)
+
+                new_ratings_map = {}
+                if ts_joueurs:
+                    new_ratings = ts_env.rate([[joueurs_ratings[j['nom']]] for j in ts_joueurs], ranks=ts_ranks)
+                    for i, j in enumerate(ts_joueurs):
+                        new_ratings_map[j['nom']] = new_ratings[i][0]
 
                 present_pids = []
+                all_ranks = []
+                last_s, rank = -1, 1
                 for i, j in enumerate(sorted_joueurs):
-                    nr = new_ratings[i][0]
-                    jid = joueurs_ids_map[j['nom']]
+                    if j['score'] < last_s: rank = i + 1
+                    all_ranks.append(rank)
+                    last_s = j['score']
+
+                for i, j in enumerate(sorted_joueurs):
+                    nom = j['nom']
+                    jid = joueurs_ids_map[nom]
                     present_pids.append(jid)
-                    cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s, consecutive_missed=0, is_ranked=true WHERE id=%s", (nr.mu, nr.sigma, jid))
-                    cur.execute("UPDATE Participations SET mu=%s, sigma=%s, new_score_trueskill=%s, position=%s WHERE tournoi_id=%s AND joueur_id=%s", (nr.mu, nr.sigma, nr.mu - 3 * nr.sigma, ranks[i], tournoi_id, jid))
+
+                    if joueurs_exclude_ts.get(nom, False):
+                        old_rating = joueurs_ratings[nom]
+                        cur.execute("UPDATE Joueurs SET consecutive_missed=0 WHERE id=%s", (jid,))
+                        cur.execute("UPDATE Participations SET mu=%s, sigma=%s, new_score_trueskill=%s, position=%s WHERE tournoi_id=%s AND joueur_id=%s", (old_rating.mu, old_rating.sigma, old_rating.mu - 3 * old_rating.sigma, all_ranks[i], tournoi_id, jid))
+                    else:
+                        nr = new_ratings_map[nom]
+                        cur.execute("UPDATE Joueurs SET mu=%s, sigma=%s, consecutive_missed=0, is_ranked=true WHERE id=%s", (nr.mu, nr.sigma, jid))
+                        cur.execute("UPDATE Participations SET mu=%s, sigma=%s, new_score_trueskill=%s, position=%s WHERE tournoi_id=%s AND joueur_id=%s", (nr.mu, nr.sigma, nr.mu - 3 * nr.sigma, all_ranks[i], tournoi_id, jid))
 
                 cur.execute("SELECT key, value FROM Configuration WHERE key IN ('ghost_enabled', 'ghost_penalty', 'unranked_threshold')")
                 conf = dict(cur.fetchall())

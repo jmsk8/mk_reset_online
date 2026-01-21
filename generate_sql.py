@@ -15,7 +15,7 @@ PLAYER_COLORS = {
     "Rayou": "#00BCD4",      # Cyan
     
     "Melwin": "#64B5F6",     # Bleu clair
-    "Clem": "#E57373",       # Rouge clair
+    "Astral": "#E57373",       # Rouge clair
     "JeanCube": "#FFF176",   # Jaune clair
     "Daytona_69": "#81C784", # Vert clair
     "Oleas": "#FF9800",      # Orange
@@ -29,7 +29,7 @@ PLAYER_COLORS = {
     "Kemoory": "#B2DFDB",    # Teal pâle
     
     "Camou": "#E3F2FD",      # Bleu très pâle
-    "Daudy": "#FFEBEE",      # Rouge très pâle
+    "Fozlo": "#FFEBEE",      # Rouge très pâle
     "Kaysuan": "#FFFDE7",    # Jaune très pâle
     "PastPlayer": "#E8F5E9", # Vert très pâle
     
@@ -87,6 +87,9 @@ for name, (mu, sigma) in initial_stats.items():
 
 tournaments = [
     # === HIVER 2025 ===
+    ("2025-01-16", {"Fozlo": 121, "Elite": 184, "J_sk8": 171, "Lu_K": 148, "Melwin": 138, "Vakaeltraz": 184}),
+    ("2025-01-23", {"Astral": 161, "Fozlo": 127, "J_sk8": 180, "Kemoory": 109, "Lu_K": 203, "Vakaeltraz": 171}),
+    ("2025-01-30", {"Fozlo": 140, "Elite": 189, "J_sk8": 193, "Vakaeltraz": 194}),
     ("2025-02-06", {"Clem": 154, "Elite": 173, "J_sk8": 180, "Kemoory": 124, "Lu_K": 152, "Mirijason": 116, "Vakaeltraz": 149}),
     ("2025-02-13", {"Clem": 154, "Elite": 142, "Lu_K": 138, "Rosalyan": 197, "Vakaeltraz": 143}),
     ("2025-02-20", {"Elite": 175, "Fozlo": 73, "J_sk8": 163, "Lu_K": 159, "Vakaeltraz": 199}),
@@ -345,3 +348,40 @@ print("✅ seed.sql généré avec succès avec les joueurs, historique et saiso
 #     ("2025-12-08", {"Ael": 103, "Clem": 132, "Elite": 115, "Falgo": 86, "J_sk8": 151, "Kemoory": 74, "McK17": 104, "Melwin": 145, "Rayou": 150, "Vakaeltraz": 140}),
 #     ("2025-12-15", {"J_sk8": 154, "Melwin": 149, "Rayou": 114, "Vakaeltraz": 176, "Elite": 119, "Clem": 133, "Ael": 98, "Falgo": 90, "McK17": 109, "Corentin": 94})
 # ]
+
+# ("2025-01-16", {"Fozlo": 121, "Elite": 184, "J_sk8": 171, "Lu_K": 148, "Melwin": 138, "Vakaeltraz": 184}),
+# ("2025-01-23", {"Astral": 161, "Fozlo": 127, "J_sk8": 180, "Kemoory": 109, "Lu_K": 203, "Vakaeltraz": 171}),
+#("2025-01-23", {"Fozlo": 140, "Elite": 189, "J_sk8": 193, "Vakaeltraz": 194,}),
+
+
+# initial_stats = {
+#     "Elite": (60.812, 1.594),
+#     "Vakaeltraz": (58.046, 1.273),
+#     "J_sk8": (54.004, 1.226),
+#     "Melwin": (52.741, 1.449),
+#     "Clem": (48.739, 1.368),
+#     "Lu_K": (53.820, 3.335),
+#     "Oleas": (56.247, 4.235),
+#     "Thaumas": (51.464, 2.719),
+#     "Ether-Zero": (52.986, 4.335),
+#     "Daytona_69": (45.619, 2.056),
+#     "Tomwilson": (49.867, 4.522),
+#     "Camou": (50.053, 4.679),
+#     "Brook1l": (43.382, 2.539),
+#     "Hardox": (40.936, 2.108),
+#     "JeanCube": (45.816, 3.812),
+#     "Kemoory": (39.914, 2.369),
+#     "Fozlo": (36.466, 2.307),
+#     "McK17": (50.000, 8.333),
+#     "Kaysuan": (50.000, 8.333),
+#     "PastPlayer": (50.000, 8.333),
+#     "Tomy": (50.000, 8.333),
+#     "Mirijason": (50.000, 8.333),
+#     "Rosalyan": (50.000, 8.333),
+#     "ColorOni": (50.000, 8.333),
+#     "Falgo": (50.000, 8.333),
+#     "Ael": (50.000, 8.333),
+#     "Rayou": (50.000, 8.333),
+#     "Corentin": (50.000, 8.333)
+# }
+

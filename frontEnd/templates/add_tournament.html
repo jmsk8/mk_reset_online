@@ -117,6 +117,7 @@
                                         <tr>
                                             <th class="has-text-light">Joueur</th>
                                             <th class="has-text-light" style="width: 150px;">Score</th>
+                                            <th class="has-text-light has-text-centered" style="width: 80px;" title="Exclure du calcul TrueSkill">No TS</th>
                                             <th style="width: 50px;"></th>
                                         </tr>
                                     </thead>
@@ -229,11 +230,16 @@
                 const tr = document.createElement('tr');
                 tr.className = 'fade-in visible';
                 tr.setAttribute('data-nom', nom);
-                
+
                 tr.innerHTML = `
                     <td class="has-text-white is-vcentered" style="font-weight:bold;">${nom}</td>
                     <td>
                         <input class="input is-small has-background-dark has-text-light score-input" type="number" placeholder="Score" required>
+                    </td>
+                    <td class="has-text-centered is-vcentered">
+                        <label class="checkbox">
+                            <input type="checkbox" class="exclude-ts-checkbox" title="Exclure ce joueur du calcul TrueSkill">
+                        </label>
                     </td>
                     <td class="is-vcentered">
                         <button class="button is-small is-danger is-outlined" onclick="removePlayer('${nom}', this)">
@@ -301,14 +307,16 @@
                 rows.forEach(row => {
                     const nom = row.getAttribute('data-nom');
                     const scoreInput = row.querySelector('.score-input');
+                    const excludeTsCheckbox = row.querySelector('.exclude-ts-checkbox');
                     const score = parseInt(scoreInput.value);
+                    const excludeFromTs = excludeTsCheckbox ? excludeTsCheckbox.checked : false;
 
                     if (isNaN(score)) {
                         scoreInput.classList.add('is-danger');
                         error = true;
                     } else {
                         scoreInput.classList.remove('is-danger');
-                        joueursData.push({ nom: nom, score: score });
+                        joueursData.push({ nom: nom, score: score, exclude_from_ts: excludeFromTs });
                     }
                 });
 

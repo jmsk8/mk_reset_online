@@ -76,16 +76,17 @@ ALTER TABLE ONLY public.tournois ALTER COLUMN id SET DEFAULT nextval('public.tou
 
 -- PARTICIPATIONS
 CREATE TABLE public.participations (
-    joueur_id integer NOT NULL, 
-    tournoi_id integer NOT NULL, 
-    score integer NOT NULL, 
-    mu double precision, 
-    sigma double precision, 
-    new_score_trueskill double precision, 
-    new_tier character(1), 
-    position integer, 
-    old_mu double precision, 
-    old_sigma double precision, 
+    joueur_id integer NOT NULL,
+    tournoi_id integer NOT NULL,
+    score integer NOT NULL,
+    mu double precision,
+    sigma double precision,
+    new_score_trueskill double precision,
+    new_tier character(1),
+    position integer,
+    old_mu double precision,
+    old_sigma double precision,
+    exclude_from_ts boolean DEFAULT false,
     CONSTRAINT participations_pkey PRIMARY KEY (joueur_id, tournoi_id)
 );
 ALTER TABLE public.participations OWNER TO mk_reset;
