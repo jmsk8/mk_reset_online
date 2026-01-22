@@ -1,11 +1,12 @@
 const GAME_CONFIG = {
-    debugMode: true, 
+    debugMode: false, 
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
         initials: { 'mario': 'M', 'luigi': 'L', 'peach': 'P', 'toad': 'T', 'yoshi': 'Y', 'bowser': 'B', 'dk': 'D', 'koopa': 'K' },
         paths: {
             char: (name) => `static/img/${name}/${name}-static.png`,
+            pp: (name) => `static/img/${name}/${name}-pp.png`,
             shell: (frame) => `static/img/green-shell/green-shell${frame}.png`,
             banana: 'static/img/banana.png'
         }
@@ -17,9 +18,10 @@ const GAME_CONFIG = {
         itemBoxCount: 4
     },
     rendering: {
-        bufferZone: 200, 
+        bufferZone: 200,
         zIndexBase: 400,
-        mobileBreakpoint: 769
+        mobileBreakpoint: 769,
+        mobileScale: 0.6
     },
     road: {
         minY: 0,
@@ -51,8 +53,8 @@ const GAME_CONFIG = {
         shellVertical: 1.5
     },
     offsets: {
-        heldItem: { pc: -50, mobile: -20 },
-        shellSpawn: { pc: 50, mobile: 20 }
+        heldItem: { pc: -50, mobile: -35 },
+        shellSpawn: { pc: 50, mobile: 35 }
     },
     delays: {
         stunDuration: 2000,
@@ -78,9 +80,9 @@ const GAME_CONFIG = {
         itemBox: { x: 10, y: 8 }
     },
     visuals: {
-        shell: { width: 48, widthMobile: 20, animSpeed: 100 },
-        banana: { width: 32, widthMobile: 20 },
-        box: { sizePC: 42, sizeMobile: 28 }
+        shell: { width: 48, widthMobile: 32, animSpeed: 100 },
+        banana: { width: 32, widthMobile: 28 },
+        box: { sizePC: 42, sizeMobile: 42 }
     }
 };
 
@@ -106,7 +108,14 @@ let worldState = {
     items: [],
     itemBoxes: [],
     finishLine: null,
-    nextSpawnTime: 0 
+    nextSpawnTime: 0
+};
+
+// État du leaderboard
+let leaderboardState = {
+    container: null,
+    slots: [],
+    previousRanking: []
 };
 
 let lastFrameTime = 0;
@@ -193,6 +202,143 @@ function preloadImages() {
     const banana = new Image();
     banana.src = GAME_CONFIG.resources.paths.banana;
     imageCache['banana'] = banana;
+
+    // Précharger les images PP
+    GAME_CONFIG.resources.characters.forEach(charName => {
+        const ppImg = new Image();
+        ppImg.src = GAME_CONFIG.resources.paths.pp(charName);
+        imageCache[`pp_${charName}`] = ppImg;
+    });
+}
+
+function initLeaderboard() {
+    leaderboardState.container = document.getElementById('race-leaderboard');
+    if (!leaderboardState.container) return;
+
+    leaderboardState.container.innerHTML = '';
+    leaderboardState.slots = [];
+    leaderboardState.previousRanking = [];
+
+    const totalKarts = GAME_CONFIG.resources.characters.length;
+    for (let i = 0; i < totalKarts; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'leaderboard-slot';
+        slot.dataset.slotIndex = i;
+        leaderboardState.container.appendChild(slot);
+        leaderboardState.slots.push(slot);
+    }
+}
+
+function addKartToLeaderboard(kart) {
+    if (!leaderboardState.container) return;
+    const ppDiv = document.createElement('div');
+    ppDiv.className = 'leaderboard-pp';
+    ppDiv.dataset.kartId = kart.id;
+
+    // Utiliser une balise img native
+    const img = document.createElement('img');
+    img.src = GAME_CONFIG.resources.paths.pp(kart.charName);
+    img.alt = kart.charName;
+    ppDiv.appendChild(img);
+
+    // Stocker la référence sur le kart
+    kart.leaderboardPP = ppDiv;
+    kart.leaderboardPosition = -1; // Pas encore positionné
+
+    // Ajouter au container (sera positionné par updateLeaderboard)
+    leaderboardState.container.appendChild(ppDiv);
+
+    // Faire apparaître avec un petit délai pour l'animation
+    setTimeout(() => {
+        ppDiv.classList.add('visible');
+    }, 50);
+}
+
+function getKartScore(kart) {
+    return kart.totalDistance;
+}
+
+function updateLeaderboard() {
+    if (!leaderboardState.container) return;
+
+    // Récupérer les karts en course (running ou hit, pas pending)
+    const activeKarts = worldState.karts.filter(k => k.state === 'running' || k.state === 'hit');
+    if (activeKarts.length === 0) return;
+
+    // Trier par score (décroissant = meilleur en premier)
+    const sortedKarts = [...activeKarts].sort((a, b) => getKartScore(b) - getKartScore(a));
+
+    // Construire le nouveau classement (tableau d'IDs)
+    const newRanking = sortedKarts.map(k => k.id);
+
+    // Détecter les changements de position
+    const prevRanking = leaderboardState.previousRanking;
+
+    sortedKarts.forEach((kart, newPosition) => {
+        if (!kart.leaderboardPP) return;
+
+        const prevPosition = prevRanking.indexOf(kart.id);
+        const ppElement = kart.leaderboardPP;
+
+        // Supprimer les anciennes classes d'animation
+        ppElement.classList.remove('overtaking', 'dropping');
+
+        if (prevPosition !== -1 && prevPosition !== newPosition) {
+            // Position a changé
+            if (newPosition < prevPosition) {
+                // Monte dans le classement (dépasse) - animation arc
+                ppElement.classList.add('overtaking');
+            } else {
+                // Descend dans le classement (se fait dépasser) - animation directe
+                ppElement.classList.add('dropping');
+            }
+
+            // Retirer la classe après l'animation
+            setTimeout(() => {
+                ppElement.classList.remove('overtaking', 'dropping');
+                // Repositionner dans le bon slot
+                positionPPInSlot(kart, newPosition);
+            }, 400);
+        } else if (prevPosition === -1) {
+            // Nouveau dans le classement
+            positionPPInSlot(kart, newPosition);
+        } else {
+            // Même position, s'assurer qu'il est bien placé
+            positionPPInSlot(kart, newPosition);
+        }
+
+        kart.leaderboardPosition = newPosition;
+    });
+
+    // Sauvegarder le classement actuel
+    leaderboardState.previousRanking = newRanking;
+}
+
+function positionPPInSlot(kart, slotIndex) {
+    if (!kart.leaderboardPP || slotIndex >= leaderboardState.slots.length) return;
+
+    const ppElement = kart.leaderboardPP;
+
+    const slotWidth = cachedIsMobile ? 32 : 46;
+    const totalSlots = leaderboardState.slots.length;
+    const reversedIndex = (totalSlots - 1) - slotIndex;
+    const xPos = reversedIndex * slotWidth;
+
+    ppElement.style.top = '0px';
+    ppElement.style.left = `${xPos}px`;
+}
+
+function triggerPPHitAnimation(kart) {
+    if (!kart.leaderboardPP) return;
+
+    const ppElement = kart.leaderboardPP;
+    ppElement.classList.remove('hit');
+    void ppElement.offsetWidth;
+    ppElement.classList.add('hit');
+
+    setTimeout(() => {
+        ppElement.classList.remove('hit');
+    }, 600);
 }
 
 function syncRoadAnimation() {
@@ -219,9 +365,10 @@ function initWorld() {
     worldState.items = [];
     worldState.itemBoxes = [];
     worldState.cameraX = 0;
-    worldState.nextSpawnTime = getGameTime() + 500; 
+    worldState.nextSpawnTime = getGameTime() + 500;
 
     syncRoadAnimation();
+    initLeaderboard();
 
     const finishLineEl = document.querySelector('.layer-finish-line');
     if (finishLineEl) {
@@ -282,6 +429,7 @@ function initWorld() {
             imgElement: img,
             worldX: startWorldX,
             yPercent: verticalPos,
+            totalDistance: 0, 
 
             absoluteVelocity: getInitialKartSpeed(),
             vy: 0,
@@ -302,7 +450,6 @@ function initWorld() {
             wanderEndTime: 0,
             wanderVy: 0,
 
-            // Compteur de tours (debug)
             lapCount: 0,
             hasPassedFinishLine: false
         });
@@ -321,7 +468,10 @@ function handleSpawns(now) {
         if (pendingKart) {
             pendingKart.state = 'running';
             pendingKart.absoluteVelocity = getInitialKartSpeed();
-            
+
+            // Ajouter la PP au leaderboard au moment du spawn
+            addKartToLeaderboard(pendingKart);
+
             const delay = randomRange(GAME_CONFIG.delays.spawnMin, GAME_CONFIG.delays.spawnMax);
             worldState.nextSpawnTime = now + delay;
         }
@@ -536,7 +686,10 @@ function animate(timestamp) {
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     
     if (cachedContainer) {
-        const screenWidth = cachedContainer.offsetWidth;
+        let screenWidth = cachedContainer.offsetWidth;
+        if (cachedIsMobile) {
+            screenWidth = screenWidth / GAME_CONFIG.rendering.mobileScale;
+        }
         const renderMargin = GAME_CONFIG.rendering.bufferZone;
         
         worldState.cameraX += GAME_CONFIG.speeds.roadPPS * deltaTime;
@@ -545,7 +698,6 @@ function animate(timestamp) {
         }
 
         if (cachedBg) {
-            // Utiliser modulo pour un défilement infini sans à-coup
             const bgX = worldState.cameraX % GAME_CONFIG.world.width;
             cachedBg.style.backgroundPosition = `-${bgX}px 0px`;
         } else {
@@ -614,11 +766,13 @@ function animate(timestamp) {
 
                 updateAI(kart, deltaTime);
                 
+                const moveDist = kart.absoluteVelocity * deltaTime;
+                kart.totalDistance += moveDist;
+
                 const prevWorldX = kart.worldX;
-                kart.worldX += kart.absoluteVelocity * deltaTime;
+                kart.worldX += moveDist;
                 kart.yPercent += kart.vy * deltaTime;
 
-                // Détection passage ligne d'arrivée (pour compteur de tours debug)
                 const finishX = GAME_CONFIG.world.finishLineX;
                 if (prevWorldX < finishX && kart.worldX >= finishX) {
                     if (kart.hasPassedFinishLine) {
@@ -672,9 +826,10 @@ function animate(timestamp) {
                         if (dx < GAME_CONFIG.hitboxes.itemVsKart.x && dy < hitThresholdY) {
                             kart.heldItem.element.remove();
                             kart.heldItem = null;
-                            
+
                             victim.state = 'hit';
                             victim.hitEndTime = gameNow + GAME_CONFIG.delays.stunDuration;
+                            triggerPPHitAnimation(victim);
                             if (victim.heldItem) {
                                 victim.throwTime = victim.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
                             }
@@ -686,7 +841,10 @@ function animate(timestamp) {
                 if (kart.heldItem && gameNow > kart.throwTime) activateItem(kart);
 
             } else if (kart.state === 'hit') {
-                kart.worldX += (GAME_CONFIG.speeds.roadPPS * 0.5) * deltaTime; 
+                const moveDist = (GAME_CONFIG.speeds.roadPPS * 0.5) * deltaTime;
+                kart.worldX += moveDist; 
+                kart.totalDistance += moveDist;
+
                 if (kart.worldX >= GAME_CONFIG.world.width) {
                     kart.worldX -= GAME_CONFIG.world.width;
                 }
@@ -765,7 +923,6 @@ function animate(timestamp) {
             if (item.type === 'shell') {
                  if (gameNow - item.lastAnimTime > GAME_CONFIG.visuals.shell.animSpeed) {
                     item.currentFrame = (item.currentFrame % 3) + 1;
-                    // Utiliser le cache pour éviter les requêtes réseau
                     const cachedShell = imageCache[`shell_${item.currentFrame}`];
                     item.imgElement.src = cachedShell ? cachedShell.src : GAME_CONFIG.resources.paths.shell(item.currentFrame);
                     item.lastAnimTime = gameNow;
@@ -819,6 +976,7 @@ function animate(timestamp) {
                         if (kart.state === 'running') {
                             kart.state = 'hit';
                             kart.hitEndTime = gameNow + GAME_CONFIG.delays.stunDuration;
+                            triggerPPHitAnimation(kart);
                             if (kart.heldItem) kart.throwTime = kart.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
                         }
                         item.isDead = true;
@@ -838,6 +996,7 @@ function animate(timestamp) {
         }
     }
 
+    updateLeaderboard();
     if (GAME_CONFIG.debugMode) updateDebugHUD();
     animationId = requestAnimationFrame(animate);
 }
