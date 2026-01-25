@@ -1,5 +1,5 @@
 const GAME_CONFIG = {
-    debugMode: true, 
+    debugMode: false, 
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
