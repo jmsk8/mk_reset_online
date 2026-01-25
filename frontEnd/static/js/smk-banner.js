@@ -1,5 +1,5 @@
 const GAME_CONFIG = {
-    debugMode: false, 
+    debugMode: true, 
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
@@ -47,7 +47,7 @@ const GAME_CONFIG = {
         speedVariationMin: 0.80, 
         speedVariationMax: 1.20,
         
-        projectileSpeed: 700, 
+        projectileSpeed: 730, 
         
         returnLane: 20,
         shellVertical: 1.5
