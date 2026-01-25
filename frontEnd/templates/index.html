@@ -102,8 +102,35 @@
 
     <section class="section">
         <div class="container">
+            {% if resultats %}
+                {% set first_date = resultats[0].meta.date.split('-') %}
+                {% set month = first_date[1]|int %}
+                {% if month in [12, 1, 2] %}
+                    {% set season_name = "d'hiver" %}
+                    {% set season_icon = "snowflake" %}
+                {% elif month in [3, 4, 5] %}
+                    {% set season_name = "de printemps" %}
+                    {% set season_icon = "seedling" %}
+                {% elif month in [6, 7, 8] %}
+                    {% set season_name = "d'été" %}
+                    {% set season_icon = "sun" %}
+                {% else %}
+                    {% set season_name = "d'automne" %}
+                    {% set season_icon = "leaf" %}
+                {% endif %}
+
+                <h2 class="title is-4 has-text-centered has-text-white mb-5">
+                    <i class="fas fa-{{ season_icon }} mr-2"></i>
+                    {% if resultats|length > 1 %}
+                        Résultats des derniers tournois
+                    {% else %}
+                        Résultat du dernier tournoi
+                    {% endif %}
+                </h2>
+            {% endif %}
+
             <div class="columns is-multiline is-centered">
-                
+
                 {% for tournoi_data in resultats %}
                 <div class="column is-12-mobile is-6-tablet is-4-desktop fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
                     
@@ -115,7 +142,6 @@
                                     {% if tournoi_data.meta.type == 'ligue' %}
                                         {{ tournoi_data.meta.ligue_nom }}
                                     {% else %}
-                                        Tournoi Standard
                                     {% endif %}
                                 </span>
                                 

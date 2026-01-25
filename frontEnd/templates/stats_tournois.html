@@ -72,9 +72,9 @@
                                     <thead>
                                         <tr>
                                             <th><i class="fas fa-calendar-alt"></i> Date</th>
-                                            <th><i class="fas fa-users"></i> P.</th> 
+                                            <th><i class="fas fa-users"></i> P.</th>
                                             <th><i class="fas fa-shield-alt"></i> Ligue</th>
-                                            <th><i class="fas fa-star"></i> Top Score</th> 
+                                            <th>👑 Vainqueur</th>
                                             <th><i class="fas fa-info-circle"></i> Détails</th>
                                         </tr>
                                     </thead>
@@ -95,7 +95,11 @@
                                                     <span class="has-text-grey">-</span>
                                                 {% endif %}
                                             </td>
-                                            <td>{{ tournoi.score_max }}</td>
+                                            <td>
+                                                <a href="/stats/joueur/{{ tournoi.vainqueur }}" class="has-text-link has-text-weight-bold">
+                                                    {{ tournoi.vainqueur }}
+                                                </a>
+                                            </td>
                                             <td>
                                                 <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined">
                                                     <span class="icon"><i class="fas fa-chart-bar"></i></span>

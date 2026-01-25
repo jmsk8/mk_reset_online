@@ -1524,9 +1524,13 @@ def get_tournois_list():
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT t.id, t.date, COUNT(p.joueur_id), MAX(p.score),
+                    SELECT t.id, t.date, COUNT(p.joueur_id),
                            COALESCE(t.ligue_nom, l.nom),
-                           COALESCE(t.ligue_couleur, l.couleur)
+                           COALESCE(t.ligue_couleur, l.couleur),
+                           (SELECT j.nom FROM Participations p2
+                            JOIN Joueurs j ON p2.joueur_id = j.id
+                            WHERE p2.tournoi_id = t.id
+                            ORDER BY p2.score DESC LIMIT 1) as vainqueur
                     FROM Tournois t
                     JOIN Participations p ON t.id = p.tournoi_id
                     LEFT JOIN Ligues l ON t.ligue_id = l.id
@@ -1538,9 +1542,9 @@ def get_tournois_list():
                     "date": r[1].strftime("%Y-%m-%d"),
                     "nb_joueurs": r[2],
                     "participants": r[2],
-                    "score_max": r[3],
-                    "ligue_nom": r[4] if r[4] else "N/A",
-                    "ligue_couleur": r[5] if r[5] else None
+                    "ligue_nom": r[3] if r[3] else "N/A",
+                    "ligue_couleur": r[4] if r[4] else None,
+                    "vainqueur": r[5]
                 } for r in cur.fetchall()]
         return jsonify(tournois)
     except Exception:
