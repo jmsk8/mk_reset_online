@@ -191,19 +191,16 @@ function getScreenPosition(worldX, cameraX, screenWidth) {
 // === INITIALISATION ===
 
 function preloadImages() {
-    // Précharger les 3 frames de shell
     for (let i = 1; i <= 3; i++) {
         const img = new Image();
         img.src = GAME_CONFIG.resources.paths.shell(i);
         imageCache[`shell_${i}`] = img;
     }
 
-    // Précharger la banana
     const banana = new Image();
     banana.src = GAME_CONFIG.resources.paths.banana;
     imageCache['banana'] = banana;
 
-    // Précharger les images PP
     GAME_CONFIG.resources.characters.forEach(charName => {
         const ppImg = new Image();
         ppImg.src = GAME_CONFIG.resources.paths.pp(charName);
@@ -235,20 +232,16 @@ function addKartToLeaderboard(kart) {
     ppDiv.className = 'leaderboard-pp';
     ppDiv.dataset.kartId = kart.id;
 
-    // Utiliser une balise img native
     const img = document.createElement('img');
     img.src = GAME_CONFIG.resources.paths.pp(kart.charName);
     img.alt = kart.charName;
     ppDiv.appendChild(img);
 
-    // Stocker la référence sur le kart
     kart.leaderboardPP = ppDiv;
-    kart.leaderboardPosition = -1; // Pas encore positionné
+    kart.leaderboardPosition = -1;
 
-    // Ajouter au container (sera positionné par updateLeaderboard)
     leaderboardState.container.appendChild(ppDiv);
 
-    // Faire apparaître avec un petit délai pour l'animation
     setTimeout(() => {
         ppDiv.classList.add('visible');
     }, 50);
@@ -261,17 +254,13 @@ function getKartScore(kart) {
 function updateLeaderboard() {
     if (!leaderboardState.container) return;
 
-    // Récupérer les karts en course (running ou hit, pas pending)
     const activeKarts = worldState.karts.filter(k => k.state === 'running' || k.state === 'hit');
     if (activeKarts.length === 0) return;
 
-    // Trier par score (décroissant = meilleur en premier)
     const sortedKarts = [...activeKarts].sort((a, b) => getKartScore(b) - getKartScore(a));
 
-    // Construire le nouveau classement (tableau d'IDs)
     const newRanking = sortedKarts.map(k => k.id);
 
-    // Détecter les changements de position
     const prevRanking = leaderboardState.previousRanking;
 
     sortedKarts.forEach((kart, newPosition) => {
@@ -280,37 +269,28 @@ function updateLeaderboard() {
         const prevPosition = prevRanking.indexOf(kart.id);
         const ppElement = kart.leaderboardPP;
 
-        // Supprimer les anciennes classes d'animation
         ppElement.classList.remove('overtaking', 'dropping');
 
         if (prevPosition !== -1 && prevPosition !== newPosition) {
-            // Position a changé
             if (newPosition < prevPosition) {
-                // Monte dans le classement (dépasse) - animation arc
                 ppElement.classList.add('overtaking');
             } else {
-                // Descend dans le classement (se fait dépasser) - animation directe
                 ppElement.classList.add('dropping');
             }
 
-            // Retirer la classe après l'animation
             setTimeout(() => {
                 ppElement.classList.remove('overtaking', 'dropping');
-                // Repositionner dans le bon slot
                 positionPPInSlot(kart, newPosition);
             }, 400);
         } else if (prevPosition === -1) {
-            // Nouveau dans le classement
             positionPPInSlot(kart, newPosition);
         } else {
-            // Même position, s'assurer qu'il est bien placé
             positionPPInSlot(kart, newPosition);
         }
 
         kart.leaderboardPosition = newPosition;
     });
 
-    // Sauvegarder le classement actuel
     leaderboardState.previousRanking = newRanking;
 }
 
@@ -469,7 +449,6 @@ function handleSpawns(now) {
             pendingKart.state = 'running';
             pendingKart.absoluteVelocity = getInitialKartSpeed();
 
-            // Ajouter la PP au leaderboard au moment du spawn
             addKartToLeaderboard(pendingKart);
 
             const delay = randomRange(GAME_CONFIG.delays.spawnMin, GAME_CONFIG.delays.spawnMax);
@@ -613,12 +592,10 @@ function giveKartItem(kart) {
     if (itemType === 'shell') {
         const size = cachedIsMobile ? GAME_CONFIG.visuals.shell.widthMobile : GAME_CONFIG.visuals.shell.width;
         itemDiv.style.width = `${size}px`;
-        // Utiliser le cache pour éviter le rechargement
         img.src = imageCache['shell_1'] ? imageCache['shell_1'].src : GAME_CONFIG.resources.paths.shell(1);
     } else {
         const size = cachedIsMobile ? GAME_CONFIG.visuals.banana.widthMobile : GAME_CONFIG.visuals.banana.width + 4;
         itemDiv.style.width = `${size}px`;
-        // Utiliser le cache pour éviter le rechargement
         img.src = imageCache['banana'] ? imageCache['banana'].src : GAME_CONFIG.resources.paths.banana;
     }
 
@@ -1046,7 +1023,6 @@ function initDebugHUD() {
     camViewLoop.style.display = 'none';
     hud.appendChild(camViewLoop);
 
-    // Panneau de classement fixe
     const leaderboard = document.createElement('div');
     leaderboard.id = 'debug-leaderboard';
     leaderboard.style.cssText = `
@@ -1118,16 +1094,12 @@ function updateDebugHUD() {
         }
     });
 
-    // Mise à jour du panneau de classement
     const leaderboardList = document.getElementById('debug-leaderboard-list');
     if (leaderboardList) {
-        // Trier les karts par position (tours + position sur le circuit)
         const sortedKarts = [...worldState.karts]
             .filter(k => k.state !== 'pending')
             .sort((a, b) => {
-                // D'abord par nombre de tours (décroissant)
                 if (b.lapCount !== a.lapCount) return b.lapCount - a.lapCount;
-                // Ensuite par position sur le circuit (décroissant)
                 return b.worldX - a.worldX;
             });
 
@@ -1168,9 +1140,103 @@ function handleVisibilityChange() {
     }
 }
 
+// === WINTER THEME - SNOW EFFECT ===
+
+function initSnow() {
+    const banner = document.querySelector('.hero.smk-snes-banner');
+    if (!banner) return;
+
+    let snowContainer = document.querySelector('.snow-container');
+    if (!snowContainer) {
+        snowContainer = document.createElement('div');
+        snowContainer.className = 'snow-container';
+        const gameWrapper = banner.querySelector('.game-content-wrapper');
+        if (gameWrapper) {
+            gameWrapper.appendChild(snowContainer);
+        } else {
+            banner.appendChild(snowContainer);
+        }
+    }
+
+    const snowflakeCount = cachedIsMobile ? 50 : 100;
+    const containerHeight = snowContainer.offsetHeight || 360;
+    const containerWidth = snowContainer.offsetWidth || 1200;
+
+    for (let i = 0; i < snowflakeCount; i++) {
+        createFallingSnowflake(snowContainer, containerHeight, containerWidth);
+    }
+
+    const landedCount = cachedIsMobile ? 15 : 30;
+    for (let i = 0; i < landedCount; i++) {
+        createLandedSnowflake(snowContainer, containerWidth);
+    }
+}
+
+function createFallingSnowflake(container, containerHeight, containerWidth) {
+    const snowflake = document.createElement('div');
+    snowflake.className = 'snowflake falling';
+
+    const size = Math.random() * 3 + 2;
+    snowflake.style.width = `${size}px`;
+    snowflake.style.height = `${size}px`;
+
+    const maxDrift = GAME_CONFIG.speeds.roadPPS * (containerHeight / 80);
+    const maxDriftPercent = (maxDrift / containerWidth) * 100;
+    const startX = Math.random() * (110 + maxDriftPercent) - 10;
+    snowflake.style.left = `${startX}%`;
+
+    const fallEndPercent = 0.65 + Math.random() * 0.30;
+    const fallHeight = containerHeight * fallEndPercent;
+
+    const fallSpeed = 80 + Math.random() * 70;
+    const duration = fallHeight / fallSpeed;
+    snowflake.style.animationDuration = `${duration}s`;
+
+    snowflake.style.animationDelay = `${Math.random() * duration}s`;
+
+    const driftDistance = -(GAME_CONFIG.speeds.roadPPS * duration);
+    snowflake.style.setProperty('--snow-drift', driftDistance);
+    snowflake.style.setProperty('--snow-fall-height', fallHeight);
+
+    container.appendChild(snowflake);
+}
+
+function createLandedSnowflake(container, containerWidth) {
+    const snowflake = document.createElement('div');
+    snowflake.className = 'snowflake landed';
+
+    const size = Math.random() * 1.5 + 1.5;
+    snowflake.style.width = `${size}px`;
+    snowflake.style.height = `${size}px`;
+
+    const bottomPercent = Math.random() * 32 + 1;
+    snowflake.style.bottom = `${bottomPercent}%`;
+
+    const zIndex = (GAME_CONFIG.rendering.zIndexBase - bottomPercent) | 0;
+    snowflake.style.zIndex = zIndex;
+
+    snowflake.style.left = `${80 + Math.random() * 40}%`;
+
+    const driftDistance = -containerWidth * 1.5; 
+    const driftDuration = (containerWidth * 1.5) / GAME_CONFIG.speeds.roadPPS;
+
+    snowflake.style.setProperty('--drift-distance', driftDistance);
+    snowflake.style.animationDuration = `${driftDuration}s`;
+
+    snowflake.style.animationDelay = `${Math.random() * driftDuration}s`;
+
+    snowflake.addEventListener('animationend', () => {
+        snowflake.remove();
+        createLandedSnowflake(container, containerWidth);
+    });
+
+    container.appendChild(snowflake);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     preloadImages();
     initWorld();
+    initSnow();
     animate(0);
     const fadeElements = document.querySelectorAll('.fade-in');
     fadeElements.forEach(el => setTimeout(() => el.classList.add('visible'), 100));
