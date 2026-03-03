@@ -12,6 +12,50 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <style>
+        @media screen and (max-width: 460px) {
+            .hero-body .title { font-size: 1.3rem !important; }
+            .hero-body .subtitle { font-size: 0.85rem !important; }
+            .podium-container .fa-4x { font-size: 2.5em !important; }
+            .podium-container .fa-3x { font-size: 2em !important; }
+            .podium-name { font-size: 0.8rem; }
+            .podium-score { font-size: 0.75rem; }
+            .section { padding: 1rem 0.75rem !important; }
+            .mobile-card-table table, .mobile-card-table thead, .mobile-card-table tbody, .mobile-card-table th, .mobile-card-table td, .mobile-card-table tr {
+                display: block;
+            }
+            .mobile-card-table thead tr {
+                position: absolute; top: -9999px; left: -9999px;
+            }
+            .mobile-card-table tr {
+                margin-bottom: 1rem;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 8px;
+                padding: 10px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            }
+            .mobile-card-table td {
+                border: none !important;
+                position: relative;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                padding-top: 5px !important;
+                padding-bottom: 5px !important;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                text-align: right;
+            }
+            .mobile-card-table td:before {
+                content: attr(data-label);
+                font-weight: bold;
+                text-align: left;
+                padding-right: 15px;
+                color: #e0e0e0;
+            }
+        }
+    </style>
 </head>
 <body>
     {% include 'navbar.html' %}
@@ -138,12 +182,14 @@
                             </p>
                         </div>
                         <div class="card-content">
+                            <div class="mobile-card-table">
                             <table class="table is-fullwidth is-hoverable">
                                 <thead>
                                     <tr>
                                         <th>Position</th>
                                         <th>Joueur</th>
                                         <th>Score</th>
+                                        <th class="has-text-centered">+/-</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -171,17 +217,25 @@
                                         {% endif %}
 
                                     <tr>
-                                        <td class="is-vcentered font-weight-bold">
+                                        <td class="is-vcentered font-weight-bold" data-label="Position">
                                             {{ ns.display_rank }} {{ icon_html|safe }}
                                         </td>
-                                        <td>
+                                        <td data-label="Joueur">
                                             <a href="/stats/joueur/{{ joueur.nom }}" class="has-text-primary font-weight-bold">{{ joueur.nom }}</a>
                                         </td>
-                                        <td>{{ joueur.score_tournoi }} pts</td>
+                                        <td data-label="Score">{{ joueur.score_tournoi }} pts</td>
+                                        <td class="has-text-centered" style="vertical-align: middle;" data-label="+/-">
+                                            {% if joueur.ts_diff is not none %}
+                                                <span class="tag is-small" style="font-weight:bold; {% if joueur.ts_diff > 0 %}background-color:#e6ffed;color:#22863a;{% elif joueur.ts_diff < 0 %}background-color:#ffeef0;color:#cb2431;{% else %}color:#6a737d;{% endif %}">
+                                                    {{ '%+.3f'|format(joueur.ts_diff) }}
+                                                </span>
+                                            {% else %}<span class="has-text-grey-light">-</span>{% endif %}
+                                        </td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                         <div class="card-footer">
                             <a href="/stats/tournois" class="card-footer-item">

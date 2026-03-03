@@ -1565,16 +1565,23 @@ def get_tournoi_details(tournoi_id):
                 td = cur.fetchone()
                 if not td: abort(404)
                 cur.execute("""
-                    SELECT j.nom, p.score, p.new_score_trueskill, p.new_tier, p.position, j.color
+                    SELECT j.nom, p.score, p.new_score_trueskill, p.new_tier, p.position, j.color,
+                           p.old_mu, p.old_sigma
                     FROM Participations p JOIN Joueurs j ON p.joueur_id = j.id
                     WHERE p.tournoi_id = %s ORDER BY p.position ASC
                 """, (tournoi_id,))
-                res = [{
-                    "nom": r[0], "score_tournoi": r[1],
-                    "score_trueskill": round(float(r[2]), 3) if r[2] else 0,
-                    "tier": r[3].strip() if r[3] else "?", "position": r[4],
-                    "color": r[5] if r[5] else "#FFFFFF"
-                } for r in cur.fetchall()]
+                res = []
+                for r in cur.fetchall():
+                    new_ts = round(float(r[2]), 3) if r[2] else 0
+                    old_ts = round(float(r[6]) - 3 * float(r[7]), 3) if r[6] is not None and r[7] is not None else None
+                    ts_diff = round(new_ts - old_ts, 3) if old_ts is not None else None
+                    res.append({
+                        "nom": r[0], "score_tournoi": r[1],
+                        "score_trueskill": new_ts,
+                        "tier": r[3].strip() if r[3] else "?", "position": r[4],
+                        "color": r[5] if r[5] else "#FFFFFF",
+                        "ts_diff": ts_diff
+                    })
         return jsonify({"date": td[0].strftime("%Y-%m-%d"), "resultats": res})
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
