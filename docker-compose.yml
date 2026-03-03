@@ -1,6 +1,6 @@
 services:
   db:
-      image: postgres:13
+      image: postgres:17
       volumes:
         - pg_data:/var/lib/postgresql/data
         - ./backEnd/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
