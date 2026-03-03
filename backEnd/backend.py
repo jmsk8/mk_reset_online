@@ -1414,6 +1414,12 @@ def get_joueur_stats(nom):
 
                 historique_data.sort(key=lambda x: x['date'], reverse=True)
 
+                for i in range(len(historique_data)):
+                    if i < len(historique_data) - 1:
+                        historique_data[i]['ts_diff'] = round(historique_data[i]['score_trueskill'] - historique_data[i + 1]['score_trueskill'], 3)
+                    else:
+                        historique_data[i]['ts_diff'] = None
+
                 nb_tournois = len(scores_bruts)
                 if nb_tournois > 0:
                     score_moyen = sum(scores_bruts) / nb_tournois

@@ -32,6 +32,26 @@ re: fclean build     ## Full cleanup then rebuild (schema + seed)
 redump: fclean       ## Full cleanup then rebuild with dump.sql
 	$(COMPOSE_DUMP) up --build -d
 
+# ── Rebuild individual services ──────────────
+
+re-front:            ## Rebuild and restart frontend
+	$(COMPOSE) up --build -d --no-deps frontend
+
+re-back:             ## Rebuild and restart backend
+	$(COMPOSE) up --build -d --no-deps backend
+
+re-db:               ## Recreate database (schema + seed)
+	$(COMPOSE) stop db
+	$(COMPOSE) rm -f db
+	docker volume rm -f $$($(COMPOSE) config --volumes | grep pg_data | head -1) 2>/dev/null || true
+	$(COMPOSE) up -d db
+
+re-db-dump:          ## Recreate database with dump.sql
+	$(COMPOSE) stop db
+	$(COMPOSE) rm -f db
+	docker volume rm -f $$($(COMPOSE) config --volumes | grep pg_data | head -1) 2>/dev/null || true
+	$(COMPOSE_DUMP) up -d db
+
 # ── Monitoring ───────────────────────────────
 
 logs:                ## Follow all logs
@@ -69,6 +89,7 @@ help:                ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: up stop start build down fclean re redump \
+        re-front re-back re-db re-db-dump \
         logs logs-nginx logs-front logs-back logs-db ps \
         db-shell db-backup help
 

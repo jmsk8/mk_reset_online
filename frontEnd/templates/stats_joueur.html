@@ -185,37 +185,64 @@
                                 <table class="table is-fullwidth is-hoverable">
                                     <thead>
                                         <tr>
-                                            <th>Date</th>
-                                            <th>Score</th>
-                                            <th>Ligue</th>
                                             <th>Position</th>
+                                            <th>Score</th>
+                                            <th class="has-text-centered">+/-</th>
+                                            <th>Ligue</th>
+                                            <th>Date</th>
                                             <th class="has-text-centered">Détails</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {% for tournoi in historique %}
                                         <tr class="fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
-                                            <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
-                                           
                                             {% if tournoi.type == 'absence' %}
-                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
-                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
                                                 <td style="vertical-align: middle;" data-label="Position">
                                                     <span class="tag is-danger is-light">Absence prolongée (+{{ tournoi.valeur }} sigma)</span>
                                                 </td>
+                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
+                                                <td style="vertical-align: middle;" class="has-text-centered" data-label="+/-">
+                                                    {% if tournoi.ts_diff is not none %}
+                                                        <span class="tag is-small" style="font-weight:bold; {% if tournoi.ts_diff > 0 %}background-color:#e6ffed;color:#22863a;{% elif tournoi.ts_diff < 0 %}background-color:#ffeef0;color:#cb2431;{% else %}color:#6a737d;{% endif %}">
+                                                            {{ '%+.3f'|format(tournoi.ts_diff) }}
+                                                        </span>
+                                                    {% else %}<span class="has-text-grey-light">-</span>{% endif %}
+                                                </td>
+                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
+                                                <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
                                                 <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails"><span class="tag is-dark">N/A</span></td>
                                             {% elif tournoi.type == 'reset' %}
-                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
-                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
                                                 <td style="vertical-align: middle;" data-label="Position">
                                                     <span class="tag is-primary is-light" style="background-color: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe;">
                                                         <i class="fas fa-magic mr-1"></i> Reset Global (+{{ tournoi.valeur }})
                                                     </span>
                                                 </td>
+                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
+                                                <td style="vertical-align: middle;" class="has-text-centered" data-label="+/-">
+                                                    {% if tournoi.ts_diff is not none %}
+                                                        <span class="tag is-small" style="font-weight:bold; {% if tournoi.ts_diff > 0 %}background-color:#e6ffed;color:#22863a;{% elif tournoi.ts_diff < 0 %}background-color:#ffeef0;color:#cb2431;{% else %}color:#6a737d;{% endif %}">
+                                                            {{ '%+.3f'|format(tournoi.ts_diff) }}
+                                                        </span>
+                                                    {% else %}<span class="has-text-grey-light">-</span>{% endif %}
+                                                </td>
+                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
+                                                <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
                                                 <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails"><span class="tag is-dark">N/A</span></td>
                                             {% else %}
+                                                <td style="vertical-align: middle;" data-label="Position">
+                                                    {% if tournoi.position == 1 %}<span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
+                                                    {% elif tournoi.position == 2 %}<span class="tag is-light"><i class="fas fa-medal"></i> 2ème</span>
+                                                    {% elif tournoi.position == 3 %}<span class="tag is-danger"><i class="fas fa-medal"></i> 3ème</span>
+                                                    {% else %}<span class="tag is-info">{{ tournoi.position }}ème</span>{% endif %}
+                                                </td>
                                                 <td style="vertical-align: middle;" data-label="Score">{{ tournoi.score }}</td>
-                                                
+                                                <td style="vertical-align: middle;" class="has-text-centered" data-label="+/-">
+                                                    {% if tournoi.ts_diff is not none %}
+                                                        <span class="tag is-small" style="font-weight:bold; {% if tournoi.ts_diff > 0 %}background-color:#e6ffed;color:#22863a;{% elif tournoi.ts_diff < 0 %}background-color:#ffeef0;color:#cb2431;{% else %}color:#6a737d;{% endif %}">
+                                                            {{ '%+.3f'|format(tournoi.ts_diff) }}
+                                                        </span>
+                                                    {% else %}<span class="has-text-grey-light">-</span>{% endif %}
+                                                </td>
                                                 <td style="vertical-align: middle;" data-label="Ligue">
                                                     {% if tournoi.ligue != 'N/A' %}
                                                         <span class="tag is-small" style="background-color: {{ tournoi.ligue_couleur or '#3298dc' }}; color: #222; font-weight: bold; border: 1px solid rgba(0,0,0,0.2);">
@@ -226,13 +253,7 @@
                                                         <span class="has-text-grey-light is-size-7">-</span>
                                                     {% endif %}
                                                 </td>
-
-                                                <td style="vertical-align: middle;" data-label="Position">
-                                                    {% if tournoi.position == 1 %}<span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
-                                                    {% elif tournoi.position == 2 %}<span class="tag is-light"><i class="fas fa-medal"></i> 2ème</span>
-                                                    {% elif tournoi.position == 3 %}<span class="tag is-danger"><i class="fas fa-medal"></i> 3ème</span>
-                                                    {% else %}<span class="tag is-info">{{ tournoi.position }}ème</span>{% endif %}
-                                                </td>
+                                                <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
                                                 <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
                                                     <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined"><span class="icon"><i class="fas fa-eye"></i></span></a>
                                                 </td>
