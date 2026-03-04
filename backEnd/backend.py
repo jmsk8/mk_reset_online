@@ -1389,7 +1389,20 @@ def get_joueur_stats(nom):
                 """, (nom,))
                 raw_history = cur.fetchall()
 
-                cur.execute("SELECT g.date, g.old_sigma, g.new_sigma, j.mu FROM ghost_log g JOIN Joueurs j ON g.joueur_id = j.id WHERE j.nom = %s ORDER BY g.date DESC", (nom,))
+                cur.execute("""
+                    SELECT g.date, g.old_sigma, g.new_sigma,
+                           COALESCE(
+                               (SELECT p2.mu FROM Participations p2
+                                JOIN Tournois t2 ON p2.tournoi_id = t2.id
+                                WHERE p2.joueur_id = g.joueur_id AND t2.date <= g.date
+                                ORDER BY t2.date DESC, t2.id DESC LIMIT 1),
+                               j.mu
+                           ) as mu_at_ghost
+                    FROM ghost_log g
+                    JOIN Joueurs j ON g.joueur_id = j.id
+                    WHERE j.nom = %s
+                    ORDER BY g.date DESC
+                """, (nom,))
                 raw_ghosts = cur.fetchall()
 
                 cur.execute("SELECT date, value_applied FROM global_resets ORDER BY date DESC")
@@ -2301,8 +2314,23 @@ def add_tournament():
                 penalty_val = float(conf.get('ghost_penalty', 0.1))
                 unranked_limit = int(conf.get('unranked_threshold', 10))
 
-                query_absents = f"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs WHERE id NOT IN ({','.join(['%s']*len(present_pids))})" if present_pids else "SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs"
-                cur.execute(query_absents, tuple(present_pids))
+                not_in_clause = f"id NOT IN ({','.join(['%s']*len(present_pids))})" if present_pids else "TRUE"
+                abs_params = list(present_pids)
+
+                if is_league_mode and ligue_id:
+                    cur.execute("SELECT id FROM Ligues ORDER BY niveau DESC LIMIT 1")
+                    lowest_ligue_row = cur.fetchone()
+                    lowest_ligue_id = lowest_ligue_row[0] if lowest_ligue_row else None
+
+                    if lowest_ligue_id and int(ligue_id) == lowest_ligue_id:
+                        query_absents = f"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs WHERE {not_in_clause} AND (ligue_id = %s OR ligue_id IS NULL)"
+                    else:
+                        query_absents = f"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs WHERE {not_in_clause} AND ligue_id = %s"
+                    abs_params.append(int(ligue_id))
+                else:
+                    query_absents = f"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs WHERE {not_in_clause}"
+
+                cur.execute(query_absents, tuple(abs_params))
                 
                 for pid, sig, missed, is_r in cur.fetchall():
                     new_missed = (missed or 0) + 1
