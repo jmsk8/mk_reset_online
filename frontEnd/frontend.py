@@ -229,7 +229,12 @@ def classement():
     if ligues_status == 200 and isinstance(ligues_data, list):
         ligues = ligues_data
 
-    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues)
+    seuils = {}
+    seuils_data, seuils_status = backend_request('GET', '/tier-seuils')
+    if seuils_status == 200 and isinstance(seuils_data, dict):
+        seuils = seuils_data
+
+    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, seuils=seuils)
 
 @app.route('/stats/joueur/<nom>')
 def stats_joueur_detail(nom):

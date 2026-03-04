@@ -159,12 +159,14 @@
                         </div>
                     </div>
 
-                    <div class="columns is-multiline">
-                        {% for joueur in joueurs %}
-                        <div class="column is-6-tablet is-4-widescreen joueur-card fade-in" 
-                             data-nom="{{ joueur.nom }}" 
-                             data-trueskill="{{ joueur.score_trueskill }}" 
-                             data-victoires="{{ joueur.victoires }}" 
+                    {% set ranked = joueurs|selectattr('tier', 'in', ['S','A','B','C'])|list %}
+                    {% set unranked = joueurs|rejectattr('tier', 'in', ['S','A','B','C'])|list %}
+
+                    {% macro joueur_card(joueur) %}
+                        <div class="column is-6-tablet is-4-widescreen joueur-card fade-in"
+                             data-nom="{{ joueur.nom }}"
+                             data-trueskill="{{ joueur.score_trueskill }}"
+                             data-victoires="{{ joueur.victoires }}"
                              data-score="{{ joueur.score_moyen }}"
                              data-nb="{{ joueur.nombre_tournois }}">
                             <div class="card glass-card" style="height: 100%;">
@@ -210,7 +212,7 @@
                                                 <p class="title is-5 has-text-success">{{ joueur.score_moyen }}</p>
                                             </div>
                                         </div>
-                                        
+
                                         <a href="/stats/joueur/{{ joueur.nom }}" class="button is-small is-fullwidth is-primary is-outlined mt-3">
                                             <span class="icon"><i class="fas fa-chart-line"></i></span>
                                             <span>Voir détails complets</span>
@@ -219,8 +221,25 @@
                                 </div>
                             </div>
                         </div>
+                    {% endmacro %}
+
+                    <div class="columns is-multiline">
+                        {% for joueur in ranked %}
+                            {{ joueur_card(joueur) }}
                         {% endfor %}
                     </div>
+
+                    {% if unranked %}
+                    <hr style="border-color: rgba(255,255,255,0.1); margin: 2rem 0;">
+                    <p class="has-text-grey-light has-text-centered mb-4">
+                        <i class="fas fa-question-circle"></i> Non classés
+                    </p>
+                    <div class="columns is-multiline">
+                        {% for joueur in unranked %}
+                            {{ joueur_card(joueur) }}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -258,21 +277,24 @@
             if(btnSort) {
                 btnSort.addEventListener('click', () => {
                     const sortBy = sortOption.value;
-                    const cardsContainer = document.querySelector('.columns.is-multiline');
-                    const cards = Array.from(document.querySelectorAll('.joueur-card'));
-                    
-                    cards.sort((a, b) => {
-                        const aValue = parseFloat(a.getAttribute(`data-${sortBy}`));
-                        const bValue = parseFloat(b.getAttribute(`data-${sortBy}`));
-                        return bValue - aValue; 
-                    });
-                    
-                    while (cardsContainer.firstChild) {
-                        cardsContainer.removeChild(cardsContainer.firstChild);
-                    }
-                    
-                    cards.forEach(card => {
-                        cardsContainer.appendChild(card);
+                    const containers = document.querySelectorAll('.columns.is-multiline');
+
+                    containers.forEach(container => {
+                        const cards = Array.from(container.querySelectorAll('.joueur-card'));
+
+                        cards.sort((a, b) => {
+                            const aValue = parseFloat(a.getAttribute(`data-${sortBy}`));
+                            const bValue = parseFloat(b.getAttribute(`data-${sortBy}`));
+                            return bValue - aValue;
+                        });
+
+                        while (container.firstChild) {
+                            container.removeChild(container.firstChild);
+                        }
+
+                        cards.forEach(card => {
+                            container.appendChild(card);
+                        });
                     });
                 });
             }

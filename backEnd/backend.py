@@ -1227,6 +1227,40 @@ def classement():
         return jsonify({"error": "Erreur serveur"}), 500
 
 
+@app.route('/tier-seuils')
+def tier_seuils():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM Configuration WHERE key = 'sigma_threshold'")
+                res = cur.fetchone()
+                threshold = float(res[0]) if res else 4.0
+
+                cur.execute("SELECT mu, sigma FROM Joueurs WHERE is_ranked = true")
+                all_players = cur.fetchall()
+
+                valid_scores = []
+                for mu, sigma in all_players:
+                    if float(sigma) <= threshold:
+                        valid_scores.append(float(mu) - 3 * float(sigma))
+
+                if len(valid_scores) < 2:
+                    return jsonify({"S": 0, "A": 0, "B": 0, "C": 0})
+
+                mean_score = sum(valid_scores) / len(valid_scores)
+                variance = sum((x - mean_score) ** 2 for x in valid_scores) / len(valid_scores)
+                std_dev = math.sqrt(variance)
+
+                return jsonify({
+                    "S": round(mean_score + std_dev, 3),
+                    "A": round(mean_score, 3),
+                    "B": round(mean_score - std_dev, 3),
+                    "C": 0
+                })
+    except Exception:
+        return jsonify({"error": "Erreur serveur"}), 500
+
+
 @app.route('/api/admin/global-reset', methods=['POST'])
 @admin_required
 def apply_global_reset():

@@ -145,20 +145,22 @@
                             </div>
                             
                             <div class="content">
-                                <div class="level">
-                                    <div class="level-left">
-                                        <div class="level-item">
-                                            <div class="field has-addons">
-                                                <div class="control">
-                                                    <input class="input" type="text" id="joueurSearch" placeholder="Rechercher...">
-                                                </div>
-                                                <div class="control">
-                                                    <button class="button is-primary" id="btnSearchJoueur">
-                                                        <i class="fas fa-search"></i>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
+                                <div class="columns is-mobile is-multiline is-centered has-text-centered" style="margin-bottom: 1rem;">
+                                    <div class="column is-narrow">
+                                        <span class="tag tier-s tier-tag is-small">S</span>
+                                        <span class="has-text-grey-light is-size-7">&ge; {{ seuils.get('S', '?') }}</span>
+                                    </div>
+                                    <div class="column is-narrow">
+                                        <span class="tag tier-a tier-tag is-small">A</span>
+                                        <span class="has-text-grey-light is-size-7">&ge; {{ seuils.get('A', '?') }}</span>
+                                    </div>
+                                    <div class="column is-narrow">
+                                        <span class="tag tier-b tier-tag is-small">B</span>
+                                        <span class="has-text-grey-light is-size-7">&ge; {{ seuils.get('B', '?') }}</span>
+                                    </div>
+                                    <div class="column is-narrow">
+                                        <span class="tag tier-c tier-tag is-small">C</span>
+                                        <span class="has-text-grey-light is-size-7">&lt; {{ seuils.get('B', '?') }}</span>
                                     </div>
                                 </div>
 
@@ -261,29 +263,6 @@
                 elem.classList.add('visible');
             });
             
-            const joueurSearch = document.getElementById('joueurSearch');
-            const btnSearchJoueur = document.getElementById('btnSearchJoueur');
-            
-            function filterJoueurs() {
-                const searchText = joueurSearch.value.toLowerCase();
-                const rows = document.querySelectorAll('.joueur-row');
-                
-                rows.forEach(row => {
-                    const nom = row.getAttribute('data-nom').toLowerCase();
-                    if (nom.includes(searchText)) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-            }
-            
-            if(joueurSearch) {
-                joueurSearch.addEventListener('keyup', filterJoueurs);
-            }
-            if(btnSearchJoueur) {
-                btnSearchJoueur.addEventListener('click', filterJoueurs);
-            }
         });
     </script>
 </body>
