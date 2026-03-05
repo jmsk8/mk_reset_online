@@ -172,10 +172,15 @@ CREATE TABLE public.awards_obtenus (
     saison_id integer REFERENCES public.saisons(id) ON DELETE CASCADE,
     award_id integer REFERENCES public.types_awards(id) ON DELETE CASCADE,
     valeur character varying(50),
+    is_league_award boolean DEFAULT false,
+    ligue_id integer REFERENCES public.ligues(id) ON DELETE SET NULL,
+    ligue_nom character varying(100),
+    ligue_couleur character varying(20),
     created_at timestamp DEFAULT now(),
-    UNIQUE(joueur_id, saison_id, award_id)
+    UNIQUE(joueur_id, saison_id, award_id, ligue_id)
 );
 ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
+CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus (joueur_id, saison_id, award_id) WHERE ligue_id IS NULL;
 
 INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
 ('gold_moai', '1er', 'gold_moai.png', 'Vainqueur de Saison'),

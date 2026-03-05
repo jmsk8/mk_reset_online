@@ -25,6 +25,7 @@
         .award-icon-large.super-silver { animation: pulseAuraSilver 3s infinite ease-in-out; }
         .award-icon-large.super-bronze { animation: pulseAuraBronze 3s infinite ease-in-out; }
         .award-count { font-size: 0.9rem; color: #fff; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); background-color: rgba(0,0,0,0.3); padding: 0 6px; border-radius: 10px; }
+        .league-glow-img { filter: drop-shadow(0 0 6px var(--league-color)) drop-shadow(0 0 14px var(--league-color)); }
         .chart-container { position: relative; width: 100%; height: 450px; }
         .modal-content-glass { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; box-shadow: 0 0 40px rgba(0,0,0,0.5); width: 400px; max-width: 90%; margin: 0 auto; }
         @media screen and (max-width: 768px) {
@@ -113,8 +114,8 @@
                                             {% elif 'bronze' in award.emoji %}{% set aura_class = 'super-bronze' %}
                                             {% endif %}
                                         {% endif %}
-                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
-                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }}" alt="{{ award.nom }}">{% else %}<span class="award-text-large">{{ award.emoji }}</span>{% endif %}
+                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}', {{ award|tojson }})">
+                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }} {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %} alt="{{ award.nom }}">{% else %}<span class="award-text-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %}>{{ award.emoji }}</span>{% endif %}
                                             <span class="award-count">x{{ award.count }}</span>
                                         </div>
                                     {% endif %}
@@ -132,8 +133,8 @@
                                 {% for award in awards %}
                                     {% if 'moai' not in award.emoji %}
                                         {% set ns_awards.found = true %}
-                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
-                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large" alt="{{ award.nom }}">{% else %}<span class="award-text-large">{{ award.emoji }}</span>{% endif %}
+                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}', {{ award|tojson }})">
+                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %} alt="{{ award.nom }}">{% else %}<span class="award-text-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %}>{{ award.emoji }}</span>{% endif %}
                                             <span class="award-count">x{{ award.count }}</span>
                                         </div>
                                     {% endif %}
@@ -289,9 +290,17 @@
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => { requestAnimationFrame(() => { elem.classList.add('visible'); }); });
         });
-        function showAwardInfo(title, description) {
+        function showAwardInfo(title, description, awardData) {
             document.getElementById('infoModalTitle').innerText = title;
-            document.getElementById('infoModalContent').innerHTML = description;
+            let content = description;
+            if (awardData && awardData.is_league_award) {
+                content = '<span class="tag" style="background-color:' + awardData.ligue_couleur + ';color:#000;font-weight:bold;margin-bottom:8px;">' + awardData.ligue_nom + '</span><br>';
+                if (awardData.ligue_supprimee) {
+                    content += '<span class="has-text-grey is-italic is-size-7">(cette ligue n\'existe plus)</span><br>';
+                }
+                content += description;
+            }
+            document.getElementById('infoModalContent').innerHTML = content;
             document.getElementById('infoModal').classList.add('is-active');
         }
         function closeInfoModal() { document.getElementById('infoModal').classList.remove('is-active'); }

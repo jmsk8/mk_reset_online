@@ -120,9 +120,13 @@
 
         .award-text-detail {
             font-size: 0.85rem;
-            color: #94a3b8; 
+            color: #94a3b8;
             margin-top: -5px;
             margin-bottom: 5px;
+        }
+
+        .league-glow-img {
+            filter: drop-shadow(0 0 6px var(--league-color)) drop-shadow(0 0 14px var(--league-color));
         }
 
         .moai-container {
@@ -592,9 +596,9 @@
                     {% set p3 = list_bronze[0] if list_bronze else none %}
 
                     {% if p2 %}
-                    <div class="moai-card" onclick="showAwardInfo('{{ p2.award_name|replace("'", "\\'") }}', '{{ p2.description|replace("'", "\\'") }}')" title="{{ p2.description }}">
+                    <div class="moai-card" onclick="showAwardInfo('{{ p2.award_name|replace("'", "\\'") }}', '{{ p2.description|replace("'", "\\'") }}', {{ p2|tojson }})" title="{{ p2.description }}">
                         <div class="rank-badge" style="background: #C0C0C0; color: #000;">2ème</div>
-                        <img src="/static/img/{{ p2.emoji }}" class="moai-img">
+                        <img src="/static/img/{{ p2.emoji }}" class="moai-img {{ 'league-glow-img' if p2.is_league_award else '' }}" {% if p2.is_league_award %}style="--league-color: {{ p2.ligue_couleur }};"{% endif %}>
                         <h3 class="title is-4">
                             <a href="/stats/joueur/{{ p2.nom }}" class="has-text-white player-link" onclick="event.stopPropagation()">{{ p2.nom }}</a>
                         </h3>
@@ -609,9 +613,9 @@
                     {% endif %}
 
                     {% if p1 %}
-                    <div class="moai-card moai-gold" onclick="showAwardInfo('{{ p1.award_name|replace("'", "\\'") }}', '{{ p1.description|replace("'", "\\'") }}')" title="{{ p1.description }}">
+                    <div class="moai-card moai-gold" onclick="showAwardInfo('{{ p1.award_name|replace("'", "\\'") }}', '{{ p1.description|replace("'", "\\'") }}', {{ p1|tojson }})" title="{{ p1.description }}">
                         <div class="rank-badge" style="background: #FFD700; color: #000; top: -20px; font-size: 1.2rem;">1er</div>
-                        <img src="/static/img/{{ p1.emoji }}" class="moai-img">
+                        <img src="/static/img/{{ p1.emoji }}" class="moai-img {{ 'league-glow-img' if p1.is_league_award else '' }}" {% if p1.is_league_award %}style="--league-color: {{ p1.ligue_couleur }};"{% endif %}>
                         <h3 class="title is-3 glow-text">
                             <a href="/stats/joueur/{{ p1.nom }}" class="has-text-white player-link" onclick="event.stopPropagation()">{{ p1.nom }}</a>
                         </h3>
@@ -626,9 +630,9 @@
                     {% endif %}
 
                     {% if p3 %}
-                    <div class="moai-card" onclick="showAwardInfo('{{ p3.award_name|replace("'", "\\'") }}', '{{ p3.description|replace("'", "\\'") }}')" title="{{ p3.description }}">
+                    <div class="moai-card" onclick="showAwardInfo('{{ p3.award_name|replace("'", "\\'") }}', '{{ p3.description|replace("'", "\\'") }}', {{ p3|tojson }})" title="{{ p3.description }}">
                         <div class="rank-badge" style="background: #CD7F32; color: #000;">3ème</div>
-                        <img src="/static/img/{{ p3.emoji }}" class="moai-img">
+                        <img src="/static/img/{{ p3.emoji }}" class="moai-img {{ 'league-glow-img' if p3.is_league_award else '' }}" {% if p3.is_league_award %}style="--league-color: {{ p3.ligue_couleur }};"{% endif %}>
                         <h3 class="title is-4">
                             <a href="/stats/joueur/{{ p3.nom }}" class="has-text-white player-link" onclick="event.stopPropagation()">{{ p3.nom }}</a>
                         </h3>
@@ -652,14 +656,14 @@
                         {% for award_code in ['ez', 'pas_loin', 'stakhanov', 'chillguy', 'stonks', 'not_stonks'] %}
                             {% if award_code in saison.awards %}
                                 <div class="column is-4">
+                                    {% set info_award = saison.awards[award_code][0] %}
                                     <div class="card has-background-transparent border-light h-100">
                                         <div class="card-content has-text-centered">
-                                            {% set info_award = saison.awards[award_code][0] %}
-                                            <div class="award-icon" onclick="showAwardInfo('{{ info_award.award_name|replace("'", "\\'") }}', '{{ info_award.description|replace("'", "\\'") }}')" title="{{ info_award.description }}">
+                                            <div class="award-icon" onclick="showAwardInfo('{{ info_award.award_name|replace("'", "\\'") }}', '{{ info_award.description|replace("'", "\\'") }}', {{ info_award|tojson }})" title="{{ info_award.description }}">
                                                 {% if info_award.emoji and '.png' in info_award.emoji %}
-                                                    <img src="/static/img/{{ info_award.emoji }}" class="award-img">
+                                                    <img src="/static/img/{{ info_award.emoji }}" class="award-img {{ 'league-glow-img' if info_award.is_league_award else '' }}" {% if info_award.is_league_award %}style="--league-color: {{ info_award.ligue_couleur }};"{% endif %}>
                                                 {% else %}
-                                                    {{ info_award.emoji }}
+                                                    <span {% if info_award.is_league_award %}class="league-glow-img" style="--league-color: {{ info_award.ligue_couleur }};"{% endif %}>{{ info_award.emoji }}</span>
                                                 {% endif %}
                                             </div>
                                             <p class="heading has-text-light mb-4">{{ info_award.award_name }}</p>
@@ -683,7 +687,7 @@
                                                             {% elif award_code == 'not_stonks' %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val|string|replace('-', '') }}</span> points{{ 's' if val|float|abs >= 2 else '' }} TS perdu{{ 's' if val|float|abs >= 2 else '' }}
                                                             {% elif award_code == 'stakhanov' %}
-                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> points{{ 's' if val|int >= 2 else '' }} {{ 'totaux' if val|int >= 2 else 'total' }}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> point{{ 's' if val|int >= 2 else '' }} {{ 'totaux' if val|int >= 2 else 'total' }}
                                                             {% else %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val }}</span>
                                                             {% endif %}
@@ -878,9 +882,17 @@
             modal.classList.add('is-active');
         }
 
-        function showAwardInfo(title, description) {
+        function showAwardInfo(title, description, awardData) {
             document.getElementById('infoModalTitle').innerText = title;
-            document.getElementById('infoModalContent').innerHTML = description;
+            let content = description;
+            if (awardData && awardData.is_league_award) {
+                content = '<span class="tag" style="background-color:' + awardData.ligue_couleur + ';color:#000;font-weight:bold;margin-bottom:8px;">' + awardData.ligue_nom + '</span><br>';
+                if (awardData.ligue_supprimee) {
+                    content += '<span class="has-text-grey is-italic is-size-7">(cette ligue n\'existe plus)</span><br>';
+                }
+                content += description;
+            }
+            document.getElementById('infoModalContent').innerHTML = content;
             document.getElementById('infoModal').classList.add('is-active');
         }
 

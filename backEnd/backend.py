@@ -169,49 +169,69 @@ def recalculate_tiers():
 # -----------------------------------------------------------------------------
 
 
-def _compute_advanced_stonks(conn, d_debut, d_fin):
+def _compute_advanced_stonks(conn, d_debut, d_fin, recap_mode=None, specific_ligue_id=None):
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT DISTINCT p.joueur_id, j.nom 
+        ligue_filter = ""
+        params = [d_debut, d_fin]
+        if recap_mode == 'league' and specific_ligue_id:
+            ligue_filter = " AND t.ligue_id = %s"
+            params.append(specific_ligue_id)
+        elif recap_mode == 'league':
+            ligue_filter = " AND t.ligue_id IS NOT NULL"
+        elif recap_mode == 'classic':
+            ligue_filter = " AND t.ligue_id IS NULL"
+
+        cur.execute(f"""
+            SELECT DISTINCT p.joueur_id, j.nom
             FROM participations p
             JOIN tournois t ON p.tournoi_id = t.id
             JOIN joueurs j ON p.joueur_id = j.id
-            WHERE t.date >= %s AND t.date <= %s
-        """, (d_debut, d_fin))
+            WHERE t.date >= %s AND t.date <= %s{ligue_filter}
+        """, params)
         joueurs_saison = cur.fetchall()
 
         stonks_list = []
 
         for jid, nom in joueurs_saison:
-            cur.execute("""
-                SELECT p.new_score_trueskill, p.sigma
+            cur.execute(f"""
+                SELECT p.new_score_trueskill, p.sigma, p.old_mu, p.old_sigma
                 FROM participations p
                 JOIN tournois t ON p.tournoi_id = t.id
-                WHERE p.joueur_id = %s AND t.date >= %s AND t.date <= %s
+                WHERE p.joueur_id = %s AND t.date >= %s AND t.date <= %s{ligue_filter}
                 ORDER BY t.date ASC
-            """, (jid, d_debut, d_fin))
-            
+            """, [jid] + params)
+
             historique = cur.fetchall()
             nb_matchs = len(historique)
             if nb_matchs == 0: continue
 
             baseline_ts = None
-            for score, sig in historique:
+            baseline_idx = None
+            for idx, (score, sig, old_mu, old_sigma) in enumerate(historique):
                 if float(sig) < 2.5:
                     baseline_ts = float(score)
-                    break 
-            
+                    baseline_idx = idx
+                    break
+
+            if baseline_ts is None and historique:
+                first_old_mu, first_old_sigma = historique[0][2], historique[0][3]
+                if first_old_mu is not None and first_old_sigma is not None and float(first_old_sigma) < 2.5:
+                    baseline_ts = float(first_old_mu) - 3 * float(first_old_sigma)
+                    baseline_idx = 0
+
             if baseline_ts is not None:
                 final_ts = float(historique[-1][0])
                 final_sigma = float(historique[-1][1])
                 delta = final_ts - baseline_ts
-                
+                matchs_ranked = nb_matchs - baseline_idx
+
                 stonks_list.append({
-                    'id': jid, 
-                    'nom': nom, 
-                    'val': delta, 
-                    'sigma': final_sigma, 
-                    'matchs': nb_matchs
+                    'id': jid,
+                    'nom': nom,
+                    'val': delta,
+                    'sigma': final_sigma,
+                    'matchs': nb_matchs,
+                    'matchs_ranked': matchs_ranked
                 })
         
         return stonks_list
@@ -407,7 +427,7 @@ def _aggregate_season_stats(d_debut, d_fin, recap_mode=None, specific_ligue_id=N
             d["total_points"] = _calculate_adjusted_total_points(d["gm_history"])
 
         winner_gm, list_gm = _compute_grand_master(stats, total_tournois)
-        advanced_stonks_list = _compute_advanced_stonks(conn, d_debut, d_fin)
+        advanced_stonks_list = _compute_advanced_stonks(conn, d_debut, d_fin, recap_mode, specific_ligue_id)
 
         candidates = {
             "grand_master": list_gm,
@@ -423,7 +443,7 @@ def _aggregate_season_stats(d_debut, d_fin, recap_mode=None, specific_ligue_id=N
             
             player_stonks = next((x for x in advanced_stonks_list if x['id'] == pid), None)
             if player_stonks:
-                 candidates["chillguy"].append({"id": pid, "nom": d["nom"], "val": abs(player_stonks['val']), "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
+                 candidates["chillguy"].append({"id": pid, "nom": d["nom"], "val": abs(player_stonks['val']), "matchs": d["matchs"], "matchs_ranked": player_stonks.get('matchs_ranked', d["matchs"]), "sigma": d["sigma_actuel"]})
 
         gm_score_map = { item['id']: item['final_score'] for item in list_gm }
         
@@ -549,19 +569,19 @@ def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
                 award_winners = [sorted(raw_list, key=lambda x: x['val'], reverse=True)[0]]
         
         elif code == 'stonks':
-            valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c['matchs'] >= (total_tournois * 0.5)]
+            valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c.get('matchs_ranked', c['matchs']) >= (total_tournois * 0.5)]
             if valid:
                 w = sorted(valid, key=lambda x: x['val'], reverse=True)[0]
                 if w['val'] > 0.001: award_winners = [w]
-        
+
         elif code == 'not_stonks':
-            valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c['matchs'] >= (total_tournois * 0.5)]
+            valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c.get('matchs_ranked', c['matchs']) >= (total_tournois * 0.5)]
             if valid:
                 w = sorted(valid, key=lambda x: x['val'], reverse=False)[0]
                 if w['val'] < -0.001: award_winners = [w]
-        
+
         elif code == 'chillguy':
-            valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c['matchs'] > (total_tournois * 0.5) and c['val'] < 0.3]
+            valid = [c for c in raw_list if float(c['sigma']) < 2.5 and c.get('matchs_ranked', c['matchs']) > (total_tournois * 0.5) and c['val'] < 0.3]
             if valid:
                 award_winners = [sorted(valid, key=lambda x: x['val'], reverse=False)[0]]
 
@@ -570,15 +590,23 @@ def _determine_winners(candidates, vic_cond, active_awards, total_tournois):
 
     return top_3_players, winners_map
 
-def _save_awards_to_db(conn, season_id, top_3, special_winners_map, is_yearly):
+def _save_awards_to_db(conn, season_id, top_3, special_winners_map, is_yearly, ligue_info=None):
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (season_id,))
-        
+        if ligue_info:
+            cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s AND ligue_id = %s", (season_id, ligue_info['id']))
+        else:
+            cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s AND ligue_id IS NULL", (season_id,))
+
         cur.execute("SELECT code, id FROM types_awards")
         types_map = {r[0]: r[1] for r in cur.fetchall()}
 
+        is_league = ligue_info is not None
+        l_id = ligue_info['id'] if ligue_info else None
+        l_nom = ligue_info['nom'] if ligue_info else None
+        l_couleur = ligue_info['couleur'] if ligue_info else None
+
         moai_codes = ['super_gold_moai', 'super_silver_moai', 'super_bronze_moai'] if is_yearly else ['gold_moai', 'silver_moai', 'bronze_moai']
-        
+
         for i in range(min(3, len(top_3))):
             player = top_3[i]
             code_award = moai_codes[i]
@@ -588,9 +616,9 @@ def _save_awards_to_db(conn, season_id, top_3, special_winners_map, is_yearly):
                     valeur_str = f"{player['final_score']:.3f}"
 
                 cur.execute("""
-                    INSERT INTO awards_obtenus (joueur_id, saison_id, award_id, valeur)
-                    VALUES (%s, %s, %s, %s)
-                """, (player['id'], season_id, types_map[code_award], valeur_str))
+                    INSERT INTO awards_obtenus (joueur_id, saison_id, award_id, valeur, is_league_award, ligue_id, ligue_nom, ligue_couleur)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (player['id'], season_id, types_map[code_award], valeur_str, is_league, l_id, l_nom, l_couleur))
 
         for code, winners in special_winners_map.items():
             if code in types_map:
@@ -598,10 +626,10 @@ def _save_awards_to_db(conn, season_id, top_3, special_winners_map, is_yearly):
                 for w in winners:
                     val_str = str(int(w['val'])) if code in ['ez', 'pas_loin', 'stakhanov'] else str(round(w['val'], 3))
                     cur.execute("""
-                        INSERT INTO awards_obtenus (joueur_id, saison_id, award_id, valeur)
-                        VALUES (%s, %s, %s, %s)
-                    """, (w['id'], season_id, award_id, val_str))
-        
+                        INSERT INTO awards_obtenus (joueur_id, saison_id, award_id, valeur, is_league_award, ligue_id, ligue_nom, ligue_couleur)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (w['id'], season_id, award_id, val_str, is_league, l_id, l_nom, l_couleur))
+
         cur.execute("UPDATE saisons SET is_active = true WHERE id = %s", (season_id,))
     conn.commit()
 
@@ -777,24 +805,47 @@ def get_recap(slug):
 
             awards_data = {}
 
-            cur.execute("""
-                SELECT t.code, t.nom, t.emoji, t.description, j.nom, a.valeur
+            award_ligue_filter = ""
+            award_params = [saison_id]
+            if is_league_recap and ligue_courante:
+                award_ligue_filter = " AND a.ligue_id = %s"
+                award_params.append(ligue_courante["id"])
+            elif is_league_recap:
+                award_ligue_filter = " AND a.ligue_id IS NOT NULL"
+
+            cur.execute(f"""
+                SELECT t.code, t.nom, t.emoji, t.description, j.nom, a.valeur,
+                       a.is_league_award, a.ligue_id, a.ligue_nom, a.ligue_couleur,
+                       l.couleur AS current_ligue_couleur, l.nom AS current_ligue_nom
                 FROM awards_obtenus a
                 JOIN types_awards t ON a.award_id = t.id
                 JOIN joueurs j ON a.joueur_id = j.id
-                WHERE a.saison_id = %s
-            """, (saison_id,))
+                LEFT JOIN ligues l ON a.ligue_id = l.id
+                WHERE a.saison_id = %s{award_ligue_filter}
+            """, award_params)
             saved_rows = cur.fetchall()
 
             if saved_rows:
-                for code, award_name, emoji, desc, player_name, valeur in saved_rows:
-                    awards_data.setdefault(code, []).append({
+                for row in saved_rows:
+                    code, award_name, emoji, desc, player_name, valeur = row[:6]
+                    is_league_award, a_ligue_id, a_ligue_nom, a_ligue_couleur, cur_ligue_couleur, cur_ligue_nom = row[6:]
+
+                    award_entry = {
                         "nom": player_name,
                         "val": valeur,
                         "emoji": emoji,
                         "award_name": award_name,
                         "description": desc
-                    })
+                    }
+
+                    if is_league_award:
+                        ligue_supprimee = a_ligue_id is None
+                        award_entry["is_league_award"] = True
+                        award_entry["ligue_nom"] = cur_ligue_nom if not ligue_supprimee else a_ligue_nom
+                        award_entry["ligue_couleur"] = cur_ligue_couleur if not ligue_supprimee else a_ligue_couleur
+                        award_entry["ligue_supprimee"] = ligue_supprimee
+
+                    awards_data.setdefault(code, []).append(award_entry)
             else:
                 active_list = config.get('active_awards', [])
                 top_3, winners_map = _determine_winners(
@@ -1486,8 +1537,26 @@ def get_joueur_stats(nom):
                         prev_ts_val = tournois_only[1]['score_trueskill']
                         progression_recente = current_ts_val - prev_ts_val
 
-                cur.execute("SELECT t.emoji, t.nom, t.description, COUNT(o.id) FROM awards_obtenus o JOIN types_awards t ON o.award_id = t.id WHERE o.joueur_id = %s GROUP BY t.emoji, t.nom, t.description", (jid,))
-                awards_list = [{"emoji": r[0], "nom": r[1], "description": r[2], "count": r[3]} for r in cur.fetchall()]
+                cur.execute("""
+                    SELECT t.emoji, t.nom, t.description, COUNT(o.id),
+                           o.is_league_award, o.ligue_nom, o.ligue_couleur, o.ligue_id,
+                           l.couleur AS current_couleur, l.nom AS current_nom
+                    FROM awards_obtenus o
+                    JOIN types_awards t ON o.award_id = t.id
+                    LEFT JOIN ligues l ON o.ligue_id = l.id
+                    WHERE o.joueur_id = %s
+                    GROUP BY t.emoji, t.nom, t.description, o.is_league_award, o.ligue_nom, o.ligue_couleur, o.ligue_id, l.couleur, l.nom
+                """, (jid,))
+                awards_list = []
+                for r in cur.fetchall():
+                    entry = {"emoji": r[0], "nom": r[1], "description": r[2], "count": r[3]}
+                    if r[4]:
+                        ligue_supprimee = r[7] is None
+                        entry["is_league_award"] = True
+                        entry["ligue_nom"] = r[9] if not ligue_supprimee else r[5]
+                        entry["ligue_couleur"] = r[8] if not ligue_supprimee else r[6]
+                        entry["ligue_supprimee"] = ligue_supprimee
+                    awards_list.append(entry)
 
         return jsonify({
             "stats": {
@@ -1935,10 +2004,53 @@ def delete_saison(saison_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT is_league_recap FROM saisons WHERE id = %s", (saison_id,))
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"error": "Saison introuvable"}), 404
+
+                is_league_recap = row[0]
+                rollback_warnings = []
+
+                if is_league_recap:
+                    cur.execute("""
+                        SELECT joueur_id, from_ligue_id, from_ligue_nom, created_at
+                        FROM league_movements
+                        WHERE saison_id = %s
+                    """, (saison_id,))
+                    movements = cur.fetchall()
+
+                    for joueur_id, from_ligue_id, from_ligue_nom, created_at in movements:
+                        cur.execute("""
+                            SELECT 1 FROM league_movements
+                            WHERE joueur_id = %s AND created_at > %s AND saison_id != %s
+                            LIMIT 1
+                        """, (joueur_id, created_at, saison_id))
+                        has_later_move = cur.fetchone()
+
+                        if has_later_move:
+                            rollback_warnings.append(f"{joueur_id}: mouvement postérieur, non restauré")
+                            continue
+
+                        if from_ligue_id is None:
+                            rollback_warnings.append(f"{from_ligue_nom}: ligue supprimée, impossible de restaurer")
+                            continue
+
+                        cur.execute("SELECT id FROM ligues WHERE id = %s", (from_ligue_id,))
+                        if not cur.fetchone():
+                            rollback_warnings.append(f"{from_ligue_nom}: ligue supprimée, impossible de restaurer")
+                            continue
+
+                        cur.execute("UPDATE joueurs SET ligue_id = %s WHERE id = %s", (from_ligue_id, joueur_id))
+
                 cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (saison_id,))
                 cur.execute("DELETE FROM saisons WHERE id = %s", (saison_id,))
             conn.commit()
-        return jsonify({"status": "success"})
+
+        response = {"status": "success"}
+        if rollback_warnings:
+            response["warnings"] = rollback_warnings
+        return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1992,26 +2104,35 @@ def save_season_awards(id):
 
             if is_league_recap:
                 cur.execute("""
-                    SELECT DISTINCT l.id, l.nom, l.niveau
+                    SELECT DISTINCT l.id, l.nom, l.niveau, l.couleur
                     FROM Ligues l
                     JOIN Tournois t ON t.ligue_id = l.id
                     WHERE t.date >= %s AND t.date <= %s
                     ORDER BY l.niveau ASC
                 """, (d_debut, d_fin))
                 ligues_rows = cur.fetchall()
-                ligues = [(r[0], r[1]) for r in ligues_rows]
+                ligues = [(r[0], r[1], r[3]) for r in ligues_rows]
 
                 if not ligues:
                     return jsonify({'error': 'Aucun tournoi de ligue pendant cette période'}), 400
 
                 all_rankings = {}
 
-                for ligue_id, ligue_nom in ligues:
+                cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (id,))
+                conn.commit()
+
+                for ligue_id, ligue_nom, ligue_couleur in ligues:
                     ligue_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_id)
 
                     gm_list = ligue_stats['candidates'].get('grand_master', [])
                     gm_sorted = sorted(gm_list, key=lambda x: x.get('final_score', 0), reverse=True)
                     all_rankings[ligue_id] = {p['id']: rank for rank, p in enumerate(gm_sorted, 1)}
+
+                    top_3, winners_map = _determine_winners(
+                        ligue_stats['candidates'], vic_cond, active_awards, ligue_stats['total_tournois']
+                    )
+                    ligue_info = {'id': ligue_id, 'nom': ligue_nom, 'couleur': ligue_couleur}
+                    _save_awards_to_db(conn, id, top_3, winners_map, is_yearly, ligue_info=ligue_info)
 
                 if move_criterion:
                     cur.execute("SELECT value FROM Configuration WHERE key = 'league_mode_enabled'")
