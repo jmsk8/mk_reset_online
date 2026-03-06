@@ -1538,25 +1538,64 @@ def get_joueur_stats(nom):
                         progression_recente = current_ts_val - prev_ts_val
 
                 cur.execute("""
-                    SELECT t.emoji, t.nom, t.description, COUNT(o.id),
+                    SELECT t.emoji, t.nom, t.description, t.code, s.nom AS saison_nom, s.is_yearly,
                            o.is_league_award, o.ligue_nom, o.ligue_couleur, o.ligue_id,
                            l.couleur AS current_couleur, l.nom AS current_nom
                     FROM awards_obtenus o
                     JOIN types_awards t ON o.award_id = t.id
+                    JOIN saisons s ON o.saison_id = s.id
                     LEFT JOIN ligues l ON o.ligue_id = l.id
                     WHERE o.joueur_id = %s
-                    GROUP BY t.emoji, t.nom, t.description, o.is_league_award, o.ligue_nom, o.ligue_couleur, o.ligue_id, l.couleur, l.nom
+                    ORDER BY s.date_fin ASC
                 """, (jid,))
                 awards_list = []
+                award_groups = {}
                 for r in cur.fetchall():
-                    entry = {"emoji": r[0], "nom": r[1], "description": r[2], "count": r[3]}
-                    if r[4]:
-                        ligue_supprimee = r[7] is None
-                        entry["is_league_award"] = True
-                        entry["ligue_nom"] = r[9] if not ligue_supprimee else r[5]
-                        entry["ligue_couleur"] = r[8] if not ligue_supprimee else r[6]
-                        entry["ligue_supprimee"] = ligue_supprimee
-                    awards_list.append(entry)
+                    emoji, nom, description, code, saison_nom, is_yearly = r[:6]
+                    is_league_award, a_ligue_nom, a_ligue_couleur, a_ligue_id, cur_couleur, cur_nom = r[6:]
+
+                    ligue_supprimee = is_league_award and a_ligue_id is None
+                    ligue_nom_final = cur_nom if (is_league_award and not ligue_supprimee) else a_ligue_nom
+                    ligue_couleur_final = cur_couleur if (is_league_award and not ligue_supprimee) else a_ligue_couleur
+
+                    is_moai = 'moai' in code
+
+                    if is_moai:
+                        if is_yearly:
+                            trophy_desc = description.replace("de l'année", "de l'année " + saison_nom.replace("Année ", ""))
+                        else:
+                            trophy_desc = description + " " + saison_nom
+                        if is_league_award and ligue_nom_final:
+                            trophy_desc += "\nObtenu en " + ligue_nom_final
+                            if ligue_supprimee:
+                                trophy_desc += " (cette ligue n'existe plus)"
+                        entry = {"emoji": emoji, "nom": nom, "description": trophy_desc, "count": 1}
+                        if is_league_award:
+                            entry["is_league_award"] = True
+                            entry["ligue_nom"] = ligue_nom_final
+                            entry["ligue_couleur"] = ligue_couleur_final
+                            entry["ligue_supprimee"] = ligue_supprimee
+                        awards_list.append(entry)
+                    else:
+                        group_key = (emoji, nom, description, bool(is_league_award),
+                                     ligue_nom_final if is_league_award else None,
+                                     ligue_couleur_final if is_league_award else None,
+                                     ligue_supprimee if is_league_award else None)
+                        if group_key not in award_groups:
+                            desc = description
+                            if is_league_award and ligue_nom_final:
+                                desc += "\nObtenu en " + ligue_nom_final
+                                if ligue_supprimee:
+                                    desc += " (cette ligue n'existe plus)"
+                            entry = {"emoji": emoji, "nom": nom, "description": desc, "count": 0}
+                            if is_league_award:
+                                entry["is_league_award"] = True
+                                entry["ligue_nom"] = ligue_nom_final
+                                entry["ligue_couleur"] = ligue_couleur_final
+                                entry["ligue_supprimee"] = ligue_supprimee
+                            award_groups[group_key] = entry
+                        award_groups[group_key]["count"] += 1
+                awards_list.extend(award_groups.values())
 
         return jsonify({
             "stats": {
