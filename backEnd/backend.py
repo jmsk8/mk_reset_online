@@ -1147,7 +1147,7 @@ def dernier_tournoi():
                 if not last_record:
                     return jsonify([])
 
-                is_league_latest = (last_record[0] is not None) or (last_record[1] is not None)
+                is_league_latest = (last_record[0] is not None) or (last_record[1] is not None and last_record[1] != 'Mixte')
                 
                 final_data = []
 
@@ -1159,7 +1159,7 @@ def dernier_tournoi():
                             COALESCE(t.ligue_couleur, l.couleur)
                         FROM Tournois t
                         LEFT JOIN Ligues l ON t.ligue_id = l.id
-                        WHERE t.ligue_nom IS NOT NULL
+                        WHERE t.ligue_nom IS NOT NULL AND t.ligue_nom != 'Mixte'
                         ORDER BY t.ligue_nom, t.date DESC
                     """)
                     rows = cur.fetchall()
@@ -2387,13 +2387,19 @@ def add_tournament():
                 res = cur.fetchone()
                 is_league_mode = (res[0] == 'true') if res else False
                 
+                is_mixte = (str(ligue_id).lower() == 'mixte') if ligue_id else False
+
                 if is_league_mode and not ligue_id:
                     return jsonify({"error": "Le mode Ligue est activé, veuillez sélectionner une ligue."}), 400
 
                 ligue_nom_archive = None
                 ligue_couleur_archive = None
 
-                if ligue_id:
+                if is_mixte:
+                    ligue_id = None
+                    ligue_nom_archive = 'Mixte'
+                    ligue_couleur_archive = '#888888'
+                elif ligue_id:
                     cur.execute("SELECT nom, couleur FROM Ligues WHERE id = %s", (ligue_id,))
                     res_ligue = cur.fetchone()
                     if res_ligue:
@@ -2401,8 +2407,8 @@ def add_tournament():
                         ligue_couleur_archive = res_ligue[1]
 
                 cur.execute("""
-                    INSERT INTO Tournois (date, ligue_id, ligue_nom, ligue_couleur) 
-                    VALUES (%s, %s, %s, %s) 
+                    INSERT INTO Tournois (date, ligue_id, ligue_nom, ligue_couleur)
+                    VALUES (%s, %s, %s, %s)
                     RETURNING id
                 """, (date_tournoi_str, ligue_id, ligue_nom_archive, ligue_couleur_archive))
                 tournoi_id = cur.fetchone()[0]

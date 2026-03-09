@@ -171,6 +171,11 @@
                     const liguesRes = await fetch('/api/ligues');
                     const ligues = await liguesRes.json();
                     
+                    const mixteOpt = document.createElement('option');
+                    mixteOpt.value = 'mixte';
+                    mixteOpt.innerText = 'Mixte (toutes ligues)';
+                    selectLigue.appendChild(mixteOpt);
+
                     ligues.forEach(l => {
                         const opt = document.createElement('option');
                         opt.value = l.id;
@@ -179,7 +184,7 @@
                     });
 
                     selectLigue.addEventListener('change', (e) => {
-                        currentLeagueId = e.target.value ? parseInt(e.target.value) : null;
+                        currentLeagueId = (e.target.value && e.target.value !== 'mixte') ? parseInt(e.target.value) : null;
                         renderPool();
                     });
                 }
@@ -288,7 +293,8 @@
                     return;
                 }
                 
-                const ligueId = isLeagueMode ? selectLigue.value : null;
+                const ligueIdRaw = isLeagueMode ? selectLigue.value : null;
+                const ligueId = (ligueIdRaw === 'mixte') ? 'mixte' : ligueIdRaw;
 
                 if (isLeagueMode && !ligueId) {
                     alert("⚠️ Mode Ligue activé : Veuillez sélectionner une ligue.");
