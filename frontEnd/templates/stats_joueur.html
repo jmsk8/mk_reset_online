@@ -25,7 +25,7 @@
         .award-icon-large.super-silver { animation: pulseAuraSilver 3s infinite ease-in-out; height: 62px; }
         .award-icon-large.super-bronze { animation: pulseAuraBronze 3s infinite ease-in-out; height: 62px; }
         .award-count { font-size: 0.9rem; color: #fff; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); background-color: rgba(0,0,0,0.3); padding: 0 6px; border-radius: 10px; }
-        .league-glow-img { filter: drop-shadow(0 0 6px var(--league-color)) drop-shadow(0 0 14px var(--league-color)); }
+        .league-glow-img { filter: drop-shadow(0 0 2px var(--league-color)) drop-shadow(0 0 5px var(--league-color)); }
         .chart-container { position: relative; width: 100%; height: 450px; }
         .modal-content-glass { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; box-shadow: 0 0 40px rgba(0,0,0,0.5); width: 400px; max-width: 90%; margin: 0 auto; }
         @media screen and (max-width: 768px) {
@@ -89,7 +89,7 @@
                                     <tbody>
                                         <tr><td><i class="fas fa-trophy"></i> Tournois</td><td class="has-text-right">{{ stats.nombre_tournois }}</td></tr>
                                         <tr><td><i class="fas fa-medal"></i> Victoires</td><td class="has-text-right">{{ stats.victoires }}</td></tr>
-                                        <tr><td><i class="fas fa-percentage"></i> Ratio V/T</td><td class="has-text-right">{{ (stats.victoires / stats.nombre_tournois * 100)|round(1) if stats.nombre_tournois > 0 else 0 }}%</td></tr>
+                                        <tr><td><i class="fas fa-percentage"></i> Ratio V/D</td><td class="has-text-right">{{ (stats.victoires / stats.nombre_tournois * 100)|round(1) if stats.nombre_tournois > 0 else 0 }}%</td></tr>
                                         <tr><td><i class="fas fa-calculator"></i> Score moyen</td><td class="has-text-right">{{ stats.score_moyen|round(3) }}</td></tr>
                                         <tr><td><i class="fas fa-list-ol"></i> Pos. Moyenne</td><td class="has-text-right">{{ stats.position_moyenne }}</td></tr>
                                         <tr><td><i class="fas fa-arrow-up"></i> Meilleur score</td><td class="has-text-right">{{ stats.meilleur_score }}</td></tr>
@@ -97,6 +97,44 @@
                                 </table>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="box glass-card mt-4 fade-in">
+                        <h4 class="title is-5 has-text-warning has-text-centered mb-3"><i class="fas fa-award"></i> Palmarès</h4>
+                        {% if palmares|length == 0 %}
+                            <p class="has-text-grey is-italic is-size-7 has-text-centered">Aucun podium.</p>
+                        {% elif not has_league_data %}
+                            <div class="has-text-centered">
+                                {% if palmares[0].gold %}<span class="is-size-3">🥇 {{ palmares[0].gold }}</span>{% endif %}
+                                {% if palmares[0].silver %}<span class="is-size-3 ml-4">🥈 {{ palmares[0].silver }}</span>{% endif %}
+                                {% if palmares[0].bronze %}<span class="is-size-3 ml-4">🥉 {{ palmares[0].bronze }}</span>{% endif %}
+                            </div>
+                        {% else %}
+                            {% for p in palmares if not p.ligue_nom %}
+                                <div class="mb-3">
+                                    <p class="has-text-weight-bold is-size-6 mb-1">
+                                        <span class="has-text-light">Mode classique</span>
+                                    </p>
+                                    <div class="ml-2">
+                                        {% if p.gold %}<span class="is-size-4">🥇 {{ p.gold }}</span>{% endif %}
+                                        {% if p.silver %}<span class="is-size-4 ml-3">🥈 {{ p.silver }}</span>{% endif %}
+                                        {% if p.bronze %}<span class="is-size-4 ml-3">🥉 {{ p.bronze }}</span>{% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                            {% for p in palmares if p.ligue_nom %}
+                                <div class="mb-3">
+                                    <p class="has-text-weight-bold is-size-6 mb-1">
+                                        <span class="tag is-small" style="background-color: {{ p.ligue_couleur or '#3298dc' }}; color: #222; font-weight: bold;">{{ p.ligue_nom }}</span>
+                                    </p>
+                                    <div class="ml-2">
+                                        {% if p.gold %}<span class="is-size-4">🥇 {{ p.gold }}</span>{% endif %}
+                                        {% if p.silver %}<span class="is-size-4 ml-3">🥈 {{ p.silver }}</span>{% endif %}
+                                        {% if p.bronze %}<span class="is-size-4 ml-3">🥉 {{ p.bronze }}</span>{% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
                     </div>
 
                     <div class="box glass-card has-text-centered mt-4 fade-in">
@@ -121,7 +159,7 @@
                                 {% endfor %}
                             </div>
                         {% endif %}
-                        {% if not ns_trophies.found %}<p class="has-text-grey is-italic is-size-7">Aucun trophée de saison.</p>{% endif %}
+                        {% if not ns_trophies.found %}<p class="has-text-grey is-italic is-size-7">Aucun trophée.</p>{% endif %}
                     </div>
 
                     <div class="box glass-card has-text-centered mt-4 fade-in">
@@ -140,7 +178,7 @@
                                 {% endfor %}
                             </div>
                         {% endif %}
-                        {% if not ns_awards.found %}<p class="has-text-grey is-italic is-size-7">Aucun award spécial.</p>{% endif %}
+                        {% if not ns_awards.found %}<p class="has-text-grey is-italic is-size-7">Aucun award.</p>{% endif %}
                     </div>
 
                     <div class="card glass-card mt-4 fade-in">

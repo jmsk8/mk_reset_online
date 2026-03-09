@@ -1597,6 +1597,44 @@ def get_joueur_stats(nom):
                         award_groups[group_key]["count"] += 1
                 awards_list.extend(award_groups.values())
 
+                # Palmarès : podiums par ligue
+                cur.execute("""
+                    SELECT p.position,
+                           COALESCE(t.ligue_nom, l.nom) AS ligue_nom,
+                           COALESCE(t.ligue_couleur, l.couleur) AS ligue_couleur,
+                           COALESCE(t.ligue_id, l.id) AS ligue_id,
+                           COALESCE(l2.niveau, 999) AS ligue_niveau
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    LEFT JOIN Ligues l ON t.ligue_id = l.id
+                    LEFT JOIN Ligues l2 ON COALESCE(t.ligue_id, l.id) = l2.id
+                    WHERE p.joueur_id = %s AND p.position IN (1, 2, 3)
+                    ORDER BY ligue_niveau
+                """, (jid,))
+                podium_rows = cur.fetchall()
+
+                palmares = {}
+                has_league_data = False
+                for pos, l_nom, l_coul, l_id, l_niv in podium_rows:
+                    key = l_nom if l_nom else "__classique__"
+                    if l_nom:
+                        has_league_data = True
+                    if key not in palmares:
+                        palmares[key] = {
+                            "ligue_nom": l_nom,
+                            "ligue_couleur": l_coul,
+                            "ligue_niveau": l_niv if l_niv else 999,
+                            "gold": 0, "silver": 0, "bronze": 0
+                        }
+                    if pos == 1:
+                        palmares[key]["gold"] += 1
+                    elif pos == 2:
+                        palmares[key]["silver"] += 1
+                    elif pos == 3:
+                        palmares[key]["bronze"] += 1
+
+                palmares_list = sorted(palmares.values(), key=lambda x: x["ligue_niveau"])
+
         return jsonify({
             "stats": {
                 "mu": round(float(mu), 3) if mu else 50.0,
@@ -1618,7 +1656,9 @@ def get_joueur_stats(nom):
                 "ligue": {"nom": ligue_nom, "couleur": ligue_color} if ligue_nom else None
             },
             "historique": historique_data,
-            "awards": awards_list
+            "awards": awards_list,
+            "palmares": palmares_list,
+            "has_league_data": has_league_data
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

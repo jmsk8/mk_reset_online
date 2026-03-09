@@ -4,6 +4,34 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
+## [1.3.0] - En cours de développement
+
+### Nouvelles fonctionnalités
+- **Mode Mixte** : nouveau type de tournoi en mode ligue, jouable entre toutes les ligues sans restriction. Enregistré avec `ligue_id = NULL` et affiché avec un tag gris "Mixte". Exclu des récaps de ligue, inclus dans les récaps classiques. Pénalités ghost appliquées normalement
+- **Colonne +/- TrueSkill** dans l'historique des tournois (`stats_tournoi.html`) et le profil joueur (`stats_joueur.html`) : affiche le gain/perte TrueSkill par match avec un tag coloré (vert `#e6ffed` pour les gains, rouge `#ffeef0` pour les pertes). Calcul basé sur `new_ts - (old_mu - 3*old_sigma)`
+- **Refonte du tableau d'historique joueur** : colonnes réordonnées en Position, Score, +/-, Ligue, Date, Détails (au lieu de Date, Score, Ligue, Position, Détails)
+- **Awards distribués par ligue** : en mode récap ligue, les awards (Stonks, Not Stonks, Chillguy, EZ, etc.) sont calculés indépendamment pour chaque ligue. Nouvelles colonnes `is_league_award`, `ligue_id`, `ligue_nom`, `ligue_couleur` dans `awards_obtenus`. Suppression d'une saison de ligue annule les mouvements inter-ligue associés
+- **Glow de ligue sur les trophées** : les trophées et awards obtenus en ligue affichent un effet de lueur (`drop-shadow`) dans la couleur de la ligue, sur les pages de récap et les profils joueurs
+- **Seuils de tier sur la page de classement** : nouvel endpoint `/tier-seuils` qui calcule les seuils mathématiques (S ≥ mean+σ, A ≥ mean, B ≥ mean−σ, C < mean−σ). Affichés comme tags colorés sur la page classement, remplaçant l'ancien champ de recherche joueur
+- **Sprites d'items** : ajout de `shroom.png`, `star.png` et `red-shell/` (3 sprites) en préparation de l'animation du banner
+
+### Corrections
+- **Pénalités d'absence scopées par ligue** : en mode ligue, les pénalités ghost ne s'appliquent plus qu'aux joueurs de la ligue concernée. Pour la ligue la plus basse, les joueurs sans ligue (`ligue_id IS NULL`) sont aussi inclus
+- **Calcul ts_diff des pénalités ghost** : utilise maintenant le mu réel issu de la dernière participation avant la pénalité (sous-requête sur `Participations`) au lieu du mu courant du joueur
+- **Contamination inter-ligue des awards** : `_compute_advanced_stonks()` accepte maintenant `recap_mode` et `specific_ligue_id` pour filtrer les participations par ligue
+- **Seuil de participation pour awards** : Stonks, Not Stonks et Chillguy exigent désormais 50% de participation avec sigma < 2.5 (`matchs_ranked >= total_tournois * 0.5`)
+
+### Améliorations
+- **Responsive mobile** : layout en cartes pour les tableaux de tournoi sous 460px (`stats_tournoi.html`), layout vertical des stats joueur sous 346px, grille 2 colonnes entre 512-768px pour `stats_joueurs.html`, macro `joueur_card` pour le rendu DRY des cartes, tailles de police fluides avec `clamp()`
+- **Tooltips enrichis** : les descriptions de trophées/awards incluent le nom de la saison, l'année (pour les Super Moai), et la ligue d'obtention. Affichage multiline dans les tooltips (`&#10;`) et dans la modale (conversion `\n` → `<br>`). Taille des Super Moai augmentée à 62px
+- **Séparation classés/non-classés** : la page `stats_joueurs.html` affiche les joueurs classés et non-classés dans deux sections distinctes avec un séparateur "Non classés"
+- **Makefile** : 29 targets dont `build`, `re`, `redump`, `logs-{service}`, `db-shell`, `db-backup`, `fclean`, et rebuild par service (`re-front`, `re-back`, `re-db`, `re-db-dump`)
+- **docker-compose.dump.yml** : fichier override pour seeder la base depuis `dump.sql` au lieu de `schema.sql`
+- **PostgreSQL 13 → 17** dans `docker-compose.yml`
+- **README** : réécriture complète avec documentation des fonctionnalités, architecture (nginx → frontend → backend → PostgreSQL), structure du projet, variables d'environnement, et instructions de lancement (Docker Compose + Nix Flakes)
+
+---
+
 ## [1.2.0] - 2026-01-26
 
 ### Nouvelles fonctionnalités
@@ -101,4 +129,4 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
-*Ce changelog couvre les versions 1.0.0 à 1.2.0 (du 11 décembre 2025 au 26 janvier 2026).*
+*Ce changelog couvre les versions 1.0.0 à 1.3.0 (du 11 décembre 2025 à aujourd'hui).*
