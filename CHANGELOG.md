@@ -13,7 +13,6 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 - **Awards distribués par ligue** : en mode récap ligue, les awards (Stonks, Not Stonks, Chillguy, EZ, etc.) sont calculés indépendamment pour chaque ligue. Nouvelles colonnes `is_league_award`, `ligue_id`, `ligue_nom`, `ligue_couleur` dans `awards_obtenus`. Suppression d'une saison de ligue annule les mouvements inter-ligue associés
 - **Glow de ligue sur les trophées** : les trophées et awards obtenus en ligue affichent un effet de lueur (`drop-shadow`) dans la couleur de la ligue, sur les pages de récap et les profils joueurs
 - **Seuils de tier sur la page de classement** : nouvel endpoint `/tier-seuils` qui calcule les seuils mathématiques (S ≥ mean+σ, A ≥ mean, B ≥ mean−σ, C < mean−σ). Affichés comme tags colorés sur la page classement, remplaçant l'ancien champ de recherche joueur
-- **Sprites d'items** : ajout de `shroom.png`, `star.png` et `red-shell/` (3 sprites) en préparation de l'animation du banner
 
 ### Corrections
 - **Pénalités d'absence scopées par ligue** : en mode ligue, les pénalités ghost ne s'appliquent plus qu'aux joueurs de la ligue concernée. Pour la ligue la plus basse, les joueurs sans ligue (`ligue_id IS NULL`) sont aussi inclus
@@ -29,6 +28,19 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 - **docker-compose.dump.yml** : fichier override pour seeder la base depuis `dump.sql` au lieu de `schema.sql`
 - **PostgreSQL 13 → 17** dans `docker-compose.yml`
 - **README** : réécriture complète avec documentation des fonctionnalités, architecture (nginx → frontend → backend → PostgreSQL), structure du projet, variables d'environnement, et instructions de lancement (Docker Compose + Nix Flakes)
+- **Refonte du banner SMK** :
+  - Stats individuels par personnage (`topSpeed`, `acceleration`, `handling`, `weight`)
+  - Nouveaux items : Red Shell (auto-guidée), Shroom (boost instantané), Star (invincibilité + effet rainbow)
+  - Distribution d'items style MK8DX (5 tiers basés sur le rang et la distance au leader)
+  - Collisions kart-vs-kart basées sur le poids
+  - Système de momentum : vitesse qui varie naturellement, `topSpeed` = vrai plafond
+  - Items shroom/star tenus en mains (devant le kart), banane/carapaces tenus derrière
+  - Récupération après impact : décélération progressive → arrêt complet → redémarrage à 0
+  - Anti-spam : 2s d'invincibilité aux items après un impact (collisions kart restent actives)
+  - Activation shroom/star = vitesse max instantanée (ignore l'accélération)
+  - Handling module l'intensité d'esquive IA
+  - Respawn des item boxes réduit à 1 seconde
+  - Nettoyage des variables de vitesse inutilisées
 
 ---
 

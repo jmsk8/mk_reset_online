@@ -146,6 +146,18 @@
     animation: snesBounce 0.15s infinite alternate ease-in-out;
 }
 
+.kart-container-moving.star-active .kart-static-png {
+    animation: snesBounce 0.15s infinite alternate ease-in-out, starRainbow 0.3s linear infinite;
+}
+
+@keyframes starRainbow {
+    0%   { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(0deg) brightness(1.3); }
+    25%  { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(90deg) brightness(1.4); }
+    50%  { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(180deg) brightness(1.3); }
+    75%  { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(270deg) brightness(1.4); }
+    100% { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(360deg) brightness(1.3); }
+}
+
 .pause-overlay {
     position: absolute;
     top: 0;

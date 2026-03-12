@@ -95,4 +95,4 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
-*Ce changelog couvre les versions 1.0.0 à 1.2.0 (du 11 décembre 2025 au 26 janvier 2026).*
+*Ce changelog couvre les versions 1.0.0 à 1.3.0 (du 11 décembre 2025 à aujourd'hui). Voir `CHANGELOG.md` pour le changelog complet.*
