@@ -33,7 +33,7 @@ def get_public_saisons():
                     nom, slug, d_debut, d_fin, is_yearly, ligue_id, ligue_nom, ligue_couleur, is_league_recap = r
                     saisons.append({
                         "nom": nom, "slug": slug,
-                        "date_debut": str(d_debut), "date_fin": str(d_fin),
+                        "date_debut": d_debut.strftime("%d/%m/%Y"), "date_fin": d_fin.strftime("%d/%m/%Y"),
                         "is_yearly": is_yearly,
                         "ligue_id": ligue_id, "ligue_nom": ligue_nom, "ligue_couleur": ligue_couleur,
                         "is_league_recap": is_league_recap if is_league_recap else False
@@ -56,7 +56,7 @@ def recap_list():
             """)
             rows = cur.fetchall()
             saisons = [{
-                "nom": r[0], "date_debut": r[1], "date_fin": r[2],
+                "nom": r[0], "date_debut": r[1].strftime("%d/%m/%Y"), "date_fin": r[2].strftime("%d/%m/%Y"),
                 "slug": r[3], "victory_condition": r[4], "is_yearly": r[5],
                 "ligue_nom": r[6], "ligue_couleur": r[7],
                 "is_league_recap": r[8] if r[8] else False
@@ -78,7 +78,8 @@ def get_recap(slug):
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, nom, date_debut, date_fin, slug,
-                       config_awards, victory_condition, is_yearly, is_league_recap, ligue_id
+                       config_awards, victory_condition, is_yearly, is_league_recap, ligue_id,
+                       include_league_stats, include_league_moves
                 FROM saisons
                 WHERE slug = %s
             """, (slug,))
@@ -86,10 +87,11 @@ def get_recap(slug):
             if not saison_row:
                 return jsonify({"error": "Saison introuvable"}), 404
 
-            saison_id, nom, d_debut, d_fin, slug_bdd, config, vic_cond, is_yearly, is_league_recap, saison_ligue_id = saison_row
+            saison_id, nom, d_debut, d_fin, slug_bdd, config, vic_cond, is_yearly, is_league_recap, saison_ligue_id, include_league_stats, include_league_moves = saison_row
 
             ligues_disponibles = []
             ligue_courante = None
+            is_hybrid_league_view = False
 
             if is_league_recap:
                 cur.execute("""
@@ -116,6 +118,26 @@ def get_recap(slug):
                     global_stats = _aggregate_season_stats(d_debut, d_fin, 'league')
             elif saison_ligue_id:
                 global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', saison_ligue_id)
+            elif (include_league_stats or include_league_moves) and ligue_id_param:
+                # Hybrid mode: classic recap viewing a specific league tab
+                cur.execute("""
+                    SELECT DISTINCT l.id, l.nom, l.couleur, l.niveau
+                    FROM Ligues l
+                    JOIN Tournois t ON t.ligue_id = l.id
+                    WHERE t.date >= %s AND t.date <= %s
+                    ORDER BY l.niveau ASC
+                """, (d_debut, d_fin))
+                ligues_rows = cur.fetchall()
+                ligues_disponibles = [
+                    {"id": r[0], "nom": r[1], "couleur": r[2], "niveau": r[3]}
+                    for r in ligues_rows
+                ]
+                ligue_courante = next((l for l in ligues_disponibles if l["id"] == ligue_id_param), None)
+                if ligue_courante:
+                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_courante["id"])
+                    is_hybrid_league_view = True
+                else:
+                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic')
             else:
                 global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic')
 
@@ -127,93 +149,95 @@ def get_recap(slug):
 
             awards_data = {}
 
-            award_ligue_filter = ""
-            award_params = [saison_id]
-            if is_league_recap and ligue_courante:
-                award_ligue_filter = " AND a.ligue_id = %s"
-                award_params.append(ligue_courante["id"])
-            elif is_league_recap:
-                award_ligue_filter = " AND a.ligue_id IS NOT NULL"
+            # In hybrid league view, no awards are shown for league tabs
+            if not is_hybrid_league_view:
+                award_ligue_filter = ""
+                award_params = [saison_id]
+                if is_league_recap and ligue_courante:
+                    award_ligue_filter = " AND a.ligue_id = %s"
+                    award_params.append(ligue_courante["id"])
+                elif is_league_recap:
+                    award_ligue_filter = " AND a.ligue_id IS NOT NULL"
 
-            cur.execute(f"""
-                SELECT t.code, t.nom, t.emoji, t.description, j.nom, a.valeur,
-                       a.is_league_award, a.ligue_id, a.ligue_nom, a.ligue_couleur,
-                       l.couleur AS current_ligue_couleur, l.nom AS current_ligue_nom
-                FROM awards_obtenus a
-                JOIN types_awards t ON a.award_id = t.id
-                JOIN joueurs j ON a.joueur_id = j.id
-                LEFT JOIN ligues l ON a.ligue_id = l.id
-                WHERE a.saison_id = %s{award_ligue_filter}
-            """, award_params)
-            saved_rows = cur.fetchall()
+                cur.execute(f"""
+                    SELECT t.code, t.nom, t.emoji, t.description, j.nom, a.valeur,
+                           a.is_league_award, a.ligue_id, a.ligue_nom, a.ligue_couleur,
+                           l.couleur AS current_ligue_couleur, l.nom AS current_ligue_nom
+                    FROM awards_obtenus a
+                    JOIN types_awards t ON a.award_id = t.id
+                    JOIN joueurs j ON a.joueur_id = j.id
+                    LEFT JOIN ligues l ON a.ligue_id = l.id
+                    WHERE a.saison_id = %s{award_ligue_filter}
+                """, award_params)
+                saved_rows = cur.fetchall()
 
-            if saved_rows:
-                for row in saved_rows:
-                    code, award_name, emoji, desc, player_name, valeur = row[:6]
-                    is_league_award, a_ligue_id, a_ligue_nom, a_ligue_couleur, cur_ligue_couleur, cur_ligue_nom = row[6:]
+                if saved_rows:
+                    for row in saved_rows:
+                        code, award_name, emoji, desc, player_name, valeur = row[:6]
+                        is_league_award, a_ligue_id, a_ligue_nom, a_ligue_couleur, cur_ligue_couleur, cur_ligue_nom = row[6:]
 
-                    award_entry = {
-                        "nom": player_name,
-                        "val": valeur,
-                        "emoji": emoji,
-                        "award_name": award_name,
-                        "description": desc
-                    }
+                        award_entry = {
+                            "nom": player_name,
+                            "val": valeur,
+                            "emoji": emoji,
+                            "award_name": award_name,
+                            "description": desc
+                        }
 
-                    if is_league_award:
-                        ligue_supprimee = a_ligue_id is None
-                        award_entry["is_league_award"] = True
-                        award_entry["ligue_nom"] = cur_ligue_nom if not ligue_supprimee else a_ligue_nom
-                        award_entry["ligue_couleur"] = cur_ligue_couleur if not ligue_supprimee else a_ligue_couleur
-                        award_entry["ligue_supprimee"] = ligue_supprimee
+                        if is_league_award:
+                            ligue_supprimee = a_ligue_id is None
+                            award_entry["is_league_award"] = True
+                            award_entry["ligue_nom"] = cur_ligue_nom if not ligue_supprimee else a_ligue_nom
+                            award_entry["ligue_couleur"] = cur_ligue_couleur if not ligue_supprimee else a_ligue_couleur
+                            award_entry["ligue_supprimee"] = ligue_supprimee
 
-                    awards_data.setdefault(code, []).append(award_entry)
-            else:
-                active_list = config.get('active_awards', [])
-                top_3, winners_map = _determine_winners(
-                    global_stats['candidates'],
-                    vic_cond,
-                    active_list,
-                    global_stats['total_tournois']
-                )
+                        awards_data.setdefault(code, []).append(award_entry)
+                else:
+                    active_list = config.get('active_awards', [])
+                    top_3, winners_map = _determine_winners(
+                        global_stats['candidates'],
+                        vic_cond,
+                        active_list,
+                        global_stats['total_tournois']
+                    )
 
-                moai_codes = (
-                    ['super_gold_moai', 'super_silver_moai', 'super_bronze_moai']
-                    if is_yearly else
-                    ['gold_moai', 'silver_moai', 'bronze_moai']
-                )
+                    moai_codes = (
+                        ['super_gold_moai', 'super_silver_moai', 'super_bronze_moai']
+                        if is_yearly else
+                        ['gold_moai', 'silver_moai', 'bronze_moai']
+                    )
 
-                for i in range(min(3, len(top_3))):
-                    p = top_3[i]
-                    code = moai_codes[i]
-                    if code in types_ref:
-                        ref = types_ref[code]
-                        awards_data.setdefault(code, []).append({
-                            "nom": p.get("nom", "?"),
-                            "val": f"{p.get('final_score', 0):.3f}",
-                            "emoji": ref["emoji"],
-                            "award_name": ref["nom"],
-                            "description": ref["desc"]
-                        })
-
-                for code, winners in winners_map.items():
-                    if code in types_ref:
-                        ref = types_ref[code]
-                        for w in winners:
-                            val_fmt = (
-                                str(int(w["val"]))
-                                if code in ['ez', 'pas_loin', 'stakhanov']
-                                else str(round(w["val"], 3))
-                            )
+                    for i in range(min(3, len(top_3))):
+                        p = top_3[i]
+                        code = moai_codes[i]
+                        if code in types_ref:
+                            ref = types_ref[code]
                             awards_data.setdefault(code, []).append({
-                                "nom": w["nom"],
-                                "val": val_fmt,
+                                "nom": p.get("nom", "?"),
+                                "val": f"{p.get('final_score', 0):.3f}",
                                 "emoji": ref["emoji"],
                                 "award_name": ref["nom"],
                                 "description": ref["desc"]
                             })
 
-            if is_league_recap and ligue_courante:
+                    for code, winners in winners_map.items():
+                        if code in types_ref:
+                            ref = types_ref[code]
+                            for w in winners:
+                                val_fmt = (
+                                    str(int(w["val"]))
+                                    if code in ['ez', 'pas_loin', 'stakhanov']
+                                    else str(round(w["val"], 3))
+                                )
+                                awards_data.setdefault(code, []).append({
+                                    "nom": w["nom"],
+                                    "val": val_fmt,
+                                    "emoji": ref["emoji"],
+                                    "award_name": ref["nom"],
+                                    "description": ref["desc"]
+                                })
+
+            if (is_league_recap and ligue_courante) or is_hybrid_league_view:
                 cur.execute("""
                     SELECT id, date
                     FROM Tournois
@@ -363,12 +387,29 @@ def get_recap(slug):
                     "datasets": datasets
                 },
                 "distribution_data": dist_data,
-                "is_league_recap": is_league_recap if is_league_recap else False
+                "is_league_recap": is_league_recap if is_league_recap else False,
+                "include_league_stats": include_league_stats if include_league_stats else False,
+                "include_league_moves": include_league_moves if include_league_moves else False
             }
 
-            if is_league_recap:
+            if is_league_recap or is_hybrid_league_view:
                 response_data["ligues_disponibles"] = ligues_disponibles
                 response_data["ligue_courante"] = ligue_courante
+
+            # For hybrid mode on main tab (no ligue_id), fetch available leagues for navigation
+            if not is_league_recap and (include_league_stats or include_league_moves) and not ligue_id_param:
+                cur.execute("""
+                    SELECT DISTINCT l.id, l.nom, l.couleur, l.niveau
+                    FROM Ligues l
+                    JOIN Tournois t ON t.ligue_id = l.id
+                    WHERE t.date >= %s AND t.date <= %s
+                    ORDER BY l.niveau ASC
+                """, (d_debut, d_fin))
+                ligues_rows = cur.fetchall()
+                response_data["ligues_disponibles"] = [
+                    {"id": r[0], "nom": r[1], "couleur": r[2], "niveau": r[3]}
+                    for r in ligues_rows
+                ]
 
             return jsonify(response_data)
 
@@ -378,16 +419,16 @@ def get_new_leagues(slug):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, is_league_recap, is_active
+                SELECT id, is_league_recap, is_active, include_league_moves
                 FROM saisons WHERE slug = %s
             """, (slug,))
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "Saison introuvable"}), 404
 
-            saison_id, is_league_recap, is_active = row
+            saison_id, is_league_recap, is_active, include_league_moves = row
 
-            if not is_league_recap:
+            if not is_league_recap and not include_league_moves:
                 return jsonify({"error": "Cette saison n'est pas un récap de ligue"}), 400
 
             cur.execute("""
@@ -487,20 +528,22 @@ def dernier_tournoi():
                     for tid, tdate, lnom, lcoul in rows:
                         tournois_to_fetch.append({
                             "id": tid,
-                            "date": tdate.strftime("%Y-%m-%d"),
+                            "date": tdate.strftime("%d/%m/%Y"),
+                            "date_sort": tdate.strftime("%Y-%m-%d"),
                             "ligue_nom": lnom,
                             "ligue_couleur": lcoul if lcoul else "#FFFFFF",
                             "type": "ligue"
                         })
 
-                    tournois_to_fetch.sort(key=lambda x: x['date'], reverse=True)
+                    tournois_to_fetch.sort(key=lambda x: x['date_sort'], reverse=True)
 
                 else:
                     cur.execute("SELECT id, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
                     last = cur.fetchone()
                     tournois_to_fetch = [{
                         "id": last[0],
-                        "date": last[1].strftime("%Y-%m-%d"),
+                        "date": last[1].strftime("%d/%m/%Y"),
+                        "date_sort": last[1].strftime("%Y-%m-%d"),
                         "type": "standard"
                     }]
 
@@ -748,7 +791,8 @@ def get_joueur_stats(nom):
                     historique_data.append({
                         "type": "tournoi",
                         "id": tid,
-                        "date": date.strftime("%Y-%m-%d"),
+                        "date": date.strftime("%d/%m/%Y"),
+                        "date_sort": date.strftime("%Y-%m-%d"),
                         "score": s_val,
                         "position": p_val,
                         "score_trueskill": round(ts_val, 3),
@@ -760,7 +804,8 @@ def get_joueur_stats(nom):
                     ts_ghost = float(current_mu) - 3 * float(new_sig)
                     penalty_val = round(float(new_sig) - float(old_sig), 3)
                     historique_data.append({
-                        "type": "absence", "date": g_date.strftime("%Y-%m-%d"),
+                        "type": "absence", "date": g_date.strftime("%d/%m/%Y"),
+                        "date_sort": g_date.strftime("%Y-%m-%d"),
                         "score": 0, "position": "-", "score_trueskill": round(ts_ghost, 3),
                         "valeur": penalty_val, "ligue": "-"
                     })
@@ -778,12 +823,13 @@ def get_joueur_stats(nom):
                         continue
 
                     historique_data.append({
-                        "type": "reset", "date": r_date_only.strftime("%Y-%m-%d"),
+                        "type": "reset", "date": r_date_only.strftime("%d/%m/%Y"),
+                        "date_sort": r_date_only.strftime("%Y-%m-%d"),
                         "score": 0, "position": "-", "score_trueskill": round(reset_ts, 3),
                         "valeur": val_float, "ligue": "-"
                     })
 
-                historique_data.sort(key=lambda x: x['date'], reverse=True)
+                historique_data.sort(key=lambda x: x['date_sort'], reverse=True)
 
                 for i in range(len(historique_data)):
                     if i < len(historique_data) - 1:
@@ -1021,7 +1067,8 @@ def get_tournois_list():
                 """)
                 tournois = [{
                     "id": r[0],
-                    "date": r[1].strftime("%Y-%m-%d"),
+                    "date": r[1].strftime("%d/%m/%Y"),
+                    "date_iso": r[1].strftime("%Y-%m-%d"),
                     "nb_joueurs": r[2],
                     "participants": r[2],
                     "ligue_nom": r[3] if r[3] else "N/A",
@@ -1059,7 +1106,7 @@ def get_tournoi_details(tournoi_id):
                         "color": r[5] if r[5] else "#FFFFFF",
                         "ts_diff": ts_diff
                     })
-        return jsonify({"date": td[0].strftime("%Y-%m-%d"), "resultats": res})
+        return jsonify({"date": td[0].strftime("%d/%m/%Y"), "resultats": res})
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 

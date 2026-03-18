@@ -7,6 +7,8 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 ## [1.3.0] - En cours de développement
 
 ### Nouvelles fonctionnalités
+- **Mode hybride ligue pour récaps classiques** : un récap en mode classique peut désormais inclure les stats de ligue et/ou les mouvements inter-ligue via deux options cochables à la création de saison. Détection automatique des tournois en ligue dans la période. Les stats de ligue s'affichent dans des onglets dédiés (sans awards ni vainqueur), tandis que les awards et trophées restent exclusifs à l'onglet principal "Résultats". Choix du critère de mouvement (IP ou TrueSkill) à la publication. Nouvelles colonnes `include_league_stats` et `include_league_moves` dans la table `saisons`
+- **Format de date français** : toutes les dates affichées sur le site sont désormais au format DD/MM/YYYY (API, templates, JavaScript). Les dates internes (tri, filtrage, inputs) restent en ISO
 - **Mode Mixte** : nouveau type de tournoi en mode ligue, jouable entre toutes les ligues sans restriction. Enregistré avec `ligue_id = NULL` et affiché avec un tag gris "Mixte". Exclu des récaps de ligue, inclus dans les récaps classiques. Pénalités ghost appliquées normalement
 - **Colonne +/- TrueSkill** dans l'historique des tournois (`stats_tournoi.html`) et le profil joueur (`stats_joueur.html`) : affiche le gain/perte TrueSkill par match avec un tag coloré (vert `#e6ffed` pour les gains, rouge `#ffeef0` pour les pertes). Calcul basé sur `new_ts - (old_mu - 3*old_sigma)`
 - **Refonte du tableau d'historique joueur** : colonnes réordonnées en Position, Score, +/-, Ligue, Date, Détails (au lieu de Date, Score, Ligue, Position, Détails)

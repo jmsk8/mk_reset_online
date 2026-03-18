@@ -137,7 +137,9 @@ CREATE TABLE public.saisons (
     ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
     ligue_nom character varying(100),
     ligue_couleur character varying(20),
-    is_league_recap boolean DEFAULT false
+    is_league_recap boolean DEFAULT false,
+    include_league_stats boolean DEFAULT false,
+    include_league_moves boolean DEFAULT false
 );
 ALTER TABLE public.saisons OWNER TO mk_reset;
 

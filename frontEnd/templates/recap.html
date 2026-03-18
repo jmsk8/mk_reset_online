@@ -395,11 +395,24 @@
         </div>
     </section>
 
-    {# Navbar des ligues pour les récaps unifiés #}
-    {% if saison and saison.is_league_recap and saison.ligues_disponibles %}
+    {# Navbar des ligues pour les récaps unifiés ou hybrides #}
+    {% set show_league_nav = saison and saison.ligues_disponibles and (saison.is_league_recap or saison.include_league_stats or saison.include_league_moves) %}
+    {% if show_league_nav %}
     <div class="container mt-4 mb-2 px-3">
         <div class="league-nav-container">
             <div class="league-badges">
+                {# Main tab for hybrid mode (classic recap) #}
+                {% if not saison.is_league_recap and (saison.include_league_stats or saison.include_league_moves) %}
+                <a href="{{ request.path }}"
+                   class="league-badge {% if not view_mode and not request.args.get('ligue_id') %}is-active{% endif %}"
+                   style="background-color: #10b981; color: white;
+                          {% if not view_mode and not request.args.get('ligue_id') %}box-shadow: 0 0 15px #10b981;{% endif %}">
+                    <i class="fas fa-trophy"></i>Résultats
+                </a>
+                {% endif %}
+
+                {# League tabs #}
+                {% if saison.is_league_recap or saison.include_league_stats %}
                 {% for ligue in saison.ligues_disponibles %}
                 <a href="?ligue_id={{ ligue.id }}"
                    class="league-badge {% if saison.ligue_courante and ligue.id == saison.ligue_courante.id and view_mode != 'new-leagues' %}is-active{% endif %}"
@@ -408,12 +421,17 @@
                     <i class="fas fa-shield-alt"></i>{{ ligue.nom }}
                 </a>
                 {% endfor %}
+                {% endif %}
+
+                {# New leagues tab (movements) #}
+                {% if saison.is_league_recap or saison.include_league_moves %}
                 <a href="?view=new-leagues"
                    class="league-badge {% if view_mode == 'new-leagues' %}is-active{% endif %}"
                    style="background-color: #6366f1; color: white;
                           {% if view_mode == 'new-leagues' %}box-shadow: 0 0 15px #6366f1;{% endif %}">
                     <i class="fas fa-exchange-alt"></i>Nouvelles Ligues
                 </a>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -423,7 +441,7 @@
         <div class="container">
             {% if saison %}
 
-                {# Vue Nouvelles Ligues #}
+                {# Vue Nouvelles Ligues (league recap or hybrid mode) #}
                 {% if view_mode == 'new-leagues' and new_leagues_data %}
                 <div class="card glass-card fade-in mb-6">
                     <header class="card-header">

@@ -300,7 +300,9 @@ async function applyGlobalReset() {
         return;
     }
 
-    if (!confirm(`Es-tu sûr de vouloir ajouter ${val} de Sigma à TOUS les joueurs en date du ${dateStr} ?\n\nAttention : Cela sera refusé si un tournoi existe déjà à cette date ou après.`)) return;
+    const dateParts = dateStr.split('-');
+    const dateDisplay = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+    if (!confirm(`Es-tu sûr de vouloir ajouter ${val} de Sigma à TOUS les joueurs en date du ${dateDisplay} ?\n\nAttention : Cela sera refusé si un tournoi existe déjà à cette date ou après.`)) return;
 
     try {
         const csrfMeta = document.querySelector('meta[name="csrf-token"]');

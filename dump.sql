@@ -338,7 +338,9 @@ CREATE TABLE public.saisons (
     ligue_id integer,
     ligue_nom character varying(100),
     ligue_couleur character varying(20),
-    is_league_recap boolean DEFAULT false
+    is_league_recap boolean DEFAULT false,
+    include_league_stats boolean DEFAULT false,
+    include_league_moves boolean DEFAULT false
 );
 
 
@@ -1075,13 +1077,13 @@ COPY public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_t
 -- Data for Name: saisons; Type: TABLE DATA; Schema: public; Owner: mk_reset
 --
 
-COPY public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly, ligue_id, ligue_nom, ligue_couleur, is_league_recap) FROM stdin;
-9	Automne 2025	automne-2025	2025-09-29	2025-12-15	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f
-10	Année 2025	annee-2025	2025-01-15	2025-12-15	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	Indice de Performance	t	\N	\N	\N	f
-8	Été 2025	ete-2025	2025-06-26	2025-09-18	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f
-7	Printemps 2025	printemps-2025	2025-03-20	2025-06-16	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f
-6	Hiver 2025	hiver-2025	2025-01-15	2025-03-13	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f
-15	Hiver 2026	hiver-2026	2026-01-12	2026-03-16	f	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	Indice de Performance	f	\N	\N	\N	t
+COPY public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly, ligue_id, ligue_nom, ligue_couleur, is_league_recap, include_league_stats, include_league_moves) FROM stdin;
+9	Automne 2025	automne-2025	2025-09-29	2025-12-15	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+10	Année 2025	annee-2025	2025-01-15	2025-12-15	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	Indice de Performance	t	\N	\N	\N	f	f	f
+8	Été 2025	ete-2025	2025-06-26	2025-09-18	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+7	Printemps 2025	printemps-2025	2025-03-20	2025-06-16	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+6	Hiver 2025	hiver-2025	2025-01-15	2025-03-13	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+15	Hiver 2026	hiver-2026	2026-01-12	2026-03-16	f	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	Indice de Performance	f	\N	\N	\N	t	f	f
 \.
 
 

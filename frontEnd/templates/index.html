@@ -103,8 +103,8 @@
     <section class="section">
         <div class="container">
             {% if resultats %}
-                {% set first_date = resultats[0].meta.date.split('-') %}
-                {% set month = first_date[1]|int %}
+                {% set first_date_parts = resultats[0].meta.date_sort.split('-') %}
+                {% set month = first_date_parts[1]|int %}
                 {% if month in [12, 1, 2] %}
                     {% set season_name = "d'hiver" %}
                     {% set season_icon = "snowflake" %}
@@ -147,8 +147,7 @@
                                 
                                 <span class="tag is-dark is-rounded mt-1">
                                     <i class="far fa-calendar-alt mr-2"></i>
-                                    {% set p = tournoi_data.meta.date.split('-') %}
-                                    {{ p[2] }}/{{ p[1] }}/{{ p[0] }}
+                                    {{ tournoi_data.meta.date }}
                                 </span>
                             </p>
                         </div>

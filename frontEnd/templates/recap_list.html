@@ -120,9 +120,6 @@
                                         <div class="column is-8 has-text-left-tablet">
                                             <p class="heading has-text-warning mb-2">Édition Spéciale</p>
                                             <p class="title is-2 yearly-title mb-3">{{ s.nom }}</p>
-                                            <p class="subtitle is-6 has-text-light mb-4">
-                                                Le bilan complet de l'année. Qui est le champion ultime ?
-                                            </p>
                                             <div class="tags">
                                                 <span class="tag is-black is-medium border-light">
                                                     <i class="far fa-calendar-alt mr-2"></i> {{ s.date_debut }} - {{ s.date_fin }}
@@ -136,14 +133,30 @@
                     </div>
                     {% endfor %}
                 </div>
-                
-                <div class="section-divider">Saisons Régulières</div>
                 {% endif %}
 
 
+                {# Grouper les saisons régulières par année (extraite de date_fin DD/MM/YYYY) #}
+                {% set regular_seasons = [] %}
+                {% for s in saisons if not s.is_yearly %}
+                    {% set _ = regular_seasons.append(s) %}
+                {% endfor %}
+
+                {% set years_seen = [] %}
+                {% for s in regular_seasons %}
+                    {% set year = s.date_fin.split('/')[-1] %}
+                    {% if year not in years_seen %}
+                        {% set _ = years_seen.append(year) %}
+                    {% endif %}
+                {% endfor %}
+
+                {% for year in years_seen %}
+                <div class="section-divider"><i class="fas fa-calendar-alt mr-2"></i> {{ year }}</div>
                 <div class="columns is-multiline">
-                    {% for s in saisons if not s.is_yearly %}
-                        <div class="column is-4 fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
+                    {% set idx = namespace(val=0) %}
+                    {% for s in regular_seasons if s.date_fin.split('/')[-1] == year %}
+                        {% set idx.val = idx.val + 1 %}
+                        <div class="column is-4 fade-in" style="animation-delay: {{ idx.val * 0.1 }}s">
                             <a href="/recap/{{ s.slug }}" style="text-decoration: none;">
                                 {% if s.is_league_recap %}
                                 {# Récap de ligue unifié (nouveau format) #}
@@ -227,6 +240,7 @@
                         </div>
                     {% endfor %}
                 </div>
+                {% endfor %}
             {% else %}
                 <div class="box glass-card has-text-centered fade-in">
                     <div class="icon is-large has-text-grey mb-3">

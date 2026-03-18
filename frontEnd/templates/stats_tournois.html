@@ -80,10 +80,9 @@
                                     </thead>
                                     <tbody>
                                         {% for tournoi in tournois %}
-                                        <tr class="tournoi-row" data-date="{{ tournoi.date }}">
+                                        <tr class="tournoi-row" data-date="{{ tournoi.date_iso }}">
                                             <td style="white-space: nowrap;">
-                                                {% set p = tournoi.date.split('-') %}
-                                                {{ p[2] }}/{{ p[1] }}/{{ p[0] }}
+                                                {{ tournoi.date }}
                                             </td>
                                             <td>{{ tournoi.participants }}</td>
                                             <td>
