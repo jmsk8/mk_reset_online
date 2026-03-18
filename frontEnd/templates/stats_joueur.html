@@ -327,13 +327,17 @@
     {% include 'footer.html' %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script>
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+        }
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => { requestAnimationFrame(() => { elem.classList.add('visible'); }); });
         });
         function showAwardInfo(title, description, awardData) {
             document.getElementById('infoModalTitle').innerText = title;
-            let content = description.replace(/\n/g, '<br>');
+            let content = escapeHtml(description).replace(/\n/g, '<br>');
             document.getElementById('infoModalContent').innerHTML = content;
             document.getElementById('infoModal').classList.add('is-active');
         }

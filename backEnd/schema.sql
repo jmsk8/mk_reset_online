@@ -182,6 +182,16 @@ CREATE TABLE public.awards_obtenus (
 ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
 CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus (joueur_id, saison_id, award_id) WHERE ligue_id IS NULL;
 
+-- INDEXES PERFORMANCE
+CREATE INDEX idx_participations_joueur_id ON public.participations(joueur_id);
+CREATE INDEX idx_participations_tournoi_id ON public.participations(tournoi_id);
+CREATE INDEX idx_joueurs_ligue_id ON public.joueurs(ligue_id);
+CREATE INDEX idx_tournois_date ON public.tournois(date);
+CREATE INDEX idx_awards_obtenus_joueur_id ON public.awards_obtenus(joueur_id);
+CREATE INDEX idx_awards_obtenus_saison_id ON public.awards_obtenus(saison_id);
+CREATE INDEX idx_ghost_log_joueur_id ON public.ghost_log(joueur_id);
+CREATE INDEX idx_ghost_log_tournoi_id ON public.ghost_log(tournoi_id);
+
 INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
 ('gold_moai', '1er', 'gold_moai.png', 'Vainqueur de Saison'),
 ('silver_moai', '2ème', 'silver_moai.png', '2ème de Saison'),

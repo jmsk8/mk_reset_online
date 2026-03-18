@@ -802,6 +802,20 @@
     {% include 'footer.html' %}
 
     <script>
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+        }
+
+        function sanitizeColor(color) {
+            if (color == null) return '';
+            var s = String(color);
+            if (/^#([0-9a-fA-F]{3,8})$/.test(s)) return s;
+            if (/^(rgb|rgba|hsl|hsla)\(\s*[\d.,\s%]+\)$/.test(s)) return s;
+            if (/^[a-zA-Z]+$/.test(s)) return s;
+            return '';
+        }
+
         const sortDirections = {
             'moy': true, 'total': true, 'part': true, 'vic': true, 'ip': true
         };
@@ -884,13 +898,13 @@
 
         function showAwardInfo(title, description, awardData) {
             document.getElementById('infoModalTitle').innerText = title;
-            let content = description;
+            let content = escapeHtml(description);
             if (awardData && awardData.is_league_award) {
-                content = '<span class="tag" style="background-color:' + awardData.ligue_couleur + ';color:#000;font-weight:bold;margin-bottom:8px;">' + awardData.ligue_nom + '</span><br>';
+                content = '<span class="tag" style="background-color:' + sanitizeColor(awardData.ligue_couleur) + ';color:#000;font-weight:bold;margin-bottom:8px;">' + escapeHtml(awardData.ligue_nom) + '</span><br>';
                 if (awardData.ligue_supprimee) {
                     content += '<span class="has-text-grey is-italic is-size-7">(cette ligue n\'existe plus)</span><br>';
                 }
-                content += description;
+                content += escapeHtml(description);
             }
             document.getElementById('infoModalContent').innerHTML = content;
             document.getElementById('infoModal').classList.add('is-active');
@@ -918,7 +932,7 @@
             else if (pVal <= 25) badge.classList.add('is-success');
             else if (pVal <= 50) badge.classList.add('is-info');
             else badge.classList.add('is-dark');
-            document.getElementById('modalProfileLink').href = "/stats/joueur/" + name;
+            document.getElementById('modalProfileLink').href = "/stats/joueur/" + encodeURIComponent(name);
             document.getElementById('playerInfoModal').classList.add('is-active');
         }
 
@@ -986,7 +1000,7 @@
             const tooltipEl = document.getElementById('chartTooltip');
 
             if (point && tooltipEl) {
-                tooltipEl.innerHTML = `<strong>${playerObj.nom}</strong><br>${playerObj.x.toFixed(3)} pts TS<br>Top ${playerObj.top_percent}%`;
+                tooltipEl.innerHTML = `<strong>${escapeHtml(playerObj.nom)}</strong><br>${escapeHtml(playerObj.x.toFixed(3))} pts TS<br>Top ${escapeHtml(playerObj.top_percent)}%`;
                 tooltipEl.style.left = point.x + 'px';
                 tooltipEl.style.top = (point.y - 10) + 'px';
                 tooltipEl.style.opacity = 1;
@@ -1011,7 +1025,7 @@
                 const item = document.createElement('div');
                 item.className = 'legend-item';
                 const lastVal = ds.data.filter(v => v !== null).slice(-1)[0] || 0;
-                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${ds.borderColor}; border: 1px solid #fff;"></div><span class="legend-name">${ds.label}</span><span class="legend-val">${lastVal}</span>`;
+                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(ds.borderColor)}; border: 1px solid #fff;"></div><span class="legend-name">${escapeHtml(ds.label)}</span><span class="legend-val">${escapeHtml(lastVal)}</span>`;
                 
                 item.onmouseenter = () => highlightLine(index);
                 item.onmouseleave = () => resetLines();
@@ -1036,7 +1050,7 @@
             distDataRaw.players.forEach((p, index) => {
                 const item = document.createElement('div');
                 item.className = 'legend-item';
-                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${p.color}; border: 1px solid #fff;"></div><span class="legend-name">${p.nom}</span><span class="legend-val">${p.top_percent}%</span>`;
+                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(p.color)}; border: 1px solid #fff;"></div><span class="legend-name">${escapeHtml(p.nom)}</span><span class="legend-val">${escapeHtml(p.top_percent)}%</span>`;
                 
                 item.onmouseenter = () => {
                     highlightPoint(index);

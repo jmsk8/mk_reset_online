@@ -1,13 +1,27 @@
+# Stage 1: Build dependencies
+FROM python:3.10-slim AS builder
+
+WORKDIR /build
+
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Stage 2: Runtime
 FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN useradd -m -u 1000 appuser
+
+COPY --from=builder /root/.local /home/appuser/.local
 
 COPY frontend.py .
 COPY templates/ templates/
 COPY static/ static/
+
+ENV PATH=/home/appuser/.local/bin:$PATH
+
+USER appuser
 
 EXPOSE 5000
 

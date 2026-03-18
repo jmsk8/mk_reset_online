@@ -30,6 +30,7 @@ except KeyError as e:
 app.permanent_session_lifetime = timedelta(minutes=30)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = True
 
 csrf = CSRFProtect(app)
 
@@ -61,8 +62,9 @@ def check_admin_token_validity():
                 session.pop('token_start_time', None)
                 
         except Exception as e:
-            print(f"⚠️ Erreur vérification token: {e}")
-            pass
+            logger.warning(f"Erreur vérification token: {e} — déconnexion par précaution")
+            session.pop('admin_token', None)
+            session.pop('token_start_time', None)
 
 @app.context_processor
 def inject_lifetime():
@@ -111,7 +113,7 @@ def backend_request(method, endpoint, data=None, params=None, headers=None):
 # ROUTES : API PROXIES (PUBLIC)
 
 @app.route('/admin/types-awards', methods=['GET'])
-@csrf.exempt
+
 def proxy_types_awards():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -376,7 +378,7 @@ def add_tournament():
     return render_template("add_tournament.html", joueurs=joueurs)
 
 @app.route('/admin/revert_last', methods=['POST'])
-@csrf.exempt
+
 def admin_revert_last():
     if not session.get('admin_token'):
         return jsonify({"error": "Non autorisé"}), 401
@@ -422,7 +424,7 @@ def admin_saisons_page():
 # ROUTES : ADMIN API PROXIES
 
 @app.route('/admin/saisons', methods=['GET', 'POST'])
-@csrf.exempt
+
 def proxy_saisons():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -434,7 +436,7 @@ def proxy_saisons():
     return jsonify(data), status
 
 @app.route('/admin/saisons/<int:id>', methods=['DELETE'])
-@csrf.exempt
+
 def proxy_saisons_delete(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -443,7 +445,7 @@ def proxy_saisons_delete(id):
     return jsonify(data), status
 
 @app.route('/admin/saisons/<int:id>/count-tournois', methods=['GET'])
-@csrf.exempt
+
 def proxy_saisons_count_tournois(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -452,7 +454,7 @@ def proxy_saisons_count_tournois(id):
     return jsonify(data), status
 
 @app.route('/admin/saisons/<int:id>/save-awards', methods=['POST'])
-@csrf.exempt
+
 def proxy_saisons_save_awards(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -462,7 +464,7 @@ def proxy_saisons_save_awards(id):
     return jsonify(data), status
 
 @app.route('/admin/joueurs', methods=['GET', 'POST'])
-@csrf.exempt
+
 def proxy_joueurs():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé : Session expirée'}), 403
@@ -485,7 +487,7 @@ def proxy_joueurs():
     return jsonify({'error': 'Méthode non autorisée'}), 405
 
 @app.route('/admin/joueurs/<int:id>', methods=['PUT', 'DELETE'])
-@csrf.exempt
+
 def proxy_joueurs_detail(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -497,7 +499,7 @@ def proxy_joueurs_detail(id):
     return jsonify(data), status
 
 @app.route('/admin/config', methods=['GET', 'POST'])
-@csrf.exempt
+
 def proxy_config():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -509,7 +511,7 @@ def proxy_config():
     return jsonify(data), status
 
 @app.route('/admin/global-reset', methods=['POST'])
-@csrf.exempt
+
 def proxy_global_reset():
     if not session.get('admin_token'):
         return jsonify({"error": "Non autorisé"}), 401
@@ -518,7 +520,7 @@ def proxy_global_reset():
     return jsonify(data), status
 
 @app.route('/admin/revert-global-reset', methods=['POST'])
-@csrf.exempt
+
 def proxy_revert_global_reset():
     if not session.get('admin_token'):
         return jsonify({"error": "Non autorisé"}), 401
@@ -532,7 +534,7 @@ def proxy_get_ligues_public():
     return jsonify(data), status
 
 @app.route('/admin/ligues/setup', methods=['POST'])
-@csrf.exempt
+
 def proxy_setup_ligues():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -542,7 +544,7 @@ def proxy_setup_ligues():
     return jsonify(data), status
 
 @app.route('/admin/ligues/draft-simulation', methods=['GET'])
-@csrf.exempt
+
 def proxy_draft_simulation():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -572,6 +574,10 @@ def add_header(response):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
 if __name__ == '__main__':

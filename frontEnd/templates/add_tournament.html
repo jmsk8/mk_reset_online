@@ -11,6 +11,7 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
         .player-item {
             cursor: pointer;
@@ -145,6 +146,10 @@
     </section>
 
 <script>
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+        }
         document.addEventListener('DOMContentLoaded', async () => {
             let availablePlayers = [];
             let selectedPlayers = [];
@@ -214,7 +219,7 @@
 
                     const div = document.createElement('div');
                     div.className = 'player-item has-text-light';
-                    div.innerHTML = `<i class="fas fa-user mr-2"></i> ${nom}`;
+                    div.innerHTML = `<i class="fas fa-user mr-2"></i> ${escapeHtml(nom)}`;
                     div.onclick = () => selectPlayer(nom);
                     poolContainer.appendChild(div);
                 });
@@ -237,7 +242,7 @@
                 tr.setAttribute('data-nom', nom);
 
                 tr.innerHTML = `
-                    <td class="has-text-white is-vcentered" style="font-weight:bold;">${nom}</td>
+                    <td class="has-text-white is-vcentered" style="font-weight:bold;">${escapeHtml(nom)}</td>
                     <td>
                         <input class="input is-small has-background-dark has-text-light score-input" type="number" placeholder="Score" required>
                     </td>
@@ -247,7 +252,7 @@
                         </label>
                     </td>
                     <td class="is-vcentered">
-                        <button class="button is-small is-danger is-outlined" onclick="removePlayer('${nom}', this)">
+                        <button class="button is-small is-danger is-outlined" onclick="removePlayer('${escapeHtml(nom).replace(/'/g, "\\'")}', this)">
                             <i class="fas fa-times"></i>
                         </button>
                     </td>
