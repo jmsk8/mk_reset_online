@@ -980,7 +980,8 @@ def get_joueur_stats(nom):
             "has_league_data": has_league_data
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @public_bp.route('/joueurs/noms')
@@ -1043,7 +1044,8 @@ def stats_joueurs():
         set_cached("stats_joueurs", result)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @public_bp.route('/stats/tournois')
@@ -1140,7 +1142,8 @@ def get_ligues_public():
                 ligues = [ligues_map[lid] for lid in ligues_order]
         return jsonify(ligues)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @public_bp.route('/health', methods=['GET'])

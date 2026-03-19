@@ -122,7 +122,8 @@ def fix_db_structure():
             conn.commit()
         return jsonify({"status": "success", "message": "Structure Tournois mise à jour et historique synchronisé."})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 # -----------------------------------------------------------------------------
@@ -168,7 +169,8 @@ def apply_global_reset():
 
         return jsonify({"status": "success", "message": f"Sigma augmenté de {val} pour tous les joueurs (Date: {date_str})."})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @admin_bp.route('/api/admin/revert-global-reset', methods=['POST'])
@@ -200,7 +202,8 @@ def revert_global_reset():
 
         return jsonify({"status": "success", "message": "Dernier reset annulé."})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 # -----------------------------------------------------------------------------
@@ -279,7 +282,8 @@ def update_config():
 
         return jsonify({"status": "success"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        logger.error(f"Erreur requête: {e}")
+        return jsonify({"error": "Requête invalide"}), 400
 
 
 # -----------------------------------------------------------------------------
@@ -312,7 +316,8 @@ def api_get_joueurs():
                 } for r in cur.fetchall()]
         return jsonify(joueurs)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['PUT'])
@@ -333,7 +338,8 @@ def api_update_joueur(id):
             invalidate_cache()
         return jsonify({"status": "success"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        logger.error(f"Erreur requête: {e}")
+        return jsonify({"error": "Requête invalide"}), 400
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['DELETE'])
@@ -384,7 +390,8 @@ def api_add_joueur():
     except ValueError:
         return jsonify({"error": "Valeurs numériques invalides pour Mu ou Sigma"}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 # -----------------------------------------------------------------------------
@@ -401,7 +408,8 @@ def get_admin_award_types():
                 awards = [{"code": r[0], "nom": r[1], "emoji": r[2], "description": r[3]} for r in cur.fetchall()]
         return jsonify(awards)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 # -----------------------------------------------------------------------------
@@ -490,7 +498,8 @@ def admin_saisons():
                         conn.commit()
                         return jsonify({"status": "success"})
         except Exception as e:
-            return jsonify({"error": str(e)}), 400
+            logger.error(f"Erreur requête: {e}")
+            return jsonify({"error": "Requête invalide"}), 400
 
 
 @admin_bp.route('/admin/saisons/<int:saison_id>', methods=['DELETE'])
@@ -548,7 +557,8 @@ def delete_saison(saison_id):
             response["warnings"] = rollback_warnings
         return jsonify(response)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @admin_bp.route('/admin/count-tournois-range', methods=['GET'])
@@ -998,7 +1008,8 @@ def add_tournament():
 
             return jsonify({"status": "success", "tournoi_id": tournoi_id}), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @admin_bp.route('/api/admin/revert-last-tournament', methods=['POST'])
@@ -1042,7 +1053,8 @@ def revert_last_tournament():
             invalidate_cache()
             return jsonify({"status": "success", "message": "Annulé."}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @admin_bp.route('/delete-tournament/<int:id>', methods=['DELETE'])
@@ -1088,7 +1100,8 @@ def delete_tournament(id):
             invalidate_cache()
         return jsonify({"status": "success"})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 # -----------------------------------------------------------------------------
@@ -1160,7 +1173,7 @@ def setup_ligues():
 
     except Exception as e:
         logger.error(f"Erreur setup_ligues: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
 @admin_bp.route('/admin/ligues/draft-simulation', methods=['GET'])
@@ -1244,4 +1257,5 @@ def draft_simulation():
                     })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500

@@ -34,7 +34,7 @@ app.config['SESSION_COOKIE_SECURE'] = True
 
 csrf = CSRFProtect(app)
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 @app.context_processor
 def inject_version():
@@ -57,7 +57,7 @@ def check_admin_token_validity():
             )
             
             if response.status_code != 200:
-                print("⚠️ Token invalide détecté -> Déconnexion forcée.")
+                logger.warning("Token invalide détecté -> Déconnexion forcée.")
                 session.pop('admin_token', None)
                 session.pop('token_start_time', None)
                 
