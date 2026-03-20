@@ -194,19 +194,19 @@
                                 <div class="card season-card" {% if s.ligue_couleur %}style="border-left: 4px solid {{ s.ligue_couleur }};"{% endif %}>
                                     <div class="card-content has-text-centered">
 
-                                        <div class="season-icon" {% if s.ligue_couleur %}style="color: {{ s.ligue_couleur }};"{% else %}class="has-text-info"{% endif %}>
+                                        <div class="season-icon" {% if s.ligue_couleur %}style="color: {{ s.ligue_couleur }};"{% endif %}>
                                             {% if s.ligue_nom %}
                                                 <i class="fas fa-shield-alt"></i>
                                             {% elif 'Hiver' in s.nom %}
-                                                <i class="fas fa-snowflake"></i>
+                                                <i class="fas fa-snowflake" style="color: #7fd4f5;"></i>
                                             {% elif 'Été' in s.nom or 'Ete' in s.nom %}
-                                                <i class="fas fa-sun"></i>
+                                                <i class="fas fa-sun" style="color: #f5c842;"></i>
                                             {% elif 'Printemps' in s.nom %}
-                                                <i class="fas fa-seedling"></i>
+                                                <i class="fas fa-seedling" style="color: #7dda58;"></i>
                                             {% elif 'Automne' in s.nom %}
-                                                <i class="fas fa-leaf"></i>
+                                                <i class="fas fa-leaf" style="color: #e08c4a;"></i>
                                             {% else %}
-                                                <i class="fas fa-calendar-alt"></i>
+                                                <i class="fas fa-calendar-alt" style="color: #94a3b8;"></i>
                                             {% endif %}
                                         </div>
 
