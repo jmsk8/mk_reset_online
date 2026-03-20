@@ -10,12 +10,32 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
-    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
 
     <style>
+        .chart-container-wrapper { display: flex; align-items: stretch; height: 400px; }
+        .chart-legend { width: 200px; overflow-y: auto; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.1); margin-right: 15px; }
+        .chart-legend::-webkit-scrollbar { width: 5px; }
+        .chart-legend::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+        .chart-area { flex-grow: 1; position: relative; }
+        .legend-item { display: flex; align-items: center; padding: 6px 8px; margin-bottom: 4px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+        .legend-item:hover { background: rgba(255,255,255,0.1); }
+        .legend-color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; flex-shrink: 0; }
+        .legend-name { font-size: 0.85rem; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .legend-val { font-size: 0.75rem; color: #94a3b8; margin-left: auto; }
+        .speech-bubble { position: absolute; background: rgba(255,255,255,0.95); color: #000; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 10; transform: translate(-50%, -130%); box-shadow: 0 4px 15px rgba(0,0,0,0.4); white-space: nowrap; text-align: center; border: 1px solid #ccc; }
+        .speech-bubble::after { content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: rgba(255,255,255,0.95) transparent transparent transparent; }
+
+        @media screen and (max-width: 768px) {
+            .chart-container-wrapper { flex-direction: column; height: auto; }
+            .chart-legend { width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; max-height: 150px; display: flex; flex-wrap: wrap; }
+            .legend-item { width: 50%; }
+            .chart-area { height: 300px; }
+        }
         @media screen and (max-width: 516px) {
             
             html {
@@ -122,23 +142,23 @@
                                     </li>
                                     {% endfor %}
                                     <li class="{{ 'is-active' if tier_actif == 'S' else '' }}">
-                                        <a href="/classement?tier=S">
-                                            <i class="fas fa-star"></i>&nbsp;S
+                                        <a href="/classement?tier=S" style="border-bottom: 3px solid #f77b7b;">
+                                            <i class="fas fa-star" style="color: #f77b7b;"></i>&nbsp;S
                                         </a>
                                     </li>
                                     <li class="{{ 'is-active' if tier_actif == 'A' else '' }}">
-                                        <a href="/classement?tier=A">
-                                            <i class="fas fa-award"></i>&nbsp;A
+                                        <a href="/classement?tier=A" style="border-bottom: 3px solid #9cda74;">
+                                            <i class="fas fa-award" style="color: #9cda74;"></i>&nbsp;A
                                         </a>
                                     </li>
                                     <li class="{{ 'is-active' if tier_actif == 'B' else '' }}">
-                                        <a href="/classement?tier=B">
-                                            <i class="fas fa-medal"></i>&nbsp;B
+                                        <a href="/classement?tier=B" style="border-bottom: 3px solid #7fe6ee;">
+                                            <i class="fas fa-medal" style="color: #7fe6ee;"></i>&nbsp;B
                                         </a>
                                     </li>
                                     <li class="{{ 'is-active' if tier_actif == 'C' else '' }}">
-                                        <a href="/classement?tier=C">
-                                            <i class="fas fa-medal"></i>&nbsp;C
+                                        <a href="/classement?tier=C" style="border-bottom: 3px solid #ae6ce4;">
+                                            <i class="fas fa-medal" style="color: #ae6ce4;"></i>&nbsp;C
                                         </a>
                                     </li>
                                 </ul>
@@ -247,6 +267,26 @@
                             </div>
                         </div>
                     </div>
+
+                    {% if distribution_data and distribution_data.players|length > 1 %}
+                    <div class="card glass-card mt-5 fade-in">
+                        <header class="card-header">
+                            <p class="card-header-title is-centered has-text-white">
+                                <i class="fas fa-chart-area mr-2"></i> Positionnement des joueurs (Loi Normale)
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <div class="chart-container-wrapper">
+                                <div class="chart-legend" id="distributionLegend"></div>
+                                <div class="chart-area">
+                                    <div id="chartTooltip" class="speech-bubble"></div>
+                                    <canvas id="distributionChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
                 </div>
             </div>
         </div>
@@ -257,12 +297,206 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
     <script>
+        function escapeHtml(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+        function sanitizeColor(c) {
+            return /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : '#FFFFFF';
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => {
                 elem.classList.add('visible');
             });
-            
+
+            {% if distribution_data and distribution_data.players|length > 1 %}
+            const ctxDist = document.getElementById('distributionChart').getContext('2d');
+            const distDataRaw = {{ distribution_data | tojson }};
+            const curvePoints = distDataRaw.curve.map(pt => ({ x: pt.x, y: pt.y }));
+            const playerPoints = distDataRaw.players.map(p => ({ x: p.x, y: p.y, name: p.nom, percentile: p.top_percent, color: p.color }));
+            const legendDist = document.getElementById('distributionLegend');
+            let distChartInstance;
+
+            function resetPoints() {
+                if (!distChartInstance) return;
+                const ds = distChartInstance.data.datasets[1];
+                ds.pointRadius = 6;
+                ds.pointBorderWidth = 1;
+                distChartInstance.update('none');
+                hideTooltip();
+            }
+
+            function highlightPoint(idx) {
+                if (!distChartInstance) return;
+                const ds = distChartInstance.data.datasets[1];
+                const newRadii = ds.data.map(() => 6);
+                newRadii[idx] = 15;
+                ds.pointRadius = newRadii;
+                const newBW = ds.data.map(() => 1);
+                newBW[idx] = 3;
+                ds.pointBorderWidth = newBW;
+                distChartInstance.update('none');
+            }
+
+            function showMiniTooltip(idx, p) {
+                if (!distChartInstance) return;
+                const meta = distChartInstance.getDatasetMeta(1);
+                const point = meta.data[idx];
+                const el = document.getElementById('chartTooltip');
+                if (point && el) {
+                    el.innerHTML = `<strong>${escapeHtml(p.nom || p.name)}</strong><br>${(p.x).toFixed(3)} pts TS<br>Top ${p.top_percent || p.percentile}%`;
+                    el.style.left = point.x + 'px';
+                    el.style.top = (point.y - 10) + 'px';
+                    el.style.opacity = 1;
+                }
+            }
+
+            function hideTooltip() {
+                const el = document.getElementById('chartTooltip');
+                if (el) el.style.opacity = 0;
+            }
+
+            distDataRaw.players.forEach((p, index) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(p.color)}; border: 1px solid #fff;"></div><span class="legend-name">${escapeHtml(p.nom)}</span><span class="legend-val">${escapeHtml(String(p.top_percent))}%</span>`;
+                item.onmouseenter = () => highlightPoint(index);
+                item.onmouseleave = () => resetPoints();
+                item.onclick = () => {
+                    highlightPoint(index);
+                    showMiniTooltip(index, p);
+                };
+                legendDist.appendChild(item);
+            });
+
+            const tierThresholds = [
+                { label: 'S', value: {{ seuils.get('S', 0) }}, color: '#f77b7b' },
+                { label: 'A', value: {{ seuils.get('A', 0) }}, color: '#9cda74' },
+                { label: 'B', value: {{ seuils.get('B', 0) }}, color: '#7fe6ee' }
+            ];
+
+            const tierZones = [
+                { label: 'C', color: '#ae6ce4', from: null, to: 'B' },
+                { label: 'B', color: '#7fe6ee', from: 'B', to: 'A' },
+                { label: 'A', color: '#9cda74', from: 'A', to: 'S' },
+                { label: 'S', color: '#f77b7b', from: 'S', to: null }
+            ];
+            function getThresholdVal(label) {
+                const t = tierThresholds.find(t => t.label === label);
+                return t ? t.value : 0;
+            }
+
+            const tierLinesPlugin = {
+                id: 'tierLines',
+                beforeDatasetsDraw(chart) {
+                    const { ctx, chartArea, scales: { x } } = chart;
+                    if (!chartArea) return;
+                    const clamp = v => Math.max(chartArea.left, Math.min(chartArea.right, v));
+
+                    tierZones.forEach(zone => {
+                        const left = zone.from ? clamp(x.getPixelForValue(getThresholdVal(zone.from))) : chartArea.left;
+                        const right = zone.to ? clamp(x.getPixelForValue(getThresholdVal(zone.to))) : chartArea.right;
+                        if (right <= left) return;
+
+                        ctx.save();
+                        ctx.fillStyle = zone.color;
+                        ctx.globalAlpha = 0.04;
+                        ctx.fillRect(left, chartArea.top, right - left, chartArea.bottom - chartArea.top);
+                        ctx.globalAlpha = 1;
+                        ctx.restore();
+                    });
+                },
+                afterDraw(chart) {
+                    const { ctx, chartArea, scales: { x } } = chart;
+                    if (!chartArea) return;
+                    const clamp = v => Math.max(chartArea.left, Math.min(chartArea.right, v));
+
+                    tierThresholds.forEach(t => {
+                        if (t.value <= 0) return;
+                        const px = x.getPixelForValue(t.value);
+                        if (px < chartArea.left || px > chartArea.right) return;
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.setLineDash([6, 4]);
+                        ctx.strokeStyle = t.color;
+                        ctx.lineWidth = 1.5;
+                        ctx.globalAlpha = 0.3;
+                        ctx.moveTo(px, chartArea.top);
+                        ctx.lineTo(px, chartArea.bottom);
+                        ctx.stroke();
+                        ctx.restore();
+                    });
+
+                    tierZones.forEach(zone => {
+                        const left = zone.from ? clamp(x.getPixelForValue(getThresholdVal(zone.from))) : chartArea.left;
+                        const right = zone.to ? clamp(x.getPixelForValue(getThresholdVal(zone.to))) : chartArea.right;
+                        if (right <= left) return;
+                        const center = (left + right) / 2;
+                        ctx.save();
+                        ctx.fillStyle = zone.color;
+                        ctx.font = 'bold 13px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.globalAlpha = 0.6;
+                        ctx.fillText(zone.label, center, chartArea.top - 6);
+                        ctx.restore();
+                    });
+                }
+            };
+
+            distChartInstance = new Chart(ctxDist, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            type: 'line', label: 'Distribution', data: curvePoints,
+                            borderColor: 'rgba(255,255,255,0.2)', borderWidth: 2,
+                            pointRadius: 0, pointHoverRadius: 0, pointHitRadius: 0,
+                            fill: true, backgroundColor: 'rgba(255,255,255,0.02)',
+                            tension: 0.4, animation: false
+                        },
+                        {
+                            type: 'scatter', label: 'Joueurs', data: playerPoints,
+                            backgroundColor: playerPoints.map(p => p.color),
+                            borderColor: '#fff', borderWidth: 1,
+                            pointRadius: 6, pointHoverRadius: 9
+                        }
+                    ]
+                },
+                plugins: [tierLinesPlugin],
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    layout: { padding: { top: 20 } },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0 && elements[0].datasetIndex === 1) {
+                            const idx = elements[0].index;
+                            const pData = playerPoints[idx];
+                            highlightPoint(idx);
+                            showMiniTooltip(idx, pData);
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: ctx => ctx[0].raw.name || 'Joueur',
+                                label: ctx => `${ctx.raw.x.toFixed(3)} pts TS, Top ${ctx.raw.percentile}%`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            min: Math.min(...curvePoints.map(p => p.x)),
+                            max: Math.max(...curvePoints.map(p => p.x))
+                        },
+                        y: { display: false }
+                    }
+                }
+            });
+            {% endif %}
         });
     </script>
 </body>
