@@ -79,6 +79,18 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 - **Respawn des item boxes** réduit à 1 seconde
 - **Effet neige** : système de particules avec dérive pour le thème hivernal
 - **Leaderboard optimisé** : throttling à 500ms, tracking du leader en cache
+- **Banner saisonnier automatique** : le fond du banner change automatiquement selon la date actuelle (hiver/printemps). Images déplacées dans `img/banners/`, effet neige limité à l'hiver. Cache nginx passé de `immutable` à `must-revalidate`
+
+#### Page Classement
+- **Courbe de loi normale** : nouveau bloc "Positionnement des joueurs (Loi Normale)" sous le tableau de classement, affichant la distribution gaussienne des scores TrueSkill des joueurs ranked avec légende interactive, tooltips et highlight au survol
+- **Zones de tiers sur la courbe** : zones colorées semi-transparentes (S/A/B/C) avec lignes de seuil en pointillés
+- **Onglets de tier colorés** : les filtres S, A, B, C ont désormais la couleur de leur tier respectif
+
+#### Palmarès
+- **Podiums mixte comptés en classique** : les podiums obtenus en tournoi mixte sont désormais comptabilisés dans la section "Mode classique" du palmarès joueur
+
+#### Contenu
+- **Texte de bienvenue enrichi** : ajout d'un paragraphe invitant les visiteurs à découvrir le site et rejoindre le Discord
 
 ---
 
@@ -179,4 +191,4 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
-*Ce changelog couvre les versions 1.0.0 à 1.3.0 (du 11 décembre 2025 au 18 mars 2026).*
+*Ce changelog couvre les versions 1.0.0 à 1.3.0 (du 11 décembre 2025 au 20 mars 2026).*
