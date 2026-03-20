@@ -1,8 +1,18 @@
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
 async function apiCall(endpoint, method = 'GET', body = null) {
     const headers = { 'Content-Type': 'application/json' };
-    
+
     if (typeof ADMIN_TOKEN !== 'undefined' && ADMIN_TOKEN) {
         headers['X-Admin-Token'] = ADMIN_TOKEN;
+    }
+
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    if (csrfMeta) {
+        headers['X-CSRFToken'] = csrfMeta.content;
     }
 
     const options = { method: method, headers: headers };
@@ -140,7 +150,7 @@ async function loadPlayers() {
     tbody.innerHTML = '';
 
     if (res.error) {
-        tbody.innerHTML = `<tr><td colspan="5" class="has-text-danger has-text-centered">Erreur Backend: ${res.error}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="has-text-danger has-text-centered">Erreur Backend: ${escapeHtml(res.error)}</td></tr>`;
         return;
     }
     
@@ -156,13 +166,13 @@ async function loadPlayers() {
         const rowOpacity = (player.is_ranked === false) ? 'style="opacity: 0.6;"' : '';
 
         tr.innerHTML = `
-            <td class="has-text-centered">${player.is_ranked 
-                ? '<span class="icon has-text-success"><i class="fas fa-square-check"></i></span>' 
+            <td class="has-text-centered">${player.is_ranked
+                ? '<span class="icon has-text-success"><i class="fas fa-square-check"></i></span>'
                 : '<span class="icon has-text-danger"><i class="fas fa-square-xmark"></i></span>'}
             </td>
             <td class="has-text-white font-weight-bold" ${rowOpacity}>
-                <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background-color:${player.color || '#fff'}; margin-right:8px; border:1px solid #555;"></span>
-                ${player.nom || 'Inconnu'}
+                <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background-color:${escapeHtml(player.color || '#fff')}; margin-right:8px; border:1px solid #555;"></span>
+                ${escapeHtml(player.nom || 'Inconnu')}
             </td>
             <td class="has-text-grey-light" ${rowOpacity}>
                 ${player.mu ? parseFloat(player.mu).toFixed(3) : '0.000'}
@@ -171,11 +181,11 @@ async function loadPlayers() {
                 ${player.sigma ? parseFloat(player.sigma).toFixed(3) : '0.000'}
             </td>
             <td ${rowOpacity}>
-                <span class="tag ${tierClass}">${player.tier || '?'}</span>
+                <span class="tag ${tierClass}">${escapeHtml(player.tier || '?')}</span>
             </td>
             <td class="has-text-right">
-                <button class="button is-small is-info is-outlined mr-1" 
-                    onclick="openEditModal(${player.id}, '${player.nom.replace(/'/g, "\\'")}', ${player.mu}, ${player.sigma}, ${player.is_ranked}, ${player.consecutive_missed}, '${player.color || '#ffffff'}')">
+                <button class="button is-small is-info is-outlined mr-1"
+                    onclick="openEditModal(${player.id}, '${escapeHtml(player.nom).replace(/'/g, "\\'")}', ${player.mu}, ${player.sigma}, ${player.is_ranked}, ${player.consecutive_missed}, '${escapeHtml(player.color || '#ffffff')}')">
                     <i class="fas fa-edit"></i>
                 </button>
                 <button class="button is-small is-danger is-outlined" onclick="deletePlayer(${player.id})">
@@ -290,12 +300,16 @@ async function applyGlobalReset() {
         return;
     }
 
-    if (!confirm(`Es-tu sûr de vouloir ajouter ${val} de Sigma à TOUS les joueurs en date du ${dateStr} ?\n\nAttention : Cela sera refusé si un tournoi existe déjà à cette date ou après.`)) return;
+    const dateParts = dateStr.split('-');
+    const dateDisplay = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+    if (!confirm(`Es-tu sûr de vouloir ajouter ${val} de Sigma à TOUS les joueurs en date du ${dateDisplay} ?\n\nAttention : Cela sera refusé si un tournoi existe déjà à cette date ou après.`)) return;
 
     try {
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        const csrfHeaders = csrfMeta ? {'X-CSRFToken': csrfMeta.content} : {};
         const res = await fetch('/admin/global-reset', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN},
+            headers: {'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN, ...csrfHeaders},
             body: JSON.stringify({
                 value: val,
                 date: dateStr
@@ -318,7 +332,9 @@ async function revertGlobalReset() {
     if (!confirm("Annuler le dernier reset global ?\n\nCela ne fonctionnera que si aucun tournoi n'a été joué depuis ce reset.")) return;
 
     try {
-        const res = await fetch('/admin/revert-global-reset', { method: 'POST', headers: {'X-Admin-Token': ADMIN_TOKEN} });
+        const csrfMeta2 = document.querySelector('meta[name="csrf-token"]');
+        const csrfHeaders2 = csrfMeta2 ? {'X-CSRFToken': csrfMeta2.content} : {};
+        const res = await fetch('/admin/revert-global-reset', { method: 'POST', headers: {'X-Admin-Token': ADMIN_TOKEN, ...csrfHeaders2} });
         const data = await res.json();
         
         if (res.ok) {

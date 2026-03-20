@@ -4,7 +4,10 @@ import logging
 import requests
 import time
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-from datetime import timedelta
+from datetime import timedelta, date
+import math
+import statistics
+from math import erf, sqrt
 from flask_wtf.csrf import CSRFProtect
 
 # CONFIGURATION
@@ -30,10 +33,11 @@ except KeyError as e:
 app.permanent_session_lifetime = timedelta(minutes=30)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = True
 
 csrf = CSRFProtect(app)
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 @app.context_processor
 def inject_version():
@@ -56,13 +60,14 @@ def check_admin_token_validity():
             )
             
             if response.status_code != 200:
-                print("⚠️ Token invalide détecté -> Déconnexion forcée.")
+                logger.warning("Token invalide détecté -> Déconnexion forcée.")
                 session.pop('admin_token', None)
                 session.pop('token_start_time', None)
                 
         except Exception as e:
-            print(f"⚠️ Erreur vérification token: {e}")
-            pass
+            logger.warning(f"Erreur vérification token: {e} — déconnexion par précaution")
+            session.pop('admin_token', None)
+            session.pop('token_start_time', None)
 
 @app.context_processor
 def inject_lifetime():
@@ -111,7 +116,7 @@ def backend_request(method, endpoint, data=None, params=None, headers=None):
 # ROUTES : API PROXIES (PUBLIC)
 
 @app.route('/admin/types-awards', methods=['GET'])
-@csrf.exempt
+
 def proxy_types_awards():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -161,11 +166,58 @@ def proxy_add_tournament():
 
 # ROUTES : VIEWS (PUBLIC)
 
+def _normal_top_percent(score, mean, stdev):
+    z = (score - mean) / stdev
+    percentile = 0.5 * (1 + erf(z / sqrt(2))) * 100
+    return round(100 - percentile, 1)
+
+def build_distribution_data(joueurs):
+    ranked = [j for j in joueurs if j.get('tier', '').strip() not in ('U', '?', 'Unranked')]
+    scores = [j['score_trueskill'] for j in ranked if j['score_trueskill'] > 0]
+    dist_data = {"curve": [], "players": []}
+    if len(scores) < 2:
+        return dist_data
+    mean = statistics.mean(scores)
+    stdev = statistics.stdev(scores) or 1.0
+    x_min = mean - 3.5 * stdev
+    x_max = mean + 3.5 * stdev
+    step = (x_max - x_min) / 120
+    x = x_min
+    while x <= x_max:
+        y = (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(-0.5 * ((x - mean) / stdev) ** 2)
+        dist_data["curve"].append({"x": round(x, 2), "y": y})
+        x += step
+    for j in ranked:
+        score = j['score_trueskill']
+        if score <= 0:
+            continue
+        y_pos = (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(-0.5 * ((score - mean) / stdev) ** 2)
+        dist_data["players"].append({
+            "nom": j["nom"],
+            "x": score,
+            "y": y_pos,
+            "color": j.get("color", "#FFFFFF"),
+            "top_percent": _normal_top_percent(score, mean, stdev)
+        })
+    dist_data["players"].sort(key=lambda k: k["x"], reverse=True)
+    return dist_data
+
+def get_banner_season():
+    month = date.today().month
+    if month in (12, 1, 2):
+        return "winter"
+    elif month in (3, 4, 5):
+        return "spring"
+    elif month in (6, 7, 8):
+        return "summer"
+    else:
+        return "autumn"
+
 @app.route('/')
 def index():
     data, status = backend_request('GET', '/dernier-tournoi')
     resultats = data if status == 200 and isinstance(data, list) else []
-    return render_template("index.html", resultats=resultats)
+    return render_template("index.html", resultats=resultats, banner_season=get_banner_season())
 
 @app.route('/recap/<season_slug>')
 def recap_season(season_slug):
@@ -184,7 +236,7 @@ def recap_season(season_slug):
         return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None, view_mode=None, new_leagues_data=None)
 
     new_leagues_data = None
-    if view_mode == 'new-leagues' and data.get('is_league_recap'):
+    if view_mode == 'new-leagues' and (data.get('is_league_recap') or data.get('include_league_moves')):
         nl_data, nl_status = backend_request('GET', f'/stats/recap/{season_slug}/new-leagues')
         if nl_status == 200:
             new_leagues_data = nl_data
@@ -229,7 +281,14 @@ def classement():
     if ligues_status == 200 and isinstance(ligues_data, list):
         ligues = ligues_data
 
-    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues)
+    seuils = {}
+    seuils_data, seuils_status = backend_request('GET', '/tier-seuils')
+    if seuils_status == 200 and isinstance(seuils_data, dict):
+        seuils = seuils_data
+
+    distribution_data = build_distribution_data(joueurs)
+
+    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, seuils=seuils, distribution_data=distribution_data)
 
 @app.route('/stats/joueur/<nom>')
 def stats_joueur_detail(nom):
@@ -240,7 +299,9 @@ def stats_joueur_detail(nom):
             nom=nom,
             stats=data.get('stats', {}),
             historique=data.get('historique', []),
-            awards=data.get('awards', [])
+            awards=data.get('awards', []),
+            palmares=data.get('palmares', []),
+            has_league_data=data.get('has_league_data', False)
         )
     elif status == 404:
         flash(f"Joueur '{nom}' non trouvé.", "warning")
@@ -369,7 +430,7 @@ def add_tournament():
     return render_template("add_tournament.html", joueurs=joueurs)
 
 @app.route('/admin/revert_last', methods=['POST'])
-@csrf.exempt
+
 def admin_revert_last():
     if not session.get('admin_token'):
         return jsonify({"error": "Non autorisé"}), 401
@@ -415,7 +476,7 @@ def admin_saisons_page():
 # ROUTES : ADMIN API PROXIES
 
 @app.route('/admin/saisons', methods=['GET', 'POST'])
-@csrf.exempt
+
 def proxy_saisons():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -427,7 +488,7 @@ def proxy_saisons():
     return jsonify(data), status
 
 @app.route('/admin/saisons/<int:id>', methods=['DELETE'])
-@csrf.exempt
+
 def proxy_saisons_delete(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -435,8 +496,18 @@ def proxy_saisons_delete(id):
     data, status = backend_request('DELETE', f'/admin/saisons/{id}', headers=headers)
     return jsonify(data), status
 
+@app.route('/admin/count-tournois-range', methods=['GET'])
+def proxy_count_tournois_range():
+    if 'admin_token' not in session:
+        return jsonify({'error': 'Non autorisé'}), 403
+    headers = {'X-Admin-Token': session['admin_token']}
+    d_debut = request.args.get('date_debut', '')
+    d_fin = request.args.get('date_fin', '')
+    data, status = backend_request('GET', f'/admin/count-tournois-range?date_debut={d_debut}&date_fin={d_fin}', headers=headers)
+    return jsonify(data), status
+
 @app.route('/admin/saisons/<int:id>/count-tournois', methods=['GET'])
-@csrf.exempt
+
 def proxy_saisons_count_tournois(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -445,7 +516,7 @@ def proxy_saisons_count_tournois(id):
     return jsonify(data), status
 
 @app.route('/admin/saisons/<int:id>/save-awards', methods=['POST'])
-@csrf.exempt
+
 def proxy_saisons_save_awards(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -455,7 +526,7 @@ def proxy_saisons_save_awards(id):
     return jsonify(data), status
 
 @app.route('/admin/joueurs', methods=['GET', 'POST'])
-@csrf.exempt
+
 def proxy_joueurs():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé : Session expirée'}), 403
@@ -478,7 +549,7 @@ def proxy_joueurs():
     return jsonify({'error': 'Méthode non autorisée'}), 405
 
 @app.route('/admin/joueurs/<int:id>', methods=['PUT', 'DELETE'])
-@csrf.exempt
+
 def proxy_joueurs_detail(id):
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -490,7 +561,7 @@ def proxy_joueurs_detail(id):
     return jsonify(data), status
 
 @app.route('/admin/config', methods=['GET', 'POST'])
-@csrf.exempt
+
 def proxy_config():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -502,7 +573,7 @@ def proxy_config():
     return jsonify(data), status
 
 @app.route('/admin/global-reset', methods=['POST'])
-@csrf.exempt
+
 def proxy_global_reset():
     if not session.get('admin_token'):
         return jsonify({"error": "Non autorisé"}), 401
@@ -511,7 +582,7 @@ def proxy_global_reset():
     return jsonify(data), status
 
 @app.route('/admin/revert-global-reset', methods=['POST'])
-@csrf.exempt
+
 def proxy_revert_global_reset():
     if not session.get('admin_token'):
         return jsonify({"error": "Non autorisé"}), 401
@@ -525,7 +596,7 @@ def proxy_get_ligues_public():
     return jsonify(data), status
 
 @app.route('/admin/ligues/setup', methods=['POST'])
-@csrf.exempt
+
 def proxy_setup_ligues():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -535,7 +606,7 @@ def proxy_setup_ligues():
     return jsonify(data), status
 
 @app.route('/admin/ligues/draft-simulation', methods=['GET'])
-@csrf.exempt
+
 def proxy_draft_simulation():
     if 'admin_token' not in session:
         return jsonify({'error': 'Non autorisé'}), 403
@@ -565,6 +636,10 @@ def add_header(response):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
 if __name__ == '__main__':

@@ -59,7 +59,7 @@
 
 @media screen and (min-width: 769px) {
     .mk-logo-responsive {
-        max-width: 600px;   
+        max-width: 450px;
         transform: translateY(+10px); 
     }
 }
@@ -71,11 +71,15 @@
     width: 100%;
     height: 65%; 
     z-index: 1; 
-    background-image: url('../img/index-banner.png');
-    background-size: 3840px 100%; 
+    background-image: url('../img/banners/index-banner-winter.png');
+    background-size: 3840px 100%;
     background-repeat: repeat-x;
     image-rendering: pixelated;
     will-change: background-position;
+}
+
+.hero.smk-snes-banner[data-season="spring"] .layer-scrolling-bg {
+    background-image: url('../img/banners/index-banner-spring.png');
 }
 
 .layer-ground {
@@ -144,6 +148,30 @@
     image-rendering: pixelated;
     filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4));
     animation: snesBounce 0.15s infinite alternate ease-in-out;
+}
+
+.kart-container-moving.star-active .kart-static-png {
+    animation: snesBounce 0.15s infinite alternate ease-in-out, starRainbow 0.3s linear infinite;
+}
+
+.kart-container-moving.kart-stopped .kart-static-png {
+    animation-play-state: paused;
+}
+
+.held-item-bouncing img {
+    animation: snesBounce 0.15s infinite alternate ease-in-out;
+}
+
+.held-item-bouncing.item-stopped img {
+    animation-play-state: paused;
+}
+
+@keyframes starRainbow {
+    0%   { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(0deg) brightness(1.3); }
+    25%  { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(90deg) brightness(1.4); }
+    50%  { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(180deg) brightness(1.3); }
+    75%  { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(270deg) brightness(1.4); }
+    100% { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(360deg) brightness(1.3); }
 }
 
 .pause-overlay {
@@ -346,6 +374,18 @@
     transform: scale(0.9);
     opacity: 0.8;
     transition: all 0.3s ease;
+}
+
+.leaderboard-pp.pp-star-active img {
+    animation: ppStarRainbow 0.4s linear infinite;
+}
+
+@keyframes ppStarRainbow {
+    0%   { filter: hue-rotate(0deg) brightness(1.3); }
+    25%  { filter: hue-rotate(90deg) brightness(1.4); }
+    50%  { filter: hue-rotate(180deg) brightness(1.3); }
+    75%  { filter: hue-rotate(270deg) brightness(1.4); }
+    100% { filter: hue-rotate(360deg) brightness(1.3); }
 }
 
 .leaderboard-pp.hit {

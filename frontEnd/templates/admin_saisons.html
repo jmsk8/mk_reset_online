@@ -11,6 +11,7 @@
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
         .checkbox-card {
             background: rgba(255,255,255,0.05);
@@ -184,6 +185,34 @@
                                     <p class="help has-text-grey mt-2" id="recapModeCreateHelp"></p>
                                 </div>
 
+                                <div id="leagueOptionsSection" class="field mt-4 type-selector" style="display: none;">
+                                    <label class="label mb-3">
+                                        <i class="fas fa-layer-group mr-1"></i> Options Ligue
+                                        <span class="tag is-info is-light ml-2" id="leagueTournoisCount"></span>
+                                    </label>
+                                    <p class="help has-text-grey-light mb-3">Des tournois en ligue ont été détectés pendant cette période.</p>
+                                    <div class="control">
+                                        <div class="checkbox-card">
+                                            <label class="checkbox has-text-white" style="display:flex; align-items:center;">
+                                                <input type="checkbox" id="includeLeagueStats" class="mr-3">
+                                                <span>
+                                                    <strong class="has-text-white"><i class="fas fa-chart-bar mr-1"></i> Afficher les stats de ligue</strong>
+                                                    <span class="is-size-7 has-text-grey-light is-italic ml-2">(Ajoute des onglets par ligue, sans awards)</span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                        <div class="checkbox-card">
+                                            <label class="checkbox has-text-white" style="display:flex; align-items:center;">
+                                                <input type="checkbox" id="includeLeagueMoves" class="mr-3">
+                                                <span>
+                                                    <strong class="has-text-white"><i class="fas fa-exchange-alt mr-1"></i> Gérer les mouvements inter-ligue</strong>
+                                                    <span class="is-size-7 has-text-grey-light is-italic ml-2">(Promotions/relégations à la publication)</span>
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="field mt-4 type-selector">
                                     <label class="label mb-3">Type de Récompense</label>
                                     <div class="control">
@@ -302,15 +331,22 @@
     </div>
 
     <script>
+    function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    }
     let currentPublishSaisonId = null;
     let leagueModeEnabled = false;
     let interLeagueMovesCount = 0;
+
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
     async function api(url, method, body=null) {
         const opts = {
             method: method,
             headers: {'X-Admin-Token': ADMIN_TOKEN}
         };
+        if (csrfToken) opts.headers['X-CSRFToken'] = csrfToken;
         if(body !== null) {
             opts.headers['Content-Type'] = 'application/json';
             opts.body = JSON.stringify(body);
@@ -368,20 +404,20 @@ async function loadAwardTypes() {
 
                 let iconDisplay = '';
                 if (type.emoji && type.emoji.endsWith('.png')) {
-                    iconDisplay = `<img src="/static/img/${type.emoji}" alt="${type.nom}" class="award-img-icon">`;
+                    iconDisplay = `<img src="/static/img/${escapeHtml(type.emoji)}" alt="${escapeHtml(type.nom)}" class="award-img-icon">`;
                 } else {
-                    iconDisplay = `<span class="is-size-5 mr-2">${type.emoji}</span>`;
+                    iconDisplay = `<span class="is-size-5 mr-2">${escapeHtml(type.emoji)}</span>`;
                 }
 
                 const div = document.createElement('div');
                 div.className = 'checkbox-card';
                 div.innerHTML = `
                     <label class="checkbox has-text-white" style="display:flex; align-items:center;">
-                        <input type="checkbox" class="award-checkbox mr-3" value="${type.code}" checked>
+                        <input type="checkbox" class="award-checkbox mr-3" value="${escapeHtml(type.code)}" checked>
                         ${iconDisplay}
                         <span>
-                            <strong class="has-text-white">${type.nom}</strong>
-                            <span class="is-size-7 has-text-grey-light is-italic ml-2">(${type.description || ''})</span>
+                            <strong class="has-text-white">${escapeHtml(type.nom)}</strong>
+                            <span class="is-size-7 has-text-grey-light is-italic ml-2">(${escapeHtml(type.description || '')})</span>
                         </span>
                     </label>
                 `;
@@ -395,7 +431,7 @@ async function loadAwardTypes() {
                 const customOpt = document.createElement('div');
                 customOpt.className = 'custom-option';
                 customOpt.dataset.value = type.code;
-                customOpt.innerHTML = `${iconDisplay} ${type.nom}`;
+                customOpt.innerHTML = `${iconDisplay} ${escapeHtml(type.nom)}`;
                 
                 customOpt.onclick = function() {
                     selectOption(this.dataset.value, this.innerHTML);
@@ -442,26 +478,33 @@ async function loadAwardTypes() {
                 ligueBadge = '<span class="tag ml-1 is-warning"><i class="fas fa-layer-group mr-1"></i>Mode Ligue</span>';
             } else if (s.ligue_nom) {
                 const couleur = s.ligue_couleur || '#3b82f6';
-                ligueBadge = `<span class="tag ml-1" style="background-color: ${couleur}; color: white;">${s.ligue_nom}</span>`;
+                ligueBadge = `<span class="tag ml-1" style="background-color: ${escapeHtml(couleur)}; color: white;">${escapeHtml(s.ligue_nom)}</span>`;
+            }
+            if (s.include_league_stats) {
+                ligueBadge += '<span class="tag ml-1 is-info is-light"><i class="fas fa-chart-bar mr-1"></i>Stats Ligue</span>';
+            }
+            if (s.include_league_moves) {
+                ligueBadge += '<span class="tag ml-1 is-info is-light"><i class="fas fa-exchange-alt mr-1"></i>Mouvements</span>';
             }
 
+            const escapedLigueNom = s.ligue_nom ? escapeHtml(s.ligue_nom).replace(/'/g, "\\'") : null;
             let publishBtn = s.is_active
                 ? ''
-                : `<button onclick="saveAwards(${s.id}, ${s.is_league_recap ? 'true' : 'false'}, ${s.ligue_id || 'null'}, ${s.ligue_nom ? "'" + s.ligue_nom + "'" : 'null'})" class="button is-primary is-outlined" title="Publier">
+                : `<button onclick="saveAwards(${s.id}, ${s.is_league_recap ? 'true' : 'false'}, ${s.ligue_id || 'null'}, ${escapedLigueNom ? "'" + escapedLigueNom + "'" : 'null'}, ${s.include_league_moves ? 'true' : 'false'})" class="button is-primary is-outlined" title="Publier">
                      <i class="fas fa-rocket"></i>&nbsp;Publier
                    </button>`;
 
             tbody.innerHTML += `
                 <tr>
                     <td>
-                        <strong class="has-text-white">${s.nom}</strong>${ligueBadge}<br>
-                        <span class="is-size-7 is-family-code has-text-grey">${s.date_debut} au ${s.date_fin}</span>
+                        <strong class="has-text-white">${escapeHtml(s.nom)}</strong>${ligueBadge}<br>
+                        <span class="is-size-7 is-family-code has-text-grey">${escapeHtml(s.date_debut)} au ${escapeHtml(s.date_fin)}</span>
                     </td>
                     <td>${typeBadge}</td>
                     <td style="vertical-align: middle;">${statusBadge}</td>
                     <td>
                         <div class="buttons are-small">
-                            <a href="/recap/${s.slug}" target="_blank" class="button is-info is-outlined" title="Voir le récap">
+                            <a href="/recap/${encodeURIComponent(s.slug)}" target="_blank" class="button is-info is-outlined" title="Voir le récap">
                                 <i class="fas fa-eye"></i>
                             </a>
                             ${publishBtn}
@@ -489,6 +532,9 @@ async function loadAwardTypes() {
             return;
         }
 
+        const includeLeagueStats = recapMode === 'classic' && document.getElementById('includeLeagueStats').checked;
+        const includeLeagueMoves = recapMode === 'classic' && document.getElementById('includeLeagueMoves').checked;
+
         const data = {
             nom: document.getElementById('nomSaison').value,
             date_debut: document.getElementById('dateDebut').value,
@@ -496,7 +542,9 @@ async function loadAwardTypes() {
             active_awards: activeAwards,
             victory_condition: victoryCondition,
             is_yearly: isYearly,
-            recap_mode: recapMode
+            recap_mode: recapMode,
+            include_league_stats: includeLeagueStats,
+            include_league_moves: includeLeagueMoves
         };
 
         const res = await api('/admin/saisons', 'POST', data);
@@ -521,10 +569,12 @@ async function loadAwardTypes() {
 
     let currentSaisonLigueId = null;
     let currentIsLeagueRecap = false;
+    let currentIncludeLeagueMoves = false;
 
-    async function saveAwards(id, isLeagueRecap = false, ligueId = null, ligueNom = null) {
+    async function saveAwards(id, isLeagueRecap = false, ligueId = null, ligueNom = null, includeLeagueMoves = false) {
         const config = await api('/admin/config', 'GET');
         currentIsLeagueRecap = isLeagueRecap;
+        currentIncludeLeagueMoves = includeLeagueMoves;
         if (config.error) {
             alert('Erreur: ' + config.error);
             return;
@@ -539,14 +589,17 @@ async function loadAwardTypes() {
             descEl.innerHTML = `Publication du récap <strong style="color: #f59e0b;">Mode Ligue</strong>.<br>
                 Cela va activer le récap unifié pour toutes les ligues.`;
         } else if (ligueNom) {
-            descEl.innerHTML = `Publication du récap <strong style="color: #f59e0b;">${ligueNom}</strong>.<br>
+            descEl.innerHTML = `Publication du récap <strong style="color: #f59e0b;">${escapeHtml(ligueNom)}</strong>.<br>
                 Cela va calculer les statistiques, sauvegarder les awards et <strong>rendre la saison publique</strong>.`;
+        } else if (includeLeagueMoves) {
+            descEl.innerHTML = `Cela va calculer les statistiques, sauvegarder les awards et <strong>rendre la saison publique</strong>.<br>
+                <span class="has-text-info"><i class="fas fa-exchange-alt mr-1"></i> Les mouvements inter-ligue seront également appliqués.</span>`;
         } else {
             descEl.innerHTML = `Cela va calculer les statistiques, sauvegarder les awards et <strong>rendre la saison publique</strong>.`;
         }
 
         const section = document.getElementById('interLeagueMoveSection');
-        if ((isLeagueRecap || ligueId) && leagueModeEnabled && interLeagueMovesCount > 0) {
+        if ((isLeagueRecap || ligueId || includeLeagueMoves) && leagueModeEnabled && interLeagueMovesCount > 0) {
             section.style.display = 'block';
             document.getElementById('movesCountDisplay').textContent = interLeagueMovesCount;
         } else {
@@ -561,6 +614,7 @@ async function loadAwardTypes() {
         currentPublishSaisonId = null;
         currentSaisonLigueId = null;
         currentIsLeagueRecap = false;
+        currentIncludeLeagueMoves = false;
     }
 
     async function confirmPublish() {
@@ -569,7 +623,7 @@ async function loadAwardTypes() {
         const saisonId = currentPublishSaisonId;
         const payload = {};
 
-        if ((currentIsLeagueRecap || currentSaisonLigueId) && leagueModeEnabled && interLeagueMovesCount > 0) {
+        if ((currentIsLeagueRecap || currentSaisonLigueId || currentIncludeLeagueMoves) && leagueModeEnabled && interLeagueMovesCount > 0) {
             const criterion = document.querySelector('input[name="moveCriterion"]:checked').value;
             payload.move_criterion = criterion;
         }
@@ -592,6 +646,40 @@ async function loadAwardTypes() {
             alert('Erreur: ' + res.error);
         }
     }
+
+    // Detect league tournaments for classic mode and show options
+    async function checkLeagueTournaments() {
+        const dateDebut = document.getElementById('dateDebut').value;
+        const dateFin = document.getElementById('dateFin').value;
+        const recapMode = document.querySelector('input[name="recapModeCreate"]:checked')?.value;
+        const section = document.getElementById('leagueOptionsSection');
+
+        if (!dateDebut || !dateFin || recapMode !== 'classic') {
+            section.style.display = 'none';
+            return;
+        }
+
+        try {
+            // Use a temporary check by creating a fake season ID-less request
+            const res = await api(`/admin/count-tournois-range?date_debut=${dateDebut}&date_fin=${dateFin}`, 'GET');
+            if (res.league_count && res.league_count > 0) {
+                section.style.display = 'block';
+                document.getElementById('leagueTournoisCount').textContent = `${res.league_count} tournoi(s) en ligue détecté(s)`;
+            } else {
+                section.style.display = 'none';
+                document.getElementById('includeLeagueStats').checked = false;
+                document.getElementById('includeLeagueMoves').checked = false;
+            }
+        } catch (e) {
+            section.style.display = 'none';
+        }
+    }
+
+    document.getElementById('dateDebut').addEventListener('change', checkLeagueTournaments);
+    document.getElementById('dateFin').addEventListener('change', checkLeagueTournaments);
+    document.querySelectorAll('input[name="recapModeCreate"]').forEach(r => {
+        r.addEventListener('change', checkLeagueTournaments);
+    });
 
     document.addEventListener('DOMContentLoaded', () => {
         loadAwardTypes();

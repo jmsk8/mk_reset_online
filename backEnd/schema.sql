@@ -137,7 +137,9 @@ CREATE TABLE public.saisons (
     ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
     ligue_nom character varying(100),
     ligue_couleur character varying(20),
-    is_league_recap boolean DEFAULT false
+    is_league_recap boolean DEFAULT false,
+    include_league_stats boolean DEFAULT false,
+    include_league_moves boolean DEFAULT false
 );
 ALTER TABLE public.saisons OWNER TO mk_reset;
 
@@ -172,10 +174,25 @@ CREATE TABLE public.awards_obtenus (
     saison_id integer REFERENCES public.saisons(id) ON DELETE CASCADE,
     award_id integer REFERENCES public.types_awards(id) ON DELETE CASCADE,
     valeur character varying(50),
+    is_league_award boolean DEFAULT false,
+    ligue_id integer REFERENCES public.ligues(id) ON DELETE SET NULL,
+    ligue_nom character varying(100),
+    ligue_couleur character varying(20),
     created_at timestamp DEFAULT now(),
-    UNIQUE(joueur_id, saison_id, award_id)
+    UNIQUE(joueur_id, saison_id, award_id, ligue_id)
 );
 ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
+CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus (joueur_id, saison_id, award_id) WHERE ligue_id IS NULL;
+
+-- INDEXES PERFORMANCE
+CREATE INDEX idx_participations_joueur_id ON public.participations(joueur_id);
+CREATE INDEX idx_participations_tournoi_id ON public.participations(tournoi_id);
+CREATE INDEX idx_joueurs_ligue_id ON public.joueurs(ligue_id);
+CREATE INDEX idx_tournois_date ON public.tournois(date);
+CREATE INDEX idx_awards_obtenus_joueur_id ON public.awards_obtenus(joueur_id);
+CREATE INDEX idx_awards_obtenus_saison_id ON public.awards_obtenus(saison_id);
+CREATE INDEX idx_ghost_log_joueur_id ON public.ghost_log(joueur_id);
+CREATE INDEX idx_ghost_log_tournoi_id ON public.ghost_log(tournoi_id);
 
 INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
 ('gold_moai', '1er', 'gold_moai.png', 'Vainqueur de Saison'),

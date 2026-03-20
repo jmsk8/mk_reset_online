@@ -1,6 +1,6 @@
 services:
   db:
-      image: postgres:13
+      image: postgres:17-alpine
       volumes:
         - pg_data:/var/lib/postgresql/data
         - ./backEnd/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
@@ -15,6 +15,8 @@ services:
         interval: 5s
         timeout: 5s
         retries: 5
+      networks:
+        - backend
 
   backend:
     build:
@@ -29,15 +31,30 @@ services:
     volumes:
       - ./backups:/app/backups
       - ./backEnd/backend.py:/app/backend.py
+      - ./backEnd/constants.py:/app/constants.py
+      - ./backEnd/db.py:/app/db.py
+      - ./backEnd/cache.py:/app/cache.py
+      - ./backEnd/auth.py:/app/auth.py
+      - ./backEnd/utils.py:/app/utils.py
+      - ./backEnd/services.py:/app/services.py
+      - ./backEnd/routes_public.py:/app/routes_public.py
+      - ./backEnd/routes_admin.py:/app/routes_admin.py
 
     environment:
       - PYTHONUNBUFFERED=1
-      - POSTGRES_HOST=db 
+      - POSTGRES_HOST=db
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    networks:
+      - backend
 
   frontend:
     build:
@@ -53,12 +70,20 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+    networks:
+      - frontend
+      - backend
 
   nginx:
-    image: nginx:latest
+    image: nginx:1.27-alpine
     ports:
       - "80:80"
     volumes:
@@ -67,6 +92,17 @@ services:
       frontend:
         condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+    networks:
+      - frontend
 
 volumes:
   pg_data:
+
+networks:
+  frontend:
+  backend:

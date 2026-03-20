@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
         .league-column {
             background: rgba(255, 255, 255, 0.05);
@@ -239,6 +240,11 @@
     <script src="{{ url_for('static', filename='js/gestion.js') }}"></script>
     
     <script>
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+        }
+
         let isLeagueEnabled = false;
         let interLeagueMoves = 0;
         let draftData = [];
@@ -345,16 +351,16 @@
                 ligue.joueurs.forEach(j => {
                     rows += `
                         <tr class="has-text-grey-light" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                            <td>${j.nom}</td>
+                            <td>${escapeHtml(j.nom)}</td>
                             <td class="has-text-right is-family-monospace">${j.score ? j.score.toFixed(3) : '-'}</td>
                         </tr>`;
                 });
 
                 container.innerHTML += `
                     <div class="column is-3">
-                        <div class="box glass-card" style="border-top: 4px solid ${ligue.couleur || '#fff'}">
+                        <div class="box glass-card" style="border-top: 4px solid ${escapeHtml(ligue.couleur) || '#fff'}">
                             <div class="has-text-centered mb-4">
-                                <h3 class="title is-4 mb-2" style="color:${ligue.couleur}">${ligue.nom}</h3>
+                                <h3 class="title is-4 mb-2" style="color:${escapeHtml(ligue.couleur)}">${escapeHtml(ligue.nom)}</h3>
                                 <span class="tag is-dark is-rounded border-light">${ligue.joueurs.length} Joueurs</span>
                             </div>
                             <div class="table-container">
@@ -467,27 +473,27 @@
                 });
 
                 col.innerHTML = `
-                    <div class="league-column" 
-                         ondrop="drop(event, ${index})" 
+                    <div class="league-column"
+                         ondrop="drop(event, ${index})"
                          ondragover="allowDrop(event)"
                          ondragenter="dragEnter(event)"
                          ondragleave="dragLeave(event)">
-                        
+
                         <span class="icon is-small delete-league-btn" onclick="deleteLeague(${index})" title="Supprimer la ligue">
                             <i class="fas fa-times"></i>
                         </span>
 
                         <div class="league-header">
-                            <span class="input-league-name" style="cursor: default;">${ligue.nom}</span>
+                            <span class="input-league-name" style="cursor: default;">${escapeHtml(ligue.nom)}</span>
                             <div class="control mt-2 mb-2">
-                                <input type="color" value="${ligue.couleur}" onchange="updateLeagueColor(${index}, this.value)" style="width:100%; height:25px; cursor:pointer;">
+                                <input type="color" value="${escapeHtml(ligue.couleur)}" onchange="updateLeagueColor(${index}, this.value)" style="width:100%; height:25px; cursor:pointer;">
                             </div>
                         </div>
-                        
+
                         <div class="players-list">
                             ${playerItems}
                         </div>
-                        
+
                         <div class="has-text-centered mt-3 pt-2" style="border-top: 1px solid rgba(255,255,255,0.1)">
                             <span class="tag is-black">${ligue.joueurs.length}</span>
                         </div>
@@ -508,8 +514,8 @@
         function createPlayerHTML(p, isUnassigned) {
             const inactiveClass = isUnassigned ? 'is-inactive' : '';
             return `
-                <div class="player-draggable ${inactiveClass}" draggable="true" data-id="${p.id}" ondragstart="drag(event)">
-                    <span class="has-text-weight-bold mr-2">${p.nom}</span>
+                <div class="player-draggable ${inactiveClass}" draggable="true" data-id="${escapeHtml(p.id)}" ondragstart="drag(event)">
+                    <span class="has-text-weight-bold mr-2">${escapeHtml(p.nom)}</span>
                     <span class="tag is-dark is-small">${p.score.toFixed(2)}</span>
                 </div>
             `;

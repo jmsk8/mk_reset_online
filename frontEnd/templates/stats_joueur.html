@@ -21,10 +21,11 @@
         @keyframes pulseAuraGold { 0% { filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6)); } 50% { filter: drop-shadow(0 0 15px rgba(255, 215, 0, 1)); } 100% { filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6)); } }
         @keyframes pulseAuraSilver { 0% { filter: drop-shadow(0 0 5px rgba(192, 192, 192, 0.6)); } 50% { filter: drop-shadow(0 0 15px rgba(255, 255, 255, 1)); } 100% { filter: drop-shadow(0 0 5px rgba(192, 192, 192, 0.6)); } }
         @keyframes pulseAuraBronze { 0% { filter: drop-shadow(0 0 5px rgba(205, 127, 50, 0.6)); } 50% { filter: drop-shadow(0 0 15px rgba(255, 160, 122, 1)); } 100% { filter: drop-shadow(0 0 5px rgba(205, 127, 50, 0.6)); } }
-        .award-icon-large.super-gold { animation: pulseAuraGold 3s infinite ease-in-out; }
-        .award-icon-large.super-silver { animation: pulseAuraSilver 3s infinite ease-in-out; }
-        .award-icon-large.super-bronze { animation: pulseAuraBronze 3s infinite ease-in-out; }
+        .award-icon-large.super-gold { animation: pulseAuraGold 3s infinite ease-in-out; height: 62px; }
+        .award-icon-large.super-silver { animation: pulseAuraSilver 3s infinite ease-in-out; height: 62px; }
+        .award-icon-large.super-bronze { animation: pulseAuraBronze 3s infinite ease-in-out; height: 62px; }
         .award-count { font-size: 0.9rem; color: #fff; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); background-color: rgba(0,0,0,0.3); padding: 0 6px; border-radius: 10px; }
+        .league-glow-img { filter: drop-shadow(0 0 2px var(--league-color)) drop-shadow(0 0 5px var(--league-color)); }
         .chart-container { position: relative; width: 100%; height: 450px; }
         .modal-content-glass { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; box-shadow: 0 0 40px rgba(0,0,0,0.5); width: 400px; max-width: 90%; margin: 0 auto; }
         @media screen and (max-width: 768px) {
@@ -88,7 +89,7 @@
                                     <tbody>
                                         <tr><td><i class="fas fa-trophy"></i> Tournois</td><td class="has-text-right">{{ stats.nombre_tournois }}</td></tr>
                                         <tr><td><i class="fas fa-medal"></i> Victoires</td><td class="has-text-right">{{ stats.victoires }}</td></tr>
-                                        <tr><td><i class="fas fa-percentage"></i> Ratio V/T</td><td class="has-text-right">{{ (stats.victoires / stats.nombre_tournois * 100)|round(1) if stats.nombre_tournois > 0 else 0 }}%</td></tr>
+                                        <tr><td><i class="fas fa-percentage"></i> Ratio V/D</td><td class="has-text-right">{{ (stats.victoires / stats.nombre_tournois * 100)|round(1) if stats.nombre_tournois > 0 else 0 }}%</td></tr>
                                         <tr><td><i class="fas fa-calculator"></i> Score moyen</td><td class="has-text-right">{{ stats.score_moyen|round(3) }}</td></tr>
                                         <tr><td><i class="fas fa-list-ol"></i> Pos. Moyenne</td><td class="has-text-right">{{ stats.position_moyenne }}</td></tr>
                                         <tr><td><i class="fas fa-arrow-up"></i> Meilleur score</td><td class="has-text-right">{{ stats.meilleur_score }}</td></tr>
@@ -96,6 +97,44 @@
                                 </table>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="box glass-card mt-4 fade-in">
+                        <h4 class="title is-5 has-text-warning has-text-centered mb-3"><i class="fas fa-award"></i> Palmarès</h4>
+                        {% if palmares|length == 0 %}
+                            <p class="has-text-grey is-italic is-size-7 has-text-centered">Aucun podium.</p>
+                        {% elif not has_league_data %}
+                            <div class="has-text-centered">
+                                {% if palmares[0].gold %}<span class="is-size-3">🥇 {{ palmares[0].gold }}</span>{% endif %}
+                                {% if palmares[0].silver %}<span class="is-size-3 ml-4">🥈 {{ palmares[0].silver }}</span>{% endif %}
+                                {% if palmares[0].bronze %}<span class="is-size-3 ml-4">🥉 {{ palmares[0].bronze }}</span>{% endif %}
+                            </div>
+                        {% else %}
+                            {% for p in palmares if not p.ligue_nom %}
+                                <div class="mb-3">
+                                    <p class="has-text-weight-bold is-size-6 mb-1">
+                                        <span class="has-text-light">Mode classique</span>
+                                    </p>
+                                    <div class="ml-2">
+                                        {% if p.gold %}<span class="is-size-4">🥇 {{ p.gold }}</span>{% endif %}
+                                        {% if p.silver %}<span class="is-size-4 ml-3">🥈 {{ p.silver }}</span>{% endif %}
+                                        {% if p.bronze %}<span class="is-size-4 ml-3">🥉 {{ p.bronze }}</span>{% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                            {% for p in palmares if p.ligue_nom %}
+                                <div class="mb-3">
+                                    <p class="has-text-weight-bold is-size-6 mb-1">
+                                        <span class="tag is-small" style="background-color: {{ p.ligue_couleur or '#3298dc' }}; color: #222; font-weight: bold;">{{ p.ligue_nom }}</span>
+                                    </p>
+                                    <div class="ml-2">
+                                        {% if p.gold %}<span class="is-size-4">🥇 {{ p.gold }}</span>{% endif %}
+                                        {% if p.silver %}<span class="is-size-4 ml-3">🥈 {{ p.silver }}</span>{% endif %}
+                                        {% if p.bronze %}<span class="is-size-4 ml-3">🥉 {{ p.bronze }}</span>{% endif %}
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
                     </div>
 
                     <div class="box glass-card has-text-centered mt-4 fade-in">
@@ -113,15 +152,14 @@
                                             {% elif 'bronze' in award.emoji %}{% set aura_class = 'super-bronze' %}
                                             {% endif %}
                                         {% endif %}
-                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
-                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }}" alt="{{ award.nom }}">{% else %}<span class="award-text-large">{{ award.emoji }}</span>{% endif %}
-                                            <span class="award-count">x{{ award.count }}</span>
+                                        <div class="award-item" title="{{ award.description|replace('\n', '&#10;')|safe }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', {{ award.description|tojson }}, {{ award|tojson }})">
+                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }} {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %} alt="{{ award.nom }}">{% else %}<span class="award-text-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %}>{{ award.emoji }}</span>{% endif %}
                                         </div>
                                     {% endif %}
                                 {% endfor %}
                             </div>
                         {% endif %}
-                        {% if not ns_trophies.found %}<p class="has-text-grey is-italic is-size-7">Aucun trophée de saison.</p>{% endif %}
+                        {% if not ns_trophies.found %}<p class="has-text-grey is-italic is-size-7">Aucun trophée.</p>{% endif %}
                     </div>
 
                     <div class="box glass-card has-text-centered mt-4 fade-in">
@@ -132,15 +170,15 @@
                                 {% for award in awards %}
                                     {% if 'moai' not in award.emoji %}
                                         {% set ns_awards.found = true %}
-                                        <div class="award-item" title="{{ award.description if award.description else award.nom }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', '{{ (award.description if award.description else award.nom)|replace("'", "\\'") }}')">
-                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large" alt="{{ award.nom }}">{% else %}<span class="award-text-large">{{ award.emoji }}</span>{% endif %}
+                                        <div class="award-item" title="{{ award.description|replace('\n', '&#10;')|safe }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', {{ award.description|tojson }}, {{ award|tojson }})">
+                                            {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %} alt="{{ award.nom }}">{% else %}<span class="award-text-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %}>{{ award.emoji }}</span>{% endif %}
                                             <span class="award-count">x{{ award.count }}</span>
                                         </div>
                                     {% endif %}
                                 {% endfor %}
                             </div>
                         {% endif %}
-                        {% if not ns_awards.found %}<p class="has-text-grey is-italic is-size-7">Aucun award spécial.</p>{% endif %}
+                        {% if not ns_awards.found %}<p class="has-text-grey is-italic is-size-7">Aucun award.</p>{% endif %}
                     </div>
 
                     <div class="card glass-card mt-4 fade-in">
@@ -185,37 +223,64 @@
                                 <table class="table is-fullwidth is-hoverable">
                                     <thead>
                                         <tr>
-                                            <th>Date</th>
-                                            <th>Score</th>
-                                            <th>Ligue</th>
                                             <th>Position</th>
+                                            <th>Score</th>
+                                            <th class="has-text-centered">+/-</th>
+                                            <th>Ligue</th>
+                                            <th>Date</th>
                                             <th class="has-text-centered">Détails</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {% for tournoi in historique %}
                                         <tr class="fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
-                                            <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
-                                           
                                             {% if tournoi.type == 'absence' %}
-                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
-                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
                                                 <td style="vertical-align: middle;" data-label="Position">
                                                     <span class="tag is-danger is-light">Absence prolongée (+{{ tournoi.valeur }} sigma)</span>
                                                 </td>
+                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
+                                                <td style="vertical-align: middle;" class="has-text-centered" data-label="+/-">
+                                                    {% if tournoi.ts_diff is not none %}
+                                                        <span class="tag is-small" style="font-weight:bold; {% if tournoi.ts_diff > 0 %}background-color:#e6ffed;color:#22863a;{% elif tournoi.ts_diff < 0 %}background-color:#ffeef0;color:#cb2431;{% else %}color:#6a737d;{% endif %}">
+                                                            {{ '%+.3f'|format(tournoi.ts_diff) }}
+                                                        </span>
+                                                    {% else %}<span class="has-text-grey-light">-</span>{% endif %}
+                                                </td>
+                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
+                                                <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
                                                 <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails"><span class="tag is-dark">N/A</span></td>
                                             {% elif tournoi.type == 'reset' %}
-                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
-                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
                                                 <td style="vertical-align: middle;" data-label="Position">
                                                     <span class="tag is-primary is-light" style="background-color: #f3e8ff; color: #6b21a8; border: 1px solid #d8b4fe;">
                                                         <i class="fas fa-magic mr-1"></i> Reset Global (+{{ tournoi.valeur }})
                                                     </span>
                                                 </td>
+                                                <td style="vertical-align: middle;" class="has-text-grey-light" data-label="Score">-</td>
+                                                <td style="vertical-align: middle;" class="has-text-centered" data-label="+/-">
+                                                    {% if tournoi.ts_diff is not none %}
+                                                        <span class="tag is-small" style="font-weight:bold; {% if tournoi.ts_diff > 0 %}background-color:#e6ffed;color:#22863a;{% elif tournoi.ts_diff < 0 %}background-color:#ffeef0;color:#cb2431;{% else %}color:#6a737d;{% endif %}">
+                                                            {{ '%+.3f'|format(tournoi.ts_diff) }}
+                                                        </span>
+                                                    {% else %}<span class="has-text-grey-light">-</span>{% endif %}
+                                                </td>
+                                                <td style="vertical-align: middle;" data-label="Ligue">-</td>
+                                                <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
                                                 <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails"><span class="tag is-dark">N/A</span></td>
                                             {% else %}
+                                                <td style="vertical-align: middle;" data-label="Position">
+                                                    {% if tournoi.position == 1 %}<span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
+                                                    {% elif tournoi.position == 2 %}<span class="tag is-light"><i class="fas fa-medal"></i> 2ème</span>
+                                                    {% elif tournoi.position == 3 %}<span class="tag is-danger"><i class="fas fa-medal"></i> 3ème</span>
+                                                    {% else %}<span class="tag is-info">{{ tournoi.position }}ème</span>{% endif %}
+                                                </td>
                                                 <td style="vertical-align: middle;" data-label="Score">{{ tournoi.score }}</td>
-                                                
+                                                <td style="vertical-align: middle;" class="has-text-centered" data-label="+/-">
+                                                    {% if tournoi.ts_diff is not none %}
+                                                        <span class="tag is-small" style="font-weight:bold; {% if tournoi.ts_diff > 0 %}background-color:#e6ffed;color:#22863a;{% elif tournoi.ts_diff < 0 %}background-color:#ffeef0;color:#cb2431;{% else %}color:#6a737d;{% endif %}">
+                                                            {{ '%+.3f'|format(tournoi.ts_diff) }}
+                                                        </span>
+                                                    {% else %}<span class="has-text-grey-light">-</span>{% endif %}
+                                                </td>
                                                 <td style="vertical-align: middle;" data-label="Ligue">
                                                     {% if tournoi.ligue == 'Mixte' %}
                                                         <span class="tag is-small" style="background-color: #888888; color: #fff; font-weight: bold; border: 1px solid rgba(0,0,0,0.2);">
@@ -230,13 +295,7 @@
                                                         <span class="has-text-grey-light is-size-7">-</span>
                                                     {% endif %}
                                                 </td>
-
-                                                <td style="vertical-align: middle;" data-label="Position">
-                                                    {% if tournoi.position == 1 %}<span class="tag is-warning"><i class="fas fa-crown"></i> 1er</span>
-                                                    {% elif tournoi.position == 2 %}<span class="tag is-light"><i class="fas fa-medal"></i> 2ème</span>
-                                                    {% elif tournoi.position == 3 %}<span class="tag is-danger"><i class="fas fa-medal"></i> 3ème</span>
-                                                    {% else %}<span class="tag is-info">{{ tournoi.position }}ème</span>{% endif %}
-                                                </td>
+                                                <td style="vertical-align: middle;" data-label="Date">{{ tournoi.date }}</td>
                                                 <td class="has-text-centered" style="vertical-align: middle;" data-label="Détails">
                                                     <a href="/stats/tournoi/{{ tournoi.id }}" class="button is-small is-primary is-outlined"><span class="icon"><i class="fas fa-eye"></i></span></a>
                                                 </td>
@@ -268,13 +327,18 @@
     {% include 'footer.html' %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script>
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+        }
         document.addEventListener('DOMContentLoaded', () => {
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => { requestAnimationFrame(() => { elem.classList.add('visible'); }); });
         });
-        function showAwardInfo(title, description) {
+        function showAwardInfo(title, description, awardData) {
             document.getElementById('infoModalTitle').innerText = title;
-            document.getElementById('infoModalContent').innerHTML = description;
+            let content = escapeHtml(description).replace(/\n/g, '<br>');
+            document.getElementById('infoModalContent').innerHTML = content;
             document.getElementById('infoModal').classList.add('is-active');
         }
         function closeInfoModal() { document.getElementById('infoModal').classList.remove('is-active'); }
