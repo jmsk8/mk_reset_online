@@ -4,7 +4,7 @@ import logging
 import requests
 import time
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
-from datetime import timedelta
+from datetime import timedelta, date
 from flask_wtf.csrf import CSRFProtect
 
 # CONFIGURATION
@@ -163,11 +163,22 @@ def proxy_add_tournament():
 
 # ROUTES : VIEWS (PUBLIC)
 
+def get_banner_season():
+    month = date.today().month
+    if month in (12, 1, 2):
+        return "winter"
+    elif month in (3, 4, 5):
+        return "spring"
+    elif month in (6, 7, 8):
+        return "summer"
+    else:
+        return "autumn"
+
 @app.route('/')
 def index():
     data, status = backend_request('GET', '/dernier-tournoi')
     resultats = data if status == 200 and isinstance(data, list) else []
-    return render_template("index.html", resultats=resultats)
+    return render_template("index.html", resultats=resultats, banner_season=get_banner_season())
 
 @app.route('/recap/<season_slug>')
 def recap_season(season_slug):

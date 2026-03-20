@@ -71,11 +71,15 @@
     width: 100%;
     height: 65%; 
     z-index: 1; 
-    background-image: url('../img/index-banner.png');
-    background-size: 3840px 100%; 
+    background-image: url('../img/banners/index-banner-winter.png');
+    background-size: 3840px 100%;
     background-repeat: repeat-x;
     image-rendering: pixelated;
     will-change: background-position;
+}
+
+.hero.smk-snes-banner[data-season="spring"] .layer-scrolling-bg {
+    background-image: url('../img/banners/index-banner-spring.png');
 }
 
 .layer-ground {

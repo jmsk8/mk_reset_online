@@ -935,14 +935,15 @@ def get_joueur_stats(nom):
                 palmares = {}
                 has_league_data = False
                 for pos, l_nom, l_coul, l_id, l_niv in podium_rows:
-                    key = l_nom if l_nom else "__classique__"
-                    if l_nom:
+                    is_real_league = bool(l_nom and l_id)
+                    key = l_nom if is_real_league else "__classique__"
+                    if is_real_league:
                         has_league_data = True
                     if key not in palmares:
                         palmares[key] = {
-                            "ligue_nom": l_nom,
-                            "ligue_couleur": l_coul,
-                            "ligue_niveau": l_niv if l_niv else 999,
+                            "ligue_nom": l_nom if is_real_league else None,
+                            "ligue_couleur": l_coul if is_real_league else None,
+                            "ligue_niveau": l_niv if (is_real_league and l_niv) else 999,
                             "gold": 0, "silver": 0, "bronze": 0
                         }
                     if pos == 1:

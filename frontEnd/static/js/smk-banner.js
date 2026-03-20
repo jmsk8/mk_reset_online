@@ -1611,7 +1611,8 @@ function createLandedSnowflake(container, containerWidth) {
 document.addEventListener('DOMContentLoaded', () => {
     preloadImages();
     initWorld();
-    initSnow();
+    const _bannerEl = document.getElementById('bannerSection');
+    if (!_bannerEl || _bannerEl.dataset.season === 'winter') initSnow();
     animate(0);
     const fadeElements = document.querySelectorAll('.fade-in');
     fadeElements.forEach(el => setTimeout(() => el.classList.add('visible'), 100));
