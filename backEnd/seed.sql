@@ -1,378 +1,1530 @@
+--
+-- PostgreSQL database dump
+--
+
+\restrict EzqdxOecr6H0OLG9uNWj5YMFat7NgUf6nIaPBrpc0Cabgt7j7DpDurcjEL2QVrI
+
+-- Dumped from database version 17.9
+-- Dumped by pg_dump version 17.9
+
 SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
 
-TRUNCATE TABLE public.saisons CASCADE;
-TRUNCATE TABLE public.participations CASCADE;
-TRUNCATE TABLE public.tournois CASCADE;
-TRUNCATE TABLE public.joueurs CASCADE;
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: mk_reset
+--
 
-INSERT INTO public.configuration (key, value) VALUES ('tau', '0.083') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+-- *not* creating schema, since initdb creates it
 
--- 1. INSERTION DES JOUEURS --
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (1, 'Rosalyan', 67.8811, 3.0063, 'U', 24, '#4285F4');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (2, 'J_sk8', 57.6947, 0.8469, 'U', 0, '#FBBC05');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (3, 'Elite', 56.1385, 0.8543, 'U', 0, '#EA4335');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (4, 'Rayou', 55.4894, 1.1128, 'U', 0, '#00BCD4');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (5, 'Vakaeltraz', 54.9943, 0.7817, 'U', 0, '#34A853');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (6, 'Melwin', 52.9233, 0.8283, 'U', 0, '#64B5F6');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (7, 'Lu_K', 53.3674, 1.1229, 'U', 3, '#FF6D01');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (8, 'Astral', 50.2839, 0.8693, 'U', 0, '#E57373');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (9, 'Daytona_69', 49.0431, 1.1335, 'U', 2, '#81C784');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (10, 'JeanCube', 50.2924, 1.9559, 'U', 18, '#FFF176');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (11, 'Oleas', 56.2470, 4.2350, 'U', 44, '#FF9800');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (12, 'Thaumas', 51.4640, 2.7190, 'U', 44, '#4DD0E1');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (13, 'Ether-Zero', 52.9860, 4.3350, 'U', 44, '#7986CB');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (14, 'Ael', 44.2380, 1.7144, 'U', 0, '#9C27B0');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (15, 'Tomwilson', 49.8670, 4.5220, 'U', 44, '#F06292');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (16, 'Falgo', 40.5463, 1.9506, 'U', 0, '#795548');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (17, 'Brook1l', 42.0952, 2.2660, 'U', 19, '#FFF59D');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (18, 'Hardox', 40.9360, 2.1080, 'U', 44, '#AED581');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (19, 'ColorOni', 47.3371, 4.2936, 'U', 18, '#FFB74D');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (20, 'Camou', 43.0013, 3.1841, 'U', 29, '#E3F2FD');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (21, 'Kemoory', 39.0616, 2.0107, 'U', 1, '#B2DFDB');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (22, 'Fozlo', 38.1229, 1.8602, 'U', 5, '#FFEBEE');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (23, 'McK17', 44.5061, 2.9049, 'U', 0, '#607D8B');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (24, 'Kaysuan', 43.2936, 5.8866, 'U', 16, '#FFFDE7');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (25, 'PastPlayer', 42.1226, 5.7253, 'U', 26, '#E8F5E9');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (26, 'Tomy', 35.9935, 4.6909, 'U', 34, '#CDDC39');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (27, 'Mirijason', 39.0969, 5.6076, 'U', 40, '#009688');
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, color) VALUES (28, 'Corentin', 42.3313, 4.3881, 'U', 0, '#3F51B5');
 
--- 2. INSERTION DE L'HISTORIQUE --
-INSERT INTO public.tournois (id, date) VALUES (1, '2025-01-16');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 1, 184, 61.8629, 1.6556, 56.8959, 'U', 1, 62.0300, 1.7353, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 1, 184, 58.2213, 1.3344, 54.2181, 'U', 1, 57.9304, 1.3730, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 1, 171, 53.5381, 1.2868, 49.6777, 'U', 3, 53.3684, 1.3181, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 1, 148, 48.7560, 4.0818, 36.5107, 'U', 4, 44.1395, 6.1869, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 1, 138, 52.7409, 1.4490, 48.3939, 'U', 5, 53.4184, 1.4878, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 1, 121, 35.2844, 2.4812, 27.8408, 'U', 6, 35.3547, 2.5099, false);
-INSERT INTO public.tournois (id, date) VALUES (2, '2025-01-23');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 2, 203, 53.8276, 3.3339, 43.8259, 'U', 1, 48.7560, 4.0818, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 2, 180, 53.7148, 1.2541, 49.9526, 'U', 2, 53.5381, 1.2868, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 2, 171, 57.7078, 1.2972, 53.8162, 'U', 3, 58.2213, 1.3344, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 2, 161, 48.7390, 1.3680, 44.6350, 'U', 4, 48.8867, 1.4017, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 2, 127, 36.4701, 2.3080, 29.5460, 'U', 5, 35.2844, 2.4812, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (21, 2, 109, 39.9140, 2.3690, 32.8070, 'U', 6, 41.4600, 2.5330, false);
-INSERT INTO public.tournois (id, date) VALUES (3, '2025-01-30');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 3, 194, 58.0460, 1.2730, 54.2270, 'U', 1, 57.7078, 1.2972, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 3, 193, 54.0039, 1.2260, 50.3259, 'U', 2, 53.7148, 1.2541, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 3, 189, 60.8120, 1.5940, 56.0300, 'U', 3, 61.8629, 1.6556, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 3, 140, 36.4660, 2.3070, 29.5450, 'U', 4, 36.4701, 2.3080, false);
-INSERT INTO public.tournois (id, date) VALUES (4, '2025-02-06');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 4, 180, 54.5781, 1.1996, 50.9793, 'U', 1, 54.0039, 1.2260, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 4, 173, 60.4765, 1.5249, 55.9019, 'U', 2, 60.8120, 1.5940, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 4, 154, 49.3082, 1.3219, 45.3426, 'U', 3, 48.7390, 1.3680, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 4, 152, 53.1964, 2.7645, 44.9028, 'U', 4, 53.8276, 3.3339, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 4, 149, 57.3291, 1.2389, 53.6124, 'U', 5, 58.0460, 1.2730, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (21, 4, 124, 40.4907, 2.2545, 33.7273, 'U', 6, 39.9140, 2.3690, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (27, 4, 116, 39.0969, 5.6076, 22.2742, 'U', 7, 50.0000, 8.3330, false);
-INSERT INTO public.tournois (id, date) VALUES (5, '2025-02-13');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (1, 5, 197, 61.0685, 5.2987, 45.1725, 'U', 1, 50.0000, 8.3330, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 5, 154, 50.1107, 1.2836, 46.2600, 'U', 2, 49.3082, 1.3219, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 5, 143, 57.2060, 1.2062, 53.5874, 'U', 3, 57.3291, 1.2389, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 5, 142, 59.6399, 1.4640, 55.2478, 'U', 4, 60.4765, 1.5249, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 5, 138, 51.8324, 2.5267, 44.2523, 'U', 5, 53.1964, 2.7645, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (10, 5, 130, 45.8160, 3.8120, 34.3800, 'U', 6, 45.8160, 3.8120, true);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 5, 111, 54.5781, 1.1996, 50.9793, 'U', 7, 54.5781, 1.1996, true);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 5, 94, 36.4660, 2.3070, 29.5450, 'U', 8, 36.4660, 2.3070, true);
-INSERT INTO public.tournois (id, date) VALUES (6, '2025-02-20');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 6, 199, 57.5801, 1.1856, 54.0233, 'U', 1, 57.2060, 1.2062, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 6, 175, 59.4848, 1.4169, 55.2341, 'U', 2, 59.6399, 1.4640, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 6, 163, 54.5219, 1.1762, 50.9934, 'U', 3, 54.5781, 1.1996, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 6, 159, 50.9790, 2.3576, 43.9061, 'U', 4, 51.8324, 2.5267, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 6, 73, 36.4051, 2.2852, 29.5494, 'U', 5, 36.4660, 2.3070, false);
-INSERT INTO public.tournois (id, date) VALUES (7, '2025-02-27');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 7, 172, 59.8218, 1.3824, 55.6746, 'U', 1, 59.4848, 1.4169, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (10, 7, 150, 51.4066, 2.9995, 42.4081, 'U', 2, 45.8160, 3.8120, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 7, 144, 52.1291, 2.1108, 45.7967, 'U', 3, 50.9790, 2.3576, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 7, 134, 54.4658, 1.1435, 51.0354, 'U', 4, 54.5219, 1.1762, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 7, 128, 50.2551, 1.2400, 46.5350, 'U', 5, 50.1107, 1.2836, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 7, 127, 52.4324, 1.3865, 48.2729, 'U', 6, 52.7409, 1.4490, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 7, 116, 56.8426, 1.1536, 53.3819, 'U', 7, 57.5801, 1.1856, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 7, 111, 37.9305, 2.1092, 31.6028, 'U', 8, 36.4051, 2.2852, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (20, 7, 94, 44.5268, 3.5666, 33.8270, 'U', 9, 50.0530, 4.6790, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (26, 7, 69, 37.7603, 5.3339, 21.7586, 'U', 10, 50.0000, 8.3330, false);
-INSERT INTO public.tournois (id, date) VALUES (8, '2025-03-06');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (1, 8, 219, 63.0297, 4.7199, 48.8700, 'U', 1, 61.0685, 5.2987, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 8, 195, 54.3484, 5.4064, 38.1291, 'U', 2, 50.0000, 8.3330, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 8, 178, 51.5381, 2.0627, 45.3500, 'U', 3, 52.1291, 2.1108, false);
-INSERT INTO public.tournois (id, date) VALUES (9, '2025-03-13');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (1, 9, 227, 64.5841, 4.1681, 52.0798, 'U', 1, 63.0297, 4.7199, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 9, 173, 56.9078, 1.1382, 53.4933, 'U', 2, 56.8426, 1.1536, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 9, 164, 50.4174, 1.2152, 46.7718, 'U', 3, 50.2551, 1.2400, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 9, 157, 52.0011, 1.3567, 47.9311, 'U', 4, 52.4324, 1.3865, false);
-INSERT INTO public.tournois (id, date) VALUES (10, '2025-03-20');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (1, 10, 202, 66.1278, 3.7049, 55.0129, 'U', 1, 64.5841, 4.1681, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 10, 175, 59.9011, 1.3512, 55.8474, 'U', 2, 59.8218, 1.3824, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 10, 174, 52.2950, 1.9335, 46.4946, 'U', 3, 51.5381, 2.0627, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 10, 164, 56.5645, 1.1193, 53.2065, 'U', 4, 56.9078, 1.1382, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (17, 10, 127, 43.4977, 2.4127, 36.2596, 'U', 5, 43.3820, 2.5390, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (26, 10, 111, 35.9935, 4.6909, 21.9209, 'U', 6, 37.7603, 5.3339, false);
-INSERT INTO public.tournois (id, date) VALUES (11, '2025-03-27');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 11, 166, 60.2237, 1.3213, 56.2598, 'U', 1, 59.9011, 1.3512, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 11, 158, 54.7671, 1.1176, 51.4142, 'U', 2, 54.4658, 1.1435, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (10, 11, 154, 52.9622, 2.5424, 45.3351, 'U', 3, 51.4066, 2.9995, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 11, 152, 52.1639, 1.3071, 48.2426, 'U', 4, 52.0011, 1.3567, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 11, 145, 52.1720, 1.7929, 46.7933, 'U', 5, 52.2950, 1.9335, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 11, 143, 56.0824, 1.0937, 52.8014, 'U', 6, 56.5645, 1.1193, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 11, 134, 50.0456, 1.1900, 46.4755, 'U', 7, 50.4174, 1.2152, false);
-INSERT INTO public.tournois (id, date) VALUES (12, '2025-04-03');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 12, 189, 52.7976, 1.7224, 47.6305, 'U', 1, 52.1720, 1.7929, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 12, 185, 50.1770, 1.1632, 46.6875, 'U', 2, 50.0456, 1.1900, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 12, 185, 55.8071, 1.0737, 52.5861, 'U', 2, 56.0824, 1.0937, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 12, 171, 45.3745, 1.9983, 39.3794, 'U', 4, 45.6190, 2.0560, false);
-INSERT INTO public.tournois (id, date) VALUES (13, '2025-04-10');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (1, 13, 194, 66.6513, 3.4847, 56.1970, 'U', 1, 66.1278, 3.7049, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 13, 156, 53.5523, 1.6418, 48.6270, 'U', 2, 52.7976, 1.7224, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 13, 153, 47.0894, 1.8509, 41.5368, 'U', 3, 45.3745, 1.9983, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 13, 150, 54.6150, 1.0921, 51.3388, 'U', 4, 54.7671, 1.1176, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 13, 149, 55.4610, 1.0519, 52.3053, 'U', 5, 55.8071, 1.0737, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 13, 142, 51.6926, 1.2722, 47.8758, 'U', 6, 52.1639, 1.3071, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 13, 107, 37.8137, 2.0735, 31.5932, 'U', 7, 37.9305, 2.1092, false);
-INSERT INTO public.tournois (id, date) VALUES (14, '2025-04-17');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 14, 194, 55.8055, 1.0380, 52.6913, 'U', 1, 55.4610, 1.0519, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 14, 179, 60.0011, 1.2849, 56.1462, 'U', 2, 60.2237, 1.3213, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 14, 167, 50.4212, 1.1379, 47.0075, 'U', 3, 50.1770, 1.1632, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (10, 14, 163, 52.2969, 2.2842, 45.4443, 'U', 4, 52.9622, 2.5424, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 14, 148, 51.2714, 1.2460, 47.5334, 'U', 5, 51.6926, 1.2722, false);
-INSERT INTO public.tournois (id, date) VALUES (15, '2025-04-24');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (1, 15, 215, 66.9467, 3.3419, 56.9211, 'U', 1, 66.6513, 3.4847, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 15, 157, 54.7706, 1.0698, 51.5612, 'U', 2, 54.6150, 1.0921, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 15, 157, 51.7477, 1.2112, 48.1140, 'U', 2, 51.2714, 1.2460, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 15, 150, 59.5169, 1.2471, 55.7756, 'U', 4, 60.0011, 1.2849, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 15, 128, 47.5890, 1.7453, 42.3531, 'U', 5, 47.0894, 1.8509, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 15, 123, 50.1698, 1.1166, 46.8198, 'U', 6, 50.4212, 1.1379, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (20, 15, 117, 43.0013, 3.1841, 33.4491, 'U', 7, 44.5268, 3.5666, false);
-INSERT INTO public.tournois (id, date) VALUES (16, '2025-05-08');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 16, 180, 59.4255, 1.2186, 55.7697, 'U', 1, 59.5169, 1.2471, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 16, 180, 55.9579, 1.0231, 52.8885, 'U', 1, 55.8055, 1.0380, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 16, 179, 50.3173, 1.0997, 47.0183, 'U', 3, 50.1698, 1.1166, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 16, 175, 51.4533, 1.1930, 47.8742, 'U', 4, 51.7477, 1.2112, false);
-INSERT INTO public.tournois (id, date) VALUES (17, '2025-05-15');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (1, 17, 207, 67.3153, 3.1983, 57.7203, 'U', 1, 66.9467, 3.3419, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 17, 183, 56.0771, 1.0133, 53.0373, 'U', 2, 55.9579, 1.0231, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 17, 171, 51.5724, 1.1708, 48.0600, 'U', 3, 51.4533, 1.1930, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 17, 162, 52.9325, 1.5900, 48.1626, 'U', 4, 53.5523, 1.6418, false);
-INSERT INTO public.tournois (id, date) VALUES (18, '2025-05-22');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 18, 191, 55.0966, 1.0541, 51.9344, 'U', 1, 54.7706, 1.0698, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 18, 171, 53.3857, 1.5183, 48.8308, 'U', 2, 52.9325, 1.5900, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 18, 170, 55.9539, 0.9963, 52.9651, 'U', 3, 56.0771, 1.0133, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (10, 18, 162, 51.9539, 2.0836, 45.7032, 'U', 4, 52.2969, 2.2842, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 18, 141, 50.1181, 1.0817, 46.8729, 'U', 5, 50.3173, 1.0997, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (25, 18, 113, 42.1226, 5.7253, 24.9467, 'U', 6, 50.0000, 8.3330, false);
-INSERT INTO public.tournois (id, date) VALUES (19, '2025-06-12');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 19, 199, 50.6376, 1.0635, 47.4472, 'U', 1, 50.1181, 1.0817, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 19, 193, 55.9331, 0.9810, 52.9902, 'U', 2, 55.9539, 0.9963, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 19, 181, 51.6641, 1.1436, 48.2333, 'U', 3, 51.5724, 1.1708, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 19, 103, 58.6988, 1.1906, 55.1271, 'U', 4, 59.4255, 1.2186, false);
-INSERT INTO public.tournois (id, date) VALUES (20, '2025-06-19');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (1, 20, 186, 67.8811, 3.0063, 58.8622, 'U', 1, 67.3153, 3.1983, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 20, 173, 55.4448, 1.0369, 52.3341, 'U', 2, 55.0966, 1.0541, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 20, 158, 56.0343, 0.9662, 53.1358, 'U', 3, 55.9331, 0.9810, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 20, 148, 54.9276, 3.6240, 44.0556, 'U', 4, 54.3484, 5.4064, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 20, 147, 53.3111, 1.4560, 48.9431, 'U', 5, 53.3857, 1.5183, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 20, 146, 58.0454, 1.1648, 54.5510, 'U', 6, 58.6988, 1.1906, false);
-INSERT INTO public.tournois (id, date) VALUES (21, '2025-06-26');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 21, 178, 58.3344, 1.1446, 54.9005, 'U', 1, 58.0454, 1.1648, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 21, 162, 52.1043, 1.1166, 48.7546, 'U', 2, 51.6641, 1.1436, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 21, 161, 53.5572, 1.3953, 49.3714, 'U', 3, 53.3111, 1.4560, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 21, 153, 55.3287, 1.0166, 52.2787, 'U', 4, 55.4448, 1.0369, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 21, 146, 55.7826, 0.9513, 52.9285, 'U', 5, 56.0343, 0.9662, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 21, 144, 51.7746, 2.9986, 42.7787, 'U', 6, 54.9276, 3.6240, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (21, 21, 97, 40.2494, 2.1908, 33.6770, 'U', 7, 40.4907, 2.2545, false);
-INSERT INTO public.tournois (id, date) VALUES (22, '2025-07-03');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 22, 189, 56.0550, 0.9409, 53.2324, 'U', 1, 55.7826, 0.9513, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 22, 172, 55.4706, 0.9990, 52.4735, 'U', 2, 55.3287, 1.0166, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 22, 159, 52.3112, 1.0907, 49.0391, 'U', 3, 52.1043, 1.1166, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 22, 145, 52.1776, 2.5407, 44.5554, 'U', 4, 51.7746, 2.9986, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 22, 143, 57.8040, 1.1172, 54.4524, 'U', 5, 58.3344, 1.1446, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 22, 122, 50.4188, 1.0466, 47.2792, 'U', 6, 50.6376, 1.0635, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (21, 22, 113, 40.0092, 2.1286, 33.6234, 'U', 7, 40.2494, 2.1908, false);
-INSERT INTO public.tournois (id, date) VALUES (23, '2025-07-10');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 23, 196, 53.9315, 1.3668, 49.8312, 'U', 1, 53.5572, 1.3953, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 23, 177, 52.3378, 2.3193, 45.3799, 'U', 2, 52.1776, 2.5407, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 23, 176, 52.0716, 1.0773, 48.8396, 'U', 3, 52.3112, 1.0907, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 23, 168, 37.7443, 2.0518, 31.5890, 'U', 4, 37.8137, 2.0735, false);
-INSERT INTO public.tournois (id, date) VALUES (24, '2025-07-17');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 24, 187, 52.5243, 1.0607, 49.3420, 'U', 1, 52.0716, 1.0773, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 24, 184, 57.7026, 1.0956, 54.4159, 'U', 2, 57.8040, 1.1172, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 24, 183, 55.9050, 0.9301, 53.1147, 'U', 3, 56.0550, 0.9409, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 24, 170, 50.2658, 1.0367, 47.1556, 'U', 4, 50.4188, 1.0466, false);
-INSERT INTO public.tournois (id, date) VALUES (25, '2025-07-24');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 25, 201, 55.7248, 0.9881, 52.7604, 'U', 1, 55.4706, 0.9990, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 25, 188, 53.2860, 2.1166, 46.9362, 'U', 2, 52.3378, 2.3193, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 25, 170, 57.4357, 1.0749, 54.2109, 'U', 3, 57.7026, 1.0956, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 25, 162, 52.3396, 1.0455, 49.2030, 'U', 4, 52.5243, 1.0607, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 25, 128, 38.5704, 1.9501, 32.7202, 'U', 5, 37.7443, 2.0518, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (17, 25, 122, 42.0952, 2.2660, 35.2972, 'U', 6, 43.4977, 2.4127, false);
-INSERT INTO public.tournois (id, date) VALUES (26, '2025-07-31');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 26, 169, 54.7220, 1.9677, 48.8188, 'U', 1, 53.2860, 2.1166, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 26, 161, 50.6596, 1.0162, 47.6108, 'U', 2, 50.2658, 1.0367, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 26, 148, 57.2773, 1.0506, 54.1254, 'U', 3, 57.4357, 1.0749, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 26, 148, 55.8623, 0.9158, 53.1149, 'U', 3, 55.9050, 0.9301, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 26, 140, 55.5563, 0.9708, 52.6439, 'U', 5, 55.7248, 0.9881, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 26, 128, 47.8729, 1.6484, 42.9276, 'U', 6, 47.5890, 1.7453, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (19, 26, 123, 47.3371, 4.2936, 34.4563, 'U', 7, 50.0000, 8.3330, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (10, 26, 113, 50.2924, 1.9559, 44.4249, 'U', 8, 51.9539, 2.0836, false);
-INSERT INTO public.tournois (id, date) VALUES (27, '2025-08-07');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 27, 181, 55.4939, 1.8735, 49.8735, 'U', 1, 54.7220, 1.9677, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 27, 177, 50.8827, 1.0007, 47.8806, 'U', 2, 50.6596, 1.0162, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 27, 174, 52.3082, 1.0278, 49.2248, 'U', 3, 52.3396, 1.0455, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 27, 173, 55.5367, 0.9070, 52.8158, 'U', 4, 55.8623, 0.9158, false);
-INSERT INTO public.tournois (id, date) VALUES (28, '2025-08-14');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 28, 184, 54.6216, 1.3276, 50.6390, 'U', 1, 53.9315, 1.3668, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 28, 177, 57.3192, 1.0315, 54.2248, 'U', 2, 57.2773, 1.0506, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 28, 162, 55.5209, 0.8957, 52.8338, 'U', 3, 55.5367, 0.9070, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 28, 158, 52.3098, 1.0101, 49.2796, 'U', 4, 52.3082, 1.0278, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 28, 144, 54.4679, 1.7679, 49.1643, 'U', 5, 55.4939, 1.8735, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (24, 28, 113, 43.2936, 5.8866, 25.6338, 'U', 6, 50.0000, 8.3330, false);
-INSERT INTO public.tournois (id, date) VALUES (29, '2025-08-21');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 29, 188, 55.8782, 0.9589, 53.0016, 'U', 1, 55.5563, 0.9708, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 29, 164, 57.3936, 1.0128, 54.3551, 'U', 2, 57.3192, 1.0315, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 29, 163, 52.5075, 0.9917, 49.5324, 'U', 3, 52.3098, 1.0101, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 29, 162, 54.5303, 1.2818, 50.6848, 'U', 4, 54.6216, 1.3276, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 29, 159, 55.3326, 0.8848, 52.6783, 'U', 5, 55.5209, 0.8957, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 29, 58, 53.4760, 1.6823, 48.4290, 'U', 6, 54.4679, 1.7679, false);
-INSERT INTO public.tournois (id, date) VALUES (30, '2025-08-28');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 30, 170, 57.6459, 1.0006, 54.6440, 'U', 1, 57.3936, 1.0128, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 30, 166, 55.4519, 0.8751, 52.8265, 'U', 2, 55.3326, 0.8848, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 30, 165, 55.8465, 0.9446, 53.0128, 'U', 3, 55.8782, 0.9589, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 30, 161, 52.4972, 0.9754, 49.5709, 'U', 4, 52.5075, 0.9917, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 30, 158, 48.0674, 1.5682, 43.3629, 'U', 5, 47.8729, 1.6484, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 30, 143, 53.8337, 1.2493, 50.0859, 'U', 6, 54.5303, 1.2818, false);
-INSERT INTO public.tournois (id, date) VALUES (31, '2025-09-04');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 31, 196, 56.1302, 0.9348, 53.3259, 'U', 1, 55.8465, 0.9446, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 31, 181, 57.6815, 0.9851, 54.7261, 'U', 2, 57.6459, 1.0006, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 31, 164, 55.4441, 0.8659, 52.8463, 'U', 3, 55.4519, 0.8751, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 31, 157, 53.2943, 1.5998, 48.4949, 'U', 4, 53.4760, 1.6823, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 31, 147, 53.4000, 1.2230, 49.7311, 'U', 5, 53.8337, 1.2493, false);
-INSERT INTO public.tournois (id, date) VALUES (32, '2025-09-18');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 32, 169, 54.3041, 1.5320, 49.7082, 'U', 1, 53.2943, 1.5998, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 32, 160, 56.2312, 0.9214, 53.4669, 'U', 2, 56.1302, 0.9348, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 32, 152, 55.4584, 0.8556, 52.8915, 'U', 3, 55.4441, 0.8659, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 32, 150, 48.7344, 1.4894, 44.2662, 'U', 4, 48.0674, 1.5682, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 32, 149, 57.3540, 0.9676, 54.4511, 'U', 5, 57.6815, 0.9851, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 32, 139, 50.7782, 0.9833, 47.8283, 'U', 6, 50.8827, 1.0007, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 32, 116, 52.1533, 0.9627, 49.2653, 'U', 7, 52.4972, 0.9754, false);
-INSERT INTO public.tournois (id, date) VALUES (33, '2025-09-29');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 33, 163, 56.4895, 0.9126, 53.7518, 'U', 1, 56.2312, 0.9214, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 33, 159, 57.4048, 0.9535, 54.5442, 'U', 2, 57.3540, 0.9676, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 33, 158, 55.4544, 0.8467, 52.9144, 'U', 3, 55.4584, 0.8556, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 33, 157, 49.1510, 1.4254, 44.8749, 'U', 4, 48.7344, 1.4894, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 33, 156, 52.0453, 0.9478, 49.2019, 'U', 5, 52.1533, 0.9627, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 33, 131, 50.5929, 0.9689, 47.6861, 'U', 6, 50.7782, 0.9833, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 33, 108, 44.3795, 4.7285, 30.1940, 'U', 7, 50.0000, 8.3330, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 33, 104, 39.5381, 5.6163, 22.6893, 'U', 8, 50.0000, 8.3330, false);
-INSERT INTO public.tournois (id, date) VALUES (34, '2025-10-06');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 34, 184, 57.5369, 0.9467, 54.6967, 'U', 1, 57.4048, 0.9535, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 34, 180, 49.7696, 1.3764, 45.6404, 'U', 2, 49.1510, 1.4254, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 34, 164, 55.3309, 0.8392, 52.8132, 'U', 3, 55.4544, 0.8467, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 34, 152, 46.9082, 3.4691, 36.5008, 'U', 4, 44.3795, 4.7285, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 34, 151, 51.7424, 0.9379, 48.9288, 'U', 5, 52.0453, 0.9478, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 34, 118, 37.7934, 4.8497, 23.2444, 'U', 6, 39.5381, 5.6163, false);
-INSERT INTO public.tournois (id, date) VALUES (35, '2025-10-13');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 35, 171, 57.6826, 0.9394, 54.8645, 'U', 1, 57.5369, 0.9467, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 35, 169, 50.3623, 1.3299, 46.3728, 'U', 2, 49.7696, 1.3764, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 35, 160, 54.1732, 1.4643, 49.7803, 'U', 3, 54.3041, 1.5320, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 35, 144, 50.5873, 0.9540, 47.7253, 'U', 4, 50.5929, 0.9689, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 35, 135, 51.5466, 0.9257, 48.7694, 'U', 5, 51.7424, 0.9379, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 35, 132, 45.4191, 2.9728, 36.5008, 'U', 6, 46.9082, 3.4691, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 35, 109, 36.2172, 4.2710, 23.4042, 'U', 7, 37.7934, 4.8497, false);
-INSERT INTO public.tournois (id, date) VALUES (36, '2025-10-20');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 36, 161, 54.8135, 1.4160, 50.5656, 'U', 1, 54.1732, 1.4643, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 36, 157, 51.7845, 0.9129, 49.0457, 'U', 2, 51.5466, 0.9257, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 36, 153, 53.4703, 1.1871, 49.9090, 'U', 3, 53.4000, 1.2230, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 36, 148, 55.2042, 0.8304, 52.7131, 'U', 4, 55.3309, 0.8392, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 36, 147, 50.2828, 1.2843, 46.4300, 'U', 5, 50.3623, 1.3299, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 36, 142, 50.3919, 0.9406, 47.5701, 'U', 6, 50.5873, 0.9540, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 36, 118, 44.3431, 2.6407, 36.4210, 'U', 7, 45.4191, 2.9728, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 36, 91, 35.0818, 3.8625, 23.4944, 'U', 8, 36.2172, 4.2710, false);
-INSERT INTO public.tournois (id, date) VALUES (37, '2025-10-27');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 37, 187, 56.7011, 0.9044, 53.9879, 'U', 1, 56.4895, 0.9126, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 37, 161, 52.0412, 0.9012, 49.3376, 'U', 2, 51.7845, 0.9129, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 37, 160, 54.8348, 1.3609, 50.7521, 'U', 3, 54.8135, 1.4160, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 37, 156, 57.4412, 0.9258, 54.6639, 'U', 4, 57.6826, 0.9394, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 37, 152, 50.3459, 0.9284, 47.5608, 'U', 5, 50.3919, 0.9406, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 37, 147, 49.8771, 1.2560, 46.1091, 'U', 6, 50.2828, 1.2843, false);
-INSERT INTO public.tournois (id, date) VALUES (38, '2025-11-03');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 38, 177, 56.9299, 0.8962, 54.2412, 'U', 1, 56.7011, 0.9044, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 38, 160, 55.1609, 1.3138, 51.2193, 'U', 2, 54.8348, 1.3609, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 38, 157, 52.2016, 0.8893, 49.5338, 'U', 3, 52.0412, 0.9012, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 38, 155, 55.1377, 0.8221, 52.6714, 'U', 4, 55.2042, 0.8304, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 38, 154, 57.1430, 0.9131, 54.4039, 'U', 5, 57.4412, 0.9258, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 38, 150, 50.1916, 0.9193, 47.4339, 'U', 6, 50.3459, 0.9284, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 38, 109, 38.4539, 1.9191, 32.6966, 'U', 7, 38.5704, 1.9501, false);
-INSERT INTO public.tournois (id, date) VALUES (39, '2025-11-10');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 39, 175, 57.1464, 0.8886, 54.4805, 'U', 1, 56.9299, 0.8962, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 39, 174, 55.4340, 1.2723, 51.6170, 'U', 2, 55.1609, 1.3138, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 39, 167, 52.3451, 0.8783, 49.7104, 'U', 3, 52.2016, 0.8893, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 39, 150, 56.9637, 0.9007, 54.2615, 'U', 4, 57.1430, 0.9131, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 39, 140, 54.9599, 0.8152, 52.5143, 'U', 5, 55.1377, 0.8221, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 39, 123, 39.9443, 3.1011, 30.6409, 'U', 6, 35.0818, 3.8625, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 39, 121, 49.2956, 1.2266, 45.6157, 'U', 7, 49.8771, 1.2560, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (22, 39, 62, 38.1229, 1.8602, 32.5423, 'U', 8, 38.4539, 1.9191, false);
-INSERT INTO public.tournois (id, date) VALUES (40, '2025-11-17');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 40, 151, 57.3892, 0.8804, 54.7479, 'U', 1, 57.1464, 0.8886, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 40, 149, 55.7680, 1.2323, 52.0710, 'U', 2, 55.4340, 1.2723, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 40, 133, 55.0326, 0.8071, 52.6115, 'U', 3, 54.9599, 0.8152, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 40, 127, 52.4489, 0.8665, 49.8496, 'U', 4, 52.3451, 0.8783, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 40, 125, 53.4222, 1.1519, 49.9663, 'U', 5, 53.4703, 1.1871, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 40, 120, 46.2098, 2.2890, 39.3429, 'U', 6, 44.3431, 2.6407, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 40, 119, 56.6127, 0.8877, 53.9495, 'U', 7, 56.9637, 0.9007, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 40, 118, 50.0365, 0.9059, 47.3188, 'U', 8, 50.1916, 0.9193, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 40, 114, 48.8677, 1.1943, 45.2847, 'U', 9, 49.2956, 1.2266, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 40, 86, 39.0668, 2.8578, 30.4934, 'U', 10, 39.9443, 3.1011, false);
-INSERT INTO public.tournois (id, date) VALUES (41, '2025-11-24');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 41, 184, 57.5656, 0.8739, 54.9438, 'U', 1, 57.3892, 0.8804, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 41, 171, 52.6613, 0.8571, 50.0900, 'U', 2, 52.4489, 0.8665, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 41, 163, 55.0343, 0.8000, 52.6342, 'U', 3, 55.0326, 0.8071, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (7, 41, 151, 53.3674, 1.1229, 49.9986, 'U', 4, 53.4222, 1.1519, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 41, 128, 55.3106, 1.1975, 51.7182, 'U', 5, 55.7680, 1.2323, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 41, 112, 41.2478, 2.4828, 33.7994, 'U', 6, 39.0668, 2.8578, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 41, 110, 45.5054, 2.0851, 39.2501, 'U', 7, 46.2098, 2.2890, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 41, 110, 48.4377, 1.1657, 44.9407, 'U', 7, 48.8677, 1.1943, false);
-INSERT INTO public.tournois (id, date) VALUES (42, '2025-12-01');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 42, 155, 55.6949, 1.1713, 52.1810, 'U', 1, 55.3106, 1.1975, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (9, 42, 142, 49.0431, 1.1335, 45.6425, 'U', 2, 48.4377, 1.1657, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 42, 142, 56.6239, 0.8757, 53.9969, 'U', 2, 56.6127, 0.8877, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 42, 140, 57.4518, 0.8625, 54.8643, 'U', 4, 57.5656, 0.8739, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 42, 137, 52.6616, 0.8467, 50.1215, 'U', 5, 52.6613, 0.8571, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 42, 128, 50.0547, 0.8930, 47.3758, 'U', 6, 50.0365, 0.9059, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 42, 126, 54.7897, 0.7931, 52.4104, 'U', 7, 55.0343, 0.8000, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 42, 102, 42.0858, 2.2322, 35.3892, 'U', 8, 41.2478, 2.4828, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 42, 87, 44.6714, 1.9478, 38.8281, 'U', 9, 45.5054, 2.0851, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (23, 42, 68, 38.5434, 5.3166, 22.5935, 'U', 10, 50.0000, 8.3330, false);
-INSERT INTO public.tournois (id, date) VALUES (43, '2025-12-08');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 43, 151, 57.6522, 0.8561, 55.0839, 'U', 1, 57.4518, 0.8625, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 43, 150, 55.9143, 1.1419, 52.4887, 'U', 2, 55.6949, 1.1713, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 43, 145, 52.7950, 0.8373, 50.2829, 'U', 3, 52.6616, 0.8467, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 43, 140, 54.7552, 0.7862, 52.3967, 'U', 4, 54.7897, 0.7931, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 43, 132, 50.1201, 0.8810, 47.4772, 'U', 5, 50.0547, 0.8930, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 43, 115, 56.3154, 0.8650, 53.7205, 'U', 6, 56.6239, 0.8757, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (23, 43, 104, 43.0273, 3.6043, 32.2145, 'U', 7, 38.5434, 5.3166, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 43, 103, 44.3612, 1.8183, 38.9064, 'U', 8, 44.6714, 1.9478, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 43, 86, 41.5517, 2.0535, 35.3912, 'U', 9, 42.0858, 2.2322, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (21, 43, 74, 39.0616, 2.0107, 33.0296, 'U', 10, 40.0092, 2.1286, false);
-INSERT INTO public.tournois (id, date) VALUES (44, '2025-12-15');
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (5, 44, 176, 54.9943, 0.7817, 52.6490, 'U', 1, 54.7552, 0.7862, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (2, 44, 154, 57.6947, 0.8469, 55.1540, 'U', 2, 57.6522, 0.8561, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (6, 44, 149, 52.9233, 0.8283, 50.4385, 'U', 3, 52.7950, 0.8373, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (8, 44, 133, 50.2839, 0.8693, 47.6760, 'U', 4, 50.1201, 0.8810, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (3, 44, 119, 56.1385, 0.8543, 53.5758, 'U', 5, 56.3154, 0.8650, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (4, 44, 114, 55.4894, 1.1128, 52.1510, 'U', 6, 55.9143, 1.1419, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (23, 44, 109, 44.5061, 2.9049, 35.7916, 'U', 7, 43.0273, 3.6043, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (14, 44, 98, 44.2380, 1.7144, 39.0950, 'U', 8, 44.3612, 1.8183, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (28, 44, 94, 42.3313, 4.3881, 29.1671, 'U', 9, 50.0000, 8.3330, false);
-INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, position, old_mu, old_sigma, exclude_from_ts) VALUES (16, 44, 90, 40.5463, 1.9506, 34.6944, 'U', 10, 41.5517, 2.0535, false);
+ALTER SCHEMA public OWNER TO mk_reset;
 
--- 4. INSERTION DES SAISONS --
-INSERT INTO public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly) VALUES (1, 'Hiver 2025', 'hiver-2025', '2025-01-16', '2025-03-13', true, '{"active_awards": ["ez", "pas_loin", "stonks", "not_stonks", "chillguy"]}', 'stakhanov', false);
-INSERT INTO public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly) VALUES (2, 'Printemps 2025', 'printemps-2025', '2025-03-20', '2025-06-19', true, '{"active_awards": ["ez", "pas_loin", "stonks", "not_stonks", "chillguy"]}', 'stakhanov', false);
-INSERT INTO public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly) VALUES (3, 'Été 2025', 'ete-2025', '2025-06-26', '2025-09-18', true, '{"active_awards": ["ez", "pas_loin", "stonks", "not_stonks", "chillguy"]}', 'stakhanov', false);
-INSERT INTO public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly) VALUES (4, 'Automne 2025', 'automne-2025', '2025-09-29', '2025-12-15', true, '{"active_awards": ["ez", "pas_loin", "stonks", "not_stonks", "chillguy"]}', 'stakhanov', false);
-INSERT INTO public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly) VALUES (5, 'Année 2025', 'annee-2025', '2025-01-16', '2025-12-15', true, '{"active_awards": ["ez", "pas_loin", "stonks", "not_stonks", "chillguy"]}', 'Indice de Performance', true);
+--
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: mk_reset
+--
 
-SELECT pg_catalog.setval('public.joueurs_id_seq', 29, true);
-SELECT pg_catalog.setval('public.tournois_id_seq', 45, true);
-SELECT pg_catalog.setval('public.saisons_id_seq', 6, true);
+COMMENT ON SCHEMA public IS '';
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: api_tokens; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.api_tokens (
+    token character varying(64) NOT NULL,
+    created_at timestamp without time zone DEFAULT now(),
+    expires_at timestamp without time zone NOT NULL
+);
+
+
+ALTER TABLE public.api_tokens OWNER TO mk_reset;
+
+--
+-- Name: awards_obtenus; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.awards_obtenus (
+    id integer NOT NULL,
+    joueur_id integer,
+    saison_id integer,
+    award_id integer,
+    valeur character varying(50),
+    is_league_award boolean DEFAULT false,
+    ligue_id integer,
+    ligue_nom character varying(100),
+    ligue_couleur character varying(20),
+    created_at timestamp without time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
+
+--
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.awards_obtenus_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.awards_obtenus_id_seq OWNER TO mk_reset;
+
+--
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.awards_obtenus_id_seq OWNED BY public.awards_obtenus.id;
+
+
+--
+-- Name: configuration; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.configuration (
+    key character varying(50) NOT NULL,
+    value character varying(255) NOT NULL
+);
+
+
+ALTER TABLE public.configuration OWNER TO mk_reset;
+
+--
+-- Name: ghost_log; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.ghost_log (
+    id integer NOT NULL,
+    joueur_id integer,
+    tournoi_id integer,
+    date date NOT NULL,
+    old_sigma double precision NOT NULL,
+    new_sigma double precision NOT NULL,
+    penalty_applied double precision NOT NULL
+);
+
+
+ALTER TABLE public.ghost_log OWNER TO mk_reset;
+
+--
+-- Name: ghost_log_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.ghost_log_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.ghost_log_id_seq OWNER TO mk_reset;
+
+--
+-- Name: ghost_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.ghost_log_id_seq OWNED BY public.ghost_log.id;
+
+
+--
+-- Name: global_resets; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.global_resets (
+    id integer NOT NULL,
+    date timestamp without time zone NOT NULL,
+    value_applied real NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.global_resets OWNER TO mk_reset;
+
+--
+-- Name: global_resets_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.global_resets_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.global_resets_id_seq OWNER TO mk_reset;
+
+--
+-- Name: global_resets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.global_resets_id_seq OWNED BY public.global_resets.id;
+
+
+--
+-- Name: joueurs; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.joueurs (
+    id integer NOT NULL,
+    nom character varying(255) NOT NULL,
+    mu double precision DEFAULT 50.0,
+    sigma double precision DEFAULT 8.333,
+    score_trueskill double precision GENERATED ALWAYS AS ((mu - ((3)::double precision * sigma))) STORED,
+    tier character(1) DEFAULT 'U'::bpchar,
+    consecutive_missed integer DEFAULT 0,
+    is_ranked boolean DEFAULT true,
+    color character varying(7) DEFAULT '#FFFFFF'::character varying,
+    ligue_id integer
+);
+
+
+ALTER TABLE public.joueurs OWNER TO mk_reset;
+
+--
+-- Name: joueurs_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.joueurs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.joueurs_id_seq OWNER TO mk_reset;
+
+--
+-- Name: joueurs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
+
+
+--
+-- Name: league_movements; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.league_movements (
+    id integer NOT NULL,
+    saison_id integer,
+    joueur_id integer,
+    from_ligue_id integer,
+    to_ligue_id integer,
+    from_ligue_nom character varying(100),
+    to_ligue_nom character varying(100),
+    direction character varying(20),
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.league_movements OWNER TO mk_reset;
+
+--
+-- Name: league_movements_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.league_movements_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.league_movements_id_seq OWNER TO mk_reset;
+
+--
+-- Name: league_movements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.league_movements_id_seq OWNED BY public.league_movements.id;
+
+
+--
+-- Name: ligues; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.ligues (
+    id integer NOT NULL,
+    nom character varying(100) NOT NULL,
+    niveau integer NOT NULL,
+    couleur character varying(20) DEFAULT '#FFFFFF'::character varying
+);
+
+
+ALTER TABLE public.ligues OWNER TO mk_reset;
+
+--
+-- Name: ligues_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.ligues_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.ligues_id_seq OWNER TO mk_reset;
+
+--
+-- Name: ligues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.ligues_id_seq OWNED BY public.ligues.id;
+
+
+--
+-- Name: participations; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.participations (
+    joueur_id integer NOT NULL,
+    tournoi_id integer NOT NULL,
+    score integer NOT NULL,
+    mu double precision,
+    sigma double precision,
+    new_score_trueskill double precision,
+    new_tier character(1),
+    "position" integer,
+    old_mu double precision,
+    old_sigma double precision,
+    exclude_from_ts boolean DEFAULT false
+);
+
+
+ALTER TABLE public.participations OWNER TO mk_reset;
+
+--
+-- Name: saisons; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.saisons (
+    id integer NOT NULL,
+    nom character varying(100) NOT NULL,
+    slug character varying(100) NOT NULL,
+    date_debut date NOT NULL,
+    date_fin date NOT NULL,
+    is_active boolean DEFAULT false,
+    config_awards jsonb DEFAULT '{}'::jsonb,
+    victory_condition character varying(50),
+    is_yearly boolean DEFAULT false,
+    ligue_id integer,
+    ligue_nom character varying(100),
+    ligue_couleur character varying(20),
+    is_league_recap boolean DEFAULT false,
+    include_league_stats boolean DEFAULT false,
+    include_league_moves boolean DEFAULT false
+);
+
+
+ALTER TABLE public.saisons OWNER TO mk_reset;
+
+--
+-- Name: saisons_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.saisons_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.saisons_id_seq OWNER TO mk_reset;
+
+--
+-- Name: saisons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.saisons_id_seq OWNED BY public.saisons.id;
+
+
+--
+-- Name: tournois; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.tournois (
+    id integer NOT NULL,
+    date date NOT NULL,
+    ligue_id integer,
+    ligue_nom character varying(100),
+    ligue_couleur character varying(20)
+);
+
+
+ALTER TABLE public.tournois OWNER TO mk_reset;
+
+--
+-- Name: tournois_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.tournois_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.tournois_id_seq OWNER TO mk_reset;
+
+--
+-- Name: tournois_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.tournois_id_seq OWNED BY public.tournois.id;
+
+
+--
+-- Name: types_awards; Type: TABLE; Schema: public; Owner: mk_reset
+--
+
+CREATE TABLE public.types_awards (
+    id integer NOT NULL,
+    code character varying(50) NOT NULL,
+    nom character varying(100) NOT NULL,
+    emoji character varying(100) NOT NULL,
+    description text
+);
+
+
+ALTER TABLE public.types_awards OWNER TO mk_reset;
+
+--
+-- Name: types_awards_id_seq; Type: SEQUENCE; Schema: public; Owner: mk_reset
+--
+
+CREATE SEQUENCE public.types_awards_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.types_awards_id_seq OWNER TO mk_reset;
+
+--
+-- Name: types_awards_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: mk_reset
+--
+
+ALTER SEQUENCE public.types_awards_id_seq OWNED BY public.types_awards.id;
+
+
+--
+-- Name: awards_obtenus id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.awards_obtenus ALTER COLUMN id SET DEFAULT nextval('public.awards_obtenus_id_seq'::regclass);
+
+
+--
+-- Name: ghost_log id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.ghost_log ALTER COLUMN id SET DEFAULT nextval('public.ghost_log_id_seq'::regclass);
+
+
+--
+-- Name: global_resets id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.global_resets ALTER COLUMN id SET DEFAULT nextval('public.global_resets_id_seq'::regclass);
+
+
+--
+-- Name: joueurs id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.joueurs ALTER COLUMN id SET DEFAULT nextval('public.joueurs_id_seq'::regclass);
+
+
+--
+-- Name: league_movements id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.league_movements ALTER COLUMN id SET DEFAULT nextval('public.league_movements_id_seq'::regclass);
+
+
+--
+-- Name: ligues id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.ligues ALTER COLUMN id SET DEFAULT nextval('public.ligues_id_seq'::regclass);
+
+
+--
+-- Name: saisons id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.saisons ALTER COLUMN id SET DEFAULT nextval('public.saisons_id_seq'::regclass);
+
+
+--
+-- Name: tournois id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.tournois ALTER COLUMN id SET DEFAULT nextval('public.tournois_id_seq'::regclass);
+
+
+--
+-- Name: types_awards id; Type: DEFAULT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.types_awards ALTER COLUMN id SET DEFAULT nextval('public.types_awards_id_seq'::regclass);
+
+
+--
+-- Data for Name: api_tokens; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.api_tokens (token, created_at, expires_at) FROM stdin;
+90a2ee70-8643-4cf5-a218-32c0e6addc31	2026-03-20 20:05:38.022663	2026-03-20 20:35:38.022535
+\.
+
+
+--
+-- Data for Name: awards_obtenus; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.awards_obtenus (id, joueur_id, saison_id, award_id, valeur, is_league_award, ligue_id, ligue_nom, ligue_couleur, created_at) FROM stdin;
+1	6	9	1	1225.333	f	\N	\N	\N	2026-01-25 16:22:11.720841
+2	5	9	2	1057.583	f	\N	\N	\N	2026-01-25 16:22:11.720841
+3	4	9	3	1048.667	f	\N	\N	\N	2026-01-25 16:22:11.720841
+4	2	9	7	7	f	\N	\N	\N	2026-01-25 16:22:11.720841
+5	4	9	8	4	f	\N	\N	\N	2026-01-25 16:22:11.720841
+6	4	9	9	2.371	f	\N	\N	\N	2026-01-25 16:22:11.720841
+7	3	9	10	-0.968	f	\N	\N	\N	2026-01-25 16:22:11.720841
+8	8	9	12	0.01	f	\N	\N	\N	2026-01-25 16:22:11.720841
+9	2	10	4	116.341	f	\N	\N	\N	2026-01-25 16:22:16.946538
+10	5	10	5	112.790	f	\N	\N	\N	2026-01-25 16:22:16.946538
+11	3	10	6	110.876	f	\N	\N	\N	2026-01-25 16:22:16.946538
+12	2	10	7	12	f	\N	\N	\N	2026-01-25 16:22:16.946538
+13	3	10	8	10	f	\N	\N	\N	2026-01-25 16:22:16.946538
+14	5	10	11	3276	f	\N	\N	\N	2026-01-25 16:22:16.946538
+15	4	10	9	6.771	f	\N	\N	\N	2026-01-25 16:22:16.946538
+16	3	10	10	-3.32	f	\N	\N	\N	2026-01-25 16:22:16.946538
+17	3	8	1	850.083	f	\N	\N	\N	2026-01-25 16:22:21.917094
+18	5	8	2	813.250	f	\N	\N	\N	2026-01-25 16:22:21.917094
+19	4	8	3	759.583	f	\N	\N	\N	2026-01-25 16:22:21.917094
+20	2	8	7	3	f	\N	\N	\N	2026-01-25 16:22:21.917094
+21	4	8	7	3	f	\N	\N	\N	2026-01-25 16:22:21.917094
+22	3	8	8	4	f	\N	\N	\N	2026-01-25 16:22:21.917094
+23	4	8	9	4.328	f	\N	\N	\N	2026-01-25 16:22:21.917094
+24	3	8	10	-0.449	f	\N	\N	\N	2026-01-25 16:22:21.917094
+25	5	8	12	0.037	f	\N	\N	\N	2026-01-25 16:22:21.917094
+26	5	7	1	665.167	f	\N	\N	\N	2026-01-25 16:22:25.221559
+27	6	7	2	500.417	f	\N	\N	\N	2026-01-25 16:22:25.221559
+28	8	7	3	477.667	f	\N	\N	\N	2026-01-25 16:22:25.221559
+29	1	7	7	4	f	\N	\N	\N	2026-01-25 16:22:25.221559
+30	5	7	8	3	f	\N	\N	\N	2026-01-25 16:22:25.221559
+31	7	7	9	2.336	f	\N	\N	\N	2026-01-25 16:22:25.221559
+32	3	7	10	-0.72	f	\N	\N	\N	2026-01-25 16:22:25.221559
+33	6	7	12	0.009	f	\N	\N	\N	2026-01-25 16:22:25.221559
+34	5	6	1	661.667	f	\N	\N	\N	2026-01-25 16:22:28.097325
+35	2	6	2	598.417	f	\N	\N	\N	2026-01-25 16:22:28.097325
+36	7	6	3	586.917	f	\N	\N	\N	2026-01-25 16:22:28.097325
+37	5	6	7	3	f	\N	\N	\N	2026-01-25 16:22:28.097325
+38	1	6	7	3	f	\N	\N	\N	2026-01-25 16:22:28.097325
+39	3	6	8	2	f	\N	\N	\N	2026-01-25 16:22:28.097325
+40	2	6	8	2	f	\N	\N	\N	2026-01-25 16:22:28.097325
+41	22	6	9	3.762	f	\N	\N	\N	2026-01-25 16:22:28.097325
+42	3	6	10	-1.221	f	\N	\N	\N	2026-01-25 16:22:28.097325
+\.
+
+
+--
+-- Data for Name: configuration; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.configuration (key, value) FROM stdin;
+tau	0.2
+ghost_enabled	true
+ghost_penalty	0.1
+unranked_threshold	13
+sigma_threshold	3.3
+league_mode_enabled	true
+inter_league_moves	3
+\.
+
+
+--
+-- Data for Name: ghost_log; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) FROM stdin;
+1	1	45	2026-01-12	3.3063	3.4063	0.1
+2	7	45	2026-01-12	1.4229	1.5229000000000001	0.1
+3	12	45	2026-01-12	3.0189999999999997	3.1189999999999998	0.1
+4	17	45	2026-01-12	2.566	2.666	0.1
+5	18	45	2026-01-12	2.408	2.508	0.1
+6	20	45	2026-01-12	3.4840999999999998	3.5841	0.1
+7	22	45	2026-01-12	2.1602	2.2602	0.1
+8	22	46	2026-01-19	2.2602	2.3602000000000003	0.1
+9	1	46	2026-01-19	3.4063	3.5063	0.1
+10	7	46	2026-01-19	1.5229000000000001	1.6229000000000002	0.1
+11	12	46	2026-01-19	3.1189999999999998	3.219	0.1
+12	17	46	2026-01-19	2.666	2.766	0.1
+13	18	46	2026-01-19	2.508	2.608	0.1
+14	17	47	2026-01-26	2.766	2.866	0.1
+15	18	47	2026-01-26	2.608	2.708	0.1
+16	22	47	2026-01-26	2.3602000000000003	2.4602000000000004	0.1
+17	7	47	2026-01-26	1.6229000000000002	1.7229000000000003	0.1
+18	12	47	2026-01-26	3.219	3.319	0.1
+19	7	48	2026-02-02	1.7229000000000003	1.8229000000000004	0.1
+20	12	48	2026-02-02	3.319	3.419	0.1
+21	17	48	2026-02-02	2.866	2.966	0.1
+22	18	48	2026-02-02	2.708	2.8080000000000003	0.1
+23	22	48	2026-02-02	2.4602000000000004	2.5602000000000005	0.1
+24	21	49	2026-02-09	2.1759530256432393	2.2759530256432394	0.1
+25	7	49	2026-02-09	1.8229000000000004	1.9229000000000005	0.1
+26	12	49	2026-02-09	3.419	3.519	0.1
+27	17	49	2026-02-09	2.966	3.0660000000000003	0.1
+28	18	49	2026-02-09	2.8080000000000003	2.9080000000000004	0.1
+29	22	49	2026-02-09	2.5602000000000005	2.6602000000000006	0.1
+30	17	50	2026-02-16	3.0660000000000003	3.1660000000000004	0.1
+31	22	50	2026-02-16	2.6602000000000006	2.7602000000000007	0.1
+32	21	50	2026-02-16	2.2759530256432394	2.3759530256432395	0.1
+33	7	50	2026-02-16	1.9229000000000005	2.0229000000000004	0.1
+34	18	50	2026-02-16	2.9080000000000004	3.0080000000000005	0.1
+35	10	50	2026-02-16	1.871722282357676	1.971722282357676	0.1
+36	21	51	2026-02-23	2.3759530256432395	2.4759530256432396	0.1
+37	18	51	2026-02-23	3.0080000000000005	3.1080000000000005	0.1
+38	10	51	2026-02-23	1.971722282357676	2.071722282357676	0.1
+39	17	51	2026-02-23	3.1660000000000004	3.2660000000000005	0.1
+40	22	51	2026-02-23	2.7602000000000007	2.8602000000000007	0.1
+63	17	58	2026-03-02	3.2660000000000005	3.3660000000000005	0.1
+64	10	58	2026-03-02	2.071722282357676	2.1717222823576763	0.1
+65	21	58	2026-03-02	2.4759530256432396	2.5759530256432397	0.1
+66	18	58	2026-03-02	3.1080000000000005	3.2080000000000006	0.1
+67	17	59	2026-03-09	3.3660000000000005	3.4660000000000006	0.1
+68	10	59	2026-03-09	2.1717222823576763	2.2717222823576764	0.1
+69	21	59	2026-03-09	2.5759530256432397	2.67595302564324	0.1
+70	18	59	2026-03-09	3.2080000000000006	3.3080000000000007	0.1
+71	17	60	2026-03-16	3.4660000000000006	3.5660000000000007	0.1
+72	10	60	2026-03-16	2.2717222823576764	2.3717222823576765	0.1
+73	21	60	2026-03-16	2.67595302564324	2.77595302564324	0.1
+74	18	60	2026-03-16	3.3080000000000007	3.408000000000001	0.1
+\.
+
+
+--
+-- Data for Name: global_resets; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.global_resets (id, date, value_applied, created_at) FROM stdin;
+1	2026-01-01 00:00:00	0.3	2026-01-25 16:04:12.538326
+\.
+
+
+--
+-- Data for Name: joueurs; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) FROM stdin;
+6	Melwin	53.2893308802277	1.035235244651866	A	0	t	#64B5F6	1
+4	Rayou	55.96849646925929	1.204277343667946	S	0	t	#00BCD4	1
+9	Daytona_69	49.3727503990952	1.1684833712573754	A	0	t	#81C784	2
+23	McK17	47.789683136472235	1.4325330467460462	B	0	t	#607D8B	2
+28	Corentin	44.5144468736758	1.5596283960037371	B	0	t	#3F51B5	2
+14	Ael	44.64162658232783	1.3263179958801457	B	0	t	#9C27B0	2
+16	Falgo	37.53219563329814	1.604999277093254	C	0	t	#795548	2
+11	Oleas	50.665316003423605	2.1200628343160157	A	0	t	#FF9800	1
+2	J_sk8	58.963490527257	1.102696486804424	S	1	t	#FBBC05	1
+5	Vakaeltraz	54.6339371108528	1.023257214042399	A	1	t	#34A853	1
+8	Astral	50.34209123776964	1.0732159053200656	A	1	t	#E57373	1
+20	Camou	43.0013	3.5841	U	39	f	#E3F2FD	\N
+15	Tomwilson	49.867	4.822	U	54	f	#F06292	\N
+26	Tomy	35.9935	4.9909	U	44	f	#CDDC39	\N
+27	Mirijason	39.0969	5.9075999999999995	U	50	f	#009688	\N
+24	Kaysuan	43.2936	6.186599999999999	U	26	f	#FFFDE7	\N
+30	Hyazak	35.857665849909175	5.119363731342539	U	5	t	#FFFFFF	\N
+25	PastPlayer	42.1226	6.0253	U	36	f	#E8F5E9	\N
+3	Elite	54.68220783741064	1.0548913595579124	A	2	t	#EA4335	1
+7	Lu_K	52.40657893014842	1.742289051889806	A	2	t	#FF6D01	1
+29	Cevelynn	50.928327385346236	2.375361351506235	B	2	t	#FFFFFF	2
+22	Fozlo	36.52758863696969	2.607087208472025	C	2	t	#FFEBEE	2
+13	Ether-Zero	52.986	4.635	U	54	f	#7986CB	\N
+19	ColorOni	47.3371	4.5935999999999995	U	28	f	#FFB74D	\N
+12	Thaumas	51.464	3.519	U	54	f	#4DD0E1	\N
+17	Brook1l	42.0952	3.5660000000000007	U	29	f	#FFF59D	\N
+10	JeanCube	50.85708400840027	2.3717222823576765	B	8	t	#FFF176	2
+21	Kemoory	38.06817266425103	2.77595302564324	C	9	t	#B2DFDB	2
+18	Hardox	40.936	3.408000000000001	U	54	f	#AED581	\N
+1	Rosalyan	67.8811	3.5063	U	34	f	#4285F4	\N
+\.
+
+
+--
+-- Data for Name: league_movements; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.league_movements (id, saison_id, joueur_id, from_ligue_id, to_ligue_id, from_ligue_nom, to_ligue_nom, direction, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: ligues; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.ligues (id, nom, niveau, couleur) FROM stdin;
+1	Ligue 0	0	#FFD700
+2	Ligue 1	1	#C0C0C0
+\.
+
+
+--
+-- Data for Name: participations; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) FROM stdin;
+3	1	184	61.8629	1.6556	56.8959	U	1	62.03	1.7353	f
+5	1	184	58.2213	1.3344	54.2181	U	1	57.9304	1.373	f
+2	1	171	53.5381	1.2868	49.6777	U	3	53.3684	1.3181	f
+7	1	148	48.756	4.0818	36.5107	U	4	44.1395	6.1869	f
+6	1	138	52.7409	1.449	48.3939	U	5	53.4184	1.4878	f
+22	1	121	35.2844	2.4812	27.8408	U	6	35.3547	2.5099	f
+7	2	203	53.8276	3.3339	43.8259	U	1	48.756	4.0818	f
+2	2	180	53.7148	1.2541	49.9526	U	2	53.5381	1.2868	f
+5	2	171	57.7078	1.2972	53.8162	U	3	58.2213	1.3344	f
+8	2	161	48.739	1.368	44.635	U	4	48.8867	1.4017	f
+22	2	127	36.4701	2.308	29.546	U	5	35.2844	2.4812	f
+21	2	109	39.914	2.369	32.807	U	6	41.46	2.533	f
+5	3	194	58.046	1.273	54.227	U	1	57.7078	1.2972	f
+2	3	193	54.0039	1.226	50.3259	U	2	53.7148	1.2541	f
+3	3	189	60.812	1.594	56.03	U	3	61.8629	1.6556	f
+22	3	140	36.466	2.307	29.545	U	4	36.4701	2.308	f
+2	4	180	54.5781	1.1996	50.9793	U	1	54.0039	1.226	f
+3	4	173	60.4765	1.5249	55.9019	U	2	60.812	1.594	f
+8	4	154	49.3082	1.3219	45.3426	U	3	48.739	1.368	f
+7	4	152	53.1964	2.7645	44.9028	U	4	53.8276	3.3339	f
+5	4	149	57.3291	1.2389	53.6124	U	5	58.046	1.273	f
+21	4	124	40.4907	2.2545	33.7273	U	6	39.914	2.369	f
+27	4	116	39.0969	5.6076	22.2742	U	7	50	8.333	f
+1	5	197	61.0685	5.2987	45.1725	U	1	50	8.333	f
+8	5	154	50.1107	1.2836	46.26	U	2	49.3082	1.3219	f
+5	5	143	57.206	1.2062	53.5874	U	3	57.3291	1.2389	f
+3	5	142	59.6399	1.464	55.2478	U	4	60.4765	1.5249	f
+7	5	138	51.8324	2.5267	44.2523	U	5	53.1964	2.7645	f
+10	5	130	45.816	3.812	34.38	U	6	45.816	3.812	t
+2	5	111	54.5781	1.1996	50.9793	U	7	54.5781	1.1996	t
+22	5	94	36.466	2.307	29.545	U	8	36.466	2.307	t
+5	6	199	57.5801	1.1856	54.0233	U	1	57.206	1.2062	f
+3	6	175	59.4848	1.4169	55.2341	U	2	59.6399	1.464	f
+2	6	163	54.5219	1.1762	50.9934	U	3	54.5781	1.1996	f
+7	6	159	50.979	2.3576	43.9061	U	4	51.8324	2.5267	f
+22	6	73	36.4051	2.2852	29.5494	U	5	36.466	2.307	f
+3	7	172	59.8218	1.3824	55.6746	U	1	59.4848	1.4169	f
+10	7	150	51.4066	2.9995	42.4081	U	2	45.816	3.812	f
+7	7	144	52.1291	2.1108	45.7967	U	3	50.979	2.3576	f
+2	7	134	54.4658	1.1435	51.0354	U	4	54.5219	1.1762	f
+8	7	128	50.2551	1.24	46.535	U	5	50.1107	1.2836	f
+6	7	127	52.4324	1.3865	48.2729	U	6	52.7409	1.449	f
+5	7	116	56.8426	1.1536	53.3819	U	7	57.5801	1.1856	f
+22	7	111	37.9305	2.1092	31.6028	U	8	36.4051	2.2852	f
+20	7	94	44.5268	3.5666	33.827	U	9	50.053	4.679	f
+26	7	69	37.7603	5.3339	21.7586	U	10	50	8.333	f
+1	8	219	63.0297	4.7199	48.87	U	1	61.0685	5.2987	f
+4	8	195	54.3484	5.4064	38.1291	U	2	50	8.333	f
+7	8	178	51.5381	2.0627	45.35	U	3	52.1291	2.1108	f
+1	9	227	64.5841	4.1681	52.0798	U	1	63.0297	4.7199	f
+5	9	173	56.9078	1.1382	53.4933	U	2	56.8426	1.1536	f
+8	9	164	50.4174	1.2152	46.7718	U	3	50.2551	1.24	f
+6	9	157	52.0011	1.3567	47.9311	U	4	52.4324	1.3865	f
+1	10	202	66.1278	3.7049	55.0129	U	1	64.5841	4.1681	f
+3	10	175	59.9011	1.3512	55.8474	U	2	59.8218	1.3824	f
+7	10	174	52.295	1.9335	46.4946	U	3	51.5381	2.0627	f
+5	10	164	56.5645	1.1193	53.2065	U	4	56.9078	1.1382	f
+17	10	127	43.4977	2.4127	36.2596	U	5	43.382	2.539	f
+26	10	111	35.9935	4.6909	21.9209	U	6	37.7603	5.3339	f
+3	11	166	60.2237	1.3213	56.2598	U	1	59.9011	1.3512	f
+2	11	158	54.7671	1.1176	51.4142	U	2	54.4658	1.1435	f
+10	11	154	52.9622	2.5424	45.3351	U	3	51.4066	2.9995	f
+6	11	152	52.1639	1.3071	48.2426	U	4	52.0011	1.3567	f
+7	11	145	52.172	1.7929	46.7933	U	5	52.295	1.9335	f
+5	11	143	56.0824	1.0937	52.8014	U	6	56.5645	1.1193	f
+8	11	134	50.0456	1.19	46.4755	U	7	50.4174	1.2152	f
+7	12	189	52.7976	1.7224	47.6305	U	1	52.172	1.7929	f
+8	12	185	50.177	1.1632	46.6875	U	2	50.0456	1.19	f
+5	12	185	55.8071	1.0737	52.5861	U	2	56.0824	1.0937	f
+9	12	171	45.3745	1.9983	39.3794	U	4	45.619	2.056	f
+1	13	194	66.6513	3.4847	56.197	U	1	66.1278	3.7049	f
+7	13	156	53.5523	1.6418	48.627	U	2	52.7976	1.7224	f
+9	13	153	47.0894	1.8509	41.5368	U	3	45.3745	1.9983	f
+2	13	150	54.615	1.0921	51.3388	U	4	54.7671	1.1176	f
+5	13	149	55.461	1.0519	52.3053	U	5	55.8071	1.0737	f
+6	13	142	51.6926	1.2722	47.8758	U	6	52.1639	1.3071	f
+22	13	107	37.8137	2.0735	31.5932	U	7	37.9305	2.1092	f
+5	14	194	55.8055	1.038	52.6913	U	1	55.461	1.0519	f
+3	14	179	60.0011	1.2849	56.1462	U	2	60.2237	1.3213	f
+8	14	167	50.4212	1.1379	47.0075	U	3	50.177	1.1632	f
+10	14	163	52.2969	2.2842	45.4443	U	4	52.9622	2.5424	f
+6	14	148	51.2714	1.246	47.5334	U	5	51.6926	1.2722	f
+1	15	215	66.9467	3.3419	56.9211	U	1	66.6513	3.4847	f
+2	15	157	54.7706	1.0698	51.5612	U	2	54.615	1.0921	f
+6	15	157	51.7477	1.2112	48.114	U	2	51.2714	1.246	f
+3	15	150	59.5169	1.2471	55.7756	U	4	60.0011	1.2849	f
+9	15	128	47.589	1.7453	42.3531	U	5	47.0894	1.8509	f
+8	15	123	50.1698	1.1166	46.8198	U	6	50.4212	1.1379	f
+20	15	117	43.0013	3.1841	33.4491	U	7	44.5268	3.5666	f
+3	16	180	59.4255	1.2186	55.7697	U	1	59.5169	1.2471	f
+5	16	180	55.9579	1.0231	52.8885	U	1	55.8055	1.038	f
+8	16	179	50.3173	1.0997	47.0183	U	3	50.1698	1.1166	f
+6	16	175	51.4533	1.193	47.8742	U	4	51.7477	1.2112	f
+1	17	207	67.3153	3.1983	57.7203	U	1	66.9467	3.3419	f
+5	17	183	56.0771	1.0133	53.0373	U	2	55.9579	1.0231	f
+6	17	171	51.5724	1.1708	48.06	U	3	51.4533	1.193	f
+7	17	162	52.9325	1.59	48.1626	U	4	53.5523	1.6418	f
+2	18	191	55.0966	1.0541	51.9344	U	1	54.7706	1.0698	f
+7	18	171	53.3857	1.5183	48.8308	U	2	52.9325	1.59	f
+5	18	170	55.9539	0.9963	52.9651	U	3	56.0771	1.0133	f
+10	18	162	51.9539	2.0836	45.7032	U	4	52.2969	2.2842	f
+8	18	141	50.1181	1.0817	46.8729	U	5	50.3173	1.0997	f
+25	18	113	42.1226	5.7253	24.9467	U	6	50	8.333	f
+8	19	199	50.6376	1.0635	47.4472	U	1	50.1181	1.0817	f
+5	19	193	55.9331	0.981	52.9902	U	2	55.9539	0.9963	f
+6	19	181	51.6641	1.1436	48.2333	U	3	51.5724	1.1708	f
+3	19	103	58.6988	1.1906	55.1271	U	4	59.4255	1.2186	f
+1	20	186	67.8811	3.0063	58.8622	U	1	67.3153	3.1983	f
+2	20	173	55.4448	1.0369	52.3341	U	2	55.0966	1.0541	f
+5	20	158	56.0343	0.9662	53.1358	U	3	55.9331	0.981	f
+4	20	148	54.9276	3.624	44.0556	U	4	54.3484	5.4064	f
+7	20	147	53.3111	1.456	48.9431	U	5	53.3857	1.5183	f
+3	20	146	58.0454	1.1648	54.551	U	6	58.6988	1.1906	f
+3	21	178	58.3344	1.1446	54.9005	U	1	58.0454	1.1648	f
+6	21	162	52.1043	1.1166	48.7546	U	2	51.6641	1.1436	f
+7	21	161	53.5572	1.3953	49.3714	U	3	53.3111	1.456	f
+2	21	153	55.3287	1.0166	52.2787	U	4	55.4448	1.0369	f
+5	21	146	55.7826	0.9513	52.9285	U	5	56.0343	0.9662	f
+4	21	144	51.7746	2.9986	42.7787	U	6	54.9276	3.624	f
+21	21	97	40.2494	2.1908	33.677	U	7	40.4907	2.2545	f
+5	22	189	56.055	0.9409	53.2324	U	1	55.7826	0.9513	f
+2	22	172	55.4706	0.999	52.4735	U	2	55.3287	1.0166	f
+6	22	159	52.3112	1.0907	49.0391	U	3	52.1043	1.1166	f
+4	22	145	52.1776	2.5407	44.5554	U	4	51.7746	2.9986	f
+3	22	143	57.804	1.1172	54.4524	U	5	58.3344	1.1446	f
+8	22	122	50.4188	1.0466	47.2792	U	6	50.6376	1.0635	f
+21	22	113	40.0092	2.1286	33.6234	U	7	40.2494	2.1908	f
+7	23	196	53.9315	1.3668	49.8312	U	1	53.5572	1.3953	f
+4	23	177	52.3378	2.3193	45.3799	U	2	52.1776	2.5407	f
+6	23	176	52.0716	1.0773	48.8396	U	3	52.3112	1.0907	f
+22	23	168	37.7443	2.0518	31.589	U	4	37.8137	2.0735	f
+6	24	187	52.5243	1.0607	49.342	U	1	52.0716	1.0773	f
+3	24	184	57.7026	1.0956	54.4159	U	2	57.804	1.1172	f
+5	24	183	55.905	0.9301	53.1147	U	3	56.055	0.9409	f
+8	24	170	50.2658	1.0367	47.1556	U	4	50.4188	1.0466	f
+2	25	201	55.7248	0.9881	52.7604	U	1	55.4706	0.999	f
+4	25	188	53.286	2.1166	46.9362	U	2	52.3378	2.3193	f
+3	25	170	57.4357	1.0749	54.2109	U	3	57.7026	1.0956	f
+6	25	162	52.3396	1.0455	49.203	U	4	52.5243	1.0607	f
+22	25	128	38.5704	1.9501	32.7202	U	5	37.7443	2.0518	f
+17	25	122	42.0952	2.266	35.2972	U	6	43.4977	2.4127	f
+4	26	169	54.722	1.9677	48.8188	U	1	53.286	2.1166	f
+8	26	161	50.6596	1.0162	47.6108	U	2	50.2658	1.0367	f
+3	26	148	57.2773	1.0506	54.1254	U	3	57.4357	1.0749	f
+5	26	148	55.8623	0.9158	53.1149	U	3	55.905	0.9301	f
+2	26	140	55.5563	0.9708	52.6439	U	5	55.7248	0.9881	f
+9	26	128	47.8729	1.6484	42.9276	U	6	47.589	1.7453	f
+19	26	123	47.3371	4.2936	34.4563	U	7	50	8.333	f
+10	26	113	50.2924	1.9559	44.4249	U	8	51.9539	2.0836	f
+4	27	181	55.4939	1.8735	49.8735	U	1	54.722	1.9677	f
+8	27	177	50.8827	1.0007	47.8806	U	2	50.6596	1.0162	f
+6	27	174	52.3082	1.0278	49.2248	U	3	52.3396	1.0455	f
+5	27	173	55.5367	0.907	52.8158	U	4	55.8623	0.9158	f
+7	28	184	54.6216	1.3276	50.639	U	1	53.9315	1.3668	f
+3	28	177	57.3192	1.0315	54.2248	U	2	57.2773	1.0506	f
+5	28	162	55.5209	0.8957	52.8338	U	3	55.5367	0.907	f
+6	28	158	52.3098	1.0101	49.2796	U	4	52.3082	1.0278	f
+4	28	144	54.4679	1.7679	49.1643	U	5	55.4939	1.8735	f
+24	28	113	43.2936	5.8866	25.6338	U	6	50	8.333	f
+2	29	188	55.8782	0.9589	53.0016	U	1	55.5563	0.9708	f
+3	29	164	57.3936	1.0128	54.3551	U	2	57.3192	1.0315	f
+6	29	163	52.5075	0.9917	49.5324	U	3	52.3098	1.0101	f
+7	29	162	54.5303	1.2818	50.6848	U	4	54.6216	1.3276	f
+5	29	159	55.3326	0.8848	52.6783	U	5	55.5209	0.8957	f
+4	29	58	53.476	1.6823	48.429	U	6	54.4679	1.7679	f
+3	30	170	57.6459	1.0006	54.644	U	1	57.3936	1.0128	f
+5	30	166	55.4519	0.8751	52.8265	U	2	55.3326	0.8848	f
+2	30	165	55.8465	0.9446	53.0128	U	3	55.8782	0.9589	f
+6	30	161	52.4972	0.9754	49.5709	U	4	52.5075	0.9917	f
+9	30	158	48.0674	1.5682	43.3629	U	5	47.8729	1.6484	f
+7	30	143	53.8337	1.2493	50.0859	U	6	54.5303	1.2818	f
+2	31	196	56.1302	0.9348	53.3259	U	1	55.8465	0.9446	f
+3	31	181	57.6815	0.9851	54.7261	U	2	57.6459	1.0006	f
+5	31	164	55.4441	0.8659	52.8463	U	3	55.4519	0.8751	f
+4	31	157	53.2943	1.5998	48.4949	U	4	53.476	1.6823	f
+7	31	147	53.4	1.223	49.7311	U	5	53.8337	1.2493	f
+4	32	169	54.3041	1.532	49.7082	U	1	53.2943	1.5998	f
+2	32	160	56.2312	0.9214	53.4669	U	2	56.1302	0.9348	f
+5	32	152	55.4584	0.8556	52.8915	U	3	55.4441	0.8659	f
+9	32	150	48.7344	1.4894	44.2662	U	4	48.0674	1.5682	f
+3	32	149	57.354	0.9676	54.4511	U	5	57.6815	0.9851	f
+8	32	139	50.7782	0.9833	47.8283	U	6	50.8827	1.0007	f
+6	32	116	52.1533	0.9627	49.2653	U	7	52.4972	0.9754	f
+2	33	163	56.4895	0.9126	53.7518	U	1	56.2312	0.9214	f
+3	33	159	57.4048	0.9535	54.5442	U	2	57.354	0.9676	f
+5	33	158	55.4544	0.8467	52.9144	U	3	55.4584	0.8556	f
+9	33	157	49.151	1.4254	44.8749	U	4	48.7344	1.4894	f
+6	33	156	52.0453	0.9478	49.2019	U	5	52.1533	0.9627	f
+8	33	131	50.5929	0.9689	47.6861	U	6	50.7782	0.9833	f
+14	33	108	44.3795	4.7285	30.194	U	7	50	8.333	f
+16	33	104	39.5381	5.6163	22.6893	U	8	50	8.333	f
+3	34	184	57.5369	0.9467	54.6967	U	1	57.4048	0.9535	f
+9	34	180	49.7696	1.3764	45.6404	U	2	49.151	1.4254	f
+5	34	164	55.3309	0.8392	52.8132	U	3	55.4544	0.8467	f
+14	34	152	46.9082	3.4691	36.5008	U	4	44.3795	4.7285	f
+6	34	151	51.7424	0.9379	48.9288	U	5	52.0453	0.9478	f
+16	34	118	37.7934	4.8497	23.2444	U	6	39.5381	5.6163	f
+3	35	171	57.6826	0.9394	54.8645	U	1	57.5369	0.9467	f
+9	35	169	50.3623	1.3299	46.3728	U	2	49.7696	1.3764	f
+4	35	160	54.1732	1.4643	49.7803	U	3	54.3041	1.532	f
+8	35	144	50.5873	0.954	47.7253	U	4	50.5929	0.9689	f
+6	35	135	51.5466	0.9257	48.7694	U	5	51.7424	0.9379	f
+14	35	132	45.4191	2.9728	36.5008	U	6	46.9082	3.4691	f
+16	35	109	36.2172	4.271	23.4042	U	7	37.7934	4.8497	f
+4	36	161	54.8135	1.416	50.5656	U	1	54.1732	1.4643	f
+6	36	157	51.7845	0.9129	49.0457	U	2	51.5466	0.9257	f
+7	36	153	53.4703	1.1871	49.909	U	3	53.4	1.223	f
+5	36	148	55.2042	0.8304	52.7131	U	4	55.3309	0.8392	f
+9	36	147	50.2828	1.2843	46.43	U	5	50.3623	1.3299	f
+8	36	142	50.3919	0.9406	47.5701	U	6	50.5873	0.954	f
+14	36	118	44.3431	2.6407	36.421	U	7	45.4191	2.9728	f
+16	36	91	35.0818	3.8625	23.4944	U	8	36.2172	4.271	f
+2	37	187	56.7011	0.9044	53.9879	U	1	56.4895	0.9126	f
+6	37	161	52.0412	0.9012	49.3376	U	2	51.7845	0.9129	f
+4	37	160	54.8348	1.3609	50.7521	U	3	54.8135	1.416	f
+3	37	156	57.4412	0.9258	54.6639	U	4	57.6826	0.9394	f
+8	37	152	50.3459	0.9284	47.5608	U	5	50.3919	0.9406	f
+9	37	147	49.8771	1.256	46.1091	U	6	50.2828	1.2843	f
+2	38	177	56.9299	0.8962	54.2412	U	1	56.7011	0.9044	f
+4	38	160	55.1609	1.3138	51.2193	U	2	54.8348	1.3609	f
+6	38	157	52.2016	0.8893	49.5338	U	3	52.0412	0.9012	f
+5	38	155	55.1377	0.8221	52.6714	U	4	55.2042	0.8304	f
+3	38	154	57.143	0.9131	54.4039	U	5	57.4412	0.9258	f
+8	38	150	50.1916	0.9193	47.4339	U	6	50.3459	0.9284	f
+22	38	109	38.4539	1.9191	32.6966	U	7	38.5704	1.9501	f
+2	39	175	57.1464	0.8886	54.4805	U	1	56.9299	0.8962	f
+4	39	174	55.434	1.2723	51.617	U	2	55.1609	1.3138	f
+6	39	167	52.3451	0.8783	49.7104	U	3	52.2016	0.8893	f
+3	39	150	56.9637	0.9007	54.2615	U	4	57.143	0.9131	f
+5	39	140	54.9599	0.8152	52.5143	U	5	55.1377	0.8221	f
+16	39	123	39.9443	3.1011	30.6409	U	6	35.0818	3.8625	f
+9	39	121	49.2956	1.2266	45.6157	U	7	49.8771	1.256	f
+22	39	62	38.1229	1.8602	32.5423	U	8	38.4539	1.9191	f
+2	40	151	57.3892	0.8804	54.7479	U	1	57.1464	0.8886	f
+4	40	149	55.768	1.2323	52.071	U	2	55.434	1.2723	f
+5	40	133	55.0326	0.8071	52.6115	U	3	54.9599	0.8152	f
+6	40	127	52.4489	0.8665	49.8496	U	4	52.3451	0.8783	f
+7	40	125	53.4222	1.1519	49.9663	U	5	53.4703	1.1871	f
+14	40	120	46.2098	2.289	39.3429	U	6	44.3431	2.6407	f
+3	40	119	56.6127	0.8877	53.9495	U	7	56.9637	0.9007	f
+8	40	118	50.0365	0.9059	47.3188	U	8	50.1916	0.9193	f
+9	40	114	48.8677	1.1943	45.2847	U	9	49.2956	1.2266	f
+16	40	86	39.0668	2.8578	30.4934	U	10	39.9443	3.1011	f
+2	41	184	57.5656	0.8739	54.9438	U	1	57.3892	0.8804	f
+6	41	171	52.6613	0.8571	50.09	U	2	52.4489	0.8665	f
+5	41	163	55.0343	0.8	52.6342	U	3	55.0326	0.8071	f
+7	41	151	53.3674	1.1229	49.9986	U	4	53.4222	1.1519	f
+4	41	128	55.3106	1.1975	51.7182	U	5	55.768	1.2323	f
+16	41	112	41.2478	2.4828	33.7994	U	6	39.0668	2.8578	f
+14	41	110	45.5054	2.0851	39.2501	U	7	46.2098	2.289	f
+9	41	110	48.4377	1.1657	44.9407	U	7	48.8677	1.1943	f
+4	42	155	55.6949	1.1713	52.181	U	1	55.3106	1.1975	f
+9	42	142	49.0431	1.1335	45.6425	U	2	48.4377	1.1657	f
+3	42	142	56.6239	0.8757	53.9969	U	2	56.6127	0.8877	f
+2	42	140	57.4518	0.8625	54.8643	U	4	57.5656	0.8739	f
+6	42	137	52.6616	0.8467	50.1215	U	5	52.6613	0.8571	f
+8	42	128	50.0547	0.893	47.3758	U	6	50.0365	0.9059	f
+5	42	126	54.7897	0.7931	52.4104	U	7	55.0343	0.8	f
+16	42	102	42.0858	2.2322	35.3892	U	8	41.2478	2.4828	f
+14	42	87	44.6714	1.9478	38.8281	U	9	45.5054	2.0851	f
+23	42	68	38.5434	5.3166	22.5935	U	10	50	8.333	f
+2	43	151	57.6522	0.8561	55.0839	U	1	57.4518	0.8625	f
+4	43	150	55.9143	1.1419	52.4887	U	2	55.6949	1.1713	f
+6	43	145	52.795	0.8373	50.2829	U	3	52.6616	0.8467	f
+5	43	140	54.7552	0.7862	52.3967	U	4	54.7897	0.7931	f
+8	43	132	50.1201	0.881	47.4772	U	5	50.0547	0.893	f
+3	43	115	56.3154	0.865	53.7205	U	6	56.6239	0.8757	f
+23	43	104	43.0273	3.6043	32.2145	U	7	38.5434	5.3166	f
+14	43	103	44.3612	1.8183	38.9064	U	8	44.6714	1.9478	f
+16	43	86	41.5517	2.0535	35.3912	U	9	42.0858	2.2322	f
+21	43	74	39.0616	2.0107	33.0296	U	10	40.0092	2.1286	f
+5	44	176	54.9943	0.7817	52.649	U	1	54.7552	0.7862	f
+2	44	154	57.6947	0.8469	55.154	U	2	57.6522	0.8561	f
+6	44	149	52.9233	0.8283	50.4385	U	3	52.795	0.8373	f
+8	44	133	50.2839	0.8693	47.676	U	4	50.1201	0.881	f
+3	44	119	56.1385	0.8543	53.5758	U	5	56.3154	0.865	f
+4	44	114	55.4894	1.1128	52.151	U	6	55.9143	1.1419	f
+23	44	109	44.5061	2.9049	35.7916	U	7	43.0273	3.6043	f
+14	44	98	44.238	1.7144	39.095	U	8	44.3612	1.8183	f
+28	44	94	42.3313	4.3881	29.1671	U	9	50	8.333	f
+16	44	90	40.5463	1.9506	34.6944	U	10	41.5517	2.0535	f
+4	45	150	56.055252002121726	1.3809063957192802	51.91253281496388	\N	1	55.4894	1.4128	f
+6	45	137	53.23343137512644	1.115225132565139	49.88775597743103	\N	2	52.9233	1.1283	f
+5	45	131	54.98906163219811	1.0713613643825979	51.77497753905031	\N	3	54.9943	1.0816999999999999	f
+10	45	128	50.801102872036374	2.035123203217294	44.69573326238449	\N	4	50.2924	2.2559	f
+8	45	121	50.28952160597934	1.1489013055318322	46.84281768938384	\N	5	50.2839	1.1693	f
+28	45	112	45.620044008482054	3.2683891381046704	35.81487659416804	\N	6	42.3313	4.6880999999999995	f
+9	45	112	48.968609321623255	1.3803575900924927	44.82753655134577	\N	6	49.0431	1.4335	f
+23	45	96	45.20471589093991	2.6319779822661813	37.308781944141366	\N	8	44.5061	3.2049	f
+3	45	96	55.43426270108733	1.1356984532099275	52.02716734145754	\N	8	56.1385	1.1542999999999999	f
+14	45	89	44.04433167025863	1.8723430936103755	38.4273023894275	\N	10	44.238	2.0143999999999997	f
+16	45	72	40.29389493324432	2.0779613669629917	34.060010832355346	\N	11	40.5463	2.2506	f
+21	45	68	38.06817266425103	2.1759530256432393	31.54031358732131	\N	12	39.0616	2.3106999999999998	f
+2	46	168	58.078100908087215	1.1381031601978726	54.6637914274936	\N	1	57.6947	1.1469	f
+6	46	145	53.664782789907356	1.1024335431468386	50.35748216046684	\N	2	53.23343137512644	1.115225132565139	f
+3	46	136	55.568312164181	1.119557054443598	52.209641000850205	\N	3	55.43426270108733	1.1356984532099275	f
+4	46	126	55.982014767614565	1.3360198365161633	51.97395525806608	\N	4	56.055252002121726	1.3809063957192802	f
+5	46	122	54.88027281708838	1.0609008722943452	51.69757020020535	\N	5	54.98906163219811	1.0713613643825979	f
+10	46	107	50.85708400840027	1.871722282357676	45.241917161327244	\N	6	50.801102872036374	2.035123203217294	f
+8	46	102	50.188669827459584	1.1320209202999005	46.79260706655988	\N	7	50.28952160597934	1.1489013055318322	f
+29	46	101	47.2139686429181	4.104991708061741	34.89899351873287	\N	8	50	8.333	f
+28	46	94	45.00950969565993	2.713786857206569	36.86814912404022	\N	9	45.620044008482054	3.2683891381046704	f
+14	46	89	43.58185482260229	1.764019971369087	38.289794908495026	\N	10	44.04433167025863	1.8723430936103755	f
+23	46	87	43.09889206508013	2.386929739419024	35.93810284682306	\N	11	45.20471589093991	2.6319779822661813	f
+2	47	158	58.408494974331774	1.1319809197779418	55.012552214997946	\N	1	58.078100908087215	1.1381031601978726	f
+4	47	152	56.262328021854806	1.3025479551385744	52.354684156439085	\N	2	55.982014767614565	1.3360198365161633	f
+29	47	132	51.62319875947367	3.0843059410418423	42.37028093634814	\N	3	47.2139686429181	4.104991708061741	f
+3	47	128	55.463746204746755	1.1043786571182104	52.15061023339212	\N	4	55.568312164181	1.119557054443598	f
+14	47	121	44.85241205386874	1.6535633276401513	39.89172207094828	\N	5	43.58185482260229	1.764019971369087	f
+9	47	103	49.08966104730447	1.3328372233793413	45.091149377166445	\N	6	48.968609321623255	1.3803575900924927	f
+6	47	100	53.319331142473146	1.0874941792264476	50.0568486047938	\N	7	53.664782789907356	1.1024335431468386	f
+8	47	100	50.082006512661174	1.114114941112711	46.73966168932304	\N	7	50.188669827459584	1.1320209202999005	f
+23	47	92	43.9843576722131	2.1218619078227565	37.61877194874483	\N	9	43.09889206508013	2.386929739419024	f
+5	47	86	54.24801978382276	1.0516573236811184	51.09304781277941	\N	10	54.88027281708838	1.0609008722943452	f
+28	47	82	43.976256396174655	2.3921042536570436	36.799943635203526	\N	11	45.00950969565993	2.713786857206569	f
+16	47	58	39.583529742170775	1.9803780182771802	33.64239568733923	\N	12	40.29389493324432	2.0779613669629917	f
+5	48	156	54.58551407879147	1.049949666832425	51.43566507829419	\N	1	54.24801978382276	1.0516573236811184	f
+8	48	148	50.50836900601137	1.1016007261696743	47.20356682750235	\N	2	50.082006512661174	1.114114941112711	f
+6	48	139	53.37202362811595	1.0762846365593215	50.14316971843798	\N	3	53.319331142473146	1.0874941792264476	f
+3	48	135	55.2329526716284	1.0911964608006883	51.95936328922633	\N	4	55.463746204746755	1.1043786571182104	f
+14	48	122	45.50948315657311	1.5680169967472517	40.80543216633136	\N	5	44.85241205386874	1.6535633276401513	f
+9	48	120	48.95224300818755	1.2948344713656768	45.06773959409052	\N	6	49.08966104730447	1.3328372233793413	f
+29	48	118	49.45854517304647	2.5811928311424146	41.714966679619224	\N	7	51.62319875947367	3.0843059410418423	f
+23	48	111	43.7470026975862	1.9504088793072878	37.895776059664335	\N	8	43.9843576722131	2.1218619078227565	f
+28	48	103	42.956475769503996	2.168392957434968	36.45129689719909	\N	9	43.976256396174655	2.3921042536570436	f
+16	48	97	38.82081138718575	1.8910935824202482	33.14753063992501	\N	10	39.583529742170775	1.9803780182771802	f
+2	49	166	58.73338144538657	1.1264526588916888	55.3540234687115	\N	1	58.408494974331774	1.1319809197779418	f
+4	49	135	56.5305183061093	1.2730902725036755	52.711247488598275	\N	2	56.262328021854806	1.3025479551385744	f
+5	49	134	54.69949288735533	1.0427391352928799	51.5712754814767	\N	3	54.58551407879147	1.049949666832425	f
+6	49	129	53.413188154013184	1.0658182672870085	50.21573335215216	\N	4	53.37202362811595	1.0762846365593215	f
+8	49	126	50.58810967665553	1.0882348122238927	47.32340523998385	\N	5	50.50836900601137	1.1016007261696743	f
+3	49	110	54.85450954190075	1.078640749687863	51.618587292837155	\N	6	55.2329526716284	1.0911964608006883	f
+9	49	110	49.0076851508684	1.2604107145839936	45.22645300711642	\N	6	48.95224300818755	1.2948344713656768	f
+14	49	97	45.64257782403392	1.5002850375945682	41.14172271125022	\N	8	45.50948315657311	1.5680169967472517	f
+23	49	94	43.74203403193711	1.8179814251007367	38.288089756634896	\N	9	43.7470026975862	1.9504088793072878	f
+28	49	91	42.495989070100606	1.9965924800563306	36.50621162993161	\N	10	42.956475769503996	2.168392957434968	f
+16	49	65	38.55267379104501	1.7965983752448929	33.16287866531033	\N	11	38.82081138718575	1.8910935824202482	f
+30	49	55	35.857665849909175	5.119363731342539	20.499574655881556	\N	12	50	8.333	f
+6	50	183	53.74288646296154	1.0655056326262096	50.54636956508291	\N	1	53.413188154013184	1.0658182672870085	f
+3	50	181	54.86736297596074	1.0732536470920504	51.64760203468459	\N	2	54.85450954190075	1.078640749687863	f
+23	50	166	45.02628541767933	1.7197131981806346	39.86714582313743	\N	3	43.74203403193711	1.8179814251007367	f
+11	50	159	52.62698330679905	3.353275436350884	42.567156997746395	\N	4	56.247	4.535	f
+4	50	156	55.70131330914044	1.2533079020924276	51.941389602863154	\N	5	56.5305183061093	1.2730902725036755	f
+2	51	151	58.99293072474893	1.122393753754588	55.625749463485164	\N	1	58.73338144538657	1.1264526588916888	f
+6	51	144	54.0264375833969	1.057880857302837	50.85279501148839	\N	2	53.74288646296154	1.0655056326262096	f
+23	51	130	46.581037668012776	1.6214324981965424	41.71674017342315	\N	3	45.02628541767933	1.7197131981806346	f
+11	51	119	53.11690985256783	2.706076418236122	44.99868059785946	\N	4	52.62698330679905	3.353275436350884	f
+7	51	114	53.14246128607587	1.8566702434297377	47.57245055578666	\N	5	53.3674	2.0229000000000004	f
+5	51	112	54.44231949196446	1.034122848783119	51.3399509456151	\N	6	54.69949288735533	1.0427391352928799	f
+28	51	111	43.62822303804257	1.8371917692939341	38.116647730160764	\N	7	42.495989070100606	1.9965924800563306	f
+3	51	110	54.35147771094744	1.0622349364643306	51.16477290155445	\N	8	54.86736297596074	1.0732536470920504	f
+9	51	99	48.627239833205444	1.231705860285332	44.932122252349444	\N	9	49.0076851508684	1.2604107145839936	f
+14	51	94	45.15741970748558	1.44928260400796	40.8095718954617	\N	10	45.64257782403392	1.5002850375945682	f
+16	51	83	38.15370923588567	1.7441295318890198	32.92132064021861	\N	11	38.55267379104501	1.7965983752448929	f
+2	54	161	59.30240147116073	1.1171952724597871	55.95081565378137	\N	1	58.99293072474893	1.122393753754588	f
+3	54	158	54.68220783741064	1.0548913595579124	51.5175337587369	\N	2	54.35147771094744	1.0622349364643306	f
+6	54	148	54.22482625083018	1.0494578976640783	51.076452557837946	\N	3	54.0264375833969	1.057880857302837	f
+5	54	141	54.48548066047121	1.027432925906211	51.40318188275258	\N	4	54.44231949196446	1.034122848783119	f
+11	54	140	53.137680896997956	2.343425596452987	46.107404107639	\N	5	53.11690985256783	2.706076418236122	f
+4	54	139	55.320074345202535	1.2254255832609684	51.64379759541963	\N	6	55.70131330914044	1.2533079020924276	f
+7	54	132	52.40657893014842	1.742289051889806	47.179711774479	\N	7	53.14246128607587	1.8566702434297377	f
+8	54	108	50.23754106969448	1.0844591567431672	46.98416359946498	\N	8	50.58810967665553	1.0882348122238927	f
+29	58	170	50.928327385346236	2.375361351506235	43.80224333082753	\N	1	49.45854517304647	2.5811928311424146	f
+9	58	169	48.78686280665091	1.213269015014594	45.14705576160713	\N	2	48.627239833205444	1.231705860285332	f
+23	58	165	46.68707578958591	1.5523691781019544	42.029968255280046	\N	3	46.581037668012776	1.6214324981965424	f
+28	58	164	43.758364913143254	1.7308545029265008	38.565801404363754	\N	4	43.62822303804257	1.8371917692939341	f
+14	58	142	44.76789574478781	1.4047190937938328	40.55373846340631	\N	5	45.15741970748558	1.44928260400796	f
+16	58	125	38.08100358278358	1.668973039764904	33.074084463488866	\N	6	38.15370923588567	1.7441295318890198	f
+22	58	119	36.52758863696969	2.607087208472025	28.706327011553615	\N	7	38.1229	2.8602000000000007	f
+4	59	149	55.74565685796559	1.2110685957720437	52.11245107064946	\N	1	55.320074345202535	1.2254255832609684	f
+5	59	144	54.6339371108528	1.023257214042399	51.564165468725605	\N	2	54.48548066047121	1.027432925906211	f
+9	59	131	49.2259209251225	1.1889615453050604	45.65903628920732	\N	3	48.78686280665091	1.213269015014594	f
+2	59	131	58.963490527257	1.102696486804424	55.65540106684373	\N	3	59.30240147116073	1.1171952724597871	f
+8	59	121	50.34209123776964	1.0732159053200656	47.12244352180944	\N	5	50.23754106969448	1.0844591567431672	f
+23	59	120	47.03347726456787	1.4843688463465023	42.58037072552836	\N	6	46.68707578958591	1.5523691781019544	f
+6	59	119	53.80424312685935	1.0421135008447278	50.677902624325164	\N	7	54.22482625083018	1.0494578976640783	f
+28	59	114	43.823742324898895	1.6423212473492181	38.89677858285124	\N	8	43.758364913143254	1.7308545029265008	f
+14	59	113	44.37571036740368	1.368595344410656	40.269924334171705	\N	9	44.76789574478781	1.4047190937938328	f
+16	59	108	37.72940496202338	1.6303511855913198	32.83835140524942	\N	10	38.08100358278358	1.668973039764904	f
+4	60	176	55.96849646925929	1.204277343667946	52.35566443825545	\N	1	55.74565685796559	1.2110685957720437	f
+23	60	163	47.789683136472235	1.4325330467460462	43.49208399623409	\N	2	47.03347726456787	1.4843688463465023	f
+9	60	151	49.3727503990952	1.1684833712573754	45.867300285323076	\N	3	49.2259209251225	1.1889615453050604	f
+28	60	139	44.5144468736758	1.5596283960037371	39.83556168566459	\N	4	43.823742324898895	1.6423212473492181	f
+14	60	136	44.64162658232783	1.3263179958801457	40.66267259468739	\N	5	44.37571036740368	1.368595344410656	f
+6	60	131	53.2893308802277	1.035235244651866	50.18362514627211	\N	6	53.80424312685935	1.0421135008447278	f
+11	60	129	50.665316003423605	2.1200628343160157	44.30512750047556	\N	7	53.137680896997956	2.343425596452987	f
+16	60	99	37.53219563329814	1.604999277093254	32.717197802018376	\N	8	37.72940496202338	1.6303511855913198	f
+\.
+
+
+--
+-- Data for Name: saisons; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly, ligue_id, ligue_nom, ligue_couleur, is_league_recap, include_league_stats, include_league_moves) FROM stdin;
+9	Automne 2025	automne-2025	2025-09-29	2025-12-15	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+10	Année 2025	annee-2025	2025-01-15	2025-12-15	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	Indice de Performance	t	\N	\N	\N	f	f	f
+8	Été 2025	ete-2025	2025-06-26	2025-09-18	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+7	Printemps 2025	printemps-2025	2025-03-20	2025-06-16	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+6	Hiver 2025	hiver-2025	2025-01-15	2025-03-13	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+15	Hiver 2026	hiver-2026	2026-01-12	2026-03-16	f	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	Indice de Performance	f	\N	\N	\N	t	f	f
+\.
+
+
+--
+-- Data for Name: tournois; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) FROM stdin;
+1	2025-01-16	\N	\N	\N
+2	2025-01-23	\N	\N	\N
+3	2025-01-30	\N	\N	\N
+4	2025-02-06	\N	\N	\N
+5	2025-02-13	\N	\N	\N
+6	2025-02-20	\N	\N	\N
+7	2025-02-27	\N	\N	\N
+8	2025-03-06	\N	\N	\N
+9	2025-03-13	\N	\N	\N
+10	2025-03-20	\N	\N	\N
+11	2025-03-27	\N	\N	\N
+12	2025-04-03	\N	\N	\N
+13	2025-04-10	\N	\N	\N
+14	2025-04-17	\N	\N	\N
+15	2025-04-24	\N	\N	\N
+16	2025-05-08	\N	\N	\N
+17	2025-05-15	\N	\N	\N
+18	2025-05-22	\N	\N	\N
+19	2025-06-12	\N	\N	\N
+20	2025-06-19	\N	\N	\N
+21	2025-06-26	\N	\N	\N
+22	2025-07-03	\N	\N	\N
+23	2025-07-10	\N	\N	\N
+24	2025-07-17	\N	\N	\N
+25	2025-07-24	\N	\N	\N
+26	2025-07-31	\N	\N	\N
+27	2025-08-07	\N	\N	\N
+28	2025-08-14	\N	\N	\N
+29	2025-08-21	\N	\N	\N
+30	2025-08-28	\N	\N	\N
+31	2025-09-04	\N	\N	\N
+32	2025-09-18	\N	\N	\N
+33	2025-09-29	\N	\N	\N
+34	2025-10-06	\N	\N	\N
+35	2025-10-13	\N	\N	\N
+36	2025-10-20	\N	\N	\N
+37	2025-10-27	\N	\N	\N
+38	2025-11-03	\N	\N	\N
+39	2025-11-10	\N	\N	\N
+40	2025-11-17	\N	\N	\N
+41	2025-11-24	\N	\N	\N
+42	2025-12-01	\N	\N	\N
+43	2025-12-08	\N	\N	\N
+44	2025-12-15	\N	\N	\N
+45	2026-01-12	\N	\N	\N
+46	2026-01-19	\N	\N	\N
+47	2026-01-26	\N	\N	\N
+48	2026-02-02	\N	\N	\N
+49	2026-02-09	\N	\N	\N
+50	2026-02-16	\N	\N	\N
+51	2026-02-23	\N	\N	\N
+54	2026-03-02	1	Ligue 0	#FFD700
+58	2026-03-02	2	Ligue 1	#C0C0C0
+59	2026-03-09	\N	Mixte	#888888
+60	2026-03-16	\N	Mixte	#888888
+\.
+
+
+--
+-- Data for Name: types_awards; Type: TABLE DATA; Schema: public; Owner: mk_reset
+--
+
+COPY public.types_awards (id, code, nom, emoji, description) FROM stdin;
+1	gold_moai	1er	gold_moai.png	Vainqueur de Saison
+2	silver_moai	2ème	silver_moai.png	2ème de Saison
+3	bronze_moai	3ème	bronze_moai.png	3ème de Saison
+4	super_gold_moai	1er	super_gold_moai.png	Vainqueur de l'année
+5	super_silver_moai	2ème	super_silver_moai.png	2ème de l'année
+6	super_bronze_moai	3ème	super_bronze_moai.png	3ème de l'année
+7	ez	EZ	🥇	Le plus de 1ères places
+8	pas_loin	C'était pas loin	🥈	Le plus de 2ème places
+9	stonks	Stonks	stonks.png	Plus forte progression TrueSkill
+10	not_stonks	Not Stonks	not_stonks.png	Plus forte perte TrueSkill
+11	stakhanov	Stakhanoviste	TposingFunky.png	Le plus de points marqués au total
+12	chillguy	Chill Guy	chillguy.png	Le score TrueSkill le plus stable
+13	Indice de Performance	Indice de Performance	🎯	Calcul IP
+\.
+
+
+--
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.awards_obtenus_id_seq', 42, true);
+
+
+--
+-- Name: ghost_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.ghost_log_id_seq', 74, true);
+
+
+--
+-- Name: global_resets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.global_resets_id_seq', 1, true);
+
+
+--
+-- Name: joueurs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.joueurs_id_seq', 30, true);
+
+
+--
+-- Name: league_movements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.league_movements_id_seq', 1, false);
+
+
+--
+-- Name: ligues_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.ligues_id_seq', 1, false);
+
+
+--
+-- Name: saisons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.saisons_id_seq', 15, true);
+
+
+--
+-- Name: tournois_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.tournois_id_seq', 60, true);
+
+
+--
+-- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
+--
+
+SELECT pg_catalog.setval('public.types_awards_id_seq', 13, true);
+
+
+--
+-- Name: api_tokens api_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.api_tokens
+    ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (token);
+
+
+--
+-- Name: awards_obtenus awards_obtenus_joueur_id_saison_id_award_id_ligue_id_key; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.awards_obtenus
+    ADD CONSTRAINT awards_obtenus_joueur_id_saison_id_award_id_ligue_id_key UNIQUE (joueur_id, saison_id, award_id, ligue_id);
+
+
+--
+-- Name: awards_obtenus awards_obtenus_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.awards_obtenus
+    ADD CONSTRAINT awards_obtenus_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: configuration configuration_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.configuration
+    ADD CONSTRAINT configuration_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: ghost_log ghost_log_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.ghost_log
+    ADD CONSTRAINT ghost_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: global_resets global_resets_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.global_resets
+    ADD CONSTRAINT global_resets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: joueurs joueurs_nom_key; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.joueurs
+    ADD CONSTRAINT joueurs_nom_key UNIQUE (nom);
+
+
+--
+-- Name: joueurs joueurs_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.joueurs
+    ADD CONSTRAINT joueurs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: league_movements league_movements_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.league_movements
+    ADD CONSTRAINT league_movements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ligues ligues_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.ligues
+    ADD CONSTRAINT ligues_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: participations participations_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.participations
+    ADD CONSTRAINT participations_pkey PRIMARY KEY (joueur_id, tournoi_id);
+
+
+--
+-- Name: saisons saisons_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.saisons
+    ADD CONSTRAINT saisons_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: saisons saisons_slug_key; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.saisons
+    ADD CONSTRAINT saisons_slug_key UNIQUE (slug);
+
+
+--
+-- Name: tournois tournois_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.tournois
+    ADD CONSTRAINT tournois_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: types_awards types_awards_code_key; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.types_awards
+    ADD CONSTRAINT types_awards_code_key UNIQUE (code);
+
+
+--
+-- Name: types_awards types_awards_pkey; Type: CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.types_awards
+    ADD CONSTRAINT types_awards_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: awards_obtenus_unique_no_ligue; Type: INDEX; Schema: public; Owner: mk_reset
+--
+
+CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus USING btree (joueur_id, saison_id, award_id) WHERE (ligue_id IS NULL);
+
+
+--
+-- Name: awards_obtenus awards_obtenus_award_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.awards_obtenus
+    ADD CONSTRAINT awards_obtenus_award_id_fkey FOREIGN KEY (award_id) REFERENCES public.types_awards(id) ON DELETE CASCADE;
+
+
+--
+-- Name: awards_obtenus awards_obtenus_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.awards_obtenus
+    ADD CONSTRAINT awards_obtenus_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: awards_obtenus awards_obtenus_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.awards_obtenus
+    ADD CONSTRAINT awards_obtenus_ligue_id_fkey FOREIGN KEY (ligue_id) REFERENCES public.ligues(id) ON DELETE SET NULL;
+
+
+--
+-- Name: awards_obtenus awards_obtenus_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.awards_obtenus
+    ADD CONSTRAINT awards_obtenus_saison_id_fkey FOREIGN KEY (saison_id) REFERENCES public.saisons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ghost_log ghost_log_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.ghost_log
+    ADD CONSTRAINT ghost_log_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ghost_log ghost_log_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.ghost_log
+    ADD CONSTRAINT ghost_log_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
+
+
+--
+-- Name: joueurs joueurs_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.joueurs
+    ADD CONSTRAINT joueurs_ligue_id_fkey FOREIGN KEY (ligue_id) REFERENCES public.ligues(id) ON DELETE SET NULL;
+
+
+--
+-- Name: league_movements league_movements_from_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.league_movements
+    ADD CONSTRAINT league_movements_from_ligue_id_fkey FOREIGN KEY (from_ligue_id) REFERENCES public.ligues(id) ON DELETE SET NULL;
+
+
+--
+-- Name: league_movements league_movements_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.league_movements
+    ADD CONSTRAINT league_movements_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: league_movements league_movements_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.league_movements
+    ADD CONSTRAINT league_movements_saison_id_fkey FOREIGN KEY (saison_id) REFERENCES public.saisons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: league_movements league_movements_to_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.league_movements
+    ADD CONSTRAINT league_movements_to_ligue_id_fkey FOREIGN KEY (to_ligue_id) REFERENCES public.ligues(id) ON DELETE SET NULL;
+
+
+--
+-- Name: participations participations_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.participations
+    ADD CONSTRAINT participations_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: participations participations_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.participations
+    ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
+
+
+--
+-- Name: saisons saisons_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.saisons
+    ADD CONSTRAINT saisons_ligue_id_fkey FOREIGN KEY (ligue_id) REFERENCES public.ligues(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tournois tournois_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: mk_reset
+--
+
+ALTER TABLE ONLY public.tournois
+    ADD CONSTRAINT tournois_ligue_id_fkey FOREIGN KEY (ligue_id) REFERENCES public.ligues(id) ON DELETE SET NULL;
+
+
+--
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: mk_reset
+--
+
+REVOKE USAGE ON SCHEMA public FROM PUBLIC;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict EzqdxOecr6H0OLG9uNWj5YMFat7NgUf6nIaPBrpc0Cabgt7j7DpDurcjEL2QVrI
+
