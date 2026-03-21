@@ -54,7 +54,7 @@ def check_admin_token_validity():
         token = session['admin_token']
         try:
             response = requests.get(
-                f"{app.config.get('BACKEND_URL', 'http://backend:8080')}/admin/check-token",
+                f"{BACKEND_URL}/admin/check-token",
                 headers={'X-Admin-Token': token},
                 timeout=1
             )
