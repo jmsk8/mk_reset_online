@@ -268,7 +268,7 @@
                         </div>
                     </div>
 
-                    {% if distribution_data and distribution_data.players|length > 1 %}
+                    {% if not tier_actif and not ligue_active and distribution_data and distribution_data.players|length > 1 %}
                     <div class="card glass-card mt-5 fade-in">
                         <header class="card-header">
                             <p class="card-header-title is-centered has-text-white">
@@ -312,7 +312,7 @@
                 elem.classList.add('visible');
             });
 
-            {% if distribution_data and distribution_data.players|length > 1 %}
+            {% if not tier_actif and not ligue_active and distribution_data and distribution_data.players|length > 1 %}
             const ctxDist = document.getElementById('distributionChart').getContext('2d');
             const distDataRaw = {{ distribution_data | tojson }};
             const curvePoints = distDataRaw.curve.map(pt => ({ x: pt.x, y: pt.y }));

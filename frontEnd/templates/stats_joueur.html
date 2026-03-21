@@ -181,23 +181,6 @@
                         {% if not ns_awards.found %}<p class="has-text-grey is-italic is-size-7">Aucun award.</p>{% endif %}
                     </div>
 
-                    <div class="card glass-card mt-4 fade-in">
-                        <div class="card-header"><p class="card-header-title is-centered"><i class="fas fa-tachometer-alt"></i> Indicateurs de Performance</p></div>
-                        <div class="card-content">
-                            <div class="content">
-                                <div class="field">
-                                    <label class="label">Constance (écart-type)</label>
-                                    <progress class="progress is-primary" value="{{ 100 - (stats.ecart_type_scores / stats.score_moyen * 100)|round if stats.score_moyen > 0 and stats.ecart_type_scores else 0 }}" max="100"></progress>
-                                    <p class="help">{% if stats.ecart_type_scores and stats.score_moyen %}Écart-type de {{ stats.ecart_type_scores|round(3) }} ({{ (stats.ecart_type_scores / stats.score_moyen * 100)|round }}% de la moyenne){% else %}Données insuffisantes{% endif %}</p>
-                                </div>
-                                <div class="field">
-                                    <label class="label">Progression récente</label>
-                                    <progress class="progress {{ 'is-success' if stats.progression_recente > 0 else 'is-danger' if stats.progression_recente < 0 else 'is-light' }}" value="{{ (50 + stats.progression_recente * 5)|round if stats.progression_recente else 50 }}" max="100"></progress>
-                                    <p class="help">{% if stats.progression_recente > 0 %}En amélioration (+{{ stats.progression_recente|round(3) }} points){% elif stats.progression_recente < 0 %}En déclin ({{ stats.progression_recente|round(3) }} points){% else %}Stable{% endif %}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
               
                 <div class="column is-8">
