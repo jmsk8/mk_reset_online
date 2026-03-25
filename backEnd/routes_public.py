@@ -814,10 +814,14 @@ def get_joueur_stats(nom):
                     val_float = float(val)
                     r_date_only = r_date.date() if hasattr(r_date, 'date') else r_date
                     reset_ts = None
-                    for tid, t_date, score, position, hist_ts, _, _, _, _ in raw_history:
-                        if t_date <= r_date_only and hist_ts is not None:
-                            reset_ts = float(hist_ts) - val_float * 3
-                            break
+                    # Find the most recent TrueSkill before the reset date,
+                    # considering both tournaments AND absence penalties
+                    best_date = None
+                    for entry in historique_data:
+                        if entry['date_sort'] <= r_date_only.strftime("%Y-%m-%d") and entry['score_trueskill'] is not None:
+                            if best_date is None or entry['date_sort'] >= best_date:
+                                best_date = entry['date_sort']
+                                reset_ts = entry['score_trueskill'] - val_float * 3
 
                     if reset_ts is None:
                         continue
@@ -829,7 +833,8 @@ def get_joueur_stats(nom):
                         "valeur": val_float, "ligue": "-"
                     })
 
-                historique_data.sort(key=lambda x: x['date_sort'], reverse=True)
+                type_order = {'tournoi': 0, 'absence': 1, 'reset': 2}
+                historique_data.sort(key=lambda x: (x['date_sort'], type_order.get(x['type'], 3)), reverse=True)
 
                 for i in range(len(historique_data)):
                     if i < len(historique_data) - 1:
