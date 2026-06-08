@@ -5,9 +5,14 @@
 COMPOSE       = docker compose
 COMPOSE_DUMP  = $(COMPOSE) -f docker-compose.yml -f docker-compose.dump.yml
 
+# ── Pré-requis ────────────────────────────────
+
+check-env:           ## Vérifie/crée le .env nécessaire au lancement
+	@bash scripts/check_env.sh
+
 # ── Lifecycle ─────────────────────────────────
 
-up:                  ## Start containers
+up: check-env        ## Start containers
 	$(COMPOSE) up -d
 
 stop:                ## Stop containers (keep volumes)
@@ -16,7 +21,7 @@ stop:                ## Stop containers (keep volumes)
 start:               ## Restart stopped containers
 	$(COMPOSE) start
 
-build:               ## Build/rebuild images and start
+build: check-env     ## Build/rebuild images and start
 	$(COMPOSE) up --build -d
 
 down:                ## Stop and remove containers/networks
@@ -29,7 +34,7 @@ fclean:              ## Full cleanup (containers + volumes + images)
 
 re: fclean build     ## Full cleanup then rebuild (schema + seed)
 
-redump: fclean       ## Full cleanup then rebuild with dump.sql
+redump: check-env fclean ## Full cleanup then rebuild with dump.sql
 	$(COMPOSE_DUMP) up --build -d
 
 # ── Rebuild individual services ──────────────
@@ -88,7 +93,7 @@ help:                ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: up stop start build down fclean re redump \
+.PHONY: check-env up stop start build down fclean re redump \
         re-front re-back re-db re-db-dump \
         logs logs-nginx logs-front logs-back logs-db ps \
         db-shell db-backup help

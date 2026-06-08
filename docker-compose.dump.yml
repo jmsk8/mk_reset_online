@@ -2,9 +2,9 @@ services:
   db:
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./dump.sql:/docker-entrypoint-initdb.d/01_dump.sql
       - /dev/null:/docker-entrypoint-initdb.d/01_schema.sql
       - /dev/null:/docker-entrypoint-initdb.d/02_seed.sql
+      - ./backEnd/dump.sql:/docker-entrypoint-initdb.d/03_dump.sql
 
 volumes:
   pg_data:
