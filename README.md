@@ -1,4 +1,4 @@
-# 🏁 Mario Kart Reset Online `v1.2.0`
+# 🏁 Mario Kart Reset Online `v1.3.1`
 
 > Plateforme de compétition Mario Kart avec classement basé sur l'algorithme TrueSkill.
 
@@ -10,7 +10,7 @@ Mario Kart Reset Online est une application web de gestion de tournois et de cla
 
 ### 📈 Classement et Tiers
 
-Les joueurs sont classés via le moteur TrueSkill qui attribue à chacun un score calculé à partir de deux variables : la performance estimée (mu) et l'incertitude (sigma). Le score final est `R = mu - 3 * sigma`. Les joueurs sont automatiquement répartis en tiers (S, A, B, C, U) selon la distribution statistique de la population active.
+Les joueurs sont classés via le moteur TrueSkill qui attribue à chacun un score calculé à partir de deux variables : la performance estimée (mu) et l'incertitude (sigma). Le score final est `R = mu - 3 * sigma`. Les joueurs sont automatiquement répartis en tiers (S, A, B, C, U) selon la distribution statistique de la population active. Les seuils de chaque tier (S ≥ mean+σ, A ≥ mean, B ≥ mean−σ) sont affichés directement sur la page de classement.
 
 Un mécanisme de **ghost** pénalise automatiquement le sigma des joueurs absents pour éviter la stagnation du classement.
 
@@ -18,8 +18,9 @@ Un mécanisme de **ghost** pénalise automatiquement le sigma des joueurs absent
 
 Chaque joueur dispose d'une page de statistiques personnelle avec :
 - Graphique de progression TrueSkill dans le temps
-- Historique complet des tournois et résultats
+- Historique complet des tournois et résultats, avec le gain/perte TrueSkill par match (colonne +/-)
 - Vitrine des awards et trophées obtenus
+- Palmarès des podiums (or, argent, bronze), détaillé par ligue en mode ligue
 - Tier actuel et score détaillé
 
 ### 🏆 Tournois
@@ -27,6 +28,7 @@ Chaque joueur dispose d'une page de statistiques personnelle avec :
 - Saisie rapide de tournois jusqu'à 12 joueurs avec auto-complétion
 - Historique consultable avec détail de chaque tournoi (positions, scores, variations TrueSkill)
 - Possibilité d'annuler les derniers tournois enregistrés
+- **Mode Mixte** : tournois jouables entre toutes les ligues sans restriction (en mode ligue)
 
 ### ⚔️ Ligues et saisons
 
@@ -34,6 +36,8 @@ Chaque joueur dispose d'une page de statistiques personnelle avec :
 - Système de promotion/relégation entre ligues
 - Reset global du sigma en début de saison
 - Recap de fin de saison avec podiums, statistiques globales et awards
+- Awards calculés indépendamment par ligue en mode récap ligue
+- Mode hybride : un récap classique peut inclure les stats et mouvements de ligue dans des onglets dédiés
 
 ### 🗿 Systeme d'awards
 
@@ -51,6 +55,7 @@ Chaque saison attribue des distinctions aux joueurs :
 - Bannière interactive simulant une course Super Mario Kart (8 personnages, items, thème correspondant à la saison actuelle)
 - Interface responsive adaptée au mobile
 - Navigation par saison et par ligue
+- Dates affichées au format français (JJ/MM/AAAA)
 
 ### 🛡️ Administration
 
@@ -73,7 +78,7 @@ Chaque saison attribue des distinctions aux joueurs :
 | **Frontend** | Python (Flask), Jinja2, Bulma CSS, Vanilla JS |
 | **Backend** | Python 3.9+, API RESTful |
 | **Moteur de classement** | TrueSkill, NumPy |
-| **Base de données** | PostgreSQL 13 |
+| **Base de données** | PostgreSQL 17 |
 | **Serveur** | Gunicorn, Nginx (reverse proxy) |
 | **Déploiement** | Docker, Docker Compose, Nix Flakes |
 
@@ -85,7 +90,7 @@ Le projet suit une architecture frontend/backend découplée, orchestrée via Do
 nginx (port 80) -> frontend Flask (port 5000) -> backend API (port 8080) -> PostgreSQL
 ```
 
-- **Backend** : API REST qui gère toute la logique métier (TrueSkill, awards, ligues, administration). Code principal dans `backEnd/backend.py`.
+- **Backend** : API REST qui gère toute la logique métier (TrueSkill, awards, ligues, administration). Point d'entrée `backEnd/backend.py`, logique répartie en modules dédiés (`routes_public.py`, `routes_admin.py`, `services.py`).
 - **Frontend** : Serveur Flask qui consomme l'API backend et rend les templates Jinja2. Code principal dans `frontEnd/frontend.py`.
 - **Nginx** : Reverse proxy qui route les requêtes vers le frontend.
 - **PostgreSQL** : Base relationnelle initialisée via `schema.sql` et `seed.sql`.

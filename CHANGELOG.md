@@ -4,6 +4,14 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
+## [1.3.1] - 2026-06-09
+
+### Corrections
+- **Calcul des tiers et du top %** : unification de toute la logique (tiers, top %, seuils, courbes de distribution) sur une seule base de calcul.
+- **Bannière saisonnière** : bascule désormais aux dates exactes au lieu du mois entier
+
+---
+
 ## [1.3.0] - 2026-03-18
 
 ### Nouvelles fonctionnalités
