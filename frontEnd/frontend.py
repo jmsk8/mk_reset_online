@@ -5,9 +5,6 @@ import requests
 import time
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from datetime import timedelta, date
-import math
-import statistics
-from math import erf, sqrt
 from flask_wtf.csrf import CSRFProtect
 
 # CONFIGURATION
@@ -166,42 +163,6 @@ def proxy_add_tournament():
 
 # ROUTES : VIEWS (PUBLIC)
 
-def _normal_top_percent(score, mean, stdev):
-    z = (score - mean) / stdev
-    percentile = 0.5 * (1 + erf(z / sqrt(2))) * 100
-    return round(100 - percentile, 1)
-
-def build_distribution_data(joueurs):
-    ranked = [j for j in joueurs if j.get('tier', '').strip() not in ('U', '?', 'Unranked')]
-    scores = [j['score_trueskill'] for j in ranked if j['score_trueskill'] > 0]
-    dist_data = {"curve": [], "players": []}
-    if len(scores) < 2:
-        return dist_data
-    mean = statistics.mean(scores)
-    stdev = statistics.stdev(scores) or 1.0
-    x_min = mean - 3.5 * stdev
-    x_max = mean + 3.5 * stdev
-    step = (x_max - x_min) / 120
-    x = x_min
-    while x <= x_max:
-        y = (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(-0.5 * ((x - mean) / stdev) ** 2)
-        dist_data["curve"].append({"x": round(x, 2), "y": y})
-        x += step
-    for j in ranked:
-        score = j['score_trueskill']
-        if score <= 0:
-            continue
-        y_pos = (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(-0.5 * ((score - mean) / stdev) ** 2)
-        dist_data["players"].append({
-            "nom": j["nom"],
-            "x": score,
-            "y": y_pos,
-            "color": j.get("color", "#FFFFFF"),
-            "top_percent": _normal_top_percent(score, mean, stdev)
-        })
-    dist_data["players"].sort(key=lambda k: k["x"], reverse=True)
-    return dist_data
-
 def get_banner_season():
     month = date.today().month
     if month in (12, 1, 2):
@@ -261,8 +222,10 @@ def classement():
         params['ligue'] = ligue_id
 
     data, status = backend_request('GET', '/classement', params=params)
-    if status == 200 and isinstance(data, list):
-        joueurs = data
+    distribution_data = {"curve": [], "players": []}
+    if status == 200 and isinstance(data, dict):
+        joueurs = data.get('joueurs', [])
+        distribution_data = data.get('distribution_data', distribution_data)
         def sort_key(j):
             tier_val = j.get('tier', '').strip()
             is_ranked = tier_val not in ['U', '?', 'Unranked']
@@ -285,8 +248,6 @@ def classement():
     seuils_data, seuils_status = backend_request('GET', '/tier-seuils')
     if seuils_status == 200 and isinstance(seuils_data, dict):
         seuils = seuils_data
-
-    distribution_data = build_distribution_data(joueurs)
 
     return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, seuils=seuils, distribution_data=distribution_data)
 

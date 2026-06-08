@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import math
+import statistics
 import logging
-from typing import Any
+from math import erf, sqrt
+from typing import Any, Callable, Iterable
 
 import psycopg2.extras
 
@@ -15,6 +17,93 @@ from constants import (
 from db import get_db_connection
 
 logger = logging.getLogger(__name__)
+
+
+_CURVE_RESOLUTION = 120
+_CURVE_SPREAD = 3.5
+
+
+def trueskill_score(mu: float, sigma: float) -> float:
+    return float(mu) - 3 * float(sigma)
+
+
+def has_tier(is_ranked: bool, sigma: float, threshold: float) -> bool:
+    return bool(is_ranked) and float(sigma) <= threshold
+
+
+def compute_distribution_stats(scores: Iterable[float]) -> tuple[float, float] | None:
+    scores = list(scores)
+    if len(scores) < 2:
+        return None
+    mean = statistics.mean(scores)
+    stdev = statistics.stdev(scores) or 1.0
+    return mean, stdev
+
+
+def tier_thresholds(scores: Iterable[float]) -> dict[str, float]:
+    stats = compute_distribution_stats(scores)
+    if stats is None:
+        return {"S": 0, "A": 0, "B": 0, "C": 0}
+    mean, stdev = stats
+    return {
+        "S": round(mean + stdev, 3),
+        "A": round(mean, 3),
+        "B": round(mean - stdev, 3),
+        "C": 0,
+    }
+
+
+def tier_for_score(score: float, mean: float, stdev: float) -> str:
+    if score > mean + stdev:
+        return "S"
+    if score > mean:
+        return "A"
+    if score > mean - stdev:
+        return "B"
+    return "C"
+
+
+def normal_top_percent(score: float, mean: float, stdev: float) -> float:
+    z = (score - mean) / stdev
+    percentile = 0.5 * (1 + erf(z / sqrt(2))) * 100
+    return round(100 - percentile, 1)
+
+
+def _normal_pdf(x: float, mean: float, stdev: float) -> float:
+    return (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(-0.5 * ((x - mean) / stdev) ** 2)
+
+
+def build_distribution(
+    players: Iterable[dict],
+    score_fn: Callable[[dict], float | None],
+) -> dict:
+    scored = [(p, score_fn(p)) for p in players]
+    scored = [(p, s) for p, s in scored if s is not None]
+    stats = compute_distribution_stats(s for _, s in scored)
+
+    dist: dict[str, list] = {"curve": [], "players": []}
+    if stats is None:
+        return dist
+    mean, stdev = stats
+
+    x_min = mean - _CURVE_SPREAD * stdev
+    x_max = mean + _CURVE_SPREAD * stdev
+    step = (x_max - x_min) / _CURVE_RESOLUTION
+    x = x_min
+    while x <= x_max:
+        dist["curve"].append({"x": round(x, 2), "y": _normal_pdf(x, mean, stdev)})
+        x += step
+
+    for p, score in scored:
+        dist["players"].append({
+            "nom": p.get("nom"),
+            "x": score,
+            "y": _normal_pdf(score, mean, stdev),
+            "color": p.get("color", "#FFFFFF"),
+            "top_percent": normal_top_percent(score, mean, stdev),
+        })
+    dist["players"].sort(key=lambda k: k["x"], reverse=True)
+    return dist
 
 
 def sync_sequences() -> None:
@@ -42,38 +131,20 @@ def recalculate_tiers() -> None:
                 cur.execute("SELECT id, mu, sigma, is_ranked FROM Joueurs")
                 all_players = cur.fetchall()
 
-                valid_scores = []
-                for pid, mu, sigma, is_ranked in all_players:
-                    if is_ranked and float(sigma) <= threshold:
-                        score = float(mu) - (3 * float(sigma))
-                        valid_scores.append(score)
-
-                if len(valid_scores) < 2:
-                    mean_score = 0
-                    std_dev = 1
-                else:
-                    mean_score = sum(valid_scores) / len(valid_scores)
-                    variance = sum((x - mean_score) ** 2 for x in valid_scores) / len(valid_scores)
-                    std_dev = math.sqrt(variance)
+                valid_scores = [
+                    trueskill_score(mu, sigma)
+                    for _, mu, sigma, is_ranked in all_players
+                    if has_tier(is_ranked, sigma, threshold)
+                ]
+                stats = compute_distribution_stats(valid_scores)
 
                 tier_updates = []
                 for pid, mu, sigma, is_ranked in all_players:
-                    mu_val = float(mu)
-                    sigma_val = float(sigma)
-                    score = mu_val - (3 * sigma_val)
-
-                    new_tier = 'U'
-
-                    if is_ranked and sigma_val <= threshold:
-                        if score > (mean_score + std_dev):
-                            new_tier = 'S'
-                        elif score > mean_score:
-                            new_tier = 'A'
-                        elif score > (mean_score - std_dev):
-                            new_tier = 'B'
-                        else:
-                            new_tier = 'C'
-
+                    if stats is not None and has_tier(is_ranked, sigma, threshold):
+                        mean_score, std_dev = stats
+                        new_tier = tier_for_score(trueskill_score(mu, sigma), mean_score, std_dev)
+                    else:
+                        new_tier = 'U'
                     tier_updates.append((pid, new_tier))
 
                 if tier_updates:

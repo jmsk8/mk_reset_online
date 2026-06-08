@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import math
-import statistics
 import logging
-from math import erf, sqrt
 from typing import Any
 
 from flask import Blueprint, jsonify, request, abort, render_template
@@ -11,7 +9,11 @@ from flask import Blueprint, jsonify, request, abort, render_template
 from constants import DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAULT_PAGE_SIZE
 from db import get_db_connection
 from cache import get_cached, set_cached
-from services import _aggregate_season_stats, _determine_winners
+from services import (
+    _aggregate_season_stats, _determine_winners,
+    trueskill_score, has_tier, compute_distribution_stats,
+    tier_thresholds, normal_top_percent, build_distribution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +64,6 @@ def recap_list():
                 "is_league_recap": r[8] if r[8] else False
             } for r in rows]
     return render_template('recap_list.html', saisons=saisons)
-
-
-def _normal_top_percent(score, mean, stdev):
-    z = (score - mean) / stdev
-    percentile = 0.5 * (1 + erf(z / sqrt(2))) * 100
-    return round(100 - percentile, 1)
 
 
 @public_bp.route('/stats/recap/<slug>')
@@ -324,56 +320,17 @@ def get_recap(slug):
                     reverse=True
                 )
 
-            final_scores = [
-                p["final_trueskill"]
+            colors_by_name = {info["nom"]: info["color"] for info in player_colors.values()}
+            recap_players = [
+                {
+                    "nom": p["nom"],
+                    "color": colors_by_name.get(p["nom"], "#FFFFFF"),
+                    "final_trueskill": p["final_trueskill"],
+                }
                 for p in global_stats["classement_points"]
                 if p["matchs"] > 0
             ]
-
-            dist_data = {"curve": [], "players": []}
-
-            if len(final_scores) > 1:
-                mean = statistics.mean(final_scores)
-                stdev = statistics.stdev(final_scores) or 1.0
-
-                x_min = mean - 3.5 * stdev
-                x_max = mean + 3.5 * stdev
-                step = (x_max - x_min) / 120
-
-                x = x_min
-                while x <= x_max:
-                    y = (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(
-                        -0.5 * ((x - mean) / stdev) ** 2
-                    )
-                    dist_data["curve"].append({"x": round(x, 2), "y": y})
-                    x += step
-
-                for p in global_stats["classement_points"]:
-                    if p["matchs"] == 0:
-                        continue
-
-                    score = p["final_trueskill"]
-                    y_pos = (1 / (stdev * math.sqrt(2 * math.pi))) * math.exp(
-                        -0.5 * ((score - mean) / stdev) ** 2
-                    )
-
-                    top_pct = _normal_top_percent(score, mean, stdev)
-
-                    color = "#FFFFFF"
-                    for info in player_colors.values():
-                        if info["nom"] == p["nom"]:
-                            color = info["color"]
-                            break
-
-                    dist_data["players"].append({
-                        "nom": p["nom"],
-                        "x": score,
-                        "y": y_pos,
-                        "color": color,
-                        "top_percent": top_pct
-                    })
-
-                dist_data["players"].sort(key=lambda k: k["x"], reverse=True)
+            dist_data = build_distribution(recap_players, lambda p: p["final_trueskill"])
 
             response_data = {
                 "nom_saison": nom,
@@ -588,7 +545,7 @@ def classement():
                 j.nom, j.mu, j.sigma, j.score_trueskill, j.tier,
                 COUNT(p.tournoi_id) as nb_tournois,
                 SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END) as victoires,
-                j.color
+                j.color, j.is_ranked
             FROM Joueurs j
             LEFT JOIN Participations p ON j.id = p.joueur_id
         """
@@ -610,28 +567,37 @@ def classement():
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        query += " GROUP BY j.id, j.nom, j.mu, j.sigma, j.score_trueskill, j.tier"
+        query += " GROUP BY j.id, j.nom, j.mu, j.sigma, j.score_trueskill, j.tier, j.color, j.is_ranked"
         query += " ORDER BY j.score_trueskill DESC NULLS LAST"
 
         joueurs = []
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT value FROM Configuration WHERE key = 'sigma_threshold'")
+                res_conf = cur.fetchone()
+                threshold = float(res_conf[0]) if res_conf else DEFAULT_SIGMA_THRESHOLD
+                cur.execute("SELECT mu, sigma, is_ranked FROM Joueurs")
+                ref_scores = [
+                    trueskill_score(m, s)
+                    for m, s, r in cur.fetchall()
+                    if has_tier(r, s, threshold)
+                ]
+                ref_stats = compute_distribution_stats(ref_scores)
+
                 cur.execute(query, params)
                 rows = cur.fetchall()
                 total_joueurs = len(rows)
-                for index, row in enumerate(rows):
-                    nom, mu, sigma, score_trueskill, tier, nb_tournois, victoires, color = row
+                for row in rows:
+                    nom, mu, sigma, score_trueskill, tier, nb_tournois, victoires, color, is_ranked = row
                     score_ts = round(float(score_trueskill), 3) if score_trueskill is not None else 0.000
                     nb = int(nb_tournois)
                     vic = int(victoires) if victoires else 0
                     ratio = round((vic / nb * 100), 1) if nb > 0 else 0
 
-                    percentile = 0
-                    if total_joueurs > 1:
-                        rank = index + 1
-                        percentile = round(((total_joueurs - rank) / (total_joueurs - 1)) * 100, 1)
-                    elif total_joueurs == 1:
-                        percentile = 100
+                    if ref_stats is not None and has_tier(is_ranked, sigma, threshold):
+                        top_percent = normal_top_percent(trueskill_score(mu, sigma), *ref_stats)
+                    else:
+                        top_percent = "?"
 
                     joueurs.append({
                         "nom": nom,
@@ -642,13 +608,20 @@ def classement():
                         "nombre_tournois": nb,
                         "victoires": vic,
                         "ratio_victoires": ratio,
-                        "percentile_trueskill": percentile,
-                        "color": color if color else "#FFFFFF"
+                        "percentile_trueskill": top_percent,
+                        "color": color if color else "#FFFFFF",
+                        "is_ranked": is_ranked
                     })
 
+        distribution_data = {"curve": [], "players": []}
+        if not tier_filtre and not ligue_filtre:
+            tiered = [j for j in joueurs if has_tier(j["is_ranked"], j["sigma"], threshold)]
+            distribution_data = build_distribution(tiered, lambda j: trueskill_score(j["mu"], j["sigma"]))
+
         if page is None:
-            set_cached(cache_key, joueurs)
-            return jsonify(joueurs)
+            payload = {"joueurs": joueurs, "distribution_data": distribution_data}
+            set_cached(cache_key, payload)
+            return jsonify(payload)
 
         # Pagination optionnelle
         offset = (page - 1) * limit
@@ -658,7 +631,8 @@ def classement():
             "total": total_joueurs,
             "page": page,
             "limit": limit,
-            "pages": math.ceil(total_joueurs / limit) if limit > 0 else 1
+            "pages": math.ceil(total_joueurs / limit) if limit > 0 else 1,
+            "distribution_data": distribution_data
         })
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
@@ -673,27 +647,13 @@ def tier_seuils():
                 res = cur.fetchone()
                 threshold = float(res[0]) if res else DEFAULT_SIGMA_THRESHOLD
 
-                cur.execute("SELECT mu, sigma FROM Joueurs WHERE is_ranked = true")
-                all_players = cur.fetchall()
-
-                valid_scores = []
-                for mu, sigma in all_players:
-                    if float(sigma) <= threshold:
-                        valid_scores.append(float(mu) - 3 * float(sigma))
-
-                if len(valid_scores) < 2:
-                    return jsonify({"S": 0, "A": 0, "B": 0, "C": 0})
-
-                mean_score = sum(valid_scores) / len(valid_scores)
-                variance = sum((x - mean_score) ** 2 for x in valid_scores) / len(valid_scores)
-                std_dev = math.sqrt(variance)
-
-                return jsonify({
-                    "S": round(mean_score + std_dev, 3),
-                    "A": round(mean_score, 3),
-                    "B": round(mean_score - std_dev, 3),
-                    "C": 0
-                })
+                cur.execute("SELECT mu, sigma, is_ranked FROM Joueurs")
+                valid_scores = [
+                    trueskill_score(mu, sigma)
+                    for mu, sigma, is_ranked in cur.fetchall()
+                    if has_tier(is_ranked, sigma, threshold)
+                ]
+                return jsonify(tier_thresholds(valid_scores))
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
@@ -725,23 +685,17 @@ def get_joueur_stats(nom):
                 sigma_val = float(sigma)
                 missed_val = int(consecutive_missed) if consecutive_missed is not None else 0
 
-                is_legit = (is_ranked and sigma_val <= threshold)
                 top_percent = "?"
-                if is_legit:
-                    cur.execute("SELECT score_trueskill FROM Joueurs WHERE is_ranked = true AND sigma <= %s", (threshold,))
-                    rows = cur.fetchall()
-                    valid_scores = [float(r[0]) for r in rows if r[0] is not None]
-                    if len(valid_scores) > 1:
-                        mean = sum(valid_scores) / len(valid_scores)
-                        variance = sum((x - mean) ** 2 for x in valid_scores) / len(valid_scores)
-                        std_dev = math.sqrt(variance)
-                        if std_dev > 0.0001:
-                            z_score = (safe_ts - mean) / std_dev
-                            cdf = 0.5 * (1 + math.erf(z_score / math.sqrt(2)))
-                            top_val = (1 - cdf) * 100
-                            top_percent = round(max(top_val, 0.01), 2)
-                        else: top_percent = 50.0
-                    elif len(valid_scores) == 1: top_percent = 1.0
+                if has_tier(is_ranked, sigma_val, threshold):
+                    cur.execute("SELECT mu, sigma, is_ranked FROM Joueurs")
+                    ref_scores = [
+                        trueskill_score(m, s)
+                        for m, s, r in cur.fetchall()
+                        if has_tier(r, s, threshold)
+                    ]
+                    ref_stats = compute_distribution_stats(ref_scores)
+                    if ref_stats is not None:
+                        top_percent = normal_top_percent(trueskill_score(mu, sigma_val), *ref_stats)
 
                 cur.execute("""
                     SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma,
