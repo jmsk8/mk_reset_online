@@ -164,15 +164,16 @@ def proxy_add_tournament():
 # ROUTES : VIEWS (PUBLIC)
 
 def get_banner_season():
-    month = date.today().month
-    if month in (12, 1, 2):
-        return "winter"
-    elif month in (3, 4, 5):
+    today = date.today()
+    md = (today.month, today.day)
+    if (3, 20) <= md < (6, 21):
         return "spring"
-    elif month in (6, 7, 8):
+    elif (6, 21) <= md < (9, 22):
         return "summer"
-    else:
+    elif (9, 22) <= md < (12, 21):
         return "autumn"
+    else:
+        return "winter"
 
 @app.route('/')
 def index():
