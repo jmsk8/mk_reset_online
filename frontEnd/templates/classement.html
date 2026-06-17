@@ -107,10 +107,14 @@
         <div class="hero-body">
             <div class="container">
                 <h1 class="title is-2 has-text-centered glow-text">
-                    <i class="fas fa-trophy"></i> Classement Général
+                    {% if vue == 'saison' %}
+                        <i class="fas fa-calendar-alt"></i> Classement de Saison
+                    {% else %}
+                        <i class="fas fa-trophy"></i> Classement Général
+                    {% endif %}
                 </h1>
                 <h2 class="subtitle has-text-centered">
-                    
+
                 </h2>
             </div>
         </div>
@@ -118,6 +122,26 @@
 
     <section class="section">
         <div class="container">
+            <div class="tabs is-centered is-medium is-toggle mb-5" id="classementVueTabs">
+                <ul>
+                    <li class="{{ 'is-active' if vue != 'saison' else '' }}">
+                        <a href="/classement">
+                            <span class="icon is-small"><i class="fas fa-trophy"></i></span>
+                            <span>Général</span>
+                        </a>
+                    </li>
+                    <li class="{{ 'is-active' if vue == 'saison' else '' }}">
+                        <a href="/classement?vue=saison">
+                            <span class="icon is-small"><i class="fas fa-calendar-alt"></i></span>
+                            <span>Saison</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            {% if vue == 'saison' %}
+            {% include 'classement_saison.html' %}
+            {% else %}
             <div class="columns">
                 <div class="column is-10 is-offset-1">
                     <div class="card glass-card fade-in">
@@ -289,6 +313,7 @@
 
                 </div>
             </div>
+            {% endif %}
         </div>
     </section>
 
@@ -312,7 +337,7 @@
                 elem.classList.add('visible');
             });
 
-            {% if not tier_actif and not ligue_active and distribution_data and distribution_data.players|length > 1 %}
+            {% if vue != 'saison' and not tier_actif and not ligue_active and distribution_data and distribution_data.players|length > 1 %}
             const ctxDist = document.getElementById('distributionChart').getContext('2d');
             const distDataRaw = {{ distribution_data | tojson }};
             const curvePoints = distDataRaw.curve.map(pt => ({ x: pt.x, y: pt.y }));

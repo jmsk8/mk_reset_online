@@ -740,6 +740,24 @@
                 </div>
                 {% endif %}
 
+                {% if saison.ip_evolution and saison.ip_evolution.datasets and saison.ip_evolution.datasets|length > 0 %}
+                <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.55s">
+                    <header class="card-header">
+                        <p class="card-header-title is-centered has-text-white">
+                            <i class="fas fa-chart-line mr-2"></i> Évolution de l'IP au fil des tournois
+                        </p>
+                    </header>
+                    <div class="card-content">
+                        <div class="chart-container-wrapper">
+                            <div class="chart-legend" id="ipEvolutionLegend"></div>
+                            <div class="chart-area">
+                                <canvas id="ipEvolutionChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% if saison.distribution_data and saison.distribution_data.players|length > 1 %}
                 <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.6s">
                     <header class="card-header">
@@ -1056,6 +1074,104 @@
                 type: 'line', data: evoData,
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.05)' } }, y: { grid: { color: 'rgba(255, 255, 255, 0.05)' } } }, elements: { point: { radius: 0, hoverRadius: 6 }, line: { tension: 0.3 } } }
             });
+            {% endif %}
+
+            {% if saison.ip_evolution and saison.ip_evolution.datasets and saison.ip_evolution.datasets|length > 0 %}
+            (function initIpEvolutionChart() {
+                const evoRaw = {{ saison.ip_evolution | tojson }};
+                const ctx = document.getElementById('ipEvolutionChart').getContext('2d');
+                const legend = document.getElementById('ipEvolutionLegend');
+
+                const ipDatasets = evoRaw.datasets.map(ds => {
+                    const pts = ds.points || [];
+                    const radii = (ds.data || []).map((_, i) => (pts[i] ? 2 : 0));
+                    const hoverRadii = (ds.data || []).map((_, i) => (pts[i] ? 6 : 0));
+                    return {
+                        label: ds.nom,
+                        data: ds.data,
+                        pointDetails: pts,
+                        borderColor: sanitizeColor(ds.color),
+                        backgroundColor: sanitizeColor(ds.color),
+                        pointBackgroundColor: sanitizeColor(ds.color),
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 1,
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0,
+                        pointRadius: radii,
+                        pointHoverRadius: hoverRadii,
+                        spanGaps: true
+                    };
+                });
+
+                let ipChart;
+                function highlightIpLine(index) {
+                    ipDatasets.forEach((ds, i) => { ds.borderWidth = (i === index) ? 4 : 1; });
+                    ipChart.update('none');
+                }
+                function resetIpLines() {
+                    ipDatasets.forEach(ds => { ds.borderWidth = 2; });
+                    ipChart.update('none');
+                }
+
+                evoRaw.datasets.forEach((ds, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    const finalIp = (ds.final_ip != null) ? ds.final_ip.toFixed(1) : '—';
+                    item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(ds.color)}; border: 1px solid #fff;"></div>` +
+                                     `<span class="legend-name">${escapeHtml(ds.nom)}</span>` +
+                                     `<span class="legend-val">${escapeHtml(finalIp)}</span>`;
+                    item.onmouseenter = () => highlightIpLine(index);
+                    item.onmouseleave = () => resetIpLines();
+                    item.onclick = () => highlightIpLine(index);
+                    legend.appendChild(item);
+                });
+
+                ipChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: evoRaw.labels, datasets: ipDatasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'point', intersect: true },
+                        onClick: (e, elements) => {
+                            if (elements && elements.length > 0) {
+                                const el = elements[0];
+                                ipChart.tooltip.setActiveElements([{ datasetIndex: el.datasetIndex, index: el.index }], { x: 0, y: 0 });
+                                ipChart.update();
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                displayColors: false,
+                                callbacks: {
+                                    title: (items) => {
+                                        if (!items.length) return '';
+                                        const it = items[0];
+                                        const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                        return d ? d.date : '';
+                                    },
+                                    label: (it) => {
+                                        const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                        if (!d) return `${it.dataset.label}`;
+                                        const lines = [it.dataset.label];
+                                        if (d.position != null) lines.push(`Position : ${d.position}`);
+                                        lines.push(`Points : ${d.score}`);
+                                        lines.push(`IP du tournoi : ${d.ip_pur}`);
+                                        lines.push(`IP total : ${d.ip_total}`);
+                                        return lines;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'IP', color: '#94a3b8' } }
+                        }
+                    }
+                });
+            })();
             {% endif %}
 
             {% if saison.distribution_data and saison.distribution_data.players|length > 1 %}

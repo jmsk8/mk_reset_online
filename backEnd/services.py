@@ -302,6 +302,120 @@ def _calculate_adjusted_total_points(match_history: list[dict]) -> float:
     return total
 
 
+def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            ligue_filter = ""
+            params: list[Any] = [d_debut, d_fin]
+            if recap_mode == 'league' and specific_ligue_id:
+                ligue_filter = " AND t.ligue_id = %s"
+                params.append(specific_ligue_id)
+            elif recap_mode == 'league':
+                ligue_filter = " AND t.ligue_id IS NOT NULL"
+            elif recap_mode == 'classic':
+                ligue_filter = " AND t.ligue_id IS NULL"
+
+            cur.execute(f"""
+                SELECT t.id, t.date
+                FROM tournois t
+                WHERE t.date >= %s AND t.date <= %s{ligue_filter}
+                ORDER BY t.date ASC, t.id ASC
+            """, params)
+            tournois = cur.fetchall()
+
+            cur.execute(f"""
+                SELECT p.tournoi_id, p.joueur_id, j.nom, j.color, p.score, p.position
+                FROM participations p
+                JOIN tournois t ON p.tournoi_id = t.id
+                JOIN joueurs j ON p.joueur_id = j.id
+                WHERE t.date >= %s AND t.date <= %s{ligue_filter}
+            """, params)
+            parts = cur.fetchall()
+
+    labels = [d.strftime("%d/%m") for _, d in tournois]
+    tournoi_ids = [tid for tid, _ in tournois]
+    tournoi_dates = {tid: d for tid, d in tournois}
+    tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
+    total_tournois = len(tournoi_ids)
+
+    seuils_at = [(idx + 1) * MIN_PARTICIPATION_RATIO for idx in range(total_tournois)]
+
+    meta: dict[int, dict] = {}
+    for tid, _jid, _nom, _col, score, _pos in parts:
+        m = meta.setdefault(tid, {"sum": 0.0, "count": 0})
+        m["sum"] += float(score)
+        m["count"] += 1
+    for m in meta.values():
+        m["avg"] = m["sum"] / m["count"] if m["count"] > 0 else 1.0
+
+    players: dict[int, dict] = {}
+    for tid, jid, nom, color, score, position in parts:
+        p = players.setdefault(jid, {"nom": nom, "color": color or "#FFFFFF", "by_idx": {}})
+        idx = tid_index.get(tid)
+        if idx is not None:
+            p["by_idx"][idx] = (float(score), position)
+
+    datasets = []
+    for jid, p in players.items():
+        data: list[float | None] = []
+        points: list[dict | None] = []
+        num_total = 0.0
+        denom_total = 0.0
+        matchs = 0
+        seen_first = False
+        for idx in range(total_tournois):
+            entry = p["by_idx"].get(idx)
+            point_detail = None
+            if entry is not None:
+                score, position = entry
+                seen_first = True
+                matchs += 1
+                t = meta[tournoi_ids[idx]]
+                poids = t["count"] + GM_BASE_WEIGHT
+                ratio = min(GM_MAX_RATIO_CAP, score / t["avg"]) if t["avg"] > 0 else 0.0
+                num_total += ratio * poids
+                denom_total += poids
+                ip_pur = round(ratio * 100, 2)
+                point_detail = {
+                    "date": tournoi_dates[tournoi_ids[idx]].strftime("%d/%m/%Y"),
+                    "position": int(position) if position is not None else None,
+                    "score": int(score),
+                    "ip_pur": ip_pur,
+                }
+
+            if not seen_first:
+                data.append(None)
+                points.append(None)
+                continue
+
+            seuil_at_n = seuils_at[idx]
+            ip_base = (num_total / denom_total) * 100 if denom_total > 0 else 0.0
+            bonus = max(0, matchs - seuil_at_n) * GM_EXTRA_MATCH_BONUS
+            ip_total = round(ip_base + bonus, 2)
+            data.append(ip_total)
+
+            if point_detail is not None:
+                point_detail["ip_total"] = ip_total
+            points.append(point_detail)
+
+        final_ip = next((v for v in reversed(data) if v is not None), 0.0)
+        seuil_final = total_tournois * MIN_PARTICIPATION_RATIO
+        datasets.append({
+            "joueur_id": jid,
+            "nom": p["nom"],
+            "color": p["color"],
+            "data": data,
+            "points": points,
+            "final_ip": final_ip,
+            "matchs": matchs,
+            "eligible": matchs >= seuil_final,
+        })
+
+    datasets.sort(key=lambda d: d["final_ip"], reverse=True)
+
+    return {"labels": labels, "tournoi_ids": tournoi_ids, "datasets": datasets}
+
+
 def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
     with get_db_connection() as conn:
         with conn.cursor() as cur:

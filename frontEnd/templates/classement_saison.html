@@ -1,0 +1,382 @@
+<style>
+    .saison-recap-table th, .saison-recap-table td {
+        padding: 0.5rem 0.75rem !important;
+        font-size: 0.95rem;
+        vertical-align: middle !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+        white-space: nowrap;
+    }
+    .saison-recap-table { background-color: transparent !important; margin-bottom: 0 !important; width: 100%; }
+    .saison-recap-table tbody tr:nth-child(even) { background-color: rgba(255, 255, 255, 0.03) !important; }
+    .saison-recap-table th.sortable { cursor: pointer; user-select: none; transition: color 0.2s, background-color 0.2s; }
+    .saison-recap-table th.sortable:hover { color: #3b82f6; background-color: rgba(255, 255, 255, 0.05); }
+    .saison-recap-table th i { margin-left: 5px; font-size: 0.8em; color: rgba(255,255,255,0.3); }
+    .saison-recap-table th.active-sort, .saison-recap-table th.active-sort i { color: #3b82f6 !important; opacity: 1; }
+
+    .saison-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
+    .saison-stat-card {
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 10px;
+        padding: 16px;
+        text-align: center;
+    }
+    .saison-stat-card .stat-value { font-size: 1.6rem; font-weight: 700; color: #fff; }
+    .saison-stat-card .stat-label { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    .league-nav-container {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 12px;
+        padding: 8px 15px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.3) transparent;
+    }
+    .league-nav-container::-webkit-scrollbar { height: 6px; }
+    .league-nav-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 3px; }
+    .league-badges { display: flex; flex-wrap: nowrap; gap: 10px; padding: 5px 0; }
+    .league-badge {
+        display: inline-flex; align-items: center;
+        padding: 10px 18px; border-radius: 25px;
+        font-weight: 600; font-size: 0.95rem;
+        text-decoration: none; white-space: nowrap;
+        transition: all 0.2s ease; border: 2px solid transparent;
+    }
+    .league-badge:hover { transform: scale(1.05); filter: brightness(1.15); text-decoration: none; }
+    .league-badge.is-active { transform: scale(1.08); border-color: rgba(255,255,255,0.5); }
+    .league-badge i { margin-right: 6px; }
+
+    @media screen and (max-width: 768px) {
+        .saison-recap-table th, .saison-recap-table td { font-size: 0.8rem; padding: 0.4rem !important; }
+        .league-nav-container { margin: 0 -0.75rem; border-radius: 0; padding: 8px 12px; }
+        .league-badge { padding: 12px 16px; font-size: 0.9rem; }
+    }
+</style>
+
+{% if not saison or not saison.saison %}
+    <div class="columns">
+        <div class="column is-8 is-offset-2">
+            <div class="notification is-info is-light has-text-centered">
+                <i class="fas fa-info-circle mr-2"></i>
+                Aucune saison en cours pour le moment. Les statistiques de saison apparaîtront
+                dès qu'un tournoi sera enregistré après le dernier récapitulatif publié.
+            </div>
+        </div>
+    </div>
+{% else %}
+    {% set s = saison.saison %}
+    {% set classement = saison.classement_ip or [] %}
+    {% set evo = saison.ip_evolution or {} %}
+    {% set stats = saison.recap_stats or {} %}
+
+    <div class="columns">
+        <div class="column is-10 is-offset-1">
+
+            <div class="has-text-centered mb-5">
+                <h2 class="title is-3 has-text-white">{{ s.nom }}</h2>
+                <p class="subtitle is-6 has-text-grey-light">
+                    Du {{ s.date_debut }} au {{ s.date_fin }}
+                    &nbsp;·&nbsp; Compétition Indice de Performance (IP)
+                </p>
+            </div>
+
+            {% if saison.is_league and saison.ligues_disponibles %}
+            <div class="league-nav-container mb-5">
+                <div class="league-badges is-justify-content-center">
+                    {% for ligue in saison.ligues_disponibles %}
+                    <a href="/classement?vue=saison&ligue_id={{ ligue.id }}"
+                       class="league-badge {% if saison.ligue_courante and ligue.id == saison.ligue_courante.id %}is-active{% endif %}"
+                       style="background-color: {{ ligue.couleur }}; color: white;
+                              {% if saison.ligue_courante and ligue.id == saison.ligue_courante.id %}box-shadow: 0 0 15px {{ ligue.couleur }};{% endif %}">
+                        <i class="fas fa-shield-alt"></i>{{ ligue.nom }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="saison-stat-grid mb-6 fade-in">
+                <div class="saison-stat-card">
+                    <div class="stat-value">{{ stats.total_tournois if stats.total_tournois is not none else 0 }}</div>
+                    <div class="stat-label"><i class="fas fa-flag-checkered mr-1"></i>Tournois</div>
+                </div>
+                <div class="saison-stat-card">
+                    <div class="stat-value">{{ stats.nb_participants if stats.nb_participants is not none else 0 }}</div>
+                    <div class="stat-label"><i class="fas fa-users mr-1"></i>Participants</div>
+                </div>
+                <div class="saison-stat-card">
+                    <div class="stat-value" style="color:#fbbf24;">
+                        {% if stats.leader %}{{ stats.leader }}{% else %}—{% endif %}
+                    </div>
+                    <div class="stat-label"><i class="fas fa-crown mr-1"></i>Leader (IP)</div>
+                </div>
+            </div>
+
+            <div class="card glass-card fade-in mb-6">
+                <header class="card-header">
+                    <p class="card-header-title is-centered has-text-warning">
+                        <i class="fas fa-list-ol mr-2"></i> Classement de saison (IP)
+                    </p>
+                </header>
+                <div class="card-content p-0">
+                    <div class="table-container">
+                        <table class="table is-fullwidth saison-recap-table has-text-light" id="saisonTable">
+                            <thead>
+                                <tr>
+                                    <th class="has-text-centered" style="width: 50px;">#</th>
+                                    <th>Joueur</th>
+                                    <th class="has-text-right sortable" onclick="sortSaisonTable('moy', this)" title="Moyenne de points par tournoi">
+                                        Moy. Pts <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th class="has-text-right sortable" onclick="sortSaisonTable('total', this)" title="Total des points accumulés">
+                                        Total Pts <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th class="has-text-centered sortable" onclick="sortSaisonTable('part', this)" title="Nombre de tournois joués">
+                                        Part. <span class="has-text-grey-light is-size-7">/{{ stats.total_tournois if stats.total_tournois is not none else 0 }}</span> <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th class="has-text-centered sortable" onclick="sortSaisonTable('vic', this)" title="Nombre de victoires (1ère place)">
+                                        Vict. <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th class="has-text-right sortable active-sort" onclick="sortSaisonTable('ip', this)" title="Indice de Performance">
+                                        IP <i class="fas fa-sort-down"></i>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for j in classement %}
+                                <tr>
+                                    <td class="has-text-centered has-text-weight-bold rank-cell">{{ loop.index }}</td>
+                                    <td>
+                                        <a href="/stats/joueur/{{ j.nom }}" class="has-text-light"><strong>{{ j.nom }}</strong></a>
+                                    </td>
+                                    <td class="has-text-right" data-val="{{ j.moyenne_points }}">
+                                        {{ '%0.2f'|format(j.moyenne_points|float) }}
+                                    </td>
+                                    <td class="has-text-right has-text-weight-bold" data-val="{{ j.total_points }}">
+                                        {{ j.total_points }}
+                                    </td>
+                                    <td class="has-text-centered" data-val="{{ j.matchs }}">
+                                        {{ j.matchs }}
+                                    </td>
+                                    <td class="has-text-centered" data-val="{{ j.victoires }}">
+                                        {{ j.victoires }}
+                                    </td>
+                                    <td class="has-text-right"
+                                        data-val="{{ j.score_gm if j.score_gm is not none else -1 }}"
+                                        data-eligible="{{ 'true' if j.is_eligible_gm else 'false' }}">
+                                        {% if j.score_gm is not none %}
+                                            {% if j.is_eligible_gm == false %}
+                                                <span class="has-text-danger" style="opacity: 0.9;" title="Participation insuffisante">
+                                                    {{ '%0.2f'|format(j.score_gm|float) }}
+                                                </span>
+                                            {% else %}
+                                                {% if j.score_gm >= 115 %}
+                                                    <span class="has-text-warning has-text-weight-bold">★ {{ '%0.2f'|format(j.score_gm|float) }}</span>
+                                                {% elif j.score_gm >= 105 %}
+                                                    <span class="has-text-success has-text-weight-bold">{{ '%0.2f'|format(j.score_gm|float) }}</span>
+                                                {% elif j.score_gm >= 95 %}
+                                                    <span class="has-text-white">{{ '%0.2f'|format(j.score_gm|float) }}</span>
+                                                {% else %}
+                                                    <span class="has-text-white" style="opacity: 0.6;">{{ '%0.2f'|format(j.score_gm|float) }}</span>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="has-text-grey-light">-</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="px-3 pb-2">
+                        <p class="is-size-7 has-text-grey-light mt-2 has-text-right">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Les indices en <span class="has-text-danger">rouge</span> indiquent que le joueur n'a pas encore atteint le nombre de participations requis pour un IP fiable.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            {% if evo.datasets and evo.datasets|length > 0 %}
+            <div class="card glass-card fade-in mb-6">
+                <header class="card-header">
+                    <p class="card-header-title is-centered has-text-white">
+                        <i class="fas fa-chart-line mr-2"></i> Évolution de l'IP au fil des tournois
+                    </p>
+                </header>
+                <div class="card-content">
+                    <div class="chart-container-wrapper">
+                        <div class="chart-legend" id="ipEvolutionLegend"></div>
+                        <div class="chart-area">
+                            <canvas id="ipEvolutionChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+    <script>
+        const saisonSortDirections = { 'moy': true, 'total': true, 'part': true, 'vic': true, 'ip': true };
+
+        function sortSaisonTable(columnKey, headerElem) {
+            const table = document.getElementById("saisonTable");
+            const tbody = table.querySelector("tbody");
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+
+            const isDesc = saisonSortDirections[columnKey];
+            saisonSortDirections[columnKey] = !isDesc;
+
+            table.querySelectorAll("th.sortable").forEach(th => {
+                th.classList.remove("active-sort");
+                const icon = th.querySelector("i");
+                if (icon) icon.className = "fas fa-sort";
+            });
+            headerElem.classList.add("active-sort");
+            const ic = headerElem.querySelector("i");
+            if (ic) ic.className = isDesc ? "fas fa-sort-down" : "fas fa-sort-up";
+
+            const cellIndexes = { 'moy': 2, 'total': 3, 'part': 4, 'vic': 5, 'ip': 6 };
+            const cellIndex = cellIndexes[columnKey] || 0;
+
+            rows.sort((rowA, rowB) => {
+                const cellA = rowA.children[cellIndex];
+                const cellB = rowB.children[cellIndex];
+                if (columnKey === 'ip') {
+                    const eligA = (cellA.getAttribute('data-eligible') === 'true');
+                    const eligB = (cellB.getAttribute('data-eligible') === 'true');
+                    if (eligA !== eligB) return eligA ? -1 : 1;
+                }
+                const valA = parseFloat(cellA.getAttribute('data-val')) || 0;
+                const valB = parseFloat(cellB.getAttribute('data-val')) || 0;
+                return isDesc ? (valB - valA) : (valA - valB);
+            });
+
+            rows.forEach((row, index) => {
+                tbody.appendChild(row);
+                const rankCell = row.querySelector(".rank-cell");
+                if (rankCell) rankCell.textContent = index + 1;
+            });
+        }
+
+        {% if evo.datasets and evo.datasets|length > 0 %}
+        (function initIpEvolutionChart() {
+            function sanitizeColor(c) {
+                if (c == null) return '#FFFFFF';
+                const s = String(c);
+                if (/^#([0-9a-fA-F]{3,8})$/.test(s)) return s;
+                return '#FFFFFF';
+            }
+            function escapeHtml(str) {
+                const d = document.createElement('div');
+                d.textContent = (str == null ? '' : str);
+                return d.innerHTML;
+            }
+
+            const evoRaw = {{ evo | tojson }};
+            const ctx = document.getElementById('ipEvolutionChart').getContext('2d');
+            const legend = document.getElementById('ipEvolutionLegend');
+
+            const datasets = evoRaw.datasets.map(ds => {
+                const pts = ds.points || [];
+                const radii = (ds.data || []).map((_, i) => (pts[i] ? 2 : 0));
+                const hoverRadii = (ds.data || []).map((_, i) => (pts[i] ? 6 : 0));
+                return {
+                    label: ds.nom,
+                    data: ds.data,
+                    pointDetails: pts,
+                    borderColor: sanitizeColor(ds.color),
+                    backgroundColor: sanitizeColor(ds.color),
+                    pointBackgroundColor: sanitizeColor(ds.color),
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 1,
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0,
+                    pointRadius: radii,
+                    pointHoverRadius: hoverRadii,
+                    spanGaps: true
+                };
+            });
+
+            let chart;
+
+            function highlightLine(index) {
+                datasets.forEach((ds, i) => {
+                    ds.borderWidth = (i === index) ? 4 : 1;
+                });
+                chart.update('none');
+            }
+            function resetLines() {
+                datasets.forEach(ds => { ds.borderWidth = 2; });
+                chart.update('none');
+            }
+
+            evoRaw.datasets.forEach((ds, index) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                const finalIp = (ds.final_ip != null) ? ds.final_ip.toFixed(1) : '—';
+                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(ds.color)}; border: 1px solid #fff;"></div>` +
+                                 `<span class="legend-name">${escapeHtml(ds.nom)}</span>` +
+                                 `<span class="legend-val">${escapeHtml(finalIp)}</span>`;
+                item.onmouseenter = () => highlightLine(index);
+                item.onmouseleave = () => resetLines();
+                item.onclick = () => highlightLine(index);
+                legend.appendChild(item);
+            });
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: evoRaw.labels, datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'point', intersect: true },
+                    onClick: (e, elements) => {
+                        if (elements && elements.length > 0) {
+                            const el = elements[0];
+                            chart.tooltip.setActiveElements([{ datasetIndex: el.datasetIndex, index: el.index }], { x: 0, y: 0 });
+                            chart.update();
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            displayColors: false,
+                            callbacks: {
+                                title: (items) => {
+                                    if (!items.length) return '';
+                                    const it = items[0];
+                                    const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                    return d ? d.date : '';
+                                },
+                                label: (it) => {
+                                    const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                    if (!d) return `${it.dataset.label}`;
+                                    const lines = [it.dataset.label];
+                                    if (d.position != null) lines.push(`Position : ${d.position}`);
+                                    lines.push(`Points : ${d.score}`);
+                                    lines.push(`IP du tournoi : ${d.ip_pur}`);
+                                    lines.push(`IP total : ${d.ip_total}`);
+                                    return lines;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            title: { display: true, text: 'IP', color: '#94a3b8' }
+                        }
+                    }
+                }
+            });
+        })();
+        {% endif %}
+    </script>
+{% endif %}

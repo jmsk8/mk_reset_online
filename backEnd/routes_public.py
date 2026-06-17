@@ -13,6 +13,7 @@ from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
     tier_thresholds, normal_top_percent, build_distribution,
+    compute_ip_evolution,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,9 @@ def get_recap(slug):
             ligue_courante = None
             is_hybrid_league_view = False
 
+            evo_mode = 'classic'
+            evo_ligue_id = None
+
             if is_league_recap:
                 cur.execute("""
                     SELECT DISTINCT l.id, l.nom, l.couleur, l.niveau
@@ -108,11 +112,14 @@ def get_recap(slug):
                 if not ligue_courante and ligues_disponibles:
                     ligue_courante = ligues_disponibles[0]
 
+                evo_mode = 'league'
                 if ligue_courante:
+                    evo_ligue_id = ligue_courante["id"]
                     global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_courante["id"])
                 else:
                     global_stats = _aggregate_season_stats(d_debut, d_fin, 'league')
             elif saison_ligue_id:
+                evo_mode, evo_ligue_id = 'league', saison_ligue_id
                 global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', saison_ligue_id)
             elif (include_league_stats or include_league_moves) and ligue_id_param:
                 # Hybrid mode: classic recap viewing a specific league tab
@@ -130,6 +137,7 @@ def get_recap(slug):
                 ]
                 ligue_courante = next((l for l in ligues_disponibles if l["id"] == ligue_id_param), None)
                 if ligue_courante:
+                    evo_mode, evo_ligue_id = 'league', ligue_courante["id"]
                     global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_courante["id"])
                     is_hybrid_league_view = True
                 else:
@@ -332,6 +340,8 @@ def get_recap(slug):
             ]
             dist_data = build_distribution(recap_players, lambda p: p["final_trueskill"])
 
+            ip_evolution = compute_ip_evolution(d_debut, d_fin, evo_mode, evo_ligue_id)
+
             response_data = {
                 "nom_saison": nom,
                 "classement_points": global_stats["classement_points"],
@@ -344,6 +354,7 @@ def get_recap(slug):
                     "datasets": datasets
                 },
                 "distribution_data": dist_data,
+                "ip_evolution": ip_evolution,
                 "is_league_recap": is_league_recap if is_league_recap else False,
                 "include_league_stats": include_league_stats if include_league_stats else False,
                 "include_league_moves": include_league_moves if include_league_moves else False
@@ -635,6 +646,123 @@ def classement():
             "distribution_data": distribution_data
         })
     except Exception:
+        return jsonify({"error": "Erreur serveur"}), 500
+
+
+def _find_active_season(cur) -> dict | None:
+    cur.execute("SELECT date_fin FROM saisons WHERE is_active = true ORDER BY date_fin DESC LIMIT 1")
+    row = cur.fetchone()
+    last_fin = row[0] if row else None
+
+    if last_fin is not None:
+        cur.execute("SELECT MIN(date), MAX(date) FROM tournois WHERE date > %s", (last_fin,))
+    else:
+        cur.execute("SELECT MIN(date), MAX(date) FROM tournois")
+    bornes = cur.fetchone()
+    d_debut, d_fin = (bornes[0], bornes[1]) if bornes else (None, None)
+    if d_debut is None or d_fin is None:
+        return None
+
+    cur.execute("""
+        SELECT COUNT(*) FILTER (WHERE ligue_id IS NOT NULL)
+        FROM tournois WHERE date >= %s AND date <= %s
+    """, (d_debut, d_fin))
+    is_league = cur.fetchone()[0] > 0
+
+    return {
+        "nom": "Saison en cours",
+        "slug": None,
+        "date_debut": d_debut,
+        "date_fin": d_fin,
+        "victory_condition": "Indice de Performance",
+        "is_league": is_league,
+    }
+
+
+@public_bp.route('/classement/saison')
+def classement_saison():
+    try:
+        ligue_id_param = request.args.get('ligue_id', type=int)
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                saison = _find_active_season(cur)
+                if saison is None:
+                    return jsonify({"saison": None})
+
+                d_debut, d_fin = saison["date_debut"], saison["date_fin"]
+                is_league = saison["is_league"]
+
+                ligues_disponibles = []
+                ligue_courante = None
+                if is_league:
+                    cur.execute("""
+                        SELECT DISTINCT l.id, l.nom, l.couleur, l.niveau
+                        FROM Ligues l
+                        JOIN Tournois t ON t.ligue_id = l.id
+                        WHERE t.date >= %s AND t.date <= %s
+                        ORDER BY l.niveau ASC
+                    """, (d_debut, d_fin))
+                    ligues_disponibles = [
+                        {"id": r[0], "nom": r[1], "couleur": r[2], "niveau": r[3]}
+                        for r in cur.fetchall()
+                    ]
+                    if ligue_id_param:
+                        ligue_courante = next((l for l in ligues_disponibles if l["id"] == ligue_id_param), None)
+                    if not ligue_courante and ligues_disponibles:
+                        ligue_courante = ligues_disponibles[0]
+
+        if is_league and ligue_courante:
+            recap_mode, specific_ligue_id = 'league', ligue_courante["id"]
+        elif is_league:
+            recap_mode, specific_ligue_id = 'league', None
+        else:
+            recap_mode, specific_ligue_id = 'classic', None
+
+        cache_key = f"classement_saison:{d_debut}:{d_fin}:{recap_mode}:{specific_ligue_id}"
+        cached = get_cached(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        stats = _aggregate_season_stats(d_debut, d_fin, recap_mode, specific_ligue_id)
+        evo = compute_ip_evolution(d_debut, d_fin, recap_mode, specific_ligue_id)
+
+        recap_players = [
+            {"nom": p["nom"], "color": "#FFFFFF", "score_gm": p["score_gm"]}
+            for p in stats["classement_moyenne"]
+            if p["matchs"] > 0 and p["score_gm"] is not None
+        ]
+        dist = build_distribution(recap_players, lambda p: p["score_gm"])
+
+        eligibles = [p for p in stats["classement_moyenne"] if p.get("is_eligible_gm")]
+        leader = eligibles[0]["nom"] if eligibles else None
+
+        payload = {
+            "saison": {
+                "nom": saison["nom"],
+                "slug": saison["slug"],
+                "date_debut": d_debut.strftime("%d/%m/%Y"),
+                "date_fin": d_fin.strftime("%d/%m/%Y"),
+                "victory_condition": saison["victory_condition"],
+            },
+            "is_league": is_league,
+            "classement_ip": stats["classement_moyenne"],
+            "ip_evolution": evo,
+            "distribution_data": dist,
+            "recap_stats": {
+                "total_tournois": stats["total_tournois"],
+                "nb_participants": len([p for p in stats["classement_moyenne"] if p["matchs"] > 0]),
+                "leader": leader,
+            },
+        }
+        if is_league:
+            payload["ligues_disponibles"] = ligues_disponibles
+            payload["ligue_courante"] = ligue_courante
+
+        set_cached(cache_key, payload)
+        return jsonify(payload)
+    except Exception as e:
+        logger.error(f"Erreur classement_saison: {e}")
         return jsonify({"error": "Erreur serveur"}), 500
 
 

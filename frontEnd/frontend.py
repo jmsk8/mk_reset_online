@@ -215,6 +215,8 @@ def recap_default():
 def classement():
     tier = request.args.get('tier')
     ligue_id = request.args.get('ligue')
+    vue = request.args.get('vue')
+    saison_ligue_id = request.args.get('ligue_id')
 
     params = {}
     if tier:
@@ -250,7 +252,16 @@ def classement():
     if seuils_status == 200 and isinstance(seuils_data, dict):
         seuils = seuils_data
 
-    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, seuils=seuils, distribution_data=distribution_data)
+    saison = None
+    if vue == 'saison':
+        s_params = {}
+        if saison_ligue_id:
+            s_params['ligue_id'] = saison_ligue_id
+        s_data, s_status = backend_request('GET', '/classement/saison', params=s_params)
+        if s_status == 200 and isinstance(s_data, dict):
+            saison = s_data  # {"saison": None} si aucune saison en cours
+
+    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, seuils=seuils, distribution_data=distribution_data, vue=vue, saison=saison)
 
 @app.route('/stats/joueur/<nom>')
 def stats_joueur_detail(nom):
