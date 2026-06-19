@@ -46,6 +46,22 @@
         .detail-stat-table tr.detail-total-row td { font-weight: bold; border-top: 1px solid rgba(255,255,255,0.12); color: #fff; }
         .detail-podium { white-space: nowrap; }
         .detail-empty { color: #9fb3c8; font-style: italic; text-align: center; padding: 1.2rem 0; }
+        .clickable-palmares { cursor: pointer; transition: box-shadow 0.15s ease, transform 0.15s ease; }
+        .clickable-palmares:hover { box-shadow: 0 0 0 1px rgba(54,162,235,0.5), 0 6px 18px rgba(0,0,0,0.4); transform: translateY(-2px); }
+        .clickable-palmares:hover .detail-cue { opacity: 1; color: #36a2eb; }
+        .pos-bucket { margin: 0.35rem 0 0.6rem; }
+        .pos-bucket-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+        .pos-bucket-head .pos-size { color: #c8d3de; font-weight: 600; }
+        .pos-bucket-head .pos-meta { color: #9fb3c8; font-size: 0.82rem; }
+        .pos-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+        .pos-badge { display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 0.85rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+        .pos-badge .pos-rank { color: #9fb3c8; }
+        .pos-badge .pos-n { font-weight: bold; color: #e6edf3; }
+        .pos-badge.is-gold   { background: rgba(255,215,0,0.16);  border-color: rgba(255,215,0,0.4); }
+        .pos-badge.is-silver { background: rgba(192,192,192,0.16); border-color: rgba(220,220,220,0.4); }
+        .pos-badge.is-bronze { background: rgba(205,127,50,0.18);  border-color: rgba(205,127,50,0.45); }
+        .pos-podium-summary { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.12); font-size: 0.85rem; color: #c8d3de; display: flex; flex-wrap: wrap; gap: 10px; }
+        .pos-podium-summary strong { color: #fff; }
         @media screen and (max-width: 768px) {
             .chart-container { height: 300px; }
             .modal-content-glass { width: 90% !important; }
@@ -118,7 +134,7 @@
                                     <tbody>
                                         <tr><td><i class="fas fa-trophy"></i> Tournois</td><td class="has-text-right">{{ stats.nombre_tournois }}</td></tr>
                                         <tr class="clickable-stat" onclick="showStatDetail('victoires')" title="Voir le détail par ligue et nombre de joueurs"><td><i class="fas fa-medal"></i> Victoires <i class="fas fa-magnifying-glass-chart detail-cue"></i></td><td class="has-text-right">{{ stats.victoires }}</td></tr>
-                                        <tr class="clickable-stat" onclick="showStatDetail('ratio_vd')" title="Voir le détail par ligue et nombre de joueurs"><td><i class="fas fa-percentage"></i> Ratio V/D <i class="fas fa-magnifying-glass-chart detail-cue"></i></td><td class="has-text-right">{{ (stats.victoires / stats.nombre_tournois * 100)|round(1) if stats.nombre_tournois > 0 else 0 }}%</td></tr>
+                                        <tr class="clickable-stat" onclick="showStatDetail('ratio_vd')" title="{{ stats.victoires }} victoire(s) / {{ stats.defaites }} défaite(s) — clique pour le détail par ligue et nombre de joueurs"><td><i class="fas fa-percentage"></i> Ratio V/D <i class="fas fa-magnifying-glass-chart detail-cue"></i></td><td class="has-text-right">{% if stats.nombre_tournois == 0 %}—{% elif stats.ratio_vd is none %}<span class="has-text-success">parfait</span>{% else %}{{ stats.ratio_vd }}{% endif %}</td></tr>
                                         <tr class="clickable-stat" onclick="showStatDetail('score_moyen')" title="Voir le détail par ligue et nombre de joueurs"><td><i class="fas fa-calculator"></i> Score moyen <i class="fas fa-magnifying-glass-chart detail-cue"></i></td><td class="has-text-right">{{ stats.score_moyen|round(3) }}</td></tr>
                                         <tr class="clickable-stat" onclick="showStatDetail('position_moyenne')" title="Voir le détail par ligue et nombre de joueurs"><td><i class="fas fa-list-ol"></i> Pos. Moyenne <i class="fas fa-magnifying-glass-chart detail-cue"></i></td><td class="has-text-right">{{ stats.position_moyenne }}</td></tr>
                                         <tr class="clickable-stat" onclick="showStatDetail('meilleur_score')" title="Voir le détail par ligue et nombre de joueurs"><td><i class="fas fa-arrow-up"></i> Meilleur score <i class="fas fa-magnifying-glass-chart detail-cue"></i></td><td class="has-text-right">{{ stats.meilleur_score }}</td></tr>
@@ -129,8 +145,8 @@
                         </div>
                     </div>
 
-                    <div class="box glass-card mt-4 fade-in">
-                        <h4 class="title is-5 has-text-warning has-text-centered mb-3"><i class="fas fa-award"></i> Palmarès</h4>
+                    <div class="box glass-card mt-4 fade-in {% if palmares|length > 0 %}clickable-palmares{% endif %}" {% if palmares|length > 0 %}onclick="showPalmaresDetail()" title="Voir le détail des positions par ligue et nombre de joueurs"{% endif %}>
+                        <h4 class="title is-5 has-text-warning has-text-centered mb-3"><i class="fas fa-award"></i> Palmarès{% if palmares|length > 0 %} <i class="fas fa-magnifying-glass-chart detail-cue is-size-6"></i>{% endif %}</h4>
                         {% if palmares|length == 0 %}
                             <p class="has-text-grey is-italic is-size-7 has-text-centered">Aucun podium.</p>
                         {% elif not has_league_data %}
@@ -164,6 +180,9 @@
                                     </div>
                                 </div>
                             {% endfor %}
+                        {% endif %}
+                        {% if palmares|length > 0 %}
+                        <p class="has-text-grey is-size-7 has-text-centered mt-2" style="opacity:0.75;"><i class="fas fa-hand-pointer"></i> Clique pour le détail des positions</p>
                         {% endif %}
                     </div>
 
@@ -350,6 +369,19 @@
         </div>
     </div>
 
+    <div class="modal" id="palmaresDetailModal">
+        <div class="modal-background" onclick="closePalmaresDetail()"></div>
+        <div class="modal-content modal-content-glass is-wide">
+            <div class="box has-background-transparent">
+                <button class="delete is-large is-pulled-right" onclick="closePalmaresDetail()"></button>
+                <h3 class="title is-4 has-text-warning mb-1 has-text-centered"><i class="fas fa-award mr-2"></i>Palmarès détaillé</h3>
+                <p class="has-text-grey is-size-7 has-text-centered mb-4">positions obtenues par ligue et nombre de joueurs</p>
+                <div class="detail-modal-body" id="palmaresDetailBody"></div>
+                <div class="has-text-centered mt-4"><button class="button is-primary is-outlined is-rounded" onclick="closePalmaresDetail()">Fermer</button></div>
+            </div>
+        </div>
+    </div>
+
     {% include 'footer.html' %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script>
@@ -384,9 +416,9 @@
             ratio_vd: {
                 title: "Ratio V/D", icon: "fa-percentage",
                 cols: [
-                    { label: "V/D", value: b => (b.ratio_vd === null ? "∞" : b.ratio_vd), cls: "has-text-weight-bold" },
+                    { label: "V/D", value: b => (b.ratio_vd === null ? "parfait" : b.ratio_vd), cls: "has-text-weight-bold" },
+                    { label: "V–D", value: b => b.victoires + "–" + b.defaites },
                     { label: "% V", value: b => b.ratio_victoires + "%" },
-                    { label: "V", value: b => b.victoires },
                     { label: "Tournois", value: b => b.nb_tournois }
                 ]
             },
@@ -466,8 +498,59 @@
         }
         function closeStatDetail() { document.getElementById('statDetailModal').classList.remove('is-active'); }
 
+        function rankLabel(rank) {
+            if (rank === 1) return '🥇';
+            if (rank === 2) return '🥈';
+            if (rank === 3) return '🥉';
+            return rank + 'e';
+        }
+        function posBadges(bucket) {
+            if (!bucket.pos_counts || bucket.pos_counts.length === 0) return '<span class="has-text-grey">—</span>';
+            return '<div class="pos-badges">' + bucket.pos_counts.map(function(pc) {
+                var rank = pc[0], count = pc[1];
+                var cls = rank === 1 ? ' is-gold' : rank === 2 ? ' is-silver' : rank === 3 ? ' is-bronze' : '';
+                return '<span class="pos-badge' + cls + '"><span class="pos-rank">' + rankLabel(rank) +
+                       '</span> <span class="pos-n">×' + count + '</span></span>';
+            }).join('') + '</div>';
+        }
+        function renderPalmaresBucket(label, bucket) {
+            var html = '<div class="pos-bucket">';
+            html += '<div class="pos-bucket-head"><span class="pos-size">' + escapeHtml(label) + '</span>' +
+                    '<span class="pos-meta">' + bucket.nb_tournois + ' tournoi' + (bucket.nb_tournois > 1 ? 's' : '') +
+                    ' · pos. moy. ' + bucket.position_moyenne + '</span></div>';
+            html += posBadges(bucket);
+            return html + '</div>';
+        }
+        function renderPalmaresLeagueBlock(league) {
+            var chipColor = league.ligue_couleur || "#3298dc";
+            var chipLabel = league.ligue_nom || "Mode classique";
+            var t = league.total;
+            var html = '<div class="detail-league-block">';
+            html += '<div class="detail-league-title"><span class="ligue-chip" style="background-color:' +
+                    escapeHtml(chipColor) + '; color:#1a1a1a;">' + escapeHtml(chipLabel) + '</span></div>';
+            league.tailles.forEach(function(b) { html += renderPalmaresBucket(b.nb_joueurs + ' joueurs', b); });
+            html += '<div class="pos-podium-summary">' +
+                    '<span>Podiums : <strong>' + t.podiums + '/' + t.nb_tournois + '</strong> (' + t.taux_podium + '%)</span>' +
+                    '<span>🥇 <strong>' + t.gold + '</strong></span>' +
+                    '<span>🥈 <strong>' + t.silver + '</strong></span>' +
+                    '<span>🥉 <strong>' + t.bronze + '</strong></span>' +
+                    '<span>Pos. moy. : <strong>' + t.position_moyenne + '</strong></span>' +
+                    '</div>';
+            return html + '</div>';
+        }
+        function showPalmaresDetail() {
+            var body = document.getElementById('palmaresDetailBody');
+            if (!STAT_DETAILS || STAT_DETAILS.length === 0) {
+                body.innerHTML = '<p class="detail-empty">Aucune participation enregistrée.</p>';
+            } else {
+                body.innerHTML = STAT_DETAILS.map(renderPalmaresLeagueBlock).join('');
+            }
+            document.getElementById('palmaresDetailModal').classList.add('is-active');
+        }
+        function closePalmaresDetail() { document.getElementById('palmaresDetailModal').classList.remove('is-active'); }
+
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') { closeStatDetail(); closeInfoModal(); }
+            if (e.key === 'Escape') { closeStatDetail(); closeInfoModal(); closePalmaresDetail(); }
         });
 
         document.addEventListener('DOMContentLoaded', function() {

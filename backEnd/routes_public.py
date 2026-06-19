@@ -1063,7 +1063,8 @@ def get_joueur_stats(nom):
 
                 def _new_bucket():
                     return {"nb_tournois": 0, "victoires": 0, "gold": 0, "silver": 0, "bronze": 0,
-                            "somme_score": 0.0, "somme_position": 0, "meilleur_score": None}
+                            "podiums": 0, "somme_score": 0.0, "somme_position": 0,
+                            "meilleur_score": None, "pos_counts": {}}
 
                 def _accumulate(bucket, position, score):
                     bucket["nb_tournois"] += 1
@@ -1071,12 +1072,16 @@ def get_joueur_stats(nom):
                     bucket["somme_position"] += position
                     if bucket["meilleur_score"] is None or score > bucket["meilleur_score"]:
                         bucket["meilleur_score"] = score
+                    if position > 0:
+                        bucket["pos_counts"][position] = bucket["pos_counts"].get(position, 0) + 1
                     if position == 1:
                         bucket["victoires"] += 1; bucket["gold"] += 1
                     elif position == 2:
                         bucket["silver"] += 1
                     elif position == 3:
                         bucket["bronze"] += 1
+                    if position in (1, 2, 3):
+                        bucket["podiums"] += 1
 
                 ligues_detail = {}
                 for d_nom, d_coul, d_niv, d_nb, d_pos, d_score in detail_rows:
@@ -1106,7 +1111,11 @@ def get_joueur_stats(nom):
                     return {
                         "nb_tournois": n,
                         "victoires": bucket["victoires"],
+                        "defaites": defaites,
                         "gold": bucket["gold"], "silver": bucket["silver"], "bronze": bucket["bronze"],
+                        "podiums": bucket["podiums"],
+                        "taux_podium": round((bucket["podiums"] / n) * 100, 1) if n > 0 else 0,
+                        "pos_counts": [[p, bucket["pos_counts"][p]] for p in sorted(bucket["pos_counts"])],
                         "ratio_vd": round((bucket["victoires"] / defaites), 2) if defaites > 0 else None,
                         "ratio_victoires": round((bucket["victoires"] / n) * 100, 1) if n > 0 else 0,
                         "score_moyen": round(bucket["somme_score"] / n, 1) if n > 0 else 0,
@@ -1139,6 +1148,8 @@ def get_joueur_stats(nom):
                 "consecutive_missed": missed_val,
                 "nombre_tournois": nb_tournois,
                 "victoires": victoires,
+                "defaites": nb_tournois - victoires,
+                "ratio_vd": round(victoires / (nb_tournois - victoires), 2) if (nb_tournois - victoires) > 0 else None,
                 "ratio_victoires": round(ratio_victoires, 1),
                 "score_moyen": round(score_moyen, 3),
                 "meilleur_score": meilleur_score,
