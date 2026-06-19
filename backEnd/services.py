@@ -12,7 +12,8 @@ from constants import (
     DEFAULT_SIGMA_THRESHOLD,
     RANKED_SIGMA_LIMIT, GHOST_SIGMA_CAP, GHOST_MISSED_THRESHOLD,
     CHILLGUY_DELTA_LIMIT, BORDERLINE_INSTABILITY_THRESHOLD, BORDERLINE_IP_WEIGHT,
-    BORDERLINE_JUMP_EXPONENT, BORDERLINE_DISP_WEIGHT,
+    BORDERLINE_JUMP_EXPONENT, BORDERLINE_DISP_WEIGHT, BORDERLINE_MIN_TOURNAMENT_SIZE,
+    BORDERLINE_LEVEL_BONUS,
     MIN_PARTICIPATION_RATIO, MIN_TOURNAMENT_RATIO,
     GM_MAX_RATIO_CAP, GM_BASE_WEIGHT, GM_EXTRA_MATCH_BONUS, REFERENCE_PLAYER_COUNT,
 )
@@ -308,7 +309,11 @@ def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
     g = BORDERLINE_JUMP_EXPONENT
     scores: dict[Any, float] = {}
     for pid, d in stats.items():
-        xs: list[float] = []
+        # On collecte (date, valeur) pour les seuls matchs valides, puis on trie par date :
+        # un match invalide (donnees manquantes) ne doit pas creer de saut artificiel, et
+        # le calcul des sauts ne doit pas dependre de l'ordre d'insertion de gm_history.
+        # On garde aussi s_pos a part pour evaluer le niveau moyen de position (bonus de niveau).
+        points: list[tuple[Any, float, float]] = []
         for m in d["gm_history"]:
             position = m.get('position')
             nb_joueurs = m.get('count')
@@ -318,20 +323,32 @@ def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
                 continue
             r = float(position)
             n = float(nb_joueurs)
-            if n <= 1 or float(avg_score) <= 0:
+            # n < BORDERLINE_MIN_TOURNAMENT_SIZE : s_pos quasi binaire -> sauts artificiels.
+            if n < BORDERLINE_MIN_TOURNAMENT_SIZE or float(avg_score) <= 0:
                 continue
             s_pos = (n - r) / (n - 1)
             ratio = min(GM_MAX_RATIO_CAP, float(score) / float(avg_score))
             s_ip = max(0.0, min(1.0, (ratio - 0.5) / (GM_MAX_RATIO_CAP - 0.5)))
-            xs.append((1 - BORDERLINE_IP_WEIGHT) * s_pos + BORDERLINE_IP_WEIGHT * s_ip)
+            value = (1 - BORDERLINE_IP_WEIGHT) * s_pos + BORDERLINE_IP_WEIGHT * s_ip
+            points.append((m.get('date'), value, s_pos))
 
-        if len(xs) < 2:
+        if len(points) < 2:
             continue
+
+        points.sort(key=lambda p: (p[0] is None, p[0]))
+        xs = [v for _, v, _ in points]
 
         sauts = [abs(xs[i] - xs[i - 1]) for i in range(1, len(xs))]
         jumps = (sum(saut ** g for saut in sauts) / len(sauts)) ** (1.0 / g)
         disp = statistics.stdev(xs)
-        scores[pid] = (1 - BORDERLINE_DISP_WEIGHT) * jumps + BORDERLINE_DISP_WEIGHT * disp
+        base = (1 - BORDERLINE_DISP_WEIGHT) * jumps + BORDERLINE_DISP_WEIGHT * disp
+
+        # Bonus de niveau : a stabilite egale, rester stable dans le haut du classement
+        # est legerement recompense. Amorti par (1 - base/seuil) pour ne PAS toucher les
+        # joueurs instables, et borne a >= 0.
+        mean_pos = statistics.mean(s for _, _, s in points)
+        damp = max(0.0, 1.0 - base / BORDERLINE_INSTABILITY_THRESHOLD)
+        scores[pid] = max(0.0, base - BORDERLINE_LEVEL_BONUS * mean_pos * damp)
 
     return scores
 
