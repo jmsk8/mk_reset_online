@@ -11,9 +11,10 @@ import psycopg2.extras
 from constants import (
     DEFAULT_SIGMA_THRESHOLD,
     RANKED_SIGMA_LIMIT, GHOST_SIGMA_CAP, GHOST_MISSED_THRESHOLD,
-    CHILLGUY_DELTA_LIMIT, BORDERLINE_INSTABILITY_THRESHOLD, BORDERLINE_IP_WEIGHT,
-    BORDERLINE_JUMP_EXPONENT, BORDERLINE_DISP_WEIGHT, BORDERLINE_MIN_TOURNAMENT_SIZE,
-    BORDERLINE_LEVEL_BONUS,
+    CHILLGUY_DELTA_LIMIT, BORDERLINE_INSTABILITY_THRESHOLD, BORDERLINE_AWARD_THRESHOLD,
+    BORDERLINE_IP_WEIGHT,
+    BORDERLINE_JUMP_EXPONENT, BORDERLINE_MIN_TOURNAMENT_SIZE,
+    BORDERLINE_MIN_VALID_MATCHES, BORDERLINE_JUMP_WEIGHT, BORDERLINE_LEVEL_BONUS,
     MIN_PARTICIPATION_RATIO, MIN_TOURNAMENT_RATIO,
     GM_MAX_RATIO_CAP, GM_BASE_WEIGHT, GM_EXTRA_MATCH_BONUS, REFERENCE_PLAYER_COUNT,
 )
@@ -309,10 +310,6 @@ def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
     g = BORDERLINE_JUMP_EXPONENT
     scores: dict[Any, float] = {}
     for pid, d in stats.items():
-        # On collecte (date, valeur) pour les seuls matchs valides, puis on trie par date :
-        # un match invalide (donnees manquantes) ne doit pas creer de saut artificiel, et
-        # le calcul des sauts ne doit pas dependre de l'ordre d'insertion de gm_history.
-        # On garde aussi s_pos a part pour evaluer le niveau moyen de position (bonus de niveau).
         points: list[tuple[Any, float, float]] = []
         for m in d["gm_history"]:
             position = m.get('position')
@@ -323,7 +320,6 @@ def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
                 continue
             r = float(position)
             n = float(nb_joueurs)
-            # n < BORDERLINE_MIN_TOURNAMENT_SIZE : s_pos quasi binaire -> sauts artificiels.
             if n < BORDERLINE_MIN_TOURNAMENT_SIZE or float(avg_score) <= 0:
                 continue
             s_pos = (n - r) / (n - 1)
@@ -332,16 +328,24 @@ def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
             value = (1 - BORDERLINE_IP_WEIGHT) * s_pos + BORDERLINE_IP_WEIGHT * s_ip
             points.append((m.get('date'), value, s_pos))
 
-        if len(points) < 2:
+        if len(points) < BORDERLINE_MIN_VALID_MATCHES:
             continue
 
         points.sort(key=lambda p: (p[0] is None, p[0]))
         xs = [v for _, v, _ in points]
 
+        # Deux mesures combinees :
+        # - sauts : amplitude des transitions consecutives (capte les yo-yo, mais un
+        #   accroc isole compte double : la descente ET la remontee vers le niveau habituel).
+        # - mad : ecart median a la mediane, robuste aux accrocs isoles (un seul mauvais
+        #   tournoi est absorbe par la mediane). Mise a l'echelle ~ ecart-type via 1.4826.
+        # On melange les deux (BORDERLINE_JUMP_WEIGHT) pour recompenser le vrai yo-yo
+        # permanent sans surponderer un accident ponctuel.
         sauts = [abs(xs[i] - xs[i - 1]) for i in range(1, len(xs))]
-        jumps = (sum(saut ** g for saut in sauts) / len(sauts)) ** (1.0 / g)
-        disp = statistics.stdev(xs)
-        base = (1 - BORDERLINE_DISP_WEIGHT) * jumps + BORDERLINE_DISP_WEIGHT * disp
+        jump_base = (sum(saut ** g for saut in sauts) / len(sauts)) ** (1.0 / g)
+        median_xs = statistics.median(xs)
+        mad_base = 1.4826 * statistics.median([abs(x - median_xs) for x in xs])
+        base = BORDERLINE_JUMP_WEIGHT * jump_base + (1 - BORDERLINE_JUMP_WEIGHT) * mad_base
 
         # Bonus de niveau : a stabilite egale, rester stable dans le haut du classement
         # est legerement recompense. Amorti par (1 - base/seuil) pour ne PAS toucher les
@@ -693,7 +697,7 @@ def _determine_winners(candidates: dict, vic_cond: str, active_awards: list[str]
                 award_winners = [sorted(valid, key=lambda x: x['val'], reverse=False)[0]]
 
         elif code == 'borderline':
-            valid = [c for c in raw_list if float(c['sigma']) < RANKED_SIGMA_LIMIT and c.get('matchs_ranked', c['matchs']) >= (total_tournois * MIN_TOURNAMENT_RATIO) and c['val'] > BORDERLINE_INSTABILITY_THRESHOLD]
+            valid = [c for c in raw_list if float(c['sigma']) < RANKED_SIGMA_LIMIT and c.get('matchs_ranked', c['matchs']) >= (total_tournois * MIN_PARTICIPATION_RATIO) and c['val'] > BORDERLINE_AWARD_THRESHOLD]
             if valid:
                 award_winners = [max(valid, key=lambda x: x['val'])]
 

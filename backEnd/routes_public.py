@@ -1042,6 +1042,93 @@ def get_joueur_stats(nom):
 
                 palmares_list = sorted(palmares.values(), key=lambda x: x["ligue_niveau"])
 
+                cur.execute("""
+                    SELECT COALESCE(t.ligue_nom, l.nom) AS ligue_nom,
+                           COALESCE(t.ligue_couleur, l.couleur) AS ligue_couleur,
+                           COALESCE(l2.niveau, 999) AS ligue_niveau,
+                           cnt.nb_joueurs,
+                           p.position,
+                           p.score
+                    FROM Participations p
+                    JOIN Tournois t ON p.tournoi_id = t.id
+                    LEFT JOIN Ligues l ON t.ligue_id = l.id
+                    LEFT JOIN Ligues l2 ON COALESCE(t.ligue_id, l.id) = l2.id
+                    JOIN (
+                        SELECT tournoi_id, COUNT(*) AS nb_joueurs
+                        FROM Participations GROUP BY tournoi_id
+                    ) cnt ON cnt.tournoi_id = p.tournoi_id
+                    WHERE p.joueur_id = %s
+                """, (jid,))
+                detail_rows = cur.fetchall()
+
+                def _new_bucket():
+                    return {"nb_tournois": 0, "victoires": 0, "gold": 0, "silver": 0, "bronze": 0,
+                            "somme_score": 0.0, "somme_position": 0, "meilleur_score": None}
+
+                def _accumulate(bucket, position, score):
+                    bucket["nb_tournois"] += 1
+                    bucket["somme_score"] += score
+                    bucket["somme_position"] += position
+                    if bucket["meilleur_score"] is None or score > bucket["meilleur_score"]:
+                        bucket["meilleur_score"] = score
+                    if position == 1:
+                        bucket["victoires"] += 1; bucket["gold"] += 1
+                    elif position == 2:
+                        bucket["silver"] += 1
+                    elif position == 3:
+                        bucket["bronze"] += 1
+
+                ligues_detail = {}
+                for d_nom, d_coul, d_niv, d_nb, d_pos, d_score in detail_rows:
+                    is_real_league = bool(d_nom)
+                    key = d_nom if is_real_league else "__classique__"
+                    pos_v = int(d_pos) if d_pos is not None else 0
+                    score_v = float(d_score) if d_score is not None else 0.0
+                    nb_v = int(d_nb)
+
+                    if key not in ligues_detail:
+                        ligues_detail[key] = {
+                            "ligue_nom": d_nom if is_real_league else None,
+                            "ligue_couleur": d_coul if is_real_league else None,
+                            "ligue_niveau": d_niv if (is_real_league and d_niv) else 999,
+                            "total": _new_bucket(),
+                            "_tailles": {}
+                        }
+                    entry = ligues_detail[key]
+                    _accumulate(entry["total"], pos_v, score_v)
+                    if nb_v not in entry["_tailles"]:
+                        entry["_tailles"][nb_v] = _new_bucket()
+                    _accumulate(entry["_tailles"][nb_v], pos_v, score_v)
+
+                def _finalize(bucket):
+                    n = bucket["nb_tournois"]
+                    defaites = n - bucket["victoires"]
+                    return {
+                        "nb_tournois": n,
+                        "victoires": bucket["victoires"],
+                        "gold": bucket["gold"], "silver": bucket["silver"], "bronze": bucket["bronze"],
+                        "ratio_vd": round((bucket["victoires"] / defaites), 2) if defaites > 0 else None,
+                        "ratio_victoires": round((bucket["victoires"] / n) * 100, 1) if n > 0 else 0,
+                        "score_moyen": round(bucket["somme_score"] / n, 1) if n > 0 else 0,
+                        "position_moyenne": round(bucket["somme_position"] / n, 2) if n > 0 else 0,
+                        "meilleur_score": bucket["meilleur_score"] if bucket["meilleur_score"] is not None else 0,
+                    }
+
+                details_list = []
+                for entry in ligues_detail.values():
+                    tailles = [
+                        dict(_finalize(b), nb_joueurs=nb)
+                        for nb, b in sorted(entry["_tailles"].items())
+                    ]
+                    details_list.append({
+                        "ligue_nom": entry["ligue_nom"],
+                        "ligue_couleur": entry["ligue_couleur"],
+                        "ligue_niveau": entry["ligue_niveau"],
+                        "total": _finalize(entry["total"]),
+                        "tailles": tailles
+                    })
+                details_list.sort(key=lambda x: x["ligue_niveau"])
+
         return jsonify({
             "stats": {
                 "mu": round(float(mu), 3) if mu else DEFAULT_MU,
@@ -1065,7 +1152,8 @@ def get_joueur_stats(nom):
             "historique": historique_data,
             "awards": awards_list,
             "palmares": palmares_list,
-            "has_league_data": has_league_data
+            "has_league_data": has_league_data,
+            "details": details_list
         })
     except Exception as e:
         logger.error(f"Erreur serveur: {e}")

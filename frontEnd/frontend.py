@@ -274,7 +274,8 @@ def stats_joueur_detail(nom):
             historique=data.get('historique', []),
             awards=data.get('awards', []),
             palmares=data.get('palmares', []),
-            has_league_data=data.get('has_league_data', False)
+            has_league_data=data.get('has_league_data', False),
+            details=data.get('details', [])
         )
     elif status == 404:
         flash(f"Joueur '{nom}' non trouvé.", "warning")

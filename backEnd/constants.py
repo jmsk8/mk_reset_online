@@ -16,12 +16,14 @@ GHOST_SIGMA_CAP = 3.5
 GHOST_MISSED_THRESHOLD = 4
 CHILLGUY_DELTA_LIMIT = 0.3
 BORDERLINE_INSTABILITY_THRESHOLD = 0.40
+BORDERLINE_AWARD_THRESHOLD = 0.30
 BORDERLINE_IP_WEIGHT = 0.2
-BORDERLINE_JUMP_EXPONENT = 1.0
-BORDERLINE_DISP_WEIGHT = 0.13
+BORDERLINE_JUMP_EXPONENT = 1.5
 # En dessous de cette taille, s_pos = (n-r)/(n-1) devient quasi binaire
 # (ex. n=2 -> s_pos in {0, 1}) et genere des sauts artificiels : on ignore ces tournois.
 BORDERLINE_MIN_TOURNAMENT_SIZE = 3
+BORDERLINE_MIN_VALID_MATCHES = 4
+BORDERLINE_JUMP_WEIGHT = 0.5
 # Bonus de niveau : a stabilite egale, rester stable dans le haut du classement
 # "demande de l'effort" et est legerement recompense (score d'instabilite plus bas).
 # Additif, dose pour rester leger, amorti pour ne PAS toucher les joueurs instables.
