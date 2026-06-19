@@ -11,7 +11,8 @@ import psycopg2.extras
 from constants import (
     DEFAULT_SIGMA_THRESHOLD,
     RANKED_SIGMA_LIMIT, GHOST_SIGMA_CAP, GHOST_MISSED_THRESHOLD,
-    CHILLGUY_DELTA_LIMIT, BORDERLINE_INSTABILITY_THRESHOLD,
+    CHILLGUY_DELTA_LIMIT, BORDERLINE_INSTABILITY_THRESHOLD, BORDERLINE_IP_WEIGHT,
+    BORDERLINE_JUMP_EXPONENT, BORDERLINE_DISP_WEIGHT,
     MIN_PARTICIPATION_RATIO, MIN_TOURNAMENT_RATIO,
     GM_MAX_RATIO_CAP, GM_BASE_WEIGHT, GM_EXTRA_MATCH_BONUS, REFERENCE_PLAYER_COUNT,
 )
@@ -304,43 +305,33 @@ def _calculate_adjusted_total_points(match_history: list[dict]) -> float:
 
 
 def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
-    """Score d'instabilite ("Borderline") de chaque joueur.
-
-    Une seule variable est prise en compte : la stabilite des positions du
-    joueur sur la saison, mesuree par la methode classique de l'ecart-type.
-
-    Les positions brutes sont biaisees quand le nombre de participants varie
-    (finir 7e/8 n'est pas finir 7e/100), donc on normalise chaque resultat
-    par le nombre de participants :
-        s = (N - r) / (N - 1)      (1 = vainqueur, 0 = dernier)
-    Un tournoi a N=1 (un seul participant) est ignore : pas de dispersion
-    possible.
-
-    Le score est l'ecart-type de la serie des s :
-      - 0 = stabilite parfaite (le joueur finit toujours a la meme position
-        relative) ;
-      - plus la dispersion est forte, plus le score grimpe.
-
-    Retourne {joueur_id: score}. Un joueur avec moins de 2 tournois
-    exploitables n'a pas d'entree (ecart-type indefini)."""
+    g = BORDERLINE_JUMP_EXPONENT
     scores: dict[Any, float] = {}
     for pid, d in stats.items():
-        s_values: list[float] = []
+        xs: list[float] = []
         for m in d["gm_history"]:
             position = m.get('position')
             nb_joueurs = m.get('count')
-            if position is None or nb_joueurs is None:
+            score = m.get('score')
+            avg_score = m.get('avg_score')
+            if position is None or nb_joueurs is None or score is None or avg_score is None:
                 continue
             r = float(position)
             n = float(nb_joueurs)
-            if n <= 1:
+            if n <= 1 or float(avg_score) <= 0:
                 continue
-            s_values.append((n - r) / (n - 1))
+            s_pos = (n - r) / (n - 1)
+            ratio = min(GM_MAX_RATIO_CAP, float(score) / float(avg_score))
+            s_ip = max(0.0, min(1.0, (ratio - 0.5) / (GM_MAX_RATIO_CAP - 0.5)))
+            xs.append((1 - BORDERLINE_IP_WEIGHT) * s_pos + BORDERLINE_IP_WEIGHT * s_ip)
 
-        if len(s_values) < 2:
+        if len(xs) < 2:
             continue
 
-        scores[pid] = statistics.stdev(s_values)
+        sauts = [abs(xs[i] - xs[i - 1]) for i in range(1, len(xs))]
+        jumps = (sum(saut ** g for saut in sauts) / len(sauts)) ** (1.0 / g)
+        disp = statistics.stdev(xs)
+        scores[pid] = (1 - BORDERLINE_DISP_WEIGHT) * jumps + BORDERLINE_DISP_WEIGHT * disp
 
     return scores
 

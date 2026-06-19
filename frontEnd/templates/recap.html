@@ -597,9 +597,9 @@
 
                                         <td class="has-text-right" data-val="{{ j.borderline_score if j.borderline_score is not none else -99 }}">
                                             {% if j.borderline_score is not none %}
-                                                {% if j.borderline_score >= 0.25 %}
+                                                {% if j.borderline_score >= 0.40 %}
                                                     <span class="has-text-warning has-text-weight-bold" title="Instable (>= seuil reward)">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
-                                                {% elif j.borderline_score < 0.05 %}
+                                                {% elif j.borderline_score < 0.15 %}
                                                     <span class="has-text-success" style="opacity: 0.8;" title="Tres stable">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
                                                 {% else %}
                                                     <span class="has-text-white" style="opacity: 0.7;" title="Stabilite moyenne">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
