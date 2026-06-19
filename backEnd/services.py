@@ -11,7 +11,8 @@ import psycopg2.extras
 from constants import (
     DEFAULT_SIGMA_THRESHOLD,
     RANKED_SIGMA_LIMIT, GHOST_SIGMA_CAP, GHOST_MISSED_THRESHOLD,
-    CHILLGUY_DELTA_LIMIT, MIN_PARTICIPATION_RATIO, MIN_TOURNAMENT_RATIO,
+    CHILLGUY_DELTA_LIMIT, BORDERLINE_INSTABILITY_THRESHOLD,
+    MIN_PARTICIPATION_RATIO, MIN_TOURNAMENT_RATIO,
     GM_MAX_RATIO_CAP, GM_BASE_WEIGHT, GM_EXTRA_MATCH_BONUS, REFERENCE_PLAYER_COUNT,
 )
 from db import get_db_connection
@@ -302,6 +303,48 @@ def _calculate_adjusted_total_points(match_history: list[dict]) -> float:
     return total
 
 
+def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
+    """Score d'instabilite ("Borderline") de chaque joueur.
+
+    Une seule variable est prise en compte : la stabilite des positions du
+    joueur sur la saison, mesuree par la methode classique de l'ecart-type.
+
+    Les positions brutes sont biaisees quand le nombre de participants varie
+    (finir 7e/8 n'est pas finir 7e/100), donc on normalise chaque resultat
+    par le nombre de participants :
+        s = (N - r) / (N - 1)      (1 = vainqueur, 0 = dernier)
+    Un tournoi a N=1 (un seul participant) est ignore : pas de dispersion
+    possible.
+
+    Le score est l'ecart-type de la serie des s :
+      - 0 = stabilite parfaite (le joueur finit toujours a la meme position
+        relative) ;
+      - plus la dispersion est forte, plus le score grimpe.
+
+    Retourne {joueur_id: score}. Un joueur avec moins de 2 tournois
+    exploitables n'a pas d'entree (ecart-type indefini)."""
+    scores: dict[Any, float] = {}
+    for pid, d in stats.items():
+        s_values: list[float] = []
+        for m in d["gm_history"]:
+            position = m.get('position')
+            nb_joueurs = m.get('count')
+            if position is None or nb_joueurs is None:
+                continue
+            r = float(position)
+            n = float(nb_joueurs)
+            if n <= 1:
+                continue
+            s_values.append((n - r) / (n - 1))
+
+        if len(s_values) < 2:
+            continue
+
+        scores[pid] = statistics.stdev(s_values)
+
+    return scores
+
+
 def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -495,6 +538,7 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                 "tid": tid,
                 "date": t_date,
                 "score": score,
+                "position": position,
                 "avg_score": t["avg_score"],
                 "count": t["count"],
                 "ligue_id": ligue_id
@@ -506,18 +550,22 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
 
         winner_gm, list_gm = _compute_grand_master(stats, total_tournois)
         advanced_stonks_list = _compute_advanced_stonks(conn, d_debut, d_fin, recap_mode, specific_ligue_id)
+        borderline_scores = _compute_borderline_scores(stats)
 
         candidates = {
             "grand_master": list_gm,
             "stonks": advanced_stonks_list,
             "not_stonks": advanced_stonks_list,
-            "ez": [], "pas_loin": [], "stakhanov": [], "chillguy": []
+            "ez": [], "pas_loin": [], "stakhanov": [], "chillguy": [], "borderline": []
         }
 
         for pid, d in stats.items():
             candidates["ez"].append({"id": pid, "nom": d["nom"], "val": d["victoires"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
             candidates["pas_loin"].append({"id": pid, "nom": d["nom"], "val": d["second_places"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
             candidates["stakhanov"].append({"id": pid, "nom": d["nom"], "val": d["total_points"], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
+
+            if pid in borderline_scores:
+                candidates["borderline"].append({"id": pid, "nom": d["nom"], "val": borderline_scores[pid], "matchs": d["matchs"], "sigma": d["sigma_actuel"]})
 
             player_stonks = next((x for x in advanced_stonks_list if x['id'] == pid), None)
             if player_stonks:
@@ -535,6 +583,8 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             score_gm_val = gm_score_map.get(pid)
             is_eligible_val = (d["matchs"] >= min_participation_req)
 
+            bl_val = borderline_scores.get(pid)
+
             entry = {
                 "nom": d["nom"],
                 "matchs": d["matchs"],
@@ -544,7 +594,8 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                 "moyenne_points": round(moyenne_pts, 2),
                 "moyenne_position": round(moyenne_pos, 2),
                 "score_gm": round(score_gm_val, 2) if score_gm_val is not None else None,
-                "is_eligible_gm": bool(is_eligible_val)
+                "is_eligible_gm": bool(is_eligible_val),
+                "borderline_score": round(bl_val, 3) if bl_val is not None else None
             }
             classement_points.append(entry)
             classement_moyenne.append(entry)
@@ -585,7 +636,7 @@ def _determine_winners(candidates: dict, vic_cond: str, active_awards: list[str]
         sorted_list = sorted(filtered, key=lambda x: x['val'], reverse=True)
         top_3_players = [{"id": x['id'], "final_score": x['val'], "nom": x['nom']} for x in sorted_list]
 
-    algos = ['ez', 'pas_loin', 'stakhanov', 'stonks', 'not_stonks', 'chillguy']
+    algos = ['ez', 'pas_loin', 'stakhanov', 'stonks', 'not_stonks', 'chillguy', 'borderline']
 
     for code in algos:
         if (code not in active_awards) or (code == vic_cond):
@@ -632,6 +683,11 @@ def _determine_winners(candidates: dict, vic_cond: str, active_awards: list[str]
             valid = [c for c in raw_list if float(c['sigma']) < RANKED_SIGMA_LIMIT and c.get('matchs_ranked', c['matchs']) >= (total_tournois * MIN_TOURNAMENT_RATIO) and c['val'] < CHILLGUY_DELTA_LIMIT]
             if valid:
                 award_winners = [sorted(valid, key=lambda x: x['val'], reverse=False)[0]]
+
+        elif code == 'borderline':
+            valid = [c for c in raw_list if float(c['sigma']) < RANKED_SIGMA_LIMIT and c.get('matchs_ranked', c['matchs']) >= (total_tournois * MIN_TOURNAMENT_RATIO) and c['val'] > BORDERLINE_INSTABILITY_THRESHOLD]
+            if valid:
+                award_winners = [max(valid, key=lambda x: x['val'])]
 
         if award_winners:
             winners_map[code] = award_winners

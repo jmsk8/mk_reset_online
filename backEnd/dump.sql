@@ -1389,6 +1389,7 @@ INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (10, 
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (11, 'stakhanov', 'Stakhanoviste', 'TposingFunky.png', 'Le plus de points marqués au total');
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (12, 'chillguy', 'Chill Guy', 'chillguy.png', 'Le score TrueSkill le plus stable');
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (13, 'Indice de Performance', 'Indice de Performance', '🎯', 'Calcul IP');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (14, 'borderline', 'Borderline', 'borderline.png', 'Les résultats les plus instables');
 
 
 --
@@ -1451,7 +1452,7 @@ SELECT pg_catalog.setval('public.tournois_id_seq', 85, true);
 -- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.types_awards_id_seq', 13, true);
+SELECT pg_catalog.setval('public.types_awards_id_seq', 14, true);
 
 
 --

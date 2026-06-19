@@ -1194,6 +1194,7 @@ COPY public.types_awards (id, code, nom, emoji, description) FROM stdin;
 11	stakhanov	Stakhanoviste	TposingFunky.png	Le plus de points marqués au total
 12	chillguy	Chill Guy	chillguy.png	Le score TrueSkill le plus stable
 13	Indice de Performance	Indice de Performance	🎯	Calcul IP
+14	borderline	Borderline	borderline.png	Les résultats les plus instables
 \.
 
 
@@ -1257,7 +1258,7 @@ SELECT pg_catalog.setval('public.tournois_id_seq', 60, true);
 -- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: mk_reset
 --
 
-SELECT pg_catalog.setval('public.types_awards_id_seq', 13, true);
+SELECT pg_catalog.setval('public.types_awards_id_seq', 14, true);
 
 
 --

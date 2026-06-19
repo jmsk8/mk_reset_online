@@ -540,6 +540,10 @@
                                         <th class="has-text-right sortable active-sort" onclick="sortTable('ip', this)" title="Indice de Performance">
                                             IP <i class="fas fa-sort-down"></i>
                                         </th>
+
+                                        <th class="has-text-right sortable" onclick="sortTable('instab', this)" title="Score d'instabilité (Borderline) — temporaire">
+                                            Instab. <i class="fas fa-sort"></i>
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -585,6 +589,20 @@
                                                     {% else %}
                                                         <span class="has-text-white" style="opacity: 0.6;">{{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% endif %}
+                                                {% endif %}
+                                            {% else %}
+                                                <span class="has-text-grey-light">-</span>
+                                            {% endif %}
+                                        </td>
+
+                                        <td class="has-text-right" data-val="{{ j.borderline_score if j.borderline_score is not none else -99 }}">
+                                            {% if j.borderline_score is not none %}
+                                                {% if j.borderline_score >= 0.25 %}
+                                                    <span class="has-text-warning has-text-weight-bold" title="Instable (>= seuil reward)">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
+                                                {% elif j.borderline_score < 0.05 %}
+                                                    <span class="has-text-success" style="opacity: 0.8;" title="Tres stable">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
+                                                {% else %}
+                                                    <span class="has-text-white" style="opacity: 0.7;" title="Stabilite moyenne">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
                                                 {% endif %}
                                             {% else %}
                                                 <span class="has-text-grey-light">-</span>
@@ -671,7 +689,7 @@
                     </h2>
                     
                     <div class="columns is-multiline is-centered">
-                        {% for award_code in ['ez', 'pas_loin', 'stakhanov', 'chillguy', 'stonks', 'not_stonks'] %}
+                        {% for award_code in ['ez', 'pas_loin', 'stakhanov', 'chillguy', 'stonks', 'not_stonks', 'borderline'] %}
                             {% if award_code in saison.awards %}
                                 <div class="column is-4">
                                     {% set info_award = saison.awards[award_code][0] %}
@@ -706,6 +724,8 @@
                                                                 <span class="has-text-weight-bold is-size-6">{{ val|string|replace('-', '') }}</span> points{{ 's' if val|float|abs >= 2 else '' }} TS perdu{{ 's' if val|float|abs >= 2 else '' }}
                                                             {% elif award_code == 'stakhanov' %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> point{{ 's' if val|int >= 2 else '' }} {{ 'totaux' if val|int >= 2 else 'total' }}
+                                                            {% elif award_code == 'borderline' %}
+                                                                instabilité <span class="has-text-weight-bold is-size-6">{{ '%+0.2f'|format(val|float) }}</span> σ au-dessus de la moyenne
                                                             {% else %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val }}</span>
                                                             {% endif %}
@@ -853,7 +873,8 @@
         }
 
         const sortDirections = {
-            'moy': true, 'total': true, 'part': true, 'vic': true, 'ip': true
+            'moy': true, 'total': true, 'part': true, 'vic': true, 'ip': true,
+            'instab': true
         };
 
         function sortTable(columnKey, headerElem) {
@@ -882,6 +903,7 @@
                 if(columnKey === 'part') cellIndex = 4;
                 if(columnKey === 'vic') cellIndex = 5;
                 if(columnKey === 'ip') cellIndex = 6;
+                if(columnKey === 'instab') cellIndex = 7;
 
                 const cellA = rowA.children[cellIndex];
                 const cellB = rowB.children[cellIndex];
