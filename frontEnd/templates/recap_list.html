@@ -136,7 +136,6 @@
                 {% endif %}
 
 
-                {# Grouper les saisons régulières par année (extraite de date_fin DD/MM/YYYY) #}
                 {% set regular_seasons = [] %}
                 {% for s in saisons if not s.is_yearly %}
                     {% set _ = regular_seasons.append(s) %}
@@ -159,7 +158,6 @@
                         <div class="column is-4 fade-in" style="animation-delay: {{ idx.val * 0.1 }}s">
                             <a href="/recap/{{ s.slug }}" style="text-decoration: none;">
                                 {% if s.is_league_recap %}
-                                {# Récap de ligue unifié (nouveau format) #}
                                 <div class="card season-card" style="border: 2px solid #f59e0b; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(0, 0, 0, 0.8));">
                                     <div class="card-content has-text-centered">
                                         <div class="season-icon has-text-warning">
@@ -190,7 +188,6 @@
                                     </div>
                                 </div>
                                 {% else %}
-                                {# Récap classique ou ancien format ligue #}
                                 <div class="card season-card" {% if s.ligue_couleur %}style="border-left: 4px solid {{ s.ligue_couleur }};"{% endif %}>
                                     <div class="card-content has-text-centered">
 

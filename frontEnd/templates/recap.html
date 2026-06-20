@@ -185,7 +185,10 @@
         .chart-legend::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
         .legend-item { display: flex; align-items: center; padding: 6px 8px; margin-bottom: 4px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
         .legend-item:hover { background: rgba(255,255,255,0.1); }
-        .legend-color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; flex-shrink: 0; }
+        .legend-color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; flex-shrink: 0; display: inline-block; }
+        #positionBreakdownTable td.pos-gold { color: #ffd700; font-weight: bold; }
+        #positionBreakdownTable td.pos-silver { color: #d8d8d8; font-weight: bold; }
+        #positionBreakdownTable td.pos-bronze { color: #cd7f32; font-weight: bold; }
         .legend-name { font-size: 0.85rem; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .legend-val { font-size: 0.75rem; color: #94a3b8; margin-left: auto; }
         .chart-area { flex-grow: 1; position: relative; }
@@ -242,7 +245,6 @@
             .modal-content-glass { width: 90% !important; }
         }
 
-        /* Navbar des ligues */
         .league-nav-container {
             background: rgba(0, 0, 0, 0.3);
             border-radius: 12px;
@@ -297,7 +299,6 @@
             margin-right: 6px;
         }
 
-        /* Vue nouvelles ligues */
         .new-leagues-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -395,13 +396,11 @@
         </div>
     </section>
 
-    {# Navbar des ligues pour les récaps unifiés ou hybrides #}
     {% set show_league_nav = saison and saison.ligues_disponibles and (saison.is_league_recap or saison.include_league_stats or saison.include_league_moves) %}
     {% if show_league_nav %}
     <div class="container mt-4 mb-2 px-3">
         <div class="league-nav-container">
             <div class="league-badges">
-                {# Main tab for hybrid mode (classic recap) #}
                 {% if not saison.is_league_recap and (saison.include_league_stats or saison.include_league_moves) %}
                 <a href="{{ request.path }}"
                    class="league-badge {% if not view_mode and not request.args.get('ligue_id') %}is-active{% endif %}"
@@ -411,7 +410,6 @@
                 </a>
                 {% endif %}
 
-                {# League tabs #}
                 {% if saison.is_league_recap or saison.include_league_stats %}
                 {% for ligue in saison.ligues_disponibles %}
                 <a href="?ligue_id={{ ligue.id }}"
@@ -423,7 +421,6 @@
                 {% endfor %}
                 {% endif %}
 
-                {# New leagues tab (movements) #}
                 {% if saison.is_league_recap or saison.include_league_moves %}
                 <a href="?view=new-leagues"
                    class="league-badge {% if view_mode == 'new-leagues' %}is-active{% endif %}"
@@ -441,7 +438,6 @@
         <div class="container">
             {% if saison %}
 
-                {# Vue Nouvelles Ligues (league recap or hybrid mode) #}
                 {% if view_mode == 'new-leagues' and new_leagues_data %}
                 <div class="card glass-card fade-in mb-6">
                     <header class="card-header">
@@ -506,7 +502,6 @@
                 </div>
 
                 {% else %}
-                {# Vue normale du récap (classement, awards, etc.) #}
                 <div class="card glass-card fade-in mb-6">
                     <header class="card-header">
                         <p class="card-header-title is-centered has-text-warning">
@@ -532,17 +527,9 @@
                                         <th class="has-text-centered sortable" onclick="sortTable('part', this)" title="Nombre de tournois joués">
                                             Part. <span class="has-text-grey-light is-size-7">/{{ saison.total_tournois }}</span> <i class="fas fa-sort"></i>
                                         </th>
-                                        
-                                        <th class="has-text-centered sortable" onclick="sortTable('vic', this)" title="Nombre de victoires (1ère place)">
-                                            Vict. <i class="fas fa-sort"></i>
-                                        </th>
-                                        
+
                                         <th class="has-text-right sortable active-sort" onclick="sortTable('ip', this)" title="Indice de Performance">
                                             IP <i class="fas fa-sort-down"></i>
-                                        </th>
-
-                                        <th class="has-text-right sortable" onclick="sortTable('instab', this)" title="Score d'instabilité (Borderline) — temporaire">
-                                            Instab. <i class="fas fa-sort"></i>
                                         </th>
                                     </tr>
                                 </thead>
@@ -566,12 +553,8 @@
                                         <td class="has-text-centered" data-val="{{ j.matchs }}">
                                             {{ j.matchs }}
                                         </td>
-                                        
-                                        <td class="has-text-centered" data-val="{{ j.victoires }}">
-                                            {{ j.victoires }}
-                                        </td>
-                                        
-                                        <td class="has-text-right" 
+
+                                        <td class="has-text-right"
                                             data-val="{{ j.score_gm if j.score_gm is not none else -1 }}"
                                             data-eligible="{{ 'true' if j.is_eligible_gm else 'false' }}">
                                             {% if j.score_gm is not none %}
@@ -589,20 +572,6 @@
                                                     {% else %}
                                                         <span class="has-text-white" style="opacity: 0.6;">{{ '%0.2f'|format(j.score_gm|float) }}</span>
                                                     {% endif %}
-                                                {% endif %}
-                                            {% else %}
-                                                <span class="has-text-grey-light">-</span>
-                                            {% endif %}
-                                        </td>
-
-                                        <td class="has-text-right" data-val="{{ j.borderline_score if j.borderline_score is not none else -99 }}">
-                                            {% if j.borderline_score is not none %}
-                                                {% if j.borderline_score >= 0.40 %}
-                                                    <span class="has-text-warning has-text-weight-bold" title="Instable (>= seuil reward)">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
-                                                {% elif j.borderline_score < 0.15 %}
-                                                    <span class="has-text-success" style="opacity: 0.8;" title="Tres stable">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
-                                                {% else %}
-                                                    <span class="has-text-white" style="opacity: 0.7;" title="Stabilite moyenne">{{ '%0.2f'|format(j.borderline_score|float) }}</span>
                                                 {% endif %}
                                             {% else %}
                                                 <span class="has-text-grey-light">-</span>
@@ -815,7 +784,53 @@
                 </div>
                 {% endif %}
 
-                {% endif %}{# Fin du else (vue normale vs nouvelles ligues) #}
+                {% if saison.position_breakdown and saison.position_breakdown.rows and saison.position_breakdown.rows|length > 0 %}
+                <div class="card glass-card fade-in mt-6" style="animation-delay: 0.65s">
+                    <header class="card-header">
+                        <p class="card-header-title is-centered has-text-warning">
+                            <i class="fas fa-medal mr-2"></i> Positions par joueur
+                        </p>
+                    </header>
+                    <div class="card-content p-0">
+                        <div class="recap-table-container">
+                            <table class="table is-fullwidth recap-table has-text-light" id="positionBreakdownTable">
+                                <thead>
+                                    <tr>
+                                        <th>Joueur</th>
+                                        {% for pos in range(1, saison.position_breakdown.max_position + 1) %}
+                                        <th class="has-text-centered sortable" onclick="sortBreakdown({{ loop.index0 }}, this)"
+                                            title="Nombre de {{ pos }}{{ 're' if pos == 1 else 'e' }} place{{ 's' if pos > 1 else '' }}">
+                                            {% if pos == 1 %}🥇{% elif pos == 2 %}🥈{% elif pos == 3 %}🥉{% else %}{{ pos }}e{% endif %} <i class="fas fa-sort"></i>
+                                        </th>
+                                        {% endfor %}
+                                        <th class="has-text-centered sortable active-sort" onclick="sortBreakdownPodiums(this)" title="Total des podiums (top 3)">
+                                            Podiums <i class="fas fa-sort"></i>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for r in saison.position_breakdown.rows %}
+                                    <tr>
+                                        <td>
+                                            <span class="is-inline-flex is-align-items-center">
+                                                <span class="legend-color-dot" style="background-color: {{ r.color or '#FFFFFF' }}; border: 1px solid rgba(255,255,255,0.6);"></span>
+                                                <a href="/stats/joueur/{{ r.nom }}" class="has-text-light player-link"><strong>{{ r.nom }}</strong></a>
+                                            </span>
+                                        </td>
+                                        {% for c in r.counts %}
+                                        <td class="has-text-centered{% if loop.index == 1 and c > 0 %} pos-gold{% elif loop.index == 2 and c > 0 %} pos-silver{% elif loop.index == 3 and c > 0 %} pos-bronze{% elif c == 0 %} has-text-grey-light{% endif %}" data-val="{{ c }}">{{ c if c > 0 else '–' }}</td>
+                                        {% endfor %}
+                                        <td class="has-text-centered has-text-weight-bold{% if r.podiums == 0 %} has-text-grey-light{% endif %}" data-val="{{ r.podiums }}">{{ r.podiums if r.podiums > 0 else '–' }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% endif %}
 
             {% endif %}
         </div>
@@ -891,8 +906,7 @@
         }
 
         const sortDirections = {
-            'moy': true, 'total': true, 'part': true, 'vic': true, 'ip': true,
-            'instab': true
+            'moy': true, 'total': true, 'part': true, 'ip': true
         };
 
         function sortTable(columnKey, headerElem) {
@@ -919,9 +933,7 @@
                 if(columnKey === 'moy') cellIndex = 2;
                 if(columnKey === 'total') cellIndex = 3;
                 if(columnKey === 'part') cellIndex = 4;
-                if(columnKey === 'vic') cellIndex = 5;
-                if(columnKey === 'ip') cellIndex = 6;
-                if(columnKey === 'instab') cellIndex = 7;
+                if(columnKey === 'ip') cellIndex = 5;
 
                 const cellA = rowA.children[cellIndex];
                 const cellB = rowB.children[cellIndex];
@@ -954,6 +966,40 @@
                     rankCell.textContent = index + 1;
                 }
             });
+        }
+
+        let breakdownSortDesc = {};
+        function sortBreakdownByCell(cellIndex, headerElem) {
+            const table = document.getElementById("positionBreakdownTable");
+            const tbody = table.querySelector("tbody");
+            const rows = Array.from(tbody.querySelectorAll("tr"));
+
+            const isDesc = breakdownSortDesc[cellIndex] !== false;
+            breakdownSortDesc[cellIndex] = !isDesc;
+
+            table.querySelectorAll("th.sortable").forEach(th => {
+                th.classList.remove("active-sort");
+                const icon = th.querySelector("i");
+                if (icon) icon.className = "fas fa-sort";
+            });
+            headerElem.classList.add("active-sort");
+            const icon = headerElem.querySelector("i");
+            if (icon) icon.className = isDesc ? "fas fa-sort-down" : "fas fa-sort-up";
+
+            rows.sort((rowA, rowB) => {
+                const valA = parseFloat(rowA.children[cellIndex].getAttribute('data-val')) || 0;
+                const valB = parseFloat(rowB.children[cellIndex].getAttribute('data-val')) || 0;
+                return isDesc ? valB - valA : valA - valB;
+            });
+            rows.forEach(row => tbody.appendChild(row));
+        }
+        function sortBreakdown(posIndex, headerElem) {
+            sortBreakdownByCell(posIndex + 1, headerElem);
+        }
+        function sortBreakdownPodiums(headerElem) {
+            const table = document.getElementById("positionBreakdownTable");
+            const lastIndex = table.querySelector("tbody tr").children.length - 1;
+            sortBreakdownByCell(lastIndex, headerElem);
         }
 
         const rulesDescriptions = {
@@ -1015,34 +1061,6 @@
         let evoChartInstance = null;
         let distChartInstance = null;
 
-        function highlightLine(index) {
-            if (!evoChartInstance) return;
-            const datasets = evoChartInstance.data.datasets;
-            
-            datasets.forEach((ds, i) => {
-                if (i === index) {
-                    ds.borderWidth = 4;
-                    ds.borderColor = ds.backgroundColor; 
-                    ds.oldColor = ds.borderColor; 
-                } else {
-                    ds.borderWidth = 1;
-                    const c = ds.backgroundColor; 
-                    ds.borderColor = c.replace('rgb', 'rgba').replace(')', ', 0.1)').replace('rgbaa', 'rgba'); 
-                }
-            });
-            evoChartInstance.update('none'); 
-        }
-
-        function resetLines() {
-            if (!evoChartInstance) return;
-            const datasets = evoChartInstance.data.datasets;
-            datasets.forEach(ds => {
-                ds.borderWidth = 2;
-                ds.borderColor = ds.backgroundColor; 
-            });
-            evoChartInstance.update('none');
-        }
-
         function resetPoints() {
             if (!distChartInstance) return;
             const ds = distChartInstance.data.datasets[1];
@@ -1093,27 +1111,105 @@
             fadeElems.forEach(elem => elem.classList.add('visible'));
 
             {% if saison.chart_data %}
-            const ctxEvo = document.getElementById('evolutionChart').getContext('2d');
-            const evoData = {{ saison.chart_data | tojson }};
-            const legendEvo = document.getElementById('evolutionLegend');
-            
-            evoData.datasets.forEach((ds, index) => {
-                const item = document.createElement('div');
-                item.className = 'legend-item';
-                const lastVal = ds.data.filter(v => v !== null).slice(-1)[0] || 0;
-                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(ds.borderColor)}; border: 1px solid #fff;"></div><span class="legend-name">${escapeHtml(ds.label)}</span><span class="legend-val">${escapeHtml(lastVal)}</span>`;
-                
-                item.onmouseenter = () => highlightLine(index);
-                item.onmouseleave = () => resetLines();
-                item.onclick = () => highlightLine(index);
+            (function initEvolutionChart() {
+                const evoRaw = {{ saison.chart_data | tojson }};
+                const ctxEvo = document.getElementById('evolutionChart').getContext('2d');
+                const legendEvo = document.getElementById('evolutionLegend');
 
-                legendEvo.appendChild(item);
-            });
+                const evoDatasets = evoRaw.datasets.map(ds => {
+                    const pts = ds.points || [];
+                    const radii = (ds.data || []).map((_, i) => (pts[i] ? 2 : 0));
+                    const hoverRadii = (ds.data || []).map((_, i) => (pts[i] ? 6 : 0));
+                    return {
+                        label: ds.label,
+                        data: ds.data,
+                        pointDetails: pts,
+                        borderColor: sanitizeColor(ds.borderColor),
+                        backgroundColor: sanitizeColor(ds.borderColor),
+                        pointBackgroundColor: sanitizeColor(ds.borderColor),
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 1,
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0,
+                        pointRadius: radii,
+                        pointHoverRadius: hoverRadii,
+                        spanGaps: true
+                    };
+                });
 
-            evoChartInstance = new Chart(ctxEvo, {
-                type: 'line', data: evoData,
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.05)' } }, y: { grid: { color: 'rgba(255, 255, 255, 0.05)' } } }, elements: { point: { radius: 0, hoverRadius: 6 }, line: { tension: 0.3 } } }
-            });
+                function highlightEvoLine(index) {
+                    evoDatasets.forEach((ds, i) => { ds.borderWidth = (i === index) ? 4 : 1; });
+                    evoChartInstance.update('none');
+                }
+                function resetEvoLines() {
+                    evoDatasets.forEach(ds => { ds.borderWidth = 2; });
+                    evoChartInstance.update('none');
+                }
+
+                evoRaw.datasets.forEach((ds, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    const vals = (ds.data || []).filter(v => v !== null);
+                    const firstVal = vals.length ? vals[0] : null;
+                    const lastVal = vals.length ? vals[vals.length - 1] : null;
+                    let diffTxt = '—';
+                    let diffClass = '';
+                    if (firstVal != null && lastVal != null) {
+                        const diff = lastVal - firstVal;
+                        const sign = diff > 0 ? '+' : '';
+                        diffTxt = sign + diff.toFixed(2);
+                        diffClass = diff > 0 ? 'has-text-success' : (diff < 0 ? 'has-text-danger' : '');
+                    }
+                    item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(ds.borderColor)}; border: 1px solid #fff;"></div>` +
+                                     `<span class="legend-name">${escapeHtml(ds.label)}</span>` +
+                                     `<span class="legend-val ${diffClass}" title="Évolution TrueSkill sur la saison">${escapeHtml(diffTxt)}</span>`;
+                    item.onmouseenter = () => highlightEvoLine(index);
+                    item.onmouseleave = () => resetEvoLines();
+                    item.onclick = () => highlightEvoLine(index);
+                    legendEvo.appendChild(item);
+                });
+
+                evoChartInstance = new Chart(ctxEvo, {
+                    type: 'line',
+                    data: { labels: evoRaw.labels, datasets: evoDatasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'point', intersect: true },
+                        onClick: (e, elements) => {
+                            if (elements && elements.length > 0) {
+                                const el = elements[0];
+                                evoChartInstance.tooltip.setActiveElements([{ datasetIndex: el.datasetIndex, index: el.index }], { x: 0, y: 0 });
+                                evoChartInstance.update();
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                displayColors: false,
+                                callbacks: {
+                                    title: (items) => {
+                                        if (!items.length) return '';
+                                        const it = items[0];
+                                        const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                        return d ? d.date : '';
+                                    },
+                                    label: (it) => {
+                                        const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                        if (!d) return `${it.dataset.label}`;
+                                        return [it.dataset.label, `TrueSkill : ${d.trueskill}`];
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'TrueSkill', color: '#94a3b8' } }
+                        }
+                    }
+                });
+            })();
             {% endif %}
 
             {% if saison.ip_evolution and saison.ip_evolution.datasets and saison.ip_evolution.datasets|length > 0 %}
@@ -1332,7 +1428,8 @@
             distDataRaw.players.forEach((p, index) => {
                 const item = document.createElement('div');
                 item.className = 'legend-item';
-                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(p.color)}; border: 1px solid #fff;"></div><span class="legend-name">${escapeHtml(p.nom)}</span><span class="legend-val">${escapeHtml(p.top_percent)}%</span>`;
+                const tsTxt = (p.x != null) ? Number(p.x).toFixed(2) : '—';
+                item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(p.color)}; border: 1px solid #fff;"></div><span class="legend-name">${escapeHtml(p.nom)}</span><span class="legend-val" title="TrueSkill en fin de saison">${escapeHtml(tsTxt)}</span>`;
                 
                 item.onmouseenter = () => {
                     highlightPoint(index);

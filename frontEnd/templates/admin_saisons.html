@@ -42,7 +42,6 @@
             margin-right: 8px;
         }
 
-        /* --- STYLES DU MENU DÉROULANT PERSONNALISÉ --- */
         .custom-select-wrapper {
             position: relative;
             user-select: none;
@@ -282,7 +281,6 @@
         </div>
     </section>
 
-    <!-- Modale de publication avec choix du critère de mouvement inter-ligue -->
     <div class="modal" id="publishModal">
         <div class="modal-background" onclick="closePublishModal()"></div>
         <div class="modal-card" style="max-width: 500px;">
@@ -647,7 +645,6 @@ async function loadAwardTypes() {
         }
     }
 
-    // Detect league tournaments for classic mode and show options
     async function checkLeagueTournaments() {
         const dateDebut = document.getElementById('dateDebut').value;
         const dateFin = document.getElementById('dateFin').value;
@@ -660,7 +657,6 @@ async function loadAwardTypes() {
         }
 
         try {
-            // Use a temporary check by creating a fake season ID-less request
             const res = await api(`/admin/count-tournois-range?date_debut=${dateDebut}&date_fin=${dateFin}`, 'GET');
             if (res.league_count && res.league_count > 0) {
                 section.style.display = 'block';

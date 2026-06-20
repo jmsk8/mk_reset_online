@@ -32,9 +32,6 @@ logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
 
 
-# -----------------------------------------------------------------------------
-# AUTH
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/admin-auth', methods=['POST'])
 def admin_auth():
@@ -94,9 +91,6 @@ def check_token():
     return jsonify({"status": "valid"}), 200
 
 
-# -----------------------------------------------------------------------------
-# FIX DB STRUCTURE
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/api/admin/fix-db-structure', methods=['GET'])
 @admin_required
@@ -126,9 +120,6 @@ def fix_db_structure():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# -----------------------------------------------------------------------------
-# GLOBAL RESET
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/api/admin/global-reset', methods=['POST'])
 @admin_required
@@ -206,9 +197,6 @@ def revert_global_reset():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# -----------------------------------------------------------------------------
-# CONFIG
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/admin/config', methods=['GET'])
 @admin_required
@@ -286,9 +274,6 @@ def update_config():
         return jsonify({"error": "Requête invalide"}), 400
 
 
-# -----------------------------------------------------------------------------
-# JOUEURS
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/admin/joueurs', methods=['GET'])
 @admin_required
@@ -394,9 +379,6 @@ def api_add_joueur():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# -----------------------------------------------------------------------------
-# TYPES AWARDS
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/admin/types-awards', methods=['GET'])
 @admin_required
@@ -412,9 +394,6 @@ def get_admin_award_types():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# -----------------------------------------------------------------------------
-# SAISONS
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/admin/saisons', methods=['GET', 'POST'])
 @admin_required
@@ -753,7 +732,6 @@ def save_season_awards(id):
                 )
                 _save_awards_to_db(conn, id, top_3, winners_map, is_yearly)
 
-                # Hybrid mode: compute league stats and/or movements for classic recap
                 if include_league_stats or include_league_moves:
                     cur.execute("""
                         SELECT DISTINCT l.id, l.nom, l.niveau, l.couleur
@@ -818,9 +796,6 @@ def save_season_awards(id):
     return jsonify(response)
 
 
-# -----------------------------------------------------------------------------
-# TOURNOIS
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/add-tournament', methods=['POST'])
 @admin_required
@@ -1104,9 +1079,6 @@ def delete_tournament(id):
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# -----------------------------------------------------------------------------
-# LIGUES
-# -----------------------------------------------------------------------------
 
 @admin_bp.route('/admin/ligues/setup', methods=['POST'])
 @admin_required

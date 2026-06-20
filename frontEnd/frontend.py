@@ -7,7 +7,6 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from datetime import timedelta, date
 from flask_wtf.csrf import CSRFProtect
 
-# CONFIGURATION
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,6 @@ APP_VERSION = "1.3.1"
 def inject_version():
     return dict(app_version=APP_VERSION)
 
-# MIDDLEWARES & CONTEXT PROCESSORS
 
 @app.before_request
 def check_admin_token_validity():
@@ -87,7 +85,6 @@ def inject_saisons():
         pass
     return dict(saisons_menu=[])
 
-# HELPER FUNCTIONS
 
 def backend_request(method, endpoint, data=None, params=None, headers=None):
     url = f"{BACKEND_URL}{endpoint}"
@@ -110,7 +107,6 @@ def backend_request(method, endpoint, data=None, params=None, headers=None):
     except requests.exceptions.RequestException:
         return None, 503
 
-# ROUTES : API PROXIES (PUBLIC)
 
 @app.route('/admin/types-awards', methods=['GET'])
 
@@ -161,7 +157,6 @@ def proxy_add_tournament():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# ROUTES : VIEWS (PUBLIC)
 
 def get_banner_season():
     today = date.today()
@@ -259,7 +254,7 @@ def classement():
             s_params['ligue_id'] = saison_ligue_id
         s_data, s_status = backend_request('GET', '/classement/saison', params=s_params)
         if s_status == 200 and isinstance(s_data, dict):
-            saison = s_data  # {"saison": None} si aucune saison en cours
+            saison = s_data
 
     return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, seuils=seuils, distribution_data=distribution_data, vue=vue, saison=saison)
 
@@ -319,7 +314,6 @@ def stats_tournoi_detail(tournoi_id):
         flash("Tournoi introuvable", "warning")
         return redirect(url_for('index'))
 
-# ROUTES : ADMIN AUTH
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
@@ -351,7 +345,6 @@ def admin_logout():
     flash('Vous avez été déconnecté', 'info')
     return redirect(url_for('index'))
 
-# ROUTES : ADMIN ACTIONS (FORMS)
 
 @app.route('/add_tournament', methods=['GET', 'POST'])
 def add_tournament():
@@ -419,7 +412,6 @@ def admin_revert_last():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ROUTES : ADMIN PAGES
 
 @app.route('/admin/gestion')
 def admin_gestion():
@@ -447,7 +439,6 @@ def admin_saisons_page():
         return redirect(url_for('admin_login'))
     return render_template('admin_saisons.html', admin_token=session['admin_token'])
 
-# ROUTES : ADMIN API PROXIES
 
 @app.route('/admin/saisons', methods=['GET', 'POST'])
 
@@ -603,7 +594,6 @@ def admin_ligues_page():
         
     return render_template('admin_ligues.html', admin_token=session['admin_token'])
 
-# MAIN
 
 @app.after_request
 def add_header(response):

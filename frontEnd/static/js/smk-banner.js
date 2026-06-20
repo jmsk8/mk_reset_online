@@ -126,7 +126,6 @@ const GAME_CONFIG = {
     }
 };
 
-// === VARIABLES GLOBALES ===
 
 let globalTimeOffset = 0;
 let pauseStartTime = 0;
@@ -162,7 +161,6 @@ let leaderboardState = {
 let lastFrameTime = 0;
 let animationId = null;
 
-// === UTILITAIRES ===
 
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
@@ -232,7 +230,6 @@ function getScreenPosition(worldX, cameraX, screenWidth) {
     return rawDiff;
 }
 
-// === INITIALISATION ===
 
 function preloadImages() {
     for (let i = 1; i <= 3; i++) {
@@ -523,7 +520,6 @@ function initWorld() {
     if (GAME_CONFIG.debugMode) initDebugHUD();
 }
 
-// === LOGIQUE DE JEU & IA ===
 
 function handleSpawns(now) {
     if (now > worldState.nextSpawnTime) {
@@ -664,7 +660,6 @@ function updateAI(kart, deltaTime) {
     kart.vy += (kart.targetVy - kart.vy) * GAME_CONFIG.physics.smoothingFactor * handling * deltaTime;
 }
 
-// === GESTION DES ITEMS ===
 
 function getDistanceToLeader(kart) {
     const leader = worldState.cachedLeader;
@@ -871,7 +866,6 @@ function activateItem(kart) {
     kart.heldItem = null;
 }
 
-// === BOUCLE D'ANIMATION ===
 
 function animate(timestamp) {
     if (!lastFrameTime) lastFrameTime = timestamp;
@@ -1353,7 +1347,6 @@ function animate(timestamp) {
     animationId = requestAnimationFrame(animate);
 }
 
-// === DEBUG HUD ===
 
 function initDebugHUD() {
     let hud = document.getElementById('debug-hud');
@@ -1487,7 +1480,6 @@ function updateDebugHUD() {
     }
 }
 
-// === GESTION EVENEMENTS ===
 
 function handleVisibilityChange() {
     const pauseOverlay = document.getElementById('pause-overlay');
@@ -1515,7 +1507,6 @@ function handleVisibilityChange() {
     }
 }
 
-// === WINTER THEME - SNOW EFFECT ===
 
 function initSnow() {
     const banner = document.querySelector('.hero.smk-snes-banner');

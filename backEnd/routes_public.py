@@ -13,7 +13,7 @@ from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
     tier_thresholds, normal_top_percent, build_distribution,
-    compute_ip_evolution, compute_position_evolution,
+    compute_ip_evolution, compute_position_evolution, compute_position_breakdown,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,7 +122,6 @@ def get_recap(slug):
                 evo_mode, evo_ligue_id = 'league', saison_ligue_id
                 global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', saison_ligue_id)
             elif (include_league_stats or include_league_moves) and ligue_id_param:
-                # Hybrid mode: classic recap viewing a specific league tab
                 cur.execute("""
                     SELECT DISTINCT l.id, l.nom, l.couleur, l.niveau
                     FROM Ligues l
@@ -153,7 +152,6 @@ def get_recap(slug):
 
             awards_data = {}
 
-            # In hybrid league view, no awards are shown for league tabs
             if not is_hybrid_league_view:
                 award_ligue_filter = ""
                 award_params = [saison_id]
@@ -296,24 +294,33 @@ def get_recap(slug):
                         pd['first_idx'] = idx
                         pd['initial_score'] = float(old_mu) - 3 * float(old_sigma)
 
+                tournoi_dates = {t[0]: t[1] for t in tournois}
+
                 for jid, pd in players_data.items():
                     p_info = player_colors.get(jid)
                     if not p_info:
                         continue
 
                     data = []
+                    points = []
                     current = pd['initial_score']
 
                     for tid in tournoi_ids:
                         if tid in pd['parts_map']:
                             current = round(pd['parts_map'][tid], 2)
                             data.append(current)
+                            points.append({
+                                "date": tournoi_dates[tid].strftime("%d/%m/%Y"),
+                                "trueskill": current,
+                            })
                         else:
                             data.append(round(current, 2) if current is not None else None)
+                            points.append(None)
 
                     datasets.append({
                         "label": p_info["nom"],
                         "data": data,
+                        "points": points,
                         "borderColor": p_info["color"],
                         "backgroundColor": p_info["color"],
                         "borderWidth": 2,
@@ -342,6 +349,7 @@ def get_recap(slug):
 
             ip_evolution = compute_ip_evolution(d_debut, d_fin, evo_mode, evo_ligue_id)
             position_evolution = compute_position_evolution(d_debut, d_fin, evo_mode, evo_ligue_id)
+            position_breakdown = compute_position_breakdown(d_debut, d_fin, evo_mode, evo_ligue_id)
 
             response_data = {
                 "nom_saison": nom,
@@ -357,6 +365,7 @@ def get_recap(slug):
                 "distribution_data": dist_data,
                 "ip_evolution": ip_evolution,
                 "position_evolution": position_evolution,
+                "position_breakdown": position_breakdown,
                 "is_league_recap": is_league_recap if is_league_recap else False,
                 "include_league_stats": include_league_stats if include_league_stats else False,
                 "include_league_moves": include_league_moves if include_league_moves else False
@@ -366,7 +375,6 @@ def get_recap(slug):
                 response_data["ligues_disponibles"] = ligues_disponibles
                 response_data["ligue_courante"] = ligue_courante
 
-            # For hybrid mode on main tab (no ligue_id), fetch available leagues for navigation
             if not is_league_recap and (include_league_stats or include_league_moves) and not ligue_id_param:
                 cur.execute("""
                     SELECT DISTINCT l.id, l.nom, l.couleur, l.niveau
@@ -636,7 +644,6 @@ def classement():
             set_cached(cache_key, payload)
             return jsonify(payload)
 
-        # Pagination optionnelle
         offset = (page - 1) * limit
         paginated = joueurs[offset:offset + limit]
         return jsonify({
@@ -898,8 +905,6 @@ def get_joueur_stats(nom):
                     val_float = float(val)
                     r_date_only = r_date.date() if hasattr(r_date, 'date') else r_date
                     reset_ts = None
-                    # Find the most recent TrueSkill before the reset date,
-                    # considering both tournaments AND absence penalties
                     best_date = None
                     for entry in historique_data:
                         if entry['date_sort'] <= r_date_only.strftime("%Y-%m-%d") and entry['score_trueskill'] is not None:
@@ -1005,7 +1010,6 @@ def get_joueur_stats(nom):
                         award_groups[group_key]["count"] += 1
                 awards_list.extend(award_groups.values())
 
-                # Palmarès : podiums par ligue
                 cur.execute("""
                     SELECT p.position,
                            COALESCE(t.ligue_nom, l.nom) AS ligue_nom,

@@ -86,25 +86,20 @@
                         <div class="card-content">
                             <div class="podium-container">
                                 {% if resultats|length >= 3 %}
-                                    {# Calcul des rangs pour le top 3 #}
                                     {% set p1 = resultats[0] %}
                                     {% set p2 = resultats[1] %}
                                     {% set p3 = resultats[2] %}
                                     
-                                    {# Rang 1 est toujours 1 #}
                                     {% set r1 = 1 %}
                                     
-                                    {# Rang 2 : Si score P2 == Score P1, alors P2 est 1er aussi. Sinon il est 2ème #}
                                     {% set r2 = 1 if p2.score_tournoi == p1.score_tournoi else 2 %}
                                     
-                                    {# Rang 3 : Dépend des scores précédents #}
                                     {% if p3.score_tournoi == p2.score_tournoi %}
                                         {% set r3 = r2 %}
                                     {% else %}
                                         {% set r3 = 3 %}
                                     {% endif %}
 
-                                    {# Définition des classes CSS pour les couleurs de médailles #}
                                     {% macro get_medal_class(rank) %}
                                         {% if rank == 1 %}has-text-warning{% elif rank == 2 %}has-text-grey-light{% elif rank == 3 %}style="color: #cd7f32;"{% endif %}
                                     {% endmacro %}
@@ -193,19 +188,15 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {# Initialisation des variables pour la boucle #}
                                     {% set ns = namespace(rank=0, prev_score=-1, display_rank=0) %}
                                     
                                     {% for joueur in resultats %}
-                                        {# Si le score est différent du précédent, le rang affiché devient l'index actuel de la boucle #}
-                                        {# Sinon, le rang affiché reste le même (ex aequo) #}
                                         {% if joueur.score_tournoi != ns.prev_score %}
                                             {% set ns.display_rank = loop.index %}
                                         {% endif %}
                                         
                                         {% set ns.prev_score = joueur.score_tournoi %}
                                         
-                                        {# Icones seulement pour le top 3, mais PAS de changement de couleur de fond #}
                                         {% if ns.display_rank == 1 %}
                                             {% set icon_html = '<i class="fas fa-trophy has-text-warning"></i>' %}
                                         {% elif ns.display_rank == 2 %}

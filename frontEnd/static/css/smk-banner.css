@@ -218,7 +218,6 @@
     100% { transform: translateY(-3px); }
 }
 
-/* === WINTER THEME - SNOW EFFECT === */
 
 .snow-container {
     position: absolute;
@@ -239,12 +238,10 @@
     will-change: transform, opacity;
 }
 
-/* Flocons qui tombent (animation continue) */
 .snowflake.falling {
     animation: snowfall linear infinite;
 }
 
-/* Flocons posés sur la route (défilent avec le sol puis disparaissent) */
 .snowflake.landed {
     opacity: 0;
     animation: snowLanded linear forwards;
@@ -331,7 +328,6 @@
 .debug-itembox { width: 8px; height: 8px; background-color: yellow; border-radius: 0; top: 30%; }
 .debug-finish { width: 2px; height: 100%; background-color: white; top: 0; transform: none; border-radius: 0; }
 
-/* === LEADERBOARD BAS DROITE === */
 
 #race-leaderboard {
     position: absolute;

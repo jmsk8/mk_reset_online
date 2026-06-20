@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict ah4iP2KWG8vrIwGzIujMKJUGFgmaHlhbfbUGi8VSyn6fsmQn7KS3xZSBC66q8MP
+\restrict Tz92Dgm9qYOmCX8QUf6BOilCMq4dUB06xBayrCj2VJjCqGXIqGtPDHuH3EPsMcz
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -528,7 +528,7 @@ ALTER TABLE ONLY public.types_awards ALTER COLUMN id SET DEFAULT nextval('public
 -- Data for Name: api_tokens; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.api_tokens (token, created_at, expires_at) VALUES ('74bc4347-e5f8-4f21-9844-781204b30d3c', '2026-06-08 21:04:30.209905', '2026-06-09 09:34:30.20931');
+INSERT INTO public.api_tokens (token, created_at, expires_at) VALUES ('5117349d-16af-49ab-b986-b8bbb4054c0f', '2026-06-17 21:38:56.059573', '2026-06-18 10:08:56.059007');
 
 
 --
@@ -691,6 +691,10 @@ INSERT INTO public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_si
 INSERT INTO public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) VALUES (111, 28, 85, '2026-06-08', 1.44809483183935, 1.5480948318393501, 0.1);
 INSERT INTO public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) VALUES (112, 22, 85, '2026-06-08', 3.2449830441834338, 3.344983044183434, 0.1);
 INSERT INTO public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) VALUES (113, 21, 85, '2026-06-08', 3.4853808997381135, 3.5853808997381136, 0.1);
+INSERT INTO public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) VALUES (114, 14, 87, '2026-06-15', 1.3163398765191676, 1.4163398765191677, 0.1);
+INSERT INTO public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) VALUES (115, 16, 87, '2026-06-15', 1.4736673175054502, 1.5736673175054503, 0.1);
+INSERT INTO public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) VALUES (116, 28, 87, '2026-06-15', 1.5480948318393501, 1.6480948318393502, 0.1);
+INSERT INTO public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) VALUES (117, 22, 87, '2026-06-15', 3.344983044183434, 3.444983044183434, 0.1);
 
 
 --
@@ -705,42 +709,42 @@ INSERT INTO public.global_resets (id, date, value_applied, created_at) VALUES (2
 -- Data for Name: joueurs; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (13, 'Ether-Zero', 52.986, 4.935, 'U', 66, false, '#7986CB', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (19, 'ColorOni', 47.3371, 4.893599999999999, 'U', 40, false, '#FFB74D', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (12, 'Thaumas', 51.464, 3.819, 'U', 66, false, '#4DD0E1', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (17, 'Brook1l', 42.0952, 3.8660000000000005, 'U', 41, false, '#FFF59D', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (1, 'Rosalyan', 67.8811, 3.8063, 'U', 46, false, '#4285F4', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (5, 'Vakaeltraz', 54.06456631557627, 1.1628473408794655, 'A', 0, true, '#34A853', 1);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (4, 'Rayou', 53.78307738928454, 1.2552074564945077, 'A', 0, true, '#00BCD4', 1);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (6, 'Melwin', 55.38830700175919, 1.1369970328486432, 'S', 0, true, '#64B5F6', 1);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (2, 'J_sk8', 58.63010024898094, 1.224512749721778, 'S', 0, true, '#FBBC05', 1);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (3, 'Elite', 55.50005492570808, 1.1614709781913104, 'S', 0, true, '#EA4335', 1);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (34, 'Hollend', 62.09182283308111, 3.903612948545681, 'U', 0, true, '#FFFFFF', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (23, 'McK17', 48.28521020141083, 1.2836365437793302, 'B', 0, true, '#607D8B', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (35, 'MCF', 32.263222927536134, 3.6003969747912397, 'U', 0, true, '#FFFFFF', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (36, 'Gilou93', 43.06246571433106, 3.8615971059701475, 'U', 0, true, '#FFFFFF', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (9, 'Daytona_69', 49.3665114391489, 1.2123871737940617, 'B', 0, true, '#81C784', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (14, 'Ael', 43.48509823646072, 1.3163398765191676, 'C', 3, true, '#9C27B0', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (16, 'Falgo', 40.174421869634244, 1.4736673175054502, 'C', 3, true, '#795548', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (28, 'Corentin', 44.61090429624214, 1.5480948318393501, 'C', 4, true, '#3F51B5', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (8, 'Astral', 50.64503499492831, 1.18025649138684, 'A', 0, true, '#E57373', 1);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (11, 'Oleas', 50.02802524861701, 1.5001127552548605, 'B', 0, true, '#FF9800', 1);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (7, 'Lu_K', 51.737965743875485, 1.4096812940151056, 'A', 1, true, '#FF6D01', 1);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (33, 'Pablitofracas', 38.23949079185022, 4.177673049893514, 'U', 0, true, '#FFFFFF', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (31, 'Neomesis', 48.57663636357555, 2.1391162147964233, 'B', 1, true, '#FFFFFF', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (22, 'Fozlo', 37.307733312126494, 3.344983044183434, 'U', 9, true, '#FFEBEE', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (21, 'Kemoory', 36.33196336398686, 3.5853808997381136, 'U', 11, true, '#B2DFDB', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (29, 'Cevelynn', 50.928327385346236, 3.5753613515062357, 'U', 14, false, '#FFFFFF', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (10, 'JeanCube', 50.85708400840027, 3.571722282357677, 'U', 20, false, '#FFF176', 2);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (32, 'Grrrr!', 36.86014978065088, 5.42210097544548, 'U', 9, true, '#FFFFFF', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (20, 'Camou', 43.0013, 3.8840999999999997, 'U', 51, false, '#E3F2FD', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (15, 'Tomwilson', 49.867, 5.122, 'U', 66, false, '#F06292', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (26, 'Tomy', 35.9935, 5.2909, 'U', 56, false, '#CDDC39', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (27, 'Mirijason', 39.0969, 6.207599999999999, 'U', 62, false, '#009688', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (24, 'Kaysuan', 43.2936, 6.486599999999999, 'U', 38, false, '#FFFDE7', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (30, 'Hyazak', 35.857665849909175, 5.419363731342539, 'U', 17, false, '#FFFFFF', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (25, 'PastPlayer', 42.1226, 6.3252999999999995, 'U', 48, false, '#E8F5E9', NULL);
-INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (18, 'Hardox', 40.936, 3.7080000000000006, 'U', 66, false, '#AED581', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (5, 'Vakaeltraz', 54.48083713111902, 1.1384961355350451, 'A', 0, true, '#34A853', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (4, 'Rayou', 52.998621598071765, 1.2192502113841723, 'A', 0, true, '#00BCD4', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (6, 'Melwin', 55.73037004894406, 1.1207510952571487, 'S', 0, true, '#64B5F6', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (2, 'J_sk8', 58.97228070276335, 1.2128079536893905, 'S', 1, true, '#FBBC05', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (3, 'Elite', 55.38247977377817, 1.1441508119002104, 'S', 1, true, '#EA4335', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (23, 'McK17', 48.090962166997514, 1.2642169428693601, 'B', 0, true, '#607D8B', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (36, 'Gilou93', 42.203581025805505, 3.243313009922533, 'C', 0, true, '#FFFFFF', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (9, 'Daytona_69', 49.71127209720903, 1.2047151181089912, 'A', 0, true, '#81C784', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (13, 'Ether-Zero', 52.986, 4.935, 'U', 67, false, '#7986CB', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (19, 'ColorOni', 47.3371, 4.893599999999999, 'U', 41, false, '#FFB74D', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (12, 'Thaumas', 51.464, 3.819, 'U', 67, false, '#4DD0E1', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (17, 'Brook1l', 42.0952, 3.8660000000000005, 'U', 42, false, '#FFF59D', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (1, 'Rosalyan', 67.8811, 3.8063, 'U', 47, false, '#4285F4', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (34, 'Hollend', 62.09182283308111, 3.903612948545681, 'U', 1, true, '#FFFFFF', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (35, 'MCF', 32.263222927536134, 3.6003969747912397, 'U', 1, true, '#FFFFFF', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (14, 'Ael', 43.48509823646072, 1.4163398765191677, 'B', 4, true, '#9C27B0', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (16, 'Falgo', 40.174421869634244, 1.5736673175054503, 'C', 4, true, '#795548', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (28, 'Corentin', 44.61090429624214, 1.6480948318393502, 'B', 5, true, '#3F51B5', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (8, 'Astral', 50.25592317281229, 1.1597273191588617, 'A', 0, true, '#E57373', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (11, 'Oleas', 50.17671774291529, 1.4432169360297435, 'A', 1, true, '#FF9800', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (7, 'Lu_K', 51.737965743875485, 1.4096812940151056, 'A', 3, true, '#FF6D01', 1);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (33, 'Pablitofracas', 36.41301120840983, 3.6965429540063526, 'U', 0, true, '#FFFFFF', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (31, 'Neomesis', 48.80103002947691, 1.9955672992820406, 'B', 0, true, '#FFFFFF', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (22, 'Fozlo', 37.307733312126494, 3.444983044183434, 'U', 10, true, '#FFEBEE', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (21, 'Kemoory', 36.33196336398686, 3.5853808997381136, 'U', 12, true, '#B2DFDB', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (29, 'Cevelynn', 50.928327385346236, 3.5753613515062357, 'U', 15, false, '#FFFFFF', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (10, 'JeanCube', 50.85708400840027, 3.571722282357677, 'U', 21, false, '#FFF176', 2);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (32, 'Grrrr!', 36.86014978065088, 5.42210097544548, 'U', 10, true, '#FFFFFF', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (20, 'Camou', 43.0013, 3.8840999999999997, 'U', 52, false, '#E3F2FD', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (15, 'Tomwilson', 49.867, 5.122, 'U', 67, false, '#F06292', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (26, 'Tomy', 35.9935, 5.2909, 'U', 57, false, '#CDDC39', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (27, 'Mirijason', 39.0969, 6.207599999999999, 'U', 63, false, '#009688', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (24, 'Kaysuan', 43.2936, 6.486599999999999, 'U', 39, false, '#FFFDE7', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (30, 'Hyazak', 35.857665849909175, 5.419363731342539, 'U', 18, false, '#FFFFFF', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (25, 'PastPlayer', 42.1226, 6.3252999999999995, 'U', 49, false, '#E8F5E9', NULL);
+INSERT INTO public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) VALUES (18, 'Hardox', 40.936, 3.7080000000000006, 'U', 67, false, '#AED581', NULL);
 
 
 --
@@ -1275,6 +1279,22 @@ INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (36, 85, 140, 43.06246571433106, 3.8615971059701475, 31.477674396420618, NULL, 4, 43.43200525437877, 5.111516173952481, false);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (33, 85, 115, 38.23949079185022, 4.177673049893514, 25.70647164216968, NULL, 5, 39.716369214472856, 5.513523571466866, false);
 INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (35, 85, 111, 32.263222927536134, 3.6003969747912397, 21.462032003162413, NULL, 6, 33.84684605321945, 3.9720304909355897, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (2, 86, 183, 58.97228070276335, 1.2128079536893905, 55.33385684169518, NULL, 1, 58.63010024898094, 1.224512749721778, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (5, 86, 179, 54.41819662874984, 1.1475294793086241, 50.97560819082397, NULL, 2, 54.06456631557627, 1.1628473408794655, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (6, 86, 169, 55.4526742856096, 1.1224258286883517, 52.08539679954455, NULL, 3, 55.38830700175919, 1.1369970328486432, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (3, 86, 139, 55.38247977377817, 1.1441508119002104, 51.95002733807754, NULL, 4, 55.50005492570808, 1.1614709781913104, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (11, 86, 135, 50.17671774291529, 1.4432169360297435, 45.84706693482606, NULL, 5, 50.02802524861701, 1.5001127552548605, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (8, 86, 127, 50.50846272850789, 1.1628350930802958, 47.019957449267, NULL, 6, 50.64503499492831, 1.18025649138684, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (4, 86, 116, 53.12143151587387, 1.235436079055168, 49.41512327870837, NULL, 7, 53.78307738928454, 1.2552074564945077, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (9, 87, 193, 49.71127209720903, 1.2047151181089912, 46.09712674288206, NULL, 1, 49.3665114391489, 1.2123871737940617, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (31, 87, 181, 48.80103002947691, 1.9955672992820406, 42.81432813163079, NULL, 2, 48.57663636357555, 2.1391162147964233, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (23, 87, 176, 48.090962166997514, 1.2642169428693601, 44.29831133838943, NULL, 3, 48.28521020141083, 1.2836365437793302, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (36, 87, 150, 42.203581025805505, 3.243313009922533, 32.473641996037905, NULL, 4, 43.06246571433106, 3.8615971059701475, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (33, 87, 140, 36.41301120840983, 3.6965429540063526, 25.32338234639077, NULL, 5, 38.23949079185022, 4.177673049893514, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (6, 88, 208, 55.73037004894406, 1.1207510952571487, 52.368116763172615, NULL, 1, 55.4526742856096, 1.1224258286883517, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (5, 88, 184, 54.48083713111902, 1.1384961355350451, 51.06534872451388, NULL, 2, 54.41819662874984, 1.1475294793086241, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (4, 88, 171, 52.998621598071765, 1.2192502113841723, 49.340870963919244, NULL, 3, 53.12143151587387, 1.235436079055168, false);
+INSERT INTO public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) VALUES (8, 88, 170, 50.25592317281229, 1.1597273191588617, 46.776741215335704, NULL, 4, 50.50846272850789, 1.1628350930802958, false);
 
 
 --
@@ -1370,6 +1390,9 @@ INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) VALUE
 INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) VALUES (83, '2026-05-27', 1, 'Ligue 0', '#FFD700');
 INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) VALUES (84, '2026-06-01', 2, 'Ligue 1', '#C0C0C0');
 INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) VALUES (85, '2026-06-08', 2, 'Ligue 1', '#C0C0C0');
+INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) VALUES (86, '2026-06-10', 1, 'Ligue 0', '#FFD700');
+INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) VALUES (87, '2026-06-15', 2, 'Ligue 1', '#C0C0C0');
+INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) VALUES (88, '2026-06-17', 1, 'Ligue 0', '#FFD700');
 
 
 --
@@ -1389,7 +1412,6 @@ INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (10, 
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (11, 'stakhanov', 'Stakhanoviste', 'TposingFunky.png', 'Le plus de points marqués au total');
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (12, 'chillguy', 'Chill Guy', 'chillguy.png', 'Le score TrueSkill le plus stable');
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (13, 'Indice de Performance', 'Indice de Performance', '🎯', 'Calcul IP');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (14, 'borderline', 'Borderline', 'borderline.png', 'Les résultats les plus instables');
 
 
 --
@@ -1403,7 +1425,7 @@ SELECT pg_catalog.setval('public.awards_obtenus_id_seq', 51, true);
 -- Name: ghost_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.ghost_log_id_seq', 113, true);
+SELECT pg_catalog.setval('public.ghost_log_id_seq', 117, true);
 
 
 --
@@ -1438,21 +1460,21 @@ SELECT pg_catalog.setval('public.ligues_id_seq', 1, false);
 -- Name: saisons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.saisons_id_seq', 13, true);
+SELECT pg_catalog.setval('public.saisons_id_seq', 19, true);
 
 
 --
 -- Name: tournois_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.tournois_id_seq', 85, true);
+SELECT pg_catalog.setval('public.tournois_id_seq', 88, true);
 
 
 --
 -- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.types_awards_id_seq', 14, true);
+SELECT pg_catalog.setval('public.types_awards_id_seq', 13, true);
 
 
 --
@@ -1714,5 +1736,5 @@ ALTER TABLE ONLY public.tournois
 -- PostgreSQL database dump complete
 --
 
-\unrestrict ah4iP2KWG8vrIwGzIujMKJUGFgmaHlhbfbUGi8VSyn6fsmQn7KS3xZSBC66q8MP
+\unrestrict Tz92Dgm9qYOmCX8QUf6BOilCMq4dUB06xBayrCj2VJjCqGXIqGtPDHuH3EPsMcz
 

@@ -334,22 +334,12 @@ def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
         points.sort(key=lambda p: (p[0] is None, p[0]))
         xs = [v for _, v, _ in points]
 
-        # Deux mesures combinees :
-        # - sauts : amplitude des transitions consecutives (capte les yo-yo, mais un
-        #   accroc isole compte double : la descente ET la remontee vers le niveau habituel).
-        # - mad : ecart median a la mediane, robuste aux accrocs isoles (un seul mauvais
-        #   tournoi est absorbe par la mediane). Mise a l'echelle ~ ecart-type via 1.4826.
-        # On melange les deux (BORDERLINE_JUMP_WEIGHT) pour recompenser le vrai yo-yo
-        # permanent sans surponderer un accident ponctuel.
         sauts = [abs(xs[i] - xs[i - 1]) for i in range(1, len(xs))]
         jump_base = (sum(saut ** g for saut in sauts) / len(sauts)) ** (1.0 / g)
         median_xs = statistics.median(xs)
         mad_base = 1.4826 * statistics.median([abs(x - median_xs) for x in xs])
         base = BORDERLINE_JUMP_WEIGHT * jump_base + (1 - BORDERLINE_JUMP_WEIGHT) * mad_base
 
-        # Bonus de niveau : a stabilite egale, rester stable dans le haut du classement
-        # est legerement recompense. Amorti par (1 - base/seuil) pour ne PAS toucher les
-        # joueurs instables, et borne a >= 0.
         mean_pos = statistics.mean(s for _, _, s in points)
         damp = max(0.0, 1.0 - base / BORDERLINE_INSTABILITY_THRESHOLD)
         scores[pid] = max(0.0, base - BORDERLINE_LEVEL_BONUS * mean_pos * damp)
@@ -562,6 +552,63 @@ def compute_position_evolution(d_debut: str, d_fin: str, recap_mode: str | None 
     datasets.sort(key=lambda d: (d["moyenne_position"], -d["victoires"]))
 
     return {"labels": labels, "tournoi_ids": tournoi_ids, "datasets": datasets, "max_position": max_position}
+
+
+def compute_position_breakdown(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            ligue_filter = ""
+            params: list[Any] = [d_debut, d_fin]
+            if recap_mode == 'league' and specific_ligue_id:
+                ligue_filter = " AND t.ligue_id = %s"
+                params.append(specific_ligue_id)
+            elif recap_mode == 'league':
+                ligue_filter = " AND t.ligue_id IS NOT NULL"
+            elif recap_mode == 'classic':
+                ligue_filter = " AND t.ligue_id IS NULL"
+
+            cur.execute(f"""
+                SELECT p.joueur_id, j.nom, j.color, p.position
+                FROM participations p
+                JOIN tournois t ON p.tournoi_id = t.id
+                JOIN joueurs j ON p.joueur_id = j.id
+                WHERE t.date >= %s AND t.date <= %s{ligue_filter}
+            """, params)
+            parts = cur.fetchall()
+
+    players: dict[int, dict] = {}
+    max_position = 1
+    for jid, nom, color, position in parts:
+        if position is None:
+            continue
+        position = int(position)
+        if position > max_position:
+            max_position = position
+        p = players.setdefault(jid, {"nom": nom, "color": color or "#FFFFFF", "counts": {}, "matchs": 0})
+        p["counts"][position] = p["counts"].get(position, 0) + 1
+        p["matchs"] += 1
+
+    rows = []
+    for jid, p in players.items():
+        counts = p["counts"]
+        podiums = counts.get(1, 0) + counts.get(2, 0) + counts.get(3, 0)
+        rows.append({
+            "joueur_id": jid,
+            "nom": p["nom"],
+            "color": p["color"],
+            "matchs": p["matchs"],
+            "podiums": podiums,
+            "counts": [counts.get(pos, 0) for pos in range(1, max_position + 1)],
+        })
+
+    rows.sort(key=lambda r: (r["counts"][0], podiums_key(r)), reverse=True)
+
+    return {"max_position": max_position, "rows": rows}
+
+
+def podiums_key(row: dict) -> tuple:
+    c = row["counts"]
+    return (c[1] if len(c) > 1 else 0, c[2] if len(c) > 2 else 0)
 
 
 def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
