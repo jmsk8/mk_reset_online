@@ -471,6 +471,99 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
     return {"labels": labels, "tournoi_ids": tournoi_ids, "datasets": datasets}
 
 
+def compute_position_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            ligue_filter = ""
+            params: list[Any] = [d_debut, d_fin]
+            if recap_mode == 'league' and specific_ligue_id:
+                ligue_filter = " AND t.ligue_id = %s"
+                params.append(specific_ligue_id)
+            elif recap_mode == 'league':
+                ligue_filter = " AND t.ligue_id IS NOT NULL"
+            elif recap_mode == 'classic':
+                ligue_filter = " AND t.ligue_id IS NULL"
+
+            cur.execute(f"""
+                SELECT t.id, t.date
+                FROM tournois t
+                WHERE t.date >= %s AND t.date <= %s{ligue_filter}
+                ORDER BY t.date ASC, t.id ASC
+            """, params)
+            tournois = cur.fetchall()
+
+            cur.execute(f"""
+                SELECT p.tournoi_id, p.joueur_id, j.nom, j.color, p.position
+                FROM participations p
+                JOIN tournois t ON p.tournoi_id = t.id
+                JOIN joueurs j ON p.joueur_id = j.id
+                WHERE t.date >= %s AND t.date <= %s{ligue_filter}
+            """, params)
+            parts = cur.fetchall()
+
+    labels = [d.strftime("%d/%m") for _, d in tournois]
+    tournoi_ids = [tid for tid, _ in tournois]
+    tournoi_dates = {tid: d for tid, d in tournois}
+    tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
+    total_tournois = len(tournoi_ids)
+
+    field_size = {}
+    for tid, _jid, _nom, _col, _pos in parts:
+        field_size[tid] = field_size.get(tid, 0) + 1
+
+    players: dict[int, dict] = {}
+    for tid, jid, nom, color, position in parts:
+        p = players.setdefault(jid, {"nom": nom, "color": color or "#FFFFFF", "by_idx": {}})
+        idx = tid_index.get(tid)
+        if idx is not None and position is not None:
+            p["by_idx"][idx] = (int(position), field_size.get(tid, 0))
+
+    max_position = 1
+    datasets = []
+    for jid, p in players.items():
+        data: list[int | None] = []
+        points: list[dict | None] = []
+        sum_pos = 0
+        matchs = 0
+        wins = 0
+        for idx in range(total_tournois):
+            entry = p["by_idx"].get(idx)
+            if entry is None:
+                data.append(None)
+                points.append(None)
+                continue
+            position, nb = entry
+            matchs += 1
+            sum_pos += position
+            if position == 1:
+                wins += 1
+            if position > max_position:
+                max_position = position
+            data.append(position)
+            points.append({
+                "date": tournoi_dates[tournoi_ids[idx]].strftime("%d/%m/%Y"),
+                "position": position,
+                "nb_joueurs": nb,
+            })
+
+        if matchs == 0:
+            continue
+        datasets.append({
+            "joueur_id": jid,
+            "nom": p["nom"],
+            "color": p["color"],
+            "data": data,
+            "points": points,
+            "moyenne_position": round(sum_pos / matchs, 2),
+            "victoires": wins,
+            "matchs": matchs,
+        })
+
+    datasets.sort(key=lambda d: (d["moyenne_position"], -d["victoires"]))
+
+    return {"labels": labels, "tournoi_ids": tournoi_ids, "datasets": datasets, "max_position": max_position}
+
+
 def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
     with get_db_connection() as conn:
         with conn.cursor() as cur:

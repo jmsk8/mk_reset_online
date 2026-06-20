@@ -13,7 +13,7 @@ from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
     tier_thresholds, normal_top_percent, build_distribution,
-    compute_ip_evolution,
+    compute_ip_evolution, compute_position_evolution,
 )
 
 logger = logging.getLogger(__name__)
@@ -341,6 +341,7 @@ def get_recap(slug):
             dist_data = build_distribution(recap_players, lambda p: p["final_trueskill"])
 
             ip_evolution = compute_ip_evolution(d_debut, d_fin, evo_mode, evo_ligue_id)
+            position_evolution = compute_position_evolution(d_debut, d_fin, evo_mode, evo_ligue_id)
 
             response_data = {
                 "nom_saison": nom,
@@ -355,6 +356,7 @@ def get_recap(slug):
                 },
                 "distribution_data": dist_data,
                 "ip_evolution": ip_evolution,
+                "position_evolution": position_evolution,
                 "is_league_recap": is_league_recap if is_league_recap else False,
                 "include_league_stats": include_league_stats if include_league_stats else False,
                 "include_league_moves": include_league_moves if include_league_moves else False

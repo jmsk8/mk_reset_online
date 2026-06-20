@@ -778,6 +778,24 @@
                 </div>
                 {% endif %}
 
+                {% if saison.position_evolution and saison.position_evolution.datasets and saison.position_evolution.datasets|length > 0 %}
+                <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.58s">
+                    <header class="card-header">
+                        <p class="card-header-title is-centered has-text-white">
+                            <i class="fas fa-ranking-star mr-2"></i> Suivi des positions au fil des tournois
+                        </p>
+                    </header>
+                    <div class="card-content">
+                        <div class="chart-container-wrapper">
+                            <div class="chart-legend" id="positionEvolutionLegend"></div>
+                            <div class="chart-area">
+                                <canvas id="positionEvolutionChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% if saison.distribution_data and saison.distribution_data.players|length > 1 %}
                 <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.6s">
                     <header class="card-header">
@@ -1190,6 +1208,114 @@
                         scales: {
                             x: { grid: { color: 'rgba(255,255,255,0.05)' } },
                             y: { grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'IP', color: '#94a3b8' } }
+                        }
+                    }
+                });
+            })();
+            {% endif %}
+
+            {% if saison.position_evolution and saison.position_evolution.datasets and saison.position_evolution.datasets|length > 0 %}
+            (function initPositionEvolutionChart() {
+                const posRaw = {{ saison.position_evolution | tojson }};
+                const ctx = document.getElementById('positionEvolutionChart').getContext('2d');
+                const legend = document.getElementById('positionEvolutionLegend');
+
+                const posDatasets = posRaw.datasets.map(ds => {
+                    const pts = ds.points || [];
+                    const radii = (ds.data || []).map((_, i) => (pts[i] ? 3 : 0));
+                    const hoverRadii = (ds.data || []).map((_, i) => (pts[i] ? 6 : 0));
+                    return {
+                        label: ds.nom,
+                        data: ds.data,
+                        pointDetails: pts,
+                        borderColor: sanitizeColor(ds.color),
+                        backgroundColor: sanitizeColor(ds.color),
+                        pointBackgroundColor: sanitizeColor(ds.color),
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 1,
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0,
+                        pointRadius: radii,
+                        pointHoverRadius: hoverRadii,
+                        spanGaps: true
+                    };
+                });
+
+                let posChart;
+                function highlightPosLine(index) {
+                    posDatasets.forEach((ds, i) => { ds.borderWidth = (i === index) ? 4 : 1; });
+                    posChart.update('none');
+                }
+                function resetPosLines() {
+                    posDatasets.forEach(ds => { ds.borderWidth = 2; });
+                    posChart.update('none');
+                }
+
+                posRaw.datasets.forEach((ds, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    const moy = (ds.moyenne_position != null) ? ds.moyenne_position.toFixed(2) : '—';
+                    item.innerHTML = `<div class="legend-color-dot" style="background-color: ${sanitizeColor(ds.color)}; border: 1px solid #fff;"></div>` +
+                                     `<span class="legend-name">${escapeHtml(ds.nom)}</span>` +
+                                     `<span class="legend-val">${escapeHtml(moy)}</span>`;
+                    item.onmouseenter = () => highlightPosLine(index);
+                    item.onmouseleave = () => resetPosLines();
+                    item.onclick = () => highlightPosLine(index);
+                    legend.appendChild(item);
+                });
+
+                const maxPos = Math.max(2, posRaw.max_position || 2);
+
+                posChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: posRaw.labels, datasets: posDatasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'point', intersect: true },
+                        onClick: (e, elements) => {
+                            if (elements && elements.length > 0) {
+                                const el = elements[0];
+                                posChart.tooltip.setActiveElements([{ datasetIndex: el.datasetIndex, index: el.index }], { x: 0, y: 0 });
+                                posChart.update();
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                displayColors: false,
+                                callbacks: {
+                                    title: (items) => {
+                                        if (!items.length) return '';
+                                        const it = items[0];
+                                        const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                        return d ? d.date : '';
+                                    },
+                                    label: (it) => {
+                                        const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                        if (!d) return `${it.dataset.label}`;
+                                        const lines = [it.dataset.label];
+                                        lines.push(`Position : ${d.position}${d.nb_joueurs ? ' / ' + d.nb_joueurs : ''}`);
+                                        return lines;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: {
+                                reverse: true,
+                                min: 0.5,
+                                max: maxPos + 0.5,
+                                grid: { color: 'rgba(255,255,255,0.05)' },
+                                title: { display: true, text: 'Position', color: '#94a3b8' },
+                                afterBuildTicks: (axis) => {
+                                    axis.ticks = [];
+                                    for (let v = 1; v <= maxPos; v++) axis.ticks.push({ value: v });
+                                },
+                                ticks: { color: '#94a3b8', autoSkip: false }
+                            }
                         }
                     }
                 });
