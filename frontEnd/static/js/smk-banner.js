@@ -1,5 +1,5 @@
 const GAME_CONFIG = {
-    debugMode: false, 
+    debugMode: false,
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
@@ -39,13 +39,13 @@ const GAME_CONFIG = {
     road: {
         minY: 0,
         maxY: 30,
-        laneTolerance: 12, 
-        edgeSafetyMargin: 2, 
-        overtakeMargin: 5, 
-        wanderMargin: 8 
+        laneTolerance: 12,
+        edgeSafetyMargin: 2,
+        overtakeMargin: 5,
+        wanderMargin: 8
     },
     physics: {
-        smoothingFactor: 5, 
+        smoothingFactor: 5,
         pushForce: 0.5,
         collisionBounceY: 10,
         floatAmplitude: 10,
@@ -104,8 +104,8 @@ const GAME_CONFIG = {
         ]
     },
     ai: {
-        holdItemMin: 500, holdItemMax: 8000,       
-        detectionRange: 250, dodgeIntensityMin: 20, dodgeIntensityMax: 50,   
+        holdItemMin: 500, holdItemMax: 8000,
+        detectionRange: 250, dodgeIntensityMin: 20, dodgeIntensityMax: 50,
         overtakeDetectionRange: 120, overtakeMinDistance: 12, overtakeSideSpeed: 10,
         boxDetectionRange: 400, boxSeekIntensity: 25,
         wanderIntervalMin: 2000, wanderIntervalMax: 6000,
@@ -113,7 +113,7 @@ const GAME_CONFIG = {
     },
     hitboxes: {
         kartVsKart: { x: 60, y: 5 },
-        itemVsKart: { x: 40, y: 5 }, 
+        itemVsKart: { x: 40, y: 5 },
         itemBox: { x: 10, y: 8 }
     },
     visuals: {
@@ -125,7 +125,6 @@ const GAME_CONFIG = {
         box: { sizePC: 42, sizeMobile: 42 }
     }
 };
-
 
 let globalTimeOffset = 0;
 let pauseStartTime = 0;
@@ -140,6 +139,10 @@ function getGameTime() {
     return Date.now() - globalTimeOffset;
 }
 
+const PH = (typeof BannerPhysics !== 'undefined') ? BannerPhysics : null;
+
+const rng = Math.random;
+
 let worldState = {
     cameraX: 0,
     karts: [],
@@ -148,30 +151,31 @@ let worldState = {
     itemBoxes: [],
     finishLine: null,
     nextSpawnTime: 0,
-    cachedLeader: null
+    cachedLeader: null,
+
+    nextItemId: 1,
+    previousRanking: [],
+    lastLeaderboardUpdate: 0
 };
+
+const kartEls = {};
+const itemEls = {};
+const ppEls = {};
 
 let leaderboardState = {
     container: null,
-    slots: [],
-    previousRanking: [],
-    lastUpdateTime: 0
+    slots: []
 };
 
 let lastFrameTime = 0;
 let animationId = null;
 
-
 function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = (Math.random() * (i + 1)) | 0;
-        [array[i], array[j]] = [array[j], array[i]];
-    }
-    return array;
+    return PH.shuffleArray(array, rng);
 }
 
 function randomRange(min, max) {
-    return Math.random() * (max - min) + min;
+    return PH.randomRange(rng, min, max);
 }
 
 function getZIndex(yPercent) {
@@ -184,27 +188,11 @@ function updateMobileStatus() {
 }
 
 function getInitialKartSpeed(stats) {
-    const variation = randomRange(0.85, 0.95);
-    return stats.topSpeed * variation;
+    return PH.getInitialKartSpeed(rng, stats);
 }
 
 function getNewMomentumTarget(stats) {
-    const weightFactor = Math.min(stats.weight / 1.4, 1.0);
-    const minMomentum = 0.55 - weightFactor * 0.15;
-    return randomRange(minMomentum, 1.0);
-}
-
-function getMomentumSpeed(stats, momentum) {
-    const minRatio = GAME_CONFIG.speeds.momentumMinRatio;
-    return stats.topSpeed * (minRatio + (1.0 - minRatio) * momentum);
-}
-
-function getShortestDistance(fromX, toX) {
-    const w = GAME_CONFIG.world.width;
-    let diff = fromX - toX;
-    if (diff < -w * 0.5) diff += w;
-    if (diff > w * 0.5) diff -= w;
-    return diff;
+    return PH.getNewMomentumTarget(rng, stats);
 }
 
 function getScreenPosition(worldX, cameraX, screenWidth) {
@@ -229,7 +217,6 @@ function getScreenPosition(worldX, cameraX, screenWidth) {
 
     return rawDiff;
 }
-
 
 function preloadImages() {
     for (let i = 1; i <= 3; i++) {
@@ -267,7 +254,6 @@ function initLeaderboard() {
 
     leaderboardState.container.innerHTML = '';
     leaderboardState.slots = [];
-    leaderboardState.previousRanking = [];
 
     const totalKarts = GAME_CONFIG.resources.characters.length;
     for (let i = 0; i < totalKarts; i++) {
@@ -290,8 +276,7 @@ function addKartToLeaderboard(kart) {
     img.alt = kart.charName;
     ppDiv.appendChild(img);
 
-    kart.leaderboardPP = ppDiv;
-    kart.leaderboardPosition = -1;
+    ppEls[kart.id] = ppDiv;
 
     leaderboardState.container.appendChild(ppDiv);
 
@@ -300,70 +285,31 @@ function addKartToLeaderboard(kart) {
     }, 50);
 }
 
-function getKartScore(kart) {
-    return kart.totalDistance;
-}
+function applyLeaderboardPosition(kartId, newPosition, prevPosition) {
+    const ppElement = ppEls[kartId];
+    if (!ppElement) return;
 
-function updateLeaderboard(gameNow) {
-    if (!leaderboardState.container) return;
-    if (gameNow - leaderboardState.lastUpdateTime < 500) return;
-    leaderboardState.lastUpdateTime = gameNow;
+    ppElement.classList.remove('overtaking', 'dropping');
 
-    const karts = worldState.karts;
-    const kartsLen = karts.length;
-
-    const activeKarts = [];
-    for (let i = 0; i < kartsLen; i++) {
-        const k = karts[i];
-        if (k.state === 'running' || k.state === 'hit') activeKarts.push(k);
-    }
-    if (activeKarts.length === 0) return;
-
-    activeKarts.sort((a, b) => b.totalDistance - a.totalDistance);
-
-    worldState.cachedLeader = activeKarts[0];
-
-    const newRanking = [];
-    const prevRanking = leaderboardState.previousRanking;
-
-    for (let i = 0; i < activeKarts.length; i++) {
-        const kart = activeKarts[i];
-        const newPosition = i;
-        kart.rank = newPosition + 1;
-        newRanking.push(kart.id);
-
-        if (!kart.leaderboardPP) continue;
-
-        const prevPosition = prevRanking.indexOf(kart.id);
-        const ppElement = kart.leaderboardPP;
-
-        ppElement.classList.remove('overtaking', 'dropping');
-
-        if (prevPosition !== -1 && prevPosition !== newPosition) {
-            if (newPosition < prevPosition) {
-                ppElement.classList.add('overtaking');
-            } else {
-                ppElement.classList.add('dropping');
-            }
-
-            setTimeout(() => {
-                ppElement.classList.remove('overtaking', 'dropping');
-                positionPPInSlot(kart, newPosition);
-            }, 400);
+    if (prevPosition !== -1 && prevPosition !== newPosition) {
+        if (newPosition < prevPosition) {
+            ppElement.classList.add('overtaking');
         } else {
-            positionPPInSlot(kart, newPosition);
+            ppElement.classList.add('dropping');
         }
 
-        kart.leaderboardPosition = newPosition;
+        setTimeout(() => {
+            ppElement.classList.remove('overtaking', 'dropping');
+            positionPPInSlot(kartId, newPosition);
+        }, 400);
+    } else {
+        positionPPInSlot(kartId, newPosition);
     }
-
-    leaderboardState.previousRanking = newRanking;
 }
 
-function positionPPInSlot(kart, slotIndex) {
-    if (!kart.leaderboardPP || slotIndex >= leaderboardState.slots.length) return;
-
-    const ppElement = kart.leaderboardPP;
+function positionPPInSlot(kartId, slotIndex) {
+    const ppElement = ppEls[kartId];
+    if (!ppElement || slotIndex >= leaderboardState.slots.length) return;
 
     const slotWidth = cachedIsMobile ? 32 : 46;
     const totalSlots = leaderboardState.slots.length;
@@ -374,10 +320,10 @@ function positionPPInSlot(kart, slotIndex) {
     ppElement.style.left = `${xPos}px`;
 }
 
-function triggerPPHitAnimation(kart) {
-    if (!kart.leaderboardPP) return;
+function triggerPPHitAnimation(kartId) {
+    const ppElement = ppEls[kartId];
+    if (!ppElement) return;
 
-    const ppElement = kart.leaderboardPP;
     ppElement.classList.remove('hit');
     void ppElement.offsetWidth;
     ppElement.classList.add('hit');
@@ -391,27 +337,39 @@ function syncRoadAnimation() {
     const groundLayer = document.querySelector('.layer-ground');
     if (!groundLayer) return;
 
-    const patternWidth = 80; 
+    const patternWidth = 80;
     const speed = GAME_CONFIG.speeds.roadPPS;
-    
+
     if (speed > 0) {
         const duration = patternWidth / speed;
         groundLayer.style.setProperty('--road-anim-duration', `${duration}s`);
     }
 }
 
+const boxEls = [];
+
 function initWorld() {
     cachedContainer = document.getElementById('karts-container');
     if (!cachedContainer) return;
     cachedContainer.innerHTML = '';
-    
+
     updateMobileStatus();
-    
+
     worldState.karts = [];
+    worldState.kartsById = {};
     worldState.items = [];
     worldState.itemBoxes = [];
     worldState.cameraX = 0;
     worldState.nextSpawnTime = getGameTime() + 500;
+    worldState.cachedLeader = null;
+    worldState.nextItemId = 1;
+    worldState.previousRanking = [];
+    worldState.lastLeaderboardUpdate = 0;
+
+    boxEls.length = 0;
+    for (const id in kartEls) delete kartEls[id];
+    for (const id in itemEls) delete itemEls[id];
+    for (const id in ppEls) delete ppEls[id];
 
     syncRoadAnimation();
     initLeaderboard();
@@ -432,15 +390,15 @@ function initWorld() {
         boxDiv.classList.add('item-box');
         boxDiv.style.width = `${currentBoxSize}px`;
         boxDiv.style.height = `${currentBoxSize}px`;
-        
+
         const boxY = GAME_CONFIG.road.minY + (i * (roadHeight / (GAME_CONFIG.world.itemBoxCount - 1)));
         boxDiv.style.bottom = `${boxY}%`;
         boxDiv.style.zIndex = getZIndex(boxY);
-        
+
         cachedContainer.appendChild(boxDiv);
-        
+        boxEls.push(boxDiv);
+
         worldState.itemBoxes.push({
-            element: boxDiv,
             worldX: GAME_CONFIG.world.itemBoxX,
             y: boxY,
             active: true,
@@ -454,26 +412,26 @@ function initWorld() {
     shuffledChars.forEach((charName, index) => {
         const wrapper = document.createElement('div');
         wrapper.classList.add('kart-container-moving');
-        
+
         const verticalPos = GAME_CONFIG.road.minY + (index * step);
-        const startWorldX = 0; 
-        
+        const startWorldX = 0;
+
         wrapper.style.bottom = `${verticalPos}%`;
         wrapper.style.zIndex = getZIndex(verticalPos);
-        
+
         const img = document.createElement('img');
         img.src = GAME_CONFIG.resources.paths.char(charName);
         img.classList.add('kart-static-png');
-        
+
         wrapper.appendChild(img);
         cachedContainer.appendChild(wrapper);
 
+        kartEls[index] = { wrapper, img };
+
         const stats = GAME_CONFIG.characterStats[charName];
-        worldState.karts.push({
+        const kart = {
             id: index,
             charName: charName,
-            element: wrapper,
-            imgElement: img,
             worldX: startWorldX,
             yPercent: verticalPos,
             totalDistance: 0,
@@ -509,202 +467,18 @@ function initWorld() {
 
             lapCount: 0,
             hasPassedFinishLine: false,
-            currentFilter: 'none'
-        });
+            stopped: false,
 
-        worldState.kartsById[index] = worldState.karts[worldState.karts.length - 1];
+            currentFilter: 'none'
+        };
+
+        worldState.karts.push(kart);
+        worldState.kartsById[index] = kart;
     });
 
     cachedBg = document.querySelector('.layer-scrolling-bg');
 
     if (GAME_CONFIG.debugMode) initDebugHUD();
-}
-
-
-function handleSpawns(now) {
-    if (now > worldState.nextSpawnTime) {
-        const pendingKart = worldState.karts.find(k => k.state === 'pending');
-        if (pendingKart) {
-            pendingKart.state = 'running';
-            pendingKart.absoluteVelocity = getInitialKartSpeed(pendingKart.stats);
-
-            addKartToLeaderboard(pendingKart);
-
-            const delay = randomRange(GAME_CONFIG.delays.spawnMin, GAME_CONFIG.delays.spawnMax);
-            worldState.nextSpawnTime = now + delay;
-        }
-    }
-}
-
-function updateAI(kart, deltaTime) {
-    if (kart.state !== 'running') return;
-
-    const now = getGameTime();
-    let dangerFound = false;
-    let avoidDirection = 0;
-
-    const handling = kart.stats.handling;
-    const itemsLen = worldState.items.length;
-    for (let i = 0; i < itemsLen; i++) {
-        const item = worldState.items[i];
-        if (item.isDead) continue;
-
-        const isBanana = (item.type === 'banana');
-        const isShell = (item.type === 'greenShell' || item.type === 'redShell');
-        if (!isBanana && !isShell) continue;
-
-        let dist = getShortestDistance(item.worldX, kart.worldX);
-        const detectionRange = GAME_CONFIG.ai.detectionRange * (isShell ? 1.5 : 1.0);
-
-        if (dist > 0 && dist < detectionRange) {
-             if (Math.abs(item.y - kart.yPercent) < GAME_CONFIG.road.laneTolerance) {
-                dangerFound = true;
-                let naturalDir = (item.y > kart.yPercent) ? -1 : 1;
-                if (naturalDir === 1) avoidDirection = (kart.yPercent > GAME_CONFIG.road.maxY - GAME_CONFIG.road.edgeSafetyMargin) ? -1 : 1;
-                else avoidDirection = (kart.yPercent < GAME_CONFIG.road.minY + GAME_CONFIG.road.edgeSafetyMargin) ? 1 : -1;
-                break;
-            }
-        }
-    }
-
-    if (dangerFound) {
-        if (kart.aiState !== 'dodging') {
-            kart.aiState = 'dodging';
-            kart.originalLaneY = kart.yPercent;
-            kart.dodgeIntensity = randomRange(
-                GAME_CONFIG.ai.dodgeIntensityMin * handling,
-                GAME_CONFIG.ai.dodgeIntensityMax * handling
-            );
-        }
-        kart.targetVy = avoidDirection * kart.dodgeIntensity;
-        kart.vy += (kart.targetVy - kart.vy) * GAME_CONFIG.physics.smoothingFactor * handling * deltaTime;
-        return;
-    }
-
-    let overtakeFound = false;
-    const kartsLen = worldState.karts.length;
-    for (let i = 0; i < kartsLen; i++) {
-        const other = worldState.karts[i];
-        if (other.id === kart.id || other.state !== 'running') continue;
-
-        let dist = getShortestDistance(other.worldX, kart.worldX);
-        const distY = Math.abs(other.yPercent - kart.yPercent);
-
-        if (dist > 0 && dist < GAME_CONFIG.ai.overtakeDetectionRange && distY < GAME_CONFIG.ai.overtakeMinDistance) {
-            overtakeFound = true;
-            let dir = (kart.yPercent > other.yPercent) ? 1 : -1;
-            if (kart.yPercent > GAME_CONFIG.road.maxY - GAME_CONFIG.road.overtakeMargin) dir = -1;
-            if (kart.yPercent < GAME_CONFIG.road.minY + GAME_CONFIG.road.overtakeMargin) dir = 1;
-            kart.targetVy = dir * GAME_CONFIG.ai.overtakeSideSpeed * handling;
-            break;
-        }
-    }
-
-    if (overtakeFound) {
-        kart.originalLaneY = kart.yPercent;
-        kart.vy += (kart.targetVy - kart.vy) * GAME_CONFIG.physics.smoothingFactor * handling * deltaTime;
-        return;
-    }
-
-    let boxTargetFound = false;
-    if (!kart.heldItem) {
-        const boxesLen = worldState.itemBoxes.length;
-        for (let i = 0; i < boxesLen; i++) {
-            const box = worldState.itemBoxes[i];
-            if (!box.active) continue;
-            let dist = getShortestDistance(box.worldX, kart.worldX);
-            if (dist > 0 && dist < GAME_CONFIG.ai.boxDetectionRange) {
-                const diffY = box.y - kart.yPercent;
-                if (Math.abs(diffY) > 2) {
-                    kart.targetVy = ((diffY > 0) ? GAME_CONFIG.ai.boxSeekIntensity : -GAME_CONFIG.ai.boxSeekIntensity) * handling;
-                    boxTargetFound = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (boxTargetFound) {
-        kart.vy += (kart.targetVy - kart.vy) * GAME_CONFIG.physics.smoothingFactor * handling * deltaTime;
-        return;
-    }
-
-    if (now > kart.nextWanderTime) {
-        kart.nextWanderTime = now + randomRange(GAME_CONFIG.ai.wanderIntervalMin, GAME_CONFIG.ai.wanderIntervalMax);
-        kart.wanderEndTime = now + randomRange(GAME_CONFIG.ai.wanderDurationMin, GAME_CONFIG.ai.wanderDurationMax);
-        let dir = (Math.random() > 0.5) ? 1 : -1;
-        if (kart.yPercent > GAME_CONFIG.road.maxY - GAME_CONFIG.road.wanderMargin) dir = -1;
-        if (kart.yPercent < GAME_CONFIG.road.minY + GAME_CONFIG.road.wanderMargin) dir = 1;
-        kart.wanderVy = dir * GAME_CONFIG.ai.wanderSpeed * handling;
-    }
-
-    if (now < kart.wanderEndTime) {
-        kart.targetVy = kart.wanderVy;
-        kart.originalLaneY = kart.yPercent;
-    } else {
-        if (kart.aiState === 'dodging') {
-            const diff = kart.originalLaneY - kart.yPercent;
-            if (Math.abs(diff) < 1) {
-                kart.targetVy = 0;
-                kart.yPercent = kart.originalLaneY;
-                kart.aiState = 'cruising';
-            } else {
-                kart.targetVy = (diff > 0 ? 1 : -1) * GAME_CONFIG.speeds.returnLane * handling;
-            }
-        } else {
-            kart.targetVy = 0;
-            kart.aiState = 'cruising';
-        }
-    }
-
-    kart.vy += (kart.targetVy - kart.vy) * GAME_CONFIG.physics.smoothingFactor * handling * deltaTime;
-}
-
-
-function getDistanceToLeader(kart) {
-    const leader = worldState.cachedLeader;
-    if (!leader || leader.id === kart.id) return 0;
-    return leader.totalDistance - kart.totalDistance;
-}
-
-function rollItem(kart) {
-    const distToLeader = getDistanceToLeader(kart);
-    const itemDist = GAME_CONFIG.itemDistribution;
-    const tiers = itemDist.tiers;
-
-    let tier;
-    if (kart.rank === 1) {
-        tier = itemDist.leaderTier;
-    } else {
-        tier = tiers.find(t => distToLeader <= t.maxDistance) || tiers[tiers.length - 1];
-    }
-
-    const totalKarts = worldState.karts.length;
-    const isLastTwo = kart.rank >= totalKarts - 1;
-    let canGetStar = false;
-    if (kart.rank === 1) {
-        canGetStar = false;
-    } else if (kart.rank <= 3) {
-        canGetStar = distToLeader >= itemDist.starMinDistTop;
-    } else if (isLastTwo) {
-        canGetStar = true;
-    } else {
-        canGetStar = distToLeader >= itemDist.starMinDistMid;
-    }
-
-    const weights = {};
-    for (const key in tier.weights) {
-        weights[key] = (key === 'star' && !canGetStar) ? 0 : tier.weights[key];
-    }
-
-    const total = Object.values(weights).reduce((s, w) => s + w, 0);
-    let roll = Math.random() * total;
-
-    for (const [itemType, weight] of Object.entries(weights)) {
-        roll -= weight;
-        if (roll <= 0) return itemType;
-    }
-    return 'banana';
 }
 
 function getItemVisualConfig(itemType) {
@@ -744,12 +518,9 @@ function getItemVisualConfig(itemType) {
     }
 }
 
-function giveKartItem(kart) {
-    if (kart.heldItem) return;
-
-    const itemType = rollItem(kart);
-
+function createHeldItemElement(itemType, holdPosition) {
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
+
     const itemDiv = document.createElement('div');
     itemDiv.style.position = 'absolute';
     itemDiv.style.pointerEvents = 'none';
@@ -761,111 +532,185 @@ function giveKartItem(kart) {
     itemDiv.style.width = `${visual.size}px`;
     img.src = visual.src;
 
-    let offset;
-    let yShift = 0;
-    if (visual.holdPosition === 'hands') {
+    if (holdPosition === 'hands') {
         itemDiv.classList.add('held-item-bouncing');
-        offset = cachedIsMobile ? GAME_CONFIG.offsets.heldItemHands.x.mobile : GAME_CONFIG.offsets.heldItemHands.x.pc;
-        yShift = cachedIsMobile ? GAME_CONFIG.offsets.heldItemHands.yShift.mobile : GAME_CONFIG.offsets.heldItemHands.yShift.pc;
-    } else {
-        offset = cachedIsMobile ? GAME_CONFIG.offsets.heldItemBehind.mobile : GAME_CONFIG.offsets.heldItemBehind.pc;
     }
 
     itemDiv.appendChild(img);
     cachedContainer.appendChild(itemDiv);
-
-    kart.heldItem = {
-        type: itemType,
-        element: itemDiv,
-        imgElement: img,
-        offset: offset,
-        yShift: yShift,
-        holdPosition: visual.holdPosition
-    };
-
-    kart.throwTime = getGameTime() + randomRange(GAME_CONFIG.ai.holdItemMin, GAME_CONFIG.ai.holdItemMax);
+    return { div: itemDiv, img: img };
 }
 
-function getKartByRank(rank) {
-    return worldState.karts.find(k => k.rank === rank && (k.state === 'running' || k.state === 'hit')) || null;
+function applyEvent(ev) {
+    switch (ev.type) {
+        case 'kartSpawned': {
+            const kart = worldState.kartsById[ev.kartId];
+            if (kart) addKartToLeaderboard(kart);
+            break;
+        }
+        case 'spawnHeldItem': {
+            const el = createHeldItemElement(ev.itemType, ev.holdPosition);
+            itemEls[ev.itemId] = el.div;
+
+            break;
+        }
+        case 'removeHeldItem':
+        case 'killItem': {
+            const el = itemEls[ev.itemId];
+            if (el) { el.remove(); delete itemEls[ev.itemId]; }
+            break;
+        }
+        case 'launchItem': {
+
+            break;
+        }
+        case 'kartHit': {
+            triggerPPHitAnimation(ev.kartId);
+            break;
+        }
+        case 'starOn': {
+            const els = kartEls[ev.kartId];
+            if (els) els.wrapper.classList.add('star-active');
+            if (ppEls[ev.kartId]) ppEls[ev.kartId].classList.add('pp-star-active');
+            break;
+        }
+        case 'starOff': {
+            const els = kartEls[ev.kartId];
+            if (els) { els.wrapper.style.filter = 'none'; els.wrapper.classList.remove('star-active'); }
+            if (ppEls[ev.kartId]) ppEls[ev.kartId].classList.remove('pp-star-active');
+            break;
+        }
+        case 'leaderboardPosition': {
+            applyLeaderboardPosition(ev.kartId, ev.newPosition, ev.prevPosition);
+            break;
+        }
+    }
 }
 
-function activateItem(kart) {
-    const held = kart.heldItem;
-    if (!held) return;
+function renderState(gameNow, screenWidth) {
+    const renderMargin = GAME_CONFIG.rendering.bufferZone;
 
-    const gameNow = getGameTime();
-
-    if (held.type === 'shroom') {
-        kart.boostEndTime = gameNow + GAME_CONFIG.speeds.shroomDuration;
-        kart.absoluteVelocity = kart.stats.topSpeed;
-        kart.momentum = 1.0;
-        held.element.remove();
-        kart.heldItem = null;
-        return;
+    if (cachedBg) {
+        const bgX = worldState.cameraX % GAME_CONFIG.world.width;
+        cachedBg.style.backgroundPosition = `-${bgX}px 0px`;
+    } else {
+        cachedBg = document.querySelector('.layer-scrolling-bg');
     }
 
-    if (held.type === 'star') {
-        const totalKarts = worldState.karts.length;
-        const rankRatio = (kart.rank - 1) / Math.max(totalKarts - 1, 1);
-        const starDur = GAME_CONFIG.speeds.starDurationMin + rankRatio * (GAME_CONFIG.speeds.starDurationMax - GAME_CONFIG.speeds.starDurationMin);
-        kart.starEndTime = gameNow + starDur;
-        kart.isInvincible = true;
-        kart.absoluteVelocity = kart.stats.topSpeed;
-        kart.momentum = 1.0;
-        kart.element.classList.add('star-active');
-        if (kart.leaderboardPP) kart.leaderboardPP.classList.add('pp-star-active');
-        held.element.remove();
-        kart.heldItem = null;
-        return;
+    if (worldState.finishLine && worldState.finishLine.element) {
+        const rx = getScreenPosition(worldState.finishLine.worldX, worldState.cameraX, screenWidth);
+        worldState.finishLine.element.style.transform = `translate3d(${rx}px, 0, 0)`;
     }
 
-    let startX = kart.worldX + held.offset;
-    if (held.type === 'greenShell' || held.type === 'redShell') {
-        const shellOffset = cachedIsMobile ? GAME_CONFIG.offsets.shellSpawn.mobile : GAME_CONFIG.offsets.shellSpawn.pc;
-        startX = kart.worldX + shellOffset;
-    }
+    const boxesLen = worldState.itemBoxes.length;
+    const floatY = Math.sin(gameNow * GAME_CONFIG.physics.floatSpeed) * GAME_CONFIG.physics.floatAmplitude;
+    for (let i = 0; i < boxesLen; i++) {
+        const box = worldState.itemBoxes[i];
+        const el = boxEls[i];
+        if (!el) continue;
+        if (!box.active) { el.style.display = 'none'; continue; }
 
-    let itemAbsVelX = 0;
-    let vy = 0;
-    let targetKartId = null;
-
-    if (held.type === 'banana') {
-        itemAbsVelX = 0;
-    } else if (held.type === 'greenShell') {
-        itemAbsVelX = GAME_CONFIG.speeds.projectileSpeed;
-        vy = randomRange(-GAME_CONFIG.speeds.shellVertical, GAME_CONFIG.speeds.shellVertical);
-    } else if (held.type === 'redShell') {
-        itemAbsVelX = GAME_CONFIG.speeds.redShellSpeed;
-        const targetRank = kart.rank - 1;
-        const target = getKartByRank(targetRank);
-        if (target) {
-            targetKartId = target.id;
+        const rx = getScreenPosition(box.worldX, worldState.cameraX, screenWidth);
+        if (rx > -renderMargin && rx < screenWidth + renderMargin) {
+            el.style.display = 'block';
+            el.style.transform = `translate3d(${rx}px, ${floatY}px, 0)`;
         } else {
-            vy = randomRange(-GAME_CONFIG.speeds.shellVertical, GAME_CONFIG.speeds.shellVertical);
+            el.style.display = 'none';
         }
     }
 
-    const newItem = {
-        type: held.type,
-        element: held.element,
-        imgElement: held.imgElement,
-        worldX: startX,
-        y: kart.yPercent,
-        vx: itemAbsVelX,
-        vy: vy,
-        shooterId: kart.id,
-        targetKartId: targetKartId,
-        createdAt: gameNow,
-        currentFrame: 1,
-        lastAnimTime: 0,
-        isDead: false
-    };
+    const kartsLen = worldState.karts.length;
+    for (let i = 0; i < kartsLen; i++) {
+        const kart = worldState.karts[i];
+        const els = kartEls[kart.id];
+        if (!els) continue;
+        const wrapper = els.wrapper;
 
-    worldState.items.push(newItem);
-    kart.heldItem = null;
+        if (kart.state === 'pending') {
+            wrapper.style.display = 'none';
+            if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].style.display = 'none';
+            continue;
+        }
+
+        if (kart.state === 'hit') {
+            if (kart.stopped) {
+                if (!wrapper.classList.contains('kart-stopped')) wrapper.classList.add('kart-stopped');
+                if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].classList.add('item-stopped');
+            } else {
+                wrapper.classList.remove('kart-stopped');
+                if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].classList.remove('item-stopped');
+            }
+        } else {
+            wrapper.classList.remove('kart-stopped');
+            if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].classList.remove('item-stopped');
+        }
+
+        const rx = getScreenPosition(kart.worldX, worldState.cameraX, screenWidth);
+        const isVisibleNow = (rx > -renderMargin && rx < screenWidth + renderMargin);
+
+        if (isVisibleNow) {
+            wrapper.style.display = 'block';
+            wrapper.style.transform = `translate3d(${rx}px, 0, 0)`;
+            wrapper.style.bottom = `${kart.yPercent}%`;
+
+            const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
+            if (wrapper.style.zIndex != zVal) wrapper.style.zIndex = zVal;
+
+            const targetFilter = (kart.state === 'hit') ? 'hit' : 'none';
+            if (kart.currentFilter !== targetFilter) {
+                kart.currentFilter = targetFilter;
+                wrapper.style.filter = targetFilter === 'hit'
+                    ? 'brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)'
+                    : 'none';
+            }
+
+            if (kart.heldItem) {
+                const hel = itemEls[kart.heldItem.id];
+                if (hel) {
+                    hel.style.display = 'block';
+                    const hx = rx + kart.heldItem.offset;
+                    const hy = kart.heldItem.yShift || 0;
+                    hel.style.transform = `translate3d(${hx}px, ${-hy}px, 0)`;
+                    hel.style.bottom = `${kart.yPercent}%`;
+                    const itemZ = kart.heldItem.holdPosition === 'hands' ? zVal + 1 : zVal;
+                    if (hel.style.zIndex != itemZ) hel.style.zIndex = itemZ;
+                }
+            }
+        } else {
+            wrapper.style.display = 'none';
+            if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].style.display = 'none';
+        }
+    }
+
+    for (let i = 0; i < worldState.items.length; i++) {
+        const item = worldState.items[i];
+        const el = itemEls[item.id];
+        if (!el) continue;
+
+        if (item.type === 'greenShell' || item.type === 'redShell') {
+            const img = el.firstChild;
+            if (img) {
+                const cached = imageCache[`${item.type}_${item.currentFrame}`];
+                const src = cached ? cached.src : (item.type === 'greenShell'
+                    ? GAME_CONFIG.resources.paths.greenShell(item.currentFrame)
+                    : GAME_CONFIG.resources.paths.redShell(item.currentFrame));
+                if (img.getAttribute('src') !== src) img.src = src;
+            }
+        }
+
+        const rx = getScreenPosition(item.worldX, worldState.cameraX, screenWidth);
+        const isVisible = (rx > -renderMargin && rx < screenWidth + renderMargin);
+        if (isVisible) {
+            el.style.display = 'block';
+            el.style.transform = `translate3d(${rx}px, 0, 0)`;
+            el.style.bottom = `${item.y}%`;
+            const zVal = (GAME_CONFIG.rendering.zIndexBase - item.y) | 0;
+            if (el.style.zIndex != zVal) el.style.zIndex = zVal;
+        } else {
+            el.style.display = 'none';
+        }
+    }
 }
-
 
 function animate(timestamp) {
     if (!lastFrameTime) lastFrameTime = timestamp;
@@ -875,478 +720,25 @@ function animate(timestamp) {
 
     const gameNow = getGameTime();
     updateMobileStatus();
-    handleSpawns(gameNow);
 
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
-    
+
     if (cachedContainer) {
         let screenWidth = cachedContainer.offsetWidth;
         if (cachedIsMobile) {
             screenWidth = screenWidth / GAME_CONFIG.rendering.mobileScale;
         }
-        const renderMargin = GAME_CONFIG.rendering.bufferZone;
-        
-        worldState.cameraX += GAME_CONFIG.speeds.roadPPS * deltaTime;
-        if (worldState.cameraX >= GAME_CONFIG.world.width) {
-            worldState.cameraX -= GAME_CONFIG.world.width;
-        }
 
-        if (cachedBg) {
-            const bgX = worldState.cameraX % GAME_CONFIG.world.width;
-            cachedBg.style.backgroundPosition = `-${bgX}px 0px`;
-        } else {
-            cachedBg = document.querySelector('.layer-scrolling-bg');
-        }
+        const events = PH.stepPhysics(GAME_CONFIG, worldState, rng, gameNow, deltaTime, cachedIsMobile);
 
-        if (worldState.finishLine && worldState.finishLine.element) {
-            const rx = getScreenPosition(worldState.finishLine.worldX, worldState.cameraX, screenWidth);
-            worldState.finishLine.element.style.transform = `translate3d(${rx}px, 0, 0)`;
-        }
+        for (let e = 0; e < events.length; e++) applyEvent(events[e]);
 
-        const boxesLen = worldState.itemBoxes.length;
-        const floatY = Math.sin(gameNow * GAME_CONFIG.physics.floatSpeed) * GAME_CONFIG.physics.floatAmplitude;
-
-        for (let i = 0; i < boxesLen; i++) {
-            const box = worldState.itemBoxes[i];
-            if (!box.active && gameNow > box.reactivateTime) {
-                box.active = true;
-                box.element.style.display = 'block';
-            }
-            if (!box.active) box.element.style.display = 'none';
-
-            const rx = getScreenPosition(box.worldX, worldState.cameraX, screenWidth);
-            
-            if (rx > -renderMargin && rx < screenWidth + renderMargin) {
-                box.element.style.transform = `translate3d(${rx}px, ${floatY}px, 0)`;
-                if (box.active) {
-                    box.element.style.display = 'block';
-                    
-                    const kartsLen = worldState.karts.length;
-                    for (let k = 0; k < kartsLen; k++) {
-                        const kart = worldState.karts[k];
-                        if (kart.state !== 'running' && kart.state !== 'hit') continue; 
-                        
-                        const dist = getShortestDistance(box.worldX, kart.worldX);
-                        const dy = Math.abs(box.y - kart.yPercent);
-                        if (Math.abs(dist) < GAME_CONFIG.hitboxes.itemBox.x && dy < GAME_CONFIG.hitboxes.itemBox.y) {
-                            box.active = false;
-                            box.reactivateTime = gameNow + GAME_CONFIG.delays.boxRespawn;
-                            if (!kart.heldItem) {
-                                kart.pendingItemGrantTime = gameNow + GAME_CONFIG.delays.itemGrant;
-                            }
-                        }
-                    }
-                }
-            } else {
-                box.element.style.display = 'none';
-            }
-        }
-
-        const kartsLen = worldState.karts.length;
-        for (let i = 0; i < kartsLen; i++) {
-            const kart = worldState.karts[i];
-
-            if (kart.state === 'pending') {
-                kart.element.style.display = 'none';
-                if (kart.heldItem) kart.heldItem.element.style.display = 'none';
-                continue;
-            }
-
-            if (kart.state === 'running') {
-                if (kart.pendingItemGrantTime && gameNow > kart.pendingItemGrantTime) {
-                    giveKartItem(kart);
-                    kart.pendingItemGrantTime = 0;
-                }
-
-                updateAI(kart, deltaTime);
-
-                const isBoosted = kart.boostEndTime > gameNow || kart.starEndTime > gameNow;
-
-                if (isBoosted) {
-                    kart.absoluteVelocity = kart.stats.topSpeed;
-                    kart.momentum = 1.0;
-                    kart.nextMomentumChange = gameNow + randomRange(GAME_CONFIG.speeds.momentumDriftMin, GAME_CONFIG.speeds.momentumDriftMax);
-                } else {
-                    if (gameNow > kart.nextMomentumChange) {
-                        kart.momentumTarget = getNewMomentumTarget(kart.stats);
-                        kart.nextMomentumChange = gameNow + randomRange(GAME_CONFIG.speeds.momentumDriftMin, GAME_CONFIG.speeds.momentumDriftMax);
-                    }
-                    const mChangeSpeed = GAME_CONFIG.speeds.momentumChangeSpeed;
-                    if (kart.momentum < kart.momentumTarget) {
-                        kart.momentum = Math.min(kart.momentumTarget, kart.momentum + mChangeSpeed * deltaTime);
-                    } else {
-                        kart.momentum = Math.max(kart.momentumTarget, kart.momentum - mChangeSpeed * deltaTime);
-                    }
-
-                    const targetSpeed = getMomentumSpeed(kart.stats, kart.momentum);
-                    const accRate = GAME_CONFIG.speeds.accelerationRate * kart.stats.acceleration;
-                    if (kart.absoluteVelocity < targetSpeed) {
-                        kart.absoluteVelocity = Math.min(targetSpeed, kart.absoluteVelocity + accRate * deltaTime);
-                    } else if (kart.absoluteVelocity > targetSpeed) {
-                        kart.absoluteVelocity = Math.max(targetSpeed, kart.absoluteVelocity - accRate * 0.25 * deltaTime);
-                    }
-                    if (kart.absoluteVelocity > kart.stats.topSpeed) {
-                        kart.absoluteVelocity = kart.stats.topSpeed;
-                    }
-                }
-
-                let effectiveSpeed = kart.absoluteVelocity;
-                if (kart.boostEndTime > gameNow) {
-                    effectiveSpeed = kart.stats.topSpeed + GAME_CONFIG.speeds.shroomBoost;
-                }
-
-                if (kart.starEndTime > gameNow) {
-                    effectiveSpeed = Math.max(effectiveSpeed, kart.stats.topSpeed * GAME_CONFIG.speeds.starSpeedMultiplier);
-                    kart.isInvincible = true;
-                } else if (kart.isInvincible) {
-                    kart.isInvincible = false;
-                    kart.element.style.filter = 'none';
-                    kart.element.classList.remove('star-active');
-                    if (kart.leaderboardPP) kart.leaderboardPP.classList.remove('pp-star-active');
-                }
-
-                const moveDist = effectiveSpeed * deltaTime;
-                kart.totalDistance += moveDist;
-
-                const prevWorldX = kart.worldX;
-                kart.worldX += moveDist;
-                kart.yPercent += kart.vy * deltaTime;
-
-                const finishX = GAME_CONFIG.world.finishLineX;
-                if (prevWorldX < finishX && kart.worldX >= finishX) {
-                    if (kart.hasPassedFinishLine) {
-                        kart.lapCount++;
-                    } else {
-                        kart.hasPassedFinishLine = true;
-                    }
-                }
-
-                if (kart.worldX >= GAME_CONFIG.world.width) {
-                    kart.worldX -= GAME_CONFIG.world.width;
-                }
-                if (kart.worldX < 0) {
-                    kart.worldX += GAME_CONFIG.world.width;
-                }
-
-                if (kart.yPercent > GAME_CONFIG.road.maxY) { kart.yPercent = GAME_CONFIG.road.maxY; kart.vy = 0; }
-                if (kart.yPercent < GAME_CONFIG.road.minY) { kart.yPercent = GAME_CONFIG.road.minY; kart.vy = 0; }
-
-                for (let j = i + 1; j < kartsLen; j++) {
-                    const other = worldState.karts[j];
-                    if (other.state !== 'running') continue;
-                    const dx = Math.abs(getShortestDistance(other.worldX, kart.worldX));
-                    const dy = Math.abs(other.yPercent - kart.yPercent);
-                    if (dx < GAME_CONFIG.hitboxes.kartVsKart.x && dy < GAME_CONFIG.hitboxes.kartVsKart.y) {
-                         if (kart.isInvincible && other.isInvincible) continue;
-                         if (kart.isInvincible) {
-                             if (other.hitInvincibleUntil > gameNow) continue;
-                             other.state = 'hit';
-                             other.hitEndTime = gameNow + GAME_CONFIG.delays.hitDecelDuration + GAME_CONFIG.delays.hitPauseDuration;
-                             triggerPPHitAnimation(other);
-                             if (other.heldItem) other.throwTime = other.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
-                             continue;
-                         }
-                         if (other.isInvincible) {
-                             if (kart.hitInvincibleUntil > gameNow) continue;
-                             kart.state = 'hit';
-                             kart.hitEndTime = gameNow + GAME_CONFIG.delays.hitDecelDuration + GAME_CONFIG.delays.hitPauseDuration;
-                             triggerPPHitAnimation(kart);
-                             if (kart.heldItem) kart.throwTime = kart.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
-                             continue;
-                         }
-                         const myWeight = kart.stats.weight;
-                         const otherWeight = other.stats.weight;
-                         const totalWeight = myWeight + otherWeight;
-                         const myRatio = otherWeight / totalWeight;
-                         const otherRatio = myWeight / totalWeight;
-                         const pushForce = GAME_CONFIG.physics.pushForce;
-                         const myBounceY = GAME_CONFIG.physics.collisionBounceY * myRatio;
-                         const otherBounceY = GAME_CONFIG.physics.collisionBounceY * otherRatio;
-                         if (kart.yPercent > other.yPercent) {
-                             kart.yPercent += pushForce * myRatio; kart.vy = myBounceY;
-                             other.yPercent -= pushForce * otherRatio; other.vy = -otherBounceY;
-                         } else {
-                             kart.yPercent -= pushForce * myRatio; kart.vy = -myBounceY;
-                             other.yPercent += pushForce * otherRatio; other.vy = otherBounceY;
-                         }
-                    }
-                }
-
-                if (kart.heldItem && kart.state === 'running' && kart.heldItem.holdPosition === 'behind') {
-                    let itemWorldX = kart.worldX + kart.heldItem.offset;
-                    if (itemWorldX < 0) itemWorldX += GAME_CONFIG.world.width;
-                    if (itemWorldX >= GAME_CONFIG.world.width) itemWorldX -= GAME_CONFIG.world.width;
-
-                    const itemY = kart.yPercent;
-
-                    for (let j = 0; j < kartsLen; j++) {
-                        const victim = worldState.karts[j];
-                        if (victim.id === kart.id || victim.state !== 'running') continue;
-                        if (victim.hitInvincibleUntil > gameNow) continue;
-
-                        const dx = Math.abs(getShortestDistance(itemWorldX, victim.worldX));
-                        const dy = Math.abs(itemY - victim.yPercent);
-
-                        const hitThresholdY = 8;
-
-                        if (dx < GAME_CONFIG.hitboxes.itemVsKart.x && dy < hitThresholdY) {
-                            if (victim.isInvincible) {
-                                kart.heldItem.element.remove();
-                                kart.heldItem = null;
-                                break;
-                            }
-                            kart.heldItem.element.remove();
-                            kart.heldItem = null;
-
-                            victim.state = 'hit';
-                            victim.hitEndTime = gameNow + GAME_CONFIG.delays.hitDecelDuration + GAME_CONFIG.delays.hitPauseDuration;
-                            triggerPPHitAnimation(victim);
-                            if (victim.heldItem) {
-                                victim.throwTime = victim.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                if (kart.heldItem && gameNow > kart.throwTime) activateItem(kart);
-
-            } else if (kart.state === 'hit') {
-                const totalHitTime = GAME_CONFIG.delays.hitDecelDuration + GAME_CONFIG.delays.hitPauseDuration;
-                const hitStart = kart.hitEndTime - totalHitTime;
-                const elapsed = gameNow - hitStart;
-                const decelDuration = GAME_CONFIG.delays.hitDecelDuration;
-
-                if (elapsed < decelDuration) {
-                    const decelProgress = elapsed / decelDuration;
-                    const hitSpeedFactor = 0.3 * Math.max(0, 1.0 - decelProgress * decelProgress);
-                    const moveDist = GAME_CONFIG.speeds.roadPPS * hitSpeedFactor * deltaTime;
-                    kart.worldX += moveDist;
-                    kart.totalDistance += moveDist;
-                    kart.element.classList.remove('kart-stopped');
-                    if (kart.heldItem) kart.heldItem.element.classList.remove('item-stopped');
-                } else {
-                    if (!kart.element.classList.contains('kart-stopped')) {
-                        kart.element.classList.add('kart-stopped');
-                    }
-                    if (kart.heldItem && !kart.heldItem.element.classList.contains('item-stopped')) {
-                        kart.heldItem.element.classList.add('item-stopped');
-                    }
-                }
-
-                if (kart.worldX >= GAME_CONFIG.world.width) {
-                    kart.worldX -= GAME_CONFIG.world.width;
-                }
-                if (gameNow > kart.hitEndTime) {
-                    kart.state = 'running';
-                    kart.element.classList.remove('kart-stopped');
-                    if (kart.heldItem) kart.heldItem.element.classList.remove('item-stopped');
-                    kart.absoluteVelocity = 0;
-                    kart.momentum = 0.2;
-                    kart.momentumTarget = randomRange(0.6, 1.0);
-                    kart.nextMomentumChange = gameNow + randomRange(GAME_CONFIG.speeds.momentumDriftMin, GAME_CONFIG.speeds.momentumDriftMax);
-                    kart.hitInvincibleUntil = gameNow + GAME_CONFIG.delays.invincibilityAfterHit;
-                }
-            }
-
-            const rx = getScreenPosition(kart.worldX, worldState.cameraX, screenWidth);
-            const isVisibleNow = (rx > -renderMargin && rx < screenWidth + renderMargin);
-
-            if (isVisibleNow) {
-                kart.element.style.display = 'block';
-                kart.element.style.transform = `translate3d(${rx}px, 0, 0)`;
-                kart.element.style.bottom = `${kart.yPercent}%`;
-                
-                const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
-                if (kart.element.style.zIndex != zVal) kart.element.style.zIndex = zVal;
-
-                const targetFilter = (kart.state === 'hit') ? 'hit' : 'none';
-                if (kart.currentFilter !== targetFilter) {
-                    kart.currentFilter = targetFilter;
-                    kart.element.style.filter = targetFilter === 'hit'
-                        ? 'brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)'
-                        : 'none';
-                }
-                
-                if (kart.heldItem) {
-                    kart.heldItem.element.style.display = 'block';
-                    const hx = rx + kart.heldItem.offset;
-                    const hy = kart.heldItem.yShift || 0;
-                    kart.heldItem.element.style.transform = `translate3d(${hx}px, ${-hy}px, 0)`;
-                    kart.heldItem.element.style.bottom = `${kart.yPercent}%`;
-                    const itemZ = kart.heldItem.holdPosition === 'hands' ? zVal + 1 : zVal;
-                    if (kart.heldItem.element.style.zIndex != itemZ) kart.heldItem.element.style.zIndex = itemZ;
-                }
-            } else {
-                kart.element.style.display = 'none';
-                if (kart.heldItem) kart.heldItem.element.style.display = 'none';
-            }
-        }
-
-        for (let i = worldState.items.length - 1; i >= 0; i--) {
-            const item = worldState.items[i];
-            if (item.isDead) continue;
-
-            for (let j = i - 1; j >= 0; j--) {
-                const other = worldState.items[j];
-                if (other.isDead) continue;
-                const dx = Math.abs(getShortestDistance(item.worldX, other.worldX));
-                const dy = Math.abs(item.y - other.y);
-                if (dx < GAME_CONFIG.hitboxes.itemVsKart.x && dy < GAME_CONFIG.hitboxes.itemVsKart.y) {
-                    item.isDead = true;
-                    other.isDead = true;
-                }
-            }
-        }
-
-        for (let i = worldState.items.length - 1; i >= 0; i--) {
-            const item = worldState.items[i];
-            if (item.isDead) continue;
-
-            if (item.type !== 'banana') {
-                if (item.type === 'redShell' && item.targetKartId !== null) {
-                    const target = worldState.kartsById[item.targetKartId];
-                    if (target && (target.state === 'running' || target.state === 'hit')) {
-                        const diffY = target.yPercent - item.y;
-                        item.vy = diffY * GAME_CONFIG.speeds.redShellTrackingSpeed;
-                    } else {
-                        let newTarget = null;
-                        let bestDist = Infinity;
-                        for (let k = 0; k < kartsLen; k++) {
-                            const candidate = worldState.karts[k];
-                            if (candidate.id === item.shooterId) continue;
-                            if (candidate.state !== 'running') continue;
-                            const dist = getShortestDistance(candidate.worldX, item.worldX);
-                            if (dist > 0 && dist < bestDist) {
-                                bestDist = dist;
-                                newTarget = candidate;
-                            }
-                        }
-                        if (newTarget) {
-                            item.targetKartId = newTarget.id;
-                        } else {
-                            item.targetKartId = null;
-                            item.vy = randomRange(-GAME_CONFIG.speeds.shellVertical, GAME_CONFIG.speeds.shellVertical);
-                        }
-                    }
-                }
-
-                item.worldX += item.vx * deltaTime;
-                item.y += item.vy * deltaTime;
-
-                if (item.y > GAME_CONFIG.road.maxY) {
-                    item.y = GAME_CONFIG.road.maxY;
-                    if (item.type !== 'redShell') item.vy = -item.vy;
-                } else if (item.y < GAME_CONFIG.road.minY) {
-                    item.y = GAME_CONFIG.road.minY;
-                    if (item.type !== 'redShell') item.vy = -item.vy;
-                }
-            }
-
-            if (item.worldX >= GAME_CONFIG.world.width) item.worldX -= GAME_CONFIG.world.width;
-            if (item.worldX < 0) item.worldX += GAME_CONFIG.world.width;
-
-            if (item.type === 'greenShell') {
-                if (gameNow - item.lastAnimTime > GAME_CONFIG.visuals.greenShell.animSpeed) {
-                    item.currentFrame = (item.currentFrame % 3) + 1;
-                    const cached = imageCache[`greenShell_${item.currentFrame}`];
-                    item.imgElement.src = cached ? cached.src : GAME_CONFIG.resources.paths.greenShell(item.currentFrame);
-                    item.lastAnimTime = gameNow;
-                }
-            } else if (item.type === 'redShell') {
-                if (gameNow - item.lastAnimTime > GAME_CONFIG.visuals.redShell.animSpeed) {
-                    item.currentFrame = (item.currentFrame % 3) + 1;
-                    const cached = imageCache[`redShell_${item.currentFrame}`];
-                    item.imgElement.src = cached ? cached.src : GAME_CONFIG.resources.paths.redShell(item.currentFrame);
-                    item.lastAnimTime = gameNow;
-                }
-            }
-            if (item.type === 'banana' && gameNow - item.createdAt > GAME_CONFIG.delays.bananaLife) {
-                item.isDead = true;
-            }
-
-            const rx = getScreenPosition(item.worldX, worldState.cameraX, screenWidth);
-            const isVisible = (rx > -renderMargin && rx < screenWidth + renderMargin);
-
-            if (isVisible && !item.isDead) {
-                item.element.style.display = 'block';
-                item.element.style.transform = `translate3d(${rx}px, 0, 0)`;
-                item.element.style.bottom = `${item.y}%`;
-
-                const zVal = (GAME_CONFIG.rendering.zIndexBase - item.y) | 0;
-                if (item.element.style.zIndex != zVal) item.element.style.zIndex = zVal;
-
-                const kartsLen = worldState.karts.length;
-                for (let k = 0; k < kartsLen; k++) {
-                    const kart = worldState.karts[k];
-                    if (item.type === 'banana' && kart.id === item.shooterId && gameNow - item.createdAt < GAME_CONFIG.delays.invincibilityOwnItem) continue;
-                    if ((item.type === 'greenShell' || item.type === 'redShell') && kart.id === item.shooterId) continue;
-                    if (kart.state !== 'running' && kart.state !== 'hit') continue;
-
-                    if (kart.isInvincible) {
-                        const dk = Math.abs(getShortestDistance(item.worldX, kart.worldX));
-                        const dky = Math.abs(item.y - kart.yPercent);
-                        if (dk < GAME_CONFIG.hitboxes.itemVsKart.x && dky < GAME_CONFIG.hitboxes.itemVsKart.y) {
-                            item.isDead = true;
-                            break;
-                        }
-                        continue;
-                    }
-
-                    let hitHeldItem = false;
-                    if (kart.heldItem && kart.heldItem.holdPosition === 'behind') {
-                        let hX = kart.worldX + kart.heldItem.offset;
-                        if (hX < 0) hX += GAME_CONFIG.world.width;
-                        if (hX >= GAME_CONFIG.world.width) hX -= GAME_CONFIG.world.width;
-
-                        const dh = Math.abs(getShortestDistance(item.worldX, hX));
-                        const dhy = Math.abs(item.y - kart.yPercent);
-
-                        if (dh < GAME_CONFIG.hitboxes.itemVsKart.x && dhy < GAME_CONFIG.hitboxes.itemVsKart.y) {
-                             kart.heldItem.element.remove();
-                             kart.heldItem = null;
-                             item.isDead = true;
-                             hitHeldItem = true;
-                        }
-                    }
-
-                    if (hitHeldItem) break;
-
-                    const dk = Math.abs(getShortestDistance(item.worldX, kart.worldX));
-                    const dky = Math.abs(item.y - kart.yPercent);
-
-                    if (dk < GAME_CONFIG.hitboxes.itemVsKart.x && dky < GAME_CONFIG.hitboxes.itemVsKart.y) {
-                        if (kart.state === 'running' && kart.hitInvincibleUntil <= gameNow) {
-                            kart.state = 'hit';
-                            kart.hitEndTime = gameNow + GAME_CONFIG.delays.hitDecelDuration + GAME_CONFIG.delays.hitPauseDuration;
-                            triggerPPHitAnimation(kart);
-                            if (kart.heldItem) kart.throwTime = kart.hitEndTime + GAME_CONFIG.delays.throwDelayAfterHit;
-                        }
-                        item.isDead = true;
-                        break;
-                    }
-                }
-            } else {
-                item.element.style.display = 'none';
-            }
-        }
-
-        let writeIdx = 0;
-        for (let i = 0; i < worldState.items.length; i++) {
-            if (worldState.items[i].isDead) {
-                worldState.items[i].element.remove();
-            } else {
-                worldState.items[writeIdx++] = worldState.items[i];
-            }
-        }
-        worldState.items.length = writeIdx;
+        renderState(gameNow, screenWidth);
     }
 
-    updateLeaderboard(gameNow);
     if (GAME_CONFIG.debugMode) updateDebugHUD();
     animationId = requestAnimationFrame(animate);
 }
-
 
 function initDebugHUD() {
     let hud = document.getElementById('debug-hud');
@@ -1425,10 +817,10 @@ function updateDebugHUD() {
 
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     const screenWidth = cachedContainer ? cachedContainer.offsetWidth : window.innerWidth;
-    
+
     const camViews = hud.getElementsByClassName('debug-camera-view');
     if (camViews.length < 2) return;
-    
+
     const camMain = camViews[0];
     const camLoop = camViews[1];
 
@@ -1442,7 +834,7 @@ function updateDebugHUD() {
     camMain.style.width = `${viewPct}%`;
 
     const overflow = (camX + screenWidth) - worldW;
-    
+
     if (overflow > 0) {
         camLoop.style.display = 'block';
         camLoop.style.left = '0%';
@@ -1480,33 +872,31 @@ function updateDebugHUD() {
     }
 }
 
-
 function handleVisibilityChange() {
     const pauseOverlay = document.getElementById('pause-overlay');
-    
+
     if (document.hidden) {
         if (animationId) cancelAnimationFrame(animationId);
-        
+
         pauseStartTime = Date.now();
-        
+
         if (pauseOverlay) pauseOverlay.style.display = 'flex';
-        
+
     } else {
         if (pauseStartTime > 0) {
             const pauseDuration = Date.now() - pauseStartTime;
-            
+
             globalTimeOffset += pauseDuration;
-            
+
             pauseStartTime = 0;
         }
-        
+
         if (pauseOverlay) pauseOverlay.style.display = 'none';
-        
+
         lastFrameTime = 0;
         animationId = requestAnimationFrame(animate);
     }
 }
-
 
 function initSnow() {
     const banner = document.querySelector('.hero.smk-snes-banner');
@@ -1583,7 +973,7 @@ function createLandedSnowflake(container, containerWidth) {
 
     snowflake.style.left = `${80 + Math.random() * 40}%`;
 
-    const driftDistance = -containerWidth * 1.5; 
+    const driftDistance = -containerWidth * 1.5;
     const driftDuration = (containerWidth * 1.5) / GAME_CONFIG.speeds.roadPPS;
 
     snowflake.style.setProperty('--drift-distance', driftDistance);

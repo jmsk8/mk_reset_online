@@ -383,7 +383,7 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
     tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
     total_tournois = len(tournoi_ids)
 
-    seuils_at = [(idx + 1) * MIN_PARTICIPATION_RATIO for idx in range(total_tournois)]
+    seuil_participation = total_tournois * MIN_PARTICIPATION_RATIO
 
     meta: dict[int, dict] = {}
     for tid, _jid, _nom, _col, score, _pos in parts:
@@ -433,9 +433,8 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 points.append(None)
                 continue
 
-            seuil_at_n = seuils_at[idx]
             ip_base = (num_total / denom_total) * 100 if denom_total > 0 else 0.0
-            bonus = max(0, matchs - seuil_at_n) * GM_EXTRA_MATCH_BONUS
+            bonus = max(0, matchs - seuil_participation) * GM_EXTRA_MATCH_BONUS
             ip_total = round(ip_base + bonus, 2)
             data.append(ip_total)
 
@@ -444,7 +443,6 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             points.append(point_detail)
 
         final_ip = next((v for v in reversed(data) if v is not None), 0.0)
-        seuil_final = total_tournois * MIN_PARTICIPATION_RATIO
         datasets.append({
             "joueur_id": jid,
             "nom": p["nom"],
@@ -453,7 +451,7 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             "points": points,
             "final_ip": final_ip,
             "matchs": matchs,
-            "eligible": matchs >= seuil_final,
+            "eligible": matchs >= seuil_participation,
         })
 
     datasets.sort(key=lambda d: d["final_ip"], reverse=True)
