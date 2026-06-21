@@ -82,6 +82,10 @@
     background-image: url('../img/banners/index-banner-spring.png');
 }
 
+.hero.smk-snes-banner[data-season="summer"] .layer-scrolling-bg {
+    background-image: url('../img/banners/index-banner-defaut.png');
+}
+
 .layer-ground {
     position: absolute;
     bottom: 0;

@@ -75,6 +75,26 @@
             cursor: help;
             transition: transform 0.2s;
         }
+        .award-help {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            margin-left: 6px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #e6edf3;
+            font-size: 0.7rem;
+            font-weight: bold;
+            cursor: help;
+            vertical-align: middle;
+        }
+        .award-help:hover {
+            background: rgba(54, 162, 235, 0.4);
+            border-color: #36a2eb;
+        }
 
         .award-icon:hover {
             transform: scale(1.1);
@@ -601,7 +621,7 @@
                     {% set p3 = list_bronze[0] if list_bronze else none %}
 
                     {% if p2 %}
-                    <div class="moai-card" onclick="showAwardInfo('{{ p2.award_name|replace("'", "\\'") }}', '{{ p2.description|replace("'", "\\'") }}', {{ p2|tojson }})" title="{{ p2.description }}">
+                    <div class="moai-card fast-tip" onclick="showAwardInfo('{{ p2.award_name|replace("'", "\\'") }}', '{{ p2.description|replace("'", "\\'") }}', {{ p2|tojson }})" data-tip="{{ p2.description }}">
                         <div class="rank-badge" style="background: #C0C0C0; color: #000;">2ème</div>
                         <img src="/static/img/{{ p2.emoji }}" class="moai-img {{ 'league-glow-img' if p2.is_league_award else '' }}" {% if p2.is_league_award %}style="--league-color: {{ p2.ligue_couleur }};"{% endif %}>
                         <h3 class="title is-4">
@@ -618,7 +638,7 @@
                     {% endif %}
 
                     {% if p1 %}
-                    <div class="moai-card moai-gold" onclick="showAwardInfo('{{ p1.award_name|replace("'", "\\'") }}', '{{ p1.description|replace("'", "\\'") }}', {{ p1|tojson }})" title="{{ p1.description }}">
+                    <div class="moai-card moai-gold fast-tip" onclick="showAwardInfo('{{ p1.award_name|replace("'", "\\'") }}', '{{ p1.description|replace("'", "\\'") }}', {{ p1|tojson }})" data-tip="{{ p1.description }}">
                         <div class="rank-badge" style="background: #FFD700; color: #000; top: -20px; font-size: 1.2rem;">1er</div>
                         <img src="/static/img/{{ p1.emoji }}" class="moai-img {{ 'league-glow-img' if p1.is_league_award else '' }}" {% if p1.is_league_award %}style="--league-color: {{ p1.ligue_couleur }};"{% endif %}>
                         <h3 class="title is-3 glow-text">
@@ -635,7 +655,7 @@
                     {% endif %}
 
                     {% if p3 %}
-                    <div class="moai-card" onclick="showAwardInfo('{{ p3.award_name|replace("'", "\\'") }}', '{{ p3.description|replace("'", "\\'") }}', {{ p3|tojson }})" title="{{ p3.description }}">
+                    <div class="moai-card fast-tip" onclick="showAwardInfo('{{ p3.award_name|replace("'", "\\'") }}', '{{ p3.description|replace("'", "\\'") }}', {{ p3|tojson }})" data-tip="{{ p3.description }}">
                         <div class="rank-badge" style="background: #CD7F32; color: #000;">3ème</div>
                         <img src="/static/img/{{ p3.emoji }}" class="moai-img {{ 'league-glow-img' if p3.is_league_award else '' }}" {% if p3.is_league_award %}style="--league-color: {{ p3.ligue_couleur }};"{% endif %}>
                         <h3 class="title is-4">
@@ -664,15 +684,15 @@
                                     {% set info_award = saison.awards[award_code][0] %}
                                     <div class="card has-background-transparent border-light h-100">
                                         <div class="card-content has-text-centered">
-                                            <div class="award-icon" onclick="showAwardInfo('{{ info_award.award_name|replace("'", "\\'") }}', '{{ info_award.description|replace("'", "\\'") }}', {{ info_award|tojson }})" title="{{ info_award.description }}">
+                                            <div class="award-icon fast-tip" onclick="showAwardInfo('{{ info_award.award_name|replace("'", "\\'") }}', '{{ info_award.description|replace("'", "\\'") }}', {{ info_award|tojson }})" data-tip="{{ info_award.description }}">
                                                 {% if info_award.emoji and '.png' in info_award.emoji %}
                                                     <img src="/static/img/{{ info_award.emoji }}" class="award-img {{ 'league-glow-img' if info_award.is_league_award else '' }}" {% if info_award.is_league_award %}style="--league-color: {{ info_award.ligue_couleur }};"{% endif %}>
                                                 {% else %}
                                                     <span {% if info_award.is_league_award %}class="league-glow-img" style="--league-color: {{ info_award.ligue_couleur }};"{% endif %}>{{ info_award.emoji }}</span>
                                                 {% endif %}
                                             </div>
-                                            <p class="heading has-text-light mb-4">{{ info_award.award_name }}</p>
-                                            
+                                            <p class="heading has-text-light mb-4">{{ info_award.award_name }}{% if award_code == 'borderline' %}<span class="award-help fast-tip" data-tip="Récompense les résultats en yo-yo. Pour chaque tournoi, la place est ramenée sur une note de 0 (dernier) à 1 (1er). On mesure l'amplitude des écarts de cette note d'un tournoi à l'autre : plus ça monte et descend, plus le score est élevé. Un seul mauvais tournoi isolé ne suffit pas, il faut une vraie irrégularité sur la durée.">?</span>{% endif %}</p>
+
                                             <div class="winners-container">
                                                 {% for winner in saison.awards[award_code] %}
                                                     {% set val = winner.val %}
@@ -741,6 +761,24 @@
                             <div class="chart-legend" id="ipEvolutionLegend"></div>
                             <div class="chart-area">
                                 <canvas id="ipEvolutionChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if saison.ip_evolution and saison.ip_evolution.datasets and saison.ip_evolution.datasets|length > 0 %}
+                <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.57s">
+                    <header class="card-header">
+                        <p class="card-header-title is-centered has-text-white">
+                            <i class="fas fa-bolt mr-2"></i> IP pur gagné par match
+                        </p>
+                    </header>
+                    <div class="card-content">
+                        <div class="chart-container-wrapper">
+                            <div class="chart-legend" id="ipPureLegend"></div>
+                            <div class="chart-area">
+                                <canvas id="ipPureChart"></canvas>
                             </div>
                         </div>
                     </div>
@@ -1304,6 +1342,128 @@
                         scales: {
                             x: { grid: { color: 'rgba(255,255,255,0.05)' } },
                             y: { grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'IP', color: '#94a3b8' } }
+                        }
+                    }
+                });
+            })();
+            {% endif %}
+
+            {% if saison.ip_evolution and saison.ip_evolution.datasets and saison.ip_evolution.datasets|length > 0 %}
+            (function initIpPureChart() {
+                const raw = {{ saison.ip_evolution | tojson }};
+                const ctx = document.getElementById('ipPureChart').getContext('2d');
+                const legend = document.getElementById('ipPureLegend');
+
+                const built = raw.datasets.map(ds => {
+                    const pts = ds.points || [];
+                    const pureData = pts.map(p => (p ? p.ip_pur : null));
+                    const played = pureData.filter(v => v !== null);
+                    const avg = played.length ? played.reduce((a, b) => a + b, 0) / played.length : null;
+                    const radii = pureData.map(v => (v !== null ? 3 : 0));
+                    const hoverRadii = pureData.map(v => (v !== null ? 6 : 0));
+                    return {
+                        nom: ds.nom,
+                        color: sanitizeColor(ds.color),
+                        avg: avg,
+                        chart: {
+                            label: ds.nom,
+                            data: pureData,
+                            pointDetails: pts,
+                            borderColor: sanitizeColor(ds.color),
+                            backgroundColor: sanitizeColor(ds.color),
+                            pointBackgroundColor: sanitizeColor(ds.color),
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 1,
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0,
+                            pointRadius: radii,
+                            pointHoverRadius: hoverRadii,
+                            spanGaps: true
+                        }
+                    };
+                });
+                built.sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
+
+                const refLine = {
+                    label: '__ref100__',
+                    data: raw.labels.map(() => 100),
+                    borderColor: 'rgba(255,255,255,0.35)',
+                    borderWidth: 1,
+                    borderDash: [6, 6],
+                    pointRadius: 0,
+                    pointHoverRadius: 0,
+                    fill: false,
+                    tension: 0,
+                    spanGaps: true
+                };
+
+                const ipPureDatasets = [refLine, ...built.map(b => b.chart)];
+
+                let ipPureChart;
+                function highlightPure(index) {
+                    built.forEach((b, i) => { b.chart.borderWidth = (i === index) ? 4 : 1; });
+                    ipPureChart.update('none');
+                }
+                function resetPure() {
+                    built.forEach(b => { b.chart.borderWidth = 2; });
+                    ipPureChart.update('none');
+                }
+
+                built.forEach((b, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    const avgTxt = (b.avg != null) ? b.avg.toFixed(1) : '—';
+                    item.innerHTML = `<div class="legend-color-dot" style="background-color: ${b.color}; border: 1px solid #fff;"></div>` +
+                                     `<span class="legend-name">${escapeHtml(b.nom)}</span>` +
+                                     `<span class="legend-val" title="IP pur moyen par match">${escapeHtml(avgTxt)}</span>`;
+                    item.onmouseenter = () => highlightPure(index);
+                    item.onmouseleave = () => resetPure();
+                    item.onclick = () => highlightPure(index);
+                    legend.appendChild(item);
+                });
+
+                ipPureChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: raw.labels, datasets: ipPureDatasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'point', intersect: true },
+                        onClick: (e, elements) => {
+                            if (elements && elements.length > 0) {
+                                const el = elements[0];
+                                ipPureChart.tooltip.setActiveElements([{ datasetIndex: el.datasetIndex, index: el.index }], { x: 0, y: 0 });
+                                ipPureChart.update();
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                displayColors: false,
+                                filter: (item) => item.dataset.label !== '__ref100__',
+                                callbacks: {
+                                    title: (items) => {
+                                        if (!items.length) return '';
+                                        const it = items[0];
+                                        const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                        return d ? d.date : '';
+                                    },
+                                    label: (it) => {
+                                        const d = (it.dataset.pointDetails || [])[it.dataIndex];
+                                        if (!d) return `${it.dataset.label}`;
+                                        const lines = [it.dataset.label];
+                                        if (d.position != null) lines.push(`Position : ${d.position}`);
+                                        lines.push(`Points : ${d.score}`);
+                                        lines.push(`IP pur : ${d.ip_pur}`);
+                                        return lines;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'IP pur', color: '#94a3b8' } }
                         }
                     }
                 });

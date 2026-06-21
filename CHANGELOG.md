@@ -4,6 +4,23 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
+## [1.4.0] - TBD
+
+### Nouvelles fonctionnalités
+- **Award Instable** : nouvel award récompensant le joueur aux résultats les plus instables sur la période. Le score mesure l'amplitude des écarts de performance d'un tournoi à l'autre à partir de la position normalisée et de l'indice de performance. Pour rester fiable, le calcul ignore les tournois de moins de 3 joueurs (où la position devient quasi binaire), exige un minimum de 4 tournois joués, et combine l'amplitude des sauts consécutifs avec une mesure robuste (écart médian) pour ne pas surévaluer un accident isolé suivi d'un retour au niveau habituel. Un léger bonus récompense la régularité dans le haut du classement. Affiché sur les profils et dans les récaps, avec son trophée dédié
+- **Graphe d'évolution de l'Indice de Performance** : nouveau graphique retraçant l'évolution de l'IP cumulé des joueurs au fil des tournois, présent sur les récaps de saison et sur le classement. Suit le mode du récap (classique, ligue, mixte)
+- **Graphe de suivi des positions** : nouveau graphique d'évolution des positions des joueurs sur les pages de récap, accompagné d'un récapitulatif de la répartition des positions (nombre de 1res, 2es, 3es places, position moyenne) sur la période
+- **Vue classement de saison** : nouvel onglet de classement basé sur la saison active, accessible via l'endpoint `/classement/saison`, avec sélection de ligue. Le graphe d'IP de cette vue est aligné sur l'ordre du classement
+- **Détail des stats par ligue sur le profil joueur** : les statistiques et le palmarès du profil joueur sont désormais cliquables et ouvrent une fenêtre détaillant les chiffres ligue par ligue (matchs, podiums, position et score moyens)
+
+### Améliorations
+
+#### Banner SMK
+- **Extraction du moteur physique** : toute la logique de simulation du banner (momentum, collisions, items, esquives) est sortie de `smk-banner.js` dans un module dédié `physics.js`, réutilisable et isolé du rendu
+- **Compression de l'image de printemps** : la bannière de printemps passe de ~1,4 Mo à ~150 Ko
+
+---
+
 ## [1.3.1] - 2026-06-09
 
 ### Corrections
@@ -191,4 +208,4 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
-*Ce changelog couvre les versions 1.0.0 à 1.3.0 (du 11 décembre 2025 au 20 mars 2026).*
+*Ce changelog couvre les versions 1.0.0 à 1.4.0 (depuis le 11 décembre 2025).*

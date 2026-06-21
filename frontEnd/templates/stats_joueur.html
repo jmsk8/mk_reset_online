@@ -140,7 +140,7 @@
                                         <tr class="clickable-stat" onclick="showStatDetail('meilleur_score')" title="Voir le détail par ligue et nombre de joueurs"><td><i class="fas fa-arrow-up"></i> Meilleur score <i class="fas fa-magnifying-glass-chart detail-cue"></i></td><td class="has-text-right">{{ stats.meilleur_score }}</td></tr>
                                     </tbody>
                                 </table>
-                                <p class="has-text-grey is-size-7 has-text-centered mt-1" style="opacity:0.75;"><i class="fas fa-hand-pointer"></i> Clique sur une stat pour le détail par ligue</p>
+                                <p class="has-text-grey is-size-7 has-text-centered mt-1" style="opacity:0.75;"><i class="fas fa-hand-pointer"></i> Clique sur une stat pour plus de détails</p>
                             </div>
                         </div>
                     </div>
@@ -201,7 +201,7 @@
                                             {% elif 'bronze' in award.emoji %}{% set aura_class = 'super-bronze' %}
                                             {% endif %}
                                         {% endif %}
-                                        <div class="award-item" title="{{ award.description|replace('\n', '&#10;')|safe }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', {{ award.description|tojson }}, {{ award|tojson }})">
+                                        <div class="award-item fast-tip" data-tip="{{ award.description|safe }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', {{ award.description|tojson }}, {{ award|tojson }})">
                                             {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ aura_class }} {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %} alt="{{ award.nom }}">{% else %}<span class="award-text-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %}>{{ award.emoji }}</span>{% endif %}
                                         </div>
                                     {% endif %}
@@ -219,7 +219,7 @@
                                 {% for award in awards %}
                                     {% if 'moai' not in award.emoji %}
                                         {% set ns_awards.found = true %}
-                                        <div class="award-item" title="{{ award.description|replace('\n', '&#10;')|safe }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', {{ award.description|tojson }}, {{ award|tojson }})">
+                                        <div class="award-item fast-tip" data-tip="{{ award.description|safe }}" onclick="showAwardInfo('{{ award.nom|replace("'", "\\'") }}', {{ award.description|tojson }}, {{ award|tojson }})">
                                             {% if award.emoji.endswith('.png') %}<img src="/static/img/{{ award.emoji }}" class="award-icon-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %} alt="{{ award.nom }}">{% else %}<span class="award-text-large {{ 'league-glow-img' if award.is_league_award else '' }}" {% if award.is_league_award %}style="--league-color: {{ award.ligue_couleur }};"{% endif %}>{{ award.emoji }}</span>{% endif %}
                                             <span class="award-count">x{{ award.count }}</span>
                                         </div>

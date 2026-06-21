@@ -155,3 +155,32 @@ input[type="submit"]:hover {
         font-size: 24px;
     }
 }
+
+.fast-tip {
+    position: relative;
+}
+.fast-tip[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 8px;
+    white-space: pre-line;
+    width: max-content;
+    max-width: 280px;
+    padding: 8px 12px;
+    background: rgba(15, 23, 42, 0.97);
+    color: #e6edf3;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+    font-size: 0.8rem;
+    line-height: 1.35;
+    text-align: center;
+    z-index: 9999;
+    pointer-events: none;
+}
+.fast-tip[data-tip=""]:hover::after {
+    content: none;
+}

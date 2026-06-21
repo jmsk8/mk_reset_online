@@ -195,17 +195,17 @@ CREATE INDEX idx_ghost_log_joueur_id ON public.ghost_log(joueur_id);
 CREATE INDEX idx_ghost_log_tournoi_id ON public.ghost_log(tournoi_id);
 
 INSERT INTO public.types_awards (code, nom, emoji, description) VALUES 
-('gold_moai', '1er', 'gold_moai.png', 'Vainqueur de Saison'),
-('silver_moai', '2ème', 'silver_moai.png', '2ème de Saison'),
-('bronze_moai', '3ème', 'bronze_moai.png', '3ème de Saison'),
-('super_gold_moai', '1er', 'super_gold_moai.png', 'Vainqueur de l''année'),
-('super_silver_moai', '2ème', 'super_silver_moai.png', '2ème de l''année'),
-('super_bronze_moai', '3ème', 'super_bronze_moai.png', '3ème de l''année'),
+('gold_moai', '1er', 'trophy/saison/gold_moai.png', 'Vainqueur de Saison'),
+('silver_moai', '2ème', 'trophy/saison/silver_moai.png', '2ème de Saison'),
+('bronze_moai', '3ème', 'trophy/saison/bronze_moai.png', '3ème de Saison'),
+('super_gold_moai', '1er', 'trophy/annee/super_gold_moai.png', 'Vainqueur de l''année'),
+('super_silver_moai', '2ème', 'trophy/annee/super_silver_moai.png', '2ème de l''année'),
+('super_bronze_moai', '3ème', 'trophy/annee/super_bronze_moai.png', '3ème de l''année'),
 ('ez', 'EZ', '🥇', 'Le plus de 1ères places'),
 ('pas_loin', 'C''était pas loin', '🥈', 'Le plus de 2ème places'),
-('stonks', 'Stonks', 'stonks.png', 'Plus forte progression TrueSkill'),
-('not_stonks', 'Not Stonks', 'not_stonks.png', 'Plus forte perte TrueSkill'),
-('stakhanov', 'Stakhanoviste', 'TposingFunky.png', 'Le plus de points marqués au total'),
-('chillguy', 'Chill Guy', 'chillguy.png', 'Le score TrueSkill le plus stable'),
-('borderline', 'Borderline', 'borderline.png', 'Les résultats les plus instables'),
+('stonks', 'Stonks', 'award/stonks.png', 'Plus forte progression TrueSkill'),
+('not_stonks', 'Not Stonks', 'award/not_stonks.png', 'Plus forte perte TrueSkill'),
+('stakhanov', 'Stakhanoviste', 'award/TposingFunky.png', 'Le plus de points marqués au total'),
+('chillguy', 'Chill Guy', 'award/chillguy.png', 'Le score TrueSkill le plus stable'),
+('borderline', 'Instable', 'award/borderline.png', 'Les résultats les plus instables'),
 ('Indice de Performance', 'Indice de Performance', '🎯', 'Calcul IP');

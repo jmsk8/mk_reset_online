@@ -1399,19 +1399,20 @@ INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) VALUE
 -- Data for Name: types_awards; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (1, 'gold_moai', '1er', 'gold_moai.png', 'Vainqueur de Saison');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (2, 'silver_moai', '2ème', 'silver_moai.png', '2ème de Saison');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (3, 'bronze_moai', '3ème', 'bronze_moai.png', '3ème de Saison');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (4, 'super_gold_moai', '1er', 'super_gold_moai.png', 'Vainqueur de l''année');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (5, 'super_silver_moai', '2ème', 'super_silver_moai.png', '2ème de l''année');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (6, 'super_bronze_moai', '3ème', 'super_bronze_moai.png', '3ème de l''année');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (1, 'gold_moai', '1er', 'trophy/saison/gold_moai.png', 'Vainqueur de Saison');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (2, 'silver_moai', '2ème', 'trophy/saison/silver_moai.png', '2ème de Saison');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (3, 'bronze_moai', '3ème', 'trophy/saison/bronze_moai.png', '3ème de Saison');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (4, 'super_gold_moai', '1er', 'trophy/annee/super_gold_moai.png', 'Vainqueur de l''année');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (5, 'super_silver_moai', '2ème', 'trophy/annee/super_silver_moai.png', '2ème de l''année');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (6, 'super_bronze_moai', '3ème', 'trophy/annee/super_bronze_moai.png', '3ème de l''année');
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (7, 'ez', 'EZ', '🥇', 'Le plus de 1ères places');
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (8, 'pas_loin', 'C''était pas loin', '🥈', 'Le plus de 2ème places');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (9, 'stonks', 'Stonks', 'stonks.png', 'Plus forte progression TrueSkill');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (10, 'not_stonks', 'Not Stonks', 'not_stonks.png', 'Plus forte perte TrueSkill');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (11, 'stakhanov', 'Stakhanoviste', 'TposingFunky.png', 'Le plus de points marqués au total');
-INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (12, 'chillguy', 'Chill Guy', 'chillguy.png', 'Le score TrueSkill le plus stable');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (9, 'stonks', 'Stonks', 'award/stonks.png', 'Plus forte progression TrueSkill');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (10, 'not_stonks', 'Not Stonks', 'award/not_stonks.png', 'Plus forte perte TrueSkill');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (11, 'stakhanov', 'Stakhanoviste', 'award/TposingFunky.png', 'Le plus de points marqués au total');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (12, 'chillguy', 'Chill Guy', 'award/chillguy.png', 'Le score TrueSkill le plus stable');
 INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (13, 'Indice de Performance', 'Indice de Performance', '🎯', 'Calcul IP');
+INSERT INTO public.types_awards (id, code, nom, emoji, description) VALUES (14, 'borderline', 'Instable', 'award/borderline.png', 'Les résultats les plus instables');
 
 
 --
@@ -1474,7 +1475,7 @@ SELECT pg_catalog.setval('public.tournois_id_seq', 88, true);
 -- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.types_awards_id_seq', 13, true);
+SELECT pg_catalog.setval('public.types_awards_id_seq', 14, true);
 
 
 --
