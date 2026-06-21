@@ -252,7 +252,7 @@ def _compute_grand_master(stats_dict: dict, total_tournois: int) -> tuple[dict |
             N_i = float(m['count'])
 
             poids = N_i + BASE_POIDS
-            ratio = min(GM_MAX_RATIO_CAP, S_i / M_barre_i) if M_barre_i > 0 else 0
+            ratio = (S_i / M_barre_i) if M_barre_i > 0 else 0
             weighted_val = ratio * poids
 
             num_total += weighted_val
@@ -417,7 +417,7 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 matchs += 1
                 t = meta[tournoi_ids[idx]]
                 poids = t["count"] + GM_BASE_WEIGHT
-                ratio = min(GM_MAX_RATIO_CAP, score / t["avg"]) if t["avg"] > 0 else 0.0
+                ratio = (score / t["avg"]) if t["avg"] > 0 else 0.0
                 num_total += ratio * poids
                 denom_total += poids
                 ip_pur = round(ratio * 100, 2)

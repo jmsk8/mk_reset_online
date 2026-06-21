@@ -193,7 +193,7 @@ def recap_season(season_slug):
         return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None, view_mode=None, new_leagues_data=None)
 
     new_leagues_data = None
-    if view_mode == 'new-leagues' and (data.get('is_league_recap') or data.get('include_league_moves')):
+    if view_mode == 'new-leagues' and data.get('include_league_moves'):
         nl_data, nl_status = backend_request('GET', f'/stats/recap/{season_slug}/new-leagues')
         if nl_status == 200:
             new_leagues_data = nl_data

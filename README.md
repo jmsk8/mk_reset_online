@@ -1,4 +1,4 @@
-# 🏁 Mario Kart Reset Online `v1.3.1`
+# 🏁 Mario Kart Reset Online `v1.4.0`
 
 > Plateforme de compétition Mario Kart avec classement basé sur l'algorithme TrueSkill.
 
@@ -21,6 +21,7 @@ Chaque joueur dispose d'une page de statistiques personnelle avec :
 - Historique complet des tournois et résultats, avec le gain/perte TrueSkill par match (colonne +/-)
 - Vitrine des awards et trophées obtenus
 - Palmarès des podiums (or, argent, bronze), détaillé par ligue en mode ligue
+- Statistiques et palmarès cliquables pour afficher le détail ligue par ligue (matchs, podiums, position et score moyens)
 - Tier actuel et score détaillé
 
 ### 🏆 Tournois
@@ -35,7 +36,9 @@ Chaque joueur dispose d'une page de statistiques personnelle avec :
 - Organisation des tournois par saisons et par ligues
 - Système de promotion/relégation entre ligues
 - Reset global du sigma en début de saison
+- Suivi du classement IP de la saison en cours via l'onglet « Saison » de la page de classement
 - Recap de fin de saison avec podiums, statistiques globales et awards
+- Graphiques d'évolution de l'Indice de Performance et des positions au fil des tournois, accompagnés d'un tableau récapitulant la répartition des positions de chaque joueur
 - Awards calculés indépendamment par ligue en mode récap ligue
 - Mode hybride : un récap classique peut inclure les stats et mouvements de ligue dans des onglets dédiés
 
@@ -48,6 +51,7 @@ Chaque saison attribue des distinctions aux joueurs :
 - **Stonks / Not Stonks** : meilleure progression / plus grosse chute TrueSkill
 - **Stakhanoviste** : plus grand nombre de points cumulés
 - **Chill Guy** : score TrueSkill le plus stable
+- **Instable** : résultats les plus irréguliers d'un tournoi à l'autre
 
 ### 🎨 Interface
 

@@ -406,8 +406,8 @@ def get_new_leagues(slug):
 
             saison_id, is_league_recap, is_active, include_league_moves = row
 
-            if not is_league_recap and not include_league_moves:
-                return jsonify({"error": "Cette saison n'est pas un récap de ligue"}), 400
+            if not include_league_moves:
+                return jsonify({"error": "Mouvements inter-ligue non activés pour cette saison"}), 400
 
             cur.execute("""
                 SELECT joueur_id, from_ligue_nom, to_ligue_nom, direction
@@ -485,7 +485,14 @@ def dernier_tournoi():
                 if not last_record:
                     return jsonify([])
 
-                is_league_latest = (last_record[0] is not None) or (last_record[1] is not None and last_record[1] != 'Mixte')
+                cur.execute("SELECT value FROM Configuration WHERE key = 'league_mode_enabled'")
+                conf = cur.fetchone()
+                league_mode_enabled = bool(conf) and conf[0] == 'true'
+
+                is_league_latest = league_mode_enabled and (
+                    (last_record[0] is not None)
+                    or (last_record[1] is not None and last_record[1] != 'Mixte')
+                )
 
                 final_data = []
 
@@ -672,11 +679,18 @@ def _find_active_season(cur) -> dict | None:
     if d_debut is None or d_fin is None:
         return None
 
-    cur.execute("""
-        SELECT COUNT(*) FILTER (WHERE ligue_id IS NOT NULL)
-        FROM tournois WHERE date >= %s AND date <= %s
-    """, (d_debut, d_fin))
-    is_league = cur.fetchone()[0] > 0
+    cur.execute("SELECT value FROM Configuration WHERE key = 'league_mode_enabled'")
+    conf = cur.fetchone()
+    league_mode_enabled = bool(conf) and conf[0] == 'true'
+
+    if league_mode_enabled:
+        cur.execute("""
+            SELECT COUNT(*) FILTER (WHERE ligue_id IS NOT NULL)
+            FROM tournois WHERE date >= %s AND date <= %s
+        """, (d_debut, d_fin))
+        is_league = cur.fetchone()[0] > 0
+    else:
+        is_league = False
 
     return {
         "nom": "Saison en cours",
@@ -1311,6 +1325,11 @@ def get_ligues_public():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT value FROM Configuration WHERE key = 'league_mode_enabled'")
+                conf = cur.fetchone()
+                if not conf or conf[0] != 'true':
+                    return jsonify([])
+
                 cur.execute("""
                     SELECT l.id, l.nom, l.niveau, l.couleur,
                            j.nom, j.score_trueskill, j.tier

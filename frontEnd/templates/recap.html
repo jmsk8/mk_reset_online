@@ -441,7 +441,7 @@
                 {% endfor %}
                 {% endif %}
 
-                {% if saison.is_league_recap or saison.include_league_moves %}
+                {% if saison.include_league_moves %}
                 <a href="?view=new-leagues"
                    class="league-badge {% if view_mode == 'new-leagues' %}is-active{% endif %}"
                    style="background-color: #6366f1; color: white;
@@ -691,7 +691,7 @@
                                                     <span {% if info_award.is_league_award %}class="league-glow-img" style="--league-color: {{ info_award.ligue_couleur }};"{% endif %}>{{ info_award.emoji }}</span>
                                                 {% endif %}
                                             </div>
-                                            <p class="heading has-text-light mb-4">{{ info_award.award_name }}{% if award_code == 'borderline' %}<span class="award-help fast-tip" data-tip="Récompense les résultats en yo-yo. Pour chaque tournoi, la place est ramenée sur une note de 0 (dernier) à 1 (1er). On mesure l'amplitude des écarts de cette note d'un tournoi à l'autre : plus ça monte et descend, plus le score est élevé. Un seul mauvais tournoi isolé ne suffit pas, il faut une vraie irrégularité sur la durée.">?</span>{% endif %}</p>
+                                            <p class="heading has-text-light mb-4">{{ info_award.award_name }}{% if award_code == 'borderline' %}<span class="award-help fast-tip" data-tip="Mesure l'irrégularité des résultats du joueur. Le score va de 0 (stabilité parfaite) à 1 (instabilité extrême).">?</span>{% endif %}</p>
 
                                             <div class="winners-container">
                                                 {% for winner in saison.awards[award_code] %}

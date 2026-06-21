@@ -246,7 +246,6 @@ def update_config():
 
                     if league_mode == 'false':
                         cur.execute("UPDATE Joueurs SET ligue_id = NULL")
-                        cur.execute("DELETE FROM Ligues")
 
                 if 'inter_league_moves' in data:
                     inter_league_moves = int(data.get('inter_league_moves', 0))

@@ -300,22 +300,33 @@
                     <h4 class="title is-5 has-text-warning">
                         <i class="fas fa-exchange-alt mr-2"></i> Mouvements Inter-Ligue
                     </h4>
-                    <p class="has-text-grey-light mb-3">
-                        <span id="movesCountDisplay">0</span> joueur(s) seront échangés entre ligues adjacentes.
-                    </p>
                     <div class="field">
-                        <label class="label has-text-white">Critère de classement pour les mouvements</label>
-                        <div class="control">
-                            <label class="radio has-text-white">
-                                <input type="radio" name="moveCriterion" value="ip" checked>
-                                Indice de Performance (classement de la saison)
-                            </label><br>
-                            <label class="radio has-text-white mt-2">
-                                <input type="radio" name="moveCriterion" value="trueskill">
-                                Score TrueSkill actuel
-                            </label>
+                        <label class="checkbox has-text-white">
+                            <input type="checkbox" id="generateMovesCheckbox" checked onchange="toggleMoveOptions()">
+                            <strong>Générer les mouvements inter-ligue</strong>
+                        </label>
+                    </div>
+                    <div id="moveOptions">
+                        <p class="has-text-grey-light mb-3">
+                            <span id="movesCountDisplay">0</span> joueur(s) seront échangés entre ligues adjacentes.
+                        </p>
+                        <div class="field">
+                            <label class="label has-text-white">Critère de classement pour les mouvements</label>
+                            <div class="control">
+                                <label class="radio has-text-white">
+                                    <input type="radio" name="moveCriterion" value="ip" checked>
+                                    Indice de Performance (classement de la saison)
+                                </label><br>
+                                <label class="radio has-text-white mt-2">
+                                    <input type="radio" name="moveCriterion" value="trueskill">
+                                    Score TrueSkill actuel
+                                </label>
+                            </div>
                         </div>
                     </div>
+                    <p id="noMovesNote" class="has-text-grey-light is-italic" style="display: none;">
+                        Aucun mouvement ne sera appliqué à la publication.
+                    </p>
                 </div>
             </section>
             <footer class="modal-card-foot" style="background-color: #1e293b; border-top: 1px solid #3b82f6;">
@@ -600,11 +611,19 @@ async function loadAwardTypes() {
         if ((isLeagueRecap || ligueId || includeLeagueMoves) && leagueModeEnabled && interLeagueMovesCount > 0) {
             section.style.display = 'block';
             document.getElementById('movesCountDisplay').textContent = interLeagueMovesCount;
+            document.getElementById('generateMovesCheckbox').checked = true;
+            toggleMoveOptions();
         } else {
             section.style.display = 'none';
         }
 
         document.getElementById('publishModal').classList.add('is-active');
+    }
+
+    function toggleMoveOptions() {
+        const enabled = document.getElementById('generateMovesCheckbox').checked;
+        document.getElementById('moveOptions').style.display = enabled ? 'block' : 'none';
+        document.getElementById('noMovesNote').style.display = enabled ? 'none' : 'block';
     }
 
     function closePublishModal() {
@@ -621,7 +640,8 @@ async function loadAwardTypes() {
         const saisonId = currentPublishSaisonId;
         const payload = {};
 
-        if ((currentIsLeagueRecap || currentSaisonLigueId || currentIncludeLeagueMoves) && leagueModeEnabled && interLeagueMovesCount > 0) {
+        if ((currentIsLeagueRecap || currentSaisonLigueId || currentIncludeLeagueMoves) && leagueModeEnabled && interLeagueMovesCount > 0
+                && document.getElementById('generateMovesCheckbox').checked) {
             const criterion = document.querySelector('input[name="moveCriterion"]:checked').value;
             payload.move_criterion = criterion;
         }
