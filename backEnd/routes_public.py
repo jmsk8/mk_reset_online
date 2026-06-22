@@ -479,20 +479,14 @@ def dernier_tournoi():
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT ligue_id, ligue_nom FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
+                cur.execute("SELECT ligue_id, ligue_nom, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
                 last_record = cur.fetchone()
 
                 if not last_record:
                     return jsonify([])
 
-                cur.execute("SELECT value FROM Configuration WHERE key = 'league_mode_enabled'")
-                conf = cur.fetchone()
-                league_mode_enabled = bool(conf) and conf[0] == 'true'
-
-                is_league_latest = league_mode_enabled and (
-                    (last_record[0] is not None)
-                    or (last_record[1] is not None and last_record[1] != 'Mixte')
-                )
+                last_ligue_id, last_ligue_nom, last_date = last_record
+                is_league_latest = (last_ligue_id is not None) or (last_ligue_nom is not None and last_ligue_nom != 'Mixte')
 
                 final_data = []
 
@@ -523,14 +517,20 @@ def dernier_tournoi():
                     tournois_to_fetch.sort(key=lambda x: x['date_sort'], reverse=True)
 
                 else:
-                    cur.execute("SELECT id, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
-                    last = cur.fetchone()
+                    cur.execute("""
+                        SELECT id, date
+                        FROM Tournois
+                        WHERE ligue_id IS NULL
+                          AND (ligue_nom IS NULL OR ligue_nom = 'Mixte')
+                          AND date_trunc('week', date) = date_trunc('week', %s::date)
+                        ORDER BY date DESC, id DESC
+                    """, (last_date,))
                     tournois_to_fetch = [{
-                        "id": last[0],
-                        "date": last[1].strftime("%d/%m/%Y"),
-                        "date_sort": last[1].strftime("%Y-%m-%d"),
+                        "id": tid,
+                        "date": tdate.strftime("%d/%m/%Y"),
+                        "date_sort": tdate.strftime("%Y-%m-%d"),
                         "type": "standard"
-                    }]
+                    } for tid, tdate in cur.fetchall()]
 
                 for t in tournois_to_fetch:
                     cur.execute("""

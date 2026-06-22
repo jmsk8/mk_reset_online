@@ -109,8 +109,7 @@ mk_reset_online/
 │   └── static/        # CSS, JS, images, sprites
 ├── nginx/             # Configuration Nginx
 ├── nix/               # Environnement Nix Flakes
-├── docker-compose.yml
-└── backup.sh
+└── docker-compose.yml
 ```
 
 ### 🔐 Variables d'environnement

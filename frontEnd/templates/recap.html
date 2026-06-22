@@ -691,7 +691,7 @@
                                                     <span {% if info_award.is_league_award %}class="league-glow-img" style="--league-color: {{ info_award.ligue_couleur }};"{% endif %}>{{ info_award.emoji }}</span>
                                                 {% endif %}
                                             </div>
-                                            <p class="heading has-text-light mb-4">{{ info_award.award_name }}{% if award_code == 'borderline' %}<span class="award-help fast-tip" data-tip="Mesure l'irrégularité des résultats du joueur. Le score va de 0 (stabilité parfaite) à 1 (instabilité extrême).">?</span>{% endif %}</p>
+                                            <p class="heading has-text-light mb-4">{{ info_award.award_name }}{% if award_code == 'borderline' %}<span class="award-help fast-tip" data-tip="Mesure l'irrégularité des résultats du joueur. Le score va de 0 (stabilité parfaite) à 1 (instabilité extrême).">?</span>{% elif award_code == 'stonks' %}<span class="award-help fast-tip" data-tip="Plus forte progression de TrueSkill sur la saison (score final moins score de départ). Pour être fiable, le départ n'est compté qu'à partir du moment où le joueur passe sous les 2.5 de sigma.">?</span>{% elif award_code == 'not_stonks' %}<span class="award-help fast-tip" data-tip="Plus forte perte de TrueSkill sur la saison (score final moins score de départ). Pour être fiable, le départ n'est compté qu'à partir du moment où le joueur passe sous les 2.5 de sigma.">?</span>{% endif %}</p>
 
                                             <div class="winners-container">
                                                 {% for winner in saison.awards[award_code] %}
@@ -714,7 +714,7 @@
                                                             {% elif award_code == 'stakhanov' %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> point{{ 's' if val|int >= 2 else '' }} {{ 'totaux' if val|int >= 2 else 'total' }}
                                                             {% elif award_code == 'borderline' %}
-                                                                instabilité <span class="has-text-weight-bold is-size-6">{{ '%+0.2f'|format(val|float) }}</span> σ au-dessus de la moyenne
+                                                                score d'instabilité <span class="has-text-weight-bold is-size-6">{{ '%0.2f'|format(val|float) }}</span>
                                                             {% else %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val }}</span>
                                                             {% endif %}
@@ -753,7 +753,7 @@
                 <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.55s">
                     <header class="card-header">
                         <p class="card-header-title is-centered has-text-white">
-                            <i class="fas fa-chart-line mr-2"></i> Évolution de l'IP au fil des tournois
+                            <i class="fas fa-chart-line mr-2"></i> Évolution de l'IP
                         </p>
                     </header>
                     <div class="card-content">
@@ -771,7 +771,7 @@
                 <div class="card glass-card mt-6 fade-in" style="animation-delay: 0.57s">
                     <header class="card-header">
                         <p class="card-header-title is-centered has-text-white">
-                            <i class="fas fa-bolt mr-2"></i> IP pur gagné par match
+                            <i class="fas fa-bolt mr-2"></i> IP pur gagné par tournoi
                         </p>
                     </header>
                     <div class="card-content">

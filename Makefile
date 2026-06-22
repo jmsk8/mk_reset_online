@@ -82,11 +82,6 @@ ps:                  ## Show running containers
 db-shell:            ## Open psql shell
 	$(COMPOSE) exec db psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
 
-db-backup:           ## Dump database to backups/
-	@mkdir -p backups
-	$(COMPOSE) exec db pg_dump -U $${POSTGRES_USER} $${POSTGRES_DB} > backups/backup_$$(date +%Y%m%d_%H%M%S).sql
-	@echo "Backup saved to backups/"
-
 # ── Help ─────────────────────────────────────
 
 help:                ## Show this help
@@ -96,6 +91,6 @@ help:                ## Show this help
 .PHONY: check-env up stop start build down fclean re redump \
         re-front re-back re-db re-db-dump \
         logs logs-nginx logs-front logs-back logs-db ps \
-        db-shell db-backup help
+        db-shell help
 
 .DEFAULT_GOAL := help

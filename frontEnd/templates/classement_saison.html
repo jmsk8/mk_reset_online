@@ -12,6 +12,11 @@
     .saison-recap-table th.sortable:hover { color: #3b82f6; background-color: rgba(255, 255, 255, 0.05); }
     .saison-recap-table th i { margin-left: 5px; font-size: 0.8em; color: rgba(255,255,255,0.3); }
     .saison-recap-table th.active-sort, .saison-recap-table th.active-sort i { color: #3b82f6 !important; opacity: 1; }
+    .saison-recap-table tr.podium-1 { background-color: rgba(255, 215, 0, 0.10) !important; box-shadow: inset 3px 0 0 #FFD700; }
+    .saison-recap-table tr.podium-2 { background-color: rgba(192, 192, 192, 0.10) !important; box-shadow: inset 3px 0 0 #C0C0C0; }
+    .saison-recap-table tr.podium-3 { background-color: rgba(205, 127, 50, 0.10) !important; box-shadow: inset 3px 0 0 #CD7F32; }
+    .saison-recap-table .rank-cell .medal { font-size: 1.1rem; }
+    .saison-recap-table .gap-col { font-variant-numeric: tabular-nums; }
 
     .saison-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
     .saison-stat-card {
@@ -69,6 +74,12 @@
     {% set classement = saison.classement_ip or [] %}
     {% set evo = saison.ip_evolution or {} %}
     {% set stats = saison.recap_stats or {} %}
+    {% set ns = namespace(ip_leader=None) %}
+    {% for j in classement %}
+        {% if j.is_eligible_gm and j.score_gm is not none and (ns.ip_leader is none or j.score_gm > ns.ip_leader) %}
+            {% set ns.ip_leader = j.score_gm %}
+        {% endif %}
+    {% endfor %}
 
     <div class="columns">
         <div class="column is-10 is-offset-1">
@@ -141,6 +152,9 @@
                                     <th class="has-text-right sortable active-sort" onclick="sortSaisonTable('ip', this)" title="Indice de Performance">
                                         IP <i class="fas fa-sort-down"></i>
                                     </th>
+                                    <th class="has-text-right gap-col" title="Écart d'IP avec le leader du championnat">
+                                        Écart
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -183,6 +197,18 @@
                                             {% endif %}
                                         {% else %}
                                             <span class="has-text-grey-light">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="has-text-right gap-col">
+                                        {% if j.is_eligible_gm and j.score_gm is not none and ns.ip_leader is not none %}
+                                            {% set gap = j.score_gm - ns.ip_leader %}
+                                            {% if gap >= -0.005 %}
+                                                <span class="has-text-warning has-text-weight-bold">leader</span>
+                                            {% else %}
+                                                <span class="has-text-grey-light">{{ '%0.2f'|format(gap|float) }}</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="has-text-grey-light" style="opacity:0.5;">-</span>
                                         {% endif %}
                                     </td>
                                 </tr>
@@ -256,12 +282,30 @@
                 return isDesc ? (valB - valA) : (valA - valB);
             });
 
+            rows.forEach((row) => tbody.appendChild(row));
+            applySaisonPodium();
+        }
+
+        function applySaisonPodium() {
+            const table = document.getElementById("saisonTable");
+            if (!table) return;
+            const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
+            const rows = Array.from(table.querySelectorAll("tbody tr"));
             rows.forEach((row, index) => {
-                tbody.appendChild(row);
+                const rank = index + 1;
+                row.classList.remove("podium-1", "podium-2", "podium-3");
                 const rankCell = row.querySelector(".rank-cell");
-                if (rankCell) rankCell.textContent = index + 1;
+                if (!rankCell) return;
+                if (medals[rank]) {
+                    row.classList.add("podium-" + rank);
+                    rankCell.innerHTML = '<span class="medal">' + medals[rank] + '</span>';
+                } else {
+                    rankCell.textContent = rank;
+                }
             });
         }
+
+        document.addEventListener("DOMContentLoaded", applySaisonPodium);
 
         {% if evo.datasets and evo.datasets|length > 0 %}
         (function initIpEvolutionChart() {

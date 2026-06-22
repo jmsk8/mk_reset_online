@@ -29,7 +29,6 @@ services:
         condition: service_healthy
 
     volumes:
-      - ./backups:/app/backups
       - ./backEnd/backend.py:/app/backend.py
       - ./backEnd/constants.py:/app/constants.py
       - ./backEnd/db.py:/app/db.py

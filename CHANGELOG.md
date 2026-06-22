@@ -4,7 +4,7 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
-## [1.4.0] - TBD
+## [1.4.0] - 2026-06-22
 
 ### Nouvelles fonctionnalités
 - **Award Instable** : nouvel award récompensant le joueur aux résultats les plus instables sur la période. Le score mesure l'amplitude des écarts de performance d'un tournoi à l'autre à partir de la position normalisée et de l'indice de performance. Pour rester fiable, le calcul ignore les tournois de moins de 3 joueurs (où la position devient quasi binaire), exige un minimum de 4 tournois joués, et combine l'amplitude des sauts consécutifs avec une mesure robuste (écart médian) pour ne pas surévaluer un accident isolé suivi d'un retour au niveau habituel. Un léger bonus récompense la régularité dans le haut du classement. Affiché sur les profils et dans les récaps, avec son trophée dédié
