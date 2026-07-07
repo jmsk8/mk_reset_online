@@ -33,7 +33,7 @@ app.config['SESSION_COOKIE_SECURE'] = True
 
 csrf = CSRFProtect(app)
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 
 @app.context_processor
 def inject_version():

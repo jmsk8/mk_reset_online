@@ -26,6 +26,8 @@ INSERT INTO public.configuration (key, value) VALUES
 ('tau', '0.083'),
 ('ghost_enabled', 'false'),
 ('ghost_penalty', '0.1'),
+('ghost_threshold_days', '28'),
+('ghost_interval_days', '7'),
 ('unranked_threshold', '10'),
 ('sigma_threshold', '4.0'),
 ('league_mode_enabled', 'false'),

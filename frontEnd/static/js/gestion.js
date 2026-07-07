@@ -117,18 +117,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const tau = parseFloat(document.getElementById('configTau').value);
             const ghost = document.getElementById('configGhost').checked;
             const ghostPenalty = parseFloat(document.getElementById('configGhostPenalty').value);
+            const ghostThresholdDays = parseInt(document.getElementById('configGhostThresholdDays').value);
+            const ghostIntervalDays = parseInt(document.getElementById('configGhostIntervalDays').value);
             const unrankedLimit = parseInt(document.getElementById('configUnrankedLimit').value);
             const sigmaThreshold = parseFloat(document.getElementById('configSigmaLimit').value);
-            
+
             if (isNaN(tau)) { alert("Erreur: Tau invalide."); return; }
             if (isNaN(ghostPenalty)) { alert("Erreur: Pénalité invalide."); return; }
+            if (isNaN(ghostThresholdDays) || ghostThresholdDays < 1) { alert("Erreur: Seuil d'absence (jours) invalide."); return; }
+            if (isNaN(ghostIntervalDays) || ghostIntervalDays < 1) { alert("Erreur: Fréquence de pénalité (jours) invalide."); return; }
             if (isNaN(unrankedLimit)) { alert("Erreur: Limite Unranked invalide."); return; }
             if (isNaN(sigmaThreshold)) { alert("Erreur: Limite Sigma invalide."); return; }
-            
-            const res = await apiCall('/admin/config', 'POST', { 
-                tau: tau, 
+
+            const res = await apiCall('/admin/config', 'POST', {
+                tau: tau,
                 ghost_enabled: ghost,
                 ghost_penalty: ghostPenalty,
+                ghost_threshold_days: ghostThresholdDays,
+                ghost_interval_days: ghostIntervalDays,
                 unranked_threshold: unrankedLimit,
                 sigma_threshold: sigmaThreshold
             });
@@ -204,6 +210,8 @@ async function loadConfig() {
         if (res.tau !== undefined) document.getElementById('configTau').value = res.tau;
         if (res.ghost_enabled !== undefined) document.getElementById('configGhost').checked = res.ghost_enabled;
         if (res.ghost_penalty !== undefined) document.getElementById('configGhostPenalty').value = res.ghost_penalty;
+        if (res.ghost_threshold_days !== undefined) document.getElementById('configGhostThresholdDays').value = res.ghost_threshold_days;
+        if (res.ghost_interval_days !== undefined) document.getElementById('configGhostIntervalDays').value = res.ghost_interval_days;
         if (res.unranked_threshold !== undefined) document.getElementById('configUnrankedLimit').value = res.unranked_threshold;
         
         const sigmaInput = document.getElementById('configSigmaLimit');

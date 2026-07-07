@@ -1,10 +1,3 @@
--- Répare les tournois dont ligue_id a été annulé alors que ligue_nom/ligue_couleur
--- sont encore renseignés : reconstruit les Ligues depuis ces archives puis ré-associe
--- ligue_id (id = numéro du nom + 1, niveau = numéro). Idempotent.
---
---   make db-shell
---   ou : docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < backEnd/migrations/2026-06-21_repair_orphaned_league_recaps.sql
-
 BEGIN;
 
 INSERT INTO public.ligues (id, nom, niveau, couleur)

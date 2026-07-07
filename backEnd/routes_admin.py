@@ -15,7 +15,8 @@ from flask import Blueprint, jsonify, request, abort
 from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, TRUESKILL_BETA, TRUESKILL_DRAW_PROBABILITY,
     DEFAULT_TAU, DEFAULT_GHOST_PENALTY, DEFAULT_UNRANKED_THRESHOLD, DEFAULT_SIGMA_THRESHOLD,
-    GHOST_SIGMA_CAP, GHOST_MISSED_THRESHOLD, TOKEN_LIFETIME_MINUTES,
+    DEFAULT_GHOST_THRESHOLD_DAYS, DEFAULT_GHOST_INTERVAL_DAYS,
+    GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES,
 )
 from db import get_db_connection, ADMIN_PASSWORD_HASH
 from auth import admin_required
@@ -204,12 +205,14 @@ def get_config():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled', 'inter_league_moves')")
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'ghost_threshold_days', 'ghost_interval_days', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled', 'inter_league_moves')")
                 rows = dict(cur.fetchall())
         return jsonify({
             "tau": float(rows.get('tau', DEFAULT_TAU)),
             "ghost_enabled": rows.get('ghost_enabled', 'false') == 'true',
             "ghost_penalty": float(rows.get('ghost_penalty', DEFAULT_GHOST_PENALTY)),
+            "ghost_threshold_days": int(rows.get('ghost_threshold_days', DEFAULT_GHOST_THRESHOLD_DAYS)),
+            "ghost_interval_days": int(rows.get('ghost_interval_days', DEFAULT_GHOST_INTERVAL_DAYS)),
             "unranked_threshold": int(rows.get('unranked_threshold', DEFAULT_UNRANKED_THRESHOLD)),
             "sigma_threshold": float(rows.get('sigma_threshold', DEFAULT_SIGMA_THRESHOLD)),
             "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true',
@@ -227,6 +230,8 @@ def update_config():
         tau = float(data.get('tau', DEFAULT_TAU))
         ghost = str(data.get('ghost_enabled', 'false')).lower()
         ghost_penalty = float(data.get('ghost_penalty', DEFAULT_GHOST_PENALTY))
+        ghost_threshold_days = max(1, int(data.get('ghost_threshold_days', DEFAULT_GHOST_THRESHOLD_DAYS)))
+        ghost_interval_days = max(1, int(data.get('ghost_interval_days', DEFAULT_GHOST_INTERVAL_DAYS)))
         unranked_threshold = int(data.get('unranked_threshold', DEFAULT_UNRANKED_THRESHOLD))
         sigma_threshold = float(data.get('sigma_threshold', DEFAULT_SIGMA_THRESHOLD))
 
@@ -236,6 +241,8 @@ def update_config():
                     ('tau', str(tau)),
                     ('ghost_enabled', ghost),
                     ('ghost_penalty', str(ghost_penalty)),
+                    ('ghost_threshold_days', str(ghost_threshold_days)),
+                    ('ghost_interval_days', str(ghost_interval_days)),
                     ('unranked_threshold', str(unranked_threshold)),
                     ('sigma_threshold', str(sigma_threshold)),
                 ]
@@ -927,39 +934,94 @@ def add_tournament():
                         WHERE p.tournoi_id = data.tid AND p.joueur_id = data.jid
                     """, participation_updates)
 
-                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('ghost_enabled', 'ghost_penalty', 'unranked_threshold')")
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('ghost_enabled', 'ghost_penalty', 'ghost_threshold_days', 'ghost_interval_days', 'unranked_threshold')")
                 conf = dict(cur.fetchall())
                 ghost_enabled = (conf.get('ghost_enabled') == 'true')
                 penalty_val = float(conf.get('ghost_penalty', DEFAULT_GHOST_PENALTY))
+                ghost_threshold_days = max(1, int(conf.get('ghost_threshold_days', DEFAULT_GHOST_THRESHOLD_DAYS)))
+                ghost_interval_days = max(1, int(conf.get('ghost_interval_days', DEFAULT_GHOST_INTERVAL_DAYS)))
                 unranked_limit = int(conf.get('unranked_threshold', DEFAULT_UNRANKED_THRESHOLD))
 
                 not_in_clause = f"id NOT IN ({','.join(['%s']*len(present_pids))})" if present_pids else "TRUE"
                 abs_params = list(present_pids)
-
-                if is_league_mode and ligue_id:
-                    cur.execute("SELECT id FROM Ligues ORDER BY niveau DESC LIMIT 1")
-                    lowest_ligue_row = cur.fetchone()
-                    lowest_ligue_id = lowest_ligue_row[0] if lowest_ligue_row else None
-
-                    if lowest_ligue_id and int(ligue_id) == lowest_ligue_id:
-                        query_absents = f"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs WHERE {not_in_clause} AND (ligue_id = %s OR ligue_id IS NULL)"
-                    else:
-                        query_absents = f"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs WHERE {not_in_clause} AND ligue_id = %s"
-                    abs_params.append(int(ligue_id))
-                else:
-                    query_absents = f"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs WHERE {not_in_clause}"
+                query_absents = f"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs WHERE {not_in_clause}"
 
                 cur.execute(query_absents, tuple(abs_params))
-                absents = cur.fetchall()
+                all_absents = cur.fetchall()
+
+                all_absent_ids = [row[0] for row in all_absents]
+                last_played = {}
+                last_played_ligue = {}
+                last_ghost = {}
+                if all_absent_ids:
+                    cur.execute("""
+                        SELECT DISTINCT ON (p.joueur_id) p.joueur_id, t.date, t.ligue_id
+                        FROM Participations p
+                        JOIN Tournois t ON p.tournoi_id = t.id
+                        WHERE p.joueur_id = ANY(%s) AND t.id <> %s AND t.date <= %s
+                        ORDER BY p.joueur_id, t.date DESC, t.id DESC
+                    """, (all_absent_ids, tournoi_id, date_tournoi))
+                    for jid, d, lid in cur.fetchall():
+                        last_played[jid] = d
+                        last_played_ligue[jid] = lid
+
+                    cur.execute("""
+                        SELECT g.joueur_id, MAX(g.date)
+                        FROM ghost_log g
+                        WHERE g.joueur_id = ANY(%s) AND g.tournoi_id <> %s AND g.date <= %s
+                        GROUP BY g.joueur_id
+                    """, (all_absent_ids, tournoi_id, date_tournoi))
+                    last_ghost = {r[0]: r[1] for r in cur.fetchall()}
+
+                absents = [
+                    row for row in all_absents
+                    if ligue_id is None or last_played_ligue.get(row[0]) == int(ligue_id)
+                ]
+                absent_ids = [row[0] for row in absents]
+
+                counted_today = set()
+                if absent_ids:
+                    cur.execute("""
+                        SELECT DISTINCT p.joueur_id
+                        FROM Participations p
+                        JOIN Tournois t ON p.tournoi_id = t.id
+                        WHERE t.date = %s AND t.id <> %s
+                          AND (t.ligue_id = %s OR (%s IS NULL AND t.ligue_id IS NULL))
+                    """, (date_tournoi, tournoi_id, ligue_id, ligue_id))
+                    present_today_ids = {r[0] for r in cur.fetchall()}
+
+                    cur.execute("""
+                        SELECT 1
+                        FROM Tournois t
+                        WHERE t.date = %s AND t.id <> %s
+                          AND (t.ligue_id = %s OR (%s IS NULL AND t.ligue_id IS NULL))
+                        LIMIT 1
+                    """, (date_tournoi, tournoi_id, ligue_id, ligue_id))
+                    same_day_exists = cur.fetchone() is not None
+                    if same_day_exists:
+                        counted_today = {pid for pid in absent_ids if pid not in present_today_ids}
 
                 ghost_inserts = []
                 absent_updates = []
                 for pid, sig, missed, is_r in absents:
-                    new_missed = (missed or 0) + 1
+                    already_today = pid in counted_today
+                    new_missed = (missed or 0) if already_today else (missed or 0) + 1
                     new_sig = float(sig)
-                    if ghost_enabled and new_missed >= GHOST_MISSED_THRESHOLD and new_sig < GHOST_SIGMA_CAP:
-                        new_sig += penalty_val
-                        ghost_inserts.append((pid, tournoi_id, date_tournoi_str, sig, new_sig, penalty_val))
+
+                    lp = last_played.get(pid)
+                    lg = last_ghost.get(pid)
+                    if lp is not None and lg is not None and lg <= lp:
+                        lg = None
+                    ref = lg or lp
+                    if ghost_enabled and not already_today and ref is not None and new_sig < GHOST_SIGMA_CAP:
+                        threshold = ghost_interval_days if lg else ghost_threshold_days
+                        if (date_tournoi - ref).days >= threshold:
+                            capped_sig = min(new_sig + penalty_val, GHOST_SIGMA_CAP)
+                            applied = round(capped_sig - new_sig, 6)
+                            if applied > 0:
+                                ghost_inserts.append((pid, tournoi_id, date_tournoi_str, new_sig, capped_sig, applied))
+                                new_sig = capped_sig
+
                     new_is_ranked = is_r
                     if new_missed >= unranked_limit: new_is_ranked = False
                     absent_updates.append((pid, new_sig, new_missed, new_is_ranked))

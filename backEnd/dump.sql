@@ -595,6 +595,8 @@ INSERT INTO public.awards_obtenus (id, joueur_id, saison_id, award_id, valeur, i
 INSERT INTO public.configuration (key, value) VALUES ('tau', '0.2');
 INSERT INTO public.configuration (key, value) VALUES ('ghost_enabled', 'true');
 INSERT INTO public.configuration (key, value) VALUES ('ghost_penalty', '0.1');
+INSERT INTO public.configuration (key, value) VALUES ('ghost_threshold_days', '28');
+INSERT INTO public.configuration (key, value) VALUES ('ghost_interval_days', '7');
 INSERT INTO public.configuration (key, value) VALUES ('unranked_threshold', '13');
 INSERT INTO public.configuration (key, value) VALUES ('sigma_threshold', '3.3');
 INSERT INTO public.configuration (key, value) VALUES ('inter_league_moves', '3');

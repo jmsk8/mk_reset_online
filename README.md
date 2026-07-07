@@ -1,4 +1,4 @@
-# 🏁 Mario Kart Reset Online `v1.4.0`
+# 🏁 Mario Kart Reset Online `v1.4.1`
 
 > Plateforme de compétition Mario Kart avec classement basé sur l'algorithme TrueSkill.
 

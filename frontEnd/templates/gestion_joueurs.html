@@ -115,24 +115,36 @@
                                     <div class="column is-12">
                                         <div class="box has-background-dark" style="border: 1px solid #3b82f6;">
                                             <label class="label has-text-white mb-3">Gestion des Absences (Ghost)</label>
-                                            <div class="level is-mobile">
-                                                <div class="level-left">
-                                                    <div class="field">
-                                                        <input type="checkbox" id="configGhost" class="switch is-rounded is-info">
-                                                        <label for="configGhost" class="has-text-white ml-2">4 tournois manqués = sigma++ </label>
+                                            <div class="field mb-4">
+                                                <input type="checkbox" id="configGhost" class="switch is-rounded is-info">
+                                                <label for="configGhost" class="has-text-white ml-2">Activer les pénalités d'absence</label>
+                                            </div>
+                                            <div class="columns is-mobile is-multiline">
+                                                <div class="column is-6">
+                                                    <label class="has-text-white is-size-7">Après combien de jours sans jouer</label>
+                                                    <div class="field has-addons mt-1">
+                                                        <p class="control"><input class="input is-small" type="number" step="1" min="1" id="configGhostThresholdDays" placeholder="28" style="width: 80px;"></p>
+                                                        <p class="control"><a class="button is-static is-small">jours</a></p>
                                                     </div>
                                                 </div>
-                                                <div class="level-right">
-                                                    <div class="field has-addons">
-                                                        <p class="control">
-                                                            <a class="button is-static is-small">Sigma +</a>
-                                                        </p>
-                                                        <p class="control">
-                                                            <input class="input is-small" type="number" step="0.01" id="configGhostPenalty" placeholder="0.1" style="width: 80px;">
-                                                        </p>
+                                                <div class="column is-6">
+                                                    <label class="has-text-white is-size-7">Puis une pénalité tous les</label>
+                                                    <div class="field has-addons mt-1">
+                                                        <p class="control"><input class="input is-small" type="number" step="1" min="1" id="configGhostIntervalDays" placeholder="7" style="width: 80px;"></p>
+                                                        <p class="control"><a class="button is-static is-small">jours</a></p>
+                                                    </div>
+                                                </div>
+                                                <div class="column is-6">
+                                                    <label class="has-text-white is-size-7">Valeur de la pénalité</label>
+                                                    <div class="field has-addons mt-1">
+                                                        <p class="control"><a class="button is-static is-small">Sigma +</a></p>
+                                                        <p class="control"><input class="input is-small" type="number" step="0.01" id="configGhostPenalty" placeholder="0.1" style="width: 80px;"></p>
                                                     </div>
                                                 </div>
                                             </div>
+                                            <p class="has-text-grey-light is-size-7 is-italic mt-2">
+                                                Le décompte part du dernier tournoi joué par le joueur. Un changement ne s'applique qu'aux tournois ajoutés ensuite.
+                                            </p>
                                         </div>
                                     </div>
                                     
