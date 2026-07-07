@@ -33,7 +33,7 @@ app.config['SESSION_COOKIE_SECURE'] = True
 
 csrf = CSRFProtect(app)
 
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2"
 
 @app.context_processor
 def inject_version():
@@ -395,6 +395,21 @@ def add_tournament():
     data, status = backend_request('GET', '/joueurs/noms')
     joueurs = data if status == 200 else []
     return render_template("add_tournament.html", joueurs=joueurs)
+
+@app.route('/admin/matchmaking', methods=['GET'])
+def matchmaking():
+    if 'admin_token' not in session:
+        flash('Accès réservé aux administrateurs', 'warning')
+        return redirect(url_for('admin_login'))
+
+    headers = {'X-Admin-Token': session['admin_token']}
+    _, status = backend_request('GET', '/admin/check-token', headers=headers)
+    if status in [401, 403]:
+        session.pop('admin_token', None)
+        flash('Votre session a expiré. Veuillez vous reconnecter.', 'danger')
+        return redirect(url_for('admin_login'))
+
+    return render_template("matchmaking.html")
 
 @app.route('/admin/revert_last', methods=['POST'])
 

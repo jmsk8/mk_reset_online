@@ -1196,8 +1196,15 @@ def get_joueur_names():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT nom, ligue_id FROM Joueurs ORDER BY score_trueskill DESC NULLS LAST")
-                joueurs = [{"nom": row[0], "ligue_id": row[1]} for row in cur.fetchall()]
+                cur.execute("SELECT nom, ligue_id, score_trueskill FROM Joueurs ORDER BY score_trueskill DESC NULLS LAST")
+                joueurs = [
+                    {
+                        "nom": row[0],
+                        "ligue_id": row[1],
+                        "score_trueskill": round(float(row[2]), 3) if row[2] is not None else 0.0,
+                    }
+                    for row in cur.fetchall()
+                ]
         return jsonify(joueurs)
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500

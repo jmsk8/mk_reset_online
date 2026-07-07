@@ -4,6 +4,13 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
+## [1.4.2] - 2026-07-07
+
+### Nouvelles fonctionnalités
+- **Onglet Matchmaking** : nouvel écran d'administration permettant de répartir les joueurs présents en lobbies équilibrés par niveau TrueSkill (10 joueurs maximum par lobby)
+
+---
+
 ## [1.4.1] - 2026-06-22
 
 ### Nouvelles fonctionnalités

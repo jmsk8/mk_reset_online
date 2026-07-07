@@ -1,4 +1,4 @@
-# 🏁 Mario Kart Reset Online `v1.4.1`
+# 🏁 Mario Kart Reset Online `v1.4.2`
 
 > Plateforme de compétition Mario Kart avec classement basé sur l'algorithme TrueSkill.
 
@@ -70,6 +70,7 @@ Chaque saison attribue des distinctions aux joueurs :
 - Mise en place des ligues avec simulation de draft
 - Reset global du sigma pour les nouvelles saisons (avec possibilité de revert)
 - Configuration du moteur TrueSkill (tau, seuil sigma, activation du ghost)
+- Matchmaking : répartition des joueurs présents en lobbies équilibrés par niveau TrueSkill (10 joueurs max par lobby)
 
 
 
