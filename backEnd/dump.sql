@@ -93,7 +93,7 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: api_tokens; Type: TABLE; Schema: public; Owner: posgres
+-- Name: api_tokens; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.api_tokens (
@@ -103,10 +103,10 @@ CREATE TABLE public.api_tokens (
 );
 
 
-ALTER TABLE public.api_tokens OWNER TO posgres;
+ALTER TABLE public.api_tokens OWNER TO postgres;
 
 --
--- Name: awards_obtenus; Type: TABLE; Schema: public; Owner: posgres
+-- Name: awards_obtenus; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.awards_obtenus (
@@ -123,10 +123,10 @@ CREATE TABLE public.awards_obtenus (
 );
 
 
-ALTER TABLE public.awards_obtenus OWNER TO posgres;
+ALTER TABLE public.awards_obtenus OWNER TO postgres;
 
 --
--- Name: awards_obtenus_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.awards_obtenus_id_seq
@@ -138,17 +138,17 @@ CREATE SEQUENCE public.awards_obtenus_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.awards_obtenus_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.awards_obtenus_id_seq OWNER TO postgres;
 
 --
--- Name: awards_obtenus_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.awards_obtenus_id_seq OWNED BY public.awards_obtenus.id;
 
 
 --
--- Name: configuration; Type: TABLE; Schema: public; Owner: posgres
+-- Name: configuration; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.configuration (
@@ -157,10 +157,10 @@ CREATE TABLE public.configuration (
 );
 
 
-ALTER TABLE public.configuration OWNER TO posgres;
+ALTER TABLE public.configuration OWNER TO postgres;
 
 --
--- Name: ghost_log; Type: TABLE; Schema: public; Owner: posgres
+-- Name: ghost_log; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.ghost_log (
@@ -174,10 +174,10 @@ CREATE TABLE public.ghost_log (
 );
 
 
-ALTER TABLE public.ghost_log OWNER TO posgres;
+ALTER TABLE public.ghost_log OWNER TO postgres;
 
 --
--- Name: ghost_log_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: ghost_log_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.ghost_log_id_seq
@@ -189,17 +189,17 @@ CREATE SEQUENCE public.ghost_log_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.ghost_log_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.ghost_log_id_seq OWNER TO postgres;
 
 --
--- Name: ghost_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: ghost_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.ghost_log_id_seq OWNED BY public.ghost_log.id;
 
 
 --
--- Name: global_resets; Type: TABLE; Schema: public; Owner: posgres
+-- Name: global_resets; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.global_resets (
@@ -210,10 +210,10 @@ CREATE TABLE public.global_resets (
 );
 
 
-ALTER TABLE public.global_resets OWNER TO posgres;
+ALTER TABLE public.global_resets OWNER TO postgres;
 
 --
--- Name: global_resets_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: global_resets_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.global_resets_id_seq
@@ -225,17 +225,17 @@ CREATE SEQUENCE public.global_resets_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.global_resets_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.global_resets_id_seq OWNER TO postgres;
 
 --
--- Name: global_resets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: global_resets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.global_resets_id_seq OWNED BY public.global_resets.id;
 
 
 --
--- Name: joueurs; Type: TABLE; Schema: public; Owner: posgres
+-- Name: joueurs; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.joueurs (
@@ -252,10 +252,10 @@ CREATE TABLE public.joueurs (
 );
 
 
-ALTER TABLE public.joueurs OWNER TO posgres;
+ALTER TABLE public.joueurs OWNER TO postgres;
 
 --
--- Name: joueurs_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: joueurs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.joueurs_id_seq
@@ -267,17 +267,17 @@ CREATE SEQUENCE public.joueurs_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.joueurs_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.joueurs_id_seq OWNER TO postgres;
 
 --
--- Name: joueurs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: joueurs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
 
 
 --
--- Name: league_movements; Type: TABLE; Schema: public; Owner: posgres
+-- Name: league_movements; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.league_movements (
@@ -293,10 +293,10 @@ CREATE TABLE public.league_movements (
 );
 
 
-ALTER TABLE public.league_movements OWNER TO posgres;
+ALTER TABLE public.league_movements OWNER TO postgres;
 
 --
--- Name: league_movements_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: league_movements_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.league_movements_id_seq
@@ -308,17 +308,17 @@ CREATE SEQUENCE public.league_movements_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.league_movements_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.league_movements_id_seq OWNER TO postgres;
 
 --
--- Name: league_movements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: league_movements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.league_movements_id_seq OWNED BY public.league_movements.id;
 
 
 --
--- Name: ligues; Type: TABLE; Schema: public; Owner: posgres
+-- Name: ligues; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.ligues (
@@ -329,10 +329,10 @@ CREATE TABLE public.ligues (
 );
 
 
-ALTER TABLE public.ligues OWNER TO posgres;
+ALTER TABLE public.ligues OWNER TO postgres;
 
 --
--- Name: ligues_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: ligues_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.ligues_id_seq
@@ -344,17 +344,17 @@ CREATE SEQUENCE public.ligues_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.ligues_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.ligues_id_seq OWNER TO postgres;
 
 --
--- Name: ligues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: ligues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.ligues_id_seq OWNED BY public.ligues.id;
 
 
 --
--- Name: participations; Type: TABLE; Schema: public; Owner: posgres
+-- Name: participations; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.participations (
@@ -372,10 +372,10 @@ CREATE TABLE public.participations (
 );
 
 
-ALTER TABLE public.participations OWNER TO posgres;
+ALTER TABLE public.participations OWNER TO postgres;
 
 --
--- Name: saisons; Type: TABLE; Schema: public; Owner: posgres
+-- Name: saisons; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.saisons (
@@ -397,10 +397,10 @@ CREATE TABLE public.saisons (
 );
 
 
-ALTER TABLE public.saisons OWNER TO posgres;
+ALTER TABLE public.saisons OWNER TO postgres;
 
 --
--- Name: saisons_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: saisons_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.saisons_id_seq
@@ -412,17 +412,17 @@ CREATE SEQUENCE public.saisons_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.saisons_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.saisons_id_seq OWNER TO postgres;
 
 --
--- Name: saisons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: saisons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.saisons_id_seq OWNED BY public.saisons.id;
 
 
 --
--- Name: tournois; Type: TABLE; Schema: public; Owner: posgres
+-- Name: tournois; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.tournois (
@@ -434,10 +434,10 @@ CREATE TABLE public.tournois (
 );
 
 
-ALTER TABLE public.tournois OWNER TO posgres;
+ALTER TABLE public.tournois OWNER TO postgres;
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: tournois_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.tournois_id_seq
@@ -449,17 +449,17 @@ CREATE SEQUENCE public.tournois_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.tournois_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.tournois_id_seq OWNER TO postgres;
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: tournois_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.tournois_id_seq OWNED BY public.tournois.id;
 
 
 --
--- Name: types_awards; Type: TABLE; Schema: public; Owner: posgres
+-- Name: types_awards; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.types_awards (
@@ -471,10 +471,10 @@ CREATE TABLE public.types_awards (
 );
 
 
-ALTER TABLE public.types_awards OWNER TO posgres;
+ALTER TABLE public.types_awards OWNER TO postgres;
 
 --
--- Name: types_awards_id_seq; Type: SEQUENCE; Schema: public; Owner: posgres
+-- Name: types_awards_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
 --
 
 CREATE SEQUENCE public.types_awards_id_seq
@@ -486,80 +486,80 @@ CREATE SEQUENCE public.types_awards_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.types_awards_id_seq OWNER TO posgres;
+ALTER SEQUENCE public.types_awards_id_seq OWNER TO postgres;
 
 --
--- Name: types_awards_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: posgres
+-- Name: types_awards_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
 --
 
 ALTER SEQUENCE public.types_awards_id_seq OWNED BY public.types_awards.id;
 
 
 --
--- Name: awards_obtenus id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: awards_obtenus id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.awards_obtenus ALTER COLUMN id SET DEFAULT nextval('public.awards_obtenus_id_seq'::regclass);
 
 
 --
--- Name: ghost_log id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: ghost_log id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.ghost_log ALTER COLUMN id SET DEFAULT nextval('public.ghost_log_id_seq'::regclass);
 
 
 --
--- Name: global_resets id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: global_resets id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.global_resets ALTER COLUMN id SET DEFAULT nextval('public.global_resets_id_seq'::regclass);
 
 
 --
--- Name: joueurs id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: joueurs id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.joueurs ALTER COLUMN id SET DEFAULT nextval('public.joueurs_id_seq'::regclass);
 
 
 --
--- Name: league_movements id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: league_movements id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.league_movements ALTER COLUMN id SET DEFAULT nextval('public.league_movements_id_seq'::regclass);
 
 
 --
--- Name: ligues id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: ligues id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.ligues ALTER COLUMN id SET DEFAULT nextval('public.ligues_id_seq'::regclass);
 
 
 --
--- Name: saisons id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: saisons id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.saisons ALTER COLUMN id SET DEFAULT nextval('public.saisons_id_seq'::regclass);
 
 
 --
--- Name: tournois id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: tournois id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.tournois ALTER COLUMN id SET DEFAULT nextval('public.tournois_id_seq'::regclass);
 
 
 --
--- Name: types_awards id; Type: DEFAULT; Schema: public; Owner: posgres
+-- Name: types_awards id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.types_awards ALTER COLUMN id SET DEFAULT nextval('public.types_awards_id_seq'::regclass);
 
 
 --
--- Data for Name: api_tokens; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: api_tokens; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.api_tokens (token, created_at, expires_at) FROM stdin;
@@ -568,7 +568,7 @@ a1d64aac-8b0f-4896-839b-ff63e1187b78	2026-07-08 21:22:08.499213	2026-07-08 21:52
 
 
 --
--- Data for Name: awards_obtenus; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: awards_obtenus; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.awards_obtenus (id, joueur_id, saison_id, award_id, valeur, is_league_award, ligue_id, ligue_nom, ligue_couleur, created_at) FROM stdin;
@@ -646,7 +646,7 @@ COPY public.awards_obtenus (id, joueur_id, saison_id, award_id, valeur, is_leagu
 
 
 --
--- Data for Name: configuration; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: configuration; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.configuration (key, value) FROM stdin;
@@ -663,7 +663,7 @@ inter_league_moves	3
 
 
 --
--- Data for Name: ghost_log; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: ghost_log; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) FROM stdin;
@@ -770,7 +770,7 @@ COPY public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, pe
 
 
 --
--- Data for Name: global_resets; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: global_resets; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.global_resets (id, date, value_applied, created_at) FROM stdin;
@@ -781,7 +781,7 @@ COPY public.global_resets (id, date, value_applied, created_at) FROM stdin;
 
 
 --
--- Data for Name: joueurs; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: joueurs; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) FROM stdin;
@@ -826,7 +826,7 @@ COPY public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, co
 
 
 --
--- Data for Name: league_movements; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: league_movements; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.league_movements (id, saison_id, joueur_id, from_ligue_id, to_ligue_id, from_ligue_nom, to_ligue_nom, direction, created_at) FROM stdin;
@@ -834,7 +834,7 @@ COPY public.league_movements (id, saison_id, joueur_id, from_ligue_id, to_ligue_
 
 
 --
--- Data for Name: ligues; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: ligues; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.ligues (id, nom, niveau, couleur) FROM stdin;
@@ -844,7 +844,7 @@ COPY public.ligues (id, nom, niveau, couleur) FROM stdin;
 
 
 --
--- Data for Name: participations; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: participations; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) FROM stdin;
@@ -1415,7 +1415,7 @@ COPY public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_t
 
 
 --
--- Data for Name: saisons; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: saisons; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly, ligue_id, ligue_nom, ligue_couleur, is_league_recap, include_league_stats, include_league_moves) FROM stdin;
@@ -1430,7 +1430,7 @@ COPY public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awar
 
 
 --
--- Data for Name: tournois; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: tournois; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) FROM stdin;
@@ -1522,7 +1522,7 @@ COPY public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) FROM stdin;
 
 
 --
--- Data for Name: types_awards; Type: TABLE DATA; Schema: public; Owner: posgres
+-- Data for Name: types_awards; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
 COPY public.types_awards (id, code, nom, emoji, description) FROM stdin;
@@ -1544,70 +1544,70 @@ COPY public.types_awards (id, code, nom, emoji, description) FROM stdin;
 
 
 --
--- Name: awards_obtenus_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.awards_obtenus_id_seq', 70, true);
 
 
 --
--- Name: ghost_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: ghost_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.ghost_log_id_seq', 126, true);
 
 
 --
--- Name: global_resets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: global_resets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.global_resets_id_seq', 3, true);
 
 
 --
--- Name: joueurs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: joueurs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.joueurs_id_seq', 37, true);
 
 
 --
--- Name: league_movements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: league_movements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.league_movements_id_seq', 1, false);
 
 
 --
--- Name: ligues_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: ligues_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.ligues_id_seq', 1, false);
 
 
 --
--- Name: saisons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: saisons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.saisons_id_seq', 14, true);
 
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: tournois_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.tournois_id_seq', 92, true);
 
 
 --
--- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: posgres
+-- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
 SELECT pg_catalog.setval('public.types_awards_id_seq', 14, true);
 
 
 --
--- Name: api_tokens api_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: api_tokens api_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.api_tokens
@@ -1615,7 +1615,7 @@ ALTER TABLE ONLY public.api_tokens
 
 
 --
--- Name: awards_obtenus awards_obtenus_joueur_id_saison_id_award_id_ligue_id_key; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: awards_obtenus awards_obtenus_joueur_id_saison_id_award_id_ligue_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1623,7 +1623,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: awards_obtenus awards_obtenus_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: awards_obtenus awards_obtenus_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1631,7 +1631,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: configuration configuration_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: configuration configuration_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.configuration
@@ -1639,7 +1639,7 @@ ALTER TABLE ONLY public.configuration
 
 
 --
--- Name: ghost_log ghost_log_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: ghost_log ghost_log_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.ghost_log
@@ -1647,7 +1647,7 @@ ALTER TABLE ONLY public.ghost_log
 
 
 --
--- Name: global_resets global_resets_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: global_resets global_resets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.global_resets
@@ -1655,7 +1655,7 @@ ALTER TABLE ONLY public.global_resets
 
 
 --
--- Name: joueurs joueurs_nom_key; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: joueurs joueurs_nom_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.joueurs
@@ -1663,7 +1663,7 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
--- Name: joueurs joueurs_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: joueurs joueurs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.joueurs
@@ -1671,7 +1671,7 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
--- Name: league_movements league_movements_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: league_movements league_movements_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1679,7 +1679,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: ligues ligues_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: ligues ligues_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.ligues
@@ -1687,7 +1687,7 @@ ALTER TABLE ONLY public.ligues
 
 
 --
--- Name: participations participations_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: participations participations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.participations
@@ -1695,7 +1695,7 @@ ALTER TABLE ONLY public.participations
 
 
 --
--- Name: saisons saisons_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: saisons saisons_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.saisons
@@ -1703,7 +1703,7 @@ ALTER TABLE ONLY public.saisons
 
 
 --
--- Name: saisons saisons_slug_key; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: saisons saisons_slug_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.saisons
@@ -1711,7 +1711,7 @@ ALTER TABLE ONLY public.saisons
 
 
 --
--- Name: tournois tournois_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: tournois tournois_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.tournois
@@ -1719,7 +1719,7 @@ ALTER TABLE ONLY public.tournois
 
 
 --
--- Name: types_awards types_awards_code_key; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: types_awards types_awards_code_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.types_awards
@@ -1727,7 +1727,7 @@ ALTER TABLE ONLY public.types_awards
 
 
 --
--- Name: types_awards types_awards_pkey; Type: CONSTRAINT; Schema: public; Owner: posgres
+-- Name: types_awards types_awards_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.types_awards
@@ -1735,14 +1735,14 @@ ALTER TABLE ONLY public.types_awards
 
 
 --
--- Name: awards_obtenus_unique_no_ligue; Type: INDEX; Schema: public; Owner: posgres
+-- Name: awards_obtenus_unique_no_ligue; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus USING btree (joueur_id, saison_id, award_id) WHERE (ligue_id IS NULL);
 
 
 --
--- Name: awards_obtenus awards_obtenus_award_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: awards_obtenus awards_obtenus_award_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1750,7 +1750,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: awards_obtenus awards_obtenus_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: awards_obtenus awards_obtenus_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1758,7 +1758,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: awards_obtenus awards_obtenus_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: awards_obtenus awards_obtenus_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1766,7 +1766,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: awards_obtenus awards_obtenus_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: awards_obtenus awards_obtenus_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1774,7 +1774,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: ghost_log ghost_log_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: ghost_log ghost_log_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.ghost_log
@@ -1782,7 +1782,7 @@ ALTER TABLE ONLY public.ghost_log
 
 
 --
--- Name: ghost_log ghost_log_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: ghost_log ghost_log_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.ghost_log
@@ -1790,7 +1790,7 @@ ALTER TABLE ONLY public.ghost_log
 
 
 --
--- Name: joueurs joueurs_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: joueurs joueurs_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.joueurs
@@ -1798,7 +1798,7 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
--- Name: league_movements league_movements_from_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: league_movements league_movements_from_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1806,7 +1806,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: league_movements league_movements_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: league_movements league_movements_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1814,7 +1814,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: league_movements league_movements_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: league_movements league_movements_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1822,7 +1822,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: league_movements league_movements_to_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: league_movements league_movements_to_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1830,7 +1830,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: participations participations_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: participations participations_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.participations
@@ -1838,7 +1838,7 @@ ALTER TABLE ONLY public.participations
 
 
 --
--- Name: participations participations_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: participations participations_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.participations
@@ -1846,7 +1846,7 @@ ALTER TABLE ONLY public.participations
 
 
 --
--- Name: saisons saisons_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: saisons saisons_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.saisons
@@ -1854,7 +1854,7 @@ ALTER TABLE ONLY public.saisons
 
 
 --
--- Name: tournois tournois_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: posgres
+-- Name: tournois tournois_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.tournois
