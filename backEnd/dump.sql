@@ -103,7 +103,7 @@ CREATE TABLE public.api_tokens (
 );
 
 
-ALTER TABLE public.api_tokens OWNER TO postgres;
+ALTER TABLE public.api_tokens OWNER TO mk_reset;
 
 --
 -- Name: awards_obtenus; Type: TABLE; Schema: public; Owner: postgres
@@ -123,7 +123,7 @@ CREATE TABLE public.awards_obtenus (
 );
 
 
-ALTER TABLE public.awards_obtenus OWNER TO postgres;
+ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
 
 --
 -- Name: awards_obtenus_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -138,7 +138,7 @@ CREATE SEQUENCE public.awards_obtenus_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.awards_obtenus_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.awards_obtenus_id_seq OWNER TO mk_reset;
 
 --
 -- Name: awards_obtenus_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -157,7 +157,7 @@ CREATE TABLE public.configuration (
 );
 
 
-ALTER TABLE public.configuration OWNER TO postgres;
+ALTER TABLE public.configuration OWNER TO mk_reset;
 
 --
 -- Name: ghost_log; Type: TABLE; Schema: public; Owner: postgres
@@ -174,7 +174,7 @@ CREATE TABLE public.ghost_log (
 );
 
 
-ALTER TABLE public.ghost_log OWNER TO postgres;
+ALTER TABLE public.ghost_log OWNER TO mk_reset;
 
 --
 -- Name: ghost_log_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -189,7 +189,7 @@ CREATE SEQUENCE public.ghost_log_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.ghost_log_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.ghost_log_id_seq OWNER TO mk_reset;
 
 --
 -- Name: ghost_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -210,7 +210,7 @@ CREATE TABLE public.global_resets (
 );
 
 
-ALTER TABLE public.global_resets OWNER TO postgres;
+ALTER TABLE public.global_resets OWNER TO mk_reset;
 
 --
 -- Name: global_resets_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -225,7 +225,7 @@ CREATE SEQUENCE public.global_resets_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.global_resets_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.global_resets_id_seq OWNER TO mk_reset;
 
 --
 -- Name: global_resets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -252,7 +252,7 @@ CREATE TABLE public.joueurs (
 );
 
 
-ALTER TABLE public.joueurs OWNER TO postgres;
+ALTER TABLE public.joueurs OWNER TO mk_reset;
 
 --
 -- Name: joueurs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -267,7 +267,7 @@ CREATE SEQUENCE public.joueurs_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.joueurs_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.joueurs_id_seq OWNER TO mk_reset;
 
 --
 -- Name: joueurs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -293,7 +293,7 @@ CREATE TABLE public.league_movements (
 );
 
 
-ALTER TABLE public.league_movements OWNER TO postgres;
+ALTER TABLE public.league_movements OWNER TO mk_reset;
 
 --
 -- Name: league_movements_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -308,7 +308,7 @@ CREATE SEQUENCE public.league_movements_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.league_movements_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.league_movements_id_seq OWNER TO mk_reset;
 
 --
 -- Name: league_movements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -329,7 +329,7 @@ CREATE TABLE public.ligues (
 );
 
 
-ALTER TABLE public.ligues OWNER TO postgres;
+ALTER TABLE public.ligues OWNER TO mk_reset;
 
 --
 -- Name: ligues_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -344,7 +344,7 @@ CREATE SEQUENCE public.ligues_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.ligues_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.ligues_id_seq OWNER TO mk_reset;
 
 --
 -- Name: ligues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -372,7 +372,7 @@ CREATE TABLE public.participations (
 );
 
 
-ALTER TABLE public.participations OWNER TO postgres;
+ALTER TABLE public.participations OWNER TO mk_reset;
 
 --
 -- Name: saisons; Type: TABLE; Schema: public; Owner: postgres
@@ -397,7 +397,7 @@ CREATE TABLE public.saisons (
 );
 
 
-ALTER TABLE public.saisons OWNER TO postgres;
+ALTER TABLE public.saisons OWNER TO mk_reset;
 
 --
 -- Name: saisons_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -412,7 +412,7 @@ CREATE SEQUENCE public.saisons_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.saisons_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.saisons_id_seq OWNER TO mk_reset;
 
 --
 -- Name: saisons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -434,7 +434,7 @@ CREATE TABLE public.tournois (
 );
 
 
-ALTER TABLE public.tournois OWNER TO postgres;
+ALTER TABLE public.tournois OWNER TO mk_reset;
 
 --
 -- Name: tournois_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -449,7 +449,7 @@ CREATE SEQUENCE public.tournois_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.tournois_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.tournois_id_seq OWNER TO mk_reset;
 
 --
 -- Name: tournois_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
@@ -471,7 +471,7 @@ CREATE TABLE public.types_awards (
 );
 
 
-ALTER TABLE public.types_awards OWNER TO postgres;
+ALTER TABLE public.types_awards OWNER TO mk_reset;
 
 --
 -- Name: types_awards_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
@@ -486,7 +486,7 @@ CREATE SEQUENCE public.types_awards_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.types_awards_id_seq OWNER TO postgres;
+ALTER SEQUENCE public.types_awards_id_seq OWNER TO mk_reset;
 
 --
 -- Name: types_awards_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
