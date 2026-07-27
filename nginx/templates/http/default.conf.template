@@ -1,0 +1,11 @@
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    # ACME HTTP-01 challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    include /etc/nginx/snippets/app.conf;
+}

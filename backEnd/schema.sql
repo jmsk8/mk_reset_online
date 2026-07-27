@@ -20,7 +20,7 @@ CREATE TABLE public.configuration (
     key character varying(50) NOT NULL PRIMARY KEY, 
     value character varying(255) NOT NULL
 );
-ALTER TABLE public.configuration OWNER TO mk_reset;
+ALTER TABLE public.configuration OWNER TO CURRENT_USER;
 
 INSERT INTO public.configuration (key, value) VALUES
 ('tau', '0.083'),
@@ -40,7 +40,7 @@ CREATE TABLE public.ligues (
     niveau INTEGER NOT NULL,
     couleur VARCHAR(20) DEFAULT '#FFFFFF'
 );
-ALTER TABLE public.ligues OWNER TO mk_reset;
+ALTER TABLE public.ligues OWNER TO CURRENT_USER;
 
 -- JOUEURS
 CREATE TABLE public.joueurs (
@@ -55,7 +55,7 @@ CREATE TABLE public.joueurs (
     color character varying(7) DEFAULT '#FFFFFF',
     ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL
 );
-ALTER TABLE public.joueurs OWNER TO mk_reset;
+ALTER TABLE public.joueurs OWNER TO CURRENT_USER;
 
 CREATE SEQUENCE public.joueurs_id_seq AS integer START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
 ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
@@ -70,7 +70,7 @@ CREATE TABLE public.tournois (
     ligue_nom character varying(100),    -- Archive du nom au moment du tournoi
     ligue_couleur character varying(20)  -- Archive de la couleur
 );
-ALTER TABLE public.tournois OWNER TO mk_reset;
+ALTER TABLE public.tournois OWNER TO CURRENT_USER;
 
 CREATE SEQUENCE public.tournois_id_seq AS integer START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
 ALTER SEQUENCE public.tournois_id_seq OWNED BY public.tournois.id;
@@ -91,7 +91,7 @@ CREATE TABLE public.participations (
     exclude_from_ts boolean DEFAULT false,
     CONSTRAINT participations_pkey PRIMARY KEY (joueur_id, tournoi_id)
 );
-ALTER TABLE public.participations OWNER TO mk_reset;
+ALTER TABLE public.participations OWNER TO CURRENT_USER;
 
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
@@ -106,7 +106,7 @@ CREATE TABLE public.ghost_log (
     new_sigma double precision NOT NULL,
     penalty_applied double precision NOT NULL
 );
-ALTER TABLE public.ghost_log OWNER TO mk_reset;
+ALTER TABLE public.ghost_log OWNER TO CURRENT_USER;
 
 -- HISTORIQUE RESET GLOBAL
 CREATE TABLE public.global_resets (
@@ -115,7 +115,7 @@ CREATE TABLE public.global_resets (
     value_applied REAL NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-ALTER TABLE public.global_resets OWNER TO mk_reset;
+ALTER TABLE public.global_resets OWNER TO CURRENT_USER;
 
 -- API TOKENS
 CREATE TABLE public.api_tokens (
@@ -123,7 +123,7 @@ CREATE TABLE public.api_tokens (
     created_at timestamp without time zone DEFAULT now(),
     expires_at timestamp without time zone NOT NULL
 );
-ALTER TABLE public.api_tokens OWNER TO mk_reset;
+ALTER TABLE public.api_tokens OWNER TO CURRENT_USER;
 
 -- SAISONS
 CREATE TABLE public.saisons (
@@ -143,7 +143,7 @@ CREATE TABLE public.saisons (
     include_league_stats boolean DEFAULT false,
     include_league_moves boolean DEFAULT false
 );
-ALTER TABLE public.saisons OWNER TO mk_reset;
+ALTER TABLE public.saisons OWNER TO CURRENT_USER;
 
 -- MOUVEMENTS INTER-LIGUES (stockage des promotions/relégations)
 CREATE TABLE public.league_movements (
@@ -157,7 +157,7 @@ CREATE TABLE public.league_movements (
     direction character varying(20),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-ALTER TABLE public.league_movements OWNER TO mk_reset;
+ALTER TABLE public.league_movements OWNER TO CURRENT_USER;
 
 -- TYPES D'AWARDS
 CREATE TABLE public.types_awards (
@@ -167,7 +167,7 @@ CREATE TABLE public.types_awards (
     emoji character varying(100) NOT NULL,
     description text
 );
-ALTER TABLE public.types_awards OWNER TO mk_reset;
+ALTER TABLE public.types_awards OWNER TO CURRENT_USER;
 
 -- AWARDS OBTENUS
 CREATE TABLE public.awards_obtenus (
@@ -183,7 +183,7 @@ CREATE TABLE public.awards_obtenus (
     created_at timestamp DEFAULT now(),
     UNIQUE(joueur_id, saison_id, award_id, ligue_id)
 );
-ALTER TABLE public.awards_obtenus OWNER TO mk_reset;
+ALTER TABLE public.awards_obtenus OWNER TO CURRENT_USER;
 CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus (joueur_id, saison_id, award_id) WHERE ligue_id IS NULL;
 
 -- INDEXES PERFORMANCE

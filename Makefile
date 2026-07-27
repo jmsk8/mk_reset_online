@@ -30,6 +30,9 @@ down:                ## Stop and remove containers/networks
 fclean:              ## Full cleanup (containers + volumes + images)
 	$(COMPOSE) down -v --rmi local
 
+distclean:           ## Full cleanup + .env (CERTS=1 to also remove certbot/)
+	@bash scripts/distclean.sh $(if $(CERTS),--certs,)
+
 # ── Re-create ────────────────────────────────
 
 re: fclean build     ## Full cleanup then rebuild (schema + seed)
@@ -56,6 +59,19 @@ re-db-dump:          ## Recreate database with dump.sql
 	$(COMPOSE) rm -f db
 	docker volume rm -f $$($(COMPOSE) config --volumes | grep pg_data | head -1) 2>/dev/null || true
 	$(COMPOSE_DUMP) up -d db
+
+# ── HTTPS (Let's Encrypt) ────────────────────
+
+ssl-init:            ## Issue initial certificate and switch to https
+	@bash scripts/init-letsencrypt.sh $(DOMAIN) $(EMAIL)
+
+ssl-renew:           ## Force certificate renewal and reload nginx
+	$(COMPOSE) run --rm --entrypoint certbot certbot renew --force-renewal
+	$(COMPOSE) exec nginx nginx -s reload
+
+ssl-off:             ## Switch back to http (certificate kept)
+	@sed -i 's/^TLS_MODE=.*/TLS_MODE=http/' .env
+	$(COMPOSE) up -d nginx
 
 # ── Monitoring ───────────────────────────────
 
@@ -88,8 +104,9 @@ help:                ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: check-env up stop start build down fclean re redump \
+.PHONY: check-env up stop start build down fclean distclean re redump \
         re-front re-back re-db re-db-dump \
+        ssl-init ssl-renew ssl-off \
         logs logs-nginx logs-front logs-back logs-db ps \
         db-shell help
 

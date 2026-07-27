@@ -125,6 +125,14 @@ SECRET_KEY=...
 ADMIN_PASSWORD_HASH=...    # Hash Bcrypt du mot de passe admin
 ```
 
+Variables optionnelles, utilisées uniquement pour un déploiement en ligne :
+
+```
+DOMAIN=...                 # Nom d'hôte servi par nginx (défaut : localhost)
+TLS_MODE=http|https        # Mode de service nginx (défaut : http)
+COMPOSE_PROFILES=ssl       # Active le conteneur certbot (renouvellement auto)
+```
+
 ### 🚀 Lancement
 
 Le projet peut être lancé de deux façons :
@@ -144,3 +152,28 @@ frontend_start  # lance le frontend
 Nix Flakes garantit un environnement de développement identique à la production.
 
 Le site est accessible sur `http://localhost`.
+
+### 🔒 HTTPS (déploiement en ligne)
+
+Par défaut la stack sert le site en clair sur le port 80. Sur un serveur avec un
+nom de domaine public, un certificat Let's Encrypt s'obtient en une commande :
+
+```bash
+make ssl-init DOMAIN=mon-domaine.tld EMAIL=moi@exemple.tld
+```
+
+Le certificat est obtenu par challenge webroot pendant que nginx tourne en mode
+`http`, puis le `.env` bascule en `TLS_MODE=https` (redirection 80 → 443). Le
+conteneur `certbot` prend ensuite en charge le renouvellement, et nginx se
+recharge toutes les 6h pour en tenir compte.
+
+| Commande | Effet |
+| :--- | :--- |
+| `make ssl-init` | Émission du certificat initial + passage en https |
+| `make ssl-renew` | Renouvellement forcé + reload nginx |
+| `make ssl-off` | Retour en http (le certificat est conservé) |
+
+Les `server{}` sont générés au démarrage depuis `nginx/templates/$TLS_MODE/`,
+le routage commun aux deux modes vivant dans `nginx/snippets/app.conf`.
+Prérequis : le domaine doit pointer vers le serveur, et les ports 80 et 443
+doivent être ouverts.
