@@ -4,7 +4,7 @@ services:
       - pg_data:/var/lib/postgresql/data
       - /dev/null:/docker-entrypoint-initdb.d/01_schema.sql
       - /dev/null:/docker-entrypoint-initdb.d/02_seed.sql
-      - ./backEnd/dump.sql:/docker-entrypoint-initdb.d/03_dump.sql
+      - ${DUMP_FILE:-./backEnd/dump.sql}:/docker-entrypoint-initdb.d/03_dump.sql
 
 volumes:
   pg_data:

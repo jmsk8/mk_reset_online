@@ -110,7 +110,29 @@ mk_reset_online/
 │   └── static/        # CSS, JS, images, sprites
 ├── nginx/             # Configuration Nginx
 ├── nix/               # Environnement Nix Flakes
+├── dumps/             # Sauvegardes locales de la base (non versionné)
 └── docker-compose.yml
+```
+
+### 💾 Sauvegardes et jeu de démonstration
+
+`backEnd/dump.sql` est un **jeu d'exemple anonymisé** (pseudos fictifs, aucune
+session) versionné pour permettre de découvrir le site avec des données
+réalistes. Les sauvegardes réelles vivent dans `dumps/`, qui n'est pas suivi
+par git.
+
+```bash
+make db-dump        # sauvegarde la base courante dans dumps/
+make db-example     # régénère le jeu d'exemple anonymisé
+```
+
+Les cibles qui repartent d'un dump acceptent une variable `DUMP`, qui vaut le
+jeu d'exemple par défaut :
+
+```bash
+make redump                                    # depuis backEnd/dump.sql
+make redump DUMP=dumps/dump_2026-07-27.sql     # depuis une sauvegarde
+make re-db-dump DUMP=dumps/dump_2026-07-08.sql
 ```
 
 ### 🔐 Variables d'environnement

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 68mnAwYfopxtvIFQEpHQJUOjbiNoeXoWMaYiZuBXhBVwDmC0s8sty1QqC7EJ6VM
+\restrict viWOa33K8BeJJgTZOOqBzTN6YvfhfiLWvrquQaewibnSbjU0rMfr6FyEPoGm924
 
 -- Dumped from database version 17.10
 -- Dumped by pg_dump version 17.10
@@ -34,6 +34,14 @@ ALTER TABLE IF EXISTS ONLY public.awards_obtenus DROP CONSTRAINT IF EXISTS award
 ALTER TABLE IF EXISTS ONLY public.awards_obtenus DROP CONSTRAINT IF EXISTS awards_obtenus_ligue_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.awards_obtenus DROP CONSTRAINT IF EXISTS awards_obtenus_joueur_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.awards_obtenus DROP CONSTRAINT IF EXISTS awards_obtenus_award_id_fkey;
+DROP INDEX IF EXISTS public.idx_tournois_date;
+DROP INDEX IF EXISTS public.idx_participations_tournoi_id;
+DROP INDEX IF EXISTS public.idx_participations_joueur_id;
+DROP INDEX IF EXISTS public.idx_joueurs_ligue_id;
+DROP INDEX IF EXISTS public.idx_ghost_log_tournoi_id;
+DROP INDEX IF EXISTS public.idx_ghost_log_joueur_id;
+DROP INDEX IF EXISTS public.idx_awards_obtenus_saison_id;
+DROP INDEX IF EXISTS public.idx_awards_obtenus_joueur_id;
 DROP INDEX IF EXISTS public.awards_obtenus_unique_no_ligue;
 ALTER TABLE IF EXISTS ONLY public.types_awards DROP CONSTRAINT IF EXISTS types_awards_pkey;
 ALTER TABLE IF EXISTS ONLY public.types_awards DROP CONSTRAINT IF EXISTS types_awards_code_key;
@@ -81,19 +89,12 @@ DROP TABLE IF EXISTS public.configuration;
 DROP SEQUENCE IF EXISTS public.awards_obtenus_id_seq;
 DROP TABLE IF EXISTS public.awards_obtenus;
 DROP TABLE IF EXISTS public.api_tokens;
---
--- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: pg_database_owner
---
-
-COMMENT ON SCHEMA public IS '';
-
-
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: api_tokens; Type: TABLE; Schema: public; Owner: postgres
+-- Name: api_tokens; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.api_tokens (
@@ -106,7 +107,7 @@ CREATE TABLE public.api_tokens (
 ALTER TABLE public.api_tokens OWNER TO CURRENT_USER;
 
 --
--- Name: awards_obtenus; Type: TABLE; Schema: public; Owner: postgres
+-- Name: awards_obtenus; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.awards_obtenus (
@@ -126,7 +127,7 @@ CREATE TABLE public.awards_obtenus (
 ALTER TABLE public.awards_obtenus OWNER TO CURRENT_USER;
 
 --
--- Name: awards_obtenus_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.awards_obtenus_id_seq
@@ -141,14 +142,14 @@ CREATE SEQUENCE public.awards_obtenus_id_seq
 ALTER SEQUENCE public.awards_obtenus_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: awards_obtenus_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.awards_obtenus_id_seq OWNED BY public.awards_obtenus.id;
 
 
 --
--- Name: configuration; Type: TABLE; Schema: public; Owner: postgres
+-- Name: configuration; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.configuration (
@@ -160,7 +161,7 @@ CREATE TABLE public.configuration (
 ALTER TABLE public.configuration OWNER TO CURRENT_USER;
 
 --
--- Name: ghost_log; Type: TABLE; Schema: public; Owner: postgres
+-- Name: ghost_log; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.ghost_log (
@@ -177,7 +178,7 @@ CREATE TABLE public.ghost_log (
 ALTER TABLE public.ghost_log OWNER TO CURRENT_USER;
 
 --
--- Name: ghost_log_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: ghost_log_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.ghost_log_id_seq
@@ -192,14 +193,14 @@ CREATE SEQUENCE public.ghost_log_id_seq
 ALTER SEQUENCE public.ghost_log_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: ghost_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: ghost_log_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.ghost_log_id_seq OWNED BY public.ghost_log.id;
 
 
 --
--- Name: global_resets; Type: TABLE; Schema: public; Owner: postgres
+-- Name: global_resets; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.global_resets (
@@ -213,7 +214,7 @@ CREATE TABLE public.global_resets (
 ALTER TABLE public.global_resets OWNER TO CURRENT_USER;
 
 --
--- Name: global_resets_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: global_resets_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.global_resets_id_seq
@@ -228,14 +229,14 @@ CREATE SEQUENCE public.global_resets_id_seq
 ALTER SEQUENCE public.global_resets_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: global_resets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: global_resets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.global_resets_id_seq OWNED BY public.global_resets.id;
 
 
 --
--- Name: joueurs; Type: TABLE; Schema: public; Owner: postgres
+-- Name: joueurs; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.joueurs (
@@ -255,7 +256,7 @@ CREATE TABLE public.joueurs (
 ALTER TABLE public.joueurs OWNER TO CURRENT_USER;
 
 --
--- Name: joueurs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: joueurs_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.joueurs_id_seq
@@ -270,14 +271,14 @@ CREATE SEQUENCE public.joueurs_id_seq
 ALTER SEQUENCE public.joueurs_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: joueurs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: joueurs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
 
 
 --
--- Name: league_movements; Type: TABLE; Schema: public; Owner: postgres
+-- Name: league_movements; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.league_movements (
@@ -296,7 +297,7 @@ CREATE TABLE public.league_movements (
 ALTER TABLE public.league_movements OWNER TO CURRENT_USER;
 
 --
--- Name: league_movements_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: league_movements_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.league_movements_id_seq
@@ -311,14 +312,14 @@ CREATE SEQUENCE public.league_movements_id_seq
 ALTER SEQUENCE public.league_movements_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: league_movements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: league_movements_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.league_movements_id_seq OWNED BY public.league_movements.id;
 
 
 --
--- Name: ligues; Type: TABLE; Schema: public; Owner: postgres
+-- Name: ligues; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.ligues (
@@ -332,7 +333,7 @@ CREATE TABLE public.ligues (
 ALTER TABLE public.ligues OWNER TO CURRENT_USER;
 
 --
--- Name: ligues_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: ligues_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.ligues_id_seq
@@ -347,14 +348,14 @@ CREATE SEQUENCE public.ligues_id_seq
 ALTER SEQUENCE public.ligues_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: ligues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: ligues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.ligues_id_seq OWNED BY public.ligues.id;
 
 
 --
--- Name: participations; Type: TABLE; Schema: public; Owner: postgres
+-- Name: participations; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.participations (
@@ -375,7 +376,7 @@ CREATE TABLE public.participations (
 ALTER TABLE public.participations OWNER TO CURRENT_USER;
 
 --
--- Name: saisons; Type: TABLE; Schema: public; Owner: postgres
+-- Name: saisons; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.saisons (
@@ -400,7 +401,7 @@ CREATE TABLE public.saisons (
 ALTER TABLE public.saisons OWNER TO CURRENT_USER;
 
 --
--- Name: saisons_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: saisons_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.saisons_id_seq
@@ -415,14 +416,14 @@ CREATE SEQUENCE public.saisons_id_seq
 ALTER SEQUENCE public.saisons_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: saisons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: saisons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.saisons_id_seq OWNED BY public.saisons.id;
 
 
 --
--- Name: tournois; Type: TABLE; Schema: public; Owner: postgres
+-- Name: tournois; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.tournois (
@@ -437,7 +438,7 @@ CREATE TABLE public.tournois (
 ALTER TABLE public.tournois OWNER TO CURRENT_USER;
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: tournois_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.tournois_id_seq
@@ -452,14 +453,14 @@ CREATE SEQUENCE public.tournois_id_seq
 ALTER SEQUENCE public.tournois_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: tournois_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.tournois_id_seq OWNED BY public.tournois.id;
 
 
 --
--- Name: types_awards; Type: TABLE; Schema: public; Owner: postgres
+-- Name: types_awards; Type: TABLE; Schema: public; Owner: example
 --
 
 CREATE TABLE public.types_awards (
@@ -474,7 +475,7 @@ CREATE TABLE public.types_awards (
 ALTER TABLE public.types_awards OWNER TO CURRENT_USER;
 
 --
--- Name: types_awards_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+-- Name: types_awards_id_seq; Type: SEQUENCE; Schema: public; Owner: example
 --
 
 CREATE SEQUENCE public.types_awards_id_seq
@@ -489,344 +490,226 @@ CREATE SEQUENCE public.types_awards_id_seq
 ALTER SEQUENCE public.types_awards_id_seq OWNER TO CURRENT_USER;
 
 --
--- Name: types_awards_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+-- Name: types_awards_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: example
 --
 
 ALTER SEQUENCE public.types_awards_id_seq OWNED BY public.types_awards.id;
 
 
 --
--- Name: awards_obtenus id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: awards_obtenus id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.awards_obtenus ALTER COLUMN id SET DEFAULT nextval('public.awards_obtenus_id_seq'::regclass);
 
 
 --
--- Name: ghost_log id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: ghost_log id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.ghost_log ALTER COLUMN id SET DEFAULT nextval('public.ghost_log_id_seq'::regclass);
 
 
 --
--- Name: global_resets id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: global_resets id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.global_resets ALTER COLUMN id SET DEFAULT nextval('public.global_resets_id_seq'::regclass);
 
 
 --
--- Name: joueurs id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: joueurs id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.joueurs ALTER COLUMN id SET DEFAULT nextval('public.joueurs_id_seq'::regclass);
 
 
 --
--- Name: league_movements id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: league_movements id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.league_movements ALTER COLUMN id SET DEFAULT nextval('public.league_movements_id_seq'::regclass);
 
 
 --
--- Name: ligues id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: ligues id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.ligues ALTER COLUMN id SET DEFAULT nextval('public.ligues_id_seq'::regclass);
 
 
 --
--- Name: saisons id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: saisons id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.saisons ALTER COLUMN id SET DEFAULT nextval('public.saisons_id_seq'::regclass);
 
 
 --
--- Name: tournois id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: tournois id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.tournois ALTER COLUMN id SET DEFAULT nextval('public.tournois_id_seq'::regclass);
 
 
 --
--- Name: types_awards id; Type: DEFAULT; Schema: public; Owner: postgres
+-- Name: types_awards id; Type: DEFAULT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.types_awards ALTER COLUMN id SET DEFAULT nextval('public.types_awards_id_seq'::regclass);
 
 
 --
--- Data for Name: api_tokens; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: api_tokens; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.api_tokens (token, created_at, expires_at) FROM stdin;
-a1d64aac-8b0f-4896-839b-ff63e1187b78	2026-07-08 21:22:08.499213	2026-07-08 21:52:08.499093
 \.
 
 
 --
--- Data for Name: awards_obtenus; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: awards_obtenus; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.awards_obtenus (id, joueur_id, saison_id, award_id, valeur, is_league_award, ligue_id, ligue_nom, ligue_couleur, created_at) FROM stdin;
-1	6	9	1	1225.333	f	\N	\N	\N	2026-01-25 16:22:11.720841
-2	5	9	2	1057.583	f	\N	\N	\N	2026-01-25 16:22:11.720841
-3	4	9	3	1048.667	f	\N	\N	\N	2026-01-25 16:22:11.720841
-4	2	9	7	7	f	\N	\N	\N	2026-01-25 16:22:11.720841
-5	4	9	8	4	f	\N	\N	\N	2026-01-25 16:22:11.720841
-6	4	9	9	2.371	f	\N	\N	\N	2026-01-25 16:22:11.720841
-7	3	9	10	-0.968	f	\N	\N	\N	2026-01-25 16:22:11.720841
-8	8	9	12	0.01	f	\N	\N	\N	2026-01-25 16:22:11.720841
-9	2	10	4	116.341	f	\N	\N	\N	2026-01-25 16:22:16.946538
-10	5	10	5	112.790	f	\N	\N	\N	2026-01-25 16:22:16.946538
-11	3	10	6	110.876	f	\N	\N	\N	2026-01-25 16:22:16.946538
-12	2	10	7	12	f	\N	\N	\N	2026-01-25 16:22:16.946538
-13	3	10	8	10	f	\N	\N	\N	2026-01-25 16:22:16.946538
-14	5	10	11	3276	f	\N	\N	\N	2026-01-25 16:22:16.946538
-15	4	10	9	6.771	f	\N	\N	\N	2026-01-25 16:22:16.946538
-16	3	10	10	-3.32	f	\N	\N	\N	2026-01-25 16:22:16.946538
-17	3	8	1	850.083	f	\N	\N	\N	2026-01-25 16:22:21.917094
-18	5	8	2	813.250	f	\N	\N	\N	2026-01-25 16:22:21.917094
-19	4	8	3	759.583	f	\N	\N	\N	2026-01-25 16:22:21.917094
-20	2	8	7	3	f	\N	\N	\N	2026-01-25 16:22:21.917094
-21	4	8	7	3	f	\N	\N	\N	2026-01-25 16:22:21.917094
-22	3	8	8	4	f	\N	\N	\N	2026-01-25 16:22:21.917094
-23	4	8	9	4.328	f	\N	\N	\N	2026-01-25 16:22:21.917094
-24	3	8	10	-0.449	f	\N	\N	\N	2026-01-25 16:22:21.917094
-25	5	8	12	0.037	f	\N	\N	\N	2026-01-25 16:22:21.917094
-26	5	7	1	665.167	f	\N	\N	\N	2026-01-25 16:22:25.221559
-27	6	7	2	500.417	f	\N	\N	\N	2026-01-25 16:22:25.221559
-28	8	7	3	477.667	f	\N	\N	\N	2026-01-25 16:22:25.221559
-29	1	7	7	4	f	\N	\N	\N	2026-01-25 16:22:25.221559
-30	5	7	8	3	f	\N	\N	\N	2026-01-25 16:22:25.221559
-31	7	7	9	2.336	f	\N	\N	\N	2026-01-25 16:22:25.221559
-32	3	7	10	-0.72	f	\N	\N	\N	2026-01-25 16:22:25.221559
-33	6	7	12	0.009	f	\N	\N	\N	2026-01-25 16:22:25.221559
-34	5	6	1	661.667	f	\N	\N	\N	2026-01-25 16:22:28.097325
-35	2	6	2	598.417	f	\N	\N	\N	2026-01-25 16:22:28.097325
-36	7	6	3	586.917	f	\N	\N	\N	2026-01-25 16:22:28.097325
-37	5	6	7	3	f	\N	\N	\N	2026-01-25 16:22:28.097325
-38	1	6	7	3	f	\N	\N	\N	2026-01-25 16:22:28.097325
-39	3	6	8	2	f	\N	\N	\N	2026-01-25 16:22:28.097325
-40	2	6	8	2	f	\N	\N	\N	2026-01-25 16:22:28.097325
-41	22	6	9	3.762	f	\N	\N	\N	2026-01-25 16:22:28.097325
-42	3	6	10	-1.221	f	\N	\N	\N	2026-01-25 16:22:28.097325
-43	2	13	1	136.120	f	\N	\N	\N	2026-03-21 14:29:48.080355
-44	4	13	2	123.600	f	\N	\N	\N	2026-03-21 14:29:48.080355
-45	6	13	3	112.516	f	\N	\N	\N	2026-03-21 14:29:48.080355
-46	2	13	7	4	f	\N	\N	\N	2026-03-21 14:29:48.080355
-47	6	13	8	3	f	\N	\N	\N	2026-03-21 14:29:48.080355
-48	6	13	11	1009	f	\N	\N	\N	2026-03-21 14:29:48.080355
-49	23	13	9	7.554	f	\N	\N	\N	2026-03-21 14:29:48.080355
-50	16	13	10	-1.343	f	\N	\N	\N	2026-03-21 14:29:48.080355
-51	5	13	12	0.211	f	\N	\N	\N	2026-03-21 14:29:48.080355
-52	2	14	1	116.032	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-53	6	14	2	112.712	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-54	3	14	3	103.608	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-55	2	14	7	4	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-56	6	14	8	6	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-57	6	14	11	980	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-58	6	14	9	2.645	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-59	4	14	10	-2.789	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-60	7	14	14	0.489	t	1	Ligue 0	#FFD700	2026-07-08 21:23:17.655811
-61	9	14	1	109.625	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-62	23	14	2	106.500	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-63	31	14	3	106.160	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-64	34	14	7	5	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-65	9	14	8	4	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-66	31	14	8	4	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-67	23	14	11	990	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-68	23	14	9	1.726	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-69	14	14	10	-1.388	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
-70	28	14	14	0.441	t	2	Ligue 1	#C0C0C0	2026-07-08 21:23:17.670288
+1	5	1	1	\N	f	\N	\N	\N	2026-07-27 20:33:24.447328
+2	11	1	2	\N	f	\N	\N	\N	2026-07-27 20:33:24.453456
+3	7	1	3	\N	f	\N	\N	\N	2026-07-27 20:33:24.454894
+4	5	1	7	7	f	\N	\N	\N	2026-07-27 20:33:24.455686
+5	5	1	8	2	f	\N	\N	\N	2026-07-27 20:33:24.456465
+6	5	1	11	582	f	\N	\N	\N	2026-07-27 20:33:24.4572
+7	5	1	9	+32.82	f	\N	\N	\N	2026-07-27 20:33:24.457937
+8	10	1	10	+7.55	f	\N	\N	\N	2026-07-27 20:33:24.458485
+9	13	1	12	2.029	f	\N	\N	\N	2026-07-27 20:33:24.459239
+10	7	1	13	3.689	f	\N	\N	\N	2026-07-27 20:33:24.459886
+11	5	2	1	\N	f	\N	\N	\N	2026-07-27 20:33:24.460447
+12	11	2	2	\N	f	\N	\N	\N	2026-07-27 20:33:24.461041
+13	12	2	3	\N	f	\N	\N	\N	2026-07-27 20:33:24.461639
+14	16	2	7	3	f	\N	\N	\N	2026-07-27 20:33:24.462227
+15	5	2	8	4	f	\N	\N	\N	2026-07-27 20:33:24.462864
+16	5	2	11	400	f	\N	\N	\N	2026-07-27 20:33:24.463525
+17	20	2	9	+6.06	f	\N	\N	\N	2026-07-27 20:33:24.46412
+18	9	2	10	-2.52	f	\N	\N	\N	2026-07-27 20:33:24.464825
+19	25	2	12	0.348	f	\N	\N	\N	2026-07-27 20:33:24.465356
+20	8	2	13	3.697	f	\N	\N	\N	2026-07-27 20:33:24.465961
+21	9	3	1	\N	f	\N	\N	\N	2026-07-27 20:33:24.466519
+22	11	3	2	\N	f	\N	\N	\N	2026-07-27 20:33:24.467274
+23	8	3	3	\N	f	\N	\N	\N	2026-07-27 20:33:24.467926
+24	5	3	7	4	f	\N	\N	\N	2026-07-27 20:33:24.468534
+25	3	3	8	4	f	\N	\N	\N	2026-07-27 20:33:24.4691
+26	9	3	11	619	f	\N	\N	\N	2026-07-27 20:33:24.469679
+27	10	3	9	+3.32	f	\N	\N	\N	2026-07-27 20:33:24.470226
+28	2	3	10	-0.75	f	\N	\N	\N	2026-07-27 20:33:24.47082
+29	4	3	12	0.228	f	\N	\N	\N	2026-07-27 20:33:24.471447
+30	19	3	13	3.873	f	\N	\N	\N	2026-07-27 20:33:24.472045
+31	9	4	1	\N	f	\N	\N	\N	2026-07-27 20:33:24.472643
+32	3	4	2	\N	f	\N	\N	\N	2026-07-27 20:33:24.473213
+33	11	4	3	\N	f	\N	\N	\N	2026-07-27 20:33:24.473758
+34	5	4	7	3	f	\N	\N	\N	2026-07-27 20:33:24.47438
+35	2	4	8	2	f	\N	\N	\N	2026-07-27 20:33:24.475029
+36	9	4	11	582	f	\N	\N	\N	2026-07-27 20:33:24.475565
+37	1	4	9	+1.80	f	\N	\N	\N	2026-07-27 20:33:24.476109
+38	5	4	10	-1.38	f	\N	\N	\N	2026-07-27 20:33:24.476787
+39	23	4	12	0.115	f	\N	\N	\N	2026-07-27 20:33:24.477324
+40	2	4	13	4.121	f	\N	\N	\N	2026-07-27 20:33:24.477848
+41	5	5	4	\N	f	\N	\N	\N	2026-07-27 20:33:24.478447
+42	11	5	5	\N	f	\N	\N	\N	2026-07-27 20:33:24.479151
+43	3	5	6	\N	f	\N	\N	\N	2026-07-27 20:33:24.479696
+44	5	5	7	16	f	\N	\N	\N	2026-07-27 20:33:24.48025
+45	5	5	8	10	f	\N	\N	\N	2026-07-27 20:33:24.480909
+46	5	5	11	1767	f	\N	\N	\N	2026-07-27 20:33:24.481438
+47	5	5	9	+31.01	f	\N	\N	\N	2026-07-27 20:33:24.48196
+48	27	5	10	+9.37	f	\N	\N	\N	2026-07-27 20:33:24.482555
+49	13	5	12	1.353	f	\N	\N	\N	2026-07-27 20:33:24.483277
+50	13	5	13	3.375	f	\N	\N	\N	2026-07-27 20:33:24.483885
+51	5	6	1	\N	f	\N	\N	\N	2026-07-27 20:33:24.48446
+52	16	6	2	\N	f	\N	\N	\N	2026-07-27 20:33:24.485037
+53	3	6	3	\N	f	\N	\N	\N	2026-07-27 20:33:24.485589
+54	16	6	7	4	f	\N	\N	\N	2026-07-27 20:33:24.486204
+55	5	6	8	3	f	\N	\N	\N	2026-07-27 20:33:24.486827
+56	5	6	11	415	f	\N	\N	\N	2026-07-27 20:33:24.487428
+57	30	6	9	+24.25	f	\N	\N	\N	2026-07-27 20:33:24.488021
+58	6	6	10	-1.73	f	\N	\N	\N	2026-07-27 20:33:24.488667
+59	13	6	12	0.071	f	\N	\N	\N	2026-07-27 20:33:24.489296
+60	20	6	13	3.935	f	\N	\N	\N	2026-07-27 20:33:24.489861
 \.
 
 
 --
--- Data for Name: configuration; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: configuration; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.configuration (key, value) FROM stdin;
-tau	0.2
-ghost_enabled	true
+tau	0.083
+ghost_enabled	false
 ghost_penalty	0.1
 ghost_threshold_days	28
 ghost_interval_days	7
-unranked_threshold	13
-sigma_threshold	3.3
+unranked_threshold	10
+sigma_threshold	4.0
 league_mode_enabled	false
-inter_league_moves	3
+inter_league_moves	0
 \.
 
 
 --
--- Data for Name: ghost_log; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: ghost_log; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.ghost_log (id, joueur_id, tournoi_id, date, old_sigma, new_sigma, penalty_applied) FROM stdin;
-1	1	45	2026-01-12	3.3063	3.4063	0.1
-2	7	45	2026-01-12	1.4229	1.5229000000000001	0.1
-3	12	45	2026-01-12	3.0189999999999997	3.1189999999999998	0.1
-4	17	45	2026-01-12	2.566	2.666	0.1
-5	18	45	2026-01-12	2.408	2.508	0.1
-6	20	45	2026-01-12	3.4840999999999998	3.5841	0.1
-7	22	45	2026-01-12	2.1602	2.2602	0.1
-8	22	46	2026-01-19	2.2602	2.3602000000000003	0.1
-9	1	46	2026-01-19	3.4063	3.5063	0.1
-10	7	46	2026-01-19	1.5229000000000001	1.6229000000000002	0.1
-11	12	46	2026-01-19	3.1189999999999998	3.219	0.1
-12	17	46	2026-01-19	2.666	2.766	0.1
-13	18	46	2026-01-19	2.508	2.608	0.1
-14	17	47	2026-01-26	2.766	2.866	0.1
-15	18	47	2026-01-26	2.608	2.708	0.1
-16	22	47	2026-01-26	2.3602000000000003	2.4602000000000004	0.1
-17	7	47	2026-01-26	1.6229000000000002	1.7229000000000003	0.1
-18	12	47	2026-01-26	3.219	3.319	0.1
-19	7	48	2026-02-02	1.7229000000000003	1.8229000000000004	0.1
-20	12	48	2026-02-02	3.319	3.419	0.1
-21	17	48	2026-02-02	2.866	2.966	0.1
-22	18	48	2026-02-02	2.708	2.8080000000000003	0.1
-23	22	48	2026-02-02	2.4602000000000004	2.5602000000000005	0.1
-24	21	49	2026-02-09	2.1759530256432393	2.2759530256432394	0.1
-25	7	49	2026-02-09	1.8229000000000004	1.9229000000000005	0.1
-26	12	49	2026-02-09	3.419	3.519	0.1
-27	17	49	2026-02-09	2.966	3.0660000000000003	0.1
-28	18	49	2026-02-09	2.8080000000000003	2.9080000000000004	0.1
-29	22	49	2026-02-09	2.5602000000000005	2.6602000000000006	0.1
-30	17	50	2026-02-16	3.0660000000000003	3.1660000000000004	0.1
-31	22	50	2026-02-16	2.6602000000000006	2.7602000000000007	0.1
-32	21	50	2026-02-16	2.2759530256432394	2.3759530256432395	0.1
-33	7	50	2026-02-16	1.9229000000000005	2.0229000000000004	0.1
-34	18	50	2026-02-16	2.9080000000000004	3.0080000000000005	0.1
-35	10	50	2026-02-16	1.871722282357676	1.971722282357676	0.1
-36	21	51	2026-02-23	2.3759530256432395	2.4759530256432396	0.1
-37	18	51	2026-02-23	3.0080000000000005	3.1080000000000005	0.1
-38	10	51	2026-02-23	1.971722282357676	2.071722282357676	0.1
-39	17	51	2026-02-23	3.1660000000000004	3.2660000000000005	0.1
-40	22	51	2026-02-23	2.7602000000000007	2.8602000000000007	0.1
-63	17	58	2026-03-02	3.2660000000000005	3.3660000000000005	0.1
-64	10	58	2026-03-02	2.071722282357676	2.1717222823576763	0.1
-65	21	58	2026-03-02	2.4759530256432396	2.5759530256432397	0.1
-66	18	58	2026-03-02	3.1080000000000005	3.2080000000000006	0.1
-67	17	59	2026-03-09	3.3660000000000005	3.4660000000000006	0.1
-68	10	59	2026-03-09	2.1717222823576763	2.2717222823576764	0.1
-69	21	59	2026-03-09	2.5759530256432397	2.67595302564324	0.1
-70	18	59	2026-03-09	3.2080000000000006	3.3080000000000007	0.1
-71	17	60	2026-03-16	3.4660000000000006	3.5660000000000007	0.1
-72	10	60	2026-03-16	2.2717222823576764	2.3717222823576765	0.1
-73	21	60	2026-03-16	2.67595302564324	2.77595302564324	0.1
-74	18	60	2026-03-16	3.3080000000000007	3.408000000000001	0.1
-80	10	64	2026-03-23	2.6717222823576763	2.7717222823576764	0.1
-81	29	66	2026-03-30	2.675361351506235	2.775361351506235	0.1
-82	22	66	2026-03-30	2.9070872084720247	3.007087208472025	0.1
-83	10	66	2026-03-30	2.7717222823576764	2.8717222823576765	0.1
-84	29	68	2026-04-06	2.775361351506235	2.875361351506235	0.1
-85	10	68	2026-04-06	2.8717222823576765	2.9717222823576765	0.1
-86	29	70	2026-04-13	2.875361351506235	2.975361351506235	0.1
-87	10	70	2026-04-13	2.9717222823576765	3.0717222823576766	0.1
-88	21	72	2026-04-20	2.785380899738113	2.885380899738113	0.1
-89	29	72	2026-04-20	2.975361351506235	3.0753613515062352	0.1
-90	10	72	2026-04-20	3.0717222823576766	3.1717222823576767	0.1
-91	21	74	2026-04-27	2.885380899738113	2.985380899738113	0.1
-92	29	74	2026-04-27	3.0753613515062352	3.1753613515062353	0.1
-93	10	74	2026-04-27	3.1717222823576767	3.271722282357677	0.1
-94	22	76	2026-05-04	2.7449830441834333	2.8449830441834334	0.1
-95	21	76	2026-05-04	2.985380899738113	3.085380899738113	0.1
-96	29	76	2026-05-04	3.1753613515062353	3.2753613515062354	0.1
-97	10	76	2026-05-04	3.271722282357677	3.371722282357677	0.1
-98	22	78	2026-05-11	2.8449830441834334	2.9449830441834335	0.1
-99	21	78	2026-05-11	3.085380899738113	3.1853808997381132	0.1
-100	29	78	2026-05-11	3.2753613515062354	3.3753613515062355	0.1
-101	10	78	2026-05-11	3.371722282357677	3.471722282357677	0.1
-102	22	80	2026-05-18	2.9449830441834335	3.0449830441834336	0.1
-103	21	80	2026-05-18	3.1853808997381132	3.2853808997381133	0.1
-104	29	80	2026-05-18	3.3753613515062355	3.4753613515062356	0.1
-105	10	80	2026-05-18	3.471722282357677	3.571722282357677	0.1
-106	22	82	2026-05-25	3.0449830441834336	3.1449830441834337	0.1
-107	21	82	2026-05-25	3.2853808997381133	3.3853808997381134	0.1
-108	29	82	2026-05-25	3.4753613515062356	3.5753613515062357	0.1
-109	22	84	2026-06-01	3.1449830441834337	3.2449830441834338	0.1
-110	21	84	2026-06-01	3.3853808997381134	3.4853808997381135	0.1
-111	28	85	2026-06-08	1.44809483183935	1.5480948318393501	0.1
-112	22	85	2026-06-08	3.2449830441834338	3.344983044183434	0.1
-113	21	85	2026-06-08	3.4853808997381135	3.5853808997381136	0.1
-114	14	87	2026-06-15	1.3163398765191676	1.4163398765191677	0.1
-115	16	87	2026-06-15	1.4736673175054502	1.5736673175054503	0.1
-116	28	87	2026-06-15	1.5480948318393501	1.6480948318393502	0.1
-117	22	87	2026-06-15	3.344983044183434	3.444983044183434	0.1
-118	14	89	2026-06-22	1.7163398765191678	1.8163398765191678	0.1
-119	16	89	2026-06-22	1.8736673175054503	1.9736673175054504	0.1
-120	28	89	2026-06-22	1.9480948318393503	2.04809483183935	0.1
-121	14	90	2026-06-29	1.8163398765191678	1.916339876519168	0.1
-122	16	90	2026-06-29	1.9736673175054504	2.0736673175054503	0.1
-123	28	90	2026-06-29	2.04809483183935	2.1480948318393502	0.1
-124	14	92	2026-07-06	1.916339876519168	2.016339876519168	0.1
-125	16	92	2026-07-06	2.0736673175054503	2.1736673175054504	0.1
-126	28	92	2026-07-06	2.1480948318393502	2.2480948318393503	0.1
 \.
 
 
 --
--- Data for Name: global_resets; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: global_resets; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.global_resets (id, date, value_applied, created_at) FROM stdin;
-1	2026-01-01 00:00:00	0.3	2026-01-25 16:04:12.538326
-2	2026-03-21 00:00:00	0.3	2026-03-22 14:51:02.752477
-3	2026-06-21 00:00:00	0.3	2026-07-07 11:39:56.219359
+1	2025-06-23 09:00:00	1.5	2026-07-27 20:33:24.490426
+2	2025-12-22 09:00:00	1.5	2026-07-27 20:33:24.490426
 \.
 
 
 --
--- Data for Name: joueurs; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: joueurs; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.joueurs (id, nom, mu, sigma, tier, consecutive_missed, is_ranked, color, ligue_id) FROM stdin;
-5	Vakaeltraz	54.21881445486364	1.3124055629820972	A	0	t	#34A853	\N
-4	Rayou	53.07174441400114	1.3685804455433597	A	0	t	#00BCD4	\N
-6	Melwin	56.67129157814304	1.3187843517014375	A	0	t	#64B5F6	\N
-34	Hollend	66.10404512429565	3.0481788856488885	S	0	t	#FFFFFF	\N
-23	McK17	49.24052104828607	1.3948533831207255	A	0	t	#607D8B	\N
-9	Daytona_69	49.997836573988444	1.3532574180961179	A	0	t	#81C784	\N
-36	Gilou93	40.221713974927944	2.6984865703466347	C	0	t	#FFFFFF	\N
-37	Steve	40.80023320397714	3.737732545063983	U	0	t	#FFFFFF	\N
-3	Elite	55.32609060721174	1.3703329411281708	A	1	t	#EA4335	\N
-2	J_sk8	58.97228070276335	1.5128079536893906	S	4	t	#FBBC05	\N
-13	Ether-Zero	52.986	5.234999999999999	U	70	f	#7986CB	\N
-19	ColorOni	47.3371	5.193599999999999	U	44	f	#FFB74D	\N
-12	Thaumas	51.464	4.119	U	70	f	#4DD0E1	\N
-17	Brook1l	42.0952	4.166	U	45	f	#FFF59D	\N
-1	Rosalyan	67.8811	4.1063	U	50	f	#4285F4	\N
-8	Astral	49.435965188592604	1.3299464449434713	A	0	t	#E57373	\N
-33	Pablitofracas	33.54969386150127	3.2482350145466565	C	0	t	#FFFFFF	\N
-31	Neomesis	49.34546084596326	1.9463368284765157	B	2	t	#FFFFFF	\N
-11	Oleas	49.07252686659786	1.6529433697280371	B	2	t	#FF9800	\N
-7	Lu_K	51.35889653537057	1.6093917384586784	A	2	t	#FF6D01	\N
-35	MCF	32.263222927536134	3.9003969747912395	U	4	t	#FFFFFF	\N
-14	Ael	43.48509823646072	2.016339876519168	B	7	t	#9C27B0	\N
-16	Falgo	40.174421869634244	2.1736673175054504	C	7	t	#795548	\N
-28	Corentin	44.61090429624214	2.2480948318393503	B	8	t	#3F51B5	\N
-22	Fozlo	37.307733312126494	3.7449830441834338	U	13	f	#FFEBEE	\N
-21	Kemoory	36.33196336398686	3.8853808997381134	U	15	f	#B2DFDB	\N
-29	Cevelynn	50.928327385346236	3.8753613515062355	U	18	f	#FFFFFF	\N
-10	JeanCube	50.85708400840027	3.871722282357677	U	24	f	#FFF176	\N
-32	Grrrr!	36.86014978065088	5.72210097544548	U	13	f	#FFFFFF	\N
-20	Camou	43.0013	4.1841	U	55	f	#E3F2FD	\N
-15	Tomwilson	49.867	5.422	U	70	f	#F06292	\N
-26	Tomy	35.9935	5.5908999999999995	U	60	f	#CDDC39	\N
-27	Mirijason	39.0969	6.507599999999999	U	66	f	#009688	\N
-24	Kaysuan	43.2936	6.786599999999999	U	42	f	#FFFDE7	\N
-30	Hyazak	35.857665849909175	5.719363731342539	U	21	f	#FFFFFF	\N
-25	PastPlayer	42.1226	6.625299999999999	U	52	f	#E8F5E9	\N
-18	Hardox	40.936	4.008000000000001	U	70	f	#AED581	\N
+1	Mario	52.917769	0.959236	A	0	t	#E52521	\N
+2	Luigi	49.483256	0.920269	B	0	t	#43B047	\N
+3	Peach	53.07051	0.717114	A	0	t	#F5A9C7	\N
+4	Daisy	54.367116	0.910378	A	0	t	#FF7F00	\N
+5	Yoshi	59.536012	0.865031	S	0	t	#66CC33	\N
+6	Toad	47.45222	0.879962	B	0	t	#F0F0F0	\N
+7	Toadette	56.39467	0.873335	S	0	t	#EE6FA0	\N
+8	Birdo	51.914338	0.806089	A	0	t	#FF9EC4	\N
+9	Bowser	50.763248	0.699107	A	0	t	#E8A33D	\N
+10	Bowser Jr.	44.433417	0.770874	B	0	t	#7FD4C1	\N
+11	Wario	52.336423	0.694852	A	0	t	#F7D117	\N
+12	Waluigi	50.416033	0.728622	A	0	t	#5B2C87	\N
+13	Rosalina	48.902276	0.714095	B	0	t	#B8CDE8	\N
+14	Donkey Kong	51.406507	0.813461	A	0	t	#6B4423	\N
+15	Diddy Kong	47.811051	0.801387	B	0	t	#C8102E	\N
+16	Funky Kong	58.196756	1.081399	S	0	t	#F2A900	\N
+17	Koopa	50.374783	0.915814	A	0	t	#3CB44B	\N
+18	Shy Guy	44.82968	0.782664	B	0	t	#D1332E	\N
+19	Lakitu	46.410023	0.828598	B	0	t	#7EC8E3	\N
+20	Dry Bones	46.611562	0.802039	B	0	t	#DCDCDC	\N
+21	Dry Bowser	49.784225	0.797824	A	0	t	#4A4A4A	\N
+22	King Boo	44.145017	0.772235	C	0	t	#E6E6FA	\N
+23	Petey	47.351789	0.766876	B	0	t	#4CAF50	\N
+24	Wiggler	43.381929	1.012688	C	0	t	#FFB300	\N
+25	Lemmy	50.874407	0.791367	A	0	t	#00BCD4	\N
+26	Larry	43.363119	0.75244	C	0	t	#2196F3	\N
+27	Wendy	37.670852	1.079329	C	0	t	#FF4081	\N
+28	Ludwig	47.297625	2.025435	U	0	f	#3F51B5	\N
+29	Iggy	48.658616	2.956093	U	0	f	#8BC34A	\N
+30	Morton	55.348765	2.033292	U	0	f	#5D4037	\N
 \.
 
 
 --
--- Data for Name: league_movements; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: league_movements; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.league_movements (id, saison_id, joueur_id, from_ligue_id, to_ligue_id, from_ligue_nom, to_ligue_nom, direction, created_at) FROM stdin;
@@ -834,7 +717,7 @@ COPY public.league_movements (id, saison_id, joueur_id, from_ligue_id, to_ligue_
 
 
 --
--- Data for Name: ligues; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: ligues; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.ligues (id, nom, niveau, couleur) FROM stdin;
@@ -844,685 +727,1181 @@ COPY public.ligues (id, nom, niveau, couleur) FROM stdin;
 
 
 --
--- Data for Name: participations; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: participations; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.participations (joueur_id, tournoi_id, score, mu, sigma, new_score_trueskill, new_tier, "position", old_mu, old_sigma, exclude_from_ts) FROM stdin;
-3	1	184	61.8629	1.6556	56.8959	U	1	62.03	1.7353	f
-5	1	184	58.2213	1.3344	54.2181	U	1	57.9304	1.373	f
-2	1	171	53.5381	1.2868	49.6777	U	3	53.3684	1.3181	f
-7	1	148	48.756	4.0818	36.5107	U	4	44.1395	6.1869	f
-6	1	138	52.7409	1.449	48.3939	U	5	53.4184	1.4878	f
-22	1	121	35.2844	2.4812	27.8408	U	6	35.3547	2.5099	f
-7	2	203	53.8276	3.3339	43.8259	U	1	48.756	4.0818	f
-2	2	180	53.7148	1.2541	49.9526	U	2	53.5381	1.2868	f
-5	2	171	57.7078	1.2972	53.8162	U	3	58.2213	1.3344	f
-8	2	161	48.739	1.368	44.635	U	4	48.8867	1.4017	f
-22	2	127	36.4701	2.308	29.546	U	5	35.2844	2.4812	f
-21	2	109	39.914	2.369	32.807	U	6	41.46	2.533	f
-5	3	194	58.046	1.273	54.227	U	1	57.7078	1.2972	f
-2	3	193	54.0039	1.226	50.3259	U	2	53.7148	1.2541	f
-3	3	189	60.812	1.594	56.03	U	3	61.8629	1.6556	f
-22	3	140	36.466	2.307	29.545	U	4	36.4701	2.308	f
-2	4	180	54.5781	1.1996	50.9793	U	1	54.0039	1.226	f
-3	4	173	60.4765	1.5249	55.9019	U	2	60.812	1.594	f
-8	4	154	49.3082	1.3219	45.3426	U	3	48.739	1.368	f
-7	4	152	53.1964	2.7645	44.9028	U	4	53.8276	3.3339	f
-5	4	149	57.3291	1.2389	53.6124	U	5	58.046	1.273	f
-21	4	124	40.4907	2.2545	33.7273	U	6	39.914	2.369	f
-27	4	116	39.0969	5.6076	22.2742	U	7	50	8.333	f
-1	5	197	61.0685	5.2987	45.1725	U	1	50	8.333	f
-8	5	154	50.1107	1.2836	46.26	U	2	49.3082	1.3219	f
-5	5	143	57.206	1.2062	53.5874	U	3	57.3291	1.2389	f
-3	5	142	59.6399	1.464	55.2478	U	4	60.4765	1.5249	f
-7	5	138	51.8324	2.5267	44.2523	U	5	53.1964	2.7645	f
-10	5	130	45.816	3.812	34.38	U	6	45.816	3.812	t
-2	5	111	54.5781	1.1996	50.9793	U	7	54.5781	1.1996	t
-22	5	94	36.466	2.307	29.545	U	8	36.466	2.307	t
-5	6	199	57.5801	1.1856	54.0233	U	1	57.206	1.2062	f
-3	6	175	59.4848	1.4169	55.2341	U	2	59.6399	1.464	f
-2	6	163	54.5219	1.1762	50.9934	U	3	54.5781	1.1996	f
-7	6	159	50.979	2.3576	43.9061	U	4	51.8324	2.5267	f
-22	6	73	36.4051	2.2852	29.5494	U	5	36.466	2.307	f
-3	7	172	59.8218	1.3824	55.6746	U	1	59.4848	1.4169	f
-10	7	150	51.4066	2.9995	42.4081	U	2	45.816	3.812	f
-7	7	144	52.1291	2.1108	45.7967	U	3	50.979	2.3576	f
-2	7	134	54.4658	1.1435	51.0354	U	4	54.5219	1.1762	f
-8	7	128	50.2551	1.24	46.535	U	5	50.1107	1.2836	f
-6	7	127	52.4324	1.3865	48.2729	U	6	52.7409	1.449	f
-5	7	116	56.8426	1.1536	53.3819	U	7	57.5801	1.1856	f
-22	7	111	37.9305	2.1092	31.6028	U	8	36.4051	2.2852	f
-20	7	94	44.5268	3.5666	33.827	U	9	50.053	4.679	f
-26	7	69	37.7603	5.3339	21.7586	U	10	50	8.333	f
-1	8	219	63.0297	4.7199	48.87	U	1	61.0685	5.2987	f
-4	8	195	54.3484	5.4064	38.1291	U	2	50	8.333	f
-7	8	178	51.5381	2.0627	45.35	U	3	52.1291	2.1108	f
-1	9	227	64.5841	4.1681	52.0798	U	1	63.0297	4.7199	f
-5	9	173	56.9078	1.1382	53.4933	U	2	56.8426	1.1536	f
-8	9	164	50.4174	1.2152	46.7718	U	3	50.2551	1.24	f
-6	9	157	52.0011	1.3567	47.9311	U	4	52.4324	1.3865	f
-1	10	202	66.1278	3.7049	55.0129	U	1	64.5841	4.1681	f
-3	10	175	59.9011	1.3512	55.8474	U	2	59.8218	1.3824	f
-7	10	174	52.295	1.9335	46.4946	U	3	51.5381	2.0627	f
-5	10	164	56.5645	1.1193	53.2065	U	4	56.9078	1.1382	f
-17	10	127	43.4977	2.4127	36.2596	U	5	43.382	2.539	f
-26	10	111	35.9935	4.6909	21.9209	U	6	37.7603	5.3339	f
-3	11	166	60.2237	1.3213	56.2598	U	1	59.9011	1.3512	f
-2	11	158	54.7671	1.1176	51.4142	U	2	54.4658	1.1435	f
-10	11	154	52.9622	2.5424	45.3351	U	3	51.4066	2.9995	f
-6	11	152	52.1639	1.3071	48.2426	U	4	52.0011	1.3567	f
-7	11	145	52.172	1.7929	46.7933	U	5	52.295	1.9335	f
-5	11	143	56.0824	1.0937	52.8014	U	6	56.5645	1.1193	f
-8	11	134	50.0456	1.19	46.4755	U	7	50.4174	1.2152	f
-7	12	189	52.7976	1.7224	47.6305	U	1	52.172	1.7929	f
-8	12	185	50.177	1.1632	46.6875	U	2	50.0456	1.19	f
-5	12	185	55.8071	1.0737	52.5861	U	2	56.0824	1.0937	f
-9	12	171	45.3745	1.9983	39.3794	U	4	45.619	2.056	f
-1	13	194	66.6513	3.4847	56.197	U	1	66.1278	3.7049	f
-7	13	156	53.5523	1.6418	48.627	U	2	52.7976	1.7224	f
-9	13	153	47.0894	1.8509	41.5368	U	3	45.3745	1.9983	f
-2	13	150	54.615	1.0921	51.3388	U	4	54.7671	1.1176	f
-5	13	149	55.461	1.0519	52.3053	U	5	55.8071	1.0737	f
-6	13	142	51.6926	1.2722	47.8758	U	6	52.1639	1.3071	f
-22	13	107	37.8137	2.0735	31.5932	U	7	37.9305	2.1092	f
-5	14	194	55.8055	1.038	52.6913	U	1	55.461	1.0519	f
-3	14	179	60.0011	1.2849	56.1462	U	2	60.2237	1.3213	f
-8	14	167	50.4212	1.1379	47.0075	U	3	50.177	1.1632	f
-10	14	163	52.2969	2.2842	45.4443	U	4	52.9622	2.5424	f
-6	14	148	51.2714	1.246	47.5334	U	5	51.6926	1.2722	f
-1	15	215	66.9467	3.3419	56.9211	U	1	66.6513	3.4847	f
-2	15	157	54.7706	1.0698	51.5612	U	2	54.615	1.0921	f
-6	15	157	51.7477	1.2112	48.114	U	2	51.2714	1.246	f
-3	15	150	59.5169	1.2471	55.7756	U	4	60.0011	1.2849	f
-9	15	128	47.589	1.7453	42.3531	U	5	47.0894	1.8509	f
-8	15	123	50.1698	1.1166	46.8198	U	6	50.4212	1.1379	f
-20	15	117	43.0013	3.1841	33.4491	U	7	44.5268	3.5666	f
-3	16	180	59.4255	1.2186	55.7697	U	1	59.5169	1.2471	f
-5	16	180	55.9579	1.0231	52.8885	U	1	55.8055	1.038	f
-8	16	179	50.3173	1.0997	47.0183	U	3	50.1698	1.1166	f
-6	16	175	51.4533	1.193	47.8742	U	4	51.7477	1.2112	f
-1	17	207	67.3153	3.1983	57.7203	U	1	66.9467	3.3419	f
-5	17	183	56.0771	1.0133	53.0373	U	2	55.9579	1.0231	f
-6	17	171	51.5724	1.1708	48.06	U	3	51.4533	1.193	f
-7	17	162	52.9325	1.59	48.1626	U	4	53.5523	1.6418	f
-2	18	191	55.0966	1.0541	51.9344	U	1	54.7706	1.0698	f
-7	18	171	53.3857	1.5183	48.8308	U	2	52.9325	1.59	f
-5	18	170	55.9539	0.9963	52.9651	U	3	56.0771	1.0133	f
-10	18	162	51.9539	2.0836	45.7032	U	4	52.2969	2.2842	f
-8	18	141	50.1181	1.0817	46.8729	U	5	50.3173	1.0997	f
-25	18	113	42.1226	5.7253	24.9467	U	6	50	8.333	f
-8	19	199	50.6376	1.0635	47.4472	U	1	50.1181	1.0817	f
-5	19	193	55.9331	0.981	52.9902	U	2	55.9539	0.9963	f
-6	19	181	51.6641	1.1436	48.2333	U	3	51.5724	1.1708	f
-3	19	103	58.6988	1.1906	55.1271	U	4	59.4255	1.2186	f
-1	20	186	67.8811	3.0063	58.8622	U	1	67.3153	3.1983	f
-2	20	173	55.4448	1.0369	52.3341	U	2	55.0966	1.0541	f
-5	20	158	56.0343	0.9662	53.1358	U	3	55.9331	0.981	f
-4	20	148	54.9276	3.624	44.0556	U	4	54.3484	5.4064	f
-7	20	147	53.3111	1.456	48.9431	U	5	53.3857	1.5183	f
-3	20	146	58.0454	1.1648	54.551	U	6	58.6988	1.1906	f
-3	21	178	58.3344	1.1446	54.9005	U	1	58.0454	1.1648	f
-6	21	162	52.1043	1.1166	48.7546	U	2	51.6641	1.1436	f
-7	21	161	53.5572	1.3953	49.3714	U	3	53.3111	1.456	f
-2	21	153	55.3287	1.0166	52.2787	U	4	55.4448	1.0369	f
-5	21	146	55.7826	0.9513	52.9285	U	5	56.0343	0.9662	f
-4	21	144	51.7746	2.9986	42.7787	U	6	54.9276	3.624	f
-21	21	97	40.2494	2.1908	33.677	U	7	40.4907	2.2545	f
-5	22	189	56.055	0.9409	53.2324	U	1	55.7826	0.9513	f
-2	22	172	55.4706	0.999	52.4735	U	2	55.3287	1.0166	f
-6	22	159	52.3112	1.0907	49.0391	U	3	52.1043	1.1166	f
-4	22	145	52.1776	2.5407	44.5554	U	4	51.7746	2.9986	f
-3	22	143	57.804	1.1172	54.4524	U	5	58.3344	1.1446	f
-8	22	122	50.4188	1.0466	47.2792	U	6	50.6376	1.0635	f
-21	22	113	40.0092	2.1286	33.6234	U	7	40.2494	2.1908	f
-7	23	196	53.9315	1.3668	49.8312	U	1	53.5572	1.3953	f
-4	23	177	52.3378	2.3193	45.3799	U	2	52.1776	2.5407	f
-6	23	176	52.0716	1.0773	48.8396	U	3	52.3112	1.0907	f
-22	23	168	37.7443	2.0518	31.589	U	4	37.8137	2.0735	f
-6	24	187	52.5243	1.0607	49.342	U	1	52.0716	1.0773	f
-3	24	184	57.7026	1.0956	54.4159	U	2	57.804	1.1172	f
-5	24	183	55.905	0.9301	53.1147	U	3	56.055	0.9409	f
-8	24	170	50.2658	1.0367	47.1556	U	4	50.4188	1.0466	f
-2	25	201	55.7248	0.9881	52.7604	U	1	55.4706	0.999	f
-4	25	188	53.286	2.1166	46.9362	U	2	52.3378	2.3193	f
-3	25	170	57.4357	1.0749	54.2109	U	3	57.7026	1.0956	f
-6	25	162	52.3396	1.0455	49.203	U	4	52.5243	1.0607	f
-22	25	128	38.5704	1.9501	32.7202	U	5	37.7443	2.0518	f
-17	25	122	42.0952	2.266	35.2972	U	6	43.4977	2.4127	f
-4	26	169	54.722	1.9677	48.8188	U	1	53.286	2.1166	f
-8	26	161	50.6596	1.0162	47.6108	U	2	50.2658	1.0367	f
-3	26	148	57.2773	1.0506	54.1254	U	3	57.4357	1.0749	f
-5	26	148	55.8623	0.9158	53.1149	U	3	55.905	0.9301	f
-2	26	140	55.5563	0.9708	52.6439	U	5	55.7248	0.9881	f
-9	26	128	47.8729	1.6484	42.9276	U	6	47.589	1.7453	f
-19	26	123	47.3371	4.2936	34.4563	U	7	50	8.333	f
-10	26	113	50.2924	1.9559	44.4249	U	8	51.9539	2.0836	f
-4	27	181	55.4939	1.8735	49.8735	U	1	54.722	1.9677	f
-8	27	177	50.8827	1.0007	47.8806	U	2	50.6596	1.0162	f
-6	27	174	52.3082	1.0278	49.2248	U	3	52.3396	1.0455	f
-5	27	173	55.5367	0.907	52.8158	U	4	55.8623	0.9158	f
-7	28	184	54.6216	1.3276	50.639	U	1	53.9315	1.3668	f
-3	28	177	57.3192	1.0315	54.2248	U	2	57.2773	1.0506	f
-5	28	162	55.5209	0.8957	52.8338	U	3	55.5367	0.907	f
-6	28	158	52.3098	1.0101	49.2796	U	4	52.3082	1.0278	f
-4	28	144	54.4679	1.7679	49.1643	U	5	55.4939	1.8735	f
-24	28	113	43.2936	5.8866	25.6338	U	6	50	8.333	f
-2	29	188	55.8782	0.9589	53.0016	U	1	55.5563	0.9708	f
-3	29	164	57.3936	1.0128	54.3551	U	2	57.3192	1.0315	f
-6	29	163	52.5075	0.9917	49.5324	U	3	52.3098	1.0101	f
-7	29	162	54.5303	1.2818	50.6848	U	4	54.6216	1.3276	f
-5	29	159	55.3326	0.8848	52.6783	U	5	55.5209	0.8957	f
-4	29	58	53.476	1.6823	48.429	U	6	54.4679	1.7679	f
-3	30	170	57.6459	1.0006	54.644	U	1	57.3936	1.0128	f
-5	30	166	55.4519	0.8751	52.8265	U	2	55.3326	0.8848	f
-2	30	165	55.8465	0.9446	53.0128	U	3	55.8782	0.9589	f
-6	30	161	52.4972	0.9754	49.5709	U	4	52.5075	0.9917	f
-9	30	158	48.0674	1.5682	43.3629	U	5	47.8729	1.6484	f
-7	30	143	53.8337	1.2493	50.0859	U	6	54.5303	1.2818	f
-2	31	196	56.1302	0.9348	53.3259	U	1	55.8465	0.9446	f
-3	31	181	57.6815	0.9851	54.7261	U	2	57.6459	1.0006	f
-5	31	164	55.4441	0.8659	52.8463	U	3	55.4519	0.8751	f
-4	31	157	53.2943	1.5998	48.4949	U	4	53.476	1.6823	f
-7	31	147	53.4	1.223	49.7311	U	5	53.8337	1.2493	f
-4	32	169	54.3041	1.532	49.7082	U	1	53.2943	1.5998	f
-2	32	160	56.2312	0.9214	53.4669	U	2	56.1302	0.9348	f
-5	32	152	55.4584	0.8556	52.8915	U	3	55.4441	0.8659	f
-9	32	150	48.7344	1.4894	44.2662	U	4	48.0674	1.5682	f
-3	32	149	57.354	0.9676	54.4511	U	5	57.6815	0.9851	f
-8	32	139	50.7782	0.9833	47.8283	U	6	50.8827	1.0007	f
-6	32	116	52.1533	0.9627	49.2653	U	7	52.4972	0.9754	f
-2	33	163	56.4895	0.9126	53.7518	U	1	56.2312	0.9214	f
-3	33	159	57.4048	0.9535	54.5442	U	2	57.354	0.9676	f
-5	33	158	55.4544	0.8467	52.9144	U	3	55.4584	0.8556	f
-9	33	157	49.151	1.4254	44.8749	U	4	48.7344	1.4894	f
-6	33	156	52.0453	0.9478	49.2019	U	5	52.1533	0.9627	f
-8	33	131	50.5929	0.9689	47.6861	U	6	50.7782	0.9833	f
-14	33	108	44.3795	4.7285	30.194	U	7	50	8.333	f
-16	33	104	39.5381	5.6163	22.6893	U	8	50	8.333	f
-3	34	184	57.5369	0.9467	54.6967	U	1	57.4048	0.9535	f
-9	34	180	49.7696	1.3764	45.6404	U	2	49.151	1.4254	f
-5	34	164	55.3309	0.8392	52.8132	U	3	55.4544	0.8467	f
-14	34	152	46.9082	3.4691	36.5008	U	4	44.3795	4.7285	f
-6	34	151	51.7424	0.9379	48.9288	U	5	52.0453	0.9478	f
-16	34	118	37.7934	4.8497	23.2444	U	6	39.5381	5.6163	f
-3	35	171	57.6826	0.9394	54.8645	U	1	57.5369	0.9467	f
-9	35	169	50.3623	1.3299	46.3728	U	2	49.7696	1.3764	f
-4	35	160	54.1732	1.4643	49.7803	U	3	54.3041	1.532	f
-8	35	144	50.5873	0.954	47.7253	U	4	50.5929	0.9689	f
-6	35	135	51.5466	0.9257	48.7694	U	5	51.7424	0.9379	f
-14	35	132	45.4191	2.9728	36.5008	U	6	46.9082	3.4691	f
-16	35	109	36.2172	4.271	23.4042	U	7	37.7934	4.8497	f
-4	36	161	54.8135	1.416	50.5656	U	1	54.1732	1.4643	f
-6	36	157	51.7845	0.9129	49.0457	U	2	51.5466	0.9257	f
-7	36	153	53.4703	1.1871	49.909	U	3	53.4	1.223	f
-5	36	148	55.2042	0.8304	52.7131	U	4	55.3309	0.8392	f
-9	36	147	50.2828	1.2843	46.43	U	5	50.3623	1.3299	f
-8	36	142	50.3919	0.9406	47.5701	U	6	50.5873	0.954	f
-14	36	118	44.3431	2.6407	36.421	U	7	45.4191	2.9728	f
-16	36	91	35.0818	3.8625	23.4944	U	8	36.2172	4.271	f
-2	37	187	56.7011	0.9044	53.9879	U	1	56.4895	0.9126	f
-6	37	161	52.0412	0.9012	49.3376	U	2	51.7845	0.9129	f
-4	37	160	54.8348	1.3609	50.7521	U	3	54.8135	1.416	f
-3	37	156	57.4412	0.9258	54.6639	U	4	57.6826	0.9394	f
-8	37	152	50.3459	0.9284	47.5608	U	5	50.3919	0.9406	f
-9	37	147	49.8771	1.256	46.1091	U	6	50.2828	1.2843	f
-2	38	177	56.9299	0.8962	54.2412	U	1	56.7011	0.9044	f
-4	38	160	55.1609	1.3138	51.2193	U	2	54.8348	1.3609	f
-6	38	157	52.2016	0.8893	49.5338	U	3	52.0412	0.9012	f
-5	38	155	55.1377	0.8221	52.6714	U	4	55.2042	0.8304	f
-3	38	154	57.143	0.9131	54.4039	U	5	57.4412	0.9258	f
-8	38	150	50.1916	0.9193	47.4339	U	6	50.3459	0.9284	f
-22	38	109	38.4539	1.9191	32.6966	U	7	38.5704	1.9501	f
-2	39	175	57.1464	0.8886	54.4805	U	1	56.9299	0.8962	f
-4	39	174	55.434	1.2723	51.617	U	2	55.1609	1.3138	f
-6	39	167	52.3451	0.8783	49.7104	U	3	52.2016	0.8893	f
-3	39	150	56.9637	0.9007	54.2615	U	4	57.143	0.9131	f
-5	39	140	54.9599	0.8152	52.5143	U	5	55.1377	0.8221	f
-16	39	123	39.9443	3.1011	30.6409	U	6	35.0818	3.8625	f
-9	39	121	49.2956	1.2266	45.6157	U	7	49.8771	1.256	f
-22	39	62	38.1229	1.8602	32.5423	U	8	38.4539	1.9191	f
-2	40	151	57.3892	0.8804	54.7479	U	1	57.1464	0.8886	f
-4	40	149	55.768	1.2323	52.071	U	2	55.434	1.2723	f
-5	40	133	55.0326	0.8071	52.6115	U	3	54.9599	0.8152	f
-6	40	127	52.4489	0.8665	49.8496	U	4	52.3451	0.8783	f
-7	40	125	53.4222	1.1519	49.9663	U	5	53.4703	1.1871	f
-14	40	120	46.2098	2.289	39.3429	U	6	44.3431	2.6407	f
-3	40	119	56.6127	0.8877	53.9495	U	7	56.9637	0.9007	f
-8	40	118	50.0365	0.9059	47.3188	U	8	50.1916	0.9193	f
-9	40	114	48.8677	1.1943	45.2847	U	9	49.2956	1.2266	f
-16	40	86	39.0668	2.8578	30.4934	U	10	39.9443	3.1011	f
-2	41	184	57.5656	0.8739	54.9438	U	1	57.3892	0.8804	f
-6	41	171	52.6613	0.8571	50.09	U	2	52.4489	0.8665	f
-5	41	163	55.0343	0.8	52.6342	U	3	55.0326	0.8071	f
-7	41	151	53.3674	1.1229	49.9986	U	4	53.4222	1.1519	f
-4	41	128	55.3106	1.1975	51.7182	U	5	55.768	1.2323	f
-16	41	112	41.2478	2.4828	33.7994	U	6	39.0668	2.8578	f
-14	41	110	45.5054	2.0851	39.2501	U	7	46.2098	2.289	f
-9	41	110	48.4377	1.1657	44.9407	U	7	48.8677	1.1943	f
-4	42	155	55.6949	1.1713	52.181	U	1	55.3106	1.1975	f
-9	42	142	49.0431	1.1335	45.6425	U	2	48.4377	1.1657	f
-3	42	142	56.6239	0.8757	53.9969	U	2	56.6127	0.8877	f
-2	42	140	57.4518	0.8625	54.8643	U	4	57.5656	0.8739	f
-6	42	137	52.6616	0.8467	50.1215	U	5	52.6613	0.8571	f
-8	42	128	50.0547	0.893	47.3758	U	6	50.0365	0.9059	f
-5	42	126	54.7897	0.7931	52.4104	U	7	55.0343	0.8	f
-16	42	102	42.0858	2.2322	35.3892	U	8	41.2478	2.4828	f
-14	42	87	44.6714	1.9478	38.8281	U	9	45.5054	2.0851	f
-23	42	68	38.5434	5.3166	22.5935	U	10	50	8.333	f
-2	43	151	57.6522	0.8561	55.0839	U	1	57.4518	0.8625	f
-4	43	150	55.9143	1.1419	52.4887	U	2	55.6949	1.1713	f
-6	43	145	52.795	0.8373	50.2829	U	3	52.6616	0.8467	f
-5	43	140	54.7552	0.7862	52.3967	U	4	54.7897	0.7931	f
-8	43	132	50.1201	0.881	47.4772	U	5	50.0547	0.893	f
-3	43	115	56.3154	0.865	53.7205	U	6	56.6239	0.8757	f
-23	43	104	43.0273	3.6043	32.2145	U	7	38.5434	5.3166	f
-14	43	103	44.3612	1.8183	38.9064	U	8	44.6714	1.9478	f
-16	43	86	41.5517	2.0535	35.3912	U	9	42.0858	2.2322	f
-21	43	74	39.0616	2.0107	33.0296	U	10	40.0092	2.1286	f
-5	44	176	54.9943	0.7817	52.649	U	1	54.7552	0.7862	f
-2	44	154	57.6947	0.8469	55.154	U	2	57.6522	0.8561	f
-6	44	149	52.9233	0.8283	50.4385	U	3	52.795	0.8373	f
-8	44	133	50.2839	0.8693	47.676	U	4	50.1201	0.881	f
-3	44	119	56.1385	0.8543	53.5758	U	5	56.3154	0.865	f
-4	44	114	55.4894	1.1128	52.151	U	6	55.9143	1.1419	f
-23	44	109	44.5061	2.9049	35.7916	U	7	43.0273	3.6043	f
-14	44	98	44.238	1.7144	39.095	U	8	44.3612	1.8183	f
-28	44	94	42.3313	4.3881	29.1671	U	9	50	8.333	f
-16	44	90	40.5463	1.9506	34.6944	U	10	41.5517	2.0535	f
-4	45	150	56.055252002121726	1.3809063957192802	51.91253281496388	\N	1	55.4894	1.4128	f
-6	45	137	53.23343137512644	1.115225132565139	49.88775597743103	\N	2	52.9233	1.1283	f
-5	45	131	54.98906163219811	1.0713613643825979	51.77497753905031	\N	3	54.9943	1.0816999999999999	f
-10	45	128	50.801102872036374	2.035123203217294	44.69573326238449	\N	4	50.2924	2.2559	f
-8	45	121	50.28952160597934	1.1489013055318322	46.84281768938384	\N	5	50.2839	1.1693	f
-28	45	112	45.620044008482054	3.2683891381046704	35.81487659416804	\N	6	42.3313	4.6880999999999995	f
-9	45	112	48.968609321623255	1.3803575900924927	44.82753655134577	\N	6	49.0431	1.4335	f
-23	45	96	45.20471589093991	2.6319779822661813	37.308781944141366	\N	8	44.5061	3.2049	f
-3	45	96	55.43426270108733	1.1356984532099275	52.02716734145754	\N	8	56.1385	1.1542999999999999	f
-14	45	89	44.04433167025863	1.8723430936103755	38.4273023894275	\N	10	44.238	2.0143999999999997	f
-16	45	72	40.29389493324432	2.0779613669629917	34.060010832355346	\N	11	40.5463	2.2506	f
-21	45	68	38.06817266425103	2.1759530256432393	31.54031358732131	\N	12	39.0616	2.3106999999999998	f
-2	46	168	58.078100908087215	1.1381031601978726	54.6637914274936	\N	1	57.6947	1.1469	f
-6	46	145	53.664782789907356	1.1024335431468386	50.35748216046684	\N	2	53.23343137512644	1.115225132565139	f
-3	46	136	55.568312164181	1.119557054443598	52.209641000850205	\N	3	55.43426270108733	1.1356984532099275	f
-4	46	126	55.982014767614565	1.3360198365161633	51.97395525806608	\N	4	56.055252002121726	1.3809063957192802	f
-5	46	122	54.88027281708838	1.0609008722943452	51.69757020020535	\N	5	54.98906163219811	1.0713613643825979	f
-10	46	107	50.85708400840027	1.871722282357676	45.241917161327244	\N	6	50.801102872036374	2.035123203217294	f
-8	46	102	50.188669827459584	1.1320209202999005	46.79260706655988	\N	7	50.28952160597934	1.1489013055318322	f
-29	46	101	47.2139686429181	4.104991708061741	34.89899351873287	\N	8	50	8.333	f
-28	46	94	45.00950969565993	2.713786857206569	36.86814912404022	\N	9	45.620044008482054	3.2683891381046704	f
-14	46	89	43.58185482260229	1.764019971369087	38.289794908495026	\N	10	44.04433167025863	1.8723430936103755	f
-23	46	87	43.09889206508013	2.386929739419024	35.93810284682306	\N	11	45.20471589093991	2.6319779822661813	f
-2	47	158	58.408494974331774	1.1319809197779418	55.012552214997946	\N	1	58.078100908087215	1.1381031601978726	f
-4	47	152	56.262328021854806	1.3025479551385744	52.354684156439085	\N	2	55.982014767614565	1.3360198365161633	f
-29	47	132	51.62319875947367	3.0843059410418423	42.37028093634814	\N	3	47.2139686429181	4.104991708061741	f
-3	47	128	55.463746204746755	1.1043786571182104	52.15061023339212	\N	4	55.568312164181	1.119557054443598	f
-14	47	121	44.85241205386874	1.6535633276401513	39.89172207094828	\N	5	43.58185482260229	1.764019971369087	f
-9	47	103	49.08966104730447	1.3328372233793413	45.091149377166445	\N	6	48.968609321623255	1.3803575900924927	f
-6	47	100	53.319331142473146	1.0874941792264476	50.0568486047938	\N	7	53.664782789907356	1.1024335431468386	f
-8	47	100	50.082006512661174	1.114114941112711	46.73966168932304	\N	7	50.188669827459584	1.1320209202999005	f
-23	47	92	43.9843576722131	2.1218619078227565	37.61877194874483	\N	9	43.09889206508013	2.386929739419024	f
-5	47	86	54.24801978382276	1.0516573236811184	51.09304781277941	\N	10	54.88027281708838	1.0609008722943452	f
-28	47	82	43.976256396174655	2.3921042536570436	36.799943635203526	\N	11	45.00950969565993	2.713786857206569	f
-16	47	58	39.583529742170775	1.9803780182771802	33.64239568733923	\N	12	40.29389493324432	2.0779613669629917	f
-5	48	156	54.58551407879147	1.049949666832425	51.43566507829419	\N	1	54.24801978382276	1.0516573236811184	f
-8	48	148	50.50836900601137	1.1016007261696743	47.20356682750235	\N	2	50.082006512661174	1.114114941112711	f
-6	48	139	53.37202362811595	1.0762846365593215	50.14316971843798	\N	3	53.319331142473146	1.0874941792264476	f
-3	48	135	55.2329526716284	1.0911964608006883	51.95936328922633	\N	4	55.463746204746755	1.1043786571182104	f
-14	48	122	45.50948315657311	1.5680169967472517	40.80543216633136	\N	5	44.85241205386874	1.6535633276401513	f
-9	48	120	48.95224300818755	1.2948344713656768	45.06773959409052	\N	6	49.08966104730447	1.3328372233793413	f
-29	48	118	49.45854517304647	2.5811928311424146	41.714966679619224	\N	7	51.62319875947367	3.0843059410418423	f
-23	48	111	43.7470026975862	1.9504088793072878	37.895776059664335	\N	8	43.9843576722131	2.1218619078227565	f
-28	48	103	42.956475769503996	2.168392957434968	36.45129689719909	\N	9	43.976256396174655	2.3921042536570436	f
-16	48	97	38.82081138718575	1.8910935824202482	33.14753063992501	\N	10	39.583529742170775	1.9803780182771802	f
-2	49	166	58.73338144538657	1.1264526588916888	55.3540234687115	\N	1	58.408494974331774	1.1319809197779418	f
-4	49	135	56.5305183061093	1.2730902725036755	52.711247488598275	\N	2	56.262328021854806	1.3025479551385744	f
-5	49	134	54.69949288735533	1.0427391352928799	51.5712754814767	\N	3	54.58551407879147	1.049949666832425	f
-6	49	129	53.413188154013184	1.0658182672870085	50.21573335215216	\N	4	53.37202362811595	1.0762846365593215	f
-8	49	126	50.58810967665553	1.0882348122238927	47.32340523998385	\N	5	50.50836900601137	1.1016007261696743	f
-3	49	110	54.85450954190075	1.078640749687863	51.618587292837155	\N	6	55.2329526716284	1.0911964608006883	f
-9	49	110	49.0076851508684	1.2604107145839936	45.22645300711642	\N	6	48.95224300818755	1.2948344713656768	f
-14	49	97	45.64257782403392	1.5002850375945682	41.14172271125022	\N	8	45.50948315657311	1.5680169967472517	f
-23	49	94	43.74203403193711	1.8179814251007367	38.288089756634896	\N	9	43.7470026975862	1.9504088793072878	f
-28	49	91	42.495989070100606	1.9965924800563306	36.50621162993161	\N	10	42.956475769503996	2.168392957434968	f
-16	49	65	38.55267379104501	1.7965983752448929	33.16287866531033	\N	11	38.82081138718575	1.8910935824202482	f
-30	49	55	35.857665849909175	5.119363731342539	20.499574655881556	\N	12	50	8.333	f
-6	50	183	53.74288646296154	1.0655056326262096	50.54636956508291	\N	1	53.413188154013184	1.0658182672870085	f
-3	50	181	54.86736297596074	1.0732536470920504	51.64760203468459	\N	2	54.85450954190075	1.078640749687863	f
-23	50	166	45.02628541767933	1.7197131981806346	39.86714582313743	\N	3	43.74203403193711	1.8179814251007367	f
-11	50	159	52.62698330679905	3.353275436350884	42.567156997746395	\N	4	56.247	4.535	f
-4	50	156	55.70131330914044	1.2533079020924276	51.941389602863154	\N	5	56.5305183061093	1.2730902725036755	f
-2	51	151	58.99293072474893	1.122393753754588	55.625749463485164	\N	1	58.73338144538657	1.1264526588916888	f
-6	51	144	54.0264375833969	1.057880857302837	50.85279501148839	\N	2	53.74288646296154	1.0655056326262096	f
-23	51	130	46.581037668012776	1.6214324981965424	41.71674017342315	\N	3	45.02628541767933	1.7197131981806346	f
-11	51	119	53.11690985256783	2.706076418236122	44.99868059785946	\N	4	52.62698330679905	3.353275436350884	f
-7	51	114	53.14246128607587	1.8566702434297377	47.57245055578666	\N	5	53.3674	2.0229000000000004	f
-5	51	112	54.44231949196446	1.034122848783119	51.3399509456151	\N	6	54.69949288735533	1.0427391352928799	f
-28	51	111	43.62822303804257	1.8371917692939341	38.116647730160764	\N	7	42.495989070100606	1.9965924800563306	f
-3	51	110	54.35147771094744	1.0622349364643306	51.16477290155445	\N	8	54.86736297596074	1.0732536470920504	f
-9	51	99	48.627239833205444	1.231705860285332	44.932122252349444	\N	9	49.0076851508684	1.2604107145839936	f
-14	51	94	45.15741970748558	1.44928260400796	40.8095718954617	\N	10	45.64257782403392	1.5002850375945682	f
-16	51	83	38.15370923588567	1.7441295318890198	32.92132064021861	\N	11	38.55267379104501	1.7965983752448929	f
-2	54	161	59.30240147116073	1.1171952724597871	55.95081565378137	\N	1	58.99293072474893	1.122393753754588	f
-3	54	158	54.68220783741064	1.0548913595579124	51.5175337587369	\N	2	54.35147771094744	1.0622349364643306	f
-6	54	148	54.22482625083018	1.0494578976640783	51.076452557837946	\N	3	54.0264375833969	1.057880857302837	f
-5	54	141	54.48548066047121	1.027432925906211	51.40318188275258	\N	4	54.44231949196446	1.034122848783119	f
-11	54	140	53.137680896997956	2.343425596452987	46.107404107639	\N	5	53.11690985256783	2.706076418236122	f
-4	54	139	55.320074345202535	1.2254255832609684	51.64379759541963	\N	6	55.70131330914044	1.2533079020924276	f
-7	54	132	52.40657893014842	1.742289051889806	47.179711774479	\N	7	53.14246128607587	1.8566702434297377	f
-8	54	108	50.23754106969448	1.0844591567431672	46.98416359946498	\N	8	50.58810967665553	1.0882348122238927	f
-29	58	170	50.928327385346236	2.375361351506235	43.80224333082753	\N	1	49.45854517304647	2.5811928311424146	f
-9	58	169	48.78686280665091	1.213269015014594	45.14705576160713	\N	2	48.627239833205444	1.231705860285332	f
-23	58	165	46.68707578958591	1.5523691781019544	42.029968255280046	\N	3	46.581037668012776	1.6214324981965424	f
-28	58	164	43.758364913143254	1.7308545029265008	38.565801404363754	\N	4	43.62822303804257	1.8371917692939341	f
-14	58	142	44.76789574478781	1.4047190937938328	40.55373846340631	\N	5	45.15741970748558	1.44928260400796	f
-16	58	125	38.08100358278358	1.668973039764904	33.074084463488866	\N	6	38.15370923588567	1.7441295318890198	f
-22	58	119	36.52758863696969	2.607087208472025	28.706327011553615	\N	7	38.1229	2.8602000000000007	f
-4	59	149	55.74565685796559	1.2110685957720437	52.11245107064946	\N	1	55.320074345202535	1.2254255832609684	f
-5	59	144	54.6339371108528	1.023257214042399	51.564165468725605	\N	2	54.48548066047121	1.027432925906211	f
-9	59	131	49.2259209251225	1.1889615453050604	45.65903628920732	\N	3	48.78686280665091	1.213269015014594	f
-2	59	131	58.963490527257	1.102696486804424	55.65540106684373	\N	3	59.30240147116073	1.1171952724597871	f
-8	59	121	50.34209123776964	1.0732159053200656	47.12244352180944	\N	5	50.23754106969448	1.0844591567431672	f
-23	59	120	47.03347726456787	1.4843688463465023	42.58037072552836	\N	6	46.68707578958591	1.5523691781019544	f
-6	59	119	53.80424312685935	1.0421135008447278	50.677902624325164	\N	7	54.22482625083018	1.0494578976640783	f
-28	59	114	43.823742324898895	1.6423212473492181	38.89677858285124	\N	8	43.758364913143254	1.7308545029265008	f
-14	59	113	44.37571036740368	1.368595344410656	40.269924334171705	\N	9	44.76789574478781	1.4047190937938328	f
-16	59	108	37.72940496202338	1.6303511855913198	32.83835140524942	\N	10	38.08100358278358	1.668973039764904	f
-4	60	176	55.96849646925929	1.204277343667946	52.35566443825545	\N	1	55.74565685796559	1.2110685957720437	f
-23	60	163	47.789683136472235	1.4325330467460462	43.49208399623409	\N	2	47.03347726456787	1.4843688463465023	f
-9	60	151	49.3727503990952	1.1684833712573754	45.867300285323076	\N	3	49.2259209251225	1.1889615453050604	f
-28	60	139	44.5144468736758	1.5596283960037371	39.83556168566459	\N	4	43.823742324898895	1.6423212473492181	f
-14	60	136	44.64162658232783	1.3263179958801457	40.66267259468739	\N	5	44.37571036740368	1.368595344410656	f
-6	60	131	53.2893308802277	1.035235244651866	50.18362514627211	\N	6	53.80424312685935	1.0421135008447278	f
-11	60	129	50.665316003423605	2.1200628343160157	44.30512750047556	\N	7	53.137680896997956	2.343425596452987	f
-16	60	99	37.53219563329814	1.604999277093254	32.717197802018376	\N	8	37.72940496202338	1.6303511855913198	f
-9	64	177	49.334633240984346	1.4243074168063956	45.06171099056516	\N	2	49.3727503990952	1.4684833712573755	f
-23	64	175	47.52194445880156	1.6499630789520372	42.572055221945455	\N	3	47.789683136472235	1.7325330467460462	f
-14	64	179	45.63733660341343	1.5710233901213808	40.92426643304929	\N	1	44.64162658232783	1.6263179958801457	f
-28	64	157	44.16738007628565	1.761250102748948	38.88362976803881	\N	4	44.5144468736758	1.8596283960037372	f
-16	64	137	37.59261050451095	1.8135402826025595	32.15198965670327	\N	5	37.53219563329814	1.904999277093254	f
-21	64	112	36.33196336398686	2.785380899738113	27.97582066477252	\N	6	38.06817266425103	3.0759530256432397	f
-4	65	184	56.53148109781381	1.4672566743880249	52.129711074649734	\N	1	55.96849646925929	1.504277343667946	f
-6	65	179	53.636057649257864	1.3041810934343303	49.72351436895487	\N	2	53.2893308802277	1.335235244651866	f
-3	65	157	54.63999853690603	1.3196717332761887	50.680983337077464	\N	3	54.68220783741064	1.3548913595579124	f
-7	65	149	52.229009294042534	1.8950018664119093	46.544003694806804	\N	4	52.40657893014842	2.042289051889806	f
-11	65	139	50.1270258314432	2.1901147195221156	43.55668167287685	\N	5	50.665316003423605	2.4200628343160155	f
-8	65	127	49.80534264837196	1.3484384972524006	45.76002715661476	\N	6	50.34209123776964	1.3732159053200657	f
-28	66	171	45.27036337697769	1.6837117650114513	40.219228081943335	\N	1	44.16738007628565	1.761250102748948	f
-16	66	167	39.30499272209681	1.710778591500795	34.172656947594426	\N	2	37.59261050451095	1.8135402826025595	f
-31	66	165	47.123154810977965	4.132430894925997	34.72586212619997	\N	3	50	8.333	f
-9	66	158	48.82260735120269	1.3793554561620414	44.68454098271657	\N	4	49.334633240984346	1.4243074168063956	f
-14	66	152	45.20809877360475	1.507844065229144	40.68456657791732	\N	5	45.63733660341343	1.5710233901213808	f
-23	66	149	46.40214050267797	1.585853669732288	41.64457949348111	\N	6	47.52194445880156	1.6499630789520372	f
-6	67	211	54.20144046067061	1.285853010198871	50.343881430074	\N	1	53.636057649257864	1.3041810934343303	f
-2	67	192	58.71304814036404	1.3690015071467143	54.60604361892389	\N	2	58.963490527257	1.402696486804424	f
-8	67	156	50.06253289561212	1.3183914745464798	46.10735847197268	\N	3	49.80534264837196	1.3484384972524006	f
-11	67	154	49.95294144297292	2.0262673785915295	43.874139307198334	\N	4	50.1270258314432	2.1901147195221156	f
-7	67	145	51.13089162804112	1.8086894464768337	45.70482328861062	\N	5	52.229009294042534	1.8950018664119093	f
-23	68	190	47.10850142410617	1.5469469780680258	42.467660489902094	\N	1	46.40214050267797	1.585853669732288	f
-31	68	186	47.67967387086294	3.2805568151997955	37.83800342526355	\N	2	47.123154810977965	4.132430894925997	f
-9	68	182	48.422899604948164	1.3535665342268846	44.362200002267514	\N	3	48.82260735120269	1.3793554561620414	f
-22	68	173	37.307733312126494	2.7449830441834333	29.072784179576196	\N	4	36.52758863696969	3.007087208472025	f
-32	68	95	36.86014978065088	5.42210097544548	20.59384685431444	\N	5	50	8.333	f
-3	69	181	55.19199323692041	1.2954276757539147	51.30571020965866	\N	1	54.63999853690603	1.3196717332761887	f
-11	69	163	51.35756580570417	1.8746492031674031	45.73361819620196	\N	2	49.95294144297292	2.0262673785915295	f
-6	69	158	54.28181151896899	1.2545934082164054	50.518031294319776	\N	3	54.20144046067061	1.285853010198871	f
-7	69	150	51.44168711794098	1.6964401973715708	46.35236652582627	\N	4	51.13089162804112	1.8086894464768337	f
-4	69	144	55.930156158736004	1.4127296046731561	51.69196734471654	\N	5	56.53148109781381	1.4672566743880249	f
-8	69	138	49.94131025415123	1.2854065972433966	46.08509046242104	\N	6	50.06253289561212	1.3183914745464798	f
-5	69	129	53.83232474305715	1.2953726193352721	49.94620688505133	\N	7	54.6339371108528	1.323257214042399	f
-23	70	183	47.86519222705803	1.5038739494732531	43.353570378638274	\N	1	47.10850142410617	1.5469469780680258	f
-31	70	166	48.52860613966187	2.7567273651819204	40.258424044116104	\N	2	47.67967387086294	3.2805568151997955	f
-9	70	162	48.28496304402977	1.3197667074207011	44.32566292176767	\N	3	48.422899604948164	1.3535665342268846	f
-16	70	152	39.966324846050334	1.62639930180883	35.08712694062385	\N	4	39.30499272209681	1.710778591500795	f
-28	70	149	44.72781959308031	1.6056691827148886	39.910812044935646	\N	5	45.27036337697769	1.6837117650114513	f
-14	70	141	44.39808095133682	1.4650310310681287	40.002987858132435	\N	6	45.20809877360475	1.507844065229144	f
-2	71	166	59.073065209054796	1.3484745623164693	55.02764152210539	\N	1	58.71304814036404	1.3690015071467143	f
-3	71	158	55.43950297901119	1.2688525289038068	51.63294539229977	\N	2	55.19199323692041	1.2954276757539147	f
-7	71	156	51.93106134572549	1.6097874157067702	47.10169909860518	\N	3	51.44168711794098	1.6964401973715708	f
-5	71	149	53.70311059445595	1.2634256156723884	49.91283374743878	\N	4	53.83232474305715	1.2953726193352721	f
-6	71	149	54.12812756606042	1.2272947189954686	50.446243409074015	\N	4	54.28181151896899	1.2545934082164054	f
-11	71	146	51.02095420176006	1.7637376668882847	45.72974120109521	\N	6	51.35756580570417	1.8746492031674031	f
-8	71	132	49.54410867537116	1.2689903039561572	45.737137763502695	\N	7	49.94131025415123	1.2854065972433966	f
-9	72	184	48.65870894731236	1.303130891442515	44.749316272984814	\N	1	48.28496304402977	1.3197667074207011	f
-28	72	179	45.17227896226064	1.5446574697016462	40.53830655315571	\N	2	44.72781959308031	1.6056691827148886	f
-23	72	166	47.55175273587705	1.4544701574817387	43.188342263431835	\N	3	47.86519222705803	1.5038739494732531	f
-16	72	162	40.169841737371144	1.5640385112088322	35.477726203744645	\N	4	39.966324846050334	1.62639930180883	f
-14	72	158	43.70036117646217	1.431335054047837	39.40635601431865	\N	5	44.39808095133682	1.4650310310681287	f
-7	73	173	52.880583555205696	1.5503305093434139	48.22959202717546	\N	1	51.93106134572549	1.6097874157067702	f
-6	73	172	54.28792835052891	1.2040905013851615	50.67565684637342	\N	2	54.12812756606042	1.2272947189954686	f
-3	73	172	55.50264398923202	1.2411184971040374	51.77928849791991	\N	2	55.43950297901119	1.2688525289038068	f
-2	73	170	58.554831117917445	1.3130348542416046	54.61572655519263	\N	4	59.073065209054796	1.3484745623164693	f
-8	73	149	49.57647875061565	1.2473478297548417	45.834435261351125	\N	5	49.54410867537116	1.2689903039561572	f
-11	73	133	50.25466471946188	1.6992104279010836	45.15703343575863	\N	6	51.02095420176006	1.7637376668882847	f
-23	74	187	48.08219504416943	1.4250935803559739	43.80691430310151	\N	1	47.55175273587705	1.4544701574817387	f
-9	74	181	48.64418425691484	1.279387842592776	44.80602072913651	\N	2	48.65870894731236	1.303130891442515	f
-14	74	166	43.81230537793168	1.3915193480878703	39.63774733366807	\N	3	43.70036117646217	1.431335054047837	f
-16	74	153	40.319193761481955	1.50912726895263	35.791811954624066	\N	4	40.169841737371144	1.5640385112088322	f
-28	74	150	44.319794356391014	1.5008106521725457	39.817362399873375	\N	5	45.17227896226064	1.5446574697016462	f
-3	75	178	56.001394951229344	1.2255995160081836	52.324596403204794	\N	1	55.50264398923202	1.2411184971040374	f
-6	75	177	54.59443691731064	1.1858044121092033	51.037023680983026	\N	2	54.28792835052891	1.2040905013851615	f
-2	75	172	58.295174679305795	1.2827162355030597	54.44702597279662	\N	3	58.554831117917445	1.3130348542416046	f
-5	75	169	53.62738589619895	1.240067999634819	49.90718189729449	\N	4	53.70311059445595	1.2634256156723884	f
-4	75	160	55.26271433766494	1.381455020577197	51.11834927593335	\N	5	55.930156158736004	1.4127296046731561	f
-9	76	198	48.96501131530263	1.2695340384452147	45.15640919996699	\N	1	48.64418425691484	1.279387842592776	f
-23	76	190	48.054270255577634	1.3954638746977057	43.867878631484515	\N	2	48.08219504416943	1.4250935803559739	f
-14	76	181	43.753343981880256	1.3705890350367018	39.64157687677015	\N	3	43.81230537793168	1.3915193480878703	f
-33	76	145	39.716369214472856	5.513523571466866	23.175798500072258	\N	4	50	8.333	f
-2	77	188	58.694803370829916	1.265272644705523	54.898985436713346	\N	1	58.295174679305795	1.2827162355030597	f
-6	77	177	54.92911464940387	1.1677237788752362	51.42594331277816	\N	2	54.59443691731064	1.1858044121092033	f
-5	77	148	53.85804357962833	1.2140720505727005	50.21582742791023	\N	3	53.62738589619895	1.240067999634819	f
-3	77	138	55.85634320074187	1.2004391615938794	52.25502571596023	\N	4	56.001394951229344	1.2255995160081836	f
-11	77	124	50.48689013151838	1.606656322463184	45.66692116412883	\N	5	50.25466471946188	1.6992104279010836	f
-8	77	120	49.58441293135541	1.219953651060407	45.924551978174186	\N	6	49.57647875061565	1.2473478297548417	f
-4	77	120	54.70961979110604	1.3382156436834298	50.694972860055756	\N	6	55.26271433766494	1.381455020577197	f
-7	77	115	52.09593950256036	1.4982679099243519	47.60113577278731	\N	8	52.880583555205696	1.5503305093434139	f
-34	78	208	58.01862527051089	5.695935221407304	40.93081960628898	\N	1	50	8.333	f
-9	78	172	49.31349088107825	1.2509770190405247	45.56055982395668	\N	2	48.96501131530263	1.2695340384452147	f
-31	78	162	48.89928916149758	2.4215086257752914	41.634763284171704	\N	3	48.52860613966187	2.7567273651819204	f
-28	78	147	44.61090429624214	1.44809483183935	40.26661980072409	\N	4	44.319794356391014	1.5008106521725457	f
-23	78	135	47.67237130617074	1.356846855414852	43.601830739926186	\N	5	48.054270255577634	1.3954638746977057	f
-14	78	133	43.48124807952336	1.3416749930416523	39.456223100398404	\N	6	43.753343981880256	1.3705890350367018	f
-35	78	99	38.33408395971922	5.280523282797893	22.492514111325544	\N	7	50	8.333	f
-5	79	188	54.22264537299928	1.2024277894580335	50.61536200462518	\N	1	53.85804357962833	1.2140720505727005	f
-3	79	174	55.75513437204477	1.1814738039983852	52.21071296004962	\N	2	55.85634320074187	1.2004391615938794	f
-7	79	174	52.38714520306406	1.4447217941563595	48.05297982059498	\N	2	52.09593950256036	1.4982679099243519	f
-11	79	157	50.5968764716894	1.5427136308299483	45.96873557919955	\N	4	50.48689013151838	1.606656322463184	f
-4	79	153	54.0836616026857	1.3143589043751391	50.14058488956029	\N	5	54.70961979110604	1.3382156436834298	f
-34	80	234	59.81132025326916	4.917766518819188	45.058020696811596	\N	1	58.01862527051089	5.695935221407304	f
-23	80	158	48.054875692751246	1.3342830617883725	44.05202650738613	\N	2	47.67237130617074	1.356846855414852	f
-9	80	157	49.19066552156182	1.2334337374079953	45.490364309337835	\N	3	49.31349088107825	1.2509770190405247	f
-14	80	153	43.48509823646072	1.3163398765191676	39.53607860690322	\N	4	43.48124807952336	1.3416749930416523	f
-16	80	129	40.174421869634244	1.4736673175054502	35.753419917117895	\N	5	40.319193761481955	1.50912726895263	f
-35	80	97	34.93773571522866	4.305015588247414	22.02268895048642	\N	6	38.33408395971922	5.280523282797893	f
-2	81	209	59.00914961106804	1.252966786382317	55.25024925192109	\N	1	58.694803370829916	1.265272644705523	f
-6	81	171	55.1572796462307	1.153885288473143	51.69562378081127	\N	2	54.92911464940387	1.1677237788752362	f
-4	81	163	54.165793145128795	1.283316339673247	50.315844126109056	\N	3	54.0836616026857	1.3143589043751391	f
-8	81	158	49.79563949964747	1.1984147936121592	46.200395118810995	\N	4	49.58441293135541	1.219953651060407	f
-5	81	131	53.87551356512801	1.1836908468985787	50.324441024432275	\N	5	54.22264537299928	1.2024277894580335	f
-7	81	113	51.737965743875485	1.4096812940151056	47.50892186183017	\N	6	52.38714520306406	1.4447217941563595	f
-34	82	211	60.8996452349487	4.4384256513811255	47.58436828080532	\N	1	59.81132025326916	4.917766518819188	f
-23	82	181	48.4387080390501	1.315302838578959	44.492799523313224	\N	2	48.054875692751246	1.3342830617883725	f
-9	82	172	49.11909171490957	1.219972923944391	45.459172943076396	\N	3	49.19066552156182	1.2334337374079953	f
-31	82	168	47.65982498844656	2.2662358393167645	40.86111747049627	\N	4	48.89928916149758	2.4215086257752914	f
-8	83	162	50.64503499492831	1.18025649138684	47.10426552076779	\N	1	49.79563949964747	1.1984147936121592	f
-6	83	159	55.38830700175919	1.1369970328486432	51.97731590321326	\N	2	55.1572796462307	1.153885288473143	f
-5	83	156	54.06456631557627	1.1628473408794655	50.57602429293787	\N	3	53.87551356512801	1.1836908468985787	f
-2	83	148	58.63010024898094	1.224512749721778	54.956561999815605	\N	4	59.00914961106804	1.252966786382317	f
-3	83	137	55.50005492570808	1.1614709781913104	52.015641991134146	\N	5	55.75513437204477	1.1814738039983852	f
-4	83	134	53.78307738928454	1.2552074564945077	50.01745501980102	\N	6	54.165793145128795	1.283316339673247	f
-11	83	129	50.02802524861701	1.5001127552548605	45.52768698285243	\N	7	50.5968764716894	1.5427136308299483	f
-34	84	217	61.55747493859562	4.143661338117617	49.126490924242766	\N	1	60.8996452349487	4.4384256513811255	f
-31	84	187	48.57663636357555	2.1391162147964233	42.15928771918628	\N	2	47.65982498844656	2.2662358393167645	f
-23	84	173	48.33747740407721	1.3008319497033929	44.43498155496703	\N	3	48.4387080390501	1.315302838578959	f
-36	84	133	43.43200525437877	5.111516173952481	28.09745673252133	\N	4	50	8.333	f
-35	84	132	33.84684605321945	3.9720304909355897	21.93075458041268	\N	5	34.93773571522866	4.305015588247414	f
-34	85	228	62.09182283308111	3.903612948545681	50.38098398744407	\N	1	61.55747493859562	4.143661338117617	f
-9	85	178	49.3665114391489	1.2123871737940617	45.72934991776672	\N	2	49.11909171490957	1.219972923944391	f
-23	85	167	48.28521020141083	1.2836365437793302	44.434300570072836	\N	3	48.33747740407721	1.3008319497033929	f
-36	85	140	43.06246571433106	3.8615971059701475	31.477674396420618	\N	4	43.43200525437877	5.111516173952481	f
-33	85	115	38.23949079185022	4.177673049893514	25.70647164216968	\N	5	39.716369214472856	5.513523571466866	f
-35	85	111	32.263222927536134	3.6003969747912397	21.462032003162413	\N	6	33.84684605321945	3.9720304909355897	f
-2	86	183	58.97228070276335	1.2128079536893905	55.33385684169518	\N	1	58.63010024898094	1.224512749721778	f
-5	86	179	54.41819662874984	1.1475294793086241	50.97560819082397	\N	2	54.06456631557627	1.1628473408794655	f
-6	86	169	55.4526742856096	1.1224258286883517	52.08539679954455	\N	3	55.38830700175919	1.1369970328486432	f
-3	86	139	55.38247977377817	1.1441508119002104	51.95002733807754	\N	4	55.50005492570808	1.1614709781913104	f
-11	86	135	50.17671774291529	1.4432169360297435	45.84706693482606	\N	5	50.02802524861701	1.5001127552548605	f
-8	86	127	50.50846272850789	1.1628350930802958	47.019957449267	\N	6	50.64503499492831	1.18025649138684	f
-4	86	116	53.12143151587387	1.235436079055168	49.41512327870837	\N	7	53.78307738928454	1.2552074564945077	f
-9	87	193	49.71127209720903	1.2047151181089912	46.09712674288206	\N	1	49.3665114391489	1.2123871737940617	f
-31	87	181	48.80103002947691	1.9955672992820406	42.81432813163079	\N	2	48.57663636357555	2.1391162147964233	f
-23	87	176	48.090962166997514	1.2642169428693601	44.29831133838943	\N	3	48.28521020141083	1.2836365437793302	f
-36	87	150	42.203581025805505	3.243313009922533	32.473641996037905	\N	4	43.06246571433106	3.8615971059701475	f
-33	87	140	36.41301120840983	3.6965429540063526	25.32338234639077	\N	5	38.23949079185022	4.177673049893514	f
-6	88	208	55.73037004894406	1.1207510952571487	52.368116763172615	\N	1	55.4526742856096	1.1224258286883517	f
-5	88	184	54.48083713111902	1.1384961355350451	51.06534872451388	\N	2	54.41819662874984	1.1475294793086241	f
-4	88	171	52.998621598071765	1.2192502113841723	49.340870963919244	\N	3	53.12143151587387	1.235436079055168	f
-8	88	170	50.25592317281229	1.1597273191588617	46.776741215335704	\N	4	50.50846272850789	1.1628350930802958	f
-34	89	198	64.3974902681622	3.5705662305693298	53.685791576454214	\N	1	62.09182283308111	4.203612948545681	f
-3	89	152	55.988131391851255	1.3991597193408438	51.79065223382872	\N	2	55.38247977377817	1.4441508119002104	f
-6	89	125	55.98942276577463	1.372247196710552	51.87268117564297	\N	3	55.73037004894406	1.4207510952571487	f
-23	89	124	49.063374288057204	1.4909116466902652	44.59063934798641	\N	4	48.090962166997514	1.5642169428693602	f
-5	89	119	54.44171522914754	1.383337666479708	50.29170222970842	\N	5	54.48083713111902	1.4384961355350452	f
-9	89	117	50.02352974212527	1.4391099313912061	45.70619994795165	\N	6	49.71127209720903	1.5047151181089913	f
-8	89	111	50.31069986019799	1.4009506331835375	46.107847960647376	\N	7	50.25592317281229	1.4597273191588618	f
-7	89	104	51.35889653537057	1.6093917384586784	46.530721319994534	\N	8	51.737965743875485	1.7096812940151056	f
-4	89	101	52.33364945387765	1.4530594650066744	47.974471058857624	\N	9	52.998621598071765	1.5192502113841724	f
-31	89	97	47.986871504422716	2.0664242505925525	41.78759875264506	\N	10	48.80103002947691	2.2955672992820406	f
-11	89	68	49.07252686659786	1.6529433697280371	44.11369675741375	\N	11	50.17671774291529	1.7432169360297436	f
-37	89	65	39.5018375881624	5.306396793354091	23.582647208100127	\N	12	50	8.333	f
-31	90	192	49.34546084596326	1.9463368284765157	43.50645036053371	\N	1	47.986871504422716	2.0664242505925525	f
-23	90	177	49.33966650005851	1.4429764562137708	45.0107371314172	\N	2	49.063374288057204	1.4909116466902652	f
-9	90	167	49.88693273108897	1.396127657119971	45.698549759729055	\N	3	50.02352974212527	1.4391099313912061	f
-8	90	161	49.84457027901221	1.3655399426534522	45.74795045105185	\N	4	50.31069986019799	1.4009506331835375	f
-36	90	130	41.54209486594469	3.0552904615183603	32.37622348138961	\N	5	42.203581025805505	3.543313009922533	f
-33	90	126	35.01464510432387	3.6021935643891516	24.208064411156414	\N	6	36.41301120840983	3.9965429540063524	f
-34	91	190	65.35239399524895	3.2761969535407856	55.52380313462659	\N	1	64.3974902681622	3.5705662305693298	f
-6	91	174	56.323450150527684	1.3452540359855594	52.287688042571006	\N	2	55.98942276577463	1.372247196710552	f
-4	91	166	52.69355316690152	1.4103554815055284	48.46248672238494	\N	3	52.33364945387765	1.4530594650066744	f
-5	91	151	54.277139439195764	1.3489059459127262	50.230421601457586	\N	4	54.44171522914754	1.383337666479708	f
-3	91	148	55.32609060721174	1.3703329411281708	51.215091783827226	\N	5	55.988131391851255	1.3991597193408438	f
-34	92	213	66.10404512429565	3.0481788856488885	56.95950846734898	\N	1	65.35239399524895	3.2761969535407856	f
-6	92	142	56.67129157814304	1.3187843517014375	52.714938523038725	\N	2	56.323450150527684	1.3452540359855594	f
-4	92	140	53.07174441400114	1.3685804455433597	48.966003077371056	\N	3	52.69355316690152	1.4103554815055284	f
-5	92	132	54.21881445486364	1.3124055629820972	50.28159776591735	\N	4	54.277139439195764	1.3489059459127262	f
-9	92	131	49.997836573988444	1.3532574180961179	45.93806431970009	\N	5	49.88693273108897	1.396127657119971	f
-23	92	126	49.24052104828607	1.3948533831207255	45.05596089892389	\N	6	49.33966650005851	1.4429764562137708	f
-8	92	116	49.435965188592604	1.3299464449434713	45.44612585376219	\N	7	49.84457027901221	1.3655399426534522	f
-37	92	86	40.80023320397714	3.737732545063983	29.587035568785193	\N	8	39.5018375881624	5.306396793354091	f
-36	92	85	40.221713974927944	2.6984865703466347	32.12625426388804	\N	9	41.54209486594469	3.0552904615183603	f
-33	92	68	33.54969386150127	3.2482350145466565	23.8049888178613	\N	10	35.01464510432387	3.6021935643891516	f
+1	1	53	63.910427	5.462289	47.523561	\N	1	50	8.333	f
+5	1	54	59.879899	4.869363	45.271809	\N	2	50	8.333	f
+25	1	43	57.170806	4.674285	43.147951	\N	3	50	8.333	f
+6	1	41	54.921001	4.582494	41.17352	\N	4	50	8.333	f
+9	1	34	52.885547	4.535692	39.278472	\N	5	50	8.333	f
+3	1	31	50.951705	4.515397	37.405513	\N	6	50	8.333	f
+19	1	27	49.048295	4.515397	35.502103	\N	7	50	8.333	f
+12	1	23	47.114453	4.535692	33.507377	\N	8	50	8.333	f
+13	1	19	45.078999	4.582494	31.331517	\N	9	50	8.333	f
+11	1	15	42.829194	4.674285	28.80634	\N	10	50	8.333	f
+17	1	8	40.120101	4.869363	25.512011	\N	11	50	8.333	f
+26	1	5	36.089573	5.462289	19.702707	\N	12	50	8.333	f
+7	2	54	62.689011	5.256274	46.920188	\N	1	50	8.333	f
+3	2	45	56.136196	3.453468	45.775791	\N	2	50.951705	4.515397	f
+12	2	45	52.880264	3.381657	42.735293	\N	3	47.114453	4.535692	f
+9	2	37	54.406799	3.36262	44.318941	\N	4	52.885547	4.535692	f
+16	2	33	53.002383	4.23898	40.285441	\N	5	50	8.333	f
+2	2	29	51.497873	4.239706	38.778756	\N	6	50	8.333	f
+1	2	25	55.127596	3.681874	44.081973	\N	7	63.910427	5.462289	f
+27	2	23	48.122238	4.281996	35.27625	\N	8	50	8.333	f
+6	2	18	49.604879	3.425537	39.328268	\N	9	54.921001	4.582494	f
+13	2	14	43.175273	3.516757	32.625002	\N	10	45.078999	4.582494	f
+26	2	9	36.593256	4.093565	24.31256	\N	11	36.089573	5.462289	f
+10	2	5	35.579499	5.397592	19.386724	\N	12	50	8.333	f
+7	3	54	66.766418	4.242364	54.039325	\N	1	62.689011	5.256274	f
+5	3	50	62.063739	3.681486	51.01928	\N	2	59.879899	4.869363	f
+12	3	42	55.574396	2.826081	47.096152	\N	3	52.880264	3.381657	f
+3	3	40	56.511883	2.844291	47.979011	\N	4	56.136196	3.453468	f
+21	3	38	53.656342	4.209807	41.026922	\N	5	50	8.333	f
+11	3	31	48.063305	3.382222	37.91664	\N	6	42.829194	4.674285	f
+22	3	28	50.241584	4.186396	37.682397	\N	7	50	8.333	f
+6	3	24	49.113468	2.816519	40.663911	\N	8	49.604879	3.425537	f
+23	3	19	47.124332	4.221127	34.460952	\N	9	50	8.333	f
+25	3	13	50.028117	3.427304	39.746204	\N	10	57.170806	4.674285	f
+18	3	10	43.080386	4.432999	29.781388	\N	11	50	8.333	f
+27	3	4	42.757965	3.495081	32.272724	\N	12	48.122238	4.281996	f
+5	4	54	64.3957	3.196418	54.806446	\N	1	62.063739	3.681486	f
+9	4	53	57.58747	2.823724	49.1163	\N	2	54.406799	3.36262	f
+4	4	47	57.824126	4.22207	45.157918	\N	3	50	8.333	f
+14	4	41	55.945984	4.153644	43.485053	\N	4	50	8.333	f
+11	4	38	50.929969	2.757422	42.657702	\N	5	48.063305	3.382222	f
+17	4	29	47.840054	3.380438	37.698741	\N	6	40.120101	4.869363	f
+2	4	29	51.735693	3.146826	42.295215	\N	7	51.497873	4.239706	f
+8	4	23	50.357756	4.067562	38.155071	\N	8	50	8.333	f
+25	4	20	49.58561	2.773122	41.266243	\N	9	50.028117	3.427304	f
+3	4	13	53.611437	2.441734	46.286234	\N	10	56.511883	2.844291	f
+7	4	8	55.954964	3.183698	46.403871	\N	11	66.766418	4.242364	f
+22	4	4	45.86987	3.375253	35.74411	\N	12	50.241584	4.186396	f
+5	5	55	65.569842	2.917504	56.817331	\N	1	64.3957	3.196418	f
+7	5	46	58.041236	2.727789	49.857868	\N	2	55.954964	3.183698	f
+12	5	46	56.444284	2.456957	49.073413	\N	3	55.574396	2.826081	f
+11	5	41	52.360741	2.396005	45.172727	\N	4	50.929969	2.757422	f
+21	5	38	53.541909	3.155463	44.075519	\N	5	53.656342	4.209807	f
+18	5	30	47.406136	3.240821	37.683672	\N	6	43.080386	4.432999	f
+8	5	30	49.871701	3.092864	40.593109	\N	7	50.357756	4.067562	f
+20	5	22	47.96537	4.118393	35.61019	\N	8	50	8.333	f
+14	5	19	50.743797	3.145888	41.306133	\N	9	55.945984	4.153644	f
+13	5	15	43.074271	2.865567	34.47757	\N	10	43.175273	3.516757	f
+25	5	9	46.727452	2.446453	39.388094	\N	11	49.58561	2.773122	f
+26	5	4	35.061199	3.61109	24.22793	\N	12	36.593256	4.093565	f
+2	6	59	55.293616	2.71246	47.156237	\N	1	51.735693	3.146826	f
+14	6	54	53.519278	2.639419	45.60102	\N	2	50.743797	3.145888	f
+8	6	50	52.125973	2.588976	44.359046	\N	3	49.871701	3.092864	f
+9	6	44	56.584736	2.420408	49.323511	\N	4	57.58747	2.823724	f
+3	6	34	53.31309	2.166125	46.814715	\N	5	53.611437	2.441734	f
+16	6	34	51.686769	3.137288	42.274904	\N	6	53.002383	4.23898	f
+18	6	25	47.728622	2.667993	39.724644	\N	7	47.406136	3.240821	f
+25	6	25	46.580309	2.175831	40.052816	\N	8	46.727452	2.446453	f
+21	6	19	50.056361	2.640305	42.135447	\N	9	53.541909	3.155463	f
+26	6	13	37.409389	2.953174	28.549866	\N	10	35.061199	3.61109	f
+23	6	9	42.416993	3.313591	32.47622	\N	11	47.124332	4.221127	f
+24	6	4	36.238265	5.171127	20.724884	\N	12	50	8.333	f
+5	7	55	65.991798	2.775198	57.666203	\N	1	65.569842	2.917504	f
+21	7	48	52.539313	2.341595	45.514528	\N	2	50.056361	2.640305	f
+13	7	44	47.184738	2.45092	39.831979	\N	3	43.074271	2.865567	f
+3	7	41	53.477874	1.967067	47.576672	\N	4	53.31309	2.166125	f
+2	7	38	54.416766	2.343865	47.385172	\N	5	55.293616	2.71246	f
+8	7	30	51.669858	2.263348	44.879813	\N	6	52.125973	2.588976	f
+11	7	26	51.410553	2.134393	45.007375	\N	7	52.360741	2.396005	f
+6	7	23	48.229695	2.42511	40.954364	\N	8	49.113468	2.816519	f
+19	7	18	46.177539	3.315051	36.232387	\N	9	49.048295	4.515397	f
+23	7	12	41.691451	2.801001	33.28845	\N	10	42.416993	3.313591	f
+15	7	10	39.337086	4.666978	25.336151	\N	11	50	8.333	f
+10	7	5	32.182479	4.450396	18.83129	\N	12	35.579499	5.397592	f
+5	8	56	66.548685	2.632388	58.651522	\N	1	65.991798	2.775198	f
+7	8	48	58.79254	2.459701	51.413437	\N	2	58.041236	2.727789	f
+11	8	47	52.369022	1.960464	46.48763	\N	3	51.410553	2.134393	f
+26	8	42	42.675637	2.498235	35.180931	\N	4	37.409389	2.953174	f
+21	8	34	52.278242	2.09263	46.000352	\N	5	52.539313	2.341595	f
+14	8	33	52.429663	2.294173	45.547143	\N	6	53.519278	2.639419	f
+17	8	29	47.829063	2.73009	39.638793	\N	7	47.840054	3.380438	f
+18	8	21	47.197761	2.315863	40.250174	\N	8	47.728622	2.667993	f
+13	8	17	46.33527	2.175428	39.808987	\N	9	47.184738	2.45092	f
+25	8	13	45.506023	1.986625	39.546149	\N	10	46.580309	2.175831	f
+20	8	9	43.20902	3.239605	33.490203	\N	11	47.96537	4.118393	f
+10	8	4	31.010874	3.993293	19.030994	\N	12	32.182479	4.450396	f
+5	9	55	67.09564	2.511669	59.560632	\N	1	66.548685	2.632388	f
+4	9	50	59.605477	3.432153	49.309018	\N	2	57.824126	4.22207	f
+1	9	42	55.802104	3.024524	46.72853	\N	3	55.127596	3.681874	f
+13	9	42	47.714483	1.989206	41.746865	\N	4	46.33527	2.175428	f
+19	9	34	47.793098	2.718787	39.636739	\N	5	46.177539	3.315051	f
+15	9	32	44.296325	3.305144	34.380894	\N	6	39.337086	4.666978	f
+21	9	28	51.105134	1.913479	45.364697	\N	7	52.278242	2.09263	f
+23	9	25	42.505967	2.407725	35.282792	\N	8	41.691451	2.801001	f
+20	9	18	42.871909	2.673975	34.849984	\N	9	43.20902	3.239605	f
+22	9	12	43.64579	2.762313	35.358852	\N	10	45.86987	3.375253	f
+6	9	8	45.573571	2.188061	39.009387	\N	11	48.229695	2.42511	f
+10	9	4	30.181787	3.659207	19.204165	\N	12	31.010874	3.993293	f
+7	10	57	60.397158	2.259881	53.617513	\N	1	58.79254	2.459701	f
+8	10	50	53.858626	2.064744	47.664394	\N	2	51.669858	2.263348	f
+5	10	43	64.985965	2.241382	58.261819	\N	3	67.09564	2.511669	f
+4	10	43	58.227983	2.816828	49.777499	\N	4	59.605477	3.432153	f
+15	10	35	47.504922	2.724207	39.3323	\N	5	44.296325	3.305144	f
+24	10	29	44.721243	3.477527	34.288664	\N	6	36.238265	5.171127	f
+3	10	25	52.549418	1.817251	47.097665	\N	7	53.477874	1.967067	f
+6	10	23	45.71108	1.985699	39.753982	\N	8	45.573571	2.188061	f
+18	10	17	46.460333	2.081917	40.214582	\N	9	47.197761	2.315863	f
+22	10	14	43.028211	2.39825	35.833462	\N	10	43.64579	2.762313	f
+26	10	9	41.668522	2.239469	34.950114	\N	11	42.675637	2.498235	f
+27	10	5	39.566001	2.988351	30.600947	\N	12	42.757965	3.495081	f
+11	11	51	54.158384	1.834984	48.653431	\N	1	52.369022	1.960464	f
+12	11	51	57.252308	2.192686	50.67425	\N	2	56.444284	2.456957	f
+2	11	42	55.118858	2.103325	48.808884	\N	3	54.416766	2.343865	f
+7	11	39	59.245962	2.040274	53.12514	\N	4	60.397158	2.259881	f
+1	11	39	54.803047	2.547066	47.161849	\N	5	55.802104	3.024524	f
+13	11	30	48.168673	1.83442	42.665414	\N	6	47.714483	1.989206	f
+6	11	29	46.089194	1.830871	40.596581	\N	7	45.71108	1.985699	f
+23	11	23	43.269148	2.145218	36.833496	\N	8	42.505967	2.407725	f
+3	11	18	51.110969	1.699927	46.011187	\N	9	52.549418	1.817251	f
+20	11	14	42.117295	2.361039	35.034177	\N	10	42.871909	2.673975	f
+10	11	10	32.745869	3.017017	23.694817	\N	11	30.181787	3.659207	f
+26	11	4	39.735383	2.090756	33.463115	\N	12	41.668522	2.239469	f
+5	12	59	65.098041	2.20143	58.493752	\N	1	64.985965	2.241382	f
+23	12	50	45.879548	1.965437	39.983238	\N	2	43.269148	2.145218	f
+25	12	42	46.974509	1.830289	41.483641	\N	3	45.506023	1.986625	f
+14	12	38	52.259869	2.056709	46.089742	\N	4	52.429663	2.294173	f
+16	12	38	51.060386	2.591495	43.285903	\N	5	51.686769	3.137288	f
+3	12	29	50.687946	1.596314	45.899005	\N	6	51.110969	1.699927	f
+19	12	29	47.30819	2.341397	40.284	\N	7	47.793098	2.718787	f
+26	12	25	40.610924	1.906919	34.890167	\N	8	39.735383	2.090756	f
+18	12	17	45.619617	1.902742	39.911391	\N	9	46.460333	2.081917	f
+17	12	15	45.518217	2.369202	38.410611	\N	10	47.829063	2.73009	f
+24	12	9	41.560359	2.877297	32.928468	\N	11	44.721243	3.477527	f
+10	12	5	31.943805	2.802613	23.535965	\N	12	32.745869	3.017017	f
+5	13	55	65.517939	2.110824	59.185468	\N	1	65.098041	2.20143	f
+8	13	51	55.191524	1.913832	49.450028	\N	2	53.858626	2.064744	f
+11	13	42	54.744979	1.71624	49.596258	\N	3	54.158384	1.834984	f
+12	13	43	56.868615	1.990506	50.897097	\N	4	57.252308	2.192686	f
+21	13	35	51.442983	1.77284	46.124462	\N	5	51.105134	1.913479	f
+16	13	29	50.993291	2.264994	44.198309	\N	6	51.060386	2.591495	f
+19	13	29	47.614263	2.092207	41.337641	\N	7	47.30819	2.341397	f
+18	13	21	45.763133	1.763155	40.473669	\N	8	45.619617	1.902742	f
+13	13	18	47.552126	1.710418	42.420872	\N	9	48.168673	1.83442	f
+23	13	14	45.153227	1.820941	39.690403	\N	10	45.879548	1.965437	f
+26	13	9	40.260644	1.789235	34.89294	\N	11	40.610924	1.906919	f
+27	13	4	37.746389	2.681359	29.702312	\N	12	39.566001	2.988351	f
+13	14	57	49.169465	1.615427	44.323183	B	1	47.552126	1.710418	f
+17	14	46	48.170257	2.107496	41.847768	C	2	45.518217	2.369202	f
+3	14	47	51.20217	1.508217	46.67752	B	3	50.687946	1.596314	f
+9	14	44	55.724668	2.134739	49.320452	B	4	56.584736	2.420408	f
+19	14	36	48.411869	1.898854	42.715306	C	5	47.614263	2.092207	f
+11	14	35	54.066794	1.60545	49.250444	B	6	54.744979	1.71624	f
+2	14	28	53.760607	1.907493	48.038129	B	7	55.118858	2.103325	f
+24	14	22	43.150764	2.429142	35.863338	C	8	41.560359	2.877297	f
+10	14	20	35.931519	2.386593	28.77174	C	9	31.943805	2.802613	f
+12	14	15	54.347965	1.826438	48.86865	B	10	56.868615	1.990506	f
+23	14	10	44.552058	1.697577	39.459327	C	11	45.153227	1.820941	f
+14	14	5	49.688472	1.89635	43.999422	C	12	52.259869	2.056709	f
+16	15	50	53.212554	2.072553	46.994896	B	1	50.993291	2.264994	f
+13	15	49	50.318038	1.531789	45.722671	B	2	49.169465	1.615427	f
+5	15	46	63.596893	1.926716	57.816745	S	3	65.517939	2.110824	f
+25	15	39	48.040186	1.702252	42.933431	C	4	46.974509	1.830289	f
+17	15	37	48.874941	1.914261	43.132159	C	5	48.170257	2.107496	f
+12	15	32	53.626872	1.696349	48.537826	B	6	54.347965	1.826438	f
+10	15	25	38.888412	2.112841	32.54989	C	7	35.931519	2.386593	f
+22	15	23	43.861245	2.12112	37.497884	C	8	43.028211	2.39825	f
+7	15	20	56.473715	1.863092	50.884439	A	9	59.245962	2.040274	f
+18	15	13	45.329497	1.649045	40.382363	C	10	45.763133	1.763155	f
+20	15	9	41.749544	2.115589	35.402776	C	11	42.117295	2.361039	f
+19	15	4	46.627718	1.779256	41.289949	C	12	48.411869	1.898854	f
+16	16	54	55.308654	1.92716	49.527174	B	1	53.212554	2.072553	f
+5	16	49	63.170953	1.796013	57.782915	S	2	63.596893	1.926716	f
+9	16	47	56.2587	1.946659	50.418722	A	3	55.724668	2.134739	f
+6	16	43	47.669602	1.703467	42.559202	C	4	46.089194	1.830871	f
+7	16	36	56.082065	1.727884	50.898415	A	5	56.473715	1.863092	f
+1	16	34	54.123877	2.226692	47.4438	B	6	54.803047	2.547066	f
+11	16	27	53.58704	1.517526	49.034463	B	7	54.066794	1.60545	f
+20	16	24	43.053873	1.924905	37.279158	C	8	41.749544	2.115589	f
+15	16	19	47.137335	2.350283	40.086486	C	9	47.504922	2.724207	f
+8	16	12	53.305258	1.774925	47.980484	B	10	55.191524	1.913832	f
+23	16	8	44.044185	1.613853	39.202625	C	11	44.552058	1.697577	f
+27	16	4	36.961853	2.505136	29.446445	C	12	37.746389	2.681359	f
+7	17	49	56.790393	1.650621	51.838529	A	1	56.082065	1.727884	f
+6	17	53	49.013602	1.602898	44.204907	B	2	47.669602	1.703467	f
+25	17	44	49.036844	1.59724	44.245123	B	3	48.040186	1.702252	f
+3	17	39	51.451843	1.433427	47.151562	A	4	51.20217	1.508217	f
+4	17	36	56.208191	2.391416	49.033942	A	5	58.227983	2.816828	f
+12	17	33	53.115204	1.589944	48.345372	A	6	53.626872	1.696349	f
+22	17	29	44.73032	1.921104	38.967007	C	7	43.861245	2.12112	f
+10	17	23	40.413894	1.915169	34.668386	C	8	38.888412	2.112841	f
+11	17	18	52.560092	1.441011	48.237057	A	9	53.58704	1.517526	f
+26	17	13	40.684504	1.668048	35.68036	C	10	40.260644	1.789235	f
+23	17	9	43.677562	1.526098	39.099266	B	11	44.044185	1.613853	f
+9	17	5	53.218612	1.803938	47.806797	A	12	56.2587	1.946659	f
+16	18	53	56.725143	1.81995	51.265294	A	1	55.308654	1.92716	f
+5	18	48	62.725418	1.696184	57.636866	S	2	63.170953	1.796013	f
+2	18	44	54.271836	1.77445	48.948487	A	3	53.760607	1.907493	f
+22	18	42	46.340954	1.775305	41.01504	B	4	44.73032	1.921104	f
+14	18	36	50.093543	1.753046	44.834404	B	5	49.688472	1.89635	f
+9	18	31	52.759227	1.678554	47.723564	A	6	53.218612	1.803938	f
+26	18	26	41.757661	1.567569	37.054953	C	7	40.684504	1.668048	f
+11	18	23	51.952947	1.375896	47.825258	A	8	52.560092	1.441011	f
+12	18	18	52.095644	1.50407	47.583432	A	9	53.115204	1.589944	f
+27	18	13	38.472691	2.210802	31.840286	C	10	36.961853	2.505136	f
+21	18	10	49.782932	1.664692	44.788858	B	11	51.442983	1.77284	f
+10	18	5	39.698008	1.820912	34.235271	C	12	40.413894	1.915169	f
+5	19	59	63.066219	1.643023	58.137151	S	1	62.725418	1.696184	f
+11	19	53	52.715886	1.324345	48.742853	A	2	51.952947	1.375896	f
+17	19	47	50.341649	1.767007	45.040629	B	3	48.874941	1.914261	f
+15	19	38	49.164319	2.085187	42.908759	B	4	47.137335	2.350283	f
+16	19	36	56.295304	1.688262	51.230518	A	5	56.725143	1.81995	f
+25	19	32	49.480929	1.506248	44.962186	B	6	49.036844	1.59724	f
+9	19	28	52.518899	1.573364	47.798805	A	7	52.759227	1.678554	f
+13	19	22	50.225556	1.45146	45.871176	A	8	50.318038	1.531789	f
+3	19	17	51.087579	1.368002	46.983573	A	9	51.451843	1.433427	f
+2	19	13	53.056434	1.65445	48.093086	A	10	54.271836	1.77445	f
+12	19	8	51.187524	1.433872	46.885908	A	11	52.095644	1.50407	f
+18	19	5	44.665996	1.580744	39.923764	B	12	45.329497	1.649045	f
+21	20	57	51.015817	1.58188	46.270179	A	1	49.782932	1.664692	f
+20	20	51	45.336678	1.780698	39.994584	B	2	43.053873	1.924905	f
+5	20	44	61.894123	1.549781	57.244779	S	3	63.066219	1.643023	f
+19	20	41	47.495646	1.658731	42.519453	B	4	46.627718	1.779256	f
+11	20	34	52.510621	1.273439	48.690303	A	5	52.715886	1.324345	f
+22	20	31	46.690076	1.653522	41.72951	B	6	46.340954	1.775305	f
+24	20	28	44.09054	2.138526	37.674963	C	7	43.150764	2.429142	f
+23	20	24	43.861599	1.447465	39.519204	B	8	43.677562	1.526098	f
+6	20	18	48.321791	1.512615	43.783945	B	9	49.013602	1.602898	f
+26	20	13	41.770222	1.484462	37.316836	C	10	41.757661	1.567569	f
+18	20	10	44.083514	1.497939	39.589698	B	11	44.665996	1.580744	f
+13	20	5	48.883114	1.392308	44.70619	A	12	50.225556	1.45146	f
+5	21	50	62.1231	1.514607	57.579281	S	1	61.894123	1.549781	f
+12	21	48	51.891411	1.377494	47.75893	A	2	51.187524	1.433872	f
+20	21	46	46.855188	1.662209	41.868562	B	3	45.336678	1.780698	f
+1	21	42	53.961557	2.000303	47.960647	A	4	54.123877	2.226692	f
+23	21	39	44.698977	1.380152	40.558521	B	5	43.861599	1.447465	f
+6	21	33	48.533358	1.435505	44.226844	B	6	48.321791	1.512615	f
+4	21	26	54.346041	2.111359	48.011965	A	7	56.208191	2.391416	f
+24	21	24	44.712995	1.932579	38.915257	B	8	44.09054	2.138526	f
+3	21	19	50.545485	1.311605	46.61067	A	9	51.087579	1.368002	f
+9	21	15	51.423633	1.489558	46.95496	A	10	52.518899	1.573364	f
+10	21	9	39.938432	1.701979	34.832494	C	11	39.698008	1.820912	f
+13	21	5	47.861371	1.343973	43.829451	B	12	48.883114	1.392308	f
+4	22	56	55.930109	1.975426	50.003832	A	1	54.346041	2.111359	f
+5	22	50	61.751867	1.455707	57.384748	S	2	62.1231	1.514607	f
+25	22	49	50.114285	1.437294	45.802404	A	3	49.480929	1.506248	f
+23	22	43	45.467069	1.323279	41.497232	B	4	44.698977	1.380152	f
+24	22	39	45.766127	1.777749	40.432879	B	5	44.712995	1.932579	f
+26	22	31	42.597756	1.411523	38.363185	C	6	41.770222	1.484462	f
+3	22	25	50.290675	1.261333	46.506675	A	7	50.545485	1.311605	f
+15	22	22	48.589575	1.892633	42.911674	B	8	49.164319	2.085187	f
+12	22	20	51.190321	1.319794	47.23094	A	9	51.891411	1.377494	f
+8	22	15	51.721389	1.656275	46.752565	A	10	53.305258	1.774925	f
+27	22	9	38.847994	2.010223	32.817324	C	11	38.472691	2.210802	f
+22	22	4	45.43815	1.576211	40.709517	B	12	46.690076	1.653522	f
+11	23	49	53.048628	1.239571	49.329915	A	1	52.510621	1.273439	f
+3	23	52	50.73718	1.220501	47.075675	A	2	50.290675	1.261333	f
+13	23	45	48.385278	1.291394	44.511095	B	3	47.861371	1.343973	f
+19	23	38	48.06354	1.558499	43.388044	B	4	47.495646	1.658731	f
+15	23	37	48.839915	1.745349	43.603868	B	5	48.589575	1.892633	f
+21	23	31	50.699642	1.493529	46.219054	A	6	51.015817	1.58188	f
+18	23	27	44.405524	1.422707	40.137402	B	7	44.083514	1.497939	f
+14	23	21	49.380415	1.634676	44.476386	B	8	50.093543	1.753046	f
+10	23	19	40.471726	1.594466	35.688328	C	9	39.938432	1.701979	f
+17	23	13	49.081838	1.648913	44.1351	B	10	50.341649	1.767007	f
+12	23	9	50.176704	1.272412	46.359469	A	11	51.190321	1.319794	f
+27	23	5	38.194799	1.906398	32.475607	C	12	38.847994	2.010223	f
+7	24	56	57.615848	1.579426	52.877569	S	1	56.790393	1.650621	f
+8	24	51	52.781746	1.566507	48.082223	A	2	51.721389	1.656275	f
+5	24	50	61.278575	1.392193	57.101994	S	3	61.751867	1.455707	f
+14	24	41	50.12122	1.541262	45.497433	A	4	49.380415	1.634676	f
+15	24	39	49.459007	1.630338	44.567992	B	5	48.839915	1.745349	f
+12	24	34	50.269983	1.227145	46.588549	A	6	50.176704	1.272412	f
+20	24	26	47.233316	1.561358	42.549241	B	7	46.855188	1.662209	f
+1	24	22	52.850731	1.83021	47.360103	A	8	53.961557	2.000303	f
+17	24	17	48.696548	1.551889	44.040881	B	9	49.081838	1.648913	f
+13	24	13	48.022572	1.245922	44.284805	B	10	48.385278	1.291394	f
+10	24	9	40.645904	1.513609	36.105076	C	11	40.471726	1.594466	f
+21	24	5	49.420766	1.432792	45.122388	B	12	50.699642	1.493529	f
+14	25	49	51.049807	1.476349	46.62076	A	1	50.12122	1.541262	f
+22	25	49	46.626124	1.494007	42.144103	B	2	45.43815	1.576211	f
+11	25	49	53.052122	1.198646	49.456185	A	3	53.048628	1.239571	f
+17	25	44	49.014298	1.469346	44.60626	B	4	48.696548	1.551889	f
+12	25	35	50.219099	1.186248	46.660356	A	5	50.269983	1.227145	f
+18	25	31	44.776614	1.357977	40.702682	B	6	44.405524	1.422707	f
+10	25	27	41.317986	1.435757	37.010715	C	7	40.645904	1.513609	f
+19	25	22	47.685791	1.473917	43.264041	B	8	48.06354	1.558499	f
+2	25	19	51.754143	1.554631	47.090249	A	9	53.056434	1.65445	f
+15	25	12	48.42038	1.537268	43.808576	B	10	49.459007	1.630338	f
+27	25	9	38.331194	1.772256	33.014425	C	11	38.194799	1.906398	f
+24	25	5	44.309029	1.680627	39.267148	C	12	45.766127	1.777749	f
+11	26	58	53.651354	1.169016	50.144307	S	1	53.052122	1.198646	f
+8	26	50	53.43643	1.48715	48.974979	A	2	52.781746	1.566507	f
+3	26	48	51.154368	1.181756	47.609099	A	3	50.73718	1.220501	f
+7	26	38	57.196685	1.493331	52.716692	S	4	57.615848	1.579426	f
+12	26	38	50.384804	1.149797	46.935412	A	5	50.219099	1.186248	f
+6	26	34	48.761798	1.369453	44.65344	B	6	48.533358	1.435505	f
+13	26	28	48.106065	1.203064	44.496874	B	7	48.022572	1.245922	f
+21	26	23	49.2096	1.36736	45.10752	B	8	49.420766	1.432792	f
+14	26	19	50.455852	1.405591	46.239078	A	9	51.049807	1.476349	f
+18	26	14	44.676052	1.304506	40.762532	B	10	44.776614	1.357977	f
+20	26	9	46.538894	1.483747	42.087654	B	11	47.233316	1.561358	f
+23	26	5	44.832431	1.284352	40.979374	B	12	45.467069	1.323279	f
+17	27	56	50.036438	1.410982	45.803492	A	1	49.014298	1.469346	f
+25	27	49	50.702003	1.375088	46.576738	A	2	50.114285	1.437294	f
+2	27	45	51.989716	1.473015	47.570672	A	3	51.754143	1.554631	f
+23	27	40	45.445161	1.237455	41.732795	B	4	44.832431	1.284352	f
+14	27	37	50.445527	1.343383	46.415377	A	5	50.455852	1.405591	f
+9	27	31	51.130292	1.415417	46.884042	A	6	51.423633	1.489558	f
+21	27	29	49.018113	1.310117	45.087761	A	7	49.2096	1.36736	f
+15	27	23	48.07822	1.456651	43.708266	B	8	48.42038	1.537268	f
+26	27	19	42.717146	1.349942	38.667321	C	9	42.597756	1.411523	f
+12	27	13	49.787603	1.118094	46.433322	A	10	50.384804	1.149797	f
+18	27	9	44.201929	1.261492	40.417453	B	11	44.676052	1.304506	f
+27	27	5	37.78975	1.700781	32.687406	C	12	38.331194	1.772256	f
+16	28	51	57.344682	1.611157	52.511211	S	1	56.295304	1.688262	f
+5	28	50	61.218287	1.341458	57.193913	S	2	61.278575	1.392193	f
+21	28	46	49.798234	1.263286	46.008375	A	3	49.018113	1.310117	f
+4	28	40	55.899122	1.815401	50.452917	S	4	55.930109	1.975426	f
+1	28	33	53.015482	1.699583	47.916733	A	5	52.850731	1.83021	f
+13	28	31	48.409937	1.165547	44.913296	A	6	48.106065	1.203064	f
+7	28	25	56.421076	1.420673	52.159057	S	7	57.196685	1.493331	f
+14	28	23	50.251605	1.291265	46.377811	A	8	50.445527	1.343383	f
+19	28	17	47.519061	1.40653	43.299473	B	9	47.685791	1.473917	f
+22	28	14	46.30265	1.426455	42.023286	B	10	46.626124	1.494007	f
+10	28	9	41.27141	1.380482	37.129964	C	11	41.317986	1.435757	f
+18	28	5	43.655621	1.230874	39.962998	B	12	44.201929	1.261492	f
+25	29	50	51.573042	1.330316	47.582092	A	1	50.702003	1.375088	f
+7	29	54	56.469656	1.364481	52.376213	S	2	56.421076	1.420673	f
+8	29	45	53.545045	1.418693	49.288967	A	3	53.43643	1.48715	f
+22	29	37	46.90979	1.363648	42.818847	B	4	46.30265	1.426455	f
+13	29	36	48.543326	1.131502	45.14882	A	5	48.409937	1.165547	f
+9	29	34	50.858547	1.352781	46.800206	A	6	51.130292	1.415417	f
+26	29	28	43.091723	1.295596	39.204934	C	7	42.717146	1.349942	f
+15	29	21	47.739867	1.388512	43.574329	B	8	48.07822	1.456651	f
+18	29	17	43.615642	1.190689	40.043575	B	9	43.655621	1.230874	f
+24	29	12	43.886721	1.580131	39.146328	C	10	44.309029	1.680627	f
+20	29	10	45.710628	1.41722	41.458969	B	11	46.538894	1.483747	f
+10	29	5	40.722155	1.338886	36.705498	C	12	41.27141	1.380482	f
+13	30	57	49.366222	1.104488	46.052758	A	1	48.543326	1.131502	f
+16	30	53	57.467431	1.523336	52.897422	S	2	57.344682	1.611157	f
+12	30	48	50.223258	1.088254	46.958497	A	3	49.787603	1.118094	f
+3	30	41	51.411897	1.145407	47.975678	A	4	51.154368	1.181756	f
+11	30	36	53.609728	1.133642	50.208802	A	5	53.651354	1.169016	f
+25	30	31	51.571296	1.277155	47.739832	A	6	51.573042	1.330316	f
+23	30	25	45.817843	1.195009	42.232814	B	7	45.445161	1.237455	f
+4	30	25	54.735196	1.683615	49.68435	A	8	55.899122	1.815401	f
+8	30	18	52.863908	1.355244	48.798174	A	9	53.545045	1.418693	f
+17	30	15	49.522379	1.350529	45.470793	A	10	50.036438	1.410982	f
+22	30	10	46.487349	1.31335	42.5473	B	11	46.90979	1.363648	f
+24	30	5	43.250327	1.520662	38.68834	C	12	43.886721	1.580131	f
+12	31	55	50.916028	1.064535	47.722422	A	1	50.223258	1.088254	f
+3	31	47	51.927391	1.114109	48.585065	A	2	51.411897	1.145407	f
+9	31	44	51.446938	1.298512	47.551403	A	3	50.858547	1.352781	f
+5	31	39	60.682321	1.288107	56.818001	S	4	61.218287	1.341458	f
+4	31	39	54.612687	1.578435	49.877383	A	5	54.735196	1.683615	f
+1	31	31	52.893816	1.591377	48.119685	A	6	53.015482	1.699583	f
+21	31	27	49.851334	1.218775	46.195009	A	7	49.798234	1.263286	f
+13	31	22	49.323252	1.075817	46.095802	A	8	49.366222	1.104488	f
+7	31	18	55.545946	1.309403	51.617737	S	9	56.469656	1.364481	f
+18	31	13	43.669556	1.156831	40.199064	B	10	43.615642	1.190689	f
+24	31	8	43.072159	1.452866	38.713562	C	11	43.250327	1.520662	f
+23	31	5	45.278672	1.168103	41.774363	B	12	45.817843	1.195009	f
+5	32	55	60.919556	1.263721	57.128394	S	1	60.682321	1.288107	f
+3	32	55	52.363783	1.088299	49.098887	A	2	51.927391	1.114109	f
+9	32	49	51.847486	1.252441	48.090164	A	3	51.446938	1.298512	f
+4	32	38	54.533499	1.493033	50.0544	A	4	54.612687	1.578435	f
+18	32	37	44.267603	1.123044	40.898472	B	5	43.669556	1.156831	f
+23	32	31	45.655497	1.132968	42.256594	B	6	45.278672	1.168103	f
+12	32	27	50.798764	1.038638	47.682852	A	7	50.916028	1.064535	f
+8	32	22	52.353908	1.299515	48.455364	A	8	52.863908	1.355244	f
+25	32	20	51.083639	1.231267	47.389837	A	9	51.571296	1.277155	f
+21	32	13	49.385383	1.180368	45.844279	A	10	49.851334	1.218775	f
+10	32	9	40.778063	1.291526	36.903486	C	11	40.722155	1.338886	f
+19	32	5	46.609973	1.358074	42.535749	B	12	47.519061	1.40653	f
+16	33	49	57.937561	1.474527	53.513981	S	1	57.467431	1.523336	f
+9	33	45	52.296669	1.214142	48.654244	A	2	51.847486	1.252441	f
+21	33	44	49.786638	1.145935	46.348832	A	3	49.385383	1.180368	f
+25	33	38	51.226384	1.190725	47.654208	A	4	51.083639	1.231267	f
+20	33	36	46.267679	1.353796	42.206289	B	5	45.710628	1.41722	f
+13	33	34	49.334853	1.049113	46.187514	A	6	49.323252	1.075817	f
+11	33	29	53.218207	1.101884	49.912554	A	7	53.609728	1.133642	f
+23	33	23	45.690486	1.101495	42.386	B	8	45.655497	1.132968	f
+18	33	20	44.275704	1.092838	40.997191	B	9	44.267603	1.123044	f
+22	33	14	46.135447	1.264643	42.341517	B	10	46.487349	1.31335	f
+15	33	10	47.018399	1.333373	43.018279	B	11	47.739867	1.388512	f
+26	33	5	42.572328	1.260448	38.790982	C	12	43.091723	1.295596	f
+7	34	59	56.197209	1.274149	52.374762	S	1	55.545946	1.309403	f
+5	34	54	60.823521	1.2268	57.143122	S	2	60.919556	1.263721	f
+9	34	47	52.640462	1.178169	49.105956	A	3	52.296669	1.214142	f
+11	34	44	53.294268	1.074608	50.070446	A	4	53.218207	1.101884	f
+2	34	38	52.01661	1.403608	47.805785	A	5	51.989716	1.473015	f
+10	34	31	41.600458	1.244037	37.868347	C	6	40.778063	1.291526	f
+14	34	28	50.101733	1.243562	46.371048	A	7	50.251605	1.291265	f
+24	34	21	43.488971	1.384648	39.335028	C	8	43.072159	1.452866	f
+12	34	18	50.48069	1.01526	47.434909	A	9	50.798764	1.038638	f
+22	34	13	45.926	1.220938	42.263185	B	10	46.135447	1.264643	f
+21	34	9	49.220426	1.115209	45.874799	A	11	49.786638	1.145935	f
+23	34	5	45.237513	1.079474	41.999092	B	12	45.690486	1.101495	f
+16	35	58	58.406002	1.42774	54.122781	S	1	57.937561	1.474527	f
+14	35	55	50.758092	1.204138	47.145679	A	2	50.101733	1.243562	f
+15	35	44	47.851461	1.281367	44.00736	B	3	47.018399	1.333373	f
+8	35	40	52.532606	1.250654	48.780644	A	4	52.353908	1.299515	f
+12	35	38	50.613886	0.993221	47.634224	A	5	50.48069	1.01526	f
+7	35	32	55.784898	1.227658	52.101923	S	6	56.197209	1.274149	f
+20	35	27	46.606099	1.297857	42.712527	B	7	46.267679	1.353796	f
+11	35	22	52.982076	1.047907	49.838356	A	8	53.294268	1.074608	f
+9	35	19	52.195077	1.142557	48.767406	A	9	52.640462	1.178169	f
+18	35	13	44.2978	1.066015	41.099754	B	10	44.275704	1.092838	f
+1	35	9	51.577293	1.509139	47.049877	A	11	52.893816	1.591377	f
+10	35	5	41.319374	1.218973	37.662453	C	12	41.600458	1.244037	f
+9	36	59	52.690429	1.118497	49.334937	A	1	52.195077	1.142557	f
+11	36	47	53.17937	1.026357	50.1003	A	2	52.982076	1.047907	f
+4	36	41	54.47012	1.422585	50.202365	A	3	54.533499	1.493033	f
+10	36	37	42.138078	1.179353	38.600018	C	4	41.319374	1.218973	f
+19	36	35	46.941667	1.302006	43.035648	B	5	46.609973	1.358074	f
+25	36	30	51.024204	1.153291	47.564332	A	6	51.226384	1.190725	f
+15	36	26	47.776306	1.234199	44.073708	B	7	47.851461	1.281367	f
+27	36	24	38.875526	1.591643	34.100598	C	8	37.78975	1.700781	f
+8	36	17	51.822418	1.207324	48.200446	A	9	52.532606	1.250654	f
+17	36	15	48.832858	1.296628	44.942973	B	10	49.522379	1.350529	f
+22	36	9	45.464643	1.183815	41.913197	B	11	45.926	1.220938	f
+26	36	4	42.084853	1.228223	38.400184	C	12	42.572328	1.260448	f
+16	37	55	58.721725	1.391954	54.545863	S	1	58.406002	1.42774	f
+14	37	52	51.212306	1.170093	47.702028	A	2	50.758092	1.204138	f
+10	37	48	43.028006	1.144166	39.595509	C	3	42.138078	1.179353	f
+11	37	41	53.139501	1.003801	50.128097	A	4	53.17937	1.026357	f
+8	37	37	51.748547	1.168242	48.243821	A	5	51.822418	1.207324	f
+22	37	31	45.746929	1.146834	42.306427	B	6	45.464643	1.183815	f
+26	37	25	42.536862	1.186588	38.977098	C	7	42.084853	1.228223	f
+17	37	22	48.612262	1.247439	44.869944	B	8	48.832858	1.296628	f
+9	37	19	52.165109	1.08794	48.90129	A	9	52.690429	1.118497	f
+15	37	15	47.406978	1.193116	43.827631	B	10	47.776306	1.234199	f
+20	37	8	46.128596	1.251893	42.372918	B	11	46.606099	1.297857	f
+19	37	5	46.190148	1.262013	42.40411	B	12	46.941667	1.302006	f
+5	38	54	61.054961	1.204644	57.441028	S	1	60.823521	1.2268	f
+6	38	48	49.758998	1.316895	45.808313	B	2	48.761798	1.369453	f
+3	38	45	52.654368	1.06164	49.469448	A	3	52.363783	1.088299	f
+7	38	37	55.734014	1.187354	52.171954	S	4	55.784898	1.227658	f
+8	38	35	51.868785	1.133369	48.468678	A	5	51.748547	1.168242	f
+2	38	31	51.985817	1.341575	47.961091	A	6	52.01661	1.403608	f
+22	38	29	46.049952	1.113711	42.708819	B	7	45.746929	1.146834	f
+9	38	22	51.930163	1.060172	48.749648	A	8	52.165109	1.08794	f
+12	38	16	50.40959	0.973171	47.490078	A	9	50.613886	0.993221	f
+26	38	14	42.719594	1.150923	39.266826	C	10	42.536862	1.186588	f
+11	38	10	52.591154	0.984145	49.638719	A	11	53.139501	1.003801	f
+15	38	5	46.863294	1.16394	43.371474	B	12	47.406978	1.193116	f
+19	39	55	47.215897	1.222775	43.547572	B	1	46.190148	1.262013	f
+3	39	45	52.87016	1.037308	49.758237	A	2	52.654368	1.06164	f
+8	39	50	52.039043	1.101927	48.733261	A	3	51.868785	1.133369	f
+15	39	38	47.282733	1.128971	43.89582	B	4	46.863294	1.16394	f
+12	39	35	50.448087	0.953972	47.58617	A	5	50.40959	0.973171	f
+21	39	35	49.251961	1.084411	45.998727	A	6	49.220426	1.115209	f
+22	39	28	46.196986	1.083044	42.947855	B	7	46.049952	1.113711	f
+20	39	21	46.188497	1.207457	42.566127	B	8	46.128596	1.251893	f
+11	39	20	52.212267	0.964278	49.319434	A	9	52.591154	0.984145	f
+14	39	13	50.67376	1.13506	47.268581	A	10	51.212306	1.170093	f
+13	39	9	48.887461	1.025994	45.809479	B	11	49.334853	1.049113	f
+18	39	4	43.944317	1.047253	40.802558	C	12	44.2978	1.066015	f
+9	40	55	52.535446	1.040589	49.413679	A	1	51.930163	1.060172	f
+5	40	50	60.927215	1.171008	57.414191	S	2	61.054961	1.204644	f
+3	40	42	53.102073	1.015464	50.055681	A	3	52.87016	1.037308	f
+4	40	41	54.499194	1.360792	50.416817	A	4	54.47012	1.422585	f
+8	40	37	52.083365	1.073879	48.861729	A	5	52.039043	1.101927	f
+17	40	29	48.788086	1.205221	45.172424	B	6	48.612262	1.247439	f
+13	40	26	48.888794	1.003783	45.877445	B	7	48.887461	1.025994	f
+21	40	24	49.113429	1.057713	45.94029	A	8	49.251961	1.084411	f
+15	40	19	47.132425	1.098929	43.835639	B	9	47.282733	1.128971	f
+26	40	13	42.732518	1.119902	39.37281	C	10	42.719594	1.150923	f
+22	40	8	45.846576	1.059012	42.66954	B	11	46.196986	1.083044	f
+10	40	5	42.627336	1.121517	39.262787	C	12	43.028006	1.144166	f
+4	41	60	55.114197	1.319222	51.156532	S	1	54.499194	1.360792	f
+1	41	47	52.284713	1.438905	47.967997	A	2	51.577293	1.509139	f
+11	41	45	52.381973	0.947023	49.540904	A	3	52.212267	0.964278	f
+9	41	45	52.603036	1.017369	49.55093	A	4	52.535446	1.040589	f
+3	41	40	53.034778	0.993911	50.053046	A	5	53.102073	1.015464	f
+20	41	31	46.490951	1.168929	42.984164	B	6	46.188497	1.207457	f
+8	41	26	51.854741	1.04767	48.711732	A	7	52.083365	1.073879	f
+21	41	25	48.960765	1.033099	45.861468	B	8	49.113429	1.057713	f
+15	41	18	46.966559	1.071568	43.751856	B	9	47.132425	1.098929	f
+22	41	13	45.63113	1.035985	42.523175	B	10	45.846576	1.059012	f
+10	41	8	42.408192	1.096521	39.118628	C	11	42.627336	1.121517	f
+27	41	5	38.38797	1.539006	33.770953	C	12	38.875526	1.591643	f
+4	42	54	55.664756	1.283127	51.815374	S	1	55.114197	1.319222	f
+7	42	54	55.892865	1.155256	52.427096	S	2	55.734014	1.187354	f
+13	42	49	49.236468	0.983873	46.284848	A	3	48.888794	1.003783	f
+11	42	41	52.426151	0.930438	49.634838	A	4	52.381973	0.947023	f
+14	42	37	50.726749	1.103337	47.416739	A	5	50.67376	1.13506	f
+10	42	33	42.879804	1.067918	39.676049	C	6	42.408192	1.096521	f
+19	42	27	47.29086	1.182007	43.744839	B	7	47.215897	1.222775	f
+6	42	21	49.47921	1.26569	45.682138	B	8	49.758998	1.316895	f
+25	42	17	50.602527	1.119864	47.242933	A	9	51.024204	1.153291	f
+23	42	15	45.114102	1.053281	41.954258	B	10	45.237513	1.079474	f
+17	42	9	48.206295	1.169301	44.698391	B	11	48.788086	1.205221	f
+18	42	4	43.591564	1.029768	40.502259	C	12	43.944317	1.047253	f
+7	43	54	56.280973	1.131919	52.885215	S	1	55.892865	1.155256	f
+1	43	46	52.880952	1.378373	48.745834	A	2	52.284713	1.438905	f
+3	43	48	53.174082	0.974533	50.250483	A	3	53.034778	0.993911	f
+23	43	39	45.628284	1.028691	42.542212	B	4	45.114102	1.053281	f
+11	43	39	52.409858	0.914554	49.666195	A	5	52.426151	0.930438	f
+8	43	35	51.775934	1.023216	48.706286	A	6	51.854741	1.04767	f
+9	43	26	52.3958	0.995337	49.409789	A	7	52.603036	1.017369	f
+20	43	22	46.541607	1.134192	43.139032	B	8	46.490951	1.168929	f
+12	43	19	50.197292	0.937003	47.386282	A	9	50.448087	0.953972	f
+13	43	14	48.923769	0.965727	46.026589	B	10	49.236468	0.983873	f
+18	43	8	43.400049	1.011388	40.365886	C	11	43.591564	1.029768	f
+27	43	4	38.028678	1.496185	33.540123	C	12	38.38797	1.539006	f
+15	44	52	47.672427	1.048842	44.525901	B	1	46.966559	1.071568	f
+12	44	45	50.480965	0.921511	47.716432	A	2	50.197292	0.937003	f
+25	44	49	50.853247	1.089867	47.583646	A	3	50.602527	1.119864	f
+8	44	38	51.830695	1.00084	48.828174	A	4	51.775934	1.023216	f
+11	44	33	52.353721	0.899668	49.654715	A	5	52.409858	0.914554	f
+3	44	32	52.988626	0.955636	50.121718	A	6	53.174082	0.974533	f
+9	44	27	52.151276	0.975107	49.225956	A	7	52.3958	0.995337	f
+22	44	25	45.645513	1.013119	42.606156	B	8	45.63113	1.035985	f
+13	44	18	48.663926	0.94839	45.818757	B	9	48.923769	0.965727	f
+27	44	12	38.394143	1.427633	34.111243	C	10	38.028678	1.496185	f
+26	44	8	42.476622	1.093512	39.196086	C	11	42.732518	1.119902	f
+10	44	5	42.451308	1.049365	39.303214	C	12	42.879804	1.067918	f
+5	45	55	61.127857	1.154105	57.665541	S	1	60.927215	1.171008	f
+4	45	46	55.929358	1.245245	52.193623	S	2	55.664756	1.283127	f
+21	45	48	49.341921	1.011616	46.307074	A	3	48.960765	1.033099	f
+12	45	39	50.619099	0.906766	47.898801	A	4	50.480965	0.921511	f
+19	45	40	47.611747	1.146143	44.173318	B	5	47.29086	1.182007	f
+9	45	35	52.036464	0.956324	49.167493	A	6	52.151276	0.975107	f
+24	45	26	43.96241	1.325598	39.985616	C	7	43.488971	1.384648	f
+11	45	25	52.099625	0.885909	49.441896	A	8	52.353721	0.899668	f
+25	45	19	50.47015	1.062774	47.281828	A	9	50.853247	1.089867	f
+26	45	14	42.485252	1.067395	39.283068	C	10	42.476622	1.093512	f
+15	45	10	47.229403	1.027806	44.145986	B	11	47.672427	1.048842	f
+27	45	4	38.08421	1.392493	33.906731	C	12	38.394143	1.427633	f
+17	46	51	48.955801	1.139802	45.536394	B	1	48.206295	1.169301	f
+11	46	49	52.271334	0.873768	49.650028	A	2	52.099625	0.885909	f
+12	46	42	50.777889	0.892761	48.099605	A	3	50.619099	0.906766	f
+25	46	44	50.588404	1.037294	47.476523	A	4	50.47015	1.062774	f
+8	46	37	51.772904	0.979978	48.83297	A	5	51.830695	1.00084	f
+14	46	30	50.620998	1.074104	47.398687	A	6	50.726749	1.103337	f
+23	46	27	45.730255	1.005652	42.713299	B	7	45.628284	1.028691	f
+22	46	23	45.650951	0.991383	42.676803	B	8	45.645513	1.013119	f
+13	46	17	48.437096	0.931476	45.642669	B	9	48.663926	0.94839	f
+27	46	13	38.497099	1.333956	34.495231	C	10	38.08421	1.392493	f
+9	46	10	51.453954	0.93988	48.634315	A	11	52.036464	0.956324	f
+24	46	4	43.353887	1.285725	39.496714	C	12	43.96241	1.325598	f
+8	47	58	52.221455	0.96485	49.326905	A	1	51.772904	0.979978	f
+11	47	47	52.499838	0.862519	49.91228	A	2	52.271334	0.873768	f
+4	47	45	55.911365	1.203962	52.29948	S	3	55.929358	1.245245	f
+6	47	42	49.843821	1.221232	46.180123	B	4	49.47921	1.26569	f
+12	47	34	50.836134	0.879334	48.198133	A	5	50.777889	0.892761	f
+1	47	33	52.64238	1.319936	48.682572	A	6	52.880952	1.378373	f
+21	47	26	49.308428	0.990151	46.337974	A	7	49.341921	1.011616	f
+3	47	25	52.686439	0.938343	49.87141	A	8	52.988626	0.955636	f
+26	47	20	42.626334	1.042376	39.499205	C	9	42.485252	1.067395	f
+10	47	14	42.468314	1.026284	39.389463	C	10	42.451308	1.049365	f
+18	47	8	43.249216	0.991916	40.273467	C	11	43.400049	1.011388	f
+13	47	5	47.952771	0.918858	45.196196	B	12	48.437096	0.931476	f
+11	48	53	52.834487	0.853572	50.27377	A	1	52.499838	0.862519	f
+14	48	47	51.076718	1.049048	47.929574	A	2	50.620998	1.074104	f
+17	48	49	49.452358	1.108153	46.127898	B	3	48.955801	1.139802	f
+5	48	39	60.655882	1.120786	57.293524	S	4	61.127857	1.154105	f
+25	48	38	50.715472	1.013729	47.674284	A	5	50.588404	1.037294	f
+9	48	34	51.435773	0.9233	48.665872	A	6	51.453954	0.93988	f
+3	48	30	52.526323	0.921893	49.760644	A	7	52.686439	0.938343	f
+10	48	24	42.759313	1.003683	39.748264	C	8	42.468314	1.026284	f
+13	48	19	47.857075	0.90394	45.145255	B	9	47.952771	0.918858	f
+19	48	15	47.369528	1.114277	44.026697	B	10	47.611747	1.146143	f
+2	48	9	51.067347	1.291351	47.193293	A	11	51.985817	1.341575	f
+24	48	4	42.934238	1.253276	39.174411	C	12	43.353887	1.285725	f
+9	49	55	51.790105	0.911617	49.055253	A	1	51.435773	0.9233	f
+25	49	53	51.020806	0.993468	48.0404	A	2	50.715472	1.013729	f
+8	49	50	52.319404	0.947035	49.4783	A	3	52.221455	0.96485	f
+23	49	43	46.093273	0.984351	43.14022	B	4	45.730255	1.005652	f
+17	49	35	49.537978	1.078179	46.30344	A	5	49.452358	1.108153	f
+24	49	30	43.459759	1.208605	39.833943	C	6	42.934238	1.253276	f
+15	49	29	47.267753	1.004424	44.254481	B	7	47.229403	1.027806	f
+1	49	21	52.08541	1.267624	48.282539	A	8	52.64238	1.319936	f
+20	49	18	46.440448	1.102029	43.13436	B	9	46.541607	1.134192	f
+11	49	15	52.457578	0.842426	49.930298	A	10	52.834487	0.853572	f
+6	49	10	49.183289	1.183154	45.633827	B	11	49.843821	1.221232	f
+26	49	4	42.345361	1.026264	39.266569	C	12	42.626334	1.042376	f
+5	50	50	60.772364	1.109819	57.442907	S	1	60.655882	1.120786	f
+8	50	47	52.519475	0.933914	49.717734	A	2	52.319404	0.947035	f
+23	50	46	46.471131	0.965906	43.573412	B	3	46.093273	0.984351	f
+18	50	39	43.67733	0.972029	40.761241	C	4	43.249216	0.991916	f
+22	50	38	45.86444	0.971246	42.950701	B	5	45.650951	0.991383	f
+3	50	33	52.321221	0.90644	49.601902	A	6	52.526323	0.921893	f
+10	50	28	42.970532	0.982531	40.022938	C	7	42.759313	1.003683	f
+2	50	23	50.544813	1.24324	46.815092	A	8	51.067347	1.291351	f
+21	50	17	48.994098	0.970384	46.082945	B	9	49.308428	0.990151	f
+24	50	12	43.302403	1.17134	39.788382	C	10	43.459759	1.208605	f
+20	50	10	45.963509	1.076283	42.734659	B	11	46.440448	1.102029	f
+27	50	4	38.158915	1.302126	34.252537	C	12	38.497099	1.333956	f
+11	51	50	52.810846	0.834886	50.306188	A	1	52.457578	0.842426	f
+5	51	49	60.643257	1.083807	57.391837	S	2	60.772364	1.109819	f
+20	51	41	46.599219	1.050313	43.448281	B	3	45.963509	1.076283	f
+6	51	39	49.569904	1.146879	46.129267	B	4	49.183289	1.183154	f
+8	51	33	52.534021	0.917725	49.780845	A	5	52.519475	0.933914	f
+7	51	32	55.937903	1.100116	52.637555	S	6	56.280973	1.131919	f
+9	51	28	51.690381	0.896843	48.999852	A	7	51.790105	0.911617	f
+18	51	22	43.892671	0.953331	41.032678	C	8	43.67733	0.972029	f
+25	51	17	50.760291	0.973422	47.840026	A	9	51.020806	0.993468	f
+22	51	12	45.785726	0.953244	42.925993	B	10	45.86444	0.971246	f
+13	51	8	47.607737	0.890956	44.934869	B	11	47.857075	0.90394	f
+19	51	4	46.846346	1.090774	43.574025	B	12	47.369528	1.114277	f
+13	52	52	48.118715	0.879597	45.479923	B	1	47.607737	0.890956	f
+3	52	53	52.535252	0.892844	49.856719	A	2	52.321221	0.90644	f
+7	52	46	55.892524	1.071801	52.677122	S	3	55.937903	1.100116	f
+6	52	45	49.844457	1.113681	46.503414	A	4	49.569904	1.146879	f
+15	52	35	47.52056	0.982962	44.571674	B	5	47.267753	1.004424	f
+20	52	31	46.826675	1.025143	43.751246	B	6	46.599219	1.050313	f
+2	52	27	50.419355	1.199683	46.820306	A	7	50.544813	1.24324	f
+12	52	25	50.697631	0.866343	48.098601	A	8	50.836134	0.879334	f
+17	52	17	49.322724	1.051044	46.169591	B	9	49.537978	1.078179	f
+1	52	12	51.441784	1.222749	47.773536	A	10	52.08541	1.267624	f
+14	52	9	50.559764	1.026225	47.48109	A	11	51.076718	1.049048	f
+26	52	4	42.120017	1.012355	39.082951	C	12	42.345361	1.026264	f
+1	53	53	52.018523	1.191529	48.443937	A	1	51.441784	1.222749	f
+25	53	47	51.020571	0.956216	48.151924	A	2	50.760291	0.973422	f
+2	53	47	50.668381	1.162641	47.180457	A	3	50.419355	1.199683	f
+15	53	43	47.748955	0.963568	44.85825	B	4	47.52056	0.982962	f
+21	53	40	49.057111	0.951665	46.202116	B	5	48.994098	0.970384	f
+14	53	31	50.449663	1.003276	47.439836	A	6	50.559764	1.026225	f
+22	53	28	45.847108	0.935633	43.040208	B	7	45.785726	0.953244	f
+10	53	22	43.100545	0.962952	40.21169	C	8	42.970532	0.982531	f
+9	53	18	51.343228	0.883128	48.693844	A	9	51.690381	0.896843	f
+20	53	13	46.55198	1.00325	43.542231	B	10	46.826675	1.025143	f
+18	53	10	43.683138	0.93778	40.869797	C	11	43.892671	0.953331	f
+26	53	5	41.799675	0.99741	38.807446	C	12	42.120017	1.012355	f
+9	54	50	51.684023	0.873407	49.063802	A	1	51.343228	0.883128	f
+11	54	53	52.953751	0.825652	50.476795	A	2	52.810846	0.834886	f
+13	54	49	48.386842	0.867149	45.785394	B	3	48.118715	0.879597	f
+12	54	44	50.779893	0.854388	48.216728	A	4	50.697631	0.866343	f
+3	54	39	52.470456	0.879154	49.832995	A	5	52.535252	0.892844	f
+26	54	32	42.215474	0.97651	39.285944	C	6	41.799675	0.99741	f
+14	54	29	50.315348	0.981934	47.369545	A	7	50.449663	1.003276	f
+8	54	24	52.254682	0.902444	49.54735	A	8	52.534021	0.917725	f
+23	54	18	46.38789	0.947655	43.544924	B	9	46.471131	0.965906	f
+19	54	12	46.602432	1.063526	43.411853	B	10	46.846346	1.090774	f
+15	54	10	47.403246	0.946945	44.56241	B	11	47.748955	0.963568	f
+10	54	5	42.821001	0.950584	39.96925	C	12	43.100545	0.962952	f
+9	55	51	52.057314	0.864089	49.465048	A	1	51.684023	0.873407	f
+7	55	52	56.01909	1.047829	52.875602	S	2	55.892524	1.071801	f
+25	55	49	51.256842	0.939316	48.438894	A	3	51.020571	0.956216	f
+11	55	39	52.989776	0.81621	50.541148	A	4	52.953751	0.825652	f
+2	55	33	50.775848	1.128404	47.390637	A	5	50.668381	1.162641	f
+4	55	35	55.490587	1.16556	51.993907	S	6	55.911365	1.203962	f
+26	55	29	42.544522	0.957536	39.671914	C	7	42.215474	0.97651	f
+13	55	21	48.322925	0.855237	45.757214	B	8	48.386842	0.867149	f
+21	55	19	48.862326	0.934637	46.058414	B	9	49.057111	0.951665	f
+24	55	13	43.295707	1.137345	39.883674	C	10	43.302403	1.17134	f
+10	55	9	42.74206	0.934769	39.937752	C	11	42.821001	0.950584	f
+12	55	5	50.303273	0.845261	47.767491	A	12	50.779893	0.854388	f
+5	56	59	60.830597	1.069759	57.621319	S	1	60.643257	1.083807	f
+3	56	51	52.746387	0.868509	50.14086	A	2	52.470456	0.879154	f
+11	56	44	53.119659	0.807836	50.696152	A	3	52.989776	0.81621	f
+9	56	41	52.157493	0.852788	49.59913	A	4	52.057314	0.864089	f
+4	56	34	55.283057	1.131593	51.888277	S	5	55.490587	1.16556	f
+22	56	30	46.078874	0.919662	43.319888	B	6	45.847108	0.935633	f
+25	56	30	51.143657	0.923089	48.37439	A	7	51.256842	0.939316	f
+13	56	22	48.273069	0.844227	45.740388	B	8	48.322925	0.855237	f
+20	56	20	46.476287	0.983086	43.52703	B	9	46.55198	1.00325	f
+18	56	15	43.656512	0.922617	40.888659	C	10	43.683138	0.93778	f
+2	56	9	50.104842	1.100833	46.802344	A	11	50.775848	1.128404	f
+27	56	5	37.945575	1.278141	34.111151	C	12	38.158915	1.302126	f
+20	57	52	47.135198	0.967058	44.234023	B	1	46.476287	0.983086	f
+5	57	48	60.5786	1.046168	57.440095	S	2	60.830597	1.069759	f
+26	57	47	43.135783	0.940208	40.315158	C	3	42.544522	0.957536	f
+3	57	41	52.742464	0.856493	50.172986	A	4	52.746387	0.868509	f
+12	57	40	50.333472	0.834445	47.830138	A	5	50.303273	0.845261	f
+19	57	29	46.780587	1.037619	43.667729	B	6	46.602432	1.063526	f
+9	57	27	51.989935	0.84153	49.465344	A	7	52.157493	0.852788	f
+11	57	21	52.87429	0.799149	50.476843	A	8	53.119659	0.807836	f
+23	57	19	46.28997	0.931156	43.496503	B	9	46.38789	0.947655	f
+18	57	12	43.587851	0.908445	40.862516	C	10	43.656512	0.922617	f
+22	57	9	45.782639	0.906919	43.06188	B	11	46.078874	0.919662	f
+27	57	4	37.690554	1.253347	33.930513	C	12	37.945575	1.278141	f
+21	58	52	49.382829	0.920972	46.619912	A	1	48.862326	0.934637	f
+9	58	49	52.202789	0.831597	49.707999	A	2	51.989935	0.84153	f
+25	58	48	51.353163	0.907894	48.629479	A	3	51.143657	0.923089	f
+7	58	38	55.899368	1.023417	52.829117	S	4	56.01909	1.047829	f
+1	58	33	52.04579	1.153917	48.584041	A	5	52.018523	1.191529	f
+14	58	33	50.338656	0.962249	47.451909	A	6	50.315348	0.981934	f
+19	58	27	46.919833	1.013724	43.878662	B	7	46.780587	1.037619	f
+11	58	23	52.686221	0.790794	50.313839	A	8	52.87429	0.799149	f
+18	58	19	43.692851	0.894063	41.010661	C	9	43.587851	0.908445	f
+3	58	13	52.394585	0.845464	49.858193	A	10	52.742464	0.856493	f
+15	58	9	47.13362	0.931666	44.338622	B	11	47.403246	0.946945	f
+26	58	5	42.901785	0.929735	40.112579	C	12	43.135783	0.940208	f
+2	59	53	50.640157	1.077479	47.407719	A	1	50.104842	1.100833	f
+12	59	52	50.537016	0.824926	48.062239	A	2	50.333472	0.834445	f
+18	59	46	44.131826	0.880462	41.490441	B	3	43.692851	0.894063	f
+3	59	42	52.382803	0.834526	49.879226	A	4	52.394585	0.845464	f
+17	59	37	49.400164	1.025819	46.322708	B	5	49.322724	1.051044	f
+20	59	33	47.239331	0.948169	44.394825	B	6	47.135198	0.967058	f
+11	59	25	52.513072	0.782661	50.16509	A	7	52.686221	0.790794	f
+26	59	23	43.060277	0.913502	40.319771	C	8	42.901785	0.929735	f
+13	59	19	48.133817	0.833354	45.633756	B	9	48.273069	0.844227	f
+15	59	14	46.945733	0.915711	44.198599	B	10	47.13362	0.931666	f
+25	59	8	50.902156	0.894	48.220155	A	11	51.353163	0.907894	f
+22	59	5	45.455694	0.895863	42.768105	B	12	45.782639	0.906919	f
+5	60	57	60.714867	1.035585	57.608111	S	1	60.5786	1.046168	f
+2	60	48	51.079754	1.054281	47.91691	A	2	50.640157	1.077479	f
+3	60	44	52.490877	0.825067	50.015675	A	3	52.382803	0.834526	f
+15	60	38	47.230471	0.900956	44.527605	B	4	46.945733	0.915711	f
+9	60	34	52.171977	0.821557	49.707306	A	5	52.202789	0.831597	f
+10	60	31	43.078171	0.918314	40.323229	C	6	42.74206	0.934769	f
+19	60	30	46.994795	0.991558	44.02012	B	7	46.919833	1.013724	f
+13	60	22	48.083374	0.823059	45.614196	B	8	48.133817	0.833354	f
+20	60	18	47.147185	0.930903	44.354477	B	9	47.239331	0.948169	f
+11	60	13	52.215325	0.77526	49.889546	A	10	52.513072	0.782661	f
+26	60	8	43.007526	0.899476	40.309097	C	11	43.060277	0.913502	f
+8	60	4	51.693246	0.890315	49.022301	A	12	52.254682	0.902444	f
+5	61	56	60.873878	1.023988	57.801914	S	1	60.714867	1.035585	f
+14	61	50	50.760109	0.946178	47.921575	A	2	50.338656	0.962249	f
+3	61	43	52.639324	0.815874	50.191703	A	3	52.490877	0.825067	f
+13	61	42	48.327976	0.813611	45.887142	B	4	48.083374	0.823059	f
+8	61	36	51.750415	0.876886	49.119758	A	5	51.693246	0.890315	f
+9	61	31	52.146364	0.812026	49.710287	A	6	52.171977	0.821557	f
+11	61	27	52.139564	0.768138	49.83515	A	7	52.215325	0.77526	f
+7	61	22	55.468686	1.001013	52.465648	S	8	55.899368	1.023417	f
+6	61	19	49.609995	1.084624	46.356123	B	9	49.844457	1.113681	f
+10	61	14	43.117633	0.904464	40.404242	C	10	43.078171	0.918314	f
+26	61	9	42.94282	0.887543	40.28019	C	11	43.007526	0.899476	f
+20	61	5	46.752045	0.919258	43.994271	B	12	47.147185	0.930903	f
+4	62	56	55.705011	1.107882	52.381367	S	1	55.283057	1.131593	f
+13	62	50	48.694271	0.805172	46.278754	B	2	48.327976	0.813611	f
+9	62	44	52.303667	0.803241	49.893943	A	3	52.146364	0.812026	f
+11	62	44	52.228581	0.761389	49.944414	A	4	52.139564	0.768138	f
+3	62	35	52.665017	0.806624	50.245145	A	5	52.639324	0.815874	f
+12	62	35	50.587413	0.815177	48.141881	A	6	50.537016	0.824926	f
+5	62	26	60.275264	1.001306	57.271346	S	7	60.873878	1.023988	f
+14	62	21	50.652423	0.929445	47.864087	A	8	50.760109	0.946178	f
+6	62	18	49.415511	1.058258	46.240736	B	9	49.609995	1.084624	f
+23	62	15	46.190054	0.916816	43.439607	B	10	46.28997	0.931156	f
+19	62	8	46.695014	0.975452	43.768658	B	11	46.994795	0.991558	f
+27	62	5	37.526257	1.235157	33.820784	C	12	37.690554	1.253347	f
+14	63	58	51.020617	0.917188	48.269054	A	1	50.652423	0.929445	f
+13	63	47	48.945424	0.797223	46.553755	B	2	48.694271	0.805172	f
+9	63	48	52.355075	0.794945	49.97024	A	3	52.303667	0.803241	f
+6	63	43	49.570214	1.03283	46.471725	B	4	49.415511	1.058258	f
+19	63	37	46.884309	0.956086	44.016051	B	5	46.695014	0.975452	f
+26	63	33	43.19943	0.87394	40.577611	C	6	42.94282	0.887543	f
+3	63	25	52.474642	0.797652	50.081687	A	7	52.665017	0.806624	f
+10	63	22	43.246537	0.889831	40.577044	C	8	43.117633	0.904464	f
+20	63	19	46.648819	0.903774	43.937496	B	9	46.752045	0.919258	f
+18	63	13	44.085974	0.867598	41.48318	C	10	44.131826	0.880462	f
+11	63	9	51.879628	0.755136	49.61422	A	11	52.228581	0.761389	f
+25	63	5	50.390419	0.882065	47.744225	A	12	50.902156	0.894	f
+10	64	54	43.867742	0.878328	41.232759	C	1	43.246537	0.889831	f
+4	64	50	55.686319	1.080096	52.446032	S	2	55.705011	1.107882	f
+17	64	45	49.635429	1.003574	46.624707	A	3	49.400164	1.025819	f
+3	64	44	52.450963	0.78948	50.082522	A	4	52.474642	0.797652	f
+9	64	35	52.275381	0.786786	49.915022	A	5	52.355075	0.794945	f
+27	64	33	38.399654	1.192606	34.821837	C	6	37.526257	1.235157	f
+18	64	28	44.202848	0.855268	41.637043	C	7	44.085974	0.867598	f
+20	64	23	46.597488	0.889252	43.929733	B	8	46.648819	0.903774	f
+14	64	18	50.699763	0.901907	47.994042	A	9	51.020617	0.917188	f
+19	64	15	46.665694	0.938525	43.85012	B	10	46.884309	0.956086	f
+13	64	9	48.65265	0.789497	46.284158	B	11	48.945424	0.797223	f
+22	64	5	45.121184	0.885277	42.465354	B	12	45.455694	0.895863	f
+25	65	50	50.782134	0.871651	48.167182	A	1	50.390419	0.882065	f
+19	65	51	47.16539	0.922803	44.396981	B	2	46.665694	0.938525	f
+1	65	49	52.279266	1.12076	48.916988	A	3	52.04579	1.153917	f
+5	65	42	59.919504	0.98057	56.977794	S	4	60.275264	1.001306	f
+12	65	39	50.641457	0.806003	48.223448	A	5	50.587413	0.815177	f
+18	65	34	44.453772	0.843817	41.922321	B	6	44.202848	0.855268	f
+9	65	27	52.157577	0.779041	49.820454	A	7	52.275381	0.786786	f
+17	65	24	49.50737	0.982527	46.559789	B	8	49.635429	1.003574	f
+2	65	17	50.750605	1.029698	47.661511	A	9	51.079754	1.054281	f
+21	65	14	49.112478	0.906599	46.392681	B	10	49.382829	0.920972	f
+22	65	8	44.931914	0.874778	42.307581	B	11	45.121184	0.885277	f
+27	65	4	38.199652	1.17434	34.676631	C	12	38.399654	1.192606	f
+12	66	58	51.033236	0.798974	48.636313	A	1	50.641457	0.806003	f
+7	66	47	55.669853	0.981109	52.726525	S	2	55.468686	1.001013	f
+8	66	42	51.985454	0.864345	49.39242	A	3	51.750415	0.876886	f
+25	66	39	50.988174	0.859169	48.410665	A	4	50.782134	0.871651	f
+11	66	35	51.954925	0.748814	49.708484	A	5	51.879628	0.755136	f
+1	66	33	52.31752	1.089417	49.049269	A	6	52.279266	1.12076	f
+5	66	28	59.473595	0.960754	56.591334	S	7	59.919504	0.98057	f
+23	66	22	46.361588	0.901513	43.65705	B	8	46.190054	0.916816	f
+4	66	17	55.224559	1.052841	52.066035	S	9	55.686319	1.080096	f
+9	66	13	51.968227	0.771982	49.652283	A	10	52.157577	0.779041	f
+13	66	9	48.501949	0.782643	46.15402	B	11	48.65265	0.789497	f
+19	66	5	46.882585	0.912143	44.146156	B	12	47.16539	0.922803	f
+1	67	51	52.780627	1.068202	49.57602	A	1	52.31752	1.089417	f
+11	67	46	52.102192	0.74378	49.870853	A	2	51.954925	0.748814	f
+25	67	41	51.132468	0.848078	48.588233	A	3	50.988174	0.859169	f
+3	67	38	52.458807	0.781797	50.113416	A	4	52.450963	0.78948	f
+15	67	37	47.394829	0.886828	44.734346	B	5	47.230471	0.900956	f
+10	67	31	44.099324	0.865484	41.502872	C	6	43.867742	0.878328	f
+9	67	29	51.829183	0.764934	49.534382	A	7	51.968227	0.771982	f
+12	67	23	50.86203	0.790622	48.490164	A	8	51.033236	0.798974	f
+22	67	16	44.912018	0.862432	42.324723	B	9	44.931914	0.874778	f
+24	67	14	43.249636	1.106104	39.931325	C	10	43.295707	1.137345	f
+26	67	10	43.095029	0.862479	40.507592	C	11	43.19943	0.87394	f
+2	67	5	50.04715	1.010029	47.017064	A	12	50.750605	1.029698	f
+11	68	51	52.335937	0.740273	50.115118	A	1	52.102192	0.74378	f
+3	68	48	52.607973	0.775247	50.282233	A	2	52.458807	0.781797	f
+14	68	44	50.880554	0.888323	48.215585	A	3	50.699763	0.901907	f
+13	68	38	48.654361	0.775325	46.328386	B	4	48.501949	0.782643	f
+9	68	38	51.813523	0.758407	49.5383	A	5	51.829183	0.764934	f
+7	68	35	55.357652	0.96183	52.472163	S	6	55.669853	0.981109	f
+21	68	25	49.056664	0.892412	46.379427	B	7	49.112478	0.906599	f
+19	68	24	46.838027	0.897819	44.144571	B	8	46.882585	0.912143	f
+26	68	17	43.126458	0.851374	40.572335	C	9	43.095029	0.862479	f
+23	68	15	46.157562	0.888606	43.491744	B	10	46.361588	0.901513	f
+10	68	9	43.896412	0.855783	41.329064	C	11	44.099324	0.865484	f
+27	68	5	37.949244	1.154535	34.48564	C	12	38.199652	1.17434	f
+11	69	54	52.570243	0.73673	50.360052	A	1	52.335937	0.740273	f
+2	69	47	50.443334	0.989778	47.473999	A	2	50.04715	1.010029	f
+8	69	49	52.121962	0.85277	49.563652	A	3	51.985454	0.864345	f
+3	69	44	52.641145	0.768176	50.336616	A	4	52.607973	0.775247	f
+9	69	37	51.818359	0.752055	49.562193	A	5	51.813523	0.758407	f
+13	69	35	48.711619	0.768104	46.407307	B	6	48.654361	0.775325	f
+12	69	30	50.789433	0.782638	48.44152	A	7	50.86203	0.790622	f
+22	69	21	45.005304	0.850605	42.45349	B	8	44.912018	0.862432	f
+25	69	18	50.910849	0.837207	48.399226	A	9	51.132468	0.848078	f
+21	69	14	48.824243	0.87935	46.186192	B	10	49.056664	0.892412	f
+20	69	9	46.374334	0.877395	43.742149	B	11	46.597488	0.889252	f
+26	69	5	42.920701	0.844627	40.386818	C	12	43.126458	0.851374	f
+3	70	51	52.862464	0.763847	50.570924	A	1	52.641145	0.768176	f
+21	70	52	49.146771	0.867583	46.544021	B	2	48.824243	0.87935	f
+4	70	48	55.175908	1.028624	52.090037	S	3	55.224559	1.052841	f
+24	70	39	43.860557	1.076602	40.63075	C	4	43.249636	1.106104	f
+18	70	36	44.713238	0.832928	42.214455	B	5	44.453772	0.843817	f
+6	70	35	49.574206	1.00913	46.546815	B	6	49.570214	1.03283	f
+12	70	30	50.703657	0.774999	48.378659	A	7	50.789433	0.782638	f
+5	70	24	58.834739	0.94256	56.007059	S	8	59.473595	0.960754	f
+23	70	17	46.107875	0.875501	43.481373	B	9	46.157562	0.888606	f
+26	70	15	42.925477	0.834514	40.421933	C	10	42.920701	0.844627	f
+9	70	10	51.474071	0.747009	49.233044	A	11	51.818359	0.752055	f
+27	70	5	37.789692	1.138911	34.372958	C	12	37.949244	1.154535	f
+3	71	57	53.083034	0.75979	50.803665	A	1	52.862464	0.763847	f
+9	71	53	51.63574	0.742047	49.409599	A	2	51.474071	0.747009	f
+14	71	49	51.039845	0.875579	48.413108	A	3	50.880554	0.888323	f
+12	71	39	50.771611	0.768066	48.467413	A	4	50.703657	0.774999	f
+1	71	35	52.671927	1.042192	49.545352	A	5	52.780627	1.068202	f
+13	71	32	48.729888	0.76135	46.445838	B	6	48.711619	0.768104	f
+19	71	26	46.86879	0.883926	44.217012	B	7	46.838027	0.897819	f
+22	71	23	45.038304	0.839561	42.519622	B	8	45.005304	0.850605	f
+10	71	19	43.906898	0.844572	41.373182	C	9	43.896412	0.855783	f
+6	71	13	49.179068	0.988283	46.214219	B	10	49.574206	1.00913	f
+26	71	10	42.824375	0.825385	40.348219	C	11	42.925477	0.834514	f
+20	71	4	46.004828	0.867784	43.401477	B	12	46.374334	0.877395	f
+16	72	56	59.124284	1.354822	55.059817	S	1	58.721725	1.391954	f
+7	72	50	55.52186	0.946492	52.682383	S	2	55.357652	0.96183	f
+10	72	49	44.37955	0.834127	41.877168	C	3	43.906898	0.844572	f
+14	72	45	51.171784	0.863043	48.582655	A	4	51.039845	0.875579	f
+1	72	35	52.668541	1.017875	49.614916	A	5	52.671927	1.042192	f
+11	72	31	52.525095	0.731294	50.331211	A	6	52.570243	0.73673	f
+26	72	29	43.080232	0.815442	40.633906	C	7	42.824375	0.825385	f
+13	72	21	48.711218	0.754734	46.447016	B	8	48.729888	0.76135	f
+2	72	17	50.245664	0.969444	47.337331	A	9	50.443334	0.989778	f
+12	72	13	50.589019	0.761309	48.305092	A	10	50.771611	0.768066	f
+21	72	8	48.912732	0.855955	46.344868	B	11	49.146771	0.867583	f
+3	72	5	52.703095	0.754573	50.439375	A	12	53.083034	0.75979	f
+11	73	53	52.756484	0.728094	50.572202	A	1	52.525095	0.731294	f
+21	73	47	49.260705	0.845421	46.724442	B	2	48.912732	0.855955	f
+16	73	44	58.791354	1.30062	54.889494	S	3	59.124284	1.354822	f
+23	73	42	46.430968	0.862992	43.841992	B	4	46.107875	0.875501	f
+25	73	33	50.958245	0.826753	48.477986	A	5	50.910849	0.837207	f
+13	73	29	48.77197	0.748488	46.526505	B	6	48.711218	0.754734	f
+9	73	29	51.558088	0.736404	49.348877	A	7	51.63574	0.742047	f
+3	73	23	52.539174	0.748393	50.293994	A	8	52.703095	0.754573	f
+15	73	19	47.326775	0.873735	44.70557	B	9	47.394829	0.886828	f
+24	73	13	43.867419	1.050605	40.715604	C	10	43.860557	1.076602	f
+6	73	9	48.798839	0.969764	45.889548	B	11	49.179068	0.988283	f
+19	73	5	46.540186	0.874202	43.917579	B	12	46.86879	0.883926	f
+5	74	57	58.971584	0.934643	56.167654	S	1	58.834739	0.94256	f
+23	74	47	46.865016	0.852589	44.307249	B	2	46.430968	0.862992	f
+7	74	41	55.491109	0.930422	52.699843	S	3	55.52186	0.946492	f
+17	74	41	49.686709	0.96339	46.79654	A	4	49.50737	0.982527	f
+15	74	34	47.487844	0.86136	44.903764	B	5	47.326775	0.873735	f
+13	74	31	48.795806	0.742643	46.567877	B	6	48.77197	0.748488	f
+9	74	26	51.447844	0.731118	49.254491	A	7	51.558088	0.736404	f
+19	74	23	46.527698	0.861801	43.942296	B	8	46.540186	0.874202	f
+18	74	18	44.705365	0.823027	42.236283	B	9	44.713238	0.832928	f
+6	74	12	48.486021	0.951855	45.630456	B	10	48.798839	0.969764	f
+22	74	9	44.859469	0.830366	42.36837	B	11	45.038304	0.839561	f
+26	74	5	42.863776	0.809776	40.434447	C	12	43.080232	0.815442	f
+4	75	55	55.496804	1.013096	52.457516	S	1	55.175908	1.028624	f
+1	75	53	52.934789	0.998356	49.939722	A	2	52.668541	1.017875	f
+11	75	49	52.825798	0.723709	50.654672	A	3	52.756484	0.728094	f
+8	75	38	52.159205	0.841947	49.633365	A	4	52.121962	0.85277	f
+21	75	36	49.334222	0.834754	46.829962	A	5	49.260705	0.845421	f
+18	75	29	44.879403	0.813444	42.43907	B	6	44.705365	0.823027	f
+13	75	29	48.761868	0.737051	46.550716	B	7	48.795806	0.742643	f
+19	75	23	46.508946	0.850035	43.95884	B	8	46.527698	0.861801	f
+26	75	20	42.921004	0.800976	40.518075	C	9	42.863776	0.809776	f
+10	75	12	44.319044	0.824192	41.846468	C	10	44.37955	0.834127	f
+23	75	9	46.633303	0.841983	44.107353	B	11	46.865016	0.852589	f
+9	75	5	51.073547	0.727144	48.892115	A	12	51.447844	0.731118	f
+16	76	56	59.204592	1.270724	55.392419	S	1	58.791354	1.30062	f
+5	76	51	59.001815	0.922344	56.234784	S	2	58.971584	0.934643	f
+8	76	50	52.321227	0.832685	49.823173	A	3	52.159205	0.841947	f
+20	76	37	46.333773	0.856395	43.764589	B	4	46.004828	0.867784	f
+4	76	34	55.307242	0.992075	52.331016	S	5	55.496804	1.013096	f
+1	76	32	52.78554	0.97825	49.850789	A	6	52.934789	0.998356	f
+10	76	30	44.461685	0.814825	42.017211	B	7	44.319044	0.824192	f
+18	76	23	44.929462	0.804622	42.515595	B	8	44.879403	0.813444	f
+26	76	19	42.976564	0.792857	40.597992	C	9	42.921004	0.800976	f
+22	76	12	44.778932	0.820884	42.31628	B	10	44.859469	0.830366	f
+23	76	9	46.408331	0.832282	43.911486	B	11	46.633303	0.841983	f
+6	76	5	47.990147	0.937696	45.177058	B	12	48.486021	0.951855	f
+5	77	55	59.249175	0.913167	56.509673	S	1	59.001815	0.922344	f
+16	77	48	59.340422	1.23244	55.643103	S	2	59.204592	1.270724	f
+7	77	43	55.607468	0.916126	52.85909	S	3	55.491109	0.930422	f
+3	77	41	52.63382	0.743034	50.404719	A	4	52.539174	0.748393	f
+12	77	39	50.6839	0.755125	48.418525	A	5	50.589019	0.761309	f
+25	77	35	50.9856	0.81716	48.534119	A	6	50.958245	0.826753	f
+9	77	27	51.038427	0.722388	48.871264	A	7	51.073547	0.727144	f
+23	77	21	46.472245	0.822362	44.005158	B	8	46.408331	0.832282	f
+10	77	17	44.530357	0.805918	42.112604	B	9	44.461685	0.814825	f
+19	77	14	46.433598	0.839406	43.91538	B	10	46.508946	0.850035	f
+15	77	9	47.296739	0.850502	44.745233	B	11	47.487844	0.86136	f
+8	77	4	51.870592	0.824412	49.397357	A	12	52.321227	0.832685	f
+5	78	53	59.415254	0.905335	56.69925	S	1	59.249175	0.913167	f
+3	78	51	52.821532	0.738524	50.60596	A	2	52.63382	0.743034	f
+9	78	41	51.193817	0.718122	49.03945	A	3	51.038427	0.722388	f
+23	78	37	46.774505	0.813047	44.335365	B	4	46.472245	0.822362	f
+16	78	38	58.825755	1.191208	55.252132	S	5	59.340422	1.23244	f
+2	78	32	50.297635	0.950995	47.444652	A	6	50.245664	0.969444	f
+4	78	26	54.997948	0.972088	52.081685	S	7	55.307242	0.992075	f
+15	78	25	47.307462	0.839743	44.788234	B	8	47.296739	0.850502	f
+20	78	19	46.301956	0.845524	43.765385	B	9	46.333773	0.856395	f
+26	78	14	42.993816	0.785601	40.637013	C	10	42.976564	0.792857	f
+6	78	9	47.669644	0.923189	44.900077	B	11	47.990147	0.937696	f
+24	78	5	43.520484	1.03347	40.420075	C	12	43.867419	1.050605	f
+11	79	51	53.027854	0.721148	50.864409	A	1	52.825798	0.723709	f
+3	79	51	52.941253	0.733975	50.739327	A	2	52.821532	0.738524	f
+13	79	43	48.938152	0.732061	46.74197	B	3	48.761868	0.737051	f
+8	79	45	51.904396	0.814949	49.45955	A	4	51.870592	0.824412	f
+21	79	38	49.401819	0.824605	46.928004	A	5	49.334222	0.834754	f
+6	79	35	47.753973	0.907727	45.030793	B	6	47.669644	0.923189	f
+28	79	28	48.329198	3.930355	36.538132	C	7	50	8.333	f
+15	79	25	47.269721	0.829326	44.781742	B	8	47.307462	0.839743	f
+10	79	20	44.538364	0.797393	42.146185	B	9	44.530357	0.805918	f
+9	79	14	50.958896	0.713896	48.817208	A	10	51.193817	0.718122	f
+22	79	9	44.638041	0.812379	42.200903	B	11	44.778932	0.820884	f
+20	79	4	45.984321	0.837577	43.471589	B	12	46.301956	0.845524	f
+20	80	54	46.429654	0.828448	43.944311	B	1	45.984321	0.837577	f
+26	80	55	43.415634	0.777967	41.081732	C	2	42.993816	0.785601	f
+23	80	46	47.030186	0.803755	44.618921	B	3	46.774505	0.813047	f
+9	80	42	50.99948	0.709388	48.871316	A	4	50.958896	0.713896	f
+25	80	38	50.989024	0.807477	48.566592	A	5	50.9856	0.81716	f
+10	80	31	44.725938	0.788746	42.359699	B	6	44.538364	0.797393	f
+16	80	27	58.048432	1.152501	54.590928	S	7	58.825755	1.191208	f
+6	80	23	47.72938	0.892673	45.051362	B	8	47.753973	0.907727	f
+19	80	20	46.410023	0.828598	43.92423	B	9	46.433598	0.839406	f
+2	80	15	50.005363	0.933378	47.205229	A	10	50.297635	0.950995	f
+11	80	8	52.728372	0.716657	50.578402	A	11	53.027854	0.721148	f
+12	80	5	50.35733	0.750143	48.1069	A	12	50.6839	0.755125	f
+16	81	55	58.351656	1.131513	54.957118	S	1	58.048432	1.152501	f
+17	81	51	50.130609	0.94757	47.287899	A	2	49.686709	0.96339	f
+5	81	43	59.275392	0.892331	56.598399	S	3	59.415254	0.905335	f
+3	81	44	52.974101	0.72926	50.786322	A	4	52.941253	0.733975	f
+23	81	37	47.204839	0.795494	44.818358	B	5	47.030186	0.803755	f
+15	81	34	47.376959	0.81961	44.918128	B	6	47.269721	0.829326	f
+10	81	28	44.854592	0.781123	42.511222	B	7	44.725938	0.788746	f
+29	81	24	47.511877	3.947505	35.669362	C	8	50	8.333	f
+11	81	17	52.513692	0.712477	50.37626	A	9	52.728372	0.716657	f
+22	81	13	44.594042	0.803914	42.182301	B	10	44.638041	0.812379	f
+26	81	9	43.348064	0.771609	41.033237	C	11	43.415634	0.777967	f
+2	81	5	49.483256	0.920269	46.722449	B	12	50.005363	0.933378	f
+5	82	58	59.493192	0.885476	56.836763	S	1	59.275392	0.892331	f
+30	82	48	58.467312	4.227431	45.785018	B	2	50	8.333	f
+7	82	46	55.703689	0.903038	52.994575	S	3	55.607468	0.916126	f
+25	82	37	51.145314	0.799283	48.747466	A	4	50.989024	0.807477	f
+23	82	37	47.422217	0.787569	45.059512	B	5	47.204839	0.795494	f
+12	82	31	50.400639	0.744319	48.167681	A	6	50.35733	0.750143	f
+3	82	27	52.88979	0.724375	50.716666	A	7	52.974101	0.72926	f
+14	82	21	51.061475	0.851402	48.507268	A	8	51.171784	0.863043	f
+13	82	16	48.870793	0.727226	46.689115	B	9	48.938152	0.732061	f
+22	82	13	44.599869	0.796006	42.21185	B	10	44.594042	0.803914	f
+9	82	10	50.764737	0.706169	48.64623	A	11	50.99948	0.709388	f
+28	82	5	43.982198	3.182705	34.434083	C	12	48.329198	3.930355	f
+14	83	56	51.375835	0.84337	48.845725	A	1	51.061475	0.851402	f
+11	83	51	52.616722	0.709021	50.489659	A	2	52.513692	0.712477	f
+21	83	46	49.574926	0.815466	47.128528	A	3	49.401819	0.824605	f
+8	83	44	51.914338	0.806089	49.49607	A	4	51.904396	0.814949	f
+12	83	33	50.401119	0.738821	48.184655	A	5	50.400639	0.744319	f
+17	83	29	50.05801	0.930694	47.265927	A	6	50.130609	0.94757	f
+28	83	28	45.032296	2.598663	37.236307	C	7	43.982198	3.182705	f
+20	83	24	46.378583	0.818838	43.92207	B	8	46.429654	0.828448	f
+26	83	19	43.34612	0.76501	41.051091	C	9	43.348064	0.771609	f
+6	83	14	47.45222	0.879962	44.812334	B	10	47.72938	0.892673	f
+10	83	8	44.654227	0.775139	42.328811	B	11	44.854592	0.781123	f
+27	83	5	37.562225	1.121106	34.198907	C	12	37.789692	1.138911	f
+7	84	58	56.000608	0.894353	53.317549	S	1	55.703689	0.903038	f
+30	84	53	58.844355	3.19181	49.268926	A	2	58.467312	4.227431	f
+11	84	47	52.722633	0.705714	50.60549	A	3	52.616722	0.709021	f
+28	84	40	47.578616	2.258678	40.802582	C	4	45.032296	2.598663	f
+12	84	37	50.463297	0.733706	48.262179	A	5	50.401119	0.738821	f
+3	84	30	52.827982	0.719856	50.668414	A	6	52.88979	0.724375	f
+4	84	25	54.692049	0.953829	51.830562	S	7	54.997948	0.972088	f
+13	84	24	48.815659	0.722757	46.647387	B	8	48.870793	0.727226	f
+23	84	16	47.328553	0.780618	44.986698	B	9	47.422217	0.787569	f
+27	84	14	37.863758	1.093604	34.582945	C	10	37.562225	1.121106	f
+22	84	9	44.430634	0.789451	42.062281	B	11	44.599869	0.796006	f
+26	84	5	43.130806	0.761343	40.846778	C	12	43.34612	0.76501	f
+7	85	58	56.300493	0.885138	53.64508	S	1	56.000608	0.894353	f
+5	85	45	59.505101	0.874363	56.882013	S	2	59.493192	0.885476	f
+20	85	43	46.77714	0.809891	44.347467	B	3	46.378583	0.818838	f
+1	85	45	52.917769	0.959236	50.040062	A	4	52.78554	0.97825	f
+4	85	36	54.643255	0.936314	51.834312	S	5	54.692049	0.953829	f
+15	85	31	47.554826	0.810179	45.12429	B	6	47.376959	0.81961	f
+16	85	26	57.82001	1.099752	54.520755	S	7	58.351656	1.131513	f
+12	85	23	50.416033	0.728622	48.230168	A	8	50.463297	0.733706	f
+23	85	18	47.319935	0.773496	44.999448	B	9	47.328553	0.780618	f
+11	85	14	52.510386	0.702217	50.403735	A	10	52.722633	0.705714	f
+18	85	8	44.838365	0.797767	42.445064	B	11	44.929462	0.804622	f
+26	85	4	42.985393	0.758663	40.709403	C	12	43.130806	0.761343	f
+3	86	52	53.07051	0.717114	50.919168	A	1	52.827982	0.719856	f
+7	86	51	56.39467	0.873335	53.774664	S	2	56.300493	0.885138	f
+21	86	48	49.822878	0.806632	47.402981	A	3	49.574926	0.815466	f
+15	86	43	47.811051	0.801387	45.406891	B	4	47.554826	0.810179	f
+30	86	35	56.706913	2.598265	48.912119	A	5	58.844355	3.19181	f
+14	86	30	51.380702	0.832653	48.882742	A	6	51.375835	0.84337	f
+29	86	28	48.658616	2.956093	39.790337	C	7	47.511877	3.947505	f
+13	86	22	48.80388	0.718106	46.649561	B	8	48.815659	0.722757	f
+11	86	20	52.352895	0.698523	50.257325	A	9	52.510386	0.702217	f
+18	86	12	44.847534	0.789863	42.477947	B	10	44.838365	0.797767	f
+4	86	9	54.094052	0.921098	51.330757	A	11	54.643255	0.936314	f
+22	86	5	44.265227	0.785135	41.909823	C	12	44.430634	0.789451	f
+16	87	50	58.196756	1.081399	54.952558	S	1	57.82001	1.099752	f
+5	87	53	59.536012	0.865031	56.94092	S	2	59.505101	0.874363	f
+30	87	47	56.856301	2.284239	50.003583	A	3	56.706913	2.598265	f
+9	87	44	50.867619	0.702908	48.758895	A	4	50.764737	0.706169	f
+13	87	39	48.902276	0.714095	46.759991	B	5	48.80388	0.718106	f
+14	87	30	51.337178	0.823084	48.867927	A	6	51.380702	0.832653	f
+23	87	26	47.351789	0.766876	45.051161	B	7	47.319935	0.773496	f
+28	87	23	47.297625	2.025435	41.22132	C	8	47.578616	2.258678	f
+18	87	18	44.82968	0.782664	42.481687	B	9	44.847534	0.789863	f
+20	87	13	46.611562	0.802039	44.205445	B	10	46.77714	0.809891	f
+22	87	8	44.102735	0.779404	41.764523	C	11	44.265227	0.785135	f
+27	87	4	37.670852	1.079329	34.432865	C	12	37.863758	1.093604	f
+4	88	59	54.367116	0.910378	51.635984	A	1	54.094052	0.921098	f
+17	88	46	50.374783	0.915814	47.627342	A	2	50.05801	0.930694	f
+26	88	49	43.363119	0.75244	41.105799	C	3	42.985393	0.758663	f
+14	88	42	51.406507	0.813461	48.966125	A	4	51.337178	0.823084	f
+11	88	40	52.336423	0.694852	50.251867	A	5	52.352895	0.698523	f
+30	88	31	55.348765	2.033292	49.248888	A	6	56.856301	2.284239	f
+21	88	28	49.784225	0.797824	47.390753	A	7	49.822878	0.806632	f
+9	88	25	50.763248	0.699107	48.665926	A	8	50.867619	0.702908	f
+22	88	20	44.145017	0.772235	41.828311	C	9	44.102735	0.779404	f
+25	88	15	50.874407	0.791367	48.500306	A	10	51.145314	0.799283	f
+24	88	9	43.381929	1.012688	40.343866	C	11	43.520484	1.03347	f
+10	88	4	44.433417	0.770874	42.120795	B	12	44.654227	0.775139	f
 \.
 
 
 --
--- Data for Name: saisons; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: saisons; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.saisons (id, nom, slug, date_debut, date_fin, is_active, config_awards, victory_condition, is_yearly, ligue_id, ligue_nom, ligue_couleur, is_league_recap, include_league_stats, include_league_moves) FROM stdin;
-9	Automne 2025	automne-2025	2025-09-29	2025-12-15	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
-10	Année 2025	annee-2025	2025-01-15	2025-12-15	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	Indice de Performance	t	\N	\N	\N	f	f	f
-8	Été 2025	ete-2025	2025-06-26	2025-09-18	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
-7	Printemps 2025	printemps-2025	2025-03-20	2025-06-16	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
-6	Hiver 2025	hiver-2025	2025-01-15	2025-03-13	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
-13	Hiver 2026	hiver-2026	2026-01-12	2026-03-16	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "not_stonks", "stonks"]}	Indice de Performance	f	\N	\N	\N	f	f	f
-14	Printemps 2026	printemps-2026	2026-03-17	2026-06-18	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "borderline", "not_stonks", "stonks"]}	Indice de Performance	f	\N	\N	\N	t	f	f
+1	Hiver 2025	hiver-2025	2025-01-06	2025-03-20	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "borderline", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+2	Printemps 2025	printemps-2025	2025-03-24	2025-06-19	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "borderline", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+3	Été 2025	ete-2025	2025-06-23	2025-09-18	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "borderline", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+4	Automne 2025	automne-2025	2025-09-22	2025-12-18	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "borderline", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
+5	Année 2025	annee-2025	2025-01-06	2025-12-18	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "borderline", "not_stonks", "stonks"]}	Indice de Performance	t	\N	\N	\N	f	f	f
+6	Hiver 2026	hiver-2026	2025-12-22	2026-03-19	t	{"active_awards": ["stakhanov", "pas_loin", "chillguy", "ez", "borderline", "not_stonks", "stonks"]}	stakhanov	f	\N	\N	\N	f	f	f
 \.
 
 
 --
--- Data for Name: tournois; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: tournois; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) FROM stdin;
-1	2025-01-16	\N	\N	\N
+1	2025-01-18	\N	\N	\N
 2	2025-01-23	\N	\N	\N
-3	2025-01-30	\N	\N	\N
-4	2025-02-06	\N	\N	\N
-5	2025-02-13	\N	\N	\N
-6	2025-02-20	\N	\N	\N
-7	2025-02-27	\N	\N	\N
-8	2025-03-06	\N	\N	\N
-9	2025-03-13	\N	\N	\N
-10	2025-03-20	\N	\N	\N
-11	2025-03-27	\N	\N	\N
-12	2025-04-03	\N	\N	\N
-13	2025-04-10	\N	\N	\N
-14	2025-04-17	\N	\N	\N
-15	2025-04-24	\N	\N	\N
-16	2025-05-08	\N	\N	\N
-17	2025-05-15	\N	\N	\N
-18	2025-05-22	\N	\N	\N
-19	2025-06-12	\N	\N	\N
-20	2025-06-19	\N	\N	\N
-21	2025-06-26	\N	\N	\N
-22	2025-07-03	\N	\N	\N
-23	2025-07-10	\N	\N	\N
-24	2025-07-17	\N	\N	\N
-25	2025-07-24	\N	\N	\N
-26	2025-07-31	\N	\N	\N
-27	2025-08-07	\N	\N	\N
-28	2025-08-14	\N	\N	\N
-29	2025-08-21	\N	\N	\N
-30	2025-08-28	\N	\N	\N
-31	2025-09-04	\N	\N	\N
-32	2025-09-18	\N	\N	\N
-33	2025-09-29	\N	\N	\N
-34	2025-10-06	\N	\N	\N
-35	2025-10-13	\N	\N	\N
-36	2025-10-20	\N	\N	\N
-37	2025-10-27	\N	\N	\N
-38	2025-11-03	\N	\N	\N
-39	2025-11-10	\N	\N	\N
-40	2025-11-17	\N	\N	\N
-41	2025-11-24	\N	\N	\N
-42	2025-12-01	\N	\N	\N
-43	2025-12-08	\N	\N	\N
-44	2025-12-15	\N	\N	\N
-45	2026-01-12	\N	\N	\N
-46	2026-01-19	\N	\N	\N
-47	2026-01-26	\N	\N	\N
-48	2026-02-02	\N	\N	\N
-49	2026-02-09	\N	\N	\N
-50	2026-02-16	\N	\N	\N
-51	2026-02-23	\N	\N	\N
-54	2026-03-02	1	Ligue 0	#FFD700
-58	2026-03-02	2	Ligue 1	#C0C0C0
-59	2026-03-09	\N	Mixte	#888888
-60	2026-03-16	\N	Mixte	#888888
-64	2026-03-23	2	Ligue 1	#C0C0C0
-65	2026-03-25	1	Ligue 0	#FFD700
-66	2026-03-30	2	Ligue 1	#C0C0C0
-67	2026-04-01	1	Ligue 0	#FFD700
-68	2026-04-06	2	Ligue 1	#C0C0C0
-69	2026-04-08	1	Ligue 0	#FFD700
-70	2026-04-13	2	Ligue 1	#C0C0C0
-71	2026-04-15	1	Ligue 0	#FFD700
-72	2026-04-20	2	Ligue 1	#C0C0C0
-73	2026-04-22	1	Ligue 0	#FFD700
-74	2026-04-27	2	Ligue 1	#C0C0C0
-75	2026-04-29	1	Ligue 0	#FFD700
-76	2026-05-04	2	Ligue 1	#C0C0C0
-77	2026-05-06	1	Ligue 0	#FFD700
-78	2026-05-11	2	Ligue 1	#C0C0C0
-79	2026-05-13	1	Ligue 0	#FFD700
-80	2026-05-18	2	Ligue 1	#C0C0C0
-81	2026-05-20	1	Ligue 0	#FFD700
-82	2026-05-25	2	Ligue 1	#C0C0C0
-83	2026-05-27	1	Ligue 0	#FFD700
-84	2026-06-01	2	Ligue 1	#C0C0C0
-85	2026-06-08	2	Ligue 1	#C0C0C0
-86	2026-06-10	1	Ligue 0	#FFD700
-87	2026-06-15	2	Ligue 1	#C0C0C0
-88	2026-06-17	1	Ligue 0	#FFD700
-89	2026-06-22	\N	\N	\N
-90	2026-06-29	\N	\N	\N
-91	2026-06-29	\N	\N	\N
-92	2026-07-06	\N	\N	\N
+3	2025-01-26	\N	\N	\N
+4	2025-01-28	\N	\N	\N
+5	2025-02-01	\N	\N	\N
+6	2025-02-06	\N	\N	\N
+7	2025-02-08	\N	\N	\N
+8	2025-02-12	\N	\N	\N
+9	2025-02-16	\N	\N	\N
+10	2025-02-23	\N	\N	\N
+11	2025-02-27	\N	\N	\N
+12	2025-03-02	\N	\N	\N
+13	2025-03-06	\N	\N	\N
+14	2025-03-13	\N	\N	\N
+15	2025-03-20	\N	\N	\N
+16	2025-03-24	\N	\N	\N
+17	2025-03-31	\N	\N	\N
+18	2025-04-02	\N	\N	\N
+19	2025-04-05	\N	\N	\N
+20	2025-04-08	\N	\N	\N
+21	2025-04-29	\N	\N	\N
+22	2025-05-02	\N	\N	\N
+23	2025-05-05	\N	\N	\N
+24	2025-05-09	\N	\N	\N
+25	2025-05-21	\N	\N	\N
+26	2025-05-26	\N	\N	\N
+27	2025-06-05	\N	\N	\N
+28	2025-06-07	\N	\N	\N
+29	2025-06-11	\N	\N	\N
+30	2025-06-15	\N	\N	\N
+31	2025-06-28	\N	\N	\N
+32	2025-07-01	\N	\N	\N
+33	2025-07-05	\N	\N	\N
+34	2025-07-07	\N	\N	\N
+35	2025-07-10	\N	\N	\N
+36	2025-07-17	\N	\N	\N
+37	2025-07-19	\N	\N	\N
+38	2025-07-22	\N	\N	\N
+39	2025-07-28	\N	\N	\N
+40	2025-08-04	\N	\N	\N
+41	2025-08-06	\N	\N	\N
+42	2025-08-11	\N	\N	\N
+43	2025-08-16	\N	\N	\N
+44	2025-08-18	\N	\N	\N
+45	2025-08-22	\N	\N	\N
+46	2025-08-26	\N	\N	\N
+47	2025-08-30	\N	\N	\N
+48	2025-09-02	\N	\N	\N
+49	2025-09-07	\N	\N	\N
+50	2025-09-11	\N	\N	\N
+51	2025-09-14	\N	\N	\N
+52	2025-09-16	\N	\N	\N
+53	2025-09-22	\N	\N	\N
+54	2025-09-26	\N	\N	\N
+55	2025-09-29	\N	\N	\N
+56	2025-10-08	\N	\N	\N
+57	2025-10-16	\N	\N	\N
+58	2025-10-19	\N	\N	\N
+59	2025-10-24	\N	\N	\N
+60	2025-10-29	\N	\N	\N
+61	2025-11-05	\N	\N	\N
+62	2025-11-09	\N	\N	\N
+63	2025-11-12	\N	\N	\N
+64	2025-11-17	\N	\N	\N
+65	2025-11-21	\N	\N	\N
+66	2025-11-26	\N	\N	\N
+67	2025-11-30	\N	\N	\N
+68	2025-12-08	\N	\N	\N
+69	2025-12-13	\N	\N	\N
+70	2025-12-18	\N	\N	\N
+71	2025-12-22	\N	\N	\N
+72	2025-12-26	\N	\N	\N
+73	2025-12-28	\N	\N	\N
+74	2025-12-31	\N	\N	\N
+75	2026-01-06	\N	\N	\N
+76	2026-01-13	\N	\N	\N
+77	2026-01-18	\N	\N	\N
+78	2026-01-29	\N	\N	\N
+79	2026-02-02	\N	\N	\N
+80	2026-02-04	\N	\N	\N
+81	2026-02-14	\N	\N	\N
+82	2026-02-22	\N	\N	\N
+83	2026-03-01	\N	\N	\N
+84	2026-03-04	\N	\N	\N
+85	2026-03-06	\N	\N	\N
+86	2026-03-10	\N	\N	\N
+87	2026-03-13	\N	\N	\N
+88	2026-03-16	\N	\N	\N
 \.
 
 
 --
--- Data for Name: types_awards; Type: TABLE DATA; Schema: public; Owner: postgres
+-- Data for Name: types_awards; Type: TABLE DATA; Schema: public; Owner: example
 --
 
 COPY public.types_awards (id, code, nom, emoji, description) FROM stdin;
@@ -1538,76 +1917,76 @@ COPY public.types_awards (id, code, nom, emoji, description) FROM stdin;
 10	not_stonks	Not Stonks	award/not_stonks.png	Plus forte perte TrueSkill
 11	stakhanov	Stakhanoviste	award/TposingFunky.png	Le plus de points marqués au total
 12	chillguy	Chill Guy	award/chillguy.png	Le score TrueSkill le plus stable
-13	Indice de Performance	Indice de Performance	🎯	Calcul IP
-14	borderline	Instable	award/borderline.png	Les résultats les plus instables
+13	borderline	Instable	award/borderline.png	Les résultats les plus instables
+14	Indice de Performance	Indice de Performance	🎯	Calcul IP
 \.
 
 
 --
--- Name: awards_obtenus_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: awards_obtenus_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
 --
 
-SELECT pg_catalog.setval('public.awards_obtenus_id_seq', 70, true);
-
-
---
--- Name: ghost_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.ghost_log_id_seq', 126, true);
+SELECT pg_catalog.setval('public.awards_obtenus_id_seq', 60, true);
 
 
 --
--- Name: global_resets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: ghost_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
 --
 
-SELECT pg_catalog.setval('public.global_resets_id_seq', 3, true);
-
-
---
--- Name: joueurs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.joueurs_id_seq', 37, true);
+SELECT pg_catalog.setval('public.ghost_log_id_seq', 1, false);
 
 
 --
--- Name: league_movements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: global_resets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
+--
+
+SELECT pg_catalog.setval('public.global_resets_id_seq', 2, true);
+
+
+--
+-- Name: joueurs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
+--
+
+SELECT pg_catalog.setval('public.joueurs_id_seq', 30, true);
+
+
+--
+-- Name: league_movements_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
 --
 
 SELECT pg_catalog.setval('public.league_movements_id_seq', 1, false);
 
 
 --
--- Name: ligues_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: ligues_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
 --
 
-SELECT pg_catalog.setval('public.ligues_id_seq', 1, false);
-
-
---
--- Name: saisons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
---
-
-SELECT pg_catalog.setval('public.saisons_id_seq', 14, true);
+SELECT pg_catalog.setval('public.ligues_id_seq', 2, true);
 
 
 --
--- Name: tournois_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: saisons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
 --
 
-SELECT pg_catalog.setval('public.tournois_id_seq', 92, true);
+SELECT pg_catalog.setval('public.saisons_id_seq', 6, true);
 
 
 --
--- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
+-- Name: tournois_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
+--
+
+SELECT pg_catalog.setval('public.tournois_id_seq', 88, true);
+
+
+--
+-- Name: types_awards_id_seq; Type: SEQUENCE SET; Schema: public; Owner: example
 --
 
 SELECT pg_catalog.setval('public.types_awards_id_seq', 14, true);
 
 
 --
--- Name: api_tokens api_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: api_tokens api_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.api_tokens
@@ -1615,7 +1994,7 @@ ALTER TABLE ONLY public.api_tokens
 
 
 --
--- Name: awards_obtenus awards_obtenus_joueur_id_saison_id_award_id_ligue_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: awards_obtenus awards_obtenus_joueur_id_saison_id_award_id_ligue_id_key; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1623,7 +2002,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: awards_obtenus awards_obtenus_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: awards_obtenus awards_obtenus_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1631,7 +2010,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: configuration configuration_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: configuration configuration_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.configuration
@@ -1639,7 +2018,7 @@ ALTER TABLE ONLY public.configuration
 
 
 --
--- Name: ghost_log ghost_log_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ghost_log ghost_log_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.ghost_log
@@ -1647,7 +2026,7 @@ ALTER TABLE ONLY public.ghost_log
 
 
 --
--- Name: global_resets global_resets_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: global_resets global_resets_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.global_resets
@@ -1655,7 +2034,7 @@ ALTER TABLE ONLY public.global_resets
 
 
 --
--- Name: joueurs joueurs_nom_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: joueurs joueurs_nom_key; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.joueurs
@@ -1663,7 +2042,7 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
--- Name: joueurs joueurs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: joueurs joueurs_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.joueurs
@@ -1671,7 +2050,7 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
--- Name: league_movements league_movements_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: league_movements league_movements_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1679,7 +2058,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: ligues ligues_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ligues ligues_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.ligues
@@ -1687,7 +2066,7 @@ ALTER TABLE ONLY public.ligues
 
 
 --
--- Name: participations participations_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: participations participations_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.participations
@@ -1695,7 +2074,7 @@ ALTER TABLE ONLY public.participations
 
 
 --
--- Name: saisons saisons_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: saisons saisons_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.saisons
@@ -1703,7 +2082,7 @@ ALTER TABLE ONLY public.saisons
 
 
 --
--- Name: saisons saisons_slug_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: saisons saisons_slug_key; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.saisons
@@ -1711,7 +2090,7 @@ ALTER TABLE ONLY public.saisons
 
 
 --
--- Name: tournois tournois_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: tournois tournois_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.tournois
@@ -1719,7 +2098,7 @@ ALTER TABLE ONLY public.tournois
 
 
 --
--- Name: types_awards types_awards_code_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: types_awards types_awards_code_key; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.types_awards
@@ -1727,7 +2106,7 @@ ALTER TABLE ONLY public.types_awards
 
 
 --
--- Name: types_awards types_awards_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: types_awards types_awards_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.types_awards
@@ -1735,14 +2114,70 @@ ALTER TABLE ONLY public.types_awards
 
 
 --
--- Name: awards_obtenus_unique_no_ligue; Type: INDEX; Schema: public; Owner: postgres
+-- Name: awards_obtenus_unique_no_ligue; Type: INDEX; Schema: public; Owner: example
 --
 
 CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus USING btree (joueur_id, saison_id, award_id) WHERE (ligue_id IS NULL);
 
 
 --
--- Name: awards_obtenus awards_obtenus_award_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: idx_awards_obtenus_joueur_id; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_awards_obtenus_joueur_id ON public.awards_obtenus USING btree (joueur_id);
+
+
+--
+-- Name: idx_awards_obtenus_saison_id; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_awards_obtenus_saison_id ON public.awards_obtenus USING btree (saison_id);
+
+
+--
+-- Name: idx_ghost_log_joueur_id; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_ghost_log_joueur_id ON public.ghost_log USING btree (joueur_id);
+
+
+--
+-- Name: idx_ghost_log_tournoi_id; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_ghost_log_tournoi_id ON public.ghost_log USING btree (tournoi_id);
+
+
+--
+-- Name: idx_joueurs_ligue_id; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_joueurs_ligue_id ON public.joueurs USING btree (ligue_id);
+
+
+--
+-- Name: idx_participations_joueur_id; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_participations_joueur_id ON public.participations USING btree (joueur_id);
+
+
+--
+-- Name: idx_participations_tournoi_id; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_participations_tournoi_id ON public.participations USING btree (tournoi_id);
+
+
+--
+-- Name: idx_tournois_date; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_tournois_date ON public.tournois USING btree (date);
+
+
+--
+-- Name: awards_obtenus awards_obtenus_award_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1750,7 +2185,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: awards_obtenus awards_obtenus_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: awards_obtenus awards_obtenus_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1758,7 +2193,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: awards_obtenus awards_obtenus_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: awards_obtenus awards_obtenus_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1766,7 +2201,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: awards_obtenus awards_obtenus_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: awards_obtenus awards_obtenus_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.awards_obtenus
@@ -1774,7 +2209,7 @@ ALTER TABLE ONLY public.awards_obtenus
 
 
 --
--- Name: ghost_log ghost_log_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ghost_log ghost_log_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.ghost_log
@@ -1782,7 +2217,7 @@ ALTER TABLE ONLY public.ghost_log
 
 
 --
--- Name: ghost_log ghost_log_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: ghost_log ghost_log_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.ghost_log
@@ -1790,7 +2225,7 @@ ALTER TABLE ONLY public.ghost_log
 
 
 --
--- Name: joueurs joueurs_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: joueurs joueurs_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.joueurs
@@ -1798,7 +2233,7 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
--- Name: league_movements league_movements_from_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: league_movements league_movements_from_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1806,7 +2241,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: league_movements league_movements_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: league_movements league_movements_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1814,7 +2249,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: league_movements league_movements_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: league_movements league_movements_saison_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1822,7 +2257,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: league_movements league_movements_to_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: league_movements league_movements_to_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.league_movements
@@ -1830,7 +2265,7 @@ ALTER TABLE ONLY public.league_movements
 
 
 --
--- Name: participations participations_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: participations participations_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.participations
@@ -1838,7 +2273,7 @@ ALTER TABLE ONLY public.participations
 
 
 --
--- Name: participations participations_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: participations participations_tournoi_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.participations
@@ -1846,7 +2281,7 @@ ALTER TABLE ONLY public.participations
 
 
 --
--- Name: saisons saisons_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: saisons saisons_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.saisons
@@ -1854,7 +2289,7 @@ ALTER TABLE ONLY public.saisons
 
 
 --
--- Name: tournois tournois_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: tournois tournois_ligue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
 --
 
 ALTER TABLE ONLY public.tournois
@@ -1865,4 +2300,5 @@ ALTER TABLE ONLY public.tournois
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 68mnAwYfopxtvIFQEpHQJUOjbiNoeXoWMaYiZuBXhBVwDmC0s8sty1QqC7EJ6VM
+\unrestrict viWOa33K8BeJJgTZOOqBzTN6YvfhfiLWvrquQaewibnSbjU0rMfr6FyEPoGm924
+
