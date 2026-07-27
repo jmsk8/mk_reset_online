@@ -6,3 +6,4 @@ data/
 result/
 certbot/
 dumps/
+docker-compose.override.yml

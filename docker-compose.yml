@@ -84,8 +84,8 @@ services:
   nginx:
     image: nginx:1.27-alpine
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PUBLISH:-0.0.0.0:80}:80"
+      - "${HTTPS_PUBLISH:-0.0.0.0:443}:443"
     environment:
       - DOMAIN=${DOMAIN:-localhost}
       - TLS_MODE=${TLS_MODE:-http}
@@ -101,23 +101,6 @@ services:
     depends_on:
       frontend:
         condition: service_healthy
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 128M
-    networks:
-      - frontend
-
-  certbot:
-    image: certbot/certbot
-    profiles:
-      - ssl
-    volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
     restart: unless-stopped
     deploy:
       resources:

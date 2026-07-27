@@ -3,7 +3,10 @@
 # ──────────────────────────────────────────────
 
 COMPOSE       = docker compose
-COMPOSE_DUMP  = $(COMPOSE) -f docker-compose.yml -f docker-compose.dump.yml
+WEB_NETWORK  ?= web
+# Un -f explicite annule le chargement automatique de l'override.
+OVERRIDE      = $(wildcard docker-compose.override.yml)
+COMPOSE_DUMP  = $(COMPOSE) -f docker-compose.yml $(if $(OVERRIDE),-f $(OVERRIDE)) -f docker-compose.dump.yml
 
 # Dump utilisé par les cibles *dump*. Surchargeable : make redump DUMP=dumps/dump_2026-07-27.sql
 DUMP         ?= backEnd/dump.sql
@@ -42,6 +45,11 @@ RESTART_APP = echo "Redémarrage du backend (vidage du cache)"; \
 check-env:           ## Vérifie/crée le .env nécessaire au lancement
 	@bash scripts/check_env.sh
 
+check-net:           ## Crée le réseau du reverse proxy si un override local l'utilise
+	@test -n "$(OVERRIDE)" || exit 0; \
+	docker network inspect $(WEB_NETWORK) >/dev/null 2>&1 \
+		|| { docker network create $(WEB_NETWORK) >/dev/null && echo "Réseau $(WEB_NETWORK) créé"; }
+
 check-dump:          ## Vérifie que le dump ciblé existe et est lisible par le conteneur
 	@test -f "$(DUMP)" || { \
 		echo "Dump introuvable : $(DUMP)"; \
@@ -60,7 +68,7 @@ check-dump:          ## Vérifie que le dump ciblé existe et est lisible par le
 
 # ── Lifecycle ─────────────────────────────────
 
-up: check-env        ## Start containers
+up: check-env check-net ## Start containers
 	$(COMPOSE) up -d
 
 stop:                ## Stop containers (keep volumes)
@@ -69,7 +77,7 @@ stop:                ## Stop containers (keep volumes)
 start:               ## Restart stopped containers
 	$(COMPOSE) start
 
-build: check-env     ## Build/rebuild images and start
+build: check-env check-net ## Build/rebuild images and start
 	$(COMPOSE) up --build -d
 
 down:                ## Stop and remove containers/networks
@@ -85,7 +93,7 @@ distclean:           ## Full cleanup + .env (CERTS=1 to also remove certbot/)
 
 re: fclean build     ## Full cleanup then rebuild (schema + seed)
 
-redump: check-env check-dump fclean ## Full cleanup then rebuild from DUMP
+redump: check-env check-net check-dump fclean ## Full cleanup then rebuild from DUMP
 	$(COMPOSE_DUMP) up --build -d
 	@$(WAIT_DB)
 	@$(DB_STATUS)
@@ -115,19 +123,6 @@ re-db-dump: check-dump ## Recreate database from DUMP
 	@$(WAIT_DB)
 	@$(DB_STATUS)
 	@$(RESTART_APP)
-
-# ── HTTPS (Let's Encrypt) ────────────────────
-
-ssl-init:            ## Issue initial certificate and switch to https
-	@bash scripts/init-letsencrypt.sh $(DOMAIN) $(EMAIL)
-
-ssl-renew:           ## Force certificate renewal and reload nginx
-	$(COMPOSE) run --rm --entrypoint certbot certbot renew --force-renewal
-	$(COMPOSE) exec nginx nginx -s reload
-
-ssl-off:             ## Switch back to http (certificate kept)
-	@sed -i 's/^TLS_MODE=.*/TLS_MODE=http/' .env
-	$(COMPOSE) up -d nginx
 
 # ── Monitoring ───────────────────────────────
 
@@ -166,9 +161,8 @@ help:                ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: check-env check-dump up stop start build down fclean distclean re redump \
+.PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-db re-db-dump \
-        ssl-init ssl-renew ssl-off \
         logs logs-nginx logs-front logs-back logs-db ps \
         db-shell db-dump db-example help
 
