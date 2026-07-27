@@ -262,19 +262,23 @@ def main():
                 continue
             seen.add((jid, code))
             aid += 1
+            # created_at explicite : sans ça le DEFAULT now() rendrait chaque
+            # régénération différente, et le dump versionné bougerait pour rien.
             award_rows.append(
                 "INSERT INTO public.awards_obtenus "
                 "(id, joueur_id, saison_id, award_id, valeur, is_league_award, ligue_id, "
-                "ligue_nom, ligue_couleur) SELECT "
-                f"{aid}, {jid}, {sid}, id, {sql_str(valeur)}, false, NULL, NULL, NULL "
+                "ligue_nom, ligue_couleur, created_at) SELECT "
+                f"{aid}, {jid}, {sid}, id, {sql_str(valeur)}, false, NULL, NULL, NULL, "
+                f"'{end.isoformat()} 20:00:00' "
                 f"FROM public.types_awards WHERE code = {sql_str(code)};"
             )
 
     out.extend(award_rows)
 
     out.append(
-        "INSERT INTO public.global_resets (id, date, value_applied) VALUES "
-        "(1, '2025-06-23 09:00:00', 1.5), (2, '2025-12-22 09:00:00', 1.5);"
+        "INSERT INTO public.global_resets (id, date, value_applied, created_at) VALUES "
+        "(1, '2025-06-23 09:00:00', 1.5, '2025-06-23 09:00:00'), "
+        "(2, '2025-12-22 09:00:00', 1.5, '2025-12-22 09:00:00');"
     )
 
     for table, col, last_id in (

@@ -17,9 +17,12 @@ info() { printf "${C_GREEN}[example]${C_RESET} %s\n" "$1"; }
 err()  { printf "${C_RED}[example]${C_RESET} %s\n" "$1" >&2; }
 
 OUT="backEnd/dump.sql"
-CONTAINER="mk_reset_example_build"
+# Nom unique : le conteneur jetable vit hors du projet compose, ce suffixe
+# garantit qu'aucune autre exécution ni aucun conteneur existant n'est touché.
+CONTAINER="mk_reset_example_build_$$_${RANDOM}"
 DATA="$(mktemp)"
-cleanup() { rm -f "$DATA"; docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
+# -v : sans lui, le volume anonyme créé par l'image postgres resterait orphelin.
+cleanup() { rm -f "$DATA"; docker rm -f -v "$CONTAINER" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 # trueskill n'est pas installé sur l'hôte : on emprunte l'image du backend.
@@ -29,8 +32,8 @@ docker compose run --rm --no-deps -T backend python - \
 [ -s "$DATA" ] || { err "Le générateur n'a rien produit."; exit 1; }
 
 info "Chargement dans une base jetable…"
-docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-docker run -d --name "$CONTAINER" \
+docker run -d --rm --name "$CONTAINER" \
+  --label com.mkreset.ephemeral=example-dump \
   -e POSTGRES_USER=example -e POSTGRES_PASSWORD=example -e POSTGRES_DB=example \
   postgres:17-alpine >/dev/null
 until docker exec "$CONTAINER" pg_isready -U example -d example >/dev/null 2>&1; do
