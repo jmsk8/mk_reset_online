@@ -37,4 +37,4 @@ USER appuser
 
 EXPOSE 8080
 
-CMD ["/bin/sh", "-c", "python -c 'from backend import sync_sequences, recalculate_tiers; sync_sequences(); recalculate_tiers()' && gunicorn -w 4 -b 0.0.0.0:8080 backend:app"]
+CMD ["/bin/sh", "-c", "python -c 'from backend import sync_sequences, recalculate_tiers; sync_sequences(); recalculate_tiers()' && gunicorn -w 2 -b 0.0.0.0:8080 backend:app"]
