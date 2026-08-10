@@ -136,7 +136,7 @@
                 {% for tournoi_data in resultats %}
                 <div class="column is-12-mobile is-6-tablet is-4-desktop fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
                     
-                    <div class="card glass-card mb-5" style="height: 100%; display: flex; flex-direction: column; {{ 'border-top: 4px solid ' + tournoi_data.meta.ligue_couleur if tournoi_data.meta.type == 'ligue' else '' }}">
+                    <div class="card glass-card rise-in mb-5" style="height: 100%; display: flex; flex-direction: column; {{ 'border-top: 4px solid ' + tournoi_data.meta.ligue_couleur if tournoi_data.meta.type == 'ligue' else '' }}">
                         
                         <div class="card-header" style="background: rgba(0,0,0,0.2);">
                             <p class="card-header-title is-centered is-flex-direction-column">
