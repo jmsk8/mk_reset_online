@@ -29,7 +29,10 @@ except KeyError as e:
 app.permanent_session_lifetime = timedelta(minutes=30)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = True
+# Le cookie "Secure" n'est envoyé par le navigateur que sur une connexion HTTPS.
+# En local (docker compose, TLS_MODE=http par défaut) ça bloquerait toute
+# connexion admin : on aligne le flag sur le TLS_MODE réellement servi par nginx.
+app.config['SESSION_COOKIE_SECURE'] = (os.environ.get('TLS_MODE', 'http') == 'https')
 
 csrf = CSRFProtect(app)
 
@@ -398,17 +401,9 @@ def add_tournament():
 
 @app.route('/admin/matchmaking', methods=['GET'])
 def matchmaking():
-    if 'admin_token' not in session:
-        flash('Accès réservé aux administrateurs', 'warning')
-        return redirect(url_for('admin_login'))
-
-    headers = {'X-Admin-Token': session['admin_token']}
-    _, status = backend_request('GET', '/admin/check-token', headers=headers)
-    if status in [401, 403]:
-        session.pop('admin_token', None)
-        flash('Votre session a expiré. Veuillez vous reconnecter.', 'danger')
-        return redirect(url_for('admin_login'))
-
+    # Ouvert à tout le monde : la page ne fait que consulter la liste publique
+    # des joueurs (/joueurs/noms) et calcule les équipes côté client, aucune
+    # action admin n'est effectuée ici.
     return render_template("matchmaking.html")
 
 @app.route('/admin/revert_last', methods=['POST'])

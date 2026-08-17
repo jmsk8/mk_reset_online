@@ -71,6 +71,7 @@ services:
     environment:
       - BACKEND_URL=http://backend:8080
       - SECRET_KEY=${SECRET_KEY}
+      - TLS_MODE=${TLS_MODE:-http}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]

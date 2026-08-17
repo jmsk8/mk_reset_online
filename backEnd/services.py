@@ -637,18 +637,23 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             rows = cur.fetchall()
 
         tournoi_meta = {}
+        session_keys = {}
         for row in rows:
             tid = row[8]
             score = float(row[2])
             if tid not in tournoi_meta:
                 tournoi_meta[tid] = {"sum_score": 0.0, "count": 0}
+                # Une session (ex: matchmaking qui scinde un gros groupe) peut generer
+                # plusieurs tournois le meme jour dans la meme ligue. On les regroupe
+                # ici comme pour la penalisation d'absence (cf routes_admin.py).
+                session_keys[tid] = (row[7], row[10])
             tournoi_meta[tid]["count"] += 1
             tournoi_meta[tid]["sum_score"] += score
 
         for tid, meta in tournoi_meta.items():
             meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1.0
 
-        total_tournois = len(tournoi_meta)
+        total_tournois = len(set(session_keys.values()))
         min_participation_req = total_tournois * MIN_PARTICIPATION_RATIO
 
         stats = {}
