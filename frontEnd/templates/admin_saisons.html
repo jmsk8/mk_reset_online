@@ -184,6 +184,25 @@
                                     <p class="help has-text-grey mt-2" id="recapModeCreateHelp"></p>
                                 </div>
 
+                                <div class="field mt-4 type-selector">
+                                    <label class="label mb-3">Version de l'IP</label>
+                                    <div class="control">
+                                        <label class="radio has-text-white mr-4">
+                                            <input type="radio" name="ipVersionCreate" value="v1" id="ipVersionV1Radio">
+                                            <span class="tag is-light ml-1">v1</span>
+                                            Formule actuelle
+                                        </label>
+                                        <label class="radio has-text-white mt-2">
+                                            <input type="radio" name="ipVersionCreate" value="v2" id="ipVersionV2Radio">
+                                            <span class="tag is-success is-light ml-1">v2</span>
+                                            Corrige le déséquilibre entre lobbies d'une même session
+                                        </label>
+                                    </div>
+                                    <p class="help has-text-grey mt-2">
+                                        Figée définitivement pour ce récap à sa création (n'affecte jamais les récaps déjà générés).
+                                    </p>
+                                </div>
+
                                 <div id="leagueOptionsSection" class="field mt-4 type-selector" style="display: none;">
                                     <label class="label mb-3">
                                         <i class="fas fa-layer-group mr-1"></i> Options Ligue
@@ -535,6 +554,7 @@ async function loadAwardTypes() {
         const victoryCondition = hiddenSelect.value;
         const isYearly = document.querySelector('input[name="seasonType"]:checked').value === 'annual';
         const recapMode = document.querySelector('input[name="recapModeCreate"]:checked').value;
+        const ipVersion = document.querySelector('input[name="ipVersionCreate"]:checked').value;
 
         if (!victoryCondition) {
             alert("Veuillez choisir une condition de victoire !");
@@ -553,7 +573,8 @@ async function loadAwardTypes() {
             is_yearly: isYearly,
             recap_mode: recapMode,
             include_league_stats: includeLeagueStats,
-            include_league_moves: includeLeagueMoves
+            include_league_moves: includeLeagueMoves,
+            ip_version: ipVersion
         };
 
         const res = await api('/admin/saisons', 'POST', data);
@@ -697,9 +718,17 @@ async function loadAwardTypes() {
         r.addEventListener('change', checkLeagueTournaments);
     });
 
+    async function prefillIpVersionDefault() {
+        const config = await api('/admin/config', 'GET');
+        const isV2 = config && config.ip_version_live === 'v2';
+        document.getElementById('ipVersionV2Radio').checked = isV2;
+        document.getElementById('ipVersionV1Radio').checked = !isV2;
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         loadAwardTypes();
         loadSaisons();
+        prefillIpVersionDefault();
     });
     </script>
 </body>
