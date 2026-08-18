@@ -25,11 +25,23 @@ BORDERLINE_LEVEL_BONUS = 0.025
 MIN_PARTICIPATION_RATIO = 0.4
 MIN_TOURNAMENT_RATIO = 0.5
 GM_MAX_RATIO_CAP = 1.5
-GM_BASE_WEIGHT = 5.0
 GM_EXTRA_MATCH_BONUS = 0.3
 REFERENCE_PLAYER_COUNT = 12.0
 
-TOKEN_LIFETIME_MINUTES = 30
+# poids = nb_joueurs_du_lobby + GM_BASE_WEIGHT. Plus la valeur est petite,
+# plus l'effectif du lobby pese dans la moyenne ponderee de l'IP.
+GM_BASE_WEIGHT_V1 = 5.0
+GM_BASE_WEIGHT_V2 = 15.0
+
+# IP v2 : force_lobby = mu_moyen_du_lobby / mu_moyen_de_la_session (calcules
+# en excluant le joueur concerne). ratio_ajuste = ratio * force_lobby ** ALPHA.
+# Session a un seul lobby => force_lobby = 1.0, donc v2 = v1.
+IP_V2_FORCE_LOBBY_ALPHA = 0.6       # 0 = desactive, 1 = correction brute
+IP_V2_FORCE_LOBBY_MIN = 0.5
+IP_V2_FORCE_LOBBY_MAX = 2.0
+IP_VERSION_DEFAULT = "v1"
+
+TOKEN_LIFETIME_MINUTES = 60
 
 CACHE_TTL_SECONDS = 300
 

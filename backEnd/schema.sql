@@ -31,7 +31,8 @@ INSERT INTO public.configuration (key, value) VALUES
 ('unranked_threshold', '10'),
 ('sigma_threshold', '4.0'),
 ('league_mode_enabled', 'false'),
-('inter_league_moves', '0');
+('inter_league_moves', '0'),
+('ip_version_live', 'v1');
 
 -- LIGUES (Déplacé avant pour les références)
 CREATE TABLE public.ligues (
@@ -141,7 +142,8 @@ CREATE TABLE public.saisons (
     ligue_couleur character varying(20),
     is_league_recap boolean DEFAULT false,
     include_league_stats boolean DEFAULT false,
-    include_league_moves boolean DEFAULT false
+    include_league_moves boolean DEFAULT false,
+    ip_version character varying(4) NOT NULL DEFAULT 'v1'
 );
 ALTER TABLE public.saisons OWNER TO CURRENT_USER;
 
