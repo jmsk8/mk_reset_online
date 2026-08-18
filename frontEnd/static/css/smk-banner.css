@@ -83,7 +83,68 @@
 }
 
 .hero.smk-snes-banner[data-season="summer"] .layer-scrolling-bg {
-    background-image: url('../img/banners/index-banner-defaut.png');
+    background-image: url('../img/banners/summer/index-banner-summer.png');
+}
+
+/* Soleil (été uniquement) : suit .layer-scrolling-bg via bgCameraX, entre le
+   ciel et le reste des calques. */
+.layer-sun {
+    position: absolute;
+    top: 0%;
+    left: 0;
+    width: 70px;
+    height: 61px;
+    z-index: 2;
+    display: none;
+    will-change: transform;
+}
+
+.hero.smk-snes-banner[data-season="summer"] .layer-sun {
+    display: block;
+    background-image: url('../img/banners/summer/sun-summer.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    image-rendering: pixelated;
+    animation: sunGlow 2.4s ease-in-out infinite;
+}
+
+@media screen and (min-width: 769px) {
+    .layer-sun {
+        width: 100px;
+        height: 88px;
+    }
+}
+
+@keyframes sunGlow {
+    0%, 100% {
+        filter: drop-shadow(0 0 16px rgba(255, 230, 130, 1))
+                drop-shadow(0 0 36px rgba(255, 205, 80, 0.85))
+                drop-shadow(0 0 64px rgba(255, 180, 50, 0.55));
+    }
+    50% {
+        filter: drop-shadow(0 0 28px rgba(255, 235, 150, 1))
+                drop-shadow(0 0 58px rgba(255, 205, 80, 1))
+                drop-shadow(0 0 95px rgba(255, 180, 50, 0.75));
+    }
+}
+
+/* Décor de premier plan (été uniquement), défile à la vitesse de la route. */
+.layer-scrolling-fg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 65%;
+    z-index: 3;
+    background-size: 3840px 100%;
+    background-repeat: repeat-x;
+    image-rendering: pixelated;
+    will-change: background-position;
+}
+
+.hero.smk-snes-banner[data-season="summer"] .layer-scrolling-fg {
+    background-image: url('../img/banners/summer/index-banner-summer-foureground.png');
 }
 
 .layer-ground {
@@ -91,7 +152,7 @@
     bottom: 0;
     width: 100%;
     height: 35%;
-    z-index: 3;
+    z-index: 4;
     background-color: #333333;
 }
 
@@ -103,24 +164,24 @@
     width: 120%;
     height: 10px;
     background-image: repeating-linear-gradient(90deg, #cc0000 0px, #cc0000 40px, #ffffff 40px, #ffffff 80px);
-    z-index: 4;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.5); 
+    z-index: 5;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
     animation: scrollBgFast var(--road-anim-duration, 0.32s) linear infinite;
 }
 
 .layer-finish-line {
     position: absolute;
     bottom: 0;
-    left: 0; 
-    height: 35%; 
-    width: 60px; 
+    left: 0;
+    height: 35%;
+    width: 60px;
     background-color: #ffffff;
     background-image:
         linear-gradient(45deg, #000000 25%, transparent 25%, transparent 75%, #000000 75%, #000000),
         linear-gradient(45deg, #000000 25%, transparent 25%, transparent 75%, #000000 75%, #000000);
     background-position: 0 0, 15px 15px;
     background-size: 30px 30px;
-    z-index: 5; 
+    z-index: 6;
     box-shadow: -2px 0 5px rgba(0,0,0,0.3);
     will-change: transform;
 }

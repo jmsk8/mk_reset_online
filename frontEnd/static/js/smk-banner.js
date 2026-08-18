@@ -27,6 +27,7 @@ const GAME_CONFIG = {
     world: {
         width: 3840,
         finishLineX: 1440,
+        sunX: 1920,
         itemBoxX: 3456,
         itemBoxCount: 4
     },
@@ -130,6 +131,8 @@ let globalTimeOffset = 0;
 let pauseStartTime = 0;
 
 let cachedBg = null;
+let cachedFg = null;
+let cachedIsSummerBanner = false;
 let cachedContainer = null;
 let cachedIsMobile = false;
 
@@ -145,11 +148,13 @@ const rng = Math.random;
 
 let worldState = {
     cameraX: 0,
+    bgCameraX: 0,
     karts: [],
     kartsById: {},
     items: [],
     itemBoxes: [],
     finishLine: null,
+    sun: null,
     nextSpawnTime: 0,
     cachedLeader: null,
 
@@ -360,6 +365,7 @@ function initWorld() {
     worldState.items = [];
     worldState.itemBoxes = [];
     worldState.cameraX = 0;
+    worldState.bgCameraX = 0;
     worldState.nextSpawnTime = getGameTime() + 500;
     worldState.cachedLeader = null;
     worldState.nextItemId = 1;
@@ -379,6 +385,15 @@ function initWorld() {
         worldState.finishLine = {
             element: finishLineEl,
             worldX: GAME_CONFIG.world.finishLineX
+        };
+    }
+
+    const sunEl = document.querySelector('.layer-sun');
+    if (sunEl) {
+        // Solidaire du fond (bgCameraX), pas de la route.
+        worldState.sun = {
+            element: sunEl,
+            worldX: GAME_CONFIG.world.sunX
         };
     }
 
@@ -477,6 +492,9 @@ function initWorld() {
     });
 
     cachedBg = document.querySelector('.layer-scrolling-bg');
+    cachedFg = document.querySelector('.layer-scrolling-fg');
+    const _bannerElSeason = document.getElementById('bannerSection');
+    cachedIsSummerBanner = !!_bannerElSeason && _bannerElSeason.dataset.season === 'summer';
 
     if (GAME_CONFIG.debugMode) initDebugHUD();
 }
@@ -591,15 +609,30 @@ function renderState(gameNow, screenWidth) {
     const renderMargin = GAME_CONFIG.rendering.bufferZone;
 
     if (cachedBg) {
-        const bgX = worldState.cameraX % GAME_CONFIG.world.width;
+        // Été : parallaxe, moitié vitesse.
+        const bgX = cachedIsSummerBanner ? worldState.bgCameraX : worldState.cameraX;
         cachedBg.style.backgroundPosition = `-${bgX}px 0px`;
     } else {
         cachedBg = document.querySelector('.layer-scrolling-bg');
     }
 
+    if (cachedFg) {
+        // Décor de premier plan (été uniquement) : même vitesse que la route.
+        const fgX = worldState.cameraX % GAME_CONFIG.world.width;
+        cachedFg.style.backgroundPosition = `-${fgX}px 0px`;
+    } else {
+        cachedFg = document.querySelector('.layer-scrolling-fg');
+    }
+
     if (worldState.finishLine && worldState.finishLine.element) {
         const rx = getScreenPosition(worldState.finishLine.worldX, worldState.cameraX, screenWidth);
         worldState.finishLine.element.style.transform = `translate3d(${rx}px, 0, 0)`;
+    }
+
+    if (worldState.sun && worldState.sun.element) {
+        // Solidaire du fond, pas de la route.
+        const sx = getScreenPosition(worldState.sun.worldX, worldState.bgCameraX, screenWidth);
+        worldState.sun.element.style.transform = `translate3d(${sx}px, 0, 0)`;
     }
 
     const boxesLen = worldState.itemBoxes.length;

@@ -389,6 +389,12 @@
             state.cameraX -= cfg.world.width;
         }
 
+        // Fond en parallaxe : moitié vitesse, boucle indépendamment de cameraX.
+        state.bgCameraX = (state.bgCameraX || 0) + cfg.speeds.roadPPS * deltaTime * 0.5;
+        if (state.bgCameraX >= cfg.world.width) {
+            state.bgCameraX -= cfg.world.width;
+        }
+
         const boxesLen = state.itemBoxes.length;
         for (let i = 0; i < boxesLen; i++) {
             const box = state.itemBoxes[i];
