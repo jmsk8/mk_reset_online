@@ -23,7 +23,7 @@ from auth import admin_required
 from cache import invalidate_cache
 from utils import generate_unique_slug, extract_league_number
 from services import (
-    recalculate_tiers,
+    recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
     _aggregate_season_stats, _determine_winners, _save_awards_to_db,
     _apply_inter_league_moves,
 )
@@ -864,6 +864,11 @@ def add_tournament():
                         ligue_nom_archive = res_ligue[0]
                         ligue_couleur_archive = res_ligue[1]
 
+                # Reference IP v2 : on fige la grille telle qu'elle est maintenant,
+                # avant que le tournoi ne fasse bouger le moindre mu. Sans effet si
+                # un tournoi de la meme journee l'a deja figee.
+                snapshot_grille(cur, date_tournoi)
+
                 cur.execute("""
                     INSERT INTO Tournois (date, ligue_id, ligue_nom, ligue_couleur)
                     VALUES (%s, %s, %s, %s)
@@ -1072,7 +1077,7 @@ def revert_last_tournament():
                 cur.execute("SELECT id, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
                 last = cur.fetchone()
                 if not last: return jsonify({"message": "Aucun tournoi à annuler."}), 404
-                tid = last[0]
+                tid, tdate = last[0], last[1]
 
                 cur.execute("SELECT joueur_id, old_mu, old_sigma FROM Participations WHERE tournoi_id = %s", (tid,))
                 participants = cur.fetchall()
@@ -1099,6 +1104,7 @@ def revert_last_tournament():
                 cur.execute("DELETE FROM ghost_log WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Participations WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (tid,))
+                drop_grille_snapshot_if_orphan(cur, tdate)
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -1117,6 +1123,10 @@ def delete_tournament(id):
                 cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
                 res = cur.fetchone()
                 threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
+
+                cur.execute("SELECT date FROM Tournois WHERE id = %s", (id,))
+                row_date = cur.fetchone()
+                tdate = row_date[0] if row_date else None
 
                 cur.execute("SELECT joueur_id, old_sigma FROM ghost_log WHERE tournoi_id = %s", (id,))
                 ghost_rows = cur.fetchall()
@@ -1146,6 +1156,8 @@ def delete_tournament(id):
                     """, batch_updates)
 
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (id,))
+                if tdate is not None:
+                    drop_grille_snapshot_if_orphan(cur, tdate)
             conn.commit()
             recalculate_tiers()
             invalidate_cache()

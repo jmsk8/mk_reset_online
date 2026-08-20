@@ -19,6 +19,7 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+ALTER TABLE IF EXISTS ONLY public.grille_snapshots DROP CONSTRAINT IF EXISTS grille_snapshots_joueur_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.tournois DROP CONSTRAINT IF EXISTS tournois_ligue_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.saisons DROP CONSTRAINT IF EXISTS saisons_ligue_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.participations DROP CONSTRAINT IF EXISTS participations_tournoi_id_fkey;
@@ -42,6 +43,7 @@ DROP INDEX IF EXISTS public.idx_ghost_log_tournoi_id;
 DROP INDEX IF EXISTS public.idx_ghost_log_joueur_id;
 DROP INDEX IF EXISTS public.idx_awards_obtenus_saison_id;
 DROP INDEX IF EXISTS public.idx_awards_obtenus_joueur_id;
+DROP INDEX IF EXISTS public.idx_grille_snapshots_date;
 DROP INDEX IF EXISTS public.awards_obtenus_unique_no_ligue;
 ALTER TABLE IF EXISTS ONLY public.types_awards DROP CONSTRAINT IF EXISTS types_awards_pkey;
 ALTER TABLE IF EXISTS ONLY public.types_awards DROP CONSTRAINT IF EXISTS types_awards_code_key;
@@ -51,6 +53,7 @@ ALTER TABLE IF EXISTS ONLY public.saisons DROP CONSTRAINT IF EXISTS saisons_pkey
 ALTER TABLE IF EXISTS ONLY public.participations DROP CONSTRAINT IF EXISTS participations_pkey;
 ALTER TABLE IF EXISTS ONLY public.ligues DROP CONSTRAINT IF EXISTS ligues_pkey;
 ALTER TABLE IF EXISTS ONLY public.league_movements DROP CONSTRAINT IF EXISTS league_movements_pkey;
+ALTER TABLE IF EXISTS ONLY public.grille_snapshots DROP CONSTRAINT IF EXISTS grille_snapshots_pkey;
 ALTER TABLE IF EXISTS ONLY public.joueurs DROP CONSTRAINT IF EXISTS joueurs_pkey;
 ALTER TABLE IF EXISTS ONLY public.joueurs DROP CONSTRAINT IF EXISTS joueurs_nom_key;
 ALTER TABLE IF EXISTS ONLY public.global_resets DROP CONSTRAINT IF EXISTS global_resets_pkey;
@@ -79,6 +82,7 @@ DROP SEQUENCE IF EXISTS public.ligues_id_seq;
 DROP TABLE IF EXISTS public.ligues;
 DROP SEQUENCE IF EXISTS public.league_movements_id_seq;
 DROP TABLE IF EXISTS public.league_movements;
+DROP TABLE IF EXISTS public.grille_snapshots;
 DROP SEQUENCE IF EXISTS public.joueurs_id_seq;
 DROP TABLE IF EXISTS public.joueurs;
 DROP SEQUENCE IF EXISTS public.global_resets_id_seq;
@@ -233,6 +237,25 @@ ALTER SEQUENCE public.global_resets_id_seq OWNER TO CURRENT_USER;
 --
 
 ALTER SEQUENCE public.global_resets_id_seq OWNED BY public.global_resets.id;
+
+
+--
+-- Name: grille_snapshots; Type: TABLE; Schema: public; Owner: example
+--
+
+CREATE TABLE public.grille_snapshots (
+    date date NOT NULL,
+    joueur_id integer NOT NULL,
+    mu double precision NOT NULL,
+    sigma double precision NOT NULL,
+    is_ranked boolean DEFAULT true NOT NULL,
+    tier character(1) DEFAULT 'U'::bpchar NOT NULL,
+    source character varying(16) DEFAULT 'live'::character varying NOT NULL,
+    created_at timestamp without time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.grille_snapshots OWNER TO CURRENT_USER;
 
 
 --
@@ -2044,6 +2067,14 @@ ALTER TABLE ONLY public.joueurs
 
 
 --
+-- Name: grille_snapshots grille_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: example
+--
+
+ALTER TABLE ONLY public.grille_snapshots
+    ADD CONSTRAINT grille_snapshots_pkey PRIMARY KEY (date, joueur_id);
+
+
+--
 -- Name: joueurs joueurs_pkey; Type: CONSTRAINT; Schema: public; Owner: example
 --
 
@@ -2120,6 +2151,13 @@ ALTER TABLE ONLY public.types_awards
 --
 
 CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus USING btree (joueur_id, saison_id, award_id) WHERE (ligue_id IS NULL);
+
+
+--
+-- Name: idx_grille_snapshots_date; Type: INDEX; Schema: public; Owner: example
+--
+
+CREATE INDEX idx_grille_snapshots_date ON public.grille_snapshots USING btree (date);
 
 
 --
@@ -2208,6 +2246,14 @@ ALTER TABLE ONLY public.awards_obtenus
 
 ALTER TABLE ONLY public.awards_obtenus
     ADD CONSTRAINT awards_obtenus_saison_id_fkey FOREIGN KEY (saison_id) REFERENCES public.saisons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: grille_snapshots grille_snapshots_joueur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: example
+--
+
+ALTER TABLE ONLY public.grille_snapshots
+    ADD CONSTRAINT grille_snapshots_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
 
 
 --
