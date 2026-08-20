@@ -155,6 +155,15 @@ db-dump:             ## Dump the running database into dumps/ (NAME=... to pick 
 db-example:          ## Rebuild the fictional example dump (backEnd/dump.sql)
 	@bash scripts/build-example-dump.sh
 
+db-migrate:          ## Applique une migration SQL (FILE=backEnd/migrations/xxx.sql)
+	@test -n "$(FILE)" || { echo "Usage : make db-migrate FILE=backEnd/migrations/xxx.sql"; exit 1; }
+	$(COMPOSE) exec -T db psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} < $(FILE)
+	@$(RESTART_APP)
+
+ip-backfill:         ## Reconstitue les grilles figées IP v2 des tournois déjà joués (DRY=1 pour simuler, SINCE=AAAA-MM-JJ)
+	$(COMPOSE) exec -T backend python - $(if $(DRY),--dry-run) $(if $(SINCE),--since $(SINCE)) < scripts/backfill_grille_snapshots.py
+	@$(if $(DRY),true,$(RESTART_APP))
+
 # ── Help ─────────────────────────────────────
 
 help:                ## Show this help
@@ -162,7 +171,7 @@ help:                ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
-        re-front re-back re-db re-db-dump \
+        re-front re-back re-db re-db-dump db-migrate ip-backfill \
         logs logs-nginx logs-front logs-back logs-db ps \
         db-shell db-dump db-example help
 
