@@ -217,36 +217,27 @@
         return state.karts.find(k => k.rank === rank && (k.state === 'running' || k.state === 'hit')) || null;
     }
 
-    function getHeldItemOffset(cfg, isMobile, holdPosition) {
-        if (holdPosition === 'hands') {
-            return {
-                offset: isMobile ? cfg.offsets.heldItemHands.x.mobile : cfg.offsets.heldItemHands.x.pc,
-                yShift: isMobile ? cfg.offsets.heldItemHands.yShift.mobile : cfg.offsets.heldItemHands.yShift.pc
-            };
-        }
-        return {
-            offset: isMobile ? cfg.offsets.heldItemBehind.mobile : cfg.offsets.heldItemBehind.pc,
-            yShift: 0
-        };
+    // Offset monde de l'objet traîné, identique sur tous les appareils. Un objet
+    // tenu en main n'est jamais une entité de collision, donc pas d'offset ici.
+    function getHeldItemWorldOffset(cfg, holdPosition) {
+        return holdPosition === 'behind' ? cfg.offsets.world.heldItemBehind : 0;
     }
 
     function getHoldPosition(itemType) {
         return (itemType === 'shroom' || itemType === 'star') ? 'hands' : 'behind';
     }
 
-    function giveKartItem(cfg, state, rng, now, isMobile, kart) {
+    function giveKartItem(cfg, state, rng, now, kart) {
         if (kart.heldItem) return null;
 
         const itemType = rollItem(cfg, state, rng, kart);
         const holdPosition = getHoldPosition(itemType);
-        const { offset, yShift } = getHeldItemOffset(cfg, isMobile, holdPosition);
 
         const itemId = state.nextItemId++;
+        // Pas d'offset visuel ici : le client le dérive de holdPosition au rendu.
         kart.heldItem = {
             id: itemId,
             type: itemType,
-            offset: offset,
-            yShift: yShift,
             holdPosition: holdPosition
         };
 
@@ -255,7 +246,7 @@
         return { type: 'spawnHeldItem', kartId: kart.id, itemId: itemId, itemType: itemType, holdPosition: holdPosition };
     }
 
-    function activateItem(cfg, state, rng, now, isMobile, kart, events) {
+    function activateItem(cfg, state, rng, now, kart, events) {
         const held = kart.heldItem;
         if (!held) return;
 
@@ -282,10 +273,9 @@
             return;
         }
 
-        let startX = kart.worldX + held.offset;
+        let startX = kart.worldX + getHeldItemWorldOffset(cfg, held.holdPosition);
         if (held.type === 'greenShell' || held.type === 'redShell') {
-            const shellOffset = isMobile ? cfg.offsets.shellSpawn.mobile : cfg.offsets.shellSpawn.pc;
-            startX = kart.worldX + shellOffset;
+            startX = kart.worldX + cfg.offsets.world.shellSpawn;
         }
 
         let itemAbsVelX = 0;
@@ -379,7 +369,7 @@
         state.previousRanking = newRanking;
     }
 
-    function stepPhysics(cfg, state, rng, now, deltaTime, isMobile) {
+    function stepPhysics(cfg, state, rng, now, deltaTime) {
         const events = [];
 
         handleSpawns(cfg, state, rng, now, events);
@@ -429,7 +419,7 @@
 
             if (kart.state === 'running') {
                 if (kart.pendingItemGrantTime && now > kart.pendingItemGrantTime) {
-                    const ev = giveKartItem(cfg, state, rng, now, isMobile, kart);
+                    const ev = giveKartItem(cfg, state, rng, now, kart);
                     if (ev) events.push(ev);
                     kart.pendingItemGrantTime = 0;
                 }
@@ -547,7 +537,7 @@
                 }
 
                 if (kart.heldItem && kart.state === 'running' && kart.heldItem.holdPosition === 'behind') {
-                    let itemWorldX = kart.worldX + kart.heldItem.offset;
+                    let itemWorldX = kart.worldX + cfg.offsets.world.heldItemBehind;
                     if (itemWorldX < 0) itemWorldX += cfg.world.width;
                     if (itemWorldX >= cfg.world.width) itemWorldX -= cfg.world.width;
 
@@ -583,7 +573,7 @@
                     }
                 }
 
-                if (kart.heldItem && now > kart.throwTime) activateItem(cfg, state, rng, now, isMobile, kart, events);
+                if (kart.heldItem && now > kart.throwTime) activateItem(cfg, state, rng, now, kart, events);
 
             } else if (kart.state === 'hit') {
                 const totalHitTime = cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
@@ -713,7 +703,7 @@
 
                 let hitHeldItem = false;
                 if (kart.heldItem && kart.heldItem.holdPosition === 'behind') {
-                    let hX = kart.worldX + kart.heldItem.offset;
+                    let hX = kart.worldX + cfg.offsets.world.heldItemBehind;
                     if (hX < 0) hX += cfg.world.width;
                     if (hX >= cfg.world.width) hX -= cfg.world.width;
 
@@ -773,7 +763,7 @@
         updateAI,
         rollItem,
         getKartByRank,
-        getHeldItemOffset,
+        getHeldItemWorldOffset,
         getHoldPosition,
         giveKartItem,
         activateItem,

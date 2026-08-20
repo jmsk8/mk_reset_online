@@ -76,9 +76,17 @@ const GAME_CONFIG = {
         shellVertical: 1.5
     },
     offsets: {
-        heldItemBehind: { pc: -50, mobile: -35 },
-        heldItemHands: { x: { pc: 28, mobile: 18 }, yShift: { pc: 30, mobile: 25 } },
-        shellSpawn: { pc: 50, mobile: 35 }
+        // Lu par la physique. Valeurs uniques (PC = mobile) pour des collisions
+        // reproductibles quel que soit l'appareil.
+        world: {
+            heldItemBehind: -50,
+            shellSpawn: 50
+        },
+        // Rendu uniquement, jamais lu par la physique.
+        render: {
+            heldItemBehind: { pc: -50, mobile: -35 },
+            heldItemHands: { x: { pc: 28, mobile: 18 }, yShift: { pc: 30, mobile: 25 } }
+        }
     },
     delays: {
         hitDecelDuration: 1500,
@@ -536,6 +544,23 @@ function getItemVisualConfig(itemType) {
     }
 }
 
+// Recalculé à chaque frame (pas figé à l'attribution) pour suivre un
+// changement de breakpoint pendant que l'objet est tenu.
+function getHeldItemRenderOffset(holdPosition) {
+    const r = GAME_CONFIG.offsets.render;
+
+    if (holdPosition === 'hands') {
+        return {
+            offset: cachedIsMobile ? r.heldItemHands.x.mobile : r.heldItemHands.x.pc,
+            yShift: cachedIsMobile ? r.heldItemHands.yShift.mobile : r.heldItemHands.yShift.pc
+        };
+    }
+    return {
+        offset: cachedIsMobile ? r.heldItemBehind.mobile : r.heldItemBehind.pc,
+        yShift: 0
+    };
+}
+
 function createHeldItemElement(itemType, holdPosition) {
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
 
@@ -701,8 +726,9 @@ function renderState(gameNow, screenWidth) {
                 const hel = itemEls[kart.heldItem.id];
                 if (hel) {
                     hel.style.display = 'block';
-                    const hx = rx + kart.heldItem.offset;
-                    const hy = kart.heldItem.yShift || 0;
+                    const hOffset = getHeldItemRenderOffset(kart.heldItem.holdPosition);
+                    const hx = rx + hOffset.offset;
+                    const hy = hOffset.yShift;
                     hel.style.transform = `translate3d(${hx}px, ${-hy}px, 0)`;
                     hel.style.bottom = `${kart.yPercent}%`;
                     const itemZ = kart.heldItem.holdPosition === 'hands' ? zVal + 1 : zVal;
@@ -762,7 +788,7 @@ function animate(timestamp) {
             screenWidth = screenWidth / GAME_CONFIG.rendering.mobileScale;
         }
 
-        const events = PH.stepPhysics(GAME_CONFIG, worldState, rng, gameNow, deltaTime, cachedIsMobile);
+        const events = PH.stepPhysics(GAME_CONFIG, worldState, rng, gameNow, deltaTime);
 
         for (let e = 0; e < events.length; e++) applyEvent(events[e]);
 
