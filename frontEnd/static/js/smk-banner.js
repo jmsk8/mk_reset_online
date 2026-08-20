@@ -4,8 +4,12 @@ const GAME_CONFIG = {
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
         initials: { 'mario': 'M', 'luigi': 'L', 'peach': 'P', 'toad': 'T', 'yoshi': 'Y', 'bowser': 'B', 'dk': 'D', 'koopa': 'K' },
+        // Les 5 orientations disponibles en asset. Les 3 manquantes pour un 360
+        // complet (sud-ouest, ouest, nord-ouest) sont obtenues en miroir.
+        kartDirections: ['side-right', 'front-right', 'front', 'back-right', 'back'],
         paths: {
-            char: (name) => `static/img/${name}/${name}-static.png`,
+            char: (name) => `static/img/${name}/${name}-asset-anime/${name}-side-right.png`,
+            charFrame: (name, dir) => `static/img/${name}/${name}-asset-anime/${name}-${dir}.png`,
             pp: (name) => `static/img/${name}/${name}-pp.png`,
             greenShell: (frame) => `static/img/green-shell/green-shell${frame}.png`,
             redShell: (frame) => `static/img/red-shell/red-shell${frame}.png`,
@@ -76,9 +80,17 @@ const GAME_CONFIG = {
         shellVertical: 1.5
     },
     offsets: {
-        heldItemBehind: { pc: -50, mobile: -35 },
-        heldItemHands: { x: { pc: 28, mobile: 18 }, yShift: { pc: 30, mobile: 25 } },
-        shellSpawn: { pc: 50, mobile: 35 }
+        // Lu par la physique. Valeurs uniques (PC = mobile) pour des collisions
+        // reproductibles quel que soit l'appareil.
+        world: {
+            heldItemBehind: -50,
+            shellSpawn: 50
+        },
+        // Rendu uniquement, jamais lu par la physique.
+        render: {
+            heldItemBehind: { pc: -50, mobile: -35 },
+            heldItemHands: { x: { pc: 28, mobile: 18 }, yShift: { pc: 30, mobile: 25 } }
+        }
     },
     delays: {
         hitDecelDuration: 1500,
@@ -124,6 +136,27 @@ const GAME_CONFIG = {
         shroom: { width: 36, widthMobile: 26 },
         star: { width: 36, widthMobile: 26 },
         box: { sizePC: 42, sizeMobile: 42 }
+    },
+    // Tête-à-queue joué pendant l'état 'hit'. La durée du malus n'est pas
+    // configurable ici : elle reste delays.hitDecelDuration + hitPauseDuration.
+    // durationRatio ne règle que la vitesse de la toupie, en la jouant sur une
+    // fraction de ce malus ; le kart tient ensuite side-right jusqu'au départ.
+    // Baisser = plus rapide (0.8 = 2 tours en 1600 ms, soit 100 ms/frame).
+    kartSpin: {
+        turns: 2,
+        durationRatio: 0.8,
+        // Un tour complet dans le sens horaire depuis side-right (est).
+        // mirror: true = scaleX(-1) sur l'asset "droite" équivalent.
+        frames: [
+            { dir: 'side-right',  mirror: false }, // est
+            { dir: 'front-right', mirror: false }, // sud-est
+            { dir: 'front',       mirror: false }, // sud
+            { dir: 'front-right', mirror: true  }, // sud-ouest
+            { dir: 'side-right',  mirror: true  }, // ouest
+            { dir: 'back-right',  mirror: true  }, // nord-ouest
+            { dir: 'back',        mirror: false }, // nord
+            { dir: 'back-right',  mirror: false }  // nord-est
+        ]
     }
 };
 
@@ -250,7 +283,20 @@ function preloadImages() {
         const ppImg = new Image();
         ppImg.src = GAME_CONFIG.resources.paths.pp(charName);
         imageCache[`pp_${charName}`] = ppImg;
+
+        // Toutes les orientations, sinon le premier tête-à-queue clignote
+        // le temps que les frames se téléchargent.
+        GAME_CONFIG.resources.kartDirections.forEach(dir => {
+            const dirImg = new Image();
+            dirImg.src = GAME_CONFIG.resources.paths.charFrame(charName, dir);
+            imageCache[`kart_${charName}_${dir}`] = dirImg;
+        });
     });
+}
+
+function getKartFrameSrc(charName, dir) {
+    const cached = imageCache[`kart_${charName}_${dir}`];
+    return cached ? cached.src : GAME_CONFIG.resources.paths.charFrame(charName, dir);
 }
 
 function initLeaderboard() {
@@ -434,14 +480,20 @@ function initWorld() {
         wrapper.style.bottom = `${verticalPos}%`;
         wrapper.style.zIndex = getZIndex(verticalPos);
 
+        // Intercalaire dédié au miroir : snesBounce occupe déjà `transform`
+        // sur l'img, on ne peut pas y empiler un scaleX(-1).
+        const sprite = document.createElement('div');
+        sprite.classList.add('kart-sprite');
+
         const img = document.createElement('img');
         img.src = GAME_CONFIG.resources.paths.char(charName);
         img.classList.add('kart-static-png');
 
-        wrapper.appendChild(img);
+        sprite.appendChild(img);
+        wrapper.appendChild(sprite);
         cachedContainer.appendChild(wrapper);
 
-        kartEls[index] = { wrapper, img };
+        kartEls[index] = { wrapper, sprite, img };
 
         const stats = GAME_CONFIG.characterStats[charName];
         const kart = {
@@ -484,7 +536,7 @@ function initWorld() {
             hasPassedFinishLine: false,
             stopped: false,
 
-            currentFilter: 'none'
+            currentSpinFrame: 0
         };
 
         worldState.karts.push(kart);
@@ -534,6 +586,23 @@ function getItemVisualConfig(itemType) {
         default:
             return { size: 32, src: '', holdPosition: 'behind' };
     }
+}
+
+// Recalculé à chaque frame (pas figé à l'attribution) pour suivre un
+// changement de breakpoint pendant que l'objet est tenu.
+function getHeldItemRenderOffset(holdPosition) {
+    const r = GAME_CONFIG.offsets.render;
+
+    if (holdPosition === 'hands') {
+        return {
+            offset: cachedIsMobile ? r.heldItemHands.x.mobile : r.heldItemHands.x.pc,
+            yShift: cachedIsMobile ? r.heldItemHands.yShift.mobile : r.heldItemHands.yShift.pc
+        };
+    }
+    return {
+        offset: cachedIsMobile ? r.heldItemBehind.mobile : r.heldItemBehind.pc,
+        yShift: 0
+    };
 }
 
 function createHeldItemElement(itemType, holdPosition) {
@@ -603,6 +672,28 @@ function applyEvent(ev) {
             break;
         }
     }
+}
+
+// Dérivé uniquement de l'état physique (state + hitEndTime) : aucun timer de
+// rendu à maintenir, donc rien qui puisse désynchroniser du reste de la course.
+// Le kart boucle kartSpin.turns fois sur la fraction durationRatio du malus,
+// puis reste sur side-right jusqu'à ce qu'il reparte.
+function getSpinFrameIndex(kart, gameNow) {
+    if (kart.state !== 'hit') return 0;
+
+    const hitDuration = GAME_CONFIG.delays.hitDecelDuration + GAME_CONFIG.delays.hitPauseDuration;
+    const spinDuration = hitDuration * GAME_CONFIG.kartSpin.durationRatio;
+    const elapsed = gameNow - (kart.hitEndTime - hitDuration);
+    if (elapsed <= 0 || elapsed >= spinDuration) return 0;
+
+    const frameCount = GAME_CONFIG.kartSpin.frames.length;
+    return Math.floor((elapsed / spinDuration) * GAME_CONFIG.kartSpin.turns * frameCount) % frameCount;
+}
+
+function applyKartSpinFrame(kart, els) {
+    const frame = GAME_CONFIG.kartSpin.frames[kart.currentSpinFrame];
+    els.img.src = getKartFrameSrc(kart.charName, frame.dir);
+    els.sprite.classList.toggle('kart-mirrored', frame.mirror);
 }
 
 function renderState(gameNow, screenWidth) {
@@ -689,20 +780,19 @@ function renderState(gameNow, screenWidth) {
             const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
             if (wrapper.style.zIndex != zVal) wrapper.style.zIndex = zVal;
 
-            const targetFilter = (kart.state === 'hit') ? 'hit' : 'none';
-            if (kart.currentFilter !== targetFilter) {
-                kart.currentFilter = targetFilter;
-                wrapper.style.filter = targetFilter === 'hit'
-                    ? 'brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)'
-                    : 'none';
+            const spinFrame = getSpinFrameIndex(kart, gameNow);
+            if (kart.currentSpinFrame !== spinFrame) {
+                kart.currentSpinFrame = spinFrame;
+                applyKartSpinFrame(kart, els);
             }
 
             if (kart.heldItem) {
                 const hel = itemEls[kart.heldItem.id];
                 if (hel) {
                     hel.style.display = 'block';
-                    const hx = rx + kart.heldItem.offset;
-                    const hy = kart.heldItem.yShift || 0;
+                    const hOffset = getHeldItemRenderOffset(kart.heldItem.holdPosition);
+                    const hx = rx + hOffset.offset;
+                    const hy = hOffset.yShift;
                     hel.style.transform = `translate3d(${hx}px, ${-hy}px, 0)`;
                     hel.style.bottom = `${kart.yPercent}%`;
                     const itemZ = kart.heldItem.holdPosition === 'hands' ? zVal + 1 : zVal;
@@ -762,7 +852,7 @@ function animate(timestamp) {
             screenWidth = screenWidth / GAME_CONFIG.rendering.mobileScale;
         }
 
-        const events = PH.stepPhysics(GAME_CONFIG, worldState, rng, gameNow, deltaTime, cachedIsMobile);
+        const events = PH.stepPhysics(GAME_CONFIG, worldState, rng, gameNow, deltaTime);
 
         for (let e = 0; e < events.length; e++) applyEvent(events[e]);
 
