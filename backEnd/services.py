@@ -49,12 +49,12 @@ def _leave_one_out(sum_mu: float, count_mu: int, own_mu: float | None) -> float 
 
 
 # Coefficient de force du lobby (IP v2, voir IP_V2_* dans constants.py) :
-# mu moyen du lobby vs mu moyen de la session. Vaut 1.0 quand la session ne
-# compte qu'un seul lobby (aucun impact sur v1).
-def _force_lobby(mu_moyen_lobby: float | None, mu_moyen_session: float | None) -> float:
-    if not mu_moyen_lobby or not mu_moyen_session or mu_moyen_session <= 0:
+# mu moyen du lobby vs mu moyen de reference (periode entiere, toutes
+# ligues confondues). Vaut 1.0 si non calculable.
+def _force_lobby(mu_moyen_lobby: float | None, mu_moyen_reference: float | None) -> float:
+    if not mu_moyen_lobby or not mu_moyen_reference or mu_moyen_reference <= 0:
         return 1.0
-    ratio = mu_moyen_lobby / mu_moyen_session
+    ratio = mu_moyen_lobby / mu_moyen_reference
     force = ratio ** IP_V2_FORCE_LOBBY_ALPHA
     return max(IP_V2_FORCE_LOBBY_MIN, min(IP_V2_FORCE_LOBBY_MAX, force))
 
@@ -278,7 +278,7 @@ def _compute_grand_master(stats_dict: dict, total_tournois: int, ip_version: str
             poids = N_i + BASE_POIDS
             ratio = min(GM_MAX_RATIO_CAP, S_i / M_barre_i) if M_barre_i > 0 else 0
             if ip_version == "v2":
-                ratio *= _force_lobby(m.get('avg_old_mu'), m.get('session_avg_old_mu'))
+                ratio *= _force_lobby(m.get('avg_old_mu'), m.get('period_avg_old_mu'))
             weighted_val = ratio * poids
 
             num_total += weighted_val
@@ -403,19 +403,30 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             """, params)
             parts = cur.fetchall()
 
+            # Reference IP v2 : mu moyen de toute la periode, toutes ligues
+            # confondues (pas de ligue_filter ici, volontairement).
+            cur.execute("""
+                SELECT p.old_mu
+                FROM participations p
+                JOIN tournois t ON p.tournoi_id = t.id
+                WHERE t.date >= %s AND t.date <= %s
+            """, [d_debut, d_fin])
+            period_sum_mu = 0.0
+            period_count_mu = 0
+            for (old_mu,) in cur.fetchall():
+                if old_mu is not None:
+                    period_sum_mu += float(old_mu)
+                    period_count_mu += 1
+
     labels = [d.strftime("%d/%m") for _, d, _ in tournois]
     tournoi_ids = [tid for tid, _, _ in tournois]
     tournoi_dates = {tid: d for tid, d, _ in tournois}
-    # Le matchmaking peut scinder un gros groupe en plusieurs tournois la meme
-    # session (meme jour, meme ligue) : on les regroupe via cette cle.
-    session_keys = {tid: (d, ligue_id) for tid, d, ligue_id in tournois}
     tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
     total_tournois = len(tournoi_ids)
 
     seuil_participation = total_tournois * MIN_PARTICIPATION_RATIO
 
     meta: dict[int, dict] = {}
-    session_meta: dict[tuple, dict] = {}
     for tid, _jid, _nom, _col, score, _pos, old_mu in parts:
         m = meta.setdefault(tid, {"sum": 0.0, "count": 0, "sum_mu": 0.0, "count_mu": 0})
         m["sum"] += float(score)
@@ -423,10 +434,6 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
         if old_mu is not None:
             m["sum_mu"] += float(old_mu)
             m["count_mu"] += 1
-            skey = session_keys.get(tid)
-            smeta = session_meta.setdefault(skey, {"sum_mu": 0.0, "count_mu": 0})
-            smeta["sum_mu"] += float(old_mu)
-            smeta["count_mu"] += 1
     for m in meta.values():
         m["avg"] = m["sum"] / m["count"] if m["count"] > 0 else 1.0
         # avg_mu leave-one-out : calcule par joueur plus bas (cf _leave_one_out).
@@ -458,12 +465,11 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 seen_first = True
                 matchs += 1
                 t = meta[tournoi_ids[idx]]
-                smeta = session_meta.get(session_keys.get(tournoi_ids[idx]), {"sum_mu": 0.0, "count_mu": 0})
 
                 ratio_v1 = min(GM_MAX_RATIO_CAP, score / t["avg"]) if t["avg"] > 0 else 0.0
                 lobby_avg_mu = _leave_one_out(t["sum_mu"], t["count_mu"], own_old_mu)
-                session_avg_mu = _leave_one_out(smeta["sum_mu"], smeta["count_mu"], own_old_mu)
-                ratio_v2 = ratio_v1 * _force_lobby(lobby_avg_mu, session_avg_mu)
+                period_avg_mu = _leave_one_out(period_sum_mu, period_count_mu, own_old_mu)
+                ratio_v2 = ratio_v1 * _force_lobby(lobby_avg_mu, period_avg_mu)
 
                 poids_v1 = t["count"] + _gm_base_weight("v1")
                 poids_v2 = t["count"] + _gm_base_weight("v2")
@@ -695,9 +701,23 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             cur.execute(base_query, params)
             rows = cur.fetchall()
 
+            # Reference IP v2 : mu moyen de toute la periode, toutes ligues
+            # confondues (pas de filtre ligue ici, volontairement).
+            cur.execute("""
+                SELECT p.old_mu
+                FROM Participations p
+                JOIN Tournois t ON p.tournoi_id = t.id
+                WHERE t.date >= %s AND t.date <= %s
+            """, [d_debut, d_fin])
+            period_sum_mu = 0.0
+            period_count_mu = 0
+            for (old_mu,) in cur.fetchall():
+                if old_mu is not None:
+                    period_sum_mu += float(old_mu)
+                    period_count_mu += 1
+
         tournoi_meta = {}
         session_keys = {}
-        session_meta: dict[tuple, dict] = {}
         for row in rows:
             tid = row[8]
             score = float(row[2])
@@ -713,11 +733,6 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             if old_mu is not None:
                 tournoi_meta[tid]["sum_mu"] += float(old_mu)
                 tournoi_meta[tid]["count_mu"] += 1
-
-                skey = session_keys[tid]
-                smeta = session_meta.setdefault(skey, {"sum_mu": 0.0, "count_mu": 0})
-                smeta["sum_mu"] += float(old_mu)
-                smeta["count_mu"] += 1
 
         for tid, meta in tournoi_meta.items():
             meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1.0
@@ -760,7 +775,6 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             if position == 2: p["second_places"] += 1
 
             t = tournoi_meta[tid]
-            smeta = session_meta[session_keys[tid]]
             p["gm_history"].append({
                 "tid": tid,
                 "date": t_date,
@@ -769,7 +783,7 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                 "avg_score": t["avg_score"],
                 "count": t["count"],
                 "avg_old_mu": _leave_one_out(t["sum_mu"], t["count_mu"], own_old_mu),
-                "session_avg_old_mu": _leave_one_out(smeta["sum_mu"], smeta["count_mu"], own_old_mu),
+                "period_avg_old_mu": _leave_one_out(period_sum_mu, period_count_mu, own_old_mu),
                 "ligue_id": ligue_id
             })
             p["final_ts"] = float(new_ts) if new_ts else 0.0
