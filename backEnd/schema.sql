@@ -31,7 +31,8 @@ INSERT INTO public.configuration (key, value) VALUES
 ('unranked_threshold', '10'),
 ('sigma_threshold', '4.0'),
 ('league_mode_enabled', 'false'),
-('inter_league_moves', '0');
+('inter_league_moves', '0'),
+('ip_version_live', 'v1');
 
 -- LIGUES (Déplacé avant pour les références)
 CREATE TABLE public.ligues (
@@ -96,6 +97,26 @@ ALTER TABLE public.participations OWNER TO CURRENT_USER;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
 
+-- GRILLE FIGEE (reference IP v2)
+-- Etat de la grille des joueurs juste avant la generation du premier tournoi
+-- d'une journee. Sert de moyenne de reference fixe a l'IP v2 : tous les
+-- tournois d'un meme jour partagent la meme reference. Voir IP_V2_REF_* dans
+-- constants.py pour le critere d'inclusion.
+CREATE TABLE public.grille_snapshots (
+    date date NOT NULL,
+    joueur_id integer NOT NULL REFERENCES public.joueurs(id) ON DELETE CASCADE,
+    mu double precision NOT NULL,
+    sigma double precision NOT NULL,
+    is_ranked boolean NOT NULL DEFAULT true,
+    tier character(1) NOT NULL DEFAULT 'U',
+    source character varying(16) NOT NULL DEFAULT 'live',
+    created_at timestamp without time zone DEFAULT now(),
+    CONSTRAINT grille_snapshots_pkey PRIMARY KEY (date, joueur_id)
+);
+ALTER TABLE public.grille_snapshots OWNER TO CURRENT_USER;
+
+CREATE INDEX idx_grille_snapshots_date ON public.grille_snapshots (date);
+
 -- HISTORIQUE FANTOME
 CREATE TABLE public.ghost_log (
     id serial PRIMARY KEY,
@@ -141,7 +162,8 @@ CREATE TABLE public.saisons (
     ligue_couleur character varying(20),
     is_league_recap boolean DEFAULT false,
     include_league_stats boolean DEFAULT false,
-    include_league_moves boolean DEFAULT false
+    include_league_moves boolean DEFAULT false,
+    ip_version character varying(4) NOT NULL DEFAULT 'v1'
 );
 ALTER TABLE public.saisons OWNER TO CURRENT_USER;
 

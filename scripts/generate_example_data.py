@@ -104,6 +104,7 @@ def main():
 
     tournaments = []
     participations = []
+    grilles = []
     tid = 0
 
     for _, _, start, end, is_yearly, _ in SEASONS:
@@ -123,6 +124,18 @@ def main():
             # ne seraient jamais retenus.
             rng.shuffle(pool)
             pool = pool[:12]
+
+            # Reference de l'IP v2 : la grille est figee telle qu'elle est
+            # avant que le tournoi du jour ne fasse bouger le moindre mu.
+            grid_stats = current_tier_stats(ratings, played)
+            for n in available:
+                r = ratings[n]
+                ranked = played[n] >= UNRANKED_THRESHOLD
+                classable = grid_stats and ranked and r.sigma <= SIGMA_THRESHOLD
+                grilles.append((
+                    day, player_id[n], r.mu, r.sigma, ranked,
+                    tier_for(r.mu - 3 * r.sigma, *grid_stats) if classable else "U",
+                ))
 
             tid += 1
             tournaments.append((tid, day))
@@ -182,6 +195,14 @@ def main():
         out.append(
             "INSERT INTO public.tournois (id, date, ligue_id, ligue_nom, ligue_couleur) "
             f"VALUES ({t_id}, '{day.isoformat()}', NULL, NULL, NULL);"
+        )
+
+    for (day, jid, mu, sigma, ranked, tier) in grilles:
+        out.append(
+            "INSERT INTO public.grille_snapshots "
+            "(date, joueur_id, mu, sigma, is_ranked, tier, source) VALUES "
+            f"('{day.isoformat()}', {jid}, {mu:.6f}, {sigma:.6f}, "
+            f"{str(ranked).lower()}, {sql_str(tier)}, 'live');"
         )
 
     for (jid, t_id, score, mu, sigma, ts, new_tier, pos, old_mu, old_sigma) in participations:

@@ -16,14 +16,14 @@ from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, TRUESKILL_BETA, TRUESKILL_DRAW_PROBABILITY,
     DEFAULT_TAU, DEFAULT_GHOST_PENALTY, DEFAULT_UNRANKED_THRESHOLD, DEFAULT_SIGMA_THRESHOLD,
     DEFAULT_GHOST_THRESHOLD_DAYS, DEFAULT_GHOST_INTERVAL_DAYS,
-    GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES,
+    GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES, IP_VERSION_DEFAULT,
 )
 from db import get_db_connection, ADMIN_PASSWORD_HASH
 from auth import admin_required
 from cache import invalidate_cache
 from utils import generate_unique_slug, extract_league_number
 from services import (
-    recalculate_tiers,
+    recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
     _aggregate_season_stats, _determine_winners, _save_awards_to_db,
     _apply_inter_league_moves,
 )
@@ -205,7 +205,7 @@ def get_config():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'ghost_threshold_days', 'ghost_interval_days', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled', 'inter_league_moves')")
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'ghost_threshold_days', 'ghost_interval_days', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled', 'inter_league_moves', 'ip_version_live')")
                 rows = dict(cur.fetchall())
         return jsonify({
             "tau": float(rows.get('tau', DEFAULT_TAU)),
@@ -216,7 +216,8 @@ def get_config():
             "unranked_threshold": int(rows.get('unranked_threshold', DEFAULT_UNRANKED_THRESHOLD)),
             "sigma_threshold": float(rows.get('sigma_threshold', DEFAULT_SIGMA_THRESHOLD)),
             "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true',
-            "inter_league_moves": int(rows.get('inter_league_moves', 0))
+            "inter_league_moves": int(rows.get('inter_league_moves', 0)),
+            "ip_version_live": rows.get('ip_version_live', IP_VERSION_DEFAULT)
         })
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
@@ -234,6 +235,9 @@ def update_config():
         ghost_interval_days = max(1, int(data.get('ghost_interval_days', DEFAULT_GHOST_INTERVAL_DAYS)))
         unranked_threshold = int(data.get('unranked_threshold', DEFAULT_UNRANKED_THRESHOLD))
         sigma_threshold = float(data.get('sigma_threshold', DEFAULT_SIGMA_THRESHOLD))
+        ip_version_live = str(data.get('ip_version_live', IP_VERSION_DEFAULT))
+        if ip_version_live not in ('v1', 'v2'):
+            return jsonify({"error": "ip_version_live invalide"}), 400
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -245,6 +249,7 @@ def update_config():
                     ('ghost_interval_days', str(ghost_interval_days)),
                     ('unranked_threshold', str(unranked_threshold)),
                     ('sigma_threshold', str(sigma_threshold)),
+                    ('ip_version_live', ip_version_live),
                 ]
 
                 if 'league_mode_enabled' in data:
@@ -410,7 +415,7 @@ def admin_saisons():
                 cur.execute("""
                     SELECT id, nom, date_debut, date_fin, slug, config_awards, is_active,
                            victory_condition, is_yearly, ligue_id, ligue_nom, ligue_couleur, is_league_recap,
-                           include_league_stats, include_league_moves
+                           include_league_stats, include_league_moves, ip_version
                     FROM saisons ORDER BY date_fin DESC, ligue_id ASC NULLS FIRST
                 """)
                 saisons = []
@@ -423,7 +428,8 @@ def admin_saisons():
                         "ligue_id": r[9], "ligue_nom": r[10], "ligue_couleur": r[11],
                         "is_league_recap": r[12] if r[12] else False,
                         "include_league_stats": r[13] if r[13] else False,
-                        "include_league_moves": r[14] if r[14] else False
+                        "include_league_moves": r[14] if r[14] else False,
+                        "ip_version": r[15] or IP_VERSION_DEFAULT
                     })
         return jsonify(saisons)
 
@@ -440,6 +446,15 @@ def admin_saisons():
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
+                    if 'ip_version' in data:
+                        ip_version = str(data.get('ip_version'))
+                        if ip_version not in ('v1', 'v2'):
+                            return jsonify({"error": "ip_version invalide"}), 400
+                    else:
+                        cur.execute("SELECT value FROM Configuration WHERE key = 'ip_version_live'")
+                        live_row = cur.fetchone()
+                        ip_version = live_row[0] if live_row else IP_VERSION_DEFAULT
+
                     if recap_mode == 'league':
                         cur.execute("SELECT id, nom, couleur FROM Ligues ORDER BY niveau ASC")
                         ligues = cur.fetchall()
@@ -460,9 +475,9 @@ def admin_saisons():
 
                         cur.execute(
                             """INSERT INTO saisons (nom, slug, date_debut, date_fin, config_awards, is_active,
-                               victory_condition, is_yearly, is_league_recap)
-                               VALUES (%s, %s, %s, %s, %s, false, %s, %s, true)""",
-                            (nom, slug, d_debut, d_fin, config_json, victory_cond, is_yearly)
+                               victory_condition, is_yearly, is_league_recap, ip_version)
+                               VALUES (%s, %s, %s, %s, %s, false, %s, %s, true, %s)""",
+                            (nom, slug, d_debut, d_fin, config_json, victory_cond, is_yearly, ip_version)
                         )
 
                         conn.commit()
@@ -475,10 +490,10 @@ def admin_saisons():
 
                         cur.execute(
                             """INSERT INTO saisons (nom, slug, date_debut, date_fin, config_awards, is_active,
-                               victory_condition, is_yearly, include_league_stats, include_league_moves)
-                               VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s) RETURNING id""",
+                               victory_condition, is_yearly, include_league_stats, include_league_moves, ip_version)
+                               VALUES (%s, %s, %s, %s, %s, false, %s, %s, %s, %s, %s) RETURNING id""",
                             (nom, slug, d_debut, d_fin, config_json, victory_cond, is_yearly,
-                             include_league_stats, include_league_moves)
+                             include_league_stats, include_league_moves, ip_version)
                         )
                         conn.commit()
                         return jsonify({"status": "success"})
@@ -614,13 +629,13 @@ def save_season_awards(id):
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT date_debut, date_fin, config_awards, victory_condition, is_yearly, ligue_id, is_league_recap,
-                       include_league_stats, include_league_moves
+                       include_league_stats, include_league_moves, ip_version
                 FROM saisons WHERE id = %s
             """, (id,))
             row = cur.fetchone()
             if not row: return jsonify({'error': 'Saison introuvable'}), 404
 
-            d_debut, d_fin, config, vic_cond, is_yearly, saison_ligue_id, is_league_recap, include_league_stats, include_league_moves = row
+            d_debut, d_fin, config, vic_cond, is_yearly, saison_ligue_id, is_league_recap, include_league_stats, include_league_moves, ip_version = row
             active_awards = config.get('active_awards', [])
             movements = []
 
@@ -644,7 +659,7 @@ def save_season_awards(id):
                 conn.commit()
 
                 for ligue_id, ligue_nom, ligue_couleur in ligues:
-                    ligue_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_id)
+                    ligue_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_id, ip_version)
 
                     gm_list = ligue_stats['candidates'].get('grand_master', [])
                     gm_sorted = sorted(gm_list, key=lambda x: x.get('final_score', 0), reverse=True)
@@ -698,7 +713,7 @@ def save_season_awards(id):
                 count = cur.fetchone()[0]
                 if count == 0:
                     return jsonify({'error': 'Aucun tournoi pour cette ligue pendant cette période'}), 400
-                global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', saison_ligue_id)
+                global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', saison_ligue_id, ip_version)
 
                 top_3, winners_map = _determine_winners(
                     global_stats['candidates'], vic_cond, active_awards, global_stats['total_tournois']
@@ -731,7 +746,7 @@ def save_season_awards(id):
                 count = cur.fetchone()[0]
                 if count == 0:
                     return jsonify({'error': 'Aucun tournoi en mode classique pendant cette période'}), 400
-                global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic')
+                global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic', None, ip_version)
 
                 top_3, winners_map = _determine_winners(
                     global_stats['candidates'], vic_cond, active_awards, global_stats['total_tournois']
@@ -752,7 +767,7 @@ def save_season_awards(id):
                     if ligues:
                         all_rankings = {}
                         for ligue_id, ligue_nom, ligue_couleur in ligues:
-                            ligue_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_id)
+                            ligue_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_id, ip_version)
                             gm_list = ligue_stats['candidates'].get('grand_master', [])
                             gm_sorted = sorted(gm_list, key=lambda x: x.get('final_score', 0), reverse=True)
                             all_rankings[ligue_id] = {p['id']: rank for rank, p in enumerate(gm_sorted, 1)}
@@ -848,6 +863,11 @@ def add_tournament():
                     if res_ligue:
                         ligue_nom_archive = res_ligue[0]
                         ligue_couleur_archive = res_ligue[1]
+
+                # Reference IP v2 : on fige la grille telle qu'elle est maintenant,
+                # avant que le tournoi ne fasse bouger le moindre mu. Sans effet si
+                # un tournoi de la meme journee l'a deja figee.
+                snapshot_grille(cur, date_tournoi)
 
                 cur.execute("""
                     INSERT INTO Tournois (date, ligue_id, ligue_nom, ligue_couleur)
@@ -1057,7 +1077,7 @@ def revert_last_tournament():
                 cur.execute("SELECT id, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
                 last = cur.fetchone()
                 if not last: return jsonify({"message": "Aucun tournoi à annuler."}), 404
-                tid = last[0]
+                tid, tdate = last[0], last[1]
 
                 cur.execute("SELECT joueur_id, old_mu, old_sigma FROM Participations WHERE tournoi_id = %s", (tid,))
                 participants = cur.fetchall()
@@ -1084,6 +1104,7 @@ def revert_last_tournament():
                 cur.execute("DELETE FROM ghost_log WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Participations WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (tid,))
+                drop_grille_snapshot_if_orphan(cur, tdate)
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -1102,6 +1123,10 @@ def delete_tournament(id):
                 cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
                 res = cur.fetchone()
                 threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
+
+                cur.execute("SELECT date FROM Tournois WHERE id = %s", (id,))
+                row_date = cur.fetchone()
+                tdate = row_date[0] if row_date else None
 
                 cur.execute("SELECT joueur_id, old_sigma FROM ghost_log WHERE tournoi_id = %s", (id,))
                 ghost_rows = cur.fetchall()
@@ -1131,6 +1156,8 @@ def delete_tournament(id):
                     """, batch_updates)
 
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (id,))
+                if tdate is not None:
+                    drop_grille_snapshot_if_orphan(cur, tdate)
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
