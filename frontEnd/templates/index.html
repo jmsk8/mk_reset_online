@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/form-readability.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/smk-banner.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/smk-banner.css') }}?v={{ app_version }}">
     
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
@@ -256,8 +256,10 @@
     {% include 'footer.html' %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/physics.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/smk-banner.js') }}"></script>
+    {# physics.js et smk-banner.js doivent rester en phase (contrat GAME_CONFIG) :
+       cache-buster nécessaire, sinon nginx (expires 7d) peut ne rafraîchir qu'un des deux. #}
+    <script src="{{ url_for('static', filename='js/physics.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/smk-banner.js') }}?v={{ app_version }}"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
