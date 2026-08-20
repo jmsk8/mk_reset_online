@@ -121,6 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const ghostIntervalDays = parseInt(document.getElementById('configGhostIntervalDays').value);
             const unrankedLimit = parseInt(document.getElementById('configUnrankedLimit').value);
             const sigmaThreshold = parseFloat(document.getElementById('configSigmaLimit').value);
+            const ipVersionLive = document.querySelector('input[name="ipVersionLive"]:checked')?.value || 'v1';
 
             if (isNaN(tau)) { alert("Erreur: Tau invalide."); return; }
             if (isNaN(ghostPenalty)) { alert("Erreur: Pénalité invalide."); return; }
@@ -136,7 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ghost_threshold_days: ghostThresholdDays,
                 ghost_interval_days: ghostIntervalDays,
                 unranked_threshold: unrankedLimit,
-                sigma_threshold: sigmaThreshold
+                sigma_threshold: sigmaThreshold,
+                ip_version_live: ipVersionLive
             });
             
             if (res.error) alert("Erreur: " + res.error);
@@ -217,6 +219,12 @@ async function loadConfig() {
         const sigmaInput = document.getElementById('configSigmaLimit');
         if (sigmaInput && res.sigma_threshold !== undefined) {
             sigmaInput.value = res.sigma_threshold;
+        }
+
+        if (res.ip_version_live !== undefined) {
+            const isV2 = res.ip_version_live === 'v2';
+            document.getElementById('configIpVersionV2').checked = isV2;
+            document.getElementById('configIpVersionV1').checked = !isV2;
         }
     }
 }

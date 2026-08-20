@@ -6,7 +6,7 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request, abort, render_template
 
-from constants import DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAULT_PAGE_SIZE
+from constants import DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAULT_PAGE_SIZE, IP_VERSION_DEFAULT
 from db import get_db_connection
 from cache import get_cached, set_cached
 from services import (
@@ -76,7 +76,7 @@ def get_recap(slug):
             cur.execute("""
                 SELECT id, nom, date_debut, date_fin, slug,
                        config_awards, victory_condition, is_yearly, is_league_recap, ligue_id,
-                       include_league_stats, include_league_moves
+                       include_league_stats, include_league_moves, ip_version
                 FROM saisons
                 WHERE slug = %s
             """, (slug,))
@@ -84,7 +84,8 @@ def get_recap(slug):
             if not saison_row:
                 return jsonify({"error": "Saison introuvable"}), 404
 
-            saison_id, nom, d_debut, d_fin, slug_bdd, config, vic_cond, is_yearly, is_league_recap, saison_ligue_id, include_league_stats, include_league_moves = saison_row
+            saison_id, nom, d_debut, d_fin, slug_bdd, config, vic_cond, is_yearly, is_league_recap, saison_ligue_id, include_league_stats, include_league_moves, ip_version = saison_row
+            ip_version = ip_version or IP_VERSION_DEFAULT
 
             ligues_disponibles = []
             ligue_courante = None
@@ -115,12 +116,12 @@ def get_recap(slug):
                 evo_mode = 'league'
                 if ligue_courante:
                     evo_ligue_id = ligue_courante["id"]
-                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_courante["id"])
+                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_courante["id"], ip_version)
                 else:
-                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'league')
+                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', None, ip_version)
             elif saison_ligue_id:
                 evo_mode, evo_ligue_id = 'league', saison_ligue_id
-                global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', saison_ligue_id)
+                global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', saison_ligue_id, ip_version)
             elif (include_league_stats or include_league_moves) and ligue_id_param:
                 cur.execute("""
                     SELECT DISTINCT l.id, l.nom, l.couleur, l.niveau
@@ -137,12 +138,12 @@ def get_recap(slug):
                 ligue_courante = next((l for l in ligues_disponibles if l["id"] == ligue_id_param), None)
                 if ligue_courante:
                     evo_mode, evo_ligue_id = 'league', ligue_courante["id"]
-                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_courante["id"])
+                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'league', ligue_courante["id"], ip_version)
                     is_hybrid_league_view = True
                 else:
-                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic')
+                    global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic', None, ip_version)
             else:
-                global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic')
+                global_stats = _aggregate_season_stats(d_debut, d_fin, 'classic', None, ip_version)
 
             cur.execute("SELECT code, nom, emoji, description, id FROM types_awards")
             types_ref = {
@@ -347,7 +348,7 @@ def get_recap(slug):
             ]
             dist_data = build_distribution(recap_players, lambda p: p["final_trueskill"])
 
-            ip_evolution = compute_ip_evolution(d_debut, d_fin, evo_mode, evo_ligue_id)
+            ip_evolution = compute_ip_evolution(d_debut, d_fin, evo_mode, evo_ligue_id, ip_version)
             position_evolution = compute_position_evolution(d_debut, d_fin, evo_mode, evo_ligue_id)
             position_breakdown = compute_position_breakdown(d_debut, d_fin, evo_mode, evo_ligue_id)
 
@@ -735,6 +736,10 @@ def classement_saison():
                     if not ligue_courante and ligues_disponibles:
                         ligue_courante = ligues_disponibles[0]
 
+                cur.execute("SELECT value FROM Configuration WHERE key = 'ip_version_live'")
+                live_row = cur.fetchone()
+                ip_version = live_row[0] if live_row else IP_VERSION_DEFAULT
+
         if is_league and ligue_courante:
             recap_mode, specific_ligue_id = 'league', ligue_courante["id"]
         elif is_league:
@@ -747,8 +752,8 @@ def classement_saison():
         if cached is not None:
             return jsonify(cached)
 
-        stats = _aggregate_season_stats(d_debut, d_fin, recap_mode, specific_ligue_id)
-        evo = compute_ip_evolution(d_debut, d_fin, recap_mode, specific_ligue_id)
+        stats = _aggregate_season_stats(d_debut, d_fin, recap_mode, specific_ligue_id, ip_version)
+        evo = compute_ip_evolution(d_debut, d_fin, recap_mode, specific_ligue_id, ip_version)
 
         recap_players = [
             {"nom": p["nom"], "color": "#FFFFFF", "score_gm": p["score_gm"]}

@@ -404,8 +404,10 @@
                                     const lines = [it.dataset.label];
                                     if (d.position != null) lines.push(`Position : ${d.position}`);
                                     lines.push(`Points : ${d.score}`);
-                                    lines.push(`IP du tournoi : ${d.ip_pur}`);
-                                    lines.push(`IP total : ${d.ip_total}`);
+                                    lines.push(`IP du tournoi (v1) : ${d.ip_pur_v1}`);
+                                    lines.push(`IP total (v1) : ${d.ip_total_v1}`);
+                                    lines.push(`IP du tournoi (v2) : ${d.ip_pur_v2}`);
+                                    lines.push(`IP total (v2) : ${d.ip_total_v2}`);
                                     return lines;
                                 }
                             }

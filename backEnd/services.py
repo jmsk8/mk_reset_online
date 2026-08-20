@@ -16,7 +16,9 @@ from constants import (
     BORDERLINE_JUMP_EXPONENT, BORDERLINE_MIN_TOURNAMENT_SIZE,
     BORDERLINE_MIN_VALID_MATCHES, BORDERLINE_JUMP_WEIGHT, BORDERLINE_LEVEL_BONUS,
     MIN_PARTICIPATION_RATIO, MIN_TOURNAMENT_RATIO,
-    GM_MAX_RATIO_CAP, GM_BASE_WEIGHT, GM_EXTRA_MATCH_BONUS, REFERENCE_PLAYER_COUNT,
+    GM_MAX_RATIO_CAP, GM_MAX_IP, GM_BASE_WEIGHT_V1, GM_BASE_WEIGHT_V2, GM_EXTRA_MATCH_BONUS, REFERENCE_PLAYER_COUNT,
+    IP_V2_FORCE_LOBBY_ALPHA, IP_V2_FORCE_LOBBY_MIN, IP_V2_FORCE_LOBBY_MAX, IP_VERSION_DEFAULT,
+    IP_V2_REF_REQUIRE_TIER, IP_V2_REF_REQUIRE_RANKED,
 )
 from db import get_db_connection
 
@@ -33,6 +35,75 @@ def trueskill_score(mu: float, sigma: float) -> float:
 
 def has_tier(is_ranked: bool, sigma: float, threshold: float) -> bool:
     return bool(is_ranked) and float(sigma) <= threshold
+
+
+def _gm_base_weight(ip_version: str) -> float:
+    return GM_BASE_WEIGHT_V2 if ip_version == "v2" else GM_BASE_WEIGHT_V1
+
+
+# Moyenne d'un groupe en excluant le joueur concerne, pour ne pas biaiser sa
+# propre reference avec son propre niveau.
+def _leave_one_out(sum_mu: float, count_mu: int, own_mu: float | None) -> float | None:
+    if own_mu is None or count_mu <= 1:
+        return None
+    return (sum_mu - float(own_mu)) / (count_mu - 1)
+
+
+# Coefficient de force du lobby (IP v2, voir IP_V2_* dans constants.py) :
+# mu moyen du lobby vs mu moyen de la grille figee du jour du tournoi (toutes
+# ligues confondues). Vaut 1.0 si non calculable.
+def _force_lobby(mu_moyen_lobby: float | None, mu_moyen_reference: float | None) -> float:
+    if not mu_moyen_lobby or not mu_moyen_reference or mu_moyen_reference <= 0:
+        return 1.0
+    ratio = mu_moyen_lobby / mu_moyen_reference
+    force = ratio ** IP_V2_FORCE_LOBBY_ALPHA
+    return max(IP_V2_FORCE_LOBBY_MIN, min(IP_V2_FORCE_LOBBY_MAX, force))
+
+
+# Un joueur compte dans la moyenne de reference IP v2 s'il "a un rank" :
+# present dans la grille (tier attribue) et pas inactif. Les deux criteres se
+# desactivent independamment via IP_V2_REF_* dans constants.py.
+def _counts_in_reference(is_ranked: bool, tier: str | None) -> bool:
+    if IP_V2_REF_REQUIRE_RANKED and not is_ranked:
+        return False
+    if IP_V2_REF_REQUIRE_TIER and (tier or 'U').strip().upper() == 'U':
+        return False
+    return True
+
+
+# Grilles figees des journees couvertes par la periode (cf grille_snapshots).
+# Retourne {date: {"sum": mu cumule, "count": effectif, "mus": {joueur_id: mu}}},
+# le detail par joueur servant au leave-one-out.
+def _load_reference_grids(cur: Any, d_debut: str, d_fin: str) -> dict:
+    cur.execute("""
+        SELECT date, joueur_id, mu, is_ranked, tier
+        FROM grille_snapshots
+        WHERE date >= %s AND date <= %s
+    """, [d_debut, d_fin])
+    grids: dict = {}
+    for d, jid, mu, is_ranked, tier in cur.fetchall():
+        if mu is None or not _counts_in_reference(is_ranked, tier):
+            continue
+        g = grids.setdefault(d, {"sum": 0.0, "count": 0, "mus": {}})
+        g["sum"] += float(mu)
+        g["count"] += 1
+        g["mus"][jid] = float(mu)
+    return grids
+
+
+# Moyenne de reference pour un joueur donne : mu moyen de la grille figee du
+# jour, le joueur lui-meme exclu s'il en fait partie (meme principe de
+# leave-one-out que pour le lobby). None si la journee n'a pas de grille figee,
+# auquel cas l'appelant se rabat sur la moyenne de periode.
+def _reference_mu(grid: dict | None, joueur_id: int) -> float | None:
+    if not grid or grid["count"] <= 0:
+        return None
+    own = grid["mus"].get(joueur_id)
+    if own is None:
+        return grid["sum"] / grid["count"]
+    if grid["count"] <= 1:
+        return None
+    return (grid["sum"] - own) / (grid["count"] - 1)
 
 
 def compute_distribution_stats(scores: Iterable[float]) -> tuple[float, float] | None:
@@ -163,6 +234,35 @@ def recalculate_tiers() -> None:
             conn.rollback()
 
 
+# Fige la grille des joueurs pour cette journee, si elle ne l'est pas deja.
+# A appeler avant toute modification de mu/sigma : c'est le premier tournoi du
+# jour qui definit la reference IP v2, les suivants (session de matchmaking
+# scindee en plusieurs lobbies) reutilisent la meme grille.
+# L'existence est testee sur la journee entiere, et pas ligne par ligne : sinon
+# un joueur cree entre-temps viendrait s'ajouter a une grille deja figee.
+def snapshot_grille(cur: Any, date_tournoi: Any) -> bool:
+    cur.execute("SELECT 1 FROM grille_snapshots WHERE date = %s LIMIT 1", (date_tournoi,))
+    if cur.fetchone():
+        return False
+    cur.execute("""
+        INSERT INTO grille_snapshots (date, joueur_id, mu, sigma, is_ranked, tier, source)
+        SELECT %s, id, mu, sigma, COALESCE(is_ranked, true), COALESCE(tier, 'U'), 'live'
+        FROM Joueurs
+        WHERE mu IS NOT NULL AND sigma IS NOT NULL
+    """, (date_tournoi,))
+    return True
+
+
+# Libere la grille figee d'une journee dont plus aucun tournoi ne subsiste,
+# pour qu'un tournoi rejoue a cette date reparte de l'etat courant. Tant qu'il
+# reste un tournoi ce jour-la, la grille reste valable et n'est pas touchee.
+def drop_grille_snapshot_if_orphan(cur: Any, date_tournoi: Any) -> None:
+    cur.execute("SELECT 1 FROM Tournois WHERE date = %s LIMIT 1", (date_tournoi,))
+    if cur.fetchone():
+        return
+    cur.execute("DELETE FROM grille_snapshots WHERE date = %s", (date_tournoi,))
+
+
 def _compute_advanced_stonks(conn: Any, d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> list[dict]:
     with conn.cursor() as cur:
         ligue_filter = ""
@@ -232,12 +332,12 @@ def _compute_advanced_stonks(conn: Any, d_debut: str, d_fin: str, recap_mode: st
         return stonks_list
 
 
-def _compute_grand_master(stats_dict: dict, total_tournois: int) -> tuple[dict | None, list[dict]]:
+def _compute_grand_master(stats_dict: dict, total_tournois: int, ip_version: str = IP_VERSION_DEFAULT) -> tuple[dict | None, list[dict]]:
     if total_tournois <= 0:
         return None, []
 
     seuil_participation = total_tournois * MIN_PARTICIPATION_RATIO
-    BASE_POIDS = GM_BASE_WEIGHT
+    BASE_POIDS = _gm_base_weight(ip_version)
 
     candidates = []
 
@@ -252,7 +352,16 @@ def _compute_grand_master(stats_dict: dict, total_tournois: int) -> tuple[dict |
             N_i = float(m['count'])
 
             poids = N_i + BASE_POIDS
-            ratio = (S_i / M_barre_i) if M_barre_i > 0 else 0
+            if ip_version == "v2":
+                # M_barre_i exclut le joueur juge (leave-one-out), sinon son propre
+                # score tire sa propre reference et amortit artificiellement son ratio.
+                denom = m.get('avg_score_excl_self') or M_barre_i
+                ratio = min(GM_MAX_RATIO_CAP, S_i / denom) if denom > 0 else 0
+                # Le plafond s'applique de nouveau apres la correction de force du
+                # lobby : sinon un match deja plafonne en ressortirait au-dessus.
+                ratio = min(GM_MAX_RATIO_CAP, ratio * _force_lobby(m.get('avg_old_mu'), m.get('ref_avg_mu')))
+            else:
+                ratio = min(GM_MAX_RATIO_CAP, S_i / M_barre_i) if M_barre_i > 0 else 0
             weighted_val = ratio * poids
 
             num_total += weighted_val
@@ -264,7 +373,7 @@ def _compute_grand_master(stats_dict: dict, total_tournois: int) -> tuple[dict |
         matchs_extra = max(0, nb_matchs_joueur - seuil_participation)
         bonus = matchs_extra * GM_EXTRA_MATCH_BONUS
 
-        final_score = ip_base + bonus
+        final_score = min(GM_MAX_IP, ip_base + bonus)
         is_eligible = (nb_matchs_joueur >= seuil_participation)
 
         candidates.append({
@@ -347,7 +456,7 @@ def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
     return scores
 
 
-def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
+def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None, ip_version: str = IP_VERSION_DEFAULT) -> dict:
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             ligue_filter = ""
@@ -361,7 +470,7 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 ligue_filter = " AND t.ligue_id IS NULL"
 
             cur.execute(f"""
-                SELECT t.id, t.date
+                SELECT t.id, t.date, t.ligue_id
                 FROM tournois t
                 WHERE t.date >= %s AND t.date <= %s{ligue_filter}
                 ORDER BY t.date ASC, t.id ASC
@@ -369,7 +478,7 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             tournois = cur.fetchall()
 
             cur.execute(f"""
-                SELECT p.tournoi_id, p.joueur_id, j.nom, j.color, p.score, p.position
+                SELECT p.tournoi_id, p.joueur_id, j.nom, j.color, p.score, p.position, p.old_mu
                 FROM participations p
                 JOIN tournois t ON p.tournoi_id = t.id
                 JOIN joueurs j ON p.joueur_id = j.id
@@ -377,55 +486,100 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             """, params)
             parts = cur.fetchall()
 
-    labels = [d.strftime("%d/%m") for _, d in tournois]
-    tournoi_ids = [tid for tid, _ in tournois]
-    tournoi_dates = {tid: d for tid, d in tournois}
+            # Reference IP v2 : grille figee du jour du tournoi, toutes ligues
+            # confondues (pas de ligue_filter ici, volontairement).
+            ref_grids = _load_reference_grids(cur, d_debut, d_fin)
+
+            # Repli pour les journees sans grille figee : mu moyen de la periode.
+            cur.execute("""
+                SELECT p.old_mu
+                FROM participations p
+                JOIN tournois t ON p.tournoi_id = t.id
+                WHERE t.date >= %s AND t.date <= %s
+            """, [d_debut, d_fin])
+            period_sum_mu = 0.0
+            period_count_mu = 0
+            for (old_mu,) in cur.fetchall():
+                if old_mu is not None:
+                    period_sum_mu += float(old_mu)
+                    period_count_mu += 1
+
+    labels = [d.strftime("%d/%m") for _, d, _ in tournois]
+    tournoi_ids = [tid for tid, _, _ in tournois]
+    tournoi_dates = {tid: d for tid, d, _ in tournois}
     tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
     total_tournois = len(tournoi_ids)
 
     seuil_participation = total_tournois * MIN_PARTICIPATION_RATIO
 
     meta: dict[int, dict] = {}
-    for tid, _jid, _nom, _col, score, _pos in parts:
-        m = meta.setdefault(tid, {"sum": 0.0, "count": 0})
+    for tid, _jid, _nom, _col, score, _pos, old_mu in parts:
+        m = meta.setdefault(tid, {"sum": 0.0, "count": 0, "sum_mu": 0.0, "count_mu": 0})
         m["sum"] += float(score)
         m["count"] += 1
+        if old_mu is not None:
+            m["sum_mu"] += float(old_mu)
+            m["count_mu"] += 1
     for m in meta.values():
         m["avg"] = m["sum"] / m["count"] if m["count"] > 0 else 1.0
+        # avg_mu leave-one-out : calcule par joueur plus bas (cf _leave_one_out).
 
     players: dict[int, dict] = {}
-    for tid, jid, nom, color, score, position in parts:
+    for tid, jid, nom, color, score, position, old_mu in parts:
         p = players.setdefault(jid, {"nom": nom, "color": color or "#FFFFFF", "by_idx": {}})
         idx = tid_index.get(tid)
         if idx is not None:
-            p["by_idx"][idx] = (float(score), position)
+            p["by_idx"][idx] = (float(score), position, old_mu)
 
     datasets = []
     for jid, p in players.items():
         data: list[float | None] = []
         points: list[dict | None] = []
-        num_total = 0.0
-        denom_total = 0.0
+        # v1 et v2 calcules en parallele pour pouvoir afficher les deux dans
+        # le tooltip, quelle que soit la version active sur le graphique.
+        num_total_v1 = 0.0
+        denom_total_v1 = 0.0
+        num_total_v2 = 0.0
+        denom_total_v2 = 0.0
         matchs = 0
         seen_first = False
         for idx in range(total_tournois):
             entry = p["by_idx"].get(idx)
             point_detail = None
             if entry is not None:
-                score, position = entry
+                score, position, own_old_mu = entry
                 seen_first = True
                 matchs += 1
                 t = meta[tournoi_ids[idx]]
-                poids = t["count"] + GM_BASE_WEIGHT
-                ratio = (score / t["avg"]) if t["avg"] > 0 else 0.0
-                num_total += ratio * poids
-                denom_total += poids
-                ip_pur = round(ratio * 100, 2)
+
+                ratio_v1 = min(GM_MAX_RATIO_CAP, score / t["avg"]) if t["avg"] > 0 else 0.0
+
+                # avg_score exclut le joueur juge (leave-one-out), meme principe que
+                # pour le mu : sinon son propre score amortit son propre ratio.
+                avg_score_excl = _leave_one_out(t["sum"], t["count"], score) or t["avg"]
+                ratio_v2_base = min(GM_MAX_RATIO_CAP, score / avg_score_excl) if avg_score_excl > 0 else 0.0
+                lobby_avg_mu = _leave_one_out(t["sum_mu"], t["count_mu"], own_old_mu)
+                ref_avg_mu = _reference_mu(ref_grids.get(tournoi_dates[tournoi_ids[idx]]), jid)
+                if ref_avg_mu is None:
+                    ref_avg_mu = _leave_one_out(period_sum_mu, period_count_mu, own_old_mu)
+                # Plafond applique apres la correction de force du lobby, comme
+                # dans _compute_grand_master.
+                ratio_v2 = min(GM_MAX_RATIO_CAP, ratio_v2_base * _force_lobby(lobby_avg_mu, ref_avg_mu))
+
+                poids_v1 = t["count"] + _gm_base_weight("v1")
+                poids_v2 = t["count"] + _gm_base_weight("v2")
+
+                num_total_v1 += ratio_v1 * poids_v1
+                denom_total_v1 += poids_v1
+                num_total_v2 += ratio_v2 * poids_v2
+                denom_total_v2 += poids_v2
+
                 point_detail = {
                     "date": tournoi_dates[tournoi_ids[idx]].strftime("%d/%m/%Y"),
                     "position": int(position) if position is not None else None,
                     "score": int(score),
-                    "ip_pur": ip_pur,
+                    "ip_pur_v1": round(ratio_v1 * 100, 2),
+                    "ip_pur_v2": round(ratio_v2 * 100, 2),
                 }
 
             if not seen_first:
@@ -433,12 +587,18 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 points.append(None)
                 continue
 
-            ip_base = (num_total / denom_total) * 100 if denom_total > 0 else 0.0
             bonus = max(0, matchs - seuil_participation) * GM_EXTRA_MATCH_BONUS
-            ip_total = round(ip_base + bonus, 2)
+            ip_base_v1 = (num_total_v1 / denom_total_v1) * 100 if denom_total_v1 > 0 else 0.0
+            ip_base_v2 = (num_total_v2 / denom_total_v2) * 100 if denom_total_v2 > 0 else 0.0
+            ip_total_v1 = round(min(GM_MAX_IP, ip_base_v1 + bonus), 2)
+            ip_total_v2 = round(min(GM_MAX_IP, ip_base_v2 + bonus), 2)
+            ip_total = ip_total_v2 if ip_version == "v2" else ip_total_v1
             data.append(ip_total)
 
             if point_detail is not None:
+                point_detail["ip_pur"] = point_detail["ip_pur_v2"] if ip_version == "v2" else point_detail["ip_pur_v1"]
+                point_detail["ip_total_v1"] = ip_total_v1
+                point_detail["ip_total_v2"] = ip_total_v2
                 point_detail["ip_total"] = ip_total
             points.append(point_detail)
 
@@ -609,14 +769,14 @@ def podiums_key(row: dict) -> tuple:
     return (c[1] if len(c) > 1 else 0, c[2] if len(c) > 2 else 0)
 
 
-def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> dict:
+def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None, ip_version: str = IP_VERSION_DEFAULT) -> dict:
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             base_query = """
                 SELECT
                     j.id, j.nom, p.score, p.position,
                     p.new_score_trueskill, p.mu, p.sigma,
-                    t.date, p.tournoi_id, j.sigma, t.ligue_id
+                    t.date, p.tournoi_id, j.sigma, t.ligue_id, p.old_mu
                 FROM Participations p
                 JOIN Tournois t ON p.tournoi_id = t.id
                 JOIN Joueurs j ON p.joueur_id = j.id
@@ -636,22 +796,45 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             cur.execute(base_query, params)
             rows = cur.fetchall()
 
+            # Reference IP v2 : grille figee du jour du tournoi, toutes ligues
+            # confondues (pas de filtre ligue ici, volontairement).
+            ref_grids = _load_reference_grids(cur, d_debut, d_fin)
+
+            # Repli pour les journees sans grille figee : mu moyen de la periode.
+            cur.execute("""
+                SELECT p.old_mu
+                FROM Participations p
+                JOIN Tournois t ON p.tournoi_id = t.id
+                WHERE t.date >= %s AND t.date <= %s
+            """, [d_debut, d_fin])
+            period_sum_mu = 0.0
+            period_count_mu = 0
+            for (old_mu,) in cur.fetchall():
+                if old_mu is not None:
+                    period_sum_mu += float(old_mu)
+                    period_count_mu += 1
+
         tournoi_meta = {}
         session_keys = {}
         for row in rows:
             tid = row[8]
             score = float(row[2])
+            old_mu = row[11]
             if tid not in tournoi_meta:
-                tournoi_meta[tid] = {"sum_score": 0.0, "count": 0}
+                tournoi_meta[tid] = {"sum_score": 0.0, "count": 0, "sum_mu": 0.0, "count_mu": 0}
                 # Une session (ex: matchmaking qui scinde un gros groupe) peut generer
                 # plusieurs tournois le meme jour dans la meme ligue. On les regroupe
                 # ici comme pour la penalisation d'absence (cf routes_admin.py).
                 session_keys[tid] = (row[7], row[10])
             tournoi_meta[tid]["count"] += 1
             tournoi_meta[tid]["sum_score"] += score
+            if old_mu is not None:
+                tournoi_meta[tid]["sum_mu"] += float(old_mu)
+                tournoi_meta[tid]["count_mu"] += 1
 
         for tid, meta in tournoi_meta.items():
             meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1.0
+            # avg_old_mu leave-one-out : calcule par joueur plus bas (cf _leave_one_out).
 
         total_tournois = len(set(session_keys.values()))
         min_participation_req = total_tournois * MIN_PARTICIPATION_RATIO
@@ -667,6 +850,7 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             tid = row[8]
             current_sigma = row[9]
             ligue_id = row[10]
+            own_old_mu = row[11]
 
             if pid not in stats:
                 stats[pid] = {
@@ -689,13 +873,19 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             if position == 2: p["second_places"] += 1
 
             t = tournoi_meta[tid]
+            ref_avg_mu = _reference_mu(ref_grids.get(t_date), pid)
+            if ref_avg_mu is None:
+                ref_avg_mu = _leave_one_out(period_sum_mu, period_count_mu, own_old_mu)
             p["gm_history"].append({
                 "tid": tid,
                 "date": t_date,
                 "score": score,
                 "position": position,
                 "avg_score": t["avg_score"],
+                "avg_score_excl_self": _leave_one_out(t["sum_score"], t["count"], score),
                 "count": t["count"],
+                "avg_old_mu": _leave_one_out(t["sum_mu"], t["count_mu"], own_old_mu),
+                "ref_avg_mu": ref_avg_mu,
                 "ligue_id": ligue_id
             })
             p["final_ts"] = float(new_ts) if new_ts else 0.0
@@ -703,7 +893,7 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
         for pid, d in stats.items():
             d["total_points"] = _calculate_adjusted_total_points(d["gm_history"])
 
-        winner_gm, list_gm = _compute_grand_master(stats, total_tournois)
+        winner_gm, list_gm = _compute_grand_master(stats, total_tournois, ip_version)
         advanced_stonks_list = _compute_advanced_stonks(conn, d_debut, d_fin, recap_mode, specific_ligue_id)
         borderline_scores = _compute_borderline_scores(stats)
 
