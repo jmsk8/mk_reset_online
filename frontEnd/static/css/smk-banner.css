@@ -208,11 +208,29 @@
     }
 }
 
+/* Porte le miroir du tête-à-queue : les orientations ouest n'existent pas en
+   asset, on retourne leur symétrique est. Élément dédié car snesBounce occupe
+   déjà `transform` sur l'img. */
+.kart-sprite {
+    width: 100%;
+    line-height: 0;
+}
+
+.kart-sprite.kart-mirrored {
+    transform: scaleX(-1);
+}
+
 .kart-static-png {
     width: 100%;
     image-rendering: pixelated;
     filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4));
     animation: snesBounce 0.15s infinite alternate ease-in-out;
+}
+
+/* Le parent est retourné : l'ombre doit l'être aussi pour rester en bas à
+   droite à l'écran, sinon elle saute d'un côté à l'autre pendant la toupie. */
+.kart-sprite.kart-mirrored .kart-static-png {
+    filter: drop-shadow(-4px 4px 0px rgba(0,0,0,0.4));
 }
 
 .kart-container-moving.star-active .kart-static-png {
