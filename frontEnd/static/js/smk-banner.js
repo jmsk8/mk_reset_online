@@ -39,7 +39,11 @@ const GAME_CONFIG = {
         bufferZone: 200,
         zIndexBase: 400,
         mobileBreakpoint: 769,
-        mobileScale: 0.6
+        mobileScale: 0.6,
+        // Miroir de .kart-container-moving en CSS. Sert a centrer une orbite
+        // sur le kart : les elements sont ancres par leur coin gauche, il faut
+        // donc connaitre la largeur du sprite pour trouver son milieu.
+        kartWidth: { pc: 100, mobile: 80 }
     },
     road: {
         minY: 0,
@@ -73,8 +77,8 @@ const GAME_CONFIG = {
         shroomDuration: 1500,
 
         starSpeedMultiplier: 1.4,
-        starDurationMin: 4000,
-        starDurationMax: 10000,
+        // Duree fixe, identique quel que soit le rang.
+        starDuration: 7500,
 
         returnLane: 20,
         shellVertical: 1.5
@@ -89,7 +93,13 @@ const GAME_CONFIG = {
         // Rendu uniquement, jamais lu par la physique.
         render: {
             heldItemBehind: { pc: -50, mobile: -35 },
-            heldItemHands: { x: { pc: 28, mobile: 18 }, yShift: { pc: 30, mobile: 25 } }
+            heldItemHands: { x: { pc: 28, mobile: 18 }, yShift: { pc: 30, mobile: 25 } },
+            // Abaissement de l'orbite, en pixels vers le bas. Au point le plus
+            // recule l'objet monte de radiusY au-dessus des roues et donne
+            // l'impression de leviter ; ce decalage le ramene au ras du sol sur
+            // toute la rotation. Purement visuel : la hitbox suit toujours la
+            // position monde calculee par getOrbitItemPosition().
+            orbitDrop: { pc: 10, mobile: 8 }
         }
     },
     delays: {
@@ -104,16 +114,54 @@ const GAME_CONFIG = {
         spawnMin: 150,
         spawnMax: 800
     },
+    // Objets retires du jeu. Un type liste ici voit son poids force a 0 dans
+    // tous les paliers, sans qu'il faille toucher aux tableaux ci-dessous : le
+    // reste du palier est renormalise automatiquement. Pour desactiver un objet,
+    // ajouter simplement son nom ici, par exemple :
+    //     disabledItems: ['tripleRedShell', 'star']
+    // Les trois triples sont en place et testes, mais mis de cote pour le
+    // moment : vider cette liste suffit a les remettre en jeu.
+    disabledItems: ['tripleBanana', 'tripleGreenShell', 'tripleRedShell'],
+
+    // Objets en orbite : `count` exemplaires tournent autour du kart et servent
+    // de bouclier, `child` etant l'objet reellement largue a chaque activation.
+    // Ajouter une entree ici suffit a creer un nouveau triple.
+    orbitItems: {
+        tripleBanana:     { child: 'banana' },
+        tripleGreenShell: { child: 'greenShell' },
+        tripleRedShell:   { child: 'redShell' }
+    },
+
+    // Geometrie commune a toutes les orbites. Lu par la physique : rayons en
+    // coordonnees monde (px pour radiusX, pourcentage de route pour radiusY)
+    // donc identiques PC et mobile, la mise a l'echelle mobile s'appliquant
+    // deja au conteneur entier.
+    orbit: {
+        count: 3,
+        orbitSpeed: 2.6,
+        radiusX: 62,
+        radiusY: 3.2,
+        dropIntervalMin: 1200,
+        dropIntervalMax: 3500
+    },
+
+    // Chaque ligne somme a 100, les poids se lisent donc directement en %.
+    // Les triples sont des objets defensifs, ils pesent en tete et en milieu de
+    // peloton et s'effacent a l'arriere ou champignon et etoile prennent le
+    // relais. Le triple rouge, le plus offensif, culmine en milieu de peloton.
     itemDistribution: {
-        leaderTier: { weights: { banana: 75, greenShell: 25, redShell: 0,  shroom: 0,  star: 0  } },
+        leaderTier: { weights: { banana: 55, tripleBanana: 10, greenShell: 25, tripleGreenShell: 10, redShell: 0,  tripleRedShell: 0,  shroom: 0,  star: 0  } },
+        // Seuils d'etoile, cales sur les bornes de paliers ci-dessous : T4
+        // s'ouvre a 2000 et T5 a 3000, si bien qu'un kart entrant dans un
+        // palier porteur d'etoile y a droit immediatement, sans fenetre morte.
         starMinDistTop: 3000,
         starMinDistMid: 2000,
         tiers: [
-            { maxDistance: 250,   weights: { banana: 55, greenShell: 35, redShell: 10, shroom: 0,  star: 0  } },
-            { maxDistance: 600,   weights: { banana: 20, greenShell: 30, redShell: 40, shroom: 10, star: 0  } },
-            { maxDistance: 1500,  weights: { banana: 10, greenShell: 15, redShell: 35, shroom: 40, star: 0  } },
-            { maxDistance: 2500,  weights: { banana: 0,  greenShell: 5,  redShell: 15, shroom: 55, star: 25 } },
-            { maxDistance: Infinity, weights: { banana: 0,  greenShell: 0,  redShell: 5,  shroom: 45, star: 50 } }
+            { maxDistance: 500,   weights: { banana: 35, tripleBanana: 12, greenShell: 25, tripleGreenShell: 12, redShell: 8,  tripleRedShell: 8,  shroom: 0,  star: 0  } },
+            { maxDistance: 1000,  weights: { banana: 12, tripleBanana: 10, greenShell: 18, tripleGreenShell: 12, redShell: 26, tripleRedShell: 12, shroom: 10, star: 0  } },
+            { maxDistance: 2000,  weights: { banana: 8,  tripleBanana: 7,  greenShell: 8,  tripleGreenShell: 7,  redShell: 22, tripleRedShell: 8,  shroom: 40, star: 0  } },
+            { maxDistance: 3000,  weights: { banana: 0,  tripleBanana: 3,  greenShell: 3,  tripleGreenShell: 4,  redShell: 8,  tripleRedShell: 2,  shroom: 55, star: 25 } },
+            { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 45, star: 50 } }
         ]
     },
     ai: {
@@ -127,6 +175,10 @@ const GAME_CONFIG = {
     hitboxes: {
         kartVsKart: { x: 60, y: 5 },
         itemVsKart: { x: 40, y: 5 },
+        // itemVsKart.y elargi de radiusY : l'objet oscille en profondeur avec
+        // son orbite, ce supplement lui rend la meme tolerance effective qu'un
+        // objet pose (5) pour une victime qui roule sur la meme voie.
+        orbitItemVsKart: { x: 40, y: 8 },
         itemBox: { x: 10, y: 8 }
     },
     visuals: {
@@ -571,6 +623,15 @@ function getItemVisualConfig(itemType) {
                 src: imageCache['banana'] ? imageCache['banana'].src : GAME_CONFIG.resources.paths.banana,
                 holdPosition: 'behind'
             };
+        // Les triples n'ont pas de sprite propre : ils reprennent celui de
+        // l'objet qu'ils larguent. Ce cas ne sert qu'aux appels directs, le
+        // rendu de l'orbite interrogeant deja le type enfant.
+        case 'tripleBanana':
+            return Object.assign(getItemVisualConfig('banana'), { holdPosition: 'orbit' });
+        case 'tripleGreenShell':
+            return Object.assign(getItemVisualConfig('greenShell'), { holdPosition: 'orbit' });
+        case 'tripleRedShell':
+            return Object.assign(getItemVisualConfig('redShell'), { holdPosition: 'orbit' });
         case 'shroom':
             return {
                 size: cachedIsMobile ? GAME_CONFIG.visuals.shroom.widthMobile : GAME_CONFIG.visuals.shroom.width,
@@ -626,6 +687,93 @@ function createHeldItemElement(itemType, holdPosition) {
     itemDiv.appendChild(img);
     cachedContainer.appendChild(itemDiv);
     return { div: itemDiv, img: img };
+}
+
+// Les carapaces tournent sur elles-memes. La frame est derivee du temps de jeu
+// plutot que stockee, comme le tete-a-queue : rien a maintenir, et les trois
+// orbes ne peuvent pas se desynchroniser entre eux. Rend null pour un objet
+// sans animation, la banane par exemple.
+function getOrbitFrameSrc(childType, gameNow) {
+    if (childType !== 'greenShell' && childType !== 'redShell') return null;
+
+    const frame = (Math.floor(gameNow / GAME_CONFIG.visuals[childType].animSpeed) % 3) + 1;
+    const cached = imageCache[`${childType}_${frame}`];
+    return cached ? cached.src : GAME_CONFIG.resources.paths[childType](frame);
+}
+
+// Un objet en orbite reste visible sur toute sa rotation : quand sa phase le
+// place au loin, il passe simplement sous le z-index du kart et c'est le
+// sprite, opaque, qui l'occulte. Il reapparait donc progressivement de part et
+// d'autre du pilote au lieu de s'effacer d'un coup.
+//
+// La bascule se joue aux extremites laterales de l'ellipse (sin change de signe
+// quand cos vaut +/-1), la ou l'objet est justement hors de la silhouette du
+// kart : le changement d'ordre y passe inapercu.
+function renderOrbitItems(kart, rx, gameNow) {
+    const held = kart.heldItem;
+    const orbit = GAME_CONFIG.orbit;
+    const visual = getItemVisualConfig(held.childType);
+
+    // Recentrage sur le milieu du sprite : les elements sont ancres par leur
+    // coin gauche, et la largeur depend de l'objet (une carapace est plus large
+    // qu'une banane), d'ou le calcul plutot qu'une constante.
+    const kartW = cachedIsMobile ? GAME_CONFIG.rendering.kartWidth.mobile : GAME_CONFIG.rendering.kartWidth.pc;
+    const cx = rx + (kartW - visual.size) / 2;
+
+    const d = GAME_CONFIG.offsets.render.orbitDrop;
+    const drop = cachedIsMobile ? d.mobile : d.pc;
+    const kartZ = getZIndex(kart.yPercent);
+    const animSrc = getOrbitFrameSrc(held.childType, gameNow);
+
+    for (let i = 0; i < held.orbs.length; i++) {
+        const orb = held.orbs[i];
+        const el = itemEls[orb.id];
+        if (!el) continue;
+
+        if (animSrc) {
+            const img = el.firstChild;
+            if (img && img.getAttribute('src') !== animSrc) img.src = animSrc;
+        }
+
+        const angle = held.orbitAngle + orb.phase;
+        const sin = Math.sin(angle);
+        const by = kart.yPercent + sin * orbit.radiusY;
+
+        // getZIndex suit la profondeur reelle, ce qui garde l'objet bien
+        // ordonne vis-a-vis des autres karts. Mais son arrondi entier peut
+        // l'egaler au kart porteur quand sin frole 0 : a egalite c'est l'ordre
+        // du DOM qui tranche, et l'objet scintillerait devant/derriere. D'ou
+        // l'ecart d'au moins un cran force du bon cote.
+        const bz = (sin > 0) ? Math.min(getZIndex(by), kartZ - 1)
+                             : Math.max(getZIndex(by), kartZ + 1);
+
+        el.style.display = 'block';
+        // Y positif = vers le bas : l'orbite entiere descend de `drop`.
+        el.style.transform = `translate3d(${cx + Math.cos(angle) * orbit.radiusX}px, ${drop}px, 0)`;
+        el.style.bottom = `${by}%`;
+        if (el.style.zIndex != bz) el.style.zIndex = bz;
+    }
+}
+
+function hideOrbitItems(kart) {
+    const held = kart.heldItem;
+    for (let i = 0; i < held.orbs.length; i++) {
+        const el = itemEls[held.orbs[i].id];
+        if (el) el.style.display = 'none';
+    }
+}
+
+// itemEls n'a pas d'entree pour l'id de groupe d'un objet en orbite, les acces
+// generiques a itemEls[heldItem.id] sont donc des no-op sur ces types : ce
+// wrapper est le seul chemin qui masque reellement un bouclier.
+function hideHeldItem(kart) {
+    if (!kart.heldItem) return;
+    if (kart.heldItem.holdPosition === 'orbit') {
+        hideOrbitItems(kart);
+        return;
+    }
+    const el = itemEls[kart.heldItem.id];
+    if (el) el.style.display = 'none';
 }
 
 function applyEvent(ev) {
@@ -752,7 +900,7 @@ function renderState(gameNow, screenWidth) {
 
         if (kart.state === 'pending') {
             wrapper.style.display = 'none';
-            if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].style.display = 'none';
+            hideHeldItem(kart);
             continue;
         }
 
@@ -786,7 +934,9 @@ function renderState(gameNow, screenWidth) {
                 applyKartSpinFrame(kart, els);
             }
 
-            if (kart.heldItem) {
+            if (kart.heldItem && kart.heldItem.holdPosition === 'orbit') {
+                renderOrbitItems(kart, rx, gameNow);
+            } else if (kart.heldItem) {
                 const hel = itemEls[kart.heldItem.id];
                 if (hel) {
                     hel.style.display = 'block';
@@ -801,7 +951,7 @@ function renderState(gameNow, screenWidth) {
             }
         } else {
             wrapper.style.display = 'none';
-            if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].style.display = 'none';
+            hideHeldItem(kart);
         }
     }
 
@@ -919,7 +1069,7 @@ function initDebugHUD() {
         font-family: monospace;
         font-size: 14px;
         z-index: 9999;
-        min-width: 120px;
+        min-width: 200px;
     `;
 
     const title = document.createElement('div');
@@ -979,18 +1129,22 @@ function updateDebugHUD() {
 
     const leaderboardList = document.getElementById('debug-leaderboard-list');
     if (leaderboardList) {
+        // Meme reference que la physique : rollItem() mesure l'ecart au premier
+        // via cachedLeader et totalDistance, jamais via worldX. Trier ici sur
+        // autre chose afficherait des ecarts incoherents avec le tirage d'items.
+        const leader = worldState.cachedLeader;
         const sortedKarts = [...worldState.karts]
             .filter(k => k.state !== 'pending')
-            .sort((a, b) => {
-                if (b.lapCount !== a.lapCount) return b.lapCount - a.lapCount;
-                return b.worldX - a.worldX;
-            });
+            .sort((a, b) => b.totalDistance - a.totalDistance);
 
         leaderboardList.innerHTML = sortedKarts.map((kart, index) => {
             const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
             const name = kart.charName.charAt(0).toUpperCase() + kart.charName.slice(1);
             const laps = kart.lapCount;
-            return `<div style="padding: 3px 0; ${index === 0 ? 'color: gold;' : ''}">${medal} ${name} <span style="float: right; color: #aaa;">T${laps}</span></div>`;
+            const gap = (leader && leader.id !== kart.id)
+                ? `${Math.round(leader.totalDistance - kart.totalDistance)}px`
+                : '\u2014';
+            return `<div style="padding: 3px 0; ${index === 0 ? 'color: gold;' : ''}">${medal} ${name} <span style="float: right; color: #aaa;">T${laps} \u00B7 ${gap}</span></div>`;
         }).join('');
     }
 }
