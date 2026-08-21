@@ -13,6 +13,7 @@
 |---|---|
 | 2026-08-17 | Rédaction initiale (cartographie + plan). |
 | 2026-08-18 | **§6.1 résolu** : `isMobile` sorti de la physique, collisions universelles PC/mobile. **§6.11 résolu** : cache-buster posé. **Audit de déterminisme** (§2.0) : `physics.js` est une fonction pure — ce qui **rouvre l'option B**. **Option C** (moteur dans le backend Flask) analysée et écartée. |
+| 2026-08-21 | Ajout de **§8, évolutions envisagées** : suivi de kart au clic sur les bulles du classement. Le point à retenir pour la migration : cette caméra-là est **par-spectateur**, ce qui nuance §6.6. |
 | 2026-08-18 | **🎯 DÉCISION : option A retenue** (serveur autoritatif + WebSocket). §4 revu en profondeur : le protocole initial ne permettait **pas** à un arrivant en cours de course d'afficher une scène correcte — voir le « test de l'arrivant » (§4.0) et les 6 lacunes corrigées. |
 
 ---
@@ -735,6 +736,10 @@ Sans ça : items fantômes, karts invisibles et éléments DOM qui fuient à cha
   Sa phase différera d'un client à l'autre. C'est purement cosmétique (une texture qui défile) —
   **acceptable en l'état**. Pour une identité stricte, piloter `background-position` depuis `cameraX`,
   comme le fait déjà `.layer-scrolling-bg` en [smk-banner.js:593-598](frontEnd/static/js/smk-banner.js#L593).
+- ⚠️ **Ce raisonnement suppose une caméra unique pour tous.** Si le suivi de kart au clic (§8.1) est
+  retenu, la caméra devient par-spectateur et n'est plus dérivable du temps serveur dans ce cas :
+  il faudra séparer caméra par défaut (déterministe, partagée) et caméra suivie (locale, jamais
+  diffusée).
 
 ### 6.7 ⚠️ Bande passante — le vrai coût
 
@@ -873,3 +878,57 @@ Il utilise `Math.random` et `GAME_CONFIG.speeds.roadPPS` — laisser tel quel, e
 - **Mode dégradé** : arrêter le service `race` → le banner doit rester animé (simulation locale).
 - **Stabilité** : laisser tourner le moteur seul 30 min et vérifier l'absence de `NaN`, de kart
   bloqué et de fuite mémoire (`state.items` qui grossit sans fin).
+
+---
+
+## 8. Évolutions envisagées (non planifiées)
+
+Idées notées au fil de l'eau, à confronter au protocole avant toute implémentation.
+
+### 8.1 Suivre un kart en cliquant sur sa bulle de classement
+
+Rendre les vignettes du classement cliquables pour verrouiller la caméra sur un kart et le suivre,
+au lieu de le laisser traverser l'écran.
+
+**Déjà en place, rien à construire :**
+
+- les bulles portent l'identité du kart : `ppDiv.dataset.kartId = kart.id`
+  ([smk-banner.js:375](frontEnd/static/js/smk-banner.js#L375)) — un seul listener sur le conteneur
+  suffit, sans toucher à leur création ;
+- tout le rendu passe déjà par `getScreenPosition(worldX, cameraX, screenWidth)`
+  ([smk-banner.js:288](frontEnd/static/js/smk-banner.js#L288)) : karts, objets, boîtes et ligne
+  d'arrivée sont positionnés relativement à la caméra, aucune coordonnée écran n'est figée ;
+- le **bouclage du monde est déjà géré** par cette même fonction, qui teste `rawDiff`, `+width` et
+  `−width`. Un kart suivi qui boucle ne provoquera donc pas de saut.
+
+**Le vrai obstacle : la caméra n'avance pas à la vitesse des karts.**
+`cameraX` progresse à `roadPPS` = 250 px/s alors que les karts roulent entre 485 et 530 px/s. La
+scène est un tapis roulant : les karts traversent vers la droite, sortent, et reviennent par la
+gauche. Ancrer la caméra (`cameraX = kart.worldX − ancrage`) entraîne en cascade :
+
+| Élément | Conséquence |
+|---|---|
+| Décor de route | Défile ~2× plus vite. Plus juste physiquement, mais change l'identité visuelle du bandeau. |
+| Parallaxe et soleil | `bgCameraX` est accumulé **indépendamment** à `roadPPS * 0.5` ([physics.js:589](frontEnd/static/js/physics.js#L589)). Il faudrait le passer en `bgCameraX += deltaCameraX * 0.5`, sinon fond et route se désolidarisent dès que la vitesse change. |
+| Décor d'été (`layer-scrolling-fg`) | Dérivé de `cameraX % width`, suivrait automatiquement. |
+| Autres karts | Défilent dans les deux sens autour du kart suivi. Avec plusieurs centaines de pixels d'écart et un bandeau d'environ 1000 px, suivre le dernier fait sortir le leader du cadre presque en permanence. **À trancher avant de coder** : laisser sortir, ou dézoomer. |
+
+**⚠️ Incidence sur la migration — nuance §6.6.**
+§6.6 propose de ne pas diffuser `cameraX` mais de la **dériver du temps serveur**
+(`cameraX = roadPPS * (serverNow - t0) / 1000 % worldWidth`), au motif qu'elle est parfaitement
+déterministe. Un suivi de kart casse ce raisonnement : la caméra devient **propre à chaque
+spectateur**, puisqu'elle dépend de qui il a cliqué. Il faudra alors distinguer explicitement :
+
+- une **caméra par défaut**, déterministe, dérivable du temps serveur comme prévu en §6.6 ;
+- une **caméra locale**, active seulement quand un kart est suivi, jamais diffusée et jamais
+  resynchronisée.
+
+Bonne nouvelle pour le protocole : le suivi reste du **rendu pur**. Il ne touche ni à la simulation,
+ni au snapshot, ni aux messages — deux spectateurs regardant des karts différents voient toujours
+*la même course*, sous un autre angle. L'objectif du document (« tous les visiteurs voient exactement
+la même course ») n'est donc pas remis en cause, à condition de bien ranger cette caméra du côté
+local et de ne jamais la laisser fuiter dans l'état partagé.
+
+**Version minimale, si le suivi complet est jugé trop coûteux :** se contenter d'un halo sur le kart
+sélectionné, via une classe CSS sur le wrapper, sur le modèle de `star-active` qui existe déjà.
+Aucune incidence sur la caméra ni sur le protocole.

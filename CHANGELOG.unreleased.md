@@ -39,6 +39,25 @@ Périmètre : 19 commits depuis `158f3c0` (1.4.2 du 2026-07-07), 122 fichiers,
   et comparaison v1 / v2 côte à côte dans l'infobulle du graphe d'évolution d'IP
 - **HTTPS avec Let's Encrypt** : configuration nginx templatisée par domaine et
   par mode TLS, certbot gérant l'émission et le renouvellement des certificats
+- **Objets en orbite sur la bannière** : trois nouveaux objets — triple banane,
+  triple carapace verte et triple carapace rouge. Trois exemplaires tournent
+  autour du kart et blessent tout adversaire qu'ils touchent ; ils encaissent
+  aussi les projectiles adverses, un par impact. Chaque exemplaire a une phase
+  figée à l'attribution, si bien qu'en perdre un — détruit au contact ou largué
+  — ne redistribue jamais les autres : la rotation restante est identique. Un
+  objet qui passe au loin reste affiché et glisse sous le z-index du kart, dont
+  le sprite opaque l'occulte ; sa hitbox reste active, il est caché et non
+  absent. Le porteur les largue ensuite un par un, chacun se comportant alors
+  exactement comme l'objet simple correspondant : la banane est posée sur place,
+  les carapaces partent vers l'avant et la rouge verrouille le kart de rang
+  supérieur. Les trois partagent une même géométrie d'orbite (`GAME_CONFIG.orbit`)
+  et se déclarent dans `GAME_CONFIG.orbitItems` : une ligne suffit pour en
+  ajouter un quatrième
+- **Objets désactivables** : `GAME_CONFIG.disabledItems` liste les types retirés
+  du jeu. Leur poids est forcé à 0 dans tous les paliers et le reste du palier
+  est renormalisé, sans avoir à retoucher les tableaux de distribution. Si un
+  palier se retrouve entièrement désactivé, le kart repart sans objet plutôt que
+  d'en recevoir un interdit
 - **Tête-à-queue sur la bannière** : quand un kart prend une banane, une
   carapace ou tout autre malus, il fait deux tours complets sur lui-même. Les
   huit orientations viennent de cinq assets, les trois manquantes (ouest,
@@ -91,6 +110,11 @@ Périmètre : 19 commits depuis `158f3c0` (1.4.2 du 2026-07-07), 122 fichiers,
 
 ### Bannière SMK
 
+- **HUD de debug** : le classement affiche l'écart en pixels avec le premier,
+  la mesure exacte dont dépendent les paliers de distribution d'objets. Il est
+  désormais trié sur `totalDistance` comme la physique, et non plus sur
+  `(lapCount, worldX)` : ce dernier divergeait du classement réel entre le
+  bouclage de `worldX` et le franchissement de la ligne d'arrivée
 - **Sprites directionnels** : le kart affiché utilise désormais
   `<perso>-side-right` du sous-dossier d'animation au lieu de
   `<perso>-static.png`. Les noms de fichiers des huit personnages ont été

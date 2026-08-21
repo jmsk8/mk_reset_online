@@ -173,6 +173,20 @@
         return leader.totalDistance - kart.totalDistance;
     }
 
+    // Interrupteur global : un type present dans cfg.disabledItems ne sort
+    // jamais d'une boite, son poids etant force a 0 dans tous les paliers.
+    function isItemEnabled(cfg, itemType) {
+        const disabled = cfg.disabledItems;
+        return !disabled || disabled.indexOf(itemType) === -1;
+    }
+
+    // Renvoie la description d'orbite d'un type triple, ou null si l'objet n'en
+    // est pas un. `child` est l'objet reellement largue a chaque activation.
+    function getOrbitSpec(cfg, itemType) {
+        const specs = cfg.orbitItems;
+        return (specs && specs[itemType]) ? specs[itemType] : null;
+    }
+
     function rollItem(cfg, state, rng, kart) {
         const distToLeader = getDistanceToLeader(state, kart);
         const itemDist = cfg.itemDistribution;
@@ -200,17 +214,28 @@
 
         const weights = {};
         for (const key in tier.weights) {
-            weights[key] = (key === 'star' && !canGetStar) ? 0 : tier.weights[key];
+            let w = tier.weights[key];
+            if (key === 'star' && !canGetStar) w = 0;
+            if (!isItemEnabled(cfg, key)) w = 0;
+            weights[key] = w;
         }
 
         const total = Object.values(weights).reduce((s, w) => s + w, 0);
-        let roll = rng() * total;
+        // Tout le palier peut etre desactive : dans ce cas le kart repart sans
+        // objet plutot que d'en recevoir un que la config interdit.
+        if (total <= 0) return null;
 
+        let roll = rng() * total;
+        let last = null;
         for (const [itemType, weight] of Object.entries(weights)) {
+            // Les poids nuls sont sautes, sinon un rng() rendant exactement 0
+            // selectionnerait la premiere cle meme interdite.
+            if (weight <= 0) continue;
+            last = itemType;
             roll -= weight;
             if (roll <= 0) return itemType;
         }
-        return 'banana';
+        return last;
     }
 
     function getKartByRank(state, rank) {
@@ -223,18 +248,99 @@
         return holdPosition === 'behind' ? cfg.offsets.world.heldItemBehind : 0;
     }
 
-    function getHoldPosition(itemType) {
-        return (itemType === 'shroom' || itemType === 'star') ? 'hands' : 'behind';
+    function getHoldPosition(cfg, itemType) {
+        if (itemType === 'shroom' || itemType === 'star') return 'hands';
+        if (getOrbitSpec(cfg, itemType)) return 'orbit';
+        return 'behind';
     }
 
-    function giveKartItem(cfg, state, rng, now, kart) {
-        if (kart.heldItem) return null;
+    // Orbite elliptique autour du kart, en coordonnees monde donc identique sur
+    // tous les appareils : cos donne l'ecart horizontal en px, sin l'ecart de
+    // profondeur en pourcentage de route.
+    //
+    // Le fait qu'une banane passe devant ou derriere le kart ne regarde que le
+    // rendu, qui joue la-dessus sur le z-index : ici la position rendue est la
+    // position reelle, sur toute l'orbite.
+    function getOrbitItemPosition(cfg, kart, orb, orbitAngle) {
+        const orbit = cfg.orbit;
+        const angle = orbitAngle + orb.phase;
+
+        let worldX = kart.worldX + Math.cos(angle) * orbit.radiusX;
+        if (worldX < 0) worldX += cfg.world.width;
+        if (worldX >= cfg.world.width) worldX -= cfg.world.width;
+
+        return { worldX: worldX, y: kart.yPercent + Math.sin(angle) * orbit.radiusY };
+    }
+
+    // Retire un objet sans toucher aux phases des autres : leur position
+    // angulaire ne depend que de orbitAngle et de leur propre phase, figee a
+    // l'attribution. La rotation restante est donc strictement la meme qu'avant
+    // le retrait, qu'il vienne d'un largage ou d'une destruction.
+    //
+    // N'emet volontairement aucun evenement : un objet detruit doit voir son
+    // element DOM supprime, un objet largue doit au contraire le garder pour que
+    // l'item lance le reutilise. C'est a l'appelant de trancher.
+    function removeOrbitItem(kart, index) {
+        const held = kart.heldItem;
+        const orb = held.orbs[index];
+        held.orbs.splice(index, 1);
+        if (held.orbs.length === 0) kart.heldItem = null;
+        return orb;
+    }
+
+    function destroyOrbitItem(kart, index, events) {
+        const kartId = kart.id;
+        const orb = removeOrbitItem(kart, index);
+        events.push({ type: 'removeHeldItem', kartId: kartId, itemId: orb.id });
+        return orb;
+    }
+
+    function giveKartItem(cfg, state, rng, now, kart, events) {
+        if (kart.heldItem) return;
 
         const itemType = rollItem(cfg, state, rng, kart);
-        const holdPosition = getHoldPosition(itemType);
+        if (!itemType) return;
+
+        const holdPosition = getHoldPosition(cfg, itemType);
+        const spec = getOrbitSpec(cfg, itemType);
+
+        if (spec) {
+            const orbit = cfg.orbit;
+            const orbs = [];
+            for (let i = 0; i < orbit.count; i++) {
+                // Phase figee une fois pour toutes : c'est ce qui garantit que la
+                // rotation des survivants ne bouge pas quand l'un disparait.
+                orbs.push({ id: state.nextItemId++, phase: (i * 2 * Math.PI) / orbit.count });
+            }
+
+            // id de groupe distinct des orbes : aucun element DOM ne lui
+            // correspond, donc les acces generiques a itemEls[heldItem.id] cote
+            // rendu restent des no-op et l'orbite passe par son propre bloc.
+            kart.heldItem = {
+                id: state.nextItemId++,
+                type: itemType,
+                childType: spec.child,
+                holdPosition: holdPosition,
+                orbitAngle: 0,
+                orbs: orbs
+            };
+
+            for (let i = 0; i < orbs.length; i++) {
+                events.push({
+                    type: 'spawnHeldItem',
+                    kartId: kart.id,
+                    itemId: orbs[i].id,
+                    itemType: spec.child,
+                    holdPosition: holdPosition
+                });
+            }
+
+            kart.throwTime = now + randomRange(rng, cfg.ai.holdItemMin, cfg.ai.holdItemMax);
+            return;
+        }
 
         const itemId = state.nextItemId++;
-        // Pas d'offset visuel ici : le client le dérive de holdPosition au rendu.
+        // Pas d'offset visuel ici : le client le derive de holdPosition au rendu.
         kart.heldItem = {
             id: itemId,
             type: itemType,
@@ -243,12 +349,91 @@
 
         kart.throwTime = now + randomRange(rng, cfg.ai.holdItemMin, cfg.ai.holdItemMax);
 
-        return { type: 'spawnHeldItem', kartId: kart.id, itemId: itemId, itemType: itemType, holdPosition: holdPosition };
+        events.push({ type: 'spawnHeldItem', kartId: kart.id, itemId: itemId, itemType: itemType, holdPosition: holdPosition });
+    }
+
+    // Met un objet en jeu depuis un kart : trajectoire et cible dependent du
+    // type, pas de la facon dont il etait porte. Partagee par l'activation d'un
+    // objet simple et par le largage d'un objet en orbite, pour qu'une carapace
+    // tiree depuis un triple se comporte exactement comme une carapace simple.
+    function spawnLaunchedItem(cfg, state, rng, now, kart, itemType, itemId, startX, startY, events) {
+        let vx = 0;
+        let vy = 0;
+        let targetKartId = null;
+
+        if (itemType === 'greenShell') {
+            vx = cfg.speeds.projectileSpeed;
+            vy = randomRange(rng, -cfg.speeds.shellVertical, cfg.speeds.shellVertical);
+        } else if (itemType === 'redShell') {
+            vx = cfg.speeds.redShellSpeed;
+            const target = getKartByRank(state, kart.rank - 1);
+            if (target) {
+                targetKartId = target.id;
+            } else {
+                vy = randomRange(rng, -cfg.speeds.shellVertical, cfg.speeds.shellVertical);
+            }
+        }
+
+        let worldX = startX;
+        if (worldX < 0) worldX += cfg.world.width;
+        if (worldX >= cfg.world.width) worldX -= cfg.world.width;
+
+        state.items.push({
+            id: itemId,
+            type: itemType,
+            worldX: worldX,
+            y: startY,
+            vx: vx,
+            vy: vy,
+            shooterId: kart.id,
+            targetKartId: targetKartId,
+            createdAt: now,
+            currentFrame: 1,
+            lastAnimTime: 0,
+            isDead: false
+        });
+
+        events.push({ type: 'launchItem', kartId: kart.id, itemId: itemId });
     }
 
     function activateItem(cfg, state, rng, now, kart, events) {
         const held = kart.heldItem;
         if (!held) return;
+
+        // Un seul objet quitte l'orbite par activation : le kart garde son
+        // bouclier reduit et rearme un largage tant qu'il lui en reste.
+        if (held.holdPosition === 'orbit') {
+            const orb = held.orbs[0];
+            const child = held.childType;
+            const pos = getOrbitItemPosition(cfg, kart, orb, held.orbitAngle);
+            removeOrbitItem(kart, 0);
+
+            let startX, startY;
+            if (child === 'banana') {
+                // Un piege est simplement lache : on part de la position d'orbite
+                // courante, donc sans saut visuel. Le rayon vertical deborde la
+                // route quand le kart longe un bord et la boucle items ne
+                // reclampe jamais les bananes (elles ne bougent pas) : on le fait
+                // ici, au largage.
+                startX = pos.worldX;
+                startY = Math.min(Math.max(pos.y, cfg.road.minY), cfg.road.maxY);
+            } else {
+                // Une carapace est tiree vers l'avant, comme depuis la main :
+                // la faire partir de l'arriere de l'orbite la ferait traverser
+                // son propre kart.
+                startX = kart.worldX + cfg.offsets.world.shellSpawn;
+                startY = kart.yPercent;
+            }
+
+            // L'objet reprend son id : son element DOM est reutilise tel quel par
+            // le rendu des items en jeu.
+            spawnLaunchedItem(cfg, state, rng, now, kart, child, orb.id, startX, startY, events);
+
+            if (kart.heldItem) {
+                kart.throwTime = now + randomRange(rng, cfg.orbit.dropIntervalMin, cfg.orbit.dropIntervalMax);
+            }
+            return;
+        }
 
         if (held.type === 'shroom') {
             kart.boostEndTime = now + cfg.speeds.shroomDuration;
@@ -260,10 +445,7 @@
         }
 
         if (held.type === 'star') {
-            const totalKarts = state.karts.length;
-            const rankRatio = (kart.rank - 1) / Math.max(totalKarts - 1, 1);
-            const starDur = cfg.speeds.starDurationMin + rankRatio * (cfg.speeds.starDurationMax - cfg.speeds.starDurationMin);
-            kart.starEndTime = now + starDur;
+            kart.starEndTime = now + cfg.speeds.starDuration;
             kart.isInvincible = true;
             kart.absoluteVelocity = kart.stats.topSpeed;
             kart.momentum = 1.0;
@@ -278,44 +460,68 @@
             startX = kart.worldX + cfg.offsets.world.shellSpawn;
         }
 
-        let itemAbsVelX = 0;
-        let vy = 0;
-        let targetKartId = null;
+        spawnLaunchedItem(cfg, state, rng, now, kart, held.type, held.id, startX, kart.yPercent, events);
+        kart.heldItem = null;
+    }
 
-        if (held.type === 'banana') {
-            itemAbsVelX = 0;
-        } else if (held.type === 'greenShell') {
-            itemAbsVelX = cfg.speeds.projectileSpeed;
-            vy = randomRange(rng, -cfg.speeds.shellVertical, cfg.speeds.shellVertical);
-        } else if (held.type === 'redShell') {
-            itemAbsVelX = cfg.speeds.redShellSpeed;
-            const targetRank = kart.rank - 1;
-            const target = getKartByRank(state, targetRank);
-            if (target) {
-                targetKartId = target.id;
-            } else {
-                vy = randomRange(rng, -cfg.speeds.shellVertical, cfg.speeds.shellVertical);
+    // Passe dediee, executee pour tous les karts y compris ceux en 'hit' : le
+    // bouclier continue de tourner pendant un tete-a-queue. Seules les
+    // collisions sont suspendues tant que le porteur n'est pas 'running', pour
+    // rester aligne sur le traitement de l'objet traine derriere.
+    function updateOrbitItems(cfg, state, now, deltaTime, events) {
+        const TWO_PI = Math.PI * 2;
+        const kartsLen = state.karts.length;
+
+        for (let i = 0; i < kartsLen; i++) {
+            const kart = state.karts[i];
+            const held = kart.heldItem;
+            if (!held || held.holdPosition !== 'orbit') continue;
+            if (kart.state !== 'running' && kart.state !== 'hit') continue;
+
+            held.orbitAngle += cfg.orbit.orbitSpeed * deltaTime;
+            if (held.orbitAngle >= TWO_PI) held.orbitAngle -= TWO_PI;
+
+            if (kart.state !== 'running') continue;
+
+            // Les trois orbes sont testes sur toute l'orbite, y compris la
+            // moitie qui passe derriere le sprite du kart : un objet occulte
+            // est un objet cache, pas un objet absent. Ne pas filtrer sur la
+            // profondeur ici, ce serait rendre le bouclier troue a l'arriere.
+            //
+            // Parcours a rebours : removeOrbitItem() fait un splice, et un orbe
+            // consomme ne doit pas decaler ceux pas encore testes.
+            for (let b = held.orbs.length - 1; b >= 0; b--) {
+                const orb = held.orbs[b];
+                const pos = getOrbitItemPosition(cfg, kart, orb, held.orbitAngle);
+                let consumed = false;
+
+                for (let j = 0; j < kartsLen; j++) {
+                    const victim = state.karts[j];
+                    if (victim.id === kart.id || victim.state !== 'running') continue;
+                    if (victim.hitInvincibleUntil > now) continue;
+
+                    const dx = Math.abs(getShortestDistance(cfg, pos.worldX, victim.worldX));
+                    const dy = Math.abs(pos.y - victim.yPercent);
+                    if (dx >= cfg.hitboxes.orbitItemVsKart.x || dy >= cfg.hitboxes.orbitItemVsKart.y) continue;
+
+                    // Une etoile encaisse l'objet sans etre ralentie, mais le
+                    // consomme quand meme : le bouclier s'use au contact.
+                    if (!victim.isInvincible) {
+                        victim.state = 'hit';
+                        victim.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+                        events.push({ type: 'kartHit', kartId: victim.id });
+                        if (victim.heldItem) victim.throwTime = victim.hitEndTime + cfg.delays.throwDelayAfterHit;
+                    }
+                    consumed = true;
+                    break;
+                }
+
+                if (consumed) {
+                    destroyOrbitItem(kart, b, events);
+                    if (!kart.heldItem) break;
+                }
             }
         }
-
-        const newItem = {
-            id: held.id,
-            type: held.type,
-            worldX: startX,
-            y: kart.yPercent,
-            vx: itemAbsVelX,
-            vy: vy,
-            shooterId: kart.id,
-            targetKartId: targetKartId,
-            createdAt: now,
-            currentFrame: 1,
-            lastAnimTime: 0,
-            isDead: false
-        };
-
-        state.items.push(newItem);
-        kart.heldItem = null;
-        events.push({ type: 'launchItem', kartId: kart.id, itemId: held.id });
     }
 
     function handleSpawns(cfg, state, rng, now, events) {
@@ -419,8 +625,7 @@
 
             if (kart.state === 'running') {
                 if (kart.pendingItemGrantTime && now > kart.pendingItemGrantTime) {
-                    const ev = giveKartItem(cfg, state, rng, now, kart);
-                    if (ev) events.push(ev);
+                    giveKartItem(cfg, state, rng, now, kart, events);
                     kart.pendingItemGrantTime = 0;
                 }
 
@@ -607,6 +812,8 @@
             }
         }
 
+        updateOrbitItems(cfg, state, now, deltaTime, events);
+
         for (let i = state.items.length - 1; i >= 0; i--) {
             const item = state.items[i];
             if (item.isDead) continue;
@@ -716,6 +923,22 @@
                          item.isDead = true;
                          hitHeldItem = true;
                     }
+                } else if (kart.heldItem && kart.heldItem.holdPosition === 'orbit') {
+                    // Le bouclier encaisse le projectile : un seul orbe part, les
+                    // autres gardent leur phase et continuent de tourner.
+                    const held = kart.heldItem;
+                    for (let b = held.orbs.length - 1; b >= 0; b--) {
+                        const pos = getOrbitItemPosition(cfg, kart, held.orbs[b], held.orbitAngle);
+                        const dh = Math.abs(getShortestDistance(cfg, item.worldX, pos.worldX));
+                        const dhy = Math.abs(item.y - pos.y);
+
+                        if (dh < cfg.hitboxes.itemVsKart.x && dhy < cfg.hitboxes.itemVsKart.y) {
+                            destroyOrbitItem(kart, b, events);
+                            item.isDead = true;
+                            hitHeldItem = true;
+                            break;
+                        }
+                    }
                 }
 
                 if (hitHeldItem) break;
@@ -765,7 +988,14 @@
         getKartByRank,
         getHeldItemWorldOffset,
         getHoldPosition,
+        isItemEnabled,
+        getOrbitSpec,
+        getOrbitItemPosition,
+        removeOrbitItem,
+        destroyOrbitItem,
+        updateOrbitItems,
         giveKartItem,
+        spawnLaunchedItem,
         activateItem,
         handleSpawns,
         updateLeaderboard,
