@@ -256,8 +256,10 @@
     {% include 'footer.html' %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    {# physics.js et smk-banner.js doivent rester en phase (contrat GAME_CONFIG) :
-       cache-buster nécessaire, sinon nginx (expires 7d) peut ne rafraîchir qu'un des deux. #}
+    {# physics-config.js, physics.js et smk-banner.js doivent rester en phase (contrat de
+       configuration) : cache-buster nécessaire, sinon nginx (expires 7d) peut ne rafraîchir
+       qu'une partie des trois. physics-config.js doit être chargé avant smk-banner.js. #}
+    <script src="{{ url_for('static', filename='js/physics-config.js') }}?v={{ app_version }}"></script>
     <script src="{{ url_for('static', filename='js/physics.js') }}?v={{ app_version }}"></script>
     <script src="{{ url_for('static', filename='js/smk-banner.js') }}?v={{ app_version }}"></script>
 

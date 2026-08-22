@@ -878,12 +878,12 @@
             if (item.worldX < 0) item.worldX += cfg.world.width;
 
             if (item.type === 'greenShell') {
-                if (now - item.lastAnimTime > cfg.visuals.greenShell.animSpeed) {
+                if (now - item.lastAnimTime > cfg.itemAnim.greenShell.animSpeed) {
                     item.currentFrame = (item.currentFrame % 3) + 1;
                     item.lastAnimTime = now;
                 }
             } else if (item.type === 'redShell') {
-                if (now - item.lastAnimTime > cfg.visuals.redShell.animSpeed) {
+                if (now - item.lastAnimTime > cfg.itemAnim.redShell.animSpeed) {
                     item.currentFrame = (item.currentFrame % 3) + 1;
                     item.lastAnimTime = now;
                 }

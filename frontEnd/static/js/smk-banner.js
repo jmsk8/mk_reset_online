@@ -1,3 +1,10 @@
+// Constantes de rendu du banner SMK.
+//
+// Uniquement de l'apparence : chemins d'assets, tailles en px, z-index,
+// seuils mobile, animations. Les constantes qui decrivent le monde simule
+// (vitesses, hitboxes, delais, distribution des objets) sont dans
+// physics-config.js et sont lues via PHYS ci-dessous — elles viendront du
+// serveur une fois la migration WSS terminee (docs/MIGRATION_BANNER_WSS.md).
 const GAME_CONFIG = {
     debugMode: false,
 
@@ -18,23 +25,6 @@ const GAME_CONFIG = {
             star: 'static/img/star.png'
         }
     },
-    characterStats: {
-        mario:  { topSpeed: 510, acceleration: 1.0,  handling: 1.0,  weight: 1.0  },
-        luigi:  { topSpeed: 505, acceleration: 1.05, handling: 1.05, weight: 0.95 },
-        peach:  { topSpeed: 495, acceleration: 1.15, handling: 1.2,  weight: 0.8  },
-        toad:   { topSpeed: 490, acceleration: 1.3,  handling: 1.3,  weight: 0.7  },
-        yoshi:  { topSpeed: 500, acceleration: 1.1,  handling: 1.15, weight: 0.85 },
-        bowser: { topSpeed: 530, acceleration: 0.7,  handling: 0.7,  weight: 1.4  },
-        dk:     { topSpeed: 525, acceleration: 0.75, handling: 0.8,  weight: 1.3  },
-        koopa:  { topSpeed: 485, acceleration: 1.25, handling: 1.25, weight: 0.75 }
-    },
-    world: {
-        width: 3840,
-        finishLineX: 1440,
-        sunX: 1920,
-        itemBoxX: 3456,
-        itemBoxCount: 4
-    },
     rendering: {
         bufferZone: 200,
         zIndexBase: 400,
@@ -44,52 +34,12 @@ const GAME_CONFIG = {
         // sur le kart : les elements sont ancres par leur coin gauche, il faut
         // donc connaitre la largeur du sprite pour trouver son milieu.
         kartWidth: { pc: 100, mobile: 80 }
-    },
-    road: {
-        minY: 0,
-        maxY: 30,
-        laneTolerance: 12,
-        edgeSafetyMargin: 2,
-        overtakeMargin: 5,
-        wanderMargin: 8
-    },
-    physics: {
-        smoothingFactor: 5,
-        pushForce: 0.5,
-        collisionBounceY: 10,
-        floatAmplitude: 10,
-        floatSpeed: 0.003
-    },
-    speeds: {
-        roadPPS: 250,
 
-        momentumMinRatio: 0.78,
-        momentumChangeSpeed: 0.25,
-        momentumDriftMin: 3000,
-        momentumDriftMax: 7000,
-        accelerationRate: 150,
-
-        projectileSpeed: 750,
-        redShellSpeed: 700,
-        redShellTrackingSpeed: 8,
-
-        shroomBoost: 250,
-        shroomDuration: 1500,
-
-        starSpeedMultiplier: 1.4,
-        // Duree fixe, identique quel que soit le rang.
-        starDuration: 7500,
-
-        returnLane: 20,
-        shellVertical: 1.5
+        // Levitation decorative des item-boxes : amplitude en px, vitesse en
+        // radians par ms. Aucun effet sur la simulation.
+        boxFloat: { amplitude: 10, speed: 0.003 }
     },
     offsets: {
-        // Lu par la physique. Valeurs uniques (PC = mobile) pour des collisions
-        // reproductibles quel que soit l'appareil.
-        world: {
-            heldItemBehind: -50,
-            shellSpawn: 50
-        },
         // Rendu uniquement, jamais lu par la physique.
         render: {
             heldItemBehind: { pc: -50, mobile: -35 },
@@ -102,88 +52,9 @@ const GAME_CONFIG = {
             orbitDrop: { pc: 10, mobile: 8 }
         }
     },
-    delays: {
-        hitDecelDuration: 1500,
-        hitPauseDuration: 500,
-        boxRespawn: 1000,
-        itemGrant: 3000,
-        bananaLife: 40000,
-        invincibilityOwnItem: 2000,
-        invincibilityAfterHit: 2000,
-        throwDelayAfterHit: 1000,
-        spawnMin: 150,
-        spawnMax: 800
-    },
-    // Objets retires du jeu. Un type liste ici voit son poids force a 0 dans
-    // tous les paliers, sans qu'il faille toucher aux tableaux ci-dessous : le
-    // reste du palier est renormalise automatiquement. Pour desactiver un objet,
-    // ajouter simplement son nom ici, par exemple :
-    //     disabledItems: ['tripleRedShell', 'star']
-    // Les trois triples sont en place et testes, mais mis de cote pour le
-    // moment : vider cette liste suffit a les remettre en jeu.
-    disabledItems: ['tripleBanana', 'tripleGreenShell', 'tripleRedShell'],
-
-    // Objets en orbite : `count` exemplaires tournent autour du kart et servent
-    // de bouclier, `child` etant l'objet reellement largue a chaque activation.
-    // Ajouter une entree ici suffit a creer un nouveau triple.
-    orbitItems: {
-        tripleBanana:     { child: 'banana' },
-        tripleGreenShell: { child: 'greenShell' },
-        tripleRedShell:   { child: 'redShell' }
-    },
-
-    // Geometrie commune a toutes les orbites. Lu par la physique : rayons en
-    // coordonnees monde (px pour radiusX, pourcentage de route pour radiusY)
-    // donc identiques PC et mobile, la mise a l'echelle mobile s'appliquant
-    // deja au conteneur entier.
-    orbit: {
-        count: 3,
-        orbitSpeed: 2.6,
-        radiusX: 62,
-        radiusY: 3.2,
-        dropIntervalMin: 1200,
-        dropIntervalMax: 3500
-    },
-
-    // Chaque ligne somme a 100, les poids se lisent donc directement en %.
-    // Les triples sont des objets defensifs, ils pesent en tete et en milieu de
-    // peloton et s'effacent a l'arriere ou champignon et etoile prennent le
-    // relais. Le triple rouge, le plus offensif, culmine en milieu de peloton.
-    itemDistribution: {
-        leaderTier: { weights: { banana: 55, tripleBanana: 10, greenShell: 25, tripleGreenShell: 10, redShell: 0,  tripleRedShell: 0,  shroom: 0,  star: 0  } },
-        // Seuils d'etoile, cales sur les bornes de paliers ci-dessous : T4
-        // s'ouvre a 2000 et T5 a 3000, si bien qu'un kart entrant dans un
-        // palier porteur d'etoile y a droit immediatement, sans fenetre morte.
-        starMinDistTop: 3000,
-        starMinDistMid: 2000,
-        tiers: [
-            { maxDistance: 500,   weights: { banana: 35, tripleBanana: 12, greenShell: 25, tripleGreenShell: 12, redShell: 8,  tripleRedShell: 8,  shroom: 0,  star: 0  } },
-            { maxDistance: 1000,  weights: { banana: 12, tripleBanana: 10, greenShell: 18, tripleGreenShell: 12, redShell: 26, tripleRedShell: 12, shroom: 10, star: 0  } },
-            { maxDistance: 2000,  weights: { banana: 8,  tripleBanana: 7,  greenShell: 8,  tripleGreenShell: 7,  redShell: 22, tripleRedShell: 8,  shroom: 40, star: 0  } },
-            { maxDistance: 3000,  weights: { banana: 0,  tripleBanana: 3,  greenShell: 3,  tripleGreenShell: 4,  redShell: 8,  tripleRedShell: 2,  shroom: 55, star: 25 } },
-            { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 45, star: 50 } }
-        ]
-    },
-    ai: {
-        holdItemMin: 500, holdItemMax: 8000,
-        detectionRange: 250, dodgeIntensityMin: 20, dodgeIntensityMax: 50,
-        overtakeDetectionRange: 120, overtakeMinDistance: 12, overtakeSideSpeed: 10,
-        boxDetectionRange: 400, boxSeekIntensity: 25,
-        wanderIntervalMin: 2000, wanderIntervalMax: 6000,
-        wanderDurationMin: 500, wanderDurationMax: 1500, wanderSpeed: 4
-    },
-    hitboxes: {
-        kartVsKart: { x: 60, y: 5 },
-        itemVsKart: { x: 40, y: 5 },
-        // itemVsKart.y elargi de radiusY : l'objet oscille en profondeur avec
-        // son orbite, ce supplement lui rend la meme tolerance effective qu'un
-        // objet pose (5) pour une victime qui roule sur la meme voie.
-        orbitItemVsKart: { x: 40, y: 8 },
-        itemBox: { x: 10, y: 8 }
-    },
     visuals: {
-        greenShell: { width: 48, widthMobile: 32, animSpeed: 100 },
-        redShell: { width: 48, widthMobile: 32, animSpeed: 100 },
+        greenShell: { width: 48, widthMobile: 32 },
+        redShell: { width: 48, widthMobile: 32 },
         banana: { width: 32, widthMobile: 28 },
         shroom: { width: 36, widthMobile: 26 },
         star: { width: 36, widthMobile: 26 },
@@ -228,6 +99,14 @@ function getGameTime() {
 }
 
 const PH = (typeof BannerPhysics !== 'undefined') ? BannerPhysics : null;
+
+// Constantes du monde simule (physics-config.js). Le client n'en lit qu'une
+// poignee, listee ci-dessous par usage — c'est exactement ce que le serveur
+// devra transmettre dans son `hello` une fois la migration WSS faite :
+//   world.width / finishLineX / sunX / itemBoxX / itemBoxCount, road.minY /
+//   road.maxY, speeds.roadPPS, orbit (geometrie), delays.hitDecelDuration +
+//   delays.hitPauseDuration (duree de la toupie).
+const PHYS = (typeof BannerPhysicsConfig !== 'undefined') ? BannerPhysicsConfig : null;
 
 const rng = Math.random;
 
@@ -286,7 +165,7 @@ function getNewMomentumTarget(stats) {
 }
 
 function getScreenPosition(worldX, cameraX, screenWidth) {
-    const w = GAME_CONFIG.world.width;
+    const w = PHYS.world.width;
     const buffer = GAME_CONFIG.rendering.bufferZone;
 
     let rawDiff = worldX - cameraX;
@@ -441,7 +320,7 @@ function syncRoadAnimation() {
     if (!groundLayer) return;
 
     const patternWidth = 80;
-    const speed = GAME_CONFIG.speeds.roadPPS;
+    const speed = PHYS.speeds.roadPPS;
 
     if (speed > 0) {
         const duration = patternWidth / speed;
@@ -482,7 +361,7 @@ function initWorld() {
     if (finishLineEl) {
         worldState.finishLine = {
             element: finishLineEl,
-            worldX: GAME_CONFIG.world.finishLineX
+            worldX: PHYS.world.finishLineX
         };
     }
 
@@ -491,20 +370,20 @@ function initWorld() {
         // Solidaire du fond (bgCameraX), pas de la route.
         worldState.sun = {
             element: sunEl,
-            worldX: GAME_CONFIG.world.sunX
+            worldX: PHYS.world.sunX
         };
     }
 
     const currentBoxSize = cachedIsMobile ? GAME_CONFIG.visuals.box.sizeMobile : GAME_CONFIG.visuals.box.sizePC;
-    const roadHeight = GAME_CONFIG.road.maxY - GAME_CONFIG.road.minY;
+    const roadHeight = PHYS.road.maxY - PHYS.road.minY;
 
-    for (let i = 0; i < GAME_CONFIG.world.itemBoxCount; i++) {
+    for (let i = 0; i < PHYS.world.itemBoxCount; i++) {
         const boxDiv = document.createElement('div');
         boxDiv.classList.add('item-box');
         boxDiv.style.width = `${currentBoxSize}px`;
         boxDiv.style.height = `${currentBoxSize}px`;
 
-        const boxY = GAME_CONFIG.road.minY + (i * (roadHeight / (GAME_CONFIG.world.itemBoxCount - 1)));
+        const boxY = PHYS.road.minY + (i * (roadHeight / (PHYS.world.itemBoxCount - 1)));
         boxDiv.style.bottom = `${boxY}%`;
         boxDiv.style.zIndex = getZIndex(boxY);
 
@@ -512,7 +391,7 @@ function initWorld() {
         boxEls.push(boxDiv);
 
         worldState.itemBoxes.push({
-            worldX: GAME_CONFIG.world.itemBoxX,
+            worldX: PHYS.world.itemBoxX,
             y: boxY,
             active: true,
             reactivateTime: 0
@@ -526,7 +405,7 @@ function initWorld() {
         const wrapper = document.createElement('div');
         wrapper.classList.add('kart-container-moving');
 
-        const verticalPos = GAME_CONFIG.road.minY + (index * step);
+        const verticalPos = PHYS.road.minY + (index * step);
         const startWorldX = 0;
 
         wrapper.style.bottom = `${verticalPos}%`;
@@ -547,7 +426,7 @@ function initWorld() {
 
         kartEls[index] = { wrapper, sprite, img };
 
-        const stats = GAME_CONFIG.characterStats[charName];
+        const stats = PHYS.characterStats[charName];
         const kart = {
             id: index,
             charName: charName,
@@ -559,7 +438,7 @@ function initWorld() {
             absoluteVelocity: getInitialKartSpeed(stats),
             momentum: randomRange(0.5, 0.8),
             momentumTarget: getNewMomentumTarget(stats),
-            nextMomentumChange: Date.now() + randomRange(GAME_CONFIG.speeds.momentumDriftMin, GAME_CONFIG.speeds.momentumDriftMax),
+            nextMomentumChange: Date.now() + randomRange(PHYS.speeds.momentumDriftMin, PHYS.speeds.momentumDriftMax),
             vy: 0,
             targetVy: 0,
 
@@ -711,7 +590,7 @@ function getOrbitFrameSrc(childType, gameNow) {
 // kart : le changement d'ordre y passe inapercu.
 function renderOrbitItems(kart, rx, gameNow) {
     const held = kart.heldItem;
-    const orbit = GAME_CONFIG.orbit;
+    const orbit = PHYS.orbit;
     const visual = getItemVisualConfig(held.childType);
 
     // Recentrage sur le milieu du sprite : les elements sont ancres par leur
@@ -829,7 +708,7 @@ function applyEvent(ev) {
 function getSpinFrameIndex(kart, gameNow) {
     if (kart.state !== 'hit') return 0;
 
-    const hitDuration = GAME_CONFIG.delays.hitDecelDuration + GAME_CONFIG.delays.hitPauseDuration;
+    const hitDuration = PHYS.delays.hitDecelDuration + PHYS.delays.hitPauseDuration;
     const spinDuration = hitDuration * GAME_CONFIG.kartSpin.durationRatio;
     const elapsed = gameNow - (kart.hitEndTime - hitDuration);
     if (elapsed <= 0 || elapsed >= spinDuration) return 0;
@@ -857,7 +736,7 @@ function renderState(gameNow, screenWidth) {
 
     if (cachedFg) {
         // Décor de premier plan (été uniquement) : même vitesse que la route.
-        const fgX = worldState.cameraX % GAME_CONFIG.world.width;
+        const fgX = worldState.cameraX % PHYS.world.width;
         cachedFg.style.backgroundPosition = `-${fgX}px 0px`;
     } else {
         cachedFg = document.querySelector('.layer-scrolling-fg');
@@ -875,7 +754,7 @@ function renderState(gameNow, screenWidth) {
     }
 
     const boxesLen = worldState.itemBoxes.length;
-    const floatY = Math.sin(gameNow * GAME_CONFIG.physics.floatSpeed) * GAME_CONFIG.physics.floatAmplitude;
+    const floatY = Math.sin(gameNow * GAME_CONFIG.rendering.boxFloat.speed) * GAME_CONFIG.rendering.boxFloat.amplitude;
     for (let i = 0; i < boxesLen; i++) {
         const box = worldState.itemBoxes[i];
         const el = boxEls[i];
@@ -1002,7 +881,7 @@ function animate(timestamp) {
             screenWidth = screenWidth / GAME_CONFIG.rendering.mobileScale;
         }
 
-        const events = PH.stepPhysics(GAME_CONFIG, worldState, rng, gameNow, deltaTime);
+        const events = PH.stepPhysics(PHYS, worldState, rng, gameNow, deltaTime);
 
         for (let e = 0; e < events.length; e++) applyEvent(events[e]);
 
@@ -1025,7 +904,7 @@ function initDebugHUD() {
 
     const finishLine = document.createElement('div');
     finishLine.className = 'debug-entity debug-finish';
-    const finishPct = (GAME_CONFIG.world.finishLineX / GAME_CONFIG.world.width) * 100;
+    const finishPct = (PHYS.world.finishLineX / PHYS.world.width) * 100;
     finishLine.style.left = `${finishPct}%`;
     hud.appendChild(finishLine);
 
@@ -1033,7 +912,7 @@ function initDebugHUD() {
         const dBox = document.createElement('div');
         dBox.className = 'debug-entity debug-itembox';
         dBox.id = `debug-box-${i}`;
-        const bPct = (box.worldX / GAME_CONFIG.world.width) * 100;
+        const bPct = (box.worldX / PHYS.world.width) * 100;
         dBox.style.left = `${bPct}%`;
         hud.appendChild(dBox);
     });
@@ -1097,7 +976,7 @@ function updateDebugHUD() {
     const camMain = camViews[0];
     const camLoop = camViews[1];
 
-    const worldW = GAME_CONFIG.world.width;
+    const worldW = PHYS.world.width;
     const camX = worldState.cameraX;
 
     const camPct = (camX / worldW) * 100;
@@ -1119,7 +998,7 @@ function updateDebugHUD() {
     worldState.karts.forEach(kart => {
         const el = document.getElementById(`debug-kart-${kart.id}`);
         if (el) {
-            const kPct = (kart.worldX / GAME_CONFIG.world.width) * 100;
+            const kPct = (kart.worldX / PHYS.world.width) * 100;
             el.style.left = `${kPct}%`;
             el.style.backgroundColor = (kart.state === 'hit') ? 'red' : 'blue';
             if (kart.state === 'pending') el.style.backgroundColor = 'gray';
@@ -1213,7 +1092,7 @@ function createFallingSnowflake(container, containerHeight, containerWidth) {
     snowflake.style.width = `${size}px`;
     snowflake.style.height = `${size}px`;
 
-    const maxDrift = GAME_CONFIG.speeds.roadPPS * (containerHeight / 80);
+    const maxDrift = PHYS.speeds.roadPPS * (containerHeight / 80);
     const maxDriftPercent = (maxDrift / containerWidth) * 100;
     const startX = Math.random() * (110 + maxDriftPercent) - 10;
     snowflake.style.left = `${startX}%`;
@@ -1227,7 +1106,7 @@ function createFallingSnowflake(container, containerHeight, containerWidth) {
 
     snowflake.style.animationDelay = `${Math.random() * duration}s`;
 
-    const driftDistance = -(GAME_CONFIG.speeds.roadPPS * duration);
+    const driftDistance = -(PHYS.speeds.roadPPS * duration);
     snowflake.style.setProperty('--snow-drift', driftDistance);
     snowflake.style.setProperty('--snow-fall-height', fallHeight);
 
@@ -1251,7 +1130,7 @@ function createLandedSnowflake(container, containerWidth) {
     snowflake.style.left = `${80 + Math.random() * 40}%`;
 
     const driftDistance = -containerWidth * 1.5;
-    const driftDuration = (containerWidth * 1.5) / GAME_CONFIG.speeds.roadPPS;
+    const driftDuration = (containerWidth * 1.5) / PHYS.speeds.roadPPS;
 
     snowflake.style.setProperty('--drift-distance', driftDistance);
     snowflake.style.animationDuration = `${driftDuration}s`;
