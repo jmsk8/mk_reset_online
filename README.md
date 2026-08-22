@@ -60,6 +60,7 @@ Chaque saison attribue des distinctions aux joueurs :
 - Interface responsive adaptée au mobile
 - Navigation par saison et par ligue
 - Dates affichées au format français (JJ/MM/AAAA)
+- Matchmaking accessible à tous : répartition des joueurs présents en lobbies équilibrés par niveau TrueSkill (10 joueurs max par lobby)
 
 ### 🛡️ Administration
 
@@ -70,7 +71,7 @@ Chaque saison attribue des distinctions aux joueurs :
 - Mise en place des ligues avec simulation de draft
 - Reset global du sigma pour les nouvelles saisons (avec possibilité de revert)
 - Configuration du moteur TrueSkill (tau, seuil sigma, activation du ghost)
-- Matchmaking : répartition des joueurs présents en lobbies équilibrés par niveau TrueSkill (10 joueurs max par lobby)
+- Bascule de version de l'Indice de Performance (v1 / v2) pour le classement live et par saison
 
 
 
