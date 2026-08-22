@@ -5,7 +5,7 @@
 >
 > Statut : **étape 1 réalisée** — le moteur est désormais indépendant de l'appareil.
 > Rédigée le 2026-08-17 sur la branche `feature/stats-saison-matchmaking-public`.
-> Mise à jour le 2026-08-18 sur la branche `refactor/banner-collision-reliability`.
+> Mise à jour le 2026-08-22 : audit infra face au 1.4.3 (TLS externalisé).
 
 ### Journal
 
@@ -15,6 +15,7 @@
 | 2026-08-18 | **§6.1 résolu** : `isMobile` sorti de la physique, collisions universelles PC/mobile. **§6.11 résolu** : cache-buster posé. **Audit de déterminisme** (§2.0) : `physics.js` est une fonction pure — ce qui **rouvre l'option B**. **Option C** (moteur dans le backend Flask) analysée et écartée. |
 | 2026-08-21 | Ajout de **§8, évolutions envisagées** : suivi de kart au clic sur les bulles du classement. Le point à retenir pour la migration : cette caméra-là est **par-spectateur**, ce qui nuance §6.6. |
 | 2026-08-18 | **🎯 DÉCISION : option A retenue** (serveur autoritatif + WebSocket). §4 revu en profondeur : le protocole initial ne permettait **pas** à un arrivant en cours de course d'afficher une scène correcte — voir le « test de l'arrivant » (§4.0) et les 6 lacunes corrigées. |
+| 2026-08-22 | **Audit infra vs 1.4.3** : le 1.4.3 a déporté le TLS sur un reverse proxy **externe** (hors dépôt) — §1 mis à jour, nouveau **§6.17** (le proxy externe est un deuxième saut WS non documenté ici). §3.5 complété (headers `X-Forwarded-*` manquants dans le bloc `/ws/`), §3.6 précisé (`depends_on` de `race` avec `condition: service_healthy`), §3.1 complété (utilisateur non-root, comme les autres Dockerfiles du repo). |
 
 ---
 
@@ -55,8 +56,17 @@ exactement ce qui rend l'option B viable.
 
 - `frontend` : Flask + `gunicorn -w 2` (workers **sync**) — voir [frontEnd/Dockerfile.frontend](frontEnd/Dockerfile.frontend).
 - `backend` : Flask + gunicorn, seul à parler à Postgres.
-- `nginx` : reverse proxy, deux modes via `TLS_MODE` (`http` / `https`), config applicative
-  factorisée dans [nginx/snippets/app.conf](nginx/snippets/app.conf) (inclus par **les deux** templates).
+- `nginx` : reverse proxy **interne**, deux templates `http`/`https` qui incluent tous les deux la
+  même config applicative factorisée dans [nginx/snippets/app.conf](nginx/snippets/app.conf).
+- ⚠️ **Depuis le 1.4.3 (2026-08-22), ce nginx ne termine plus le TLS public.** Le certbot interne
+  ([nginx/docker-entrypoint.d/99-certbot-reload.sh](nginx/docker-entrypoint.d/99-certbot-reload.sh))
+  existe toujours dans le repo mais n'est plus actif en prod : `.env` y vaut bien `TLS_MODE=http`
+  (confirmé). Le TLS s'est déplacé sur un **reverse proxy externe, hors de ce dépôt** (voir
+  `CHANGELOG.md` 1.4.3, « TLS déporté sur un reverse proxy externe »). Le lien entre les deux se
+  fait via [docker-compose.override.yml](docker-compose.override.yml) : ce `nginx` rejoint en plus
+  un réseau Docker externe `web` (`WEB_NETWORK`, défaut `web`) sous l'alias `mkreset`.
+  **Conséquence pour le WS : le trafic WSS traverse deux proxys, pas un seul, et le second est
+  invisible depuis ce dépôt** — voir §6.17.
 - **Aucune infra WebSocket / SSE nulle part** dans le projet aujourd'hui.
 - Limites de ressources serrées (commit `fbb1303`) : `cpus: '0.5'`–`'1'`, `memory: 128M`–`512M`.
 
@@ -233,6 +243,10 @@ raceEngine/
 - Maintient l'état monde + la liste des clients connectés.
 - Expose `GET /healthz` pour le `healthcheck` compose.
 - **Aucun accès à Postgres, aucun accès au `backend`.** Réseau `frontend` uniquement.
+- Comme [Dockerfile.backend](backEnd/Dockerfile.backend) et
+  [Dockerfile.frontend](frontEnd/Dockerfile.frontend) : tourner en utilisateur non-root
+  (`useradd -m -u 1000 appuser` + `USER appuser`). Aucune raison de déroger à la convention du repo
+  pour ce service, même s'il n'a pas d'accès base.
 
 ### 3.2 [frontEnd/static/js/smk-banner.js](frontEnd/static/js/smk-banner.js)
 
@@ -275,16 +289,24 @@ une seule modif couvre les deux modes) :
 location /ws/ {
     proxy_pass http://race:3000;
     proxy_http_version 1.1;
-    proxy_set_header Upgrade    $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host       $host;
-    proxy_set_header X-Real-IP  $remote_addr;
+    proxy_set_header Upgrade           $http_upgrade;
+    proxy_set_header Connection        "upgrade";
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout  3600s;   # sinon nginx coupe à 60 s d'inactivité
     proxy_send_timeout  3600s;
     proxy_buffering     off;
     limit_conn          ws_conn 5;   # zone à déclarer dans nginx.conf
 }
 ```
+
+> Les deux headers `X-Forwarded-For`/`X-Forwarded-Proto` sont absents d'une première version de ce
+> bloc. Ils ne changent rien au fonctionnement du WS lui-même (`limit_conn` s'appuie sur
+> `$binary_remote_addr`, pas sur ces headers), mais `/admin` et `/` les posent déjà : les omettre
+> ici casserait sans raison la cohérence si `race` loggue un jour l'IP réelle ou le schéma d'origine
+> (utile pour le contrôle d'`Origin`, §6.12).
 
 Et dans [nginx/nginx.conf](nginx/nginx.conf), à côté des `limit_req_zone` existants :
 
@@ -294,6 +316,9 @@ limit_conn_zone $binary_remote_addr zone=ws_conn:10m;
 
 > Le bloc regex existant `location ~* \.(js|css|…)$` ne capte pas `/ws/race` (pas d'extension) :
 > pas de collision. `location /admin` est un préfixe distinct : pas de collision non plus.
+>
+> ⚠️ Ce bloc ne couvre que **ce** nginx. Depuis le 1.4.3, un reverse proxy externe est intercalé
+> devant lui (§1) — voir §6.17 pour ce qu'il faut vérifier de ce côté-là, hors de ce dépôt.
 
 ### 3.6 [docker-compose.yml](docker-compose.yml)
 
@@ -319,7 +344,21 @@ limit_conn_zone $binary_remote_addr zone=ws_conn:10m;
       - frontend        # ⚠️ surtout PAS `backend`
 ```
 
-Puis ajouter `race` dans le `depends_on` du service `nginx`.
+Puis ajouter `race` dans le `depends_on` du service `nginx`, sur le même modèle que `frontend`
+(qui a déjà un healthcheck et un `condition: service_healthy`) :
+
+```yaml
+  nginx:
+    depends_on:
+      frontend:
+        condition: service_healthy
+      race:
+        condition: service_healthy
+```
+
+> Sans `condition: service_healthy`, `nginx` peut démarrer avant que `race` ait fini son boot et
+> proxy-passer dans le vide le temps que `/healthz` réponde — pas grave en soi (le client
+> WS réessaiera), mais autant rester cohérent avec le traitement déjà réservé à `frontend`.
 
 ### 3.7 Divers
 
@@ -513,6 +552,8 @@ Le serveur **ignore tout le reste**. Seuls messages acceptés :
 8. Fallback local si le WS échoue (§6.10).
 9. Reconnexion + backoff + resync sur `visibilitychange` (§6.4).
 10. Validation en `TLS_MODE=https` (`wss://`), puis deux navigateurs côte à côte pendant 5 min (§7).
+    ⚠️ Ceci ne teste que le `nginx` de ce dépôt. La prod n'utilise plus ce mode (§1, §6.17) : elle
+    passe par le reverse proxy externe, à valider séparément sur le VPS lui-même.
 
 > **Note** : contrairement à ce qu'envisageait une version intermédiaire de cette note, le client
 > n'a besoin **ni** de pas de temps fixe **ni** de PRNG semé — en option A il ne simule rien. Le
@@ -856,6 +897,38 @@ la conso CPU réelle du conteneur, vu les limites récemment posées.
 [`initSnow`](frontEnd/static/js/smk-banner.js#L901) est purement décoratif et local.
 Il utilise `Math.random` et `GAME_CONFIG.speeds.roadPPS` — laisser tel quel, en veillant à ce que
 `roadPPS` reste disponible côté client (il arrive dans le `hello`, §4).
+
+### 6.17 ⚠️ Le reverse proxy externe est un deuxième saut WebSocket, hors de ce dépôt
+
+Depuis le 1.4.3 (§1), ce `nginx` ne termine plus le TLS public : un reverse proxy externe le fait,
+sur le réseau Docker `web` ([docker-compose.override.yml](docker-compose.override.yml)), et lui
+relaie ensuite du HTTP en clair vers l'alias `mkreset`. Une connexion WSS traverse donc **deux**
+proxys, pas un :
+
+```
+navigateur --wss://--> [reverse proxy externe, hors dépôt] --ws://--> nginx (ce dépôt) --> race:3000
+```
+
+Le §3.5 ne configure que le second maillon. Le premier échappe entièrement à ce dépôt — pas de
+fichier de conf à modifier ici, mais un point à vérifier avant de considérer le protocole prêt,
+avec quiconque gère ce proxy sur le VPS :
+
+- Il doit relayer l'upgrade WebSocket (`Connection: Upgrade`, `Upgrade: websocket`) sur `/ws/` —
+  la plupart des reverse proxies le font, mais **pas garanti par défaut sur tous**.
+- Il doit lui aussi tenir un timeout d'inactivité très supérieur à 60 s (comme en §3.5), sans quoi
+  il coupera la connexion avant même que ce `nginx` n'entre en jeu.
+- Il n'a besoin de connaître que `mkreset` (ce `nginx`) — jamais `race` directement, qui reste
+  interne au réseau `frontend` de ce compose.
+
+**Bonne nouvelle** : rien de tout cela ne remet en cause le choix `ws://`/`wss://` côté client
+(§6.13). Le navigateur ne voit que l'URL publique — en HTTPS — donc `location.protocol` vaudra
+`'https:'` et le client demandera `wss://`, **quelle que soit** la valeur de `TLS_MODE` en interne
+(qui vaut `http` en prod, précisément parce que le TLS est traité en amont). Ne pas confondre les
+deux : `TLS_MODE` décrit ce que *ce* `nginx` sert, pas ce que voit le public.
+
+> À part, sans rapport direct avec le WS mais même cause racine : `SESSION_COOKIE_SECURE`
+> ([frontend.py:35](frontEnd/frontend.py#L35)) suit ce même `TLS_MODE`, donc vaut `False` en prod
+> aujourd'hui alors que le site public est en HTTPS. À traiter séparément de cette migration.
 
 ---
 
