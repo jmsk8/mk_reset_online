@@ -36,10 +36,16 @@ REFERENCE_PLAYER_COUNT = 12.0
 GM_BASE_WEIGHT_V1 = 5.0
 GM_BASE_WEIGHT_V2 = 15.0
 
-# IP v2 : force_lobby = mu_moyen_du_lobby / mu_moyen_de_reference (calcules
-# en excluant le joueur concerne). ratio_ajuste = ratio * force_lobby ** ALPHA.
-# Lobby au niveau de la reference => force_lobby = 1.0, donc v2 = v1.
-IP_V2_FORCE_LOBBY_ALPHA = 1       # 0 = desactive, 1 = correction brute
+# IP v2 : ratio_ajuste = ratio * force_lobby, avec
+#   force_lobby = 1 + PER_MU * (mu_moyen_du_lobby - mu_moyen_de_reference)
+# les deux moyennes etant calculees en excluant le joueur concerne. Lobby au
+# niveau de la reference => force_lobby = 1.0, donc v2 = v1.
+#
+# L'ecart est pris en points de mu et non en rapport : le mu TrueSkill est une
+# echelle d'intervalle dont l'origine est arbitraire (50 ici, 25 dans la lib),
+# donc seule la difference a un sens. Un rapport rendrait la correction
+# dependante du niveau general, qu'un reset global suffirait a deplacer.
+IP_V2_FORCE_LOBBY_PER_MU = 0.02   # correction par point de mu d'ecart. 0 = desactive
 IP_V2_FORCE_LOBBY_MIN = 0.5
 IP_V2_FORCE_LOBBY_MAX = 2.0
 IP_VERSION_DEFAULT = "v1"

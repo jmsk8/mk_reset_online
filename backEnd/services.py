@@ -17,7 +17,7 @@ from constants import (
     BORDERLINE_MIN_VALID_MATCHES, BORDERLINE_JUMP_WEIGHT, BORDERLINE_LEVEL_BONUS,
     MIN_PARTICIPATION_RATIO, MIN_TOURNAMENT_RATIO,
     GM_MAX_RATIO_CAP, GM_MAX_IP, GM_BASE_WEIGHT_V1, GM_BASE_WEIGHT_V2, GM_EXTRA_MATCH_BONUS, REFERENCE_PLAYER_COUNT,
-    IP_V2_FORCE_LOBBY_ALPHA, IP_V2_FORCE_LOBBY_MIN, IP_V2_FORCE_LOBBY_MAX, IP_VERSION_DEFAULT,
+    IP_V2_FORCE_LOBBY_PER_MU, IP_V2_FORCE_LOBBY_MIN, IP_V2_FORCE_LOBBY_MAX, IP_VERSION_DEFAULT,
     IP_V2_REF_REQUIRE_TIER, IP_V2_REF_REQUIRE_RANKED,
 )
 from db import get_db_connection
@@ -49,14 +49,13 @@ def _leave_one_out(sum_mu: float, count_mu: int, own_mu: float | None) -> float 
     return (sum_mu - float(own_mu)) / (count_mu - 1)
 
 
-# Coefficient de force du lobby (IP v2, voir IP_V2_* dans constants.py) :
-# mu moyen du lobby vs mu moyen de la grille figee du jour du tournoi (toutes
+# Coefficient de force du lobby (IP v2, voir IP_V2_* dans constants.py) : ecart
+# en points de mu entre le lobby et la grille figee du jour du tournoi (toutes
 # ligues confondues). Vaut 1.0 si non calculable.
 def _force_lobby(mu_moyen_lobby: float | None, mu_moyen_reference: float | None) -> float:
-    if not mu_moyen_lobby or not mu_moyen_reference or mu_moyen_reference <= 0:
+    if mu_moyen_lobby is None or mu_moyen_reference is None:
         return 1.0
-    ratio = mu_moyen_lobby / mu_moyen_reference
-    force = ratio ** IP_V2_FORCE_LOBBY_ALPHA
+    force = 1 + IP_V2_FORCE_LOBBY_PER_MU * (mu_moyen_lobby - mu_moyen_reference)
     return max(IP_V2_FORCE_LOBBY_MIN, min(IP_V2_FORCE_LOBBY_MAX, force))
 
 
