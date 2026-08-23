@@ -29,10 +29,11 @@ const URL = argValue('--url', 'ws://localhost:3000/ws/race');
 const AFTER_S = Number(argValue('--after', '5'));
 const WATCH_S = Number(argValue('--watch', '4'));
 
-const FLAG_PENDING = 1;
+const FLAG_GRID = 1;
 const FLAG_HIT = 2;
 const FLAG_STOPPED = 4;
 const FLAG_STAR = 8;
+const FLAG_FINISHED = 16;
 
 let holder = null;
 let holderMessages = 0;
@@ -51,9 +52,11 @@ function audit(hello) {
     console.log(`protocole ${hello.protocol}, t0 il y a ${((Date.now() - hello.t0) / 1000).toFixed(1)} s, ` +
                 `snapshot date de ${snap.ts}`);
     console.log(`monde : ${world.width} unites, arrivee a ${world.finishLineX}, soleil a ${world.sunX}, ` +
-                `route ${world.roadMinY}..${world.roadMaxY}, ${world.roadPPS} px/s\n`);
+                `route ${world.roadMinY}..${world.roadMaxY}, ${world.roadPPS} px/s, ${world.laps} tours`);
+    console.log(`course : phase ${snap.ph}, tour ${snap.lp}/${world.laps}, ` +
+                `panneau ${snap.sg ? snap.sg.join('/') : 'aucun'}\n`);
 
-    const running = karts.filter(k => !(k[4] & FLAG_PENDING));
+    const running = karts.filter(k => !(k[4] & FLAG_GRID));
     const held = karts.filter(k => k[6] !== null);
     const starred = karts.filter(k => k[4] & FLAG_STAR);
     const stopped = karts.filter(k => k[4] & FLAG_STOPPED);
@@ -68,13 +71,20 @@ function audit(hello) {
          'identite des karts', hello.karts ? hello.karts.map(k => k.char).join(', ') : '');
     line(hello.boxes && hello.boxes.length > 0,
          'position des item-boxes', hello.boxes ? `${hello.boxes.length} boites` : '');
-    line(karts.length > 0 && running.every(k => typeof k[5] === 'number' && k[5] > 0),
-         'classement reconstituable', `${running.length} karts en course, rangs ${running.map(k => k[5]).sort((a, b) => a - b).join('')}`);
+    line(karts.length > 0 && karts.every(k => typeof k[5] === 'number' && k[5] > 0),
+         'classement reconstituable', `rangs ${karts.map(k => k[5]).sort((a, b) => a - b).join('')}`);
+    line(typeof snap.ph === 'string' && typeof snap.lp === 'number',
+         'phase et tour', `${snap.ph}, tour ${snap.lp}`);
+    line(Array.isArray(snap.fo),
+         'ordre d arrivee', snap.fo && snap.fo.length
+            ? snap.fo.map((id, i) => `${i + 1}.${(hello.karts.find(k => k.id === id) || {}).char}`).join(' ')
+            : 'personne n est encore arrive');
     line(held.every(k => typeof k[7] === 'string'),
          'type de l objet tenu', held.length ? held.map(k => `${k[0]}:${k[7]}(${k[8]})`).join(' ') : 'aucun kart ne tient d objet pour l instant');
     line(karts.every(k => typeof k[4] === 'number'),
-         'etats (pending/hit/stopped/etoile)',
-         `${running.length} en course, ${hit.length} percutes, ${stopped.length} figes, ${starred.length} sous etoile`);
+         'etats (grille/hit/stopped/etoile/arrive)',
+         `${running.length} lances, ${hit.length} percutes, ${stopped.length} figes, ` +
+         `${starred.length} sous etoile, ${karts.filter(k => k[4] & FLAG_FINISHED).length} arrives`);
     line(boxes.length > 0,
          'etat des item-boxes', `${takenBoxes.length}/${boxes.length} deja consommees`);
     line(typeof snap.cx === 'number' && typeof snap.bx === 'number',

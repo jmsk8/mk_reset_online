@@ -159,6 +159,60 @@
             itemBox: { x: 10, y: 8 }
         },
 
+        // Deroulement d'une course. Durees en millisecondes, distances en
+        // unites monde.
+        race: {
+            laps: 5,
+
+            // Duree totale du decompte = countdownHoldMs + 2 * lightIntervalMs.
+            countdownHoldMs: 3000,
+            lightIntervalMs: 1500,
+
+            // Le client masque Lakitu des que la ligne sort de sa fenetre, dont
+            // il est seul a connaitre la largeur. Ce delai n'est qu'un
+            // garde-fou : sans lui, le feu vert reparaitrait a chaque passage
+            // de la ligne, toutes les quinze secondes.
+            goSignMs: 5000,
+
+            resultsDelayMs: 7000,
+            // Au-dela, les karts encore en piste sont classes d'office.
+            maxRaceMs: 180000,
+
+            // Deux lignes paralleles filant en diagonale : `lanes` donne leur
+            // profondeur de depart, `laneSlope` ce que chaque rang y ajoute.
+            //
+            // Profondeur totale = backOffset + 3 * rowGap + colStagger. A tenir
+            // avec parkStartOffset dans les ~600 unites visibles d'un
+            // telephone, sinon le fond de grille sort du cadre.
+            grid: {
+                backOffset: 115,
+                rowGap: 110,
+                colStagger: 55,
+                lanes: [0.2, 0.58],
+                laneSlope: 0.05
+            },
+
+            // Le reste des tirages est un depart rate.
+            startTurboChance: 0.8,
+            startNormalChance: 0.1,
+            turboBoostMs: 1200,
+            failStallMs: 1000,
+
+            finishedSpeedRatio: 0.6,
+
+            // Ecart a la ligne de la camera garee. Elle designe le centre de la
+            // vue : negatif place la ligne a droite du centre, positif a gauche.
+            parkStartOffset: 0,
+            parkFinishOffset: -150,
+
+            // La camera est deux fois plus lente que les karts : elle doit
+            // s'elancer bien avant l'arrivee pour etre garee a temps. 2600
+            // unites et un rattrapage au triple de la vitesse suffisent au pire
+            // cas, camera juste passee devant la ligne.
+            cameraApproachDistance: 2600,
+            cameraMaxCatchupRatio: 3
+        },
+
         // Cadence d'animation des carapaces, en ms par frame. Lu par la physique :
         // c'est elle qui fait avancer `currentFrame`, le client ne fait que
         // afficher la frame courante.
