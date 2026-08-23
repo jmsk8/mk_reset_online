@@ -32,10 +32,11 @@
             koopa:  { topSpeed: 485, acceleration: 1.25, handling: 1.25, weight: 0.75 }
         },
         world: {
-            width: 3840,
+            width: 7680,
             finishLineX: 1440,
             sunX: 1920,
-            itemBoxX: 3456,
+            // A mi-tour de la ligne.
+            itemBoxX: 5280,
             itemBoxCount: 4
         },
         road: {
@@ -174,6 +175,10 @@
             // de la ligne, toutes les quinze secondes.
             goSignMs: 5000,
 
+            // Lakitu etant ancre sur la ligne, le panneau n'est vu que si la
+            // camera passe devant pendant ce delai.
+            finalSignMs: 6000,
+
             resultsDelayMs: 7000,
             // Au-dela, les karts encore en piste sont classes d'office.
             maxRaceMs: 180000,
@@ -205,11 +210,10 @@
             parkStartOffset: 0,
             parkFinishOffset: -150,
 
-            // La camera est deux fois plus lente que les karts : elle doit
-            // s'elancer bien avant l'arrivee pour etre garee a temps. 2600
-            // unites et un rattrapage au triple de la vitesse suffisent au pire
-            // cas, camera juste passee devant la ligne.
-            cameraApproachDistance: 2600,
+            // Pire cas : la camera vient de depasser la ligne et doit refaire un
+            // tour complet du monde avant l'arrivee du leader. A recalculer si
+            // world.width, roadPPS ou la vitesse des karts changent.
+            cameraApproachDistance: 5400,
             cameraMaxCatchupRatio: 3
         },
 
