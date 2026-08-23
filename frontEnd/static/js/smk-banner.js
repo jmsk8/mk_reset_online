@@ -351,10 +351,10 @@ const CURTAIN_FALL_MS = 700;
 // repartirait vers le haut avant d'avoir fini de tomber.
 const CURTAIN_MIN_MS = 1400;
 
-// Les panneaux de tour (laps/2 a 4, laps/final) existent dans les assets mais
-// ne sont pas affiches.
+// laps/2 a 4 existent dans les assets mais ne sont pas affiches.
 const LAKITU_SPRITES = [
     ['start', 1], ['start', 2], ['start', 3], ['start', 4],
+    ['laps', 'final'],
     ['finish', 1], ['finish', 2], ['finish', 3]
 ];
 

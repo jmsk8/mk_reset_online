@@ -669,15 +669,13 @@
         }
 
         if (state.phase === 'racing') {
-            // Le tour du leader continue d'etre suivi — il part dans le
-            // snapshot et sert de repere — mais les panneaux `laps` ne sont
-            // plus affiches. Pour les remettre, il suffit de reposer un signe
-            // ici : `laps/2` a `laps/4`, puis `laps/final` au dernier tour.
+            // Seul le dernier tour est signale.
             const lap = Math.min(race.laps, leader.lapCount + 1);
-            if (lap !== state.leaderLap) state.leaderLap = lap;
+            if (lap !== state.leaderLap) {
+                state.leaderLap = lap;
+                if (lap === race.laps) setSign(state, 'laps', 'final', now, race.finalSignMs);
+            }
 
-            // La camera part se garer bien avant l'arrivee : elle est deux fois
-            // plus lente que les karts.
             if (leader.totalDistance >= leader.finishDistance - race.cameraApproachDistance) {
                 state.phase = 'finishing';
 
