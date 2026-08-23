@@ -1,0 +1,25 @@
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Les dépendances d'abord : cette couche reste en cache tant que package.json
+# ne bouge pas. `ws` est la seule, et elle n'a aucune dépendance transitive.
+COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+
+COPY server.js protocol.js ./
+COPY tools/ tools/
+
+# physics.js et physics-config.js ne sont volontairement PAS copiés ici : ils
+# sont montés depuis frontEnd/static/js par docker-compose. Ce sont les fichiers
+# mêmes que le navigateur reçoit, donc il n'en existe qu'une version — la
+# simulation ne peut pas dériver de ce qui est affiché. Sans ces montages, le
+# service refuse de démarrer avec un message explicite.
+
+# Convention du dépôt : aucun service ne tourne en root. L'image node fournit
+# déjà un utilisateur `node` en uid 1000.
+USER node
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]

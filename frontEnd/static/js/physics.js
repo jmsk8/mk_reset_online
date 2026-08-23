@@ -975,6 +975,97 @@
         return events;
     }
 
+    // Fabrique l'etat initial d'une course. Vit ici, dans le module partage,
+    // pour qu'il n'en existe qu'une seule version : le serveur autoritatif et le
+    // client doivent poser exactement le meme monde, sans quoi la migration
+    // reintroduirait la divergence qu'elle corrige. Ne cree aucun element
+    // visuel — le rendu se deduit de cet etat (voir reconcileDom cote client).
+    function createWorldState(cfg, rng, now) {
+        const roadHeight = cfg.road.maxY - cfg.road.minY;
+
+        const itemBoxes = [];
+        for (let i = 0; i < cfg.world.itemBoxCount; i++) {
+            itemBoxes.push({
+                worldX: cfg.world.itemBoxX,
+                y: cfg.road.minY + (i * (roadHeight / (cfg.world.itemBoxCount - 1))),
+                active: true,
+                reactivateTime: 0
+            });
+        }
+
+        const names = shuffleArray(Object.keys(cfg.characterStats), rng);
+        const step = roadHeight / (names.length - 1 || 1);
+
+        const karts = [];
+        const kartsById = {};
+
+        names.forEach((charName, index) => {
+            const verticalPos = cfg.road.minY + (index * step);
+            const stats = cfg.characterStats[charName];
+
+            const kart = {
+                id: index,
+                charName: charName,
+                worldX: 0,
+                yPercent: verticalPos,
+                totalDistance: 0,
+
+                stats: stats,
+                absoluteVelocity: getInitialKartSpeed(rng, stats),
+                momentum: randomRange(rng, 0.5, 0.8),
+                momentumTarget: getNewMomentumTarget(rng, stats),
+                nextMomentumChange: now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax),
+                vy: 0,
+                targetVy: 0,
+
+                state: 'pending',
+                rank: index + 1,
+
+                aiState: 'cruising',
+                originalLaneY: verticalPos,
+                dodgeIntensity: 30,
+
+                hitEndTime: 0,
+                heldItem: null,
+                throwTime: 0,
+                pendingItemGrantTime: 0,
+
+                boostEndTime: 0,
+                starEndTime: 0,
+                isInvincible: false,
+                hitInvincibleUntil: 0,
+
+                nextWanderTime: now + randomRange(rng, 1000, 5000),
+                wanderEndTime: 0,
+                wanderVy: 0,
+
+                lapCount: 0,
+                hasPassedFinishLine: false,
+                stopped: false,
+
+                currentSpinFrame: 0
+            };
+
+            karts.push(kart);
+            kartsById[index] = kart;
+        });
+
+        return {
+            cameraX: 0,
+            bgCameraX: 0,
+            karts: karts,
+            kartsById: kartsById,
+            items: [],
+            itemBoxes: itemBoxes,
+            nextSpawnTime: now + 500,
+            cachedLeader: null,
+
+            nextItemId: 1,
+            previousRanking: [],
+            lastLeaderboardUpdate: 0
+        };
+    }
+
     return {
         shuffleArray,
         randomRange,
@@ -999,6 +1090,7 @@
         activateItem,
         handleSpawns,
         updateLeaderboard,
+        createWorldState,
         stepPhysics
     };
 });

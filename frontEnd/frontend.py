@@ -36,7 +36,7 @@ app.config['SESSION_COOKIE_SECURE'] = (os.environ.get('TLS_MODE', 'http') == 'ht
 
 csrf = CSRFProtect(app)
 
-APP_VERSION = "1.4.4"
+APP_VERSION = "1.4.3"
 
 @app.context_processor
 def inject_version():

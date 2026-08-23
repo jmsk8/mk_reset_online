@@ -87,6 +87,40 @@ services:
       - frontend
       - backend
 
+  race:
+    build:
+      context: ./raceEngine
+      dockerfile: Dockerfile.race
+    expose:
+      - "3000"
+    volumes:
+      # Le moteur et sa configuration sont les fichiers servis au navigateur,
+      # montés tels quels : une seule version au monde, donc aucune dérive
+      # possible entre ce qui est simulé et ce qui est affiché.
+      - ./frontEnd/static/js/physics.js:/app/physics.js:ro
+      - ./frontEnd/static/js/physics-config.js:/app/physics-config.js:ro
+    environment:
+      - PORT=3000
+      # Vide = toutes origines acceptées. À renseigner en production, sinon
+      # n'importe quel site peut ouvrir une connexion permanente sur ce service.
+      - ALLOWED_ORIGINS=${WS_ALLOWED_ORIGINS:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+    networks:
+      # Surtout pas `backend` : ce service n'a rien à faire près de la base. Ni
+      # session, ni cookie, ni accès Postgres — c'est ce qui rend acceptable
+      # d'exposer une connexion permanente non authentifiée.
+      - frontend
+
   nginx:
     image: nginx:1.27-alpine
     ports:
@@ -106,6 +140,8 @@ services:
       - ./certbot/www:/var/www/certbot:ro
     depends_on:
       frontend:
+        condition: service_healthy
+      race:
         condition: service_healthy
     restart: unless-stopped
     deploy:
