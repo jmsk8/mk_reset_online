@@ -86,6 +86,18 @@
             <div id="karts-container" class="karts-layer"></div>
         </div>
 
+        {# Rideau de départ : couvre la scène tant qu'elle n'est pas prête à être
+           montrée (assets chargés, état reçu, DOM reconstruit). Levé par défaut,
+           pour qu'un JS mort laisse le banner visible plutôt que masqué. #}
+        <div class="race-curtain-clip" aria-hidden="true">
+            <div id="race-curtain" class="race-curtain"></div>
+        </div>
+
+        <div id="race-status" class="race-status is-connecting" title="État de la connexion au serveur de course">
+            <span class="race-status-dot"></span>
+            <span class="race-status-label">connexion</span>
+        </div>
+
         <div id="race-leaderboard"></div>
 
         <div class="hero-body-content">
@@ -95,10 +107,6 @@
                     <img id="green-shell-img" src="{{ url_for('static', filename='img/green-shell/green-shell1.png') }}" alt="Green Shell" class="green-shell-anim" style="display: none;"> 
                 </div>
             </div>
-        </div>
-
-        <div id="pause-overlay" class="pause-overlay" style="display: none;">
-            <div class="pause-text">PAUSE</div>
         </div>
     </section>
 
@@ -256,9 +264,9 @@
     {% include 'footer.html' %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    {# physics.js et smk-banner.js doivent rester en phase (contrat GAME_CONFIG) :
-       cache-buster nécessaire, sinon nginx (expires 7d) peut ne rafraîchir qu'un des deux. #}
-    <script src="{{ url_for('static', filename='js/physics.js') }}?v={{ app_version }}"></script>
+    {# physics.js et physics-config.js ne sont plus chargés par le navigateur : la course
+       est simulée par le service `race`, le client ne fait que l'afficher. Le cache-buster
+       reste nécessaire, nginx servant les .js avec expires 7d. #}
     <script src="{{ url_for('static', filename='js/smk-banner.js') }}?v={{ app_version }}"></script>
 
     <script>

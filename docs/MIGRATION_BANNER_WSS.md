@@ -3,7 +3,9 @@
 > Objectif : **tous les visiteurs voient exactement la même course**, au lieu d'une
 > simulation locale et aléatoire par navigateur.
 >
-> Statut : **étape 1 réalisée** — le moteur est désormais indépendant de l'appareil.
+> Statut : **migration faite** sur la branche `feature/banner-wss`, non publiée. Le serveur est
+> autoritatif, les clients ne font que du rendu. Ce qui reste à faire est hors de ce
+> dépôt : voir §9.3.
 > Rédigée le 2026-08-17 sur la branche `feature/stats-saison-matchmaking-public`.
 > Mise à jour le 2026-08-22 : audit infra face au 1.4.3 (TLS externalisé).
 
@@ -15,6 +17,7 @@
 | 2026-08-18 | **§6.1 résolu** : `isMobile` sorti de la physique, collisions universelles PC/mobile. **§6.11 résolu** : cache-buster posé. **Audit de déterminisme** (§2.0) : `physics.js` est une fonction pure — ce qui **rouvre l'option B**. **Option C** (moteur dans le backend Flask) analysée et écartée. |
 | 2026-08-21 | Ajout de **§8, évolutions envisagées** : suivi de kart au clic sur les bulles du classement. Le point à retenir pour la migration : cette caméra-là est **par-spectateur**, ce qui nuance §6.6. |
 | 2026-08-18 | **🎯 DÉCISION : option A retenue** (serveur autoritatif + WebSocket). §4 revu en profondeur : le protocole initial ne permettait **pas** à un arrivant en cours de course d'afficher une scène correcte — voir le « test de l'arrivant » (§4.0) et les 6 lacunes corrigées. |
+| 2026-08-23 | **Migration réalisée** de bout en bout (lots 1 à 9). Écarts assumés au plan initial et points restants : **§9**. |
 | 2026-08-22 | **Audit infra vs 1.4.3** : le 1.4.3 a déporté le TLS sur un reverse proxy **externe** (hors dépôt) — §1 mis à jour, nouveau **§6.17** (le proxy externe est un deuxième saut WS non documenté ici). §3.5 complété (headers `X-Forwarded-*` manquants dans le bloc `/ws/`), §3.6 précisé (`depends_on` de `race` avec `condition: service_healthy`), §3.1 complété (utilisateur non-root, comme les autres Dockerfiles du repo). |
 
 ---
@@ -1005,3 +1008,55 @@ local et de ne jamais la laisser fuiter dans l'état partagé.
 **Version minimale, si le suivi complet est jugé trop coûteux :** se contenter d'un halo sur le kart
 sélectionné, via une classe CSS sur le wrapper, sur le modèle de `star-active` qui existe déjà.
 Aucune incidence sur la caméra ni sur le protocole.
+
+---
+
+## 9. Ce qui a effectivement été construit (2026-08-23)
+
+Le plan des §3 à §7 a été suivi. Cette section ne répète pas ce qui s'est passé comme
+prévu : elle note **ce qui en diffère**, parce que c'est là que la note serait trompeuse
+pour qui la relirait plus tard.
+
+### 9.1 Écarts assumés par rapport au plan
+
+| Point | Ce que prévoyait la note | Ce qui a été fait, et pourquoi |
+|---|---|---|
+| **Mode dégradé** (§6.10) | recharger `physics.js` en `import()` paresseux et **relancer la simulation locale** | **Aucune simulation dans le navigateur, jamais.** Hors ligne = décor qui défile, sans karts, pastille rouge. Décision explicite : « je ne veux pas de fausse course, uniquement du spectateur ». Conséquence heureuse : `physics.js` disparaît complètement du client, et il ne peut plus exister deux versions du gameplay |
+| **Défilement de la route** (§6.6) | phase de l'animation CSS « purement cosmétique — acceptable en l'état » | Tranché dans l'autre sens : le décor est **entièrement piloté par la caméra**, animation CSS supprimée. Étendu aux animations de sprite (rebond, étoile, soleil), calées par `animation-delay` négatif sur l'horloge serveur |
+| **Caméras** (§6.6) | dérivées du temps par le client, `t0` transmis, snapshot en simple garde-fou | **Transmises dans chaque snapshot** (`cx`, `bx`). Deux nombres contre la certitude qu'aucun spectateur ne verra le décor décalé |
+| **Fréquence** (§4.2) | ~15 Hz | **10 Hz**, décidé après mesure : 15 Hz donnait 664 o/snapshot soit ~35 Mo/h par spectateur. Avec `permessage-deflate` (contexte conservé entre messages, fenêtre 4 Ko) : **1,3 Ko/s, ~5 Mo/h** |
+| **Champs du snapshot** (§4.1) | inventaire de 8 champs par kart | Deux manques trouvés à l'usage : **`hitEnd`** (sans la date de fin de malus, un arrivant sait qu'un kart est percuté mais pas depuis quand, et le fait tourner à contretemps) et **`hitDuration`** dans le `hello` (le client ne peut pas dériver la frame de toupie sans elle) |
+| **Création du monde** | implicite : le serveur pose la grille de départ | `createWorldState()` a été remontée **dans `physics.js`**, le module déjà partagé. La note laissait supposer deux implémentations de la grille de départ à maintenir en parallèle — exactement le genre de duplication que la migration élimine |
+| **Cycle de vie** (§6.15) | course unique infinie, simulée même sans public | **Course à la demande** : départ à la première connexion, arrêt 30 s après le dernier départ. Le délai de grâce évite qu'un F5 ne reparte de zéro |
+| **Événements** (§4.2) | diffuser la liste produite par `stepPhysics` | Seuls `kartHit` et `leaderboardPosition` sont transmis, et ce dernier **uniquement en cas de changement de place** : `updateLeaderboard` en émet huit toutes les 500 ms, dont l'immense majorité ne déclenche aucune animation |
+| **Rideau et indicateur** | absents de la note | Ajoutés : le rideau masque la reconstruction d'une scène de milieu de course, l'indicateur dit au visiteur s'il regarde une course en direct ou un décor |
+
+### 9.2 Un piège qui n'était pas dans la note : le recalage d'horloge
+
+§6.8 demande de recaler l'horloge par ping/pong toutes les 30 s. Fait — mais appliquer
+chaque mesure telle quelle **fait sauter l'instant affiché**, donc toute la scène, à chaque
+recalage. Invisible sur une liaison locale à 2 ms d'aller-retour, très visible sur mobile où
+il varie de plusieurs dizaines de millisecondes : une saccade régulière, toutes les 30 s.
+
+L'horloge effective rejoint donc sa cible **progressivement**, à 1 ms par frame (60 ms/s),
+avec saut direct au-delà d'une seconde d'écart — un décrochage n'est pas une dérive.
+
+Corollaire : les éléments créés avant la première mesure portent une phase d'animation
+calée sur l'heure locale, donc fausse, et elle ne se corrigerait jamais d'elle-même.
+`realignAnimations()` les reprend à la première calibration.
+
+### 9.3 Ce qui reste, et qui est hors de ce dépôt
+
+- **§6.17 — le reverse proxy externe.** Tout ce qui précède a été validé contre le `nginx`
+  de ce dépôt (`make race-nginx`). En production le trafic traverse **d'abord** un reverse
+  proxy externe, hors dépôt : il doit relayer l'upgrade WebSocket sur `/ws/` et tenir un
+  timeout d'inactivité très supérieur à 60 s. À vérifier sur le VPS avant de considérer la
+  migration terminée en prod.
+- **`WS_ALLOWED_ORIGINS`** : vide, toutes les origines peuvent ouvrir le flux. À renseigner
+  dans le `.env` de production, sinon n'importe quel site peut ouvrir une connexion
+  permanente sur le service.
+- **`SESSION_COOKIE_SECURE`** (noté en §6.17) : toujours à traiter, toujours sans rapport
+  avec cette migration.
+- **`bannerDev`** (console du navigateur) et `make race-deps` / `make race-spectate` sont
+  des outils de développement. Ils ne coûtent rien et servent au diagnostic ; à supprimer
+  si l'on veut refermer complètement le chantier.

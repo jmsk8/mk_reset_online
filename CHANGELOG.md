@@ -4,6 +4,41 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
+## [Non publié]
+
+### Nouvelles fonctionnalités
+- **Bannière synchronisée pour tous les visiteurs** : la course du bandeau d'accueil n'est plus simulée par chaque navigateur mais par un service dédié, `race`, dont tous les spectateurs reçoivent l'état par WebSocket. Deux personnes qui ouvrent le site au même moment voient désormais rigoureusement la même course — mêmes positions, mêmes collisions, même classement. Auparavant chaque onglet avait son propre monde, son propre tirage aléatoire et sa propre horloge : c'étaient autant de courses différentes que de visiteurs
+- **Arrivée en cours de course** : un visiteur qui se connecte à la centième seconde reçoit un état complet et affiche immédiatement une scène juste — classement rempli dans le bon ordre, objets tenus avec la bonne image, halo d'étoile allumé, item-boxes déjà consommées masquées, kart percuté figé. Rien à l'écran ne dépend d'un événement qu'il aurait fallu voir passer
+- **Rideau de départ** : un damier noir et blanc couvre le bandeau tant que la scène n'est pas prête (images décodées, état reçu, deux snapshots en tampon) puis se lève. Il masque la reconstruction du décor et celle d'une course déjà commencée
+- **Indicateur de connexion** : une pastille en haut à droite du bandeau — verte en direct, rouge hors ligne
+- **Course à la demande** : la simulation démarre à la première connexion et s'arrête trente secondes après le départ du dernier spectateur. Personne devant l'écran, aucun CPU consommé. Le délai de grâce évite qu'un simple rafraîchissement ne reparte de zéro
+
+### Corrections
+- **Défilement du décor désynchronisé** : la bordure de route tournait sur une animation CSS infinie, dont la phase dépendait du moment où la page avait été chargée. Elle est maintenant positionnée depuis la caméra, comme le reste du décor. Même traitement pour les animations décoratives — rebond des karts, arc-en-ciel de l'étoile, pulsation du soleil — calées sur l'horloge du serveur par un `animation-delay` négatif
+- **Constantes de simulation dupliquées** : les valeurs qui décrivent le monde (vitesses, hitboxes, délais, distribution des objets) vivaient dans le même objet que celles qui décrivent son apparence. Elles sont séparées, et le client n'en garde plus aucune copie : le serveur transmet le strict nécessaire à l'affichage lors de la connexion. Un réglage de gameplay ne peut plus changer d'un côté sans l'autre
+
+### Améliorations
+
+#### Bannière
+- **Page d'accueil allégée** : `physics.js` et `physics-config.js` ne sont plus chargés par le navigateur, soit environ 1 800 lignes de JavaScript en moins. Le client ne fait plus que du rendu
+- **Le rendu se déduit de l'état, plus des événements** : à chaque image, le DOM est réconcilié avec l'état reçu — ce qui manque est créé, ce qui ne correspond plus à rien est supprimé. C'est ce qui rend affichable une course déjà commencée, et ce qui évite qu'une reconnexion ne laisse des éléments fantômes
+- **Interpolation par chemin le plus court** : le monde boucle à 3840 unités, interpoler naïvement entre les deux bords faisait traverser toute la carte à l'envers à chaque tour
+- **Horloge calée sur le serveur** par ping/pong, en retenant la meilleure mesure plutôt que la moyenne, et rattrapée progressivement — l'appliquer d'un coup faisait sauter la scène à chaque recalage, ce qui se voyait sur mobile où l'aller-retour est irrégulier
+- **Mode dégradé** : si le service est injoignable, le décor continue de défiler sans course, pastille rouge, et la connexion est retentée en backoff exponentiel. Le navigateur ne simule jamais de course de substitution — il n'y a qu'une course, celle du serveur
+- **Onglet en arrière-plan** : le client demande au serveur de couper son flux, et redemande un état complet au retour. La course continue sans lui, il n'y a plus rien à « reprendre » — l'overlay PAUSE disparaît
+
+#### Bande passante
+- **1,3 Ko/s par spectateur**, soit environ 5 Mo/h. Trois décisions y concourent : diffusion à 10 Hz pour une simulation à 30 Hz, compression `permessage-deflate` en conservant le contexte entre messages (76 % de gain mesuré sur des snapshots aussi répétitifs), et suppression des événements de classement qui étaient émis pour les huit karts toutes les 500 ms même quand personne ne changeait de place
+
+#### Infrastructure
+- **Service `race`** : Node 22 sans dépendance transitive, utilisateur non-root, limité à 0,25 CPU et 128 Mo, sur le réseau `frontend` uniquement — jamais près de la base. `physics.js` et `physics-config.js` y sont montés depuis `frontEnd/static/js` : une seule version de ces fichiers existe, la simulation ne peut donc pas dériver de ce qui est affiché
+- **nginx** : bloc `/ws/` avec relais de l'upgrade WebSocket, timeouts à une heure (sans quoi la connexion serait coupée au bout de 60 s d'inactivité) et `limit_conn` — les limites de débit existantes comptent des requêtes, ce qui ne veut rien dire pour une connexion qui dure des heures
+- **Boucle à pas fixe** avec plafond de rattrapage : sans lui, une pause du ramasse-miettes déclenche une spirale où chaque tick rejoue le retard accumulé
+- **Surveillance** : le moteur détecte les `NaN` et les karts immobiles, et rend un bilan (pas simulés, objets en vol, mémoire) exploitable en soak. Cibles `make race-soak`, `make race-spectate`, `make race-nginx`, `make re-race` et `make logs-race`
+- **`WS_ALLOWED_ORIGINS`** *(optionnel, à renseigner en production)* : liste blanche des origines autorisées à ouvrir le flux. Vide, toutes sont acceptées
+
+---
+
 ## [1.4.3] - 2026-08-22
 
 ### Nouvelles fonctionnalités
