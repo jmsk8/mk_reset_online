@@ -101,6 +101,10 @@ let race = null;
 let idleTimer = null;
 let totalRaces = 0;
 
+// Grille de la course suivante, vainqueur en pole. Conserve y compris quand le
+// service se met au repos faute de spectateurs.
+let lastFinishOrder = null;
+
 function startRace() {
     const now = Date.now();
 
@@ -109,7 +113,7 @@ function startRace() {
         // le temps reel. C'est elle qui date les snapshots.
         simTime: now,
         t0: now,
-        state: PH.createWorldState(CFG, rng, now),
+        state: PH.createWorldState(CFG, rng, now, lastFinishOrder),
 
         accumulator: 0,
         lastRealTime: now,
@@ -127,7 +131,7 @@ function startRace() {
 
     race.loop = setInterval(tick, DT_MS);
     totalRaces++;
-    console.log(`[course] depart — ${race.state.karts.map(k => k.charName).join(', ')}`);
+    console.log(`[course] grille — ${race.state.karts.map(k => k.charName).join(', ')}`);
 }
 
 function stopRace() {
@@ -137,18 +141,16 @@ function stopRace() {
     race = null;
 }
 
-// Repart sur une course neuve sans toucher au service : nouveau tirage de
-// personnages, nouvelle grille, compteurs remis a zero. Les spectateurs deja
-// connectes doivent recevoir un `hello`, sinon ils garderaient les identites et
-// les item-boxes de la course precedente et afficheraient les mauvais sprites.
-function restartRace() {
+// Sans le `hello`, les spectateurs garderaient les identites et la grille de la
+// course precedente.
+function beginNewRace() {
     if (race) {
         clearInterval(race.loop);
         race = null;
     }
 
     if (clients.size === 0 && !ALWAYS_ON) {
-        console.log('[course] redemarrage demande, mais aucun spectateur : la prochaine connexion relancera.');
+        console.log('[course] plus aucun spectateur : la prochaine connexion relancera.');
         return;
     }
 
@@ -156,7 +158,12 @@ function restartRace() {
     for (const [ws] of clients) {
         if (ws.readyState === ws.OPEN) sendHello(ws);
     }
-    console.log(`[course] redemarree pour ${clients.size} spectateur(s).`);
+}
+
+// Redemarrage a chaud demande de l'exterieur (`make restart-race`).
+function restartRace() {
+    console.log('[course] redemarrage demande.');
+    beginNewRace();
 }
 
 function ensureRunning() {
@@ -188,14 +195,32 @@ function tick() {
     let steps = 0;
     const startedAt = Date.now();
 
+    let finishedOrder = null;
+
     while (race.accumulator >= DT && steps < MAX_CATCHUP_STEPS) {
         race.simTime += DT_MS;
         const events = PH.stepPhysics(CFG, race.state, rng, race.simTime, DT);
+
+        for (const ev of events) {
+            if (ev.type === 'raceOver') {
+                finishedOrder = ev.order.map(id => race.state.kartsById[id].charName);
+            } else if (ev.type === 'kartFinished') {
+                const kart = race.state.kartsById[ev.kartId];
+                console.log(`[course] ${ev.rank}. ${kart.charName}`);
+            }
+        }
+
         const kept = protocol.filterEvents(events);
         if (kept.length) race.pendingEvents.push(...kept);
         race.accumulator -= DT;
         steps++;
         race.ticks++;
+    }
+
+    if (finishedOrder) {
+        lastFinishOrder = finishedOrder;
+        beginNewRace();
+        return;
     }
 
     if (race.accumulator >= DT) {
@@ -424,8 +449,10 @@ function checkStuck() {
     if (!race) return;
     const now = Date.now();
 
+    if (race.state.phase === 'countdown') return;
+
     for (const kart of race.state.karts) {
-        if (kart.state === 'pending') continue;
+        if (kart.state === 'grid' || kart.finished) continue;
 
         const seen = race.lastProgress.get(kart.id);
         if (!seen || kart.totalDistance > seen.totalDistance + 1) {
@@ -453,18 +480,17 @@ function report() {
         return;
     }
 
-    const board = race.state.karts
-        .filter(k => k.state !== 'pending')
+    // Copie : trier le tableau du monde changerait l'ordre d'iteration de la
+    // simulation.
+    const board = race.state.karts.slice()
         .sort((a, b) => a.rank - b.rank)
-        .map(k => `${k.rank}.${k.charName}${k.heldItem ? '*' : ''}`)
+        .map(k => `${k.rank}.${k.charName}${k.finished ? '!' : (k.heldItem ? '*' : '')}`)
         .join(' ');
 
     const rss = Math.round(process.memoryUsage().rss / 1048576);
-    const lap = race.state.karts.reduce((max, k) => Math.max(max, k.lapCount), 0);
-
     console.log(
-        `[t+${formatClock(race.simTime - race.t0)}] ${board}\n` +
-        `           ticks=${race.ticks} objets=${race.state.items.length} tours=${lap} ` +
+        `[t+${formatClock(race.simTime - race.t0)}] ${race.state.phase} tour ${race.state.leaderLap}/${CFG.race.laps} — ${board}\n` +
+        `           ticks=${race.ticks} objets=${race.state.items.length} arrives=${race.state.finishOrder.length} ` +
         `nextItemId=${race.state.nextItemId} spectateurs=${clients.size} ` +
         `rss=${rss}Mo pas_max=${race.maxStepMs}ms rejetes=${race.droppedSteps}`
     );

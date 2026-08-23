@@ -12,14 +12,15 @@
 // demander « un arrivant peut-il le deduire du seul snapshot ? ». Si non, c'est
 // ici qu'il manque un champ.
 
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 2;
 
 // Champ de bits de l'etat d'un kart. Compact parce qu'il part dix fois par
 // seconde a chaque spectateur (voir §6.7 du document de migration).
-const FLAG_PENDING = 1;  // pas encore entre en course -> masque
-const FLAG_HIT = 2;      // percute -> tete-a-queue
-const FLAG_STOPPED = 4;  // immobilise apres impact -> sprite fige
-const FLAG_STAR = 8;     // etoile active -> halo
+const FLAG_GRID = 1;      // sur la grille, avant le coup d'envoi
+const FLAG_HIT = 2;       // percute -> tete-a-queue
+const FLAG_STOPPED = 4;   // immobilise apres impact -> sprite fige
+const FLAG_STAR = 8;      // etoile active -> halo
+const FLAG_FINISHED = 16; // a franchi la ligne -> tour d'honneur
 
 function round(value, decimals) {
     const factor = Math.pow(10, decimals);
@@ -28,10 +29,11 @@ function round(value, decimals) {
 
 function kartFlags(kart) {
     let flags = 0;
-    if (kart.state === 'pending') flags |= FLAG_PENDING;
+    if (kart.state === 'grid') flags |= FLAG_GRID;
     if (kart.state === 'hit') flags |= FLAG_HIT;
     if (kart.stopped) flags |= FLAG_STOPPED;
     if (kart.isInvincible) flags |= FLAG_STAR;
+    if (kart.finished) flags |= FLAG_FINISHED;
     return flags;
 }
 
@@ -82,6 +84,12 @@ function itemTuple(item) {
 // temps ecoule ; elles voyagent quand meme dans chaque snapshot. Deux nombres
 // contre la certitude qu'aucun spectateur ne verra jamais le decor decale, ce
 // n'est pas cher paye — et c'est ce que demande une identite stricte du rendu.
+// [groupe, image]. Le drapeau s'anime cote client : seul le groupe part.
+function signTuple(state) {
+    if (!state.sign) return null;
+    return [state.sign.group, state.sign.group === 'finish' ? null : state.sign.frame];
+}
+
 function buildSnapshot(state, simTime) {
     return {
         t: 's',
@@ -93,7 +101,14 @@ function buildSnapshot(state, simTime) {
         bx: round(state.bgCameraX, 2),
         k: state.karts.map(kartTuple),
         i: state.items.map(itemTuple),
-        b: state.itemBoxes.map(box => (box.active ? 1 : 0))
+        b: state.itemBoxes.map(box => (box.active ? 1 : 0)),
+
+        // L'ordre d'arrivee est dans le snapshot : un spectateur qui se
+        // connecte pendant le classement doit le voir en entier.
+        ph: state.phase,
+        lp: state.leaderLap,
+        sg: signTuple(state),
+        fo: state.finishOrder
     };
 }
 
@@ -127,7 +142,10 @@ function buildHello(cfg, state, simTime, t0) {
                 radiusY: cfg.orbit.radiusY
             },
             // Cadence d'animation des carapaces en orbite, derivee du temps.
-            shellAnimSpeed: cfg.itemAnim.greenShell.animSpeed
+            shellAnimSpeed: cfg.itemAnim.greenShell.animSpeed,
+
+            laps: cfg.race.laps,
+            flagAnimSpeed: 220
         },
 
         karts: state.karts.map(kart => ({ id: kart.id, char: kart.charName })),
@@ -160,10 +178,11 @@ function filterEvents(events) {
 
 module.exports = {
     PROTOCOL_VERSION,
-    FLAG_PENDING,
+    FLAG_GRID,
     FLAG_HIT,
     FLAG_STOPPED,
     FLAG_STAR,
+    FLAG_FINISHED,
     buildHello,
     buildSnapshot,
     filterEvents

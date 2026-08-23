@@ -20,6 +20,7 @@ const GAME_CONFIG = {
             pp: (name) => `static/img/${name}/${name}-pp.png`,
             greenShell: (frame) => `static/img/green-shell/green-shell${frame}.png`,
             redShell: (frame) => `static/img/red-shell/red-shell${frame}.png`,
+            lakitu: (group, frame) => `static/img/lakitu/${group}/${frame}.png`,
             banana: 'static/img/banana.png',
             shroom: 'static/img/shroom.png',
             star: 'static/img/star.png'
@@ -138,7 +139,12 @@ let worldState = {
     items: [],
     itemBoxes: [],
     finishLine: null,
-    sun: null
+    sun: null,
+
+    phase: 'countdown',
+    leaderLap: 1,
+    sign: null,
+    finishOrder: []
 };
 
 const kartEls = {};
@@ -216,6 +222,11 @@ function preloadImages() {
         cache(`greenShell_${i}`, GAME_CONFIG.resources.paths.greenShell(i));
         cache(`redShell_${i}`, GAME_CONFIG.resources.paths.redShell(i));
     }
+
+    // Lakitu : feux de depart, panneaux de tour, drapeau a damier.
+    LAKITU_SPRITES.forEach(([group, frame]) => {
+        cache(`lakitu_${group}_${frame}`, GAME_CONFIG.resources.paths.lakitu(group, frame));
+    });
 
     cache('banana', GAME_CONFIG.resources.paths.banana);
     cache('shroom', GAME_CONFIG.resources.paths.shroom);
@@ -333,6 +344,24 @@ function triggerPPHitAnimation(kartId) {
     }, 600);
 }
 
+// A tenir en phase avec la transition de .is-down dans smk-banner.css.
+const CURTAIN_FALL_MS = 700;
+
+// Duree minimale du rideau baisse, descente comprise : sans plancher, il
+// repartirait vers le haut avant d'avoir fini de tomber.
+const CURTAIN_MIN_MS = 1400;
+
+// Les panneaux de tour (laps/2 a 4, laps/final) existent dans les assets mais
+// ne sont pas affiches.
+const LAKITU_SPRITES = [
+    ['start', 1], ['start', 2], ['start', 3], ['start', 4],
+    ['finish', 1], ['finish', 2], ['finish', 3]
+];
+
+// Hauteur du sprite de Lakitu et sa position au-dessus de la route.
+const LAKITU_HEIGHT = { pc: 120, mobile: 82 };
+const LAKITU_BOTTOM = 32;
+
 // Periode du damier rouge/blanc de la bordure de route, en unites monde : la
 // bande se repete tous les 80px (repeating-linear-gradient, smk-banner.css).
 const ROAD_PATTERN_WIDTH = 80;
@@ -397,8 +426,11 @@ function clearScene() {
     worldState.kartsById = {};
     worldState.items = [];
     worldState.itemBoxes = [];
+    worldState.finishOrder = [];
+    worldState.sign = null;
     domDirty = true;
     reconcileDom();
+    renderResults();
 }
 
 // Date de depart de la course en cours. Un `hello` peut arriver pour deux
@@ -413,6 +445,12 @@ let currentRaceT0 = null;
 // du personnage precedent. La reconciliation ne verrait rien a corriger, les
 // identifiants n'ayant pas bouge.
 function wipeSceneElements() {
+    if (lakituEls) {
+        lakituEls.wrapper.remove();
+        lakituEls = null;
+    }
+    resultsShown = -1;
+
     for (const id in kartEls) {
         kartEls[id].wrapper.remove();
         delete kartEls[id];
@@ -426,15 +464,17 @@ function wipeSceneElements() {
     while (boxEls.length) boxEls.pop().remove();
 }
 
+function isNewRace(hello) {
+    return hello.t0 !== currentRaceT0;
+}
+
 // Construit la scene a partir du `hello`. Rien n'est invente ici : identites,
-// geometrie du monde et etat courant viennent tous du serveur. Rend vrai s'il
-// s'agit d'une course differente de la precedente.
+// geometrie du monde et etat courant viennent tous du serveur.
 function buildWorldFromHello(hello) {
     WORLD = hello.world;
 
-    const isNewRace = hello.t0 !== currentRaceT0;
+    if (isNewRace(hello)) wipeSceneElements();
     currentRaceT0 = hello.t0;
-    if (isNewRace) wipeSceneElements();
 
     worldState.karts = hello.karts.map(entry => ({
         id: entry.id,
@@ -442,9 +482,10 @@ function buildWorldFromHello(hello) {
         worldX: 0,
         yPercent: WORLD.roadMinY,
         totalDistance: 0,
-        state: 'pending',
+        state: 'grid',
         stopped: false,
         isInvincible: false,
+        finished: false,
         rank: entry.id + 1,
         hitEndTime: 0,
         heldItem: null
@@ -462,8 +503,6 @@ function buildWorldFromHello(hello) {
     applyState(hello.snapshot, null, 0);
     domDirty = true;
     reconcileDom();
-
-    return isNewRace;
 }
 
 function getItemVisualConfig(itemType) {
@@ -660,10 +699,20 @@ const bannerLink = {
     // decodees, et le flux en etat de fournir une scene — soit deux snapshots
     // en tampon, soit la certitude qu'il n'y aura pas de course.
     gates: { assets: false, stream: false },
+    loweredAt: 0,
 
     open(gate) {
         this.gates[gate] = true;
-        if (this.gates.assets && this.gates.stream) this.raiseCurtain();
+        if (!this.gates.assets || !this.gates.stream) return;
+
+        // Sans plancher, le rideau clignoterait entre deux courses.
+        const shown = Date.now() - this.loweredAt;
+        if (shown < CURTAIN_MIN_MS) {
+            setTimeout(() => this.raiseCurtain(), CURTAIN_MIN_MS - shown);
+            return;
+        }
+
+        this.raiseCurtain();
     },
 
     init() {
@@ -674,6 +723,7 @@ const bannerLink = {
     },
 
     lowerCurtain() {
+        this.loweredAt = Date.now();
         if (this.curtainEl) this.curtainEl.classList.add('is-down');
         if (this.leaderboardEl) this.leaderboardEl.classList.add('is-veiled');
     },
@@ -816,11 +866,6 @@ function reconcileLeaderboard() {
     for (let i = 0; i < worldState.karts.length; i++) {
         const kart = worldState.karts[i];
 
-        if (kart.state === 'pending') {
-            removePPEl(kart.id);
-            continue;
-        }
-
         ensurePPEl(kart);
 
         const slot = kart.rank - 1;
@@ -913,13 +958,119 @@ function applyKartSpinFrame(kart, els, frameIndex) {
     els.sprite.classList.toggle('kart-mirrored', frame.mirror);
 }
 
+// Lakitu est ancre sur la ligne de depart : c'est la camera qui le fait entrer
+// et sortir du cadre, et le serveur qui decide du panneau qu'il tient.
+let lakituEls = null;
+
+function ensureLakituEl() {
+    if (lakituEls) return lakituEls;
+    if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
+    if (!cachedContainer) return null;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'lakitu';
+
+    const img = document.createElement('img');
+    wrapper.appendChild(img);
+    cachedContainer.appendChild(wrapper);
+
+    lakituEls = { wrapper: wrapper, img: img, key: null };
+    return lakituEls;
+}
+
+function lakituSrc(group, frame, gameNow) {
+    // Le drapeau s'anime a partir du temps : le serveur n'envoie que le groupe.
+    if (group === 'finish') {
+        frame = (Math.floor(gameNow / WORLD.flagAnimSpeed) % 3) + 1;
+    }
+    const cached = imageCache[`lakitu_${group}_${frame}`];
+    return cached ? cached.src : GAME_CONFIG.resources.paths.lakitu(group, frame);
+}
+
+function renderLakitu(gameNow, screenWidth) {
+    const els = ensureLakituEl();
+    if (!els) return;
+
+    const sign = worldState.sign;
+    if (!sign) {
+        els.wrapper.style.display = 'none';
+        return;
+    }
+
+    const rx = getScreenPosition(WORLD.finishLineX, worldState.cameraX, screenWidth);
+    const margin = GAME_CONFIG.rendering.bufferZone;
+    if (rx < -margin || rx > screenWidth + margin) {
+        els.wrapper.style.display = 'none';
+        return;
+    }
+
+    const src = lakituSrc(sign[0], sign[1], gameNow);
+    if (els.key !== src) {
+        els.key = src;
+        els.img.src = src;
+    }
+
+    els.wrapper.style.display = 'block';
+    els.wrapper.style.height = `${cachedIsMobile ? LAKITU_HEIGHT.mobile : LAKITU_HEIGHT.pc}px`;
+    els.wrapper.style.bottom = `${LAKITU_BOTTOM}%`;
+    // Centre sur la ligne : la moitie de largeur gagnee compte sur mobile.
+    els.wrapper.style.transform = `translate3d(${rx}px, 0, 0) translateX(-50%)`;
+}
+
+let resultsEl = null;
+let resultsShown = -1;
+
+// Reconstruit entierement depuis `finishOrder` : un spectateur qui arrive en
+// plein classement le voit en entier, sans avoir assiste aux arrivees.
+function renderResults() {
+    if (!resultsEl) resultsEl = document.getElementById('race-results');
+    if (!resultsEl) return;
+
+    const order = worldState.finishOrder || [];
+    const visible = order.length > 0;
+
+    resultsEl.classList.toggle('is-visible', visible);
+    if (!visible) {
+        resultsShown = 0;
+        resultsEl.innerHTML = '';
+        return;
+    }
+
+    if (resultsShown === order.length) return;
+    resultsShown = order.length;
+
+    resultsEl.innerHTML = '';
+    order.forEach((kartId, index) => {
+        const kart = worldState.kartsById[kartId];
+        if (!kart) return;
+
+        const entry = document.createElement('div');
+        entry.className = 'race-result';
+
+        const rank = document.createElement('span');
+        rank.className = 'race-result-rank';
+        rank.textContent = index + 1;
+
+        const img = document.createElement('img');
+        img.src = GAME_CONFIG.resources.paths.pp(kart.charName);
+        img.alt = kart.charName;
+
+        entry.appendChild(rank);
+        entry.appendChild(img);
+        resultsEl.appendChild(entry);
+    });
+}
+
 function renderState(gameNow, screenWidth) {
     const renderMargin = GAME_CONFIG.rendering.bufferZone;
 
     if (domDirty) {
         domDirty = false;
         reconcileDom();
+        renderResults();
     }
+
+    renderLakitu(gameNow, screenWidth);
 
     // Les trois calques de decor sont des textures, pas des elements places :
     // ils ne passent pas par getScreenPosition et doivent donc appliquer le
@@ -987,12 +1138,6 @@ function renderState(gameNow, screenWidth) {
         const els = kartEls[kart.id];
         if (!els) continue;
         const wrapper = els.wrapper;
-
-        if (kart.state === 'pending') {
-            wrapper.style.display = 'none';
-            hideHeldItem(kart);
-            continue;
-        }
 
         if (kart.state === 'hit') {
             if (kart.stopped) {
@@ -1162,9 +1307,10 @@ function writeKart(kart, ta, tb, t) {
     }
 
     const flags = ta[4];
-    kart.state = (flags & 1) ? 'pending' : ((flags & 2) ? 'hit' : 'running');
+    kart.state = (flags & 1) ? 'grid' : ((flags & 2) ? 'hit' : 'running');
     kart.stopped = !!(flags & 4);
     kart.isInvincible = !!(flags & 8);
+    kart.finished = !!(flags & 16);
     kart.rank = ta[5];
 
     // Un serveur qui ne date pas le malus (`hitEnd` absent) ne doit pas priver
@@ -1266,6 +1412,11 @@ function applyState(a, b, t) {
     for (let i = 0; i < worldState.itemBoxes.length; i++) {
         worldState.itemBoxes[i].active = a.b[i] === 1;
     }
+
+    worldState.phase = a.ph;
+    worldState.leaderLap = a.lp;
+    worldState.sign = a.sg;
+    worldState.finishOrder = a.fo;
 }
 
 const bannerNet = {
@@ -1276,6 +1427,8 @@ const bannerNet = {
     ready: false,
     gotHello: false,
     wasOffline: false,
+    pendingHello: null,
+    rebuildTimer: null,
     reconnectTimer: null,
     pingTimer: null,
     rttSamples: [],
@@ -1331,34 +1484,38 @@ const bannerNet = {
         }
 
         if (msg.t === 'hello') {
-            if (msg.protocol !== 1) {
+            if (msg.protocol !== 2) {
                 // Version incompatible : mieux vaut le decor seul qu'une scene
                 // interpretee de travers.
                 console.warn(`banner : protocole ${msg.protocol} non gere`);
                 this.giveUp();
                 return;
             }
-            // Retour apres une coupure annoncee : on rebaisse le rideau, le
-            // temps de reconstruire. Sans lui, huit karts et un classement
-            // surgiraient d'un coup sur un decor vide.
+            // Course neuve alors qu'une autre etait a l'ecran : le rideau tombe
+            // d'abord, la scene n'est refaite qu'une fois qu'il est en bas.
+            // Sinon la nouvelle grille apparait derriere un rideau a mi-hauteur.
+            if (isNewRace(msg) && this.ready) {
+                this.ready = false;
+                this.gotHello = false;
+                bannerLink.gates.stream = false;
+                bannerLink.lowerCurtain();
+
+                this.pendingHello = msg;
+                clearTimeout(this.rebuildTimer);
+                this.rebuildTimer = setTimeout(() => {
+                    if (this.pendingHello) this.applyHello(this.pendingHello);
+                }, CURTAIN_FALL_MS);
+                return;
+            }
+
+            // Retour apres coupure : la scene est deja vide, rien a cacher.
             if (this.wasOffline) {
                 this.wasOffline = false;
                 bannerLink.gates.stream = false;
                 bannerLink.lowerCurtain();
             }
 
-            this.buffer = [];
-            this.gotHello = true;
-
-            // Course neuve alors qu'on en regardait deja une : on rebaisse le
-            // rideau, le temps que la nouvelle grille se remplisse.
-            if (buildWorldFromHello(msg) && this.ready) {
-                this.ready = false;
-                bannerLink.gates.stream = false;
-                bannerLink.lowerCurtain();
-            }
-
-            this.buffer.push(msg.snapshot);
+            this.applyHello(msg);
             return;
         }
 
@@ -1378,6 +1535,14 @@ const bannerNet = {
                 bannerLink.open('stream');
             }
         }
+    },
+
+    applyHello(msg) {
+        this.pendingHello = null;
+        this.buffer = [];
+        this.gotHello = true;
+        buildWorldFromHello(msg);
+        this.buffer.push(msg.snapshot);
     },
 
     ping() {
@@ -1450,6 +1615,8 @@ const bannerNet = {
         this.ready = false;
         this.gotHello = false;
         this.buffer = [];
+        this.pendingHello = null;
+        clearTimeout(this.rebuildTimer);
 
         if (this.pingTimer) {
             clearInterval(this.pingTimer);
@@ -1676,7 +1843,7 @@ function updateDebugHUD() {
             const kPct = (kart.worldX / WORLD.width) * 100;
             el.style.left = `${kPct}%`;
             el.style.backgroundColor = (kart.state === 'hit') ? 'red' : 'blue';
-            if (kart.state === 'pending') el.style.backgroundColor = 'gray';
+            if (kart.state === 'grid') el.style.backgroundColor = 'gray';
             el.innerText = GAME_CONFIG.resources.initials[kart.charName] || '?';
         }
     });
@@ -1687,7 +1854,6 @@ function updateDebugHUD() {
         // via totalDistance, jamais via worldX. Trier ici sur autre chose
         // afficherait des ecarts incoherents avec le tirage d'items.
         const sortedKarts = [...worldState.karts]
-            .filter(k => k.state !== 'pending')
             .sort((a, b) => b.totalDistance - a.totalDistance);
 
         const leader = sortedKarts[0] || null;

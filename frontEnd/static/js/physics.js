@@ -167,10 +167,17 @@
         kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
     }
 
+    // Ecart au premier, mesure en distance restante : deux karts partis de
+    // rangs differents n'ont pas la meme distance a couvrir, comparer leurs
+    // compteurs bruts placerait la pole en dernier au premier virage.
+    function remainingDistance(kart) {
+        return kart.finishDistance - kart.totalDistance;
+    }
+
     function getDistanceToLeader(state, kart) {
         const leader = state.cachedLeader;
         if (!leader || leader.id === kart.id) return 0;
-        return leader.totalDistance - kart.totalDistance;
+        return remainingDistance(kart) - remainingDistance(leader);
     }
 
     // Interrupteur global : un type present dans cfg.disabledItems ne sort
@@ -524,19 +531,6 @@
         }
     }
 
-    function handleSpawns(cfg, state, rng, now, events) {
-        if (now > state.nextSpawnTime) {
-            const pendingKart = state.karts.find(k => k.state === 'pending');
-            if (pendingKart) {
-                pendingKart.state = 'running';
-                pendingKart.absoluteVelocity = getInitialKartSpeed(rng, pendingKart.stats);
-                events.push({ type: 'kartSpawned', kartId: pendingKart.id });
-                const delay = randomRange(rng, cfg.delays.spawnMin, cfg.delays.spawnMax);
-                state.nextSpawnTime = now + delay;
-            }
-        }
-    }
-
     function updateLeaderboard(state, now, events) {
         if (now - state.lastLeaderboardUpdate < 500) return;
         state.lastLeaderboardUpdate = now;
@@ -551,7 +545,20 @@
         }
         if (activeKarts.length === 0) return;
 
-        activeKarts.sort((a, b) => b.totalDistance - a.totalDistance);
+        // Position reelle en course = distance restante jusqu'a la ligne, et
+        // non distance parcourue : la grille etant en quinconce, les huit karts
+        // n'ont pas la meme distance a couvrir.
+        //
+        // Un kart arrive garde ensuite sa place quoi qu'il fasse : il roule au
+        // ralenti, et un poursuivant encore en course pourrait le depasser en
+        // distance sans lui avoir repris sa position.
+        activeKarts.sort((a, b) => {
+            if (a.finished || b.finished) {
+                if (a.finished && b.finished) return a.finishRank - b.finishRank;
+                return a.finished ? -1 : 1;
+            }
+            return remainingDistance(a) - remainingDistance(b);
+        });
         state.cachedLeader = activeKarts[0];
 
         const newRanking = [];
@@ -575,21 +582,191 @@
         state.previousRanking = newRanking;
     }
 
+    // Position de la camera face a la ligne. La camera designe le centre de la
+    // vue, donc un ecart negatif place la ligne a droite du centre.
+    function parkPosition(cfg, offset) {
+        let x = cfg.world.finishLineX + offset;
+        if (x < 0) x += cfg.world.width;
+        if (x >= cfg.world.width) x -= cfg.world.width;
+        return x;
+    }
+
+    // Distance a parcourir vers l'avant pour aller de `from` a `to`. La camera
+    // ne recule jamais : le decor defilerait a l'envers.
+    function forwardDistance(cfg, from, to) {
+        let d = to - from;
+        if (d < 0) d += cfg.world.width;
+        return d;
+    }
+
+    function getLeader(state) {
+        let leader = null;
+        for (const kart of state.karts) {
+            if (!leader || kart.totalDistance > leader.totalDistance) leader = kart;
+        }
+        return leader;
+    }
+
+    // Le coup d'envoi. Chaque kart tire son depart : turbo pour la grande
+    // majorite, depart normal, ou cale d'une seconde.
+    function launchKarts(cfg, state, rng, now, events) {
+        const race = cfg.race;
+
+        for (const kart of state.karts) {
+            kart.state = 'running';
+
+            const roll = rng();
+            if (roll < race.startTurboChance) {
+                kart.boostEndTime = now + race.turboBoostMs;
+                kart.absoluteVelocity = kart.stats.topSpeed;
+                kart.momentum = 1;
+                events.push({ type: 'startBoost', kartId: kart.id, kind: 'turbo' });
+            } else if (roll < race.startTurboChance + race.startNormalChance) {
+                kart.absoluteVelocity = getInitialKartSpeed(rng, kart.stats);
+                events.push({ type: 'startBoost', kartId: kart.id, kind: 'normal' });
+            } else {
+                kart.startStallUntil = now + race.failStallMs;
+                kart.absoluteVelocity = 0;
+                kart.momentum = 0;
+                events.push({ type: 'startBoost', kartId: kart.id, kind: 'fail' });
+            }
+        }
+    }
+
+    function setSign(state, group, frame, now, duration) {
+        state.sign = { group: group, frame: frame, until: now + duration };
+    }
+
+    // Enchainement des phases, et pilotage de la camera qui en decoule.
+    function updateRace(cfg, state, rng, now, deltaTime, events) {
+        const race = cfg.race;
+        const leader = getLeader(state);
+
+        if (state.phase === 'countdown') {
+            // Un feu par seconde jusqu'au depart : les quatre images de
+            // lakitu/start sont montrees dans l'ordre.
+            const remaining = state.startAt - now;
+
+            // Premiere image tenue le temps de l'attente, puis un feu par
+            // intervalle. La quatrieme, le feu vert, n'apparait qu'au GO.
+            const elapsed = state.countdownMs - remaining;
+            const step = elapsed < race.countdownHoldMs
+                ? 1
+                : Math.min(3, 2 + Math.floor((elapsed - race.countdownHoldMs) / race.lightIntervalMs));
+            if (!state.sign || state.sign.group !== 'start' || state.sign.frame !== step) {
+                setSign(state, 'start', step, now, remaining + race.goSignMs);
+            }
+
+            if (now >= state.startAt) {
+                state.phase = 'racing';
+                // La quatrieme image est le feu vert : elle n'apparait qu'au
+                // coup d'envoi, pas pendant le decompte.
+                setSign(state, 'start', 4, now, race.goSignMs);
+                launchKarts(cfg, state, rng, now, events);
+                events.push({ type: 'raceStart' });
+            }
+            return;
+        }
+
+        if (state.phase === 'racing') {
+            // Le tour du leader continue d'etre suivi — il part dans le
+            // snapshot et sert de repere — mais les panneaux `laps` ne sont
+            // plus affiches. Pour les remettre, il suffit de reposer un signe
+            // ici : `laps/2` a `laps/4`, puis `laps/final` au dernier tour.
+            const lap = Math.min(race.laps, leader.lapCount + 1);
+            if (lap !== state.leaderLap) state.leaderLap = lap;
+
+            // La camera part se garer bien avant l'arrivee : elle est deux fois
+            // plus lente que les karts.
+            if (leader.totalDistance >= leader.finishDistance - race.cameraApproachDistance) {
+                state.phase = 'finishing';
+
+                const park = parkPosition(cfg, race.parkFinishOffset);
+                const distance = forwardDistance(cfg, state.cameraX, park);
+                const speed = Math.max(leader.absoluteVelocity, 1);
+                const timeLeft = Math.max(0.5, (leader.finishDistance - leader.totalDistance) / speed);
+
+                state.cameraSpeed = Math.min(
+                    cfg.speeds.roadPPS * race.cameraMaxCatchupRatio,
+                    Math.max(cfg.speeds.roadPPS, distance / timeLeft)
+                );
+                state.cameraTarget = park;
+
+                // Le drapeau reste sorti tant que la course n'est pas finie :
+                // il accompagne chaque passage, pas seulement celui du
+                // vainqueur.
+                setSign(state, 'finish', 1, now, race.maxRaceMs);
+                events.push({ type: 'raceFinishing' });
+            }
+            return;
+        }
+
+        if (state.phase === 'finishing') {
+            // Un kart bloque ne doit pas figer le service : passe un delai
+            // large, on classe les retardataires dans l'ordre ou ils courent et
+            // on enchaine.
+            if (now > state.startAt + race.maxRaceMs) {
+                for (const kart of state.karts) {
+                    if (kart.finished) continue;
+                    kart.finished = true;
+                    kart.finishRank = state.finishOrder.length + 1;
+                    state.finishOrder.push(kart.id);
+                }
+            }
+
+            if (state.finishOrder.length === state.karts.length && !state.resultsAt) {
+                state.resultsAt = now + race.resultsDelayMs;
+                state.phase = 'results';
+                events.push({ type: 'raceFinished' });
+            }
+            return;
+        }
+
+        if (state.phase === 'results' && now >= state.resultsAt) {
+            // Le service en tire une course neuve : c'est lui qui detient
+            // createWorldState et les connexions a prevenir.
+            events.push({ type: 'raceOver', order: state.finishOrder.slice() });
+            state.resultsAt = now + race.resultsDelayMs;
+        }
+    }
+
+    function updateCamera(cfg, state, deltaTime) {
+        const width = cfg.world.width;
+
+        if (state.phase === 'countdown') return;
+
+        if (state.phase === 'racing') {
+            state.cameraX += cfg.speeds.roadPPS * deltaTime;
+        } else if (state.cameraTarget !== null && state.cameraTarget !== undefined) {
+            // Approche de la position de parking, puis arret net.
+            const remaining = forwardDistance(cfg, state.cameraX, state.cameraTarget);
+            const advance = state.cameraSpeed * deltaTime;
+            if (advance >= remaining) {
+                state.cameraX = state.cameraTarget;
+                state.cameraTarget = null;
+            } else {
+                state.cameraX += advance;
+            }
+        } else {
+            return;
+        }
+
+        if (state.cameraX >= width) state.cameraX -= width;
+
+        // Fond en parallaxe : moitié vitesse.
+        state.bgCameraX = (state.bgCameraX || 0) + (state.phase === 'racing'
+            ? cfg.speeds.roadPPS * deltaTime * 0.5
+            : state.cameraSpeed * deltaTime * 0.5);
+        if (state.bgCameraX >= width) state.bgCameraX -= width;
+    }
+
     function stepPhysics(cfg, state, rng, now, deltaTime) {
         const events = [];
 
-        handleSpawns(cfg, state, rng, now, events);
+        updateRace(cfg, state, rng, now, deltaTime, events);
+        updateCamera(cfg, state, deltaTime);
 
-        state.cameraX += cfg.speeds.roadPPS * deltaTime;
-        if (state.cameraX >= cfg.world.width) {
-            state.cameraX -= cfg.world.width;
-        }
-
-        // Fond en parallaxe : moitié vitesse, boucle indépendamment de cameraX.
-        state.bgCameraX = (state.bgCameraX || 0) + cfg.speeds.roadPPS * deltaTime * 0.5;
-        if (state.bgCameraX >= cfg.world.width) {
-            state.bgCameraX -= cfg.world.width;
-        }
+        if (state.sign && now > state.sign.until) state.sign = null;
 
         const boxesLen = state.itemBoxes.length;
         for (let i = 0; i < boxesLen; i++) {
@@ -603,6 +780,7 @@
             for (let k = 0; k < kartsLen0; k++) {
                 const kart = state.karts[k];
                 if (kart.state !== 'running' && kart.state !== 'hit') continue;
+                if (kart.finished) continue;
 
                 const dist = getShortestDistance(cfg, box.worldX, kart.worldX);
                 const dy = Math.abs(box.y - kart.yPercent);
@@ -621,10 +799,14 @@
         for (let i = 0; i < kartsLen; i++) {
             const kart = state.karts[i];
 
-            if (kart.state === 'pending') continue;
+            if (kart.state === 'grid') continue;
 
             if (kart.state === 'running') {
-                if (kart.pendingItemGrantTime && now > kart.pendingItemGrantTime) {
+                // Depart rate : le kart reste sur place, moteur noye.
+                if (kart.startStallUntil > now) continue;
+
+                // Un kart qui a fini ne ramasse plus rien : il rentre au ralenti.
+                if (!kart.finished && kart.pendingItemGrantTime && now > kart.pendingItemGrantTime) {
                     giveKartItem(cfg, state, rng, now, kart, events);
                     kart.pendingItemGrantTime = 0;
                 }
@@ -666,6 +848,10 @@
                     effectiveSpeed = kart.stats.topSpeed + cfg.speeds.shroomBoost;
                 }
 
+                if (kart.finished) {
+                    effectiveSpeed = Math.min(effectiveSpeed, kart.stats.topSpeed * cfg.race.finishedSpeedRatio);
+                }
+
                 if (kart.starEndTime > now) {
                     effectiveSpeed = Math.max(effectiveSpeed, kart.stats.topSpeed * cfg.speeds.starSpeedMultiplier);
                     kart.isInvincible = true;
@@ -683,11 +869,30 @@
 
                 const finishX = cfg.world.finishLineX;
                 if (prevWorldX < finishX && kart.worldX >= finishX) {
-                    if (kart.hasPassedFinishLine) {
-                        kart.lapCount++;
-                    } else {
-                        kart.hasPassedFinishLine = true;
+                    kart.lapCount++;
+                    kart.hasPassedFinishLine = true;
+                }
+
+                if (!kart.finished && kart.totalDistance >= kart.finishDistance) {
+                    kart.finished = true;
+                    kart.finishRank = state.finishOrder.length + 1;
+                    state.finishOrder.push(kart.id);
+
+                    // Il ne se sert plus de ce qu'il tient : autant le lui
+                    // retirer, sinon une banane trainerait derriere lui
+                    // jusqu'au bout du tour d'honneur.
+                    if (kart.heldItem) {
+                        if (kart.heldItem.holdPosition === 'orbit') {
+                            for (const orb of kart.heldItem.orbs) {
+                                events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: orb.id });
+                            }
+                        } else {
+                            events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
+                        }
+                        kart.heldItem = null;
                     }
+
+                    events.push({ type: 'kartFinished', kartId: kart.id, rank: kart.finishRank });
                 }
 
                 if (kart.worldX >= cfg.world.width) {
@@ -975,13 +1180,16 @@
         return events;
     }
 
-    // Fabrique l'etat initial d'une course. Vit ici, dans le module partage,
-    // pour qu'il n'en existe qu'une seule version : le serveur autoritatif et le
-    // client doivent poser exactement le meme monde, sans quoi la migration
-    // reintroduirait la divergence qu'elle corrige. Ne cree aucun element
-    // visuel — le rendu se deduit de cet etat (voir reconcileDom cote client).
-    function createWorldState(cfg, rng, now) {
+    function countdownDuration(race) {
+        return race.countdownHoldMs + 2 * race.lightIntervalMs;
+    }
+
+    // `startOrder` est l'ordre d'arrivee de la course precedente : le vainqueur
+    // repart en pole. Absent, la grille est tiree au sort.
+    function createWorldState(cfg, rng, now, startOrder) {
         const roadHeight = cfg.road.maxY - cfg.road.minY;
+        const race = cfg.race;
+        const countdownMs = countdownDuration(race);
 
         const itemBoxes = [];
         for (let i = 0; i < cfg.world.itemBoxCount; i++) {
@@ -993,32 +1201,43 @@
             });
         }
 
-        const names = shuffleArray(Object.keys(cfg.characterStats), rng);
-        const step = roadHeight / (names.length - 1 || 1);
+        const roster = Object.keys(cfg.characterStats);
+        const names = (startOrder && startOrder.length === roster.length)
+            ? startOrder.slice()
+            : shuffleArray(roster, rng);
 
         const karts = [];
         const kartsById = {};
 
         names.forEach((charName, index) => {
-            const verticalPos = cfg.road.minY + (index * step);
+            const row = Math.floor(index / race.grid.lanes.length);
+            const col = index % race.grid.lanes.length;
+
+            const gapToLine = race.grid.backOffset + row * race.grid.rowGap + col * race.grid.colStagger;
+            let worldX = cfg.world.finishLineX - gapToLine;
+            if (worldX < 0) worldX += cfg.world.width;
+
+            const depth = race.grid.lanes[col] + row * race.grid.laneSlope;
+            const verticalPos = Math.min(cfg.road.maxY,
+                                         Math.max(cfg.road.minY, cfg.road.minY + roadHeight * depth));
             const stats = cfg.characterStats[charName];
 
             const kart = {
                 id: index,
                 charName: charName,
-                worldX: 0,
+                worldX: worldX,
                 yPercent: verticalPos,
                 totalDistance: 0,
 
                 stats: stats,
-                absoluteVelocity: getInitialKartSpeed(rng, stats),
-                momentum: randomRange(rng, 0.5, 0.8),
+                absoluteVelocity: 0,
+                momentum: 0,
                 momentumTarget: getNewMomentumTarget(rng, stats),
                 nextMomentumChange: now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax),
                 vy: 0,
                 targetVy: 0,
 
-                state: 'pending',
+                state: 'grid',
                 rank: index + 1,
 
                 aiState: 'cruising',
@@ -1043,6 +1262,14 @@
                 hasPassedFinishLine: false,
                 stopped: false,
 
+                // La grille est derriere la ligne : le premier franchissement
+                // fait passer au tour 2, la course s'acheve au franchissement
+                // numero `laps`. D'ou `laps - 1` tours pleins.
+                finishDistance: (race.laps - 1) * cfg.world.width + gapToLine,
+                finished: false,
+                finishRank: 0,
+                startStallUntil: 0,
+
                 currentSpinFrame: 0
             };
 
@@ -1051,14 +1278,23 @@
         });
 
         return {
-            cameraX: 0,
+            cameraX: parkPosition(cfg, race.parkStartOffset),
             bgCameraX: 0,
             karts: karts,
             kartsById: kartsById,
             items: [],
             itemBoxes: itemBoxes,
-            nextSpawnTime: now + 500,
             cachedLeader: null,
+
+            phase: 'countdown',
+            countdownMs: countdownMs,
+            startAt: now + countdownMs,
+            resultsAt: 0,
+            leaderLap: 1,
+            finishOrder: [],
+            cameraSpeed: cfg.speeds.roadPPS,
+            // Panneau tenu par Lakitu : { group, frame, until }.
+            sign: { group: 'start', frame: 1, until: now + countdownMs + race.goSignMs },
 
             nextItemId: 1,
             previousRanking: [],
@@ -1088,7 +1324,6 @@
         giveKartItem,
         spawnLaunchedItem,
         activateItem,
-        handleSpawns,
         updateLeaderboard,
         createWorldState,
         stepPhysics
