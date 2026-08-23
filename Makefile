@@ -106,6 +106,14 @@ re-front:            ## Rebuild and restart frontend
 re-back:             ## Rebuild and restart backend
 	$(COMPOSE) up --build -d --no-deps backend
 
+re-race:             ## Rebuild and restart the banner race engine
+	$(COMPOSE) up --build -d --no-deps race
+
+# SIGHUP plutot qu'un redemarrage de conteneur : la course repart de zero, mais
+# le service, les connexions WebSocket et l'image restent en place.
+restart-race:        ## Relance une course neuve sans couper le service
+	$(COMPOSE) kill -s HUP race
+
 re-db:               ## Recreate database (schema + seed)
 	$(COMPOSE) stop db
 	$(COMPOSE) rm -f db
@@ -138,6 +146,9 @@ logs-front:          ## Follow frontend logs
 logs-back:           ## Follow backend logs
 	$(COMPOSE) logs -f backend
 
+logs-race:           ## Follow race engine logs
+	$(COMPOSE) logs -f race
+
 logs-db:             ## Follow database logs
 	$(COMPOSE) logs -f db
 
@@ -164,6 +175,33 @@ ip-backfill:         ## Reconstitue les grilles figées IP v2 des tournois déj�
 	$(COMPOSE) exec -T backend python - $(if $(DRY),--dry-run) $(if $(SINCE),--since $(SINCE)) < scripts/backfill_grille_snapshots.py
 	@$(if $(DRY),true,$(RESTART_APP))
 
+# ── Moteur de course (banner) ────────────────
+
+# Emprunte une image node le temps d'un test, sans rien installer sur la machine
+# ni toucher a la stack. Les options de `docker run` et l'image sont separees :
+# tout ce qui vient apres l'image serait passe au conteneur, pas a docker.
+RACE_DOCKER = docker run --rm -u "$$(id -u):$$(id -g)" -e npm_config_cache=/tmp/.npm \
+	-v "$$(pwd):/repo" -w /repo/raceEngine
+RACE_IMAGE  = node:22-alpine
+RACE_NODE   = $(RACE_DOCKER) $(RACE_IMAGE)
+
+race-deps:           ## Installe ws dans raceEngine/node_modules (pour les tests hors conteneur)
+	$(RACE_NODE) npm install --no-audit --no-fund
+
+race-soak:           ## Soak du moteur seul, 10 min, sans WebSocket (DURATION=... pour changer)
+	$(RACE_NODE) node server.js --duration $${DURATION:-600} --always-on
+
+race-spectate:       ## Test de l'arrivant contre le service `race` en cours d'execution (AFTER=... secondes)
+	$(COMPOSE) exec race node tools/spectate.js --after $${AFTER:-30}
+
+# Meme test, mais par l'URL publique : c'est le seul qui traverse nginx, donc le
+# seul qui verifie l'upgrade WebSocket, les timeouts et limit_conn.
+#
+# 127.0.0.1 et non localhost : node resout localhost en ::1 en priorite, alors
+# que docker ne publie le port que sur 0.0.0.0 — donc en IPv4 uniquement.
+race-nginx:          ## Test de l'arrivant a travers nginx (URL=... pour viser un autre hote)
+	$(RACE_DOCKER) --network host $(RACE_IMAGE) node tools/spectate.js --url $${URL:-ws://127.0.0.1/ws/race} --after $${AFTER:-10}
+
 # ── Help ─────────────────────────────────────
 
 help:                ## Show this help
@@ -171,8 +209,9 @@ help:                ## Show this help
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
-        re-front re-back re-db re-db-dump db-migrate ip-backfill \
-        logs logs-nginx logs-front logs-back logs-db ps \
+        re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
+        race-deps race-soak race-spectate race-nginx \
+        logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help
 
 .DEFAULT_GOAL := help

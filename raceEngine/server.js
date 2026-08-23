@@ -1,0 +1,532 @@
+'use strict';
+
+// Moteur de course autoritatif du banner SMK.
+//
+// Une seule course tourne ici, et c'est elle que tous les navigateurs
+// regardent : les clients ne simulent rien, ils affichent. Voir
+// docs/MIGRATION_BANNER_WSS.md, option A.
+//
+//   node server.js                  service normal (HTTP + WebSocket)
+//   node server.js --duration 600   soak de 10 minutes, course forcee, puis bilan
+//   node server.js --always-on      simule meme sans spectateur
+//   node server.js --quiet          pas de rapport periodique
+//
+// Cycle de vie : la course demarre a la premiere connexion et s'arrete 30 s
+// apres le depart du dernier spectateur. Personne devant l'ecran, aucun CPU
+// consomme. Le delai de grace evite qu'un simple F5 ne reparte de zero.
+
+const fs = require('fs');
+const http = require('http');
+const path = require('path');
+const { WebSocketServer } = require('ws');
+
+const protocol = require('./protocol');
+
+// Le moteur et sa configuration sont les fichiers du front, tels quels : aucune
+// copie, donc aucune derive possible entre ce qui est simule et ce qui est
+// affiche. Dans le conteneur ils sont montes a cote de ce fichier, dans le
+// depot ils vivent sous frontEnd/static/js.
+function loadShared(name) {
+    const candidates = ['.', '../frontEnd/static/js'];
+    for (const dir of candidates) {
+        const full = path.join(__dirname, dir, name);
+        if (fs.existsSync(full)) return require(full);
+    }
+    throw new Error(`${name} introuvable (cherche dans : ${candidates.join(', ')})`);
+}
+
+const PH = loadShared('physics.js');
+const CFG = loadShared('physics-config.js');
+
+// ── Parametres ──────────────────────────────────────────────────────────────
+
+const PORT = Number(process.env.PORT) || 3000;
+const WS_PATH = process.env.WS_PATH || '/ws/race';
+
+const TICK_HZ = 30;
+const DT = 1 / TICK_HZ;
+const DT_MS = DT * 1000;
+
+// La simulation tourne a 30 Hz, la diffusion a 10 : le client interpole entre
+// deux snapshots, il n'a pas besoin de tous les pas. Diffuser plus vite double
+// la bande passante par spectateur sans rien changer a ce qu'il voit.
+const SEND_HZ = 10;
+const TICKS_PER_SEND = Math.round(TICK_HZ / SEND_HZ);
+
+// Plafond de rattrapage : sans lui, une pause GC ou un gel de l'hote declenche
+// une spirale ou chaque tick rejoue le retard accumule, ce qui sature le CPU —
+// d'autant plus avec la limite a 0.25 cpu prevue pour ce service. Au-dela, on
+// abandonne le retard : mieux vaut une course qui saute que l'hote a genoux.
+const MAX_CATCHUP_STEPS = 5;
+
+// Delai de grace avant l'arret de la course quand plus personne ne regarde.
+const IDLE_GRACE_MS = 30000;
+
+// Taille maximale d'un message entrant. Le client n'envoie que `ping` et
+// `vis`, quelques dizaines d'octets : tout ce qui depasse est une tentative.
+const MAX_PAYLOAD = 512;
+
+// Sonde applicative : une connexion qui ne repond plus au ping est fermee.
+const HEARTBEAT_MS = 30000;
+
+const REPORT_INTERVAL_MS = 5000;
+
+// Un kart en course dont la distance ne bouge pas pendant ce delai est
+// considere comme bloque. Large : un kart percute reste immobile le temps du
+// malus (hitDecelDuration + hitPauseDuration = 2 s).
+const STUCK_TIMEOUT_MS = 10000;
+
+const args = process.argv.slice(2);
+function argValue(name) {
+    const i = args.indexOf(name);
+    return i !== -1 && args[i + 1] ? args[i + 1] : null;
+}
+const DURATION_S = Number(argValue('--duration')) || 0;
+const QUIET = args.includes('--quiet');
+const ALWAYS_ON = args.includes('--always-on') || DURATION_S > 0 || process.env.ALWAYS_ON === '1';
+
+// Origines autorisees a ouvrir le flux. Vide = tout le monde, ce qui convient
+// en local mais jamais en production : sans ce controle, n'importe quel site
+// peut ouvrir une connexion permanente sur ce service (§6.12).
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
+
+const rng = Math.random;
+
+// ── Course ──────────────────────────────────────────────────────────────────
+
+let race = null;
+let idleTimer = null;
+let totalRaces = 0;
+
+function startRace() {
+    const now = Date.now();
+
+    race = {
+        // Horloge de simulation : elle n'avance que par pas fixes, jamais par
+        // le temps reel. C'est elle qui date les snapshots.
+        simTime: now,
+        t0: now,
+        state: PH.createWorldState(CFG, rng, now),
+
+        accumulator: 0,
+        lastRealTime: now,
+        ticks: 0,
+        droppedSteps: 0,
+        maxStepMs: 0,
+        sinceBroadcast: 0,
+        pendingEvents: [],
+
+        lastProgress: new Map(),
+        problems: 0,
+
+        loop: null
+    };
+
+    race.loop = setInterval(tick, DT_MS);
+    totalRaces++;
+    console.log(`[course] depart — ${race.state.karts.map(k => k.charName).join(', ')}`);
+}
+
+function stopRace() {
+    if (!race) return;
+    clearInterval(race.loop);
+    console.log(`[course] arret apres ${formatClock(race.simTime - race.t0)} (plus aucun spectateur)`);
+    race = null;
+}
+
+// Repart sur une course neuve sans toucher au service : nouveau tirage de
+// personnages, nouvelle grille, compteurs remis a zero. Les spectateurs deja
+// connectes doivent recevoir un `hello`, sinon ils garderaient les identites et
+// les item-boxes de la course precedente et afficheraient les mauvais sprites.
+function restartRace() {
+    if (race) {
+        clearInterval(race.loop);
+        race = null;
+    }
+
+    if (clients.size === 0 && !ALWAYS_ON) {
+        console.log('[course] redemarrage demande, mais aucun spectateur : la prochaine connexion relancera.');
+        return;
+    }
+
+    startRace();
+    for (const [ws] of clients) {
+        if (ws.readyState === ws.OPEN) sendHello(ws);
+    }
+    console.log(`[course] redemarree pour ${clients.size} spectateur(s).`);
+}
+
+function ensureRunning() {
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+    }
+    if (!race) startRace();
+}
+
+function scheduleIdleStop() {
+    if (ALWAYS_ON || idleTimer || !race) return;
+    idleTimer = setTimeout(() => {
+        idleTimer = null;
+        if (clients.size === 0) stopRace();
+    }, IDLE_GRACE_MS);
+}
+
+function tick() {
+    const now = Date.now();
+    let elapsed = (now - race.lastRealTime) / 1000;
+    race.lastRealTime = now;
+
+    // Un ecart absurde (mise en veille de la machine, debogueur) ne doit pas
+    // entrer dans l'accumulateur.
+    if (elapsed > 1) elapsed = 1;
+    race.accumulator += elapsed;
+
+    let steps = 0;
+    const startedAt = Date.now();
+
+    while (race.accumulator >= DT && steps < MAX_CATCHUP_STEPS) {
+        race.simTime += DT_MS;
+        const events = PH.stepPhysics(CFG, race.state, rng, race.simTime, DT);
+        const kept = protocol.filterEvents(events);
+        if (kept.length) race.pendingEvents.push(...kept);
+        race.accumulator -= DT;
+        steps++;
+        race.ticks++;
+    }
+
+    if (race.accumulator >= DT) {
+        // Retard non rattrape : on le jette plutot que de le trainer.
+        race.droppedSteps += Math.floor(race.accumulator / DT);
+        race.accumulator = 0;
+    }
+
+    const stepMs = Date.now() - startedAt;
+    if (stepMs > race.maxStepMs) race.maxStepMs = stepMs;
+
+    if (!checkIntegrity()) {
+        console.error('[course] etat corrompu, arret du service.');
+        shutdown(1);
+        return;
+    }
+
+    race.sinceBroadcast += steps;
+    if (race.sinceBroadcast >= TICKS_PER_SEND) {
+        race.sinceBroadcast = 0;
+        broadcast();
+    }
+}
+
+// ── Diffusion ───────────────────────────────────────────────────────────────
+
+const clients = new Map(); // ws -> { hidden, alive }
+
+function broadcast() {
+    if (clients.size === 0) {
+        race.pendingEvents.length = 0;
+        return;
+    }
+
+    const snapshot = protocol.buildSnapshot(race.state, race.simTime);
+    if (race.pendingEvents.length) {
+        snapshot.ev = race.pendingEvents;
+        race.pendingEvents = [];
+    }
+
+    const payload = JSON.stringify(snapshot);
+
+    for (const [ws, meta] of clients) {
+        // Onglet en arriere-plan : le client a demande qu'on lui coupe le flux.
+        // La course continue sans lui, il redemandera l'etat en revenant.
+        if (meta.hidden) continue;
+        if (ws.readyState !== ws.OPEN) continue;
+        ws.send(payload);
+    }
+}
+
+function sendHello(ws) {
+    ws.send(JSON.stringify(protocol.buildHello(CFG, race.state, race.simTime, race.t0)));
+}
+
+// ── Transport ───────────────────────────────────────────────────────────────
+
+const httpServer = http.createServer((req, res) => {
+    if (req.url === '/healthz') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            ok: true,
+            racing: !!race,
+            clients: clients.size,
+            ticks: race ? race.ticks : 0,
+            races: totalRaces,
+            uptime: Math.round(process.uptime())
+        }));
+        return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('not found\n');
+});
+
+// Deux snapshots consecutifs se ressemblent enormement : memes cles, memes
+// karts, quelques chiffres qui changent. C'est le cas ideal pour deflate, a
+// condition de garder le contexte de compression d'un message a l'autre — c'est
+// justement la ressemblance entre messages qui paye.
+//
+// La fenetre est volontairement reduite a 4 Ko (2^12) : elle couvre largement
+// l'historique utile a des messages de quelques centaines d'octets, tout en
+// bornant la memoire par connexion, qui compte avec la limite a 128 Mo prevue
+// pour ce conteneur. Les petits messages (pong) ne sont pas compresses.
+const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_PAYLOAD,
+    perMessageDeflate: {
+        zlibDeflateOptions: { level: 6, memLevel: 7 },
+        serverMaxWindowBits: 12,
+        clientNoContextTakeover: true,
+        concurrencyLimit: 10,
+        threshold: 256
+    }
+});
+
+function originAllowed(origin) {
+    if (ALLOWED_ORIGINS.length === 0) return true;
+    if (!origin) return true; // outils en ligne de commande, sondes
+    return ALLOWED_ORIGINS.includes(origin);
+}
+
+httpServer.on('upgrade', (req, socket, head) => {
+    const pathname = (req.url || '').split('?')[0];
+
+    if (pathname !== WS_PATH) {
+        socket.destroy();
+        return;
+    }
+
+    if (!originAllowed(req.headers.origin)) {
+        console.warn(`[ws] origine refusee : ${req.headers.origin}`);
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+    }
+
+    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
+});
+
+wss.on('connection', ws => {
+    ensureRunning();
+
+    clients.set(ws, { hidden: false, alive: true });
+    sendHello(ws);
+
+    ws.on('message', data => {
+        // Le service ne fait rien d'autre que repondre a `ping` et noter `vis`.
+        // Tout le reste est ignore en silence : c'est un flux de lecture, il
+        // n'existe aucune raison legitime de lui envoyer autre chose.
+        let msg;
+        try {
+            msg = JSON.parse(data.toString());
+        } catch (err) {
+            return;
+        }
+        if (!msg || typeof msg !== 'object') return;
+
+        const meta = clients.get(ws);
+        if (!meta) return;
+
+        if (msg.t === 'ping') {
+            ws.send(JSON.stringify({ t: 'pong', c: msg.c, s: Date.now() }));
+            return;
+        }
+
+        if (msg.t === 'vis') {
+            const wasHidden = meta.hidden;
+            meta.hidden = !!msg.hidden;
+            // Au retour d'un onglet, le client a besoin d'une scene complete :
+            // il a rate tout ce qui s'est passe, exactement comme un arrivant.
+            if (wasHidden && !meta.hidden && race) sendHello(ws);
+        }
+    });
+
+    ws.on('pong', () => {
+        const meta = clients.get(ws);
+        if (meta) meta.alive = true;
+    });
+
+    ws.on('close', () => {
+        clients.delete(ws);
+        scheduleIdleStop();
+    });
+
+    ws.on('error', () => {
+        clients.delete(ws);
+        scheduleIdleStop();
+    });
+});
+
+// Une connexion peut mourir sans que la pile TCP le signale (reseau mobile,
+// proxy qui disparait). Sans cette sonde, le service accumulerait des
+// spectateurs fantomes — et ne s'arreterait donc jamais faute de public.
+const heartbeat = setInterval(() => {
+    for (const [ws, meta] of clients) {
+        if (!meta.alive) {
+            ws.terminate();
+            clients.delete(ws);
+            continue;
+        }
+        meta.alive = false;
+        ws.ping();
+    }
+    if (clients.size === 0) scheduleIdleStop();
+}, HEARTBEAT_MS);
+
+// ── Surveillance ────────────────────────────────────────────────────────────
+
+function isBroken(value) {
+    return typeof value !== 'number' || !isFinite(value);
+}
+
+// Un NaN n'apparait jamais seul : il se propage a tout ce qu'il touche, et une
+// course qui en contient un est perdue. On le signale des la premiere
+// occurrence, avec de quoi remonter a sa source.
+function checkIntegrity() {
+    if (!race) return true;
+
+    for (const kart of race.state.karts) {
+        const bad = ['worldX', 'yPercent', 'totalDistance', 'absoluteVelocity', 'vy']
+            .filter(f => isBroken(kart[f]));
+        if (bad.length) {
+            race.problems++;
+            console.error(`[ALERTE] kart ${kart.id} (${kart.charName}) : ${bad.map(f => `${f}=${kart[f]}`).join(', ')}`);
+            return false;
+        }
+    }
+
+    for (const item of race.state.items) {
+        const bad = ['worldX', 'y', 'vx', 'vy'].filter(f => isBroken(item[f]));
+        if (bad.length) {
+            race.problems++;
+            console.error(`[ALERTE] objet ${item.id} (${item.type}) : ${bad.map(f => `${f}=${item[f]}`).join(', ')}`);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// Un kart immobile trop longtemps est soit coince contre une bordure, soit
+// victime d'un etat 'hit' qui ne se termine jamais. Les deux passeraient
+// inapercus sur un rapport de distances qui, globalement, continue de monter.
+function checkStuck() {
+    if (!race) return;
+    const now = Date.now();
+
+    for (const kart of race.state.karts) {
+        if (kart.state === 'pending') continue;
+
+        const seen = race.lastProgress.get(kart.id);
+        if (!seen || kart.totalDistance > seen.totalDistance + 1) {
+            race.lastProgress.set(kart.id, { totalDistance: kart.totalDistance, at: now });
+            continue;
+        }
+
+        if (now - seen.at > STUCK_TIMEOUT_MS) {
+            race.problems++;
+            console.error(`[ALERTE] kart ${kart.id} (${kart.charName}) immobile depuis ${Math.round((now - seen.at) / 1000)} s ` +
+                          `(state=${kart.state}, stopped=${kart.stopped}, velocity=${kart.absoluteVelocity.toFixed(1)})`);
+            race.lastProgress.set(kart.id, { totalDistance: kart.totalDistance, at: now });
+        }
+    }
+}
+
+function formatClock(ms) {
+    const total = Math.floor(ms / 1000);
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function report() {
+    if (!race) {
+        console.log(`[repos] aucune course (spectateurs : ${clients.size})`);
+        return;
+    }
+
+    const board = race.state.karts
+        .filter(k => k.state !== 'pending')
+        .sort((a, b) => a.rank - b.rank)
+        .map(k => `${k.rank}.${k.charName}${k.heldItem ? '*' : ''}`)
+        .join(' ');
+
+    const rss = Math.round(process.memoryUsage().rss / 1048576);
+    const lap = race.state.karts.reduce((max, k) => Math.max(max, k.lapCount), 0);
+
+    console.log(
+        `[t+${formatClock(race.simTime - race.t0)}] ${board}\n` +
+        `           ticks=${race.ticks} objets=${race.state.items.length} tours=${lap} ` +
+        `nextItemId=${race.state.nextItemId} spectateurs=${clients.size} ` +
+        `rss=${rss}Mo pas_max=${race.maxStepMs}ms rejetes=${race.droppedSteps}`
+    );
+
+    race.maxStepMs = 0;
+}
+
+function shutdown(code) {
+    const problems = race ? race.problems : 0;
+
+    if (race) {
+        console.log(
+            `\n── bilan ──\n` +
+            `duree simulee   : ${formatClock(race.simTime - race.t0)}\n` +
+            `pas simules     : ${race.ticks} (attendu ~${Math.round((race.simTime - race.t0) / DT_MS)})\n` +
+            `pas rejetes     : ${race.droppedSteps}\n` +
+            `objets en vol   : ${race.state.items.length}\n` +
+            `ids d'objets    : ${race.state.nextItemId}\n` +
+            `spectateurs     : ${clients.size}\n` +
+            `memoire (rss)   : ${Math.round(process.memoryUsage().rss / 1048576)} Mo\n` +
+            `anomalies       : ${problems}`
+        );
+        clearInterval(race.loop);
+    }
+
+    clearInterval(heartbeat);
+    clearInterval(watchdog);
+    if (reporter) clearInterval(reporter);
+    httpServer.close();
+
+    process.exit(code !== undefined ? code : (problems > 0 ? 1 : 0));
+}
+
+// ── Demarrage ───────────────────────────────────────────────────────────────
+
+const watchdog = setInterval(checkStuck, 1000);
+const reporter = QUIET ? null : setInterval(report, REPORT_INTERVAL_MS);
+
+httpServer.listen(PORT, () => {
+    console.log(`Moteur de course : ${TICK_HZ} Hz simules, ${SEND_HZ} Hz diffuses.`);
+    console.log(`HTTP  : http://0.0.0.0:${PORT}/healthz`);
+    console.log(`WS    : ws://0.0.0.0:${PORT}${WS_PATH}`);
+    console.log(`Origines : ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(', ') : 'toutes (ALLOWED_ORIGINS vide)'}`);
+    console.log(ALWAYS_ON
+        ? 'Mode : simulation permanente.'
+        : 'Mode : course a la demande (depart a la premiere connexion, arret 30 s apres la derniere).');
+
+    if (ALWAYS_ON) startRace();
+});
+
+if (DURATION_S > 0) {
+    setTimeout(() => {
+        report();
+        shutdown();
+    }, DURATION_S * 1000);
+}
+
+// Redemarrage a chaud, sans arreter le conteneur : `make restart-race`.
+process.on('SIGHUP', () => {
+    console.log('[course] SIGHUP recu.');
+    restartRace();
+});
+
+process.on('SIGINT', () => shutdown());
+process.on('SIGTERM', () => shutdown());
