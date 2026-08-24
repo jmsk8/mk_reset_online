@@ -926,7 +926,11 @@ function reconcileItems() {
     for (let i = 0; i < worldState.items.length; i++) {
         const item = worldState.items[i];
         expected[item.id] = true;
-        ensureItemEl(item.id, item.type, 'behind');
+
+        // L'element a ete cree quand l'objet etait encore en main, donc avec le
+        // rebond. Une fois lance, il n'y a plus rien pour le retirer : sans
+        // cette ligne, une banane sautille au sol.
+        ensureItemEl(item.id, item.type, 'behind').classList.remove('held-item-bouncing');
     }
 
     for (let i = 0; i < worldState.karts.length; i++) {
@@ -1271,12 +1275,18 @@ function renderState(gameNow, screenWidth) {
                 const hel = itemEls[kart.heldItem.id];
                 if (hel) {
                     hel.style.display = 'block';
+
+                    // Un objet passe de la main au trainage pendant sa vie :
+                    // le rebond suit, il n'appartient qu'a l'objet tenu en main.
+                    const inHands = kart.heldItem.holdPosition === 'hands';
+                    hel.classList.toggle('held-item-bouncing', inHands);
+
                     const hOffset = getHeldItemRenderOffset(kart.heldItem.holdPosition);
                     const hx = rx + hOffset.offset;
                     const hy = hOffset.yShift;
                     hel.style.transform = `translate3d(${hx}px, ${-hy}px, 0)`;
                     hel.style.bottom = `${kart.yPercent}%`;
-                    const itemZ = kart.heldItem.holdPosition === 'hands' ? zVal + 1 : zVal;
+                    const itemZ = inHands ? zVal + 1 : zVal;
                     if (hel.style.zIndex != itemZ) hel.style.zIndex = itemZ;
                 }
             }
@@ -1306,7 +1316,9 @@ function renderState(gameNow, screenWidth) {
         const isVisible = (rx > -renderMargin && rx < screenWidth + renderMargin);
         if (isVisible) {
             el.style.display = 'block';
-            el.style.transform = `translate3d(${rx}px, 0, 0)`;
+            // `hop` souleve l'objet sans toucher a sa profondeur de piste : une
+            // banane en cloche passe au-dessus, elle ne change pas de couloir.
+            el.style.transform = `translate3d(${rx}px, ${-item.hop}px, 0)`;
             el.style.bottom = `${item.y}%`;
             const zVal = (GAME_CONFIG.rendering.zIndexBase - item.y) | 0;
             if (el.style.zIndex != zVal) el.style.zIndex = zVal;
@@ -1481,7 +1493,7 @@ function applyState(a, b, t) {
     for (const tuple of a.i) {
         let item = itemMirrors.get(tuple[0]);
         if (!item) {
-            item = { id: tuple[0], type: tuple[1], worldX: 0, y: 0, currentFrame: 1 };
+            item = { id: tuple[0], type: tuple[1], worldX: 0, y: 0, currentFrame: 1, hop: 0 };
             itemMirrors.set(tuple[0], item);
         }
 
@@ -1490,6 +1502,7 @@ function applyState(a, b, t) {
         item.worldX = to ? lerpWrapped(tuple[2], to[2], t, WORLD.width) : tuple[2];
         item.y = to ? lerp(tuple[3], to[3], t) : tuple[3];
         item.currentFrame = tuple[4];
+        item.hop = to ? lerp(tuple[5] || 0, to[5] || 0, t) : (tuple[5] || 0);
 
         worldState.items.push(item);
     }
