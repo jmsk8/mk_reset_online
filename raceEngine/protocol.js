@@ -68,15 +68,16 @@ function kartTuple(kart) {
     ];
 }
 
-// [id, type, worldX, y, frame] — `frame` porte l'animation des carapaces, que
-// la simulation fait avancer : le client ne fait que l'afficher.
+// [id, type, worldX, y, frame, hop] — `frame` porte l'animation des carapaces,
+// `hop` la hauteur d'une banane encore en l'air, en pixels de rendu.
 function itemTuple(item) {
     return [
         item.id,
         item.type,
         round(item.worldX, 2),
         round(item.y, 2),
-        item.currentFrame
+        item.currentFrame,
+        item.hop ? round(item.hop, 1) : 0
     ];
 }
 

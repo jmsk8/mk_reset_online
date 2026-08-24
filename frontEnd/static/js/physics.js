@@ -51,26 +51,50 @@
         let avoidDirection = 0;
 
         const handling = kart.stats.handling;
+        const ai = cfg.ai;
+
+        // Menace la plus urgente, mesuree en temps avant impact. Un objet qui
+        // s'eloigne n'en est pas une — ce qui evite au passage qu'un kart fuie
+        // la carapace qu'il vient de tirer.
+        let threat = null;
+        let threatTtc = Infinity;
+
         const itemsLen = state.items.length;
         for (let i = 0; i < itemsLen; i++) {
             const item = state.items[i];
             if (item.isDead) continue;
+            if (item.type !== 'banana' && item.type !== 'greenShell' && item.type !== 'redShell') continue;
 
-            const isBanana = (item.type === 'banana');
-            const isShell = (item.type === 'greenShell' || item.type === 'redShell');
-            if (!isBanana && !isShell) continue;
+            const dist = getShortestDistance(cfg, item.worldX, kart.worldX);
+            if (dist <= 0 || dist > ai.threatMaxDistance) continue;
+            if (Math.abs(item.y - kart.yPercent) >= cfg.road.laneTolerance) continue;
 
-            let dist = getShortestDistance(cfg, item.worldX, kart.worldX);
-            const detectionRange = cfg.ai.detectionRange * (isShell ? 1.5 : 1.0);
+            const closing = kart.absoluteVelocity - item.vx;
+            if (closing <= 0) continue;
 
-            if (dist > 0 && dist < detectionRange) {
-                 if (Math.abs(item.y - kart.yPercent) < cfg.road.laneTolerance) {
-                    dangerFound = true;
-                    let naturalDir = (item.y > kart.yPercent) ? -1 : 1;
-                    if (naturalDir === 1) avoidDirection = (kart.yPercent > cfg.road.maxY - cfg.road.edgeSafetyMargin) ? -1 : 1;
-                    else avoidDirection = (kart.yPercent < cfg.road.minY + cfg.road.edgeSafetyMargin) ? 1 : -1;
-                    break;
-                }
+            const ttc = (dist / closing) * 1000;
+            if (ttc <= ai.threatWindowMs && ttc < threatTtc) {
+                threat = item;
+                threatTtc = ttc;
+            }
+        }
+
+        if (!threat) {
+            kart.threatItemId = 0;
+        } else {
+            // Decide a la premiere perception, une fois pour toutes.
+            if (kart.threatItemId !== threat.id) {
+                kart.threatItemId = threat.id;
+                kart.threatIgnored = rng() < ai.dodgeMissChance / handling;
+                kart.threatReactAt = now + (ai.reactionBaseMs / handling)
+                    * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
+            }
+
+            if (!kart.threatIgnored && now >= kart.threatReactAt) {
+                dangerFound = true;
+                const naturalDir = (threat.y > kart.yPercent) ? -1 : 1;
+                if (naturalDir === 1) avoidDirection = (kart.yPercent > cfg.road.maxY - cfg.road.edgeSafetyMargin) ? -1 : 1;
+                else avoidDirection = (kart.yPercent < cfg.road.minY + cfg.road.edgeSafetyMargin) ? 1 : -1;
             }
         }
 
@@ -249,16 +273,31 @@
         return state.karts.find(k => k.rank === rank && (k.state === 'running' || k.state === 'hit')) || null;
     }
 
-    // Offset monde de l'objet traîné, identique sur tous les appareils. Un objet
-    // tenu en main n'est jamais une entité de collision, donc pas d'offset ici.
-    function getHeldItemWorldOffset(cfg, holdPosition) {
-        return holdPosition === 'behind' ? cfg.offsets.world.heldItemBehind : 0;
+    // Tout objet simple arrive en main, y compris ceux qui peuvent ensuite etre
+    // traines : en main, il n'a pas de hitbox, il ne protege de rien et ne
+    // blesse personne.
+    function getHoldPosition(cfg, itemType) {
+        if (getOrbitSpec(cfg, itemType)) return 'orbit';
+        return 'hands';
     }
 
-    function getHoldPosition(cfg, itemType) {
-        if (itemType === 'shroom' || itemType === 'star') return 'hands';
-        if (getOrbitSpec(cfg, itemType)) return 'orbit';
-        return 'behind';
+    function isTrailable(cfg, itemType) {
+        return (cfg.trailableItems || []).indexOf(itemType) !== -1;
+    }
+
+    // Decide de la vie de l'objet : sorti derriere le kart a un moment, ou garde
+    // en main jusqu'au tir.
+    function planItemUse(cfg, rng, now, kart, itemType) {
+        const ai = cfg.ai;
+
+        if (isTrailable(cfg, itemType) && rng() < ai.trailChance) {
+            kart.trailTime = now + randomRange(rng, ai.trailDelayMin, ai.trailDelayMax);
+            kart.throwTime = kart.trailTime + randomRange(rng, ai.trailHoldMin, ai.trailHoldMax);
+            return;
+        }
+
+        kart.trailTime = 0;
+        kart.throwTime = now + randomRange(rng, ai.holdItemMin, ai.holdItemMax);
     }
 
     // Orbite elliptique autour du kart, en coordonnees monde donc identique sur
@@ -354,26 +393,43 @@
             holdPosition: holdPosition
         };
 
-        kart.throwTime = now + randomRange(rng, cfg.ai.holdItemMin, cfg.ai.holdItemMax);
+        planItemUse(cfg, rng, now, kart, itemType);
 
         events.push({ type: 'spawnHeldItem', kartId: kart.id, itemId: itemId, itemType: itemType, holdPosition: holdPosition });
+    }
+
+    function rankChance(table, state, kart) {
+        if (kart.rank === 1) return table.leader;
+        if (kart.rank >= state.karts.length) return table.last;
+        return table.pack;
+    }
+
+    function rollShellDirection(cfg, rng, state, kart, itemType) {
+        const chances = cfg.ai.shellBackwardChance[itemType];
+        if (!chances) return 1;
+
+        return rng() < rankChance(chances, state, kart) ? -1 : 1;
     }
 
     // Met un objet en jeu depuis un kart : trajectoire et cible dependent du
     // type, pas de la facon dont il etait porte. Partagee par l'activation d'un
     // objet simple et par le largage d'un objet en orbite, pour qu'une carapace
     // tiree depuis un triple se comporte exactement comme une carapace simple.
-    function spawnLaunchedItem(cfg, state, rng, now, kart, itemType, itemId, startX, startY, events) {
+    function spawnLaunchedItem(cfg, state, rng, now, kart, itemType, itemId, startX, startY, events, direction) {
+        const dir = direction === -1 ? -1 : 1;
         let vx = 0;
         let vy = 0;
         let targetKartId = null;
 
         if (itemType === 'greenShell') {
-            vx = cfg.speeds.projectileSpeed;
+            vx = cfg.speeds.projectileSpeed * dir;
             vy = randomRange(rng, -cfg.speeds.shellVertical, cfg.speeds.shellVertical);
         } else if (itemType === 'redShell') {
-            vx = cfg.speeds.redShellSpeed;
-            const target = getKartByRank(state, kart.rank - 1);
+            vx = cfg.speeds.redShellSpeed * dir;
+            // Tete chercheuse vers l'avant seulement : tiree en arriere, elle
+            // part tout droit. Sans cible des le depart, la boucle de suivi ne
+            // s'y interesse jamais, pas meme pour lui en trouver une.
+            const target = dir > 0 ? getKartByRank(state, kart.rank - 1) : null;
             if (target) {
                 targetKartId = target.id;
             } else {
@@ -397,7 +453,17 @@
             createdAt: now,
             currentFrame: 1,
             lastAnimTime: 0,
-            isDead: false
+            isDead: false,
+
+            // Vol en cloche : tant qu'il dure, l'objet est en l'air et ne touche
+            // personne. `hop` est la hauteur de l'arc, en pixels de rendu.
+            flightUntil: 0,
+            flightFrom: 0,
+            flightTo: 0,
+            hop: 0,
+
+            // Un objet ne peut toucher son lanceur qu'une fois eloigne de lui.
+            armed: false
         });
 
         events.push({ type: 'launchItem', kartId: kart.id, itemId: itemId });
@@ -448,6 +514,7 @@
             kart.momentum = 1.0;
             events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
             kart.heldItem = null;
+            kart.trailTime = 0;
             return;
         }
 
@@ -459,16 +526,38 @@
             events.push({ type: 'starOn', kartId: kart.id });
             events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
             kart.heldItem = null;
+            kart.trailTime = 0;
             return;
         }
 
-        let startX = kart.worldX + getHeldItemWorldOffset(cfg, held.holdPosition);
+        // Une banane est lachee derriere le kart, qu'elle ait ete trainee ou
+        // tenue en main : sinon elle apparaitrait sous lui.
+        let direction = 1;
+        let startX = kart.worldX + cfg.offsets.world.heldItemBehind;
+
+        let lobbed = false;
+
         if (held.type === 'greenShell' || held.type === 'redShell') {
+            direction = rollShellDirection(cfg, rng, state, kart, held.type);
+            startX = kart.worldX + (direction > 0 ? cfg.offsets.world.shellSpawn
+                                                  : cfg.offsets.world.heldItemBehind);
+        } else if (held.type === 'banana' && rng() < rankChance(cfg.ai.bananaLobChance, state, kart)) {
+            lobbed = true;
             startX = kart.worldX + cfg.offsets.world.shellSpawn;
         }
 
-        spawnLaunchedItem(cfg, state, rng, now, kart, held.type, held.id, startX, kart.yPercent, events);
+        spawnLaunchedItem(cfg, state, rng, now, kart, held.type, held.id, startX, kart.yPercent, events, direction);
+
+        if (lobbed) {
+            const item = state.items[state.items.length - 1];
+            item.flightFrom = item.worldX;
+            item.flightTo = item.worldX + cfg.speeds.bananaLobDistance;
+            item.flightUntil = now + cfg.speeds.bananaLobDurationMs;
+            // Renseignee pour l'IA seulement : le deplacement vient du vol.
+            item.vx = cfg.speeds.bananaLobDistance / (cfg.speeds.bananaLobDurationMs / 1000);
+        }
         kart.heldItem = null;
+        kart.trailTime = 0;
     }
 
     // Passe dediee, executee pour tous les karts y compris ceux en 'hit' : le
@@ -888,6 +977,7 @@
                             events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                         }
                         kart.heldItem = null;
+                        kart.trailTime = 0;
                     }
 
                     events.push({ type: 'kartFinished', kartId: kart.id, rank: kart.finishRank });
@@ -965,10 +1055,12 @@
                             if (victim.isInvincible) {
                                 events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                                 kart.heldItem = null;
+                                kart.trailTime = 0;
                                 break;
                             }
                             events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                             kart.heldItem = null;
+                            kart.trailTime = 0;
 
                             victim.state = 'hit';
                             victim.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
@@ -979,6 +1071,14 @@
                             break;
                         }
                     }
+                }
+
+                // Passage de la main au trainage : c'est le seul moment ou la
+                // hitbox de l'objet s'active.
+                if (kart.heldItem && kart.trailTime && now > kart.trailTime
+                    && kart.heldItem.holdPosition === 'hands') {
+                    kart.heldItem.holdPosition = 'behind';
+                    kart.trailTime = 0;
                 }
 
                 if (kart.heldItem && now > kart.throwTime) activateItem(cfg, state, rng, now, kart, events);
@@ -1037,6 +1137,25 @@
             const item = state.items[i];
             if (item.isDead) continue;
 
+            // Vol en cloche. L'objet reste dangereux en l'air : seule sa
+            // position change, pas sa hitbox.
+            if (item.flightUntil) {
+                const total = cfg.speeds.bananaLobDurationMs;
+                const progress = Math.min(1, 1 - (item.flightUntil - now) / total);
+
+                item.worldX = item.flightFrom + (item.flightTo - item.flightFrom) * progress;
+                if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
+                item.hop = Math.sin(Math.PI * progress) * cfg.speeds.bananaLobHeight;
+
+                if (progress >= 1) {
+                    item.flightUntil = 0;
+                    item.hop = 0;
+                    item.vx = 0;
+                    // La duree de vie ne court qu'a l'atterrissage.
+                    item.createdAt = now;
+                }
+            }
+
             if (item.type !== 'banana') {
                 if (item.type === 'redShell' && item.targetKartId !== null) {
                     const target = state.kartsById[item.targetKartId];
@@ -1044,13 +1163,15 @@
                         const diffY = target.yPercent - item.y;
                         item.vy = diffY * cfg.speeds.redShellTrackingSpeed;
                     } else {
+                        // Cible de repli cherchee dans le sens de deplacement.
+                        const dir = item.vx >= 0 ? 1 : -1;
                         let newTarget = null;
                         let bestDist = Infinity;
                         for (let k = 0; k < kartsLen; k++) {
                             const candidate = state.karts[k];
                             if (candidate.id === item.shooterId) continue;
                             if (candidate.state !== 'running') continue;
-                            const dist = getShortestDistance(cfg, candidate.worldX, item.worldX);
+                            const dist = getShortestDistance(cfg, candidate.worldX, item.worldX) * dir;
                             if (dist > 0 && dist < bestDist) {
                                 bestDist = dist;
                                 newTarget = candidate;
@@ -1095,9 +1216,16 @@
                 item.isDead = true;
             }
 
+            if (!item.armed) {
+                const shooter = state.kartsById[item.shooterId];
+                if (!shooter || Math.abs(getShortestDistance(cfg, item.worldX, shooter.worldX)) > cfg.itemArmDistance) {
+                    item.armed = true;
+                }
+            }
+
             for (let k = 0; k < kartsLen; k++) {
                 const kart = state.karts[k];
-                if (item.type === 'banana' && kart.id === item.shooterId && now - item.createdAt < cfg.delays.invincibilityOwnItem) continue;
+                if (item.type === 'banana' && kart.id === item.shooterId && !item.armed) continue;
                 if ((item.type === 'greenShell' || item.type === 'redShell') && kart.id === item.shooterId) continue;
                 if (kart.state !== 'running' && kart.state !== 'hit') continue;
 
@@ -1123,6 +1251,7 @@
                     if (dh < cfg.hitboxes.itemVsKart.x && dhy < cfg.hitboxes.itemVsKart.y) {
                          events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                          kart.heldItem = null;
+                         kart.trailTime = 0;
                          item.isDead = true;
                          hitHeldItem = true;
                     }
@@ -1252,6 +1381,10 @@
                 isInvincible: false,
                 hitInvincibleUntil: 0,
 
+                trailTime: 0,
+                threatItemId: 0,
+                threatReactAt: 0,
+                threatIgnored: false,
                 nextWanderTime: now + randomRange(rng, 1000, 5000),
                 wanderEndTime: 0,
                 wanderVy: 0,
@@ -1311,7 +1444,6 @@
         updateAI,
         rollItem,
         getKartByRank,
-        getHeldItemWorldOffset,
         getHoldPosition,
         isItemEnabled,
         getOrbitSpec,

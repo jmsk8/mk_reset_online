@@ -61,8 +61,8 @@
             momentumDriftMax: 7000,
             accelerationRate: 150,
 
-            projectileSpeed: 750,
-            redShellSpeed: 700,
+            projectileSpeed: 880,
+            redShellSpeed: 840,
             redShellTrackingSpeed: 8,
 
             shroomBoost: 250,
@@ -71,6 +71,12 @@
             starSpeedMultiplier: 1.4,
             // Duree fixe, identique quel que soit le rang.
             starDuration: 7500,
+
+            // Banane lancee en cloche. La hauteur est un decalage de rendu en
+            // pixels, sans effet sur la profondeur de piste.
+            bananaLobDistance: 900,
+            bananaLobDurationMs: 850,
+            bananaLobHeight: 105,
 
             returnLane: 20,
             shellVertical: 1.5
@@ -89,7 +95,6 @@
             boxRespawn: 1000,
             itemGrant: 3000,
             bananaLife: 40000,
-            invincibilityOwnItem: 2000,
             invincibilityAfterHit: 2000,
             throwDelayAfterHit: 1000,
             spawnMin: 150,
@@ -142,15 +147,53 @@
                 { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 45, star: 50 } }
             ]
         },
+        // Objets qu'un kart peut trainer derriere lui.
+        trailableItems: ['banana', 'greenShell', 'redShell'],
+
         ai: {
             holdItemMin: 500, holdItemMax: 8000,
-            detectionRange: 250, dodgeIntensityMin: 20, dodgeIntensityMax: 50,
+
+            // Un objet arrive en main, sans hitbox. Le kart decide ensuite, ou
+            // non, de le sortir derriere lui.
+            trailChance: 0.6,
+
+            // Probabilite qu'une carapace parte vers l'arriere, par type et par
+            // place. Le leader n'a personne devant, le dernier personne
+            // derriere.
+            shellBackwardChance: {
+                greenShell: { leader: 0.9, pack: 0.2, last: 0.05 },
+                redShell: { leader: 0.95, pack: 0.05, last: 0 }
+            },
+
+            // Banane lancee en cloche devant plutot que lachee derriere.
+            bananaLobChance: { leader: 0, pack: 0.2, last: 0.7 },
+            trailDelayMin: 400, trailDelayMax: 3000,
+            trailHoldMin: 1200, trailHoldMax: 6000,
+            dodgeIntensityMin: 20, dodgeIntensityMax: 50,
+
+            // Perception : le seuil est un temps avant impact, non une distance.
+            // Une carapace de face approche a plus du triple de la vitesse d'une
+            // banane — a distance egale, le temps pour reagir n'a rien de
+            // comparable. Le plafond evite de s'ecarter d'un objet hors ecran.
+            threatWindowMs: 900,
+            threatMaxDistance: 900,
+
+            // Latence de reflexe, inversement proportionnelle au handling et
+            // tiree au sort a chaque menace. Un kart peut aussi ne pas voir
+            // l'objet, d'autant plus qu'il est lourd a manoeuvrer.
+            reactionBaseMs: 280,
+            reactionJitterMin: 0.8, reactionJitterMax: 1.35,
+            dodgeMissChance: 0.1,
             overtakeDetectionRange: 120, overtakeMinDistance: 12, overtakeSideSpeed: 10,
             boxDetectionRange: 400, boxSeekIntensity: 25,
             wanderIntervalMin: 2000, wanderIntervalMax: 6000,
             wanderDurationMin: 500, wanderDurationMax: 1500, wanderSpeed: 4
         },
-        hitboxes: {
+        // Distance dont un objet doit s'ecarter de son lanceur avant de pouvoir le
+    // toucher : protege du lancer, sans immuniser pour autant.
+    itemArmDistance: 110,
+
+    hitboxes: {
             kartVsKart: { x: 60, y: 5 },
             itemVsKart: { x: 40, y: 5 },
             // itemVsKart.y elargi de radiusY : l'objet oscille en profondeur avec
