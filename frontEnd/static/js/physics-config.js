@@ -77,6 +77,9 @@
             bananaLobDistance: 900,
             bananaLobDurationMs: 850,
             bananaLobHeight: 105,
+            // Forme de l'arc. En dessous de 1, le sommet arrive plus tot et le
+            // depart est plus vertical.
+            bananaLobRise: 0.62,
 
             returnLane: 20,
             shellVertical: 1.5
@@ -178,9 +181,28 @@
             threatWindowMs: 900,
             threatMaxDistance: 900,
 
+            // Un objet traine avance a la vitesse de son porteur : le temps
+            // avant impact ne dit rien d'utile, c'est une distance de vue qu'il
+            // faut. Largement au-dela de la hitbox de 40.
+            trailThreatDistance: 260,
+
+            // Accule au bord, un kart ne peut plus s'ecarter du bon cote : il
+            // leve le pied. Face a un objet traine, ralentir suffit a ne plus le
+            // rattraper.
+            edgeBrakeFactor: 0.78,
+            edgeBrakeMs: 700,
+
             // Latence de reflexe, inversement proportionnelle au handling et
             // tiree au sort a chaque menace. Un kart peut aussi ne pas voir
             // l'objet, d'autant plus qu'il est lourd a manoeuvrer.
+            // Visee : le kart se recale sur sa cible avant de tirer.
+            // `aimErrorMax` est divise par le handling — la hitbox verticale
+            // d'un objet valant 5, une erreur de cet ordre suffit a rater.
+            aimLeadMs: 1300,
+            aimScanDistance: 900,
+            aimErrorMax: 3.5,
+            aimSpeed: 12,
+
             reactionBaseMs: 280,
             reactionJitterMin: 0.8, reactionJitterMax: 1.35,
             dodgeMissChance: 0.1,

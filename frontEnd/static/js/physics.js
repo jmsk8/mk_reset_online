@@ -56,7 +56,8 @@
         // Menace la plus urgente, mesuree en temps avant impact. Un objet qui
         // s'eloigne n'en est pas une — ce qui evite au passage qu'un kart fuie
         // la carapace qu'il vient de tirer.
-        let threat = null;
+        let threatId = 0;
+        let threatY = 0;
         let threatTtc = Infinity;
 
         const itemsLen = state.items.length;
@@ -74,17 +75,49 @@
 
             const ttc = (dist / closing) * 1000;
             if (ttc <= ai.threatWindowMs && ttc < threatTtc) {
-                threat = item;
+                threatId = item.id;
+                threatY = item.y;
                 threatTtc = ttc;
             }
         }
 
-        if (!threat) {
+        // Objets traines par les autres karts. Ils avancent a la vitesse de leur
+        // porteur : ils ne menacent donc que celui qui revient vraiment dessus.
+        for (let i = 0; i < state.karts.length; i++) {
+            const other = state.karts[i];
+            if (other.id === kart.id || other.state !== 'running') continue;
+
+            const held = other.heldItem;
+            if (!held || held.holdPosition !== 'behind') continue;
+
+            let hx = other.worldX + cfg.offsets.world.heldItemBehind;
+            if (hx < 0) hx += cfg.world.width;
+            if (hx >= cfg.world.width) hx -= cfg.world.width;
+
+            const dist = getShortestDistance(cfg, hx, kart.worldX);
+            if (dist <= 0 || dist > ai.trailThreatDistance) continue;
+            if (Math.abs(other.yPercent - kart.yPercent) >= cfg.road.laneTolerance) continue;
+
+            // Seul celui qui revient dessus est menace : derriere un porteur
+            // plus rapide, l'objet s'eloigne.
+            const closing = kart.absoluteVelocity - other.absoluteVelocity;
+            if (closing <= 0) continue;
+
+            // Meme etalon que les projectiles, pour departager les menaces.
+            const ttc = (dist / Math.max(closing, 1)) * 1000;
+            if (ttc < threatTtc) {
+                threatId = held.id;
+                threatY = other.yPercent;
+                threatTtc = ttc;
+            }
+        }
+
+        if (!threatId) {
             kart.threatItemId = 0;
         } else {
             // Decide a la premiere perception, une fois pour toutes.
-            if (kart.threatItemId !== threat.id) {
-                kart.threatItemId = threat.id;
+            if (kart.threatItemId !== threatId) {
+                kart.threatItemId = threatId;
                 kart.threatIgnored = rng() < ai.dodgeMissChance / handling;
                 kart.threatReactAt = now + (ai.reactionBaseMs / handling)
                     * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
@@ -92,9 +125,15 @@
 
             if (!kart.threatIgnored && now >= kart.threatReactAt) {
                 dangerFound = true;
-                const naturalDir = (threat.y > kart.yPercent) ? -1 : 1;
+                const naturalDir = (threatY > kart.yPercent) ? -1 : 1;
                 if (naturalDir === 1) avoidDirection = (kart.yPercent > cfg.road.maxY - cfg.road.edgeSafetyMargin) ? -1 : 1;
                 else avoidDirection = (kart.yPercent < cfg.road.minY + cfg.road.edgeSafetyMargin) ? 1 : -1;
+
+                // L'esquive part du mauvais cote : le kart est contre le bord,
+                // il n'a plus que le frein.
+                if (avoidDirection !== naturalDir) {
+                    kart.brakeUntil = now + ai.edgeBrakeMs;
+                }
             }
         }
 
@@ -110,6 +149,42 @@
             kart.targetVy = avoidDirection * kart.dodgeIntensity;
             kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
             return;
+        }
+
+        // Visee, dans le sens de tir choisi a la reception. Apres l'esquive —
+        // se faire toucher en visant reste prioritaire — et avant le
+        // depassement.
+        if (isAiming(cfg, kart) && now > kart.throwTime - ai.aimLeadMs) {
+            const dir = kart.shotDirection;
+            let target = null;
+            let targetDist = Infinity;
+
+            for (let i = 0; i < state.karts.length; i++) {
+                const other = state.karts[i];
+                if (other.id === kart.id || other.state !== 'running') continue;
+
+                const dist = getShortestDistance(cfg, other.worldX, kart.worldX) * dir;
+                if (dist > 0 && dist < ai.aimScanDistance && dist < targetDist) {
+                    targetDist = dist;
+                    target = other;
+                }
+            }
+
+            if (target) {
+                const margin = cfg.road.edgeSafetyMargin;
+                const desired = Math.min(cfg.road.maxY - margin,
+                                         Math.max(cfg.road.minY + margin, target.yPercent + kart.aimError));
+                const diff = desired - kart.yPercent;
+
+                if (Math.abs(diff) > 0.5) {
+                    const speed = ai.aimSpeed * handling;
+                    kart.aiState = 'aiming';
+                    kart.originalLaneY = kart.yPercent;
+                    kart.targetVy = Math.max(-speed, Math.min(speed, diff * ai.aimSpeed));
+                    kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
+                    return;
+                }
+            }
         }
 
         let overtakeFound = false;
@@ -285,10 +360,32 @@
         return (cfg.trailableItems || []).indexOf(itemType) !== -1;
     }
 
+    // Une banane simplement lachee derriere soi ne se vise pas.
+    function isAiming(cfg, kart) {
+        const held = kart.heldItem;
+        if (!held || held.holdPosition === 'orbit') return false;
+        if (held.type === 'greenShell' || held.type === 'redShell') return true;
+        return held.type === 'banana' && kart.lobbing;
+    }
+
     // Decide de la vie de l'objet : sorti derriere le kart a un moment, ou garde
     // en main jusqu'au tir.
-    function planItemUse(cfg, rng, now, kart, itemType) {
+    // Le sens du tir est arrete des la reception : le kart doit savoir de quel
+    // cote viser bien avant de lacher son objet.
+    function planItemUse(cfg, rng, state, now, kart, itemType) {
         const ai = cfg.ai;
+
+        kart.shotDirection = 1;
+        kart.lobbing = false;
+
+        if (itemType === 'greenShell' || itemType === 'redShell') {
+            kart.shotDirection = rollShellDirection(cfg, rng, state, kart, itemType);
+        } else if (itemType === 'banana') {
+            kart.lobbing = rng() < rankChance(ai.bananaLobChance, state, kart);
+            kart.shotDirection = kart.lobbing ? 1 : -1;
+        }
+
+        kart.aimError = randomRange(rng, -ai.aimErrorMax, ai.aimErrorMax) / kart.stats.handling;
 
         if (isTrailable(cfg, itemType) && rng() < ai.trailChance) {
             kart.trailTime = now + randomRange(rng, ai.trailDelayMin, ai.trailDelayMax);
@@ -393,7 +490,7 @@
             holdPosition: holdPosition
         };
 
-        planItemUse(cfg, rng, now, kart, itemType);
+        planItemUse(cfg, rng, state, now, kart, itemType);
 
         events.push({ type: 'spawnHeldItem', kartId: kart.id, itemId: itemId, itemType: itemType, holdPosition: holdPosition });
     }
@@ -538,10 +635,10 @@
         let lobbed = false;
 
         if (held.type === 'greenShell' || held.type === 'redShell') {
-            direction = rollShellDirection(cfg, rng, state, kart, held.type);
+            direction = kart.shotDirection;
             startX = kart.worldX + (direction > 0 ? cfg.offsets.world.shellSpawn
                                                   : cfg.offsets.world.heldItemBehind);
-        } else if (held.type === 'banana' && rng() < rankChance(cfg.ai.bananaLobChance, state, kart)) {
+        } else if (held.type === 'banana' && kart.lobbing) {
             lobbed = true;
             startX = kart.worldX + cfg.offsets.world.shellSpawn;
         }
@@ -939,6 +1036,10 @@
                     effectiveSpeed = Math.min(effectiveSpeed, kart.stats.topSpeed * cfg.race.finishedSpeedRatio);
                 }
 
+                if (now < kart.brakeUntil) {
+                    effectiveSpeed *= cfg.ai.edgeBrakeFactor;
+                }
+
                 if (kart.starEndTime > now) {
                     effectiveSpeed = Math.max(effectiveSpeed, kart.stats.topSpeed * cfg.speeds.starSpeedMultiplier);
                     kart.isInvincible = true;
@@ -1145,7 +1246,7 @@
 
                 item.worldX = item.flightFrom + (item.flightTo - item.flightFrom) * progress;
                 if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
-                item.hop = Math.sin(Math.PI * progress) * cfg.speeds.bananaLobHeight;
+                item.hop = Math.sin(Math.PI * Math.pow(progress, cfg.speeds.bananaLobRise)) * cfg.speeds.bananaLobHeight;
 
                 if (progress >= 1) {
                     item.flightUntil = 0;
@@ -1382,6 +1483,10 @@
                 hitInvincibleUntil: 0,
 
                 trailTime: 0,
+                brakeUntil: 0,
+                shotDirection: 1,
+                lobbing: false,
+                aimError: 0,
                 threatItemId: 0,
                 threatReactAt: 0,
                 threatIgnored: false,
