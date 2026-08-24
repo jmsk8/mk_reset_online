@@ -80,16 +80,15 @@ function itemTuple(item) {
     ];
 }
 
-// Les deux cameras sont parfaitement deterministes et pourraient se deduire du
-// temps ecoule ; elles voyagent quand meme dans chaque snapshot. Deux nombres
-// contre la certitude qu'aucun spectateur ne verra jamais le decor decale, ce
-// n'est pas cher paye — et c'est ce que demande une identite stricte du rendu.
 // [groupe, image]. Le drapeau s'anime cote client : seul le groupe part.
 function signTuple(state) {
     if (!state.sign) return null;
     return [state.sign.group, state.sign.group === 'finish' ? null : state.sign.frame];
 }
 
+// Les deux cameras pourraient se deduire du temps ecoule ; elles voyagent quand
+// meme dans chaque snapshot, contre la certitude qu'aucun spectateur ne verra le
+// decor decale.
 function buildSnapshot(state, simTime) {
     return {
         t: 's',

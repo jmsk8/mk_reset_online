@@ -160,7 +160,9 @@ const ppAnimating = {};
 
 let leaderboardState = {
     container: null,
-    slots: []
+    slots: [],
+    cameraEl: null,
+    bound: false
 };
 
 let lastFrameTime = 0;
@@ -250,12 +252,99 @@ function getKartFrameSrc(charName, dir) {
     return cached ? cached.src : GAME_CONFIG.resources.paths.charFrame(charName, dir);
 }
 
+// Kart suivi par la camera, ou null pour la camera par defaut. Purement local :
+// deux spectateurs peuvent regarder des karts differents, ils voient la meme
+// course sous un autre angle. Cet etat ne part jamais au serveur.
+let focusedKartId = null;
+
+// Camera effectivement utilisee pour le rendu. Elle vaut celle du serveur en
+// mode par defaut, et la position du kart suivi sinon.
+let renderCameraX = 0;
+let renderBgCameraX = 0;
+let lastFocusCameraX = null;
+
+function wrapWorld(x) {
+    const w = WORLD.width;
+    if (x < 0) return x + w;
+    if (x >= w) return x - w;
+    return x;
+}
+
+function shortestDelta(from, to) {
+    const w = WORLD.width;
+    let delta = to - from;
+    if (delta > w / 2) delta -= w;
+    else if (delta < -w / 2) delta += w;
+    return delta;
+}
+
+function updateRenderCamera() {
+    const kart = focusedKartId === null ? null : worldState.kartsById[focusedKartId];
+
+    if (!kart) {
+        renderCameraX = worldState.cameraX;
+        renderBgCameraX = worldState.bgCameraX;
+        lastFocusCameraX = null;
+        return;
+    }
+
+    // Le fond ne peut pas garder sa propre vitesse : il avance de la moitie du
+    // deplacement de la camera, sinon decor et route se desolidarisent des que
+    // celle-ci change d'allure.
+    if (lastFocusCameraX === null) {
+        renderBgCameraX = worldState.bgCameraX;
+        lastFocusCameraX = worldState.cameraX;
+    }
+
+    renderBgCameraX = wrapWorld(renderBgCameraX + shortestDelta(lastFocusCameraX, kart.worldX) / 2);
+    renderCameraX = kart.worldX;
+    lastFocusCameraX = kart.worldX;
+}
+
+function setFocus(kartId) {
+    focusedKartId = kartId;
+    lastFocusCameraX = null;
+    updateFocusMarks();
+}
+
+function updateFocusMarks() {
+    const cameraBtn = leaderboardState.cameraEl;
+    if (cameraBtn) cameraBtn.classList.toggle('is-focused', focusedKartId === null);
+
+    for (const id in ppEls) {
+        ppEls[id].classList.toggle('is-focused', String(focusedKartId) === id);
+    }
+}
+
+function onLeaderboardClick(event) {
+    const target = event.target.closest('.leaderboard-camera, [data-kart-id]');
+    if (!target) return;
+
+    setFocus(target.classList.contains('leaderboard-camera') ? null : Number(target.dataset.kartId));
+}
+
 function initLeaderboard() {
     leaderboardState.container = document.getElementById('race-leaderboard');
     if (!leaderboardState.container) return;
 
     leaderboardState.container.innerHTML = '';
     leaderboardState.slots = [];
+
+    if (!leaderboardState.bound) {
+        leaderboardState.bound = true;
+        leaderboardState.container.addEventListener('click', onLeaderboardClick);
+    }
+
+    const camera = document.createElement('div');
+    camera.className = 'leaderboard-pp leaderboard-camera visible';
+    camera.title = 'Vue par defaut';
+    camera.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+        '<path d="M4 7h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/>' +
+        '<path d="M15 11.2l5-2.7v7l-5-2.7z"/></svg>';
+    leaderboardState.container.appendChild(camera);
+    leaderboardState.cameraEl = camera;
+
+    updateFocusMarks();
 
     const totalKarts = GAME_CONFIG.resources.characters.length;
     for (let i = 0; i < totalKarts; i++) {
@@ -445,6 +534,9 @@ let currentRaceT0 = null;
 // du personnage precedent. La reconciliation ne verrait rien a corriger, les
 // identifiants n'ayant pas bouge.
 function wipeSceneElements() {
+    focusedKartId = null;
+    lastFocusCameraX = null;
+
     if (lakituEls) {
         lakituEls.wrapper.remove();
         lakituEls = null;
@@ -877,6 +969,8 @@ function reconcileLeaderboard() {
     for (const id in ppEls) {
         if (!worldState.kartsById[id]) removePPEl(id);
     }
+
+    updateFocusMarks();
 }
 
 function removePPEl(kartId) {
@@ -997,7 +1091,7 @@ function renderLakitu(gameNow, screenWidth) {
         return;
     }
 
-    const rx = getScreenPosition(WORLD.finishLineX, worldState.cameraX, screenWidth);
+    const rx = getScreenPosition(WORLD.finishLineX, renderCameraX, screenWidth);
     const margin = GAME_CONFIG.rendering.bufferZone;
     if (rx < -margin || rx > screenWidth + margin) {
         els.wrapper.style.display = 'none';
@@ -1064,6 +1158,8 @@ function renderResults() {
 function renderState(gameNow, screenWidth) {
     const renderMargin = GAME_CONFIG.rendering.bufferZone;
 
+    updateRenderCamera();
+
     if (domDirty) {
         domDirty = false;
         reconcileDom();
@@ -1080,7 +1176,7 @@ function renderState(gameNow, screenWidth) {
 
     if (cachedBg) {
         // Été : parallaxe, moitié vitesse.
-        const bgX = cachedIsSummerBanner ? worldState.bgCameraX : worldState.cameraX;
+        const bgX = cachedIsSummerBanner ? renderBgCameraX : renderCameraX;
         cachedBg.style.backgroundPosition = `${halfView - bgX}px 0px`;
     } else {
         cachedBg = document.querySelector('.layer-scrolling-bg');
@@ -1088,7 +1184,7 @@ function renderState(gameNow, screenWidth) {
 
     if (cachedFg) {
         // Décor de premier plan (été uniquement) : même vitesse que la route.
-        const fgX = (worldState.cameraX - halfView) % WORLD.width;
+        const fgX = (renderCameraX - halfView) % WORLD.width;
         cachedFg.style.backgroundPosition = `${-fgX}px 0px`;
     } else {
         cachedFg = document.querySelector('.layer-scrolling-fg');
@@ -1098,20 +1194,20 @@ function renderState(gameNow, screenWidth) {
         // Bordure de route : la bande est un motif de 80px ancre sur le monde,
         // il suffit de la decaler du reste de la division. Modulo positif, un
         // reste negatif donnerait une valeur CSS invalide.
-        const roadX = (((worldState.cameraX - halfView) % ROAD_PATTERN_WIDTH) + ROAD_PATTERN_WIDTH) % ROAD_PATTERN_WIDTH;
+        const roadX = (((renderCameraX - halfView) % ROAD_PATTERN_WIDTH) + ROAD_PATTERN_WIDTH) % ROAD_PATTERN_WIDTH;
         cachedGround.style.setProperty('--road-offset', `${-roadX}px`);
     } else {
         cachedGround = document.querySelector('.layer-ground');
     }
 
     if (worldState.finishLine && worldState.finishLine.element) {
-        const rx = getScreenPosition(worldState.finishLine.worldX, worldState.cameraX, screenWidth);
+        const rx = getScreenPosition(worldState.finishLine.worldX, renderCameraX, screenWidth);
         worldState.finishLine.element.style.transform = `translate3d(${rx}px, 0, 0)`;
     }
 
     if (worldState.sun && worldState.sun.element) {
         // Solidaire du fond, pas de la route.
-        const sx = getScreenPosition(worldState.sun.worldX, worldState.bgCameraX, screenWidth);
+        const sx = getScreenPosition(worldState.sun.worldX, renderBgCameraX, screenWidth);
         worldState.sun.element.style.transform = `translate3d(${sx}px, 0, 0)`;
     }
 
@@ -1123,7 +1219,7 @@ function renderState(gameNow, screenWidth) {
         if (!el) continue;
         if (!box.active) { el.style.display = 'none'; continue; }
 
-        const rx = getScreenPosition(box.worldX, worldState.cameraX, screenWidth);
+        const rx = getScreenPosition(box.worldX, renderCameraX, screenWidth);
         if (rx > -renderMargin && rx < screenWidth + renderMargin) {
             el.style.display = 'block';
             el.style.transform = `translate3d(${rx}px, ${floatY}px, 0)`;
@@ -1152,7 +1248,7 @@ function renderState(gameNow, screenWidth) {
             if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].classList.remove('item-stopped');
         }
 
-        const rx = getScreenPosition(kart.worldX, worldState.cameraX, screenWidth);
+        const rx = getScreenPosition(kart.worldX, renderCameraX, screenWidth);
         const isVisibleNow = (rx > -renderMargin && rx < screenWidth + renderMargin);
 
         if (isVisibleNow) {
@@ -1206,7 +1302,7 @@ function renderState(gameNow, screenWidth) {
             }
         }
 
-        const rx = getScreenPosition(item.worldX, worldState.cameraX, screenWidth);
+        const rx = getScreenPosition(item.worldX, renderCameraX, screenWidth);
         const isVisible = (rx > -renderMargin && rx < screenWidth + renderMargin);
         if (isVisible) {
             el.style.display = 'block';
@@ -1819,7 +1915,7 @@ function updateDebugHUD() {
 
     const worldW = WORLD.width;
     // camera = centre de la vue : le bord gauche est a mi-largeur en arriere.
-    const camX = (((worldState.cameraX - screenWidth / 2) % worldW) + worldW) % worldW;
+    const camX = (((renderCameraX - screenWidth / 2) % worldW) + worldW) % worldW;
 
     const camPct = (camX / worldW) * 100;
     const viewPct = (screenWidth / worldW) * 100;
