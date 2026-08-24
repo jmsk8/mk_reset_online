@@ -614,6 +614,50 @@
     background-color: #333;
 }
 
+/* Photos cliquables : elles verrouillent la caméra sur un kart. Le conteneur
+   reste transparent aux clics, seules les vignettes les captent. */
+.leaderboard-pp {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+/* Vue par défaut, à gauche des photos. Elle ne bouge jamais : sa place ne
+   dépend d'aucun classement. */
+.leaderboard-camera {
+    left: -46px;
+    background-color: #111111;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+.leaderboard-camera svg {
+    width: 22px;
+    height: 22px;
+    fill: #ffffff;
+}
+
+/* Repère discret sur la vue active : un liseré, rien de plus. */
+.leaderboard-pp.is-focused img,
+.leaderboard-camera.is-focused {
+    border-color: #ffcc00;
+    box-shadow: 0 0 6px rgba(255, 204, 0, 0.9);
+}
+
+@media screen and (max-width: 768px) {
+    .leaderboard-camera {
+        left: -32px;
+    }
+
+    .leaderboard-camera svg {
+        width: 15px;
+        height: 15px;
+    }
+}
+
 .leaderboard-pp.overtaking {
     z-index: 10;
     transform: scale(1.2);
