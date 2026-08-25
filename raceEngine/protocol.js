@@ -145,7 +145,10 @@ function buildHello(cfg, state, simTime, t0) {
             shellAnimSpeed: cfg.itemAnim.greenShell.animSpeed,
 
             laps: cfg.race.laps,
-            flagAnimSpeed: 220
+            flagAnimSpeed: 220,
+            // Rayon du souffle de la bleue : le client en tire la taille dessinee,
+            // pour que l'effet couvre exactement la zone touchee.
+            blastRadius: cfg.blueShell.blastRadiusX
         },
 
         karts: state.karts.map(kart => ({ id: kart.id, char: kart.charName })),

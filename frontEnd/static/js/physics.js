@@ -36,6 +36,14 @@
         return stats.topSpeed * variation;
     }
 
+    // Retire avec un sursis : l'objet reste affiche le temps qu'on voie le choc,
+    // sans plus rien pouvoir heurter.
+    function spendItem(cfg, item, now) {
+        if (item.spent) return;
+        item.spent = true;
+        item.deadAt = now + cfg.delays.itemLingerMs;
+    }
+
     function getShortestDistance(cfg, fromX, toX) {
         const w = cfg.world.width;
         let diff = fromX - toX;
@@ -65,6 +73,7 @@
             const item = state.items[i];
             if (item.isDead) continue;
             if (item.type !== 'banana' && item.type !== 'greenShell' && item.type !== 'redShell') continue;
+            if (item.spent) continue;
 
             const dist = getShortestDistance(cfg, item.worldX, kart.worldX);
             if (dist <= 0 || dist > ai.threatMaxDistance) continue;
@@ -293,8 +302,26 @@
         return (specs && specs[itemType]) ? specs[itemType] : null;
     }
 
+    // La bleue ne passe pas par les paliers : elle a ses propres conditions.
+    function rollBlueShell(cfg, state, rng, kart) {
+        const spec = cfg.blueShell;
+        if (!isItemEnabled(cfg, 'blueShell')) return false;
+        if (kart.rank < spec.minRank || kart.rank > spec.maxRank) return false;
+
+        const leader = getRacingLeader(state);
+        if (!leader || leader.id === kart.id) return false;
+
+        return state.blueShellChance > 0 && rng() < state.blueShellChance;
+    }
+
     function rollItem(cfg, state, rng, kart) {
         const distToLeader = getDistanceToLeader(state, kart);
+
+        if (rollBlueShell(cfg, state, rng, kart)) {
+            state.blueShellChance /= cfg.blueShell.chanceDecay;
+            return 'blueShell';
+        }
+
         const itemDist = cfg.itemDistribution;
         const tiers = itemDist.tiers;
 
@@ -346,6 +373,19 @@
 
     function getKartByRank(state, rank) {
         return state.karts.find(k => k.rank === rank && (k.state === 'running' || k.state === 'hit')) || null;
+    }
+
+    // Le mieux place parmi ceux qui courent encore : viser le tour d'honneur
+    // d'un kart deja arrive n'aurait aucun sens.
+    function getRacingLeader(state) {
+        let best = null;
+        for (let i = 0; i < state.karts.length; i++) {
+            const kart = state.karts[i];
+            if (kart.finished) continue;
+            if (kart.state !== 'running' && kart.state !== 'hit') continue;
+            if (!best || kart.rank < best.rank) best = kart;
+        }
+        return best;
     }
 
     // Tout objet simple arrive en main, y compris ceux qui peuvent ensuite etre
@@ -501,6 +541,28 @@
         return table.pack;
     }
 
+    // Le plus proche devant, en sautant ceux qui sont colles au tireur. Null si
+    // tout le monde est trop proche : la rouge part alors sans cible.
+    function findRedShellTarget(cfg, state, kart) {
+        let best = null;
+        let bestDist = Infinity;
+
+        for (let i = 0; i < state.karts.length; i++) {
+            const other = state.karts[i];
+            if (other.id === kart.id) continue;
+            if (other.state !== 'running' && other.state !== 'hit') continue;
+
+            const dist = getShortestDistance(cfg, other.worldX, kart.worldX);
+            if (dist < cfg.speeds.redShellMinTarget) continue;
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = other;
+            }
+        }
+
+        return best;
+    }
+
     function rollShellDirection(cfg, rng, state, kart, itemType) {
         const chances = cfg.ai.shellBackwardChance[itemType];
         if (!chances) return 1;
@@ -526,7 +588,7 @@
             // Tete chercheuse vers l'avant seulement : tiree en arriere, elle
             // part tout droit. Sans cible des le depart, la boucle de suivi ne
             // s'y interesse jamais, pas meme pour lui en trouver une.
-            const target = dir > 0 ? getKartByRank(state, kart.rank - 1) : null;
+            const target = dir > 0 ? findRedShellTarget(cfg, state, kart) : null;
             if (target) {
                 targetKartId = target.id;
             } else {
@@ -560,7 +622,9 @@
             hop: 0,
 
             // Un objet ne peut toucher son lanceur qu'une fois eloigne de lui.
-            armed: false
+            armed: false,
+            spent: false,
+            deadAt: 0
         });
 
         events.push({ type: 'launchItem', kartId: kart.id, itemId: itemId });
@@ -629,6 +693,38 @@
 
         // Une banane est lachee derriere le kart, qu'elle ait ete trainee ou
         // tenue en main : sinon elle apparaitrait sous lui.
+        // La bleue part droit devant, au-dessus de la piste, vers le premier.
+        if (held.type === 'blueShell') {
+            const spec = cfg.blueShell;
+
+            state.items.push({
+                id: held.id,
+                type: 'blueShell',
+                worldX: kart.worldX,
+                y: (cfg.road.minY + cfg.road.maxY) / 2,
+                vx: spec.speed,
+                vy: 0,
+                shooterId: kart.id,
+                targetKartId: null,
+                createdAt: now,
+                currentFrame: 1,
+                lastAnimTime: 0,
+                isDead: false,
+                flightUntil: 0,
+                flightFrom: 0,
+                flightTo: 0,
+                hop: spec.cruiseHop,
+                armed: true,
+                phase: 'cruise',
+                phaseUntil: 0
+            });
+
+            events.push({ type: 'launchItem', kartId: kart.id, itemId: held.id });
+            kart.heldItem = null;
+            kart.trailTime = 0;
+            return;
+        }
+
         let direction = 1;
         let startX = kart.worldX + cfg.offsets.world.heldItemBehind;
 
@@ -856,25 +952,30 @@
 
         if (state.phase === 'racing') {
             // Seul le dernier tour est signale.
-            const lap = Math.min(race.laps, leader.lapCount + 1);
+            // `lapCount` compte les franchissements. Le premier cloture le
+            // trajet depuis la grille, pas un tour : le tour affiche vaut donc
+            // le nombre de franchissements, au minimum 1.
+            const lap = Math.min(race.laps, Math.max(1, leader.lapCount));
             if (lap !== state.leaderLap) {
                 state.leaderLap = lap;
-                if (lap === race.laps) setSign(state, 'laps', 'final', now, race.finalSignMs);
+
+                // Chaque tour entame rend la bleue un peu plus probable.
+                state.blueShellChance = Math.min(
+                    cfg.blueShell.chanceCap,
+                    state.blueShellChance + cfg.blueShell.chancePerLap
+                );
             }
 
-            if (leader.totalDistance >= leader.finishDistance - race.cameraApproachDistance) {
+            // Le panneau se declenche sur ce qu'il reste a parcourir au premier :
+            // c'est la seule mesure qui dise vraiment « il lui reste un tour ».
+            if (!state.finalSignShown && remainingDistance(leader) <= cfg.world.width) {
+                state.finalSignShown = true;
+                setSign(state, 'laps', 'final', now, race.finalSignMs);
+            }
+
+            if (remainingDistance(leader) <= race.cameraApproachDistance) {
                 state.phase = 'finishing';
-
-                const park = parkPosition(cfg, race.parkFinishOffset);
-                const distance = forwardDistance(cfg, state.cameraX, park);
-                const speed = Math.max(leader.absoluteVelocity, 1);
-                const timeLeft = Math.max(0.5, (leader.finishDistance - leader.totalDistance) / speed);
-
-                state.cameraSpeed = Math.min(
-                    cfg.speeds.roadPPS * race.cameraMaxCatchupRatio,
-                    Math.max(cfg.speeds.roadPPS, distance / timeLeft)
-                );
-                state.cameraTarget = park;
+                state.cameraTarget = parkPosition(cfg, race.parkFinishOffset);
 
                 // Le drapeau reste sorti tant que la course n'est pas finie :
                 // il accompagne chaque passage, pas seulement celui du
@@ -886,6 +987,14 @@
         }
 
         if (state.phase === 'finishing') {
+            // Le drapeau ne sort qu'a l'approche reelle de la ligne, pas des le
+            // repositionnement de la camera. Une fois sorti il reste en main :
+            // il accompagne chaque passage, pas seulement le premier.
+            if (!state.flagShown && leader && remainingDistance(leader) <= race.flagDistance) {
+                state.flagShown = true;
+                setSign(state, 'finish', 1, now, race.maxRaceMs);
+            }
+
             // Un kart bloque ne doit pas figer le service : passe un delai
             // large, on classe les retardataires dans l'ordre ou ils courent et
             // on enchaine.
@@ -914,6 +1023,23 @@
         }
     }
 
+    // Recalculee a chaque pas : la camera vise l'instant ou le leader franchira
+    // la ligne. Un leader percute en chemin change la donne, elle suit.
+    function aimCameraSpeed(cfg, state) {
+        const race = cfg.race;
+        const leader = getLeader(state);
+        if (!leader) return cfg.speeds.roadPPS;
+
+        const distance = forwardDistance(cfg, state.cameraX, state.cameraTarget);
+        const speed = Math.max(leader.absoluteVelocity, 1);
+        const timeLeft = Math.max(0.4, remainingDistance(leader) / speed);
+
+        return Math.min(
+            cfg.speeds.roadPPS * race.cameraMaxCatchupRatio,
+            Math.max(cfg.speeds.roadPPS * race.cameraMinSpeedRatio, distance / timeLeft)
+        );
+    }
+
     function updateCamera(cfg, state, deltaTime) {
         const width = cfg.world.width;
 
@@ -922,6 +1048,8 @@
         if (state.phase === 'racing') {
             state.cameraX += cfg.speeds.roadPPS * deltaTime;
         } else if (state.cameraTarget !== null && state.cameraTarget !== undefined) {
+            state.cameraSpeed = aimCameraSpeed(cfg, state);
+
             // Approche de la position de parking, puis arret net.
             const remaining = forwardDistance(cfg, state.cameraX, state.cameraTarget);
             const advance = state.cameraSpeed * deltaTime;
@@ -942,6 +1070,162 @@
             ? cfg.speeds.roadPPS * deltaTime * 0.5
             : state.cameraSpeed * deltaTime * 0.5);
         if (state.bgCameraX >= width) state.bgCameraX -= width;
+    }
+
+    // Etoile et champignon sont les deux seules sorties.
+    function blastKart(cfg, state, now, kart, events) {
+        if (kart.state !== 'running') return;
+        if (kart.isInvincible) return;
+        if (kart.boostEndTime > now) return;
+
+        kart.state = 'hit';
+        kart.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+        events.push({ type: 'kartHit', kartId: kart.id });
+        if (kart.heldItem) kart.throwTime = kart.hitEndTime + cfg.delays.throwDelayAfterHit;
+    }
+
+    // Un kart n'est touche que lorsque le front l'atteint, et une seule fois :
+    // l'etat 'hit' dure plus longtemps que le souffle.
+    function updateBlueBlast(cfg, state, now, item, events) {
+        const spec = cfg.blueShell;
+        const progress = Math.min(1, 1 - (item.phaseUntil - now) / spec.blastMs);
+        const reachX = spec.blastRadiusX * progress;
+        const reachY = spec.blastRadiusY * progress;
+
+        for (let k = 0; k < state.karts.length; k++) {
+            const kart = state.karts[k];
+            const dx = Math.abs(getShortestDistance(cfg, item.worldX, kart.worldX));
+            const dy = Math.abs(kart.yPercent - item.y);
+            if (dx > reachX || dy > reachY) continue;
+
+            blastKart(cfg, state, now, kart, events);
+        }
+
+        if (progress >= 1) item.isDead = true;
+    }
+
+    // Le souffle est une entite a part entiere, pas un evenement : un spectateur
+    // qui arrive pendant l'explosion doit la voir.
+    function spawnBlueBlast(cfg, state, now, source, events) {
+        const spec = cfg.blueShell;
+
+        // La cible est touchee a l'instant meme de l'impact : le dome s'etend a
+        // 200 unites par seconde quand elle en parcourt 500, il ne la
+        // rattraperait jamais. Le front ne sert qu'a emporter les voisins.
+        const target = source.targetKartId === null ? null : state.kartsById[source.targetKartId];
+        if (target) blastKart(cfg, state, now, target, events);
+
+        state.items.push({
+            id: state.nextItemId++,
+            type: 'blueBlast',
+            worldX: source.worldX,
+            y: source.y,
+            vx: 0,
+            vy: 0,
+            shooterId: source.shooterId,
+            targetKartId: null,
+            createdAt: now,
+            currentFrame: 1,
+            lastAnimTime: 0,
+            isDead: false,
+            flightUntil: 0,
+            flightFrom: 0,
+            flightTo: 0,
+            hop: 0,
+            armed: true,
+            spent: false,
+            deadAt: 0,
+            phase: 'blast',
+            phaseUntil: now + spec.blastMs
+        });
+    }
+
+    // Elle part tout droit, sans cible, et ne se verrouille qu'a l'approche du
+    // premier. Le verrou ne bouge plus ensuite.
+    function updateBlueShell(cfg, state, now, item, deltaTime, events) {
+        const spec = cfg.blueShell;
+        const target = item.targetKartId === null ? null : state.kartsById[item.targetKartId];
+
+        if (item.phase === 'cruise') {
+            item.worldX += spec.speed * deltaTime;
+            item.hop = spec.cruiseHop;
+
+            if (!target) {
+                const leader = getRacingLeader(state);
+                const expired = now - item.createdAt > spec.maxCruiseMs;
+
+                if (!leader) {
+                    if (expired) {
+                        spawnBlueBlast(cfg, state, now, item, events);
+                        item.isDead = true;
+                        return;
+                    }
+                } else {
+                    const gap = getShortestDistance(cfg, leader.worldX, item.worldX);
+                    if ((gap > 0 && gap < spec.lockDistance) || expired) {
+                        item.targetKartId = leader.id;
+                    }
+                }
+            } else {
+                const gap = getShortestDistance(cfg, target.worldX, item.worldX);
+                if (gap < spec.catchDistance && gap > -spec.catchDistance) {
+                    item.phase = 'orbit';
+                    item.phaseUntil = now + spec.orbitMs;
+                }
+            }
+
+            if (item.worldX < 0) item.worldX += cfg.world.width;
+            if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
+            return;
+        }
+
+        // Une fois accrochee, elle suit son kart. S'il disparait de la course,
+        // elle explose sur sa derniere position connue.
+        if (!target || (target.state !== 'running' && target.state !== 'hit')) {
+            spawnBlueBlast(cfg, state, now, item, events);
+            item.isDead = true;
+            return;
+        }
+
+        if (item.phase === 'orbit') {
+            const progress = Math.min(1, 1 - (item.phaseUntil - now) / spec.orbitMs);
+            const angle = progress * spec.orbitTurns * 2 * Math.PI;
+
+            item.worldX = target.worldX + Math.cos(angle) * spec.orbitRadiusX;
+            item.y = target.yPercent + Math.sin(angle) * spec.orbitRadiusY;
+            item.hop = spec.orbitHop;
+
+            if (progress >= 1) {
+                item.phase = 'hover';
+                item.phaseUntil = now + spec.hoverMs;
+            }
+        } else if (item.phase === 'hover') {
+            item.worldX = target.worldX + spec.hoverLead;
+            item.y = target.yPercent;
+            item.hop = spec.orbitHop;
+
+            if (now >= item.phaseUntil) {
+                item.phase = 'crash';
+                item.phaseUntil = now + spec.crashMs;
+            }
+        } else if (item.phase === 'crash') {
+            const progress = Math.min(1, 1 - (item.phaseUntil - now) / spec.crashMs);
+            // Elle continue d'avancer pendant qu'elle tombe, depuis la position
+            // de surplomb.
+            item.worldX = target.worldX + spec.hoverLead + (spec.crashLead - spec.hoverLead) * progress;
+            item.y = target.yPercent;
+            // Chute acceleree : elle decroche a peine, puis s'abat.
+            item.hop = spec.orbitHop * (1 - progress * progress);
+
+            if (progress >= 1) {
+                spawnBlueBlast(cfg, state, now, item, events);
+                item.isDead = true;
+                return;
+            }
+        }
+
+        if (item.worldX < 0) item.worldX += cfg.world.width;
+        if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
     }
 
     function stepPhysics(cfg, state, rng, now, deltaTime) {
@@ -1218,18 +1502,22 @@
 
         updateOrbitItems(cfg, state, now, deltaTime, events);
 
+        // Rien ne casse une bleue, pas meme une autre bleue : elles sont hors de
+        // cette passe, des deux cotes.
         for (let i = state.items.length - 1; i >= 0; i--) {
             const item = state.items[i];
-            if (item.isDead) continue;
+            if (item.isDead || item.spent) continue;
+            if (item.type === 'blueShell' || item.type === 'blueBlast') continue;
 
             for (let j = i - 1; j >= 0; j--) {
                 const other = state.items[j];
-                if (other.isDead) continue;
+                if (other.isDead || other.spent) continue;
+                if (other.type === 'blueShell' || other.type === 'blueBlast') continue;
                 const dx = Math.abs(getShortestDistance(cfg, item.worldX, other.worldX));
                 const dy = Math.abs(item.y - other.y);
                 if (dx < cfg.hitboxes.itemVsKart.x && dy < cfg.hitboxes.itemVsKart.y) {
-                    item.isDead = true;
-                    other.isDead = true;
+                    spendItem(cfg, item, now);
+                    spendItem(cfg, other, now);
                 }
             }
         }
@@ -1237,6 +1525,20 @@
         for (let i = state.items.length - 1; i >= 0; i--) {
             const item = state.items[i];
             if (item.isDead) continue;
+
+            if (item.type === 'blueShell') {
+                updateBlueShell(cfg, state, now, item, deltaTime, events);
+                if (now - item.lastAnimTime > cfg.itemAnim.blueShell.animSpeed) {
+                    item.currentFrame = (item.currentFrame % 3) + 1;
+                    item.lastAnimTime = now;
+                }
+                continue;
+            }
+
+            if (item.type === 'blueBlast') {
+                updateBlueBlast(cfg, state, now, item, events);
+                continue;
+            }
 
             // Vol en cloche. L'objet reste dangereux en l'air : seule sa
             // position change, pas sa hitbox.
@@ -1273,7 +1575,7 @@
                             if (candidate.id === item.shooterId) continue;
                             if (candidate.state !== 'running') continue;
                             const dist = getShortestDistance(cfg, candidate.worldX, item.worldX) * dir;
-                            if (dist > 0 && dist < bestDist) {
+                            if (dist >= cfg.speeds.redShellMinTarget && dist < bestDist) {
                                 bestDist = dist;
                                 newTarget = candidate;
                             }
@@ -1324,6 +1626,8 @@
                 }
             }
 
+            if (item.spent) continue;
+
             for (let k = 0; k < kartsLen; k++) {
                 const kart = state.karts[k];
                 if (item.type === 'banana' && kart.id === item.shooterId && !item.armed) continue;
@@ -1334,7 +1638,7 @@
                     const dk = Math.abs(getShortestDistance(cfg, item.worldX, kart.worldX));
                     const dky = Math.abs(item.y - kart.yPercent);
                     if (dk < cfg.hitboxes.itemVsKart.x && dky < cfg.hitboxes.itemVsKart.y) {
-                        item.isDead = true;
+                        spendItem(cfg, item, now);
                         break;
                     }
                     continue;
@@ -1353,7 +1657,7 @@
                          events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                          kart.heldItem = null;
                          kart.trailTime = 0;
-                         item.isDead = true;
+                         spendItem(cfg, item, now);
                          hitHeldItem = true;
                     }
                 } else if (kart.heldItem && kart.heldItem.holdPosition === 'orbit') {
@@ -1367,7 +1671,7 @@
 
                         if (dh < cfg.hitboxes.itemVsKart.x && dhy < cfg.hitboxes.itemVsKart.y) {
                             destroyOrbitItem(kart, b, events);
-                            item.isDead = true;
+                            spendItem(cfg, item, now);
                             hitHeldItem = true;
                             break;
                         }
@@ -1386,7 +1690,7 @@
                         events.push({ type: 'kartHit', kartId: kart.id });
                         if (kart.heldItem) kart.throwTime = kart.hitEndTime + cfg.delays.throwDelayAfterHit;
                     }
-                    item.isDead = true;
+                    spendItem(cfg, item, now);
                     break;
                 }
             }
@@ -1395,6 +1699,7 @@
         let writeIdx = 0;
         for (let i = 0; i < state.items.length; i++) {
             const it = state.items[i];
+            if (it.spent && now >= it.deadAt) it.isDead = true;
             if (it.isDead) {
                 events.push({ type: 'killItem', itemId: it.id });
             } else {
@@ -1498,10 +1803,10 @@
                 hasPassedFinishLine: false,
                 stopped: false,
 
-                // La grille est derriere la ligne : le premier franchissement
-                // fait passer au tour 2, la course s'acheve au franchissement
-                // numero `laps`. D'ou `laps - 1` tours pleins.
-                finishDistance: (race.laps - 1) * cfg.world.width + gapToLine,
+                // Cinq tours pleins, plus le bout de piste qui separe la place
+                // de grille de la ligne. Ce segment initial ne compte pas comme
+                // un tour : il vaut moins d'une seconde.
+                finishDistance: race.laps * cfg.world.width + gapToLine,
                 finished: false,
                 finishRank: 0,
                 startStallUntil: 0,
@@ -1527,12 +1832,15 @@
             startAt: now + countdownMs,
             resultsAt: 0,
             leaderLap: 1,
+            finalSignShown: false,
+            flagShown: false,
             finishOrder: [],
             cameraSpeed: cfg.speeds.roadPPS,
             // Panneau tenu par Lakitu : { group, frame, until }.
             sign: { group: 'start', frame: 1, until: now + countdownMs + race.goSignMs },
 
             nextItemId: 1,
+            blueShellChance: 0,
             previousRanking: [],
             lastLeaderboardUpdate: 0
         };
