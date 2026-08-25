@@ -52,6 +52,114 @@
         return diff;
     }
 
+    // Distance laterale qu'un kart couvre en `ms` millisecondes, en partant a
+    // l'arret. Le lissage lui interdit d'atteindre sa vitesse d'esquive d'un
+    // coup : sur une reaction courte, la moitie du trajet part dans la montee
+    // en regime. L'ignorer ferait croire a un poids lourd qu'il coupe devant
+    // n'importe quoi. `tau` est la constante de temps du filtre applique plus
+    // bas a `vy`, maniabilite comprise — elle pese donc deux fois, sur le
+    // regime atteint comme sur le temps mis a l'atteindre.
+    function lateralReach(cfg, handling, intensity, ms) {
+        const t = ms / 1000;
+        const tau = 1 / (cfg.physics.smoothingFactor * handling);
+        return intensity * (t - tau * (1 - Math.exp(-t / tau)));
+    }
+
+    // Probabilite qu'un kart ne voie pas venir la menace.
+    //
+    // Elle ne vaut plein tarif que pour une esquive tout juste jouable. Un
+    // objet aperçu de loin sur une route libre, lui, ne se rate pas : le kart
+    // qui foncerait dedans sans un geste ne passerait pas pour distrait, mais
+    // pour casse. La difficulte se mesure en distance — ce que le kart peut
+    // couvrir avant l'impact, rapporte a ce qu'il doit couvrir pour degager —
+    // et le tirage s'efface a mesure que cette marge grandit.
+    function missChance(cfg, kart, threatY, spareMs) {
+        const ai = cfg.ai;
+        const handling = kart.stats.handling;
+        const base = ai.dodgeMissChance / handling;
+
+        // Il passe deja assez a cote pour que la hitbox le manque : rater cette
+        // menace-la ne lui coute rien.
+        const need = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin
+            - Math.abs(threatY - kart.yPercent);
+        if (need <= 0) return 0;
+        if (spareMs <= 0) return base;
+
+        // Capacite type et non celle du coup a jouer : l'intensite reelle n'est
+        // tiree qu'au moment de s'ecarter, une fois le reflexe passe.
+        const intensity = (ai.dodgeIntensityMin + ai.dodgeIntensityMax) * 0.5 * handling;
+        const ease = lateralReach(cfg, handling, intensity, spareMs) / need;
+
+        if (ease <= 1) return base;
+        if (ease >= ai.dodgeEasyRatio) return 0;
+        return base * (1 - (ease - 1) / (ai.dodgeEasyRatio - 1));
+    }
+
+    // Cote d'esquive et intensite, arretes une fois pour toutes a la premiere
+    // reaction a une menace donnee — un kart qui rechoisirait a chaque tick
+    // hesiterait sur place au lieu de s'ecarter.
+    //
+    // Le cote naturel est celui qui eloigne de l'objet. Quand le bord de piste
+    // le condamne, le kart ne renonce pas pour autant : il jauge la traversee
+    // par l'autre cote, devant l'objet. Il lui faut alors la place ET le temps,
+    // et il n'estime le second qu'a vue (cf. ai.crossJudgeError) : la traversee
+    // ratee fait partie du jeu. Sans issue des deux cotes, il ne reste que le
+    // frein.
+    function planDodge(cfg, rng, kart, threatId, threatY, ttc) {
+        const ai = cfg.ai;
+        const handling = kart.stats.handling;
+        const margin = cfg.road.edgeSafetyMargin;
+
+        kart.dodgePlanId = threatId;
+        kart.dodgeIntensity = randomRange(rng,
+            ai.dodgeIntensityMin * handling,
+            ai.dodgeIntensityMax * handling
+        );
+
+        const naturalDir = (threatY > kart.yPercent) ? -1 : 1;
+
+        // Ecart au-dela duquel l'objet ne touche plus, et ecart actuel : la
+        // detection ouvre plus large que la hitbox, un kart peut donc etre
+        // alerte alors qu'il passe deja a cote.
+        const clear = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin;
+        const gap = Math.abs(threatY - kart.yPercent);
+
+        const roomNatural = (naturalDir > 0)
+            ? (cfg.road.maxY - margin) - kart.yPercent
+            : kart.yPercent - (cfg.road.minY + margin);
+
+        if (roomNatural >= Math.max(0, clear - gap)) {
+            kart.dodgeDir = naturalDir;
+            kart.dodgeStuck = false;
+            kart.dodgeCrossing = false;
+            return;
+        }
+
+        // Traverser coute l'ecart entier, plus le degagement de l'autre cote.
+        const crossDir = -naturalDir;
+        const crossNeed = gap + clear;
+        const roomCross = (crossDir > 0)
+            ? (cfg.road.maxY - margin) - kart.yPercent
+            : kart.yPercent - (cfg.road.minY + margin);
+
+        const err = ai.crossJudgeError / handling;
+        const judged = lateralReach(cfg, handling, kart.dodgeIntensity, ttc)
+            * randomRange(rng, 1 - err, 1 + err);
+
+        if (gap < clear && roomCross >= crossNeed && judged >= crossNeed) {
+            kart.dodgeDir = crossDir;
+            kart.dodgeStuck = false;
+            kart.dodgeCrossing = true;
+            return;
+        }
+
+        // Colle au bord : il pousse quand meme du cote naturel, ce qui lui
+        // grappille le peu de place restante, et lache les gaz.
+        kart.dodgeDir = naturalDir;
+        kart.dodgeStuck = true;
+        kart.dodgeCrossing = false;
+    }
+
     function updateAI(cfg, state, rng, now, kart, deltaTime) {
         if (kart.state !== 'running') return;
 
@@ -68,6 +176,10 @@
         let threatY = 0;
         let threatTtc = Infinity;
 
+        // Le lourd doit regarder plus loin que le vif pour disposer de la meme
+        // marge de manoeuvre — voir ai.threatWindowMs.
+        const threatWindow = ai.threatWindowMs / handling;
+
         const itemsLen = state.items.length;
         for (let i = 0; i < itemsLen; i++) {
             const item = state.items[i];
@@ -83,7 +195,7 @@
             if (closing <= 0) continue;
 
             const ttc = (dist / closing) * 1000;
-            if (ttc <= ai.threatWindowMs && ttc < threatTtc) {
+            if (ttc <= threatWindow && ttc < threatTtc) {
                 threatId = item.id;
                 threatY = item.y;
                 threatTtc = ttc;
@@ -123,24 +235,33 @@
 
         if (!threatId) {
             kart.threatItemId = 0;
+            kart.dodgePlanId = 0;
         } else {
             // Decide a la premiere perception, une fois pour toutes.
             if (kart.threatItemId !== threatId) {
                 kart.threatItemId = threatId;
-                kart.threatIgnored = rng() < ai.dodgeMissChance / handling;
-                kart.threatReactAt = now + (ai.reactionBaseMs / handling)
+
+                const reactMs = (ai.reactionBaseMs / handling)
                     * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
+                kart.threatReactAt = now + reactMs;
+
+                // Ce qui restera une fois le reflexe passe : c'est ce temps-la,
+                // et non le delai brut avant impact, qui dit si l'esquive etait
+                // a sa portee.
+                kart.threatIgnored = rng() < missChance(cfg, kart, threatY, threatTtc - reactMs);
             }
 
             if (!kart.threatIgnored && now >= kart.threatReactAt) {
                 dangerFound = true;
-                const naturalDir = (threatY > kart.yPercent) ? -1 : 1;
-                if (naturalDir === 1) avoidDirection = (kart.yPercent > cfg.road.maxY - cfg.road.edgeSafetyMargin) ? -1 : 1;
-                else avoidDirection = (kart.yPercent < cfg.road.minY + cfg.road.edgeSafetyMargin) ? 1 : -1;
+                if (kart.dodgePlanId !== threatId) {
+                    planDodge(cfg, rng, kart, threatId, threatY, threatTtc);
+                }
+                avoidDirection = kart.dodgeDir;
 
-                // L'esquive part du mauvais cote : le kart est contre le bord,
-                // il n'a plus que le frein.
-                if (avoidDirection !== naturalDir) {
+                // Le frein n'accompagne que les esquives qui ne sont pas
+                // franches : acculle il n'a plus que lui, en traversee il
+                // recule l'impact le temps de passer devant l'objet.
+                if (kart.dodgeStuck || kart.dodgeCrossing) {
                     kart.brakeUntil = now + ai.edgeBrakeMs;
                 }
             }
@@ -150,10 +271,6 @@
             if (kart.aiState !== 'dodging') {
                 kart.aiState = 'dodging';
                 kart.originalLaneY = kart.yPercent;
-                kart.dodgeIntensity = randomRange(rng,
-                    cfg.ai.dodgeIntensityMin * handling,
-                    cfg.ai.dodgeIntensityMax * handling
-                );
             }
             kart.targetVy = avoidDirection * kart.dodgeIntensity;
             kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
@@ -314,7 +431,7 @@
         return state.blueShellChance > 0 && rng() < state.blueShellChance;
     }
 
-    function rollItem(cfg, state, rng, kart) {
+    function rollItem(cfg, state, rng, now, kart) {
         const distToLeader = getDistanceToLeader(state, kart);
 
         if (rollBlueShell(cfg, state, rng, kart)) {
@@ -334,8 +451,13 @@
 
         const totalKarts = state.karts.length;
         const isLastTwo = kart.rank >= totalKarts - 1;
+        // Fenetre morte au depart : tant qu'elle dure, aucun rang n'y a droit,
+        // les ecarts du premier bloc d'objets ne signifiant encore rien.
+        const raceMs = now - state.startAt;
         let canGetStar = false;
-        if (kart.rank === 1) {
+        if (raceMs < itemDist.starMinRaceMs) {
+            canGetStar = false;
+        } else if (kart.rank === 1) {
             canGetStar = false;
         } else if (kart.rank <= 3) {
             canGetStar = distToLeader >= itemDist.starMinDistTop;
@@ -481,7 +603,7 @@
     function giveKartItem(cfg, state, rng, now, kart, events) {
         if (kart.heldItem) return;
 
-        const itemType = rollItem(cfg, state, rng, kart);
+        const itemType = rollItem(cfg, state, rng, now, kart);
         if (!itemType) return;
 
         const holdPosition = getHoldPosition(cfg, itemType);
@@ -614,12 +736,14 @@
             lastAnimTime: 0,
             isDead: false,
 
-            // Vol en cloche : tant qu'il dure, l'objet est en l'air et ne touche
-            // personne. `hop` est la hauteur de l'arc, en pixels de rendu.
+            // Vol en cloche. `hop` est la hauteur de l'arc, en pixels de rendu.
+            // `rising` couvre la montee, pendant laquelle l'objet survole tout
+            // le monde et n'a pas de hitbox ; il retombe a false au sommet.
             flightUntil: 0,
             flightFrom: 0,
             flightTo: 0,
             hop: 0,
+            rising: false,
 
             // Un objet ne peut toucher son lanceur qu'une fois eloigne de lui.
             armed: false,
@@ -746,6 +870,9 @@
             item.flightFrom = item.worldX;
             item.flightTo = item.worldX + cfg.speeds.bananaLobDistance;
             item.flightUntil = now + cfg.speeds.bananaLobDurationMs;
+            // Sans hitbox tant qu'elle monte : elle part de la main du lanceur et
+            // passe au-dessus de ce qui le precede immediatement.
+            item.rising = true;
             // Renseignee pour l'IA seulement : le deplacement vient du vol.
             item.vx = cfg.speeds.bananaLobDistance / (cfg.speeds.bananaLobDurationMs / 1000);
         }
@@ -977,10 +1104,10 @@
                 state.phase = 'finishing';
                 state.cameraTarget = parkPosition(cfg, race.parkFinishOffset);
 
-                // Le drapeau reste sorti tant que la course n'est pas finie :
-                // il accompagne chaque passage, pas seulement celui du
-                // vainqueur.
-                setSign(state, 'finish', 1, now, race.maxRaceMs);
+                // Pas de drapeau ici : la camera se gare deux tours avant la
+                // fin et la ligne reste a l'ecran tout ce temps, sortir Lakitu
+                // des maintenant le laisserait plante la une demi-course. C'est
+                // la phase 'finishing' qui le sort a l'approche reelle.
                 events.push({ type: 'raceFinishing' });
             }
             return;
@@ -1089,8 +1216,13 @@
     function updateBlueBlast(cfg, state, now, item, events) {
         const spec = cfg.blueShell;
         const progress = Math.min(1, 1 - (item.phaseUntil - now) / spec.blastMs);
-        const reachX = spec.blastRadiusX * progress;
-        const reachY = spec.blastRadiusY * progress;
+        // Le kart n'est pas un point : le front l'emporte des qu'il atteint sa
+        // carrosserie, pas son centre. Sans ca un voisin colle a la cible voyait
+        // le souffle s'arreter a une demi-longueur de kart de lui, et le
+        // deplacement pendant les 300 ms du dome suffisait a l'en sortir.
+        const body = cfg.hitboxes.itemVsKart;
+        const reachX = spec.blastRadiusX * progress + body.x;
+        const reachY = spec.blastRadiusY * progress + body.y;
 
         for (let k = 0; k < state.karts.length; k++) {
             const kart = state.karts[k];
@@ -1540,8 +1672,9 @@
                 continue;
             }
 
-            // Vol en cloche. L'objet reste dangereux en l'air : seule sa
-            // position change, pas sa hitbox.
+            // Vol en cloche. La montee est inoffensive, la banane ne redevient
+            // dangereuse qu'a la redescente : le sommet de l'arc est atteint la
+            // ou sin() culmine, soit progress^bananaLobRise == 0.5.
             if (item.flightUntil) {
                 const total = cfg.speeds.bananaLobDurationMs;
                 const progress = Math.min(1, 1 - (item.flightUntil - now) / total);
@@ -1550,10 +1683,15 @@
                 if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
                 item.hop = Math.sin(Math.PI * Math.pow(progress, cfg.speeds.bananaLobRise)) * cfg.speeds.bananaLobHeight;
 
+                if (item.rising && progress >= Math.pow(0.5, 1 / cfg.speeds.bananaLobRise)) {
+                    item.rising = false;
+                }
+
                 if (progress >= 1) {
                     item.flightUntil = 0;
                     item.hop = 0;
                     item.vx = 0;
+                    item.rising = false;
                     // La duree de vie ne court qu'a l'atterrissage.
                     item.createdAt = now;
                 }
@@ -1627,6 +1765,8 @@
             }
 
             if (item.spent) continue;
+            // Hitbox coupee sur toute la montee de la cloche.
+            if (item.rising) continue;
 
             for (let k = 0; k < kartsLen; k++) {
                 const kart = state.karts[k];
@@ -1795,6 +1935,10 @@
                 threatItemId: 0,
                 threatReactAt: 0,
                 threatIgnored: false,
+                dodgePlanId: 0,
+                dodgeDir: 0,
+                dodgeStuck: false,
+                dodgeCrossing: false,
                 nextWanderTime: now + randomRange(rng, 1000, 5000),
                 wanderEndTime: 0,
                 wanderVy: 0,
