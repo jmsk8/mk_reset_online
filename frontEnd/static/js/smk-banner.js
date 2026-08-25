@@ -6,7 +6,7 @@
 // elles vivent dans le service `race`, qui en transmet le strict necessaire
 // dans son `hello` (voir WORLD plus bas, et docs/MIGRATION_BANNER_WSS.md).
 const GAME_CONFIG = {
-    debugMode: false,
+    debugMode: true,
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
@@ -18,12 +18,13 @@ const GAME_CONFIG = {
             char: (name) => `static/img/${name}/${name}-asset-anime/${name}-side-right.png`,
             charFrame: (name, dir) => `static/img/${name}/${name}-asset-anime/${name}-${dir}.png`,
             pp: (name) => `static/img/${name}/${name}-pp.png`,
-            greenShell: (frame) => `static/img/green-shell/green-shell${frame}.png`,
-            redShell: (frame) => `static/img/red-shell/red-shell${frame}.png`,
+            greenShell: (frame) => `static/img/items/green-shell/green-shell${frame}.png`,
+            redShell: (frame) => `static/img/items/red-shell/red-shell${frame}.png`,
+            blueShell: (frame) => `static/img/items/blue-shell/${frame}.png`,
             lakitu: (group, frame) => `static/img/lakitu/${group}/${frame}.png`,
-            banana: 'static/img/banana.png',
-            shroom: 'static/img/shroom.png',
-            star: 'static/img/star.png'
+            banana: 'static/img/items/banana/banana.png',
+            shroom: 'static/img/items/shroom/shroom.png',
+            star: 'static/img/items/star/star.png'
         }
     },
     rendering: {
@@ -56,10 +57,12 @@ const GAME_CONFIG = {
     visuals: {
         greenShell: { width: 48, widthMobile: 32 },
         redShell: { width: 48, widthMobile: 32 },
+        blueShell: { width: 58, widthMobile: 40 },
         banana: { width: 32, widthMobile: 28 },
         shroom: { width: 36, widthMobile: 26 },
         star: { width: 36, widthMobile: 26 },
-        box: { sizePC: 42, sizeMobile: 42 }
+        box: { sizePC: 42, sizeMobile: 42 },
+        // Taille du souffle : voir WORLD.blastRadius, transmis par le serveur.
     },
     // Tête-à-queue joué pendant l'état 'hit'. La durée du malus n'est pas
     // configurable ici : elle reste delays.hitDecelDuration + hitPauseDuration.
@@ -223,6 +226,7 @@ function preloadImages() {
     for (let i = 1; i <= 3; i++) {
         cache(`greenShell_${i}`, GAME_CONFIG.resources.paths.greenShell(i));
         cache(`redShell_${i}`, GAME_CONFIG.resources.paths.redShell(i));
+        cache(`blueShell_${i}`, GAME_CONFIG.resources.paths.blueShell(i));
     }
 
     // Lakitu : feux de depart, panneaux de tour, drapeau a damier.
@@ -626,6 +630,16 @@ function getItemVisualConfig(itemType) {
             return Object.assign(getItemVisualConfig('greenShell'), { holdPosition: 'orbit' });
         case 'tripleRedShell':
             return Object.assign(getItemVisualConfig('redShell'), { holdPosition: 'orbit' });
+        case 'blueShell':
+            return {
+                size: cachedIsMobile ? GAME_CONFIG.visuals.blueShell.widthMobile : GAME_CONFIG.visuals.blueShell.width,
+                src: imageCache['blueShell_1'] ? imageCache['blueShell_1'].src : GAME_CONFIG.resources.paths.blueShell(1),
+                holdPosition: 'hands'
+            };
+        // Le souffle n'a pas de sprite : il est dessine en CSS, et sa taille
+        // vient du rayon reellement utilise par le serveur.
+        case 'blueBlast':
+            return { size: WORLD.blastRadius * 2, src: null, holdPosition: 'behind' };
         case 'shroom':
             return {
                 size: cachedIsMobile ? GAME_CONFIG.visuals.shroom.widthMobile : GAME_CONFIG.visuals.shroom.width,
@@ -667,11 +681,27 @@ function createHeldItemElement(itemType, holdPosition) {
     itemDiv.style.position = 'absolute';
     itemDiv.style.pointerEvents = 'none';
 
-    const img = document.createElement('img');
-    img.style.width = '100%';
-
     const visual = getItemVisualConfig(itemType);
     itemDiv.style.width = `${visual.size}px`;
+
+    // Le souffle de la bleue est un element sans image, anime en CSS. Les
+    // objets sont ancres par leur coin bas-gauche : il faut le recentrer sur le
+    // point d'impact, sinon il s'ouvrirait a cote.
+    if (!visual.src) {
+        itemDiv.classList.add('blue-blast');
+        // Centre sur le point d'impact, base posee sur la piste.
+        itemDiv.style.marginLeft = `${-visual.size / 2}px`;
+
+        const wave = document.createElement('div');
+        wave.className = 'blue-blast-wave';
+        itemDiv.appendChild(wave);
+
+        cachedContainer.appendChild(itemDiv);
+        return { div: itemDiv, img: null };
+    }
+
+    const img = document.createElement('img');
+    img.style.width = '100%';
     img.src = visual.src;
 
     if (holdPosition === 'hands') {
@@ -1301,13 +1331,11 @@ function renderState(gameNow, screenWidth) {
         const el = itemEls[item.id];
         if (!el) continue;
 
-        if (item.type === 'greenShell' || item.type === 'redShell') {
+        if (item.type === 'greenShell' || item.type === 'redShell' || item.type === 'blueShell') {
             const img = el.firstChild;
             if (img) {
                 const cached = imageCache[`${item.type}_${item.currentFrame}`];
-                const src = cached ? cached.src : (item.type === 'greenShell'
-                    ? GAME_CONFIG.resources.paths.greenShell(item.currentFrame)
-                    : GAME_CONFIG.resources.paths.redShell(item.currentFrame));
+                const src = cached ? cached.src : GAME_CONFIG.resources.paths[item.type](item.currentFrame);
                 if (img.getAttribute('src') !== src) img.src = src;
             }
         }
@@ -1320,7 +1348,11 @@ function renderState(gameNow, screenWidth) {
             // banane en cloche passe au-dessus, elle ne change pas de couloir.
             el.style.transform = `translate3d(${rx}px, ${-item.hop}px, 0)`;
             el.style.bottom = `${item.y}%`;
-            const zVal = (GAME_CONFIG.rendering.zIndexBase - item.y) | 0;
+            // Le souffle passe devant tout le monde : il doit recouvrir les
+            // karts qu'il emporte.
+            const zVal = item.type === 'blueBlast'
+                ? GAME_CONFIG.rendering.zIndexBase + 60
+                : (GAME_CONFIG.rendering.zIndexBase - item.y) | 0;
             if (el.style.zIndex != zVal) el.style.zIndex = zVal;
         } else {
             el.style.display = 'none';
@@ -1971,8 +2003,9 @@ function updateDebugHUD() {
             const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
             const name = kart.charName.charAt(0).toUpperCase() + kart.charName.slice(1);
             // Le nombre de tours n'est pas diffuse : il se deduit de la
-            // distance parcourue, qui l'est.
-            const laps = Math.floor(kart.totalDistance / WORLD.width);
+            // distance parcourue, qui l'est. Affiche en base 1 : on est dans
+            // le tour 1 des le depart, comme sur le panneau de Lakitu.
+            const laps = Math.floor(kart.totalDistance / WORLD.width) + 1;
             const gap = (leader && leader.id !== kart.id)
                 ? `${Math.round(leader.totalDistance - kart.totalDistance)}px`
                 : '\u2014';

@@ -64,6 +64,9 @@
             projectileSpeed: 880,
             redShellSpeed: 840,
             redShellTrackingSpeed: 8,
+            // Cible trop proche pour qu'un tir ait du sens : la rouge passe a la
+            // suivante. Si tout le monde est colle, elle part sans cible.
+            redShellMinTarget: 250,
 
             shroomBoost: 250,
             shroomDuration: 1500,
@@ -98,7 +101,10 @@
             boxRespawn: 1000,
             itemGrant: 3000,
             bananaLife: 40000,
-            invincibilityAfterHit: 2000,
+            // Sursis entre le contact et la disparition : le sprite s'effacait
+            // avant qu'on ait vu le choc. Sans danger pendant ce delai.
+            itemLingerMs: 80,
+            invincibilityAfterHit: 3000,
             throwDelayAfterHit: 1000,
             spawnMin: 150,
             spawnMax: 800
@@ -150,6 +156,53 @@
                 { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 45, star: 50 } }
             ]
         },
+        // Carapace bleue. Elle ne sort pas des paliers de distribution : elle a
+        // ses propres conditions, et reste rare par construction.
+        blueShell: {
+            // Ni le peloton de tete, ni le dernier.
+            minRank: 5,
+            maxRank: 7,
+
+            // La chance court sur toute la course : nulle au depart, elle gagne
+            // `chancePerLap` a chaque tour sans depasser `chanceCap`, et chaque
+            // bleue lancee la coupe en deux.
+            chancePerLap: 0.05,
+            chanceCap: 0.15,
+            chanceDecay: 2,
+
+            // Trajet en ligne droite au milieu de la piste, au-dessus de tout.
+            speed: 1500,
+            // Hauteur en vol, puis une fois sur la cible.
+            cruiseHop: 72,
+            orbitHop: 118,
+            catchDistance: 70,
+            // Elle file tout droit sans cible, puis se verrouille sur le premier
+            // a cette distance. Le verrou est definitif : c'est ce kart qu'elle
+            // frappe, meme s'il se fait doubler avant l'impact.
+            lockDistance: 800,
+            // Au-dela, elle se verrouille sur le premier ou qu'il soit.
+            maxCruiseMs: 9000,
+
+            // Un tour autour de la cible, puis surplomb, puis chute.
+            orbitTurns: 1,
+            orbitMs: 800,
+            orbitRadiusX: 85,
+            orbitRadiusY: 4,
+            hoverMs: 450,
+            crashMs: 130,
+            // Elle se poste devant le kart avant de plonger, puis pique encore
+            // pendant la chute : en 130 ms il parcourt 65 unites, viser sa
+            // position exacte reviendrait a lui tomber derriere.
+            hoverLead: 48,
+            crashLead: 95,
+
+            // Dome qui s'etend depuis le point d'impact : chaque kart est touche
+            // a l'instant ou le front l'atteint.
+            blastRadiusX: 180,
+            blastRadiusY: 8.5,
+            blastMs: 300
+        },
+
         // Objets qu'un kart peut trainer derriere lui.
         trailableItems: ['banana', 'greenShell', 'redShell'],
 
@@ -255,11 +308,11 @@
             // avec parkStartOffset dans les ~600 unites visibles d'un
             // telephone, sinon le fond de grille sort du cadre.
             grid: {
-                backOffset: 115,
-                rowGap: 110,
-                colStagger: 55,
-                lanes: [0.2, 0.58],
-                laneSlope: 0.05
+                backOffset: 120,
+                rowGap: 155,
+                colStagger: 80,
+                lanes: [0.13, 0.66],
+                laneSlope: 0.045
             },
 
             // Le reste des tirages est un depart rate.
@@ -275,11 +328,21 @@
             parkStartOffset: 0,
             parkFinishOffset: -150,
 
-            // Pire cas : la camera vient de depasser la ligne et doit refaire un
-            // tour complet du monde avant l'arrivee du leader. A recalculer si
+            // Le drapeau a damier sort bien plus tard que le repositionnement de
+            // la camera : environ cinq secondes avant le premier passage.
+            flagDistance: 2600,
+
+            // La camera n'accelere jamais : elle ne fait que ralentir pour se
+            // garer pile quand le leader franchit la ligne, puis s'y bloque.
+            //
+            // C'est ce qui impose d'ouvrir l'approche deux tours avant la fin :
+            // au pire elle doit couvrir un tour complet, soit 7680 unites, et a
+            // sa vitesse normale il lui faut 30,7 s — exactement le temps que
+            // met le leader a parcourir ces deux tours. A recalculer si
             // world.width, roadPPS ou la vitesse des karts changent.
-            cameraApproachDistance: 5400,
-            cameraMaxCatchupRatio: 3
+            cameraApproachDistance: 15400,
+            cameraMinSpeedRatio: 0.35,
+            cameraMaxCatchupRatio: 1
         },
 
         // Cadence d'animation des carapaces, en ms par frame. Lu par la physique :
@@ -287,7 +350,8 @@
         // afficher la frame courante.
         itemAnim: {
             greenShell: { animSpeed: 100 },
-            redShell: { animSpeed: 100 }
+            redShell: { animSpeed: 100 },
+            blueShell: { animSpeed: 90 }
         }
     };
 });
