@@ -148,12 +148,21 @@
             // palier porteur d'etoile y a droit immediatement, sans fenetre morte.
             starMinDistTop: 3000,
             starMinDistMid: 2000,
+            // Delai d'ouverture de l'etoile, compte depuis le depart : les ecarts
+            // du premier bloc d'objets ne veulent encore rien dire, une etoile
+            // tiree la deciderait la course avant qu'elle commence.
+            starMinRaceMs: 10000,
             tiers: [
-                { maxDistance: 500,   weights: { banana: 35, tripleBanana: 12, greenShell: 25, tripleGreenShell: 12, redShell: 8,  tripleRedShell: 8,  shroom: 0,  star: 0  } },
-                { maxDistance: 1000,  weights: { banana: 12, tripleBanana: 10, greenShell: 18, tripleGreenShell: 12, redShell: 26, tripleRedShell: 12, shroom: 10, star: 0  } },
-                { maxDistance: 2000,  weights: { banana: 8,  tripleBanana: 7,  greenShell: 8,  tripleGreenShell: 7,  redShell: 22, tripleRedShell: 8,  shroom: 40, star: 0  } },
-                { maxDistance: 3000,  weights: { banana: 0,  tripleBanana: 3,  greenShell: 3,  tripleGreenShell: 4,  redShell: 8,  tripleRedShell: 2,  shroom: 55, star: 25 } },
-                { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 45, star: 50 } }
+                { maxDistance: 500,   weights: { banana: 31, tripleBanana: 12, greenShell: 25, tripleGreenShell: 12, redShell: 12, tripleRedShell: 8,  shroom: 0,  star: 0  } },
+                { maxDistance: 1000,  weights: { banana: 10, tripleBanana: 10, greenShell: 14, tripleGreenShell: 12, redShell: 26, tripleRedShell: 12, shroom: 16, star: 0  } },
+                { maxDistance: 2000,  weights: { banana: 5,  tripleBanana: 7,  greenShell: 8,  tripleGreenShell: 7,  redShell: 22, tripleRedShell: 8,  shroom: 40, star: 3  } },
+                { maxDistance: 3000,  weights: { banana: 0,  tripleBanana: 3,  greenShell: 3,  tripleGreenShell: 4,  redShell: 13, tripleRedShell: 2,  shroom: 45, star: 30 } },
+                { maxDistance: 3500,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 45, star: 50 } },
+                // Dernier palier : c'est aussi le repli quand aucune borne ne
+                // correspond, il couvre donc tout au-dela de 3500. Un kart
+                // decroche a ce point la n'a plus rien a defendre, seule
+                // l'etoile le ramene dans la course.
+                { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 0,  tripleRedShell: 0,  shroom: 20, star: 80 } }
             ]
         },
         // Carapace bleue. Elle ne sort pas des paliers de distribution : elle a
@@ -231,6 +240,15 @@
             // Une carapace de face approche a plus du triple de la vitesse d'une
             // banane — a distance egale, le temps pour reagir n'a rien de
             // comparable. Le plafond evite de s'ecarter d'un objet hors ecran.
+            //
+            // La fenetre est divisee par le handling : un kart lourd est plus
+            // long a repondre et se deporte moins vite, il lui faut donc
+            // anticiper d'autant. Plate, elle condamnait Bowser a encaisser
+            // toute banane pleine voie — il la voyait 470 ms avant l'impact et
+            // lui en fallait 520. L'echelle en 1/handling annule exactement le
+            // handling dans la distance couverte avant impact (regime en h,
+            // temps en 1/h) : tous les karts voient venir avec la meme marge,
+            // et c'est la reponse qui les separe, pas la vue.
             threatWindowMs: 900,
             threatMaxDistance: 900,
 
@@ -245,6 +263,19 @@
             edgeBrakeFactor: 0.78,
             edgeBrakeMs: 700,
 
+            // Esquive contrariee. Le bord condamnant le cote naturel, le kart
+            // regarde s'il a le temps de couper de l'autre cote, devant
+            // l'objet : il lui faut franchir l'ecart qui l'en separe, plus la
+            // demi-hitbox verticale et cette marge.
+            crossDodgeMargin: 2,
+
+            // L'estimation se fait a vue, jamais au centimetre : la distance
+            // qu'il se croit capable de couvrir est tiree dans un intervalle
+            // autour de la vraie, d'autant plus large qu'il manoeuvre mal. Un
+            // kart lourd s'engage donc parfois dans une traversee qu'il ne
+            // finira pas, et renonce parfois a une qu'il aurait tenue.
+            crossJudgeError: 0.25,
+
             // Latence de reflexe, inversement proportionnelle au handling et
             // tiree au sort a chaque menace. Un kart peut aussi ne pas voir
             // l'objet, d'autant plus qu'il est lourd a manoeuvrer.
@@ -258,7 +289,14 @@
 
             reactionBaseMs: 280,
             reactionJitterMin: 0.8, reactionJitterMax: 1.35,
+
+            // Inattention. Le taux n'est plein que pour une esquive tout juste
+            // jouable : un objet isole, vu de loin, sur une route libre ne se
+            // rate pas — la bourde se voit trop et ne ressemble a rien d'autre
+            // qu'a un bug. Au-dela de dodgeEasyRatio fois la marge necessaire,
+            // le tirage ne joue plus du tout.
             dodgeMissChance: 0.1,
+            dodgeEasyRatio: 2.5,
             overtakeDetectionRange: 120, overtakeMinDistance: 12, overtakeSideSpeed: 10,
             boxDetectionRange: 400, boxSeekIntensity: 25,
             wanderIntervalMin: 2000, wanderIntervalMax: 6000,
@@ -329,8 +367,9 @@
             parkFinishOffset: -150,
 
             // Le drapeau a damier sort bien plus tard que le repositionnement de
-            // la camera : environ cinq secondes avant le premier passage.
-            flagDistance: 2600,
+            // la camera : Lakitu ne se penche qu'a l'approche reelle du premier,
+            // soit environ trois secondes avant son passage.
+            flagDistance: 1400,
 
             // La camera n'accelere jamais : elle ne fait que ralentir pour se
             // garer pile quand le leader franchit la ligne, puis s'y bloque.
