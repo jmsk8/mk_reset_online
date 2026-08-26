@@ -12,7 +12,7 @@
 // demander « un arrivant peut-il le deduire du seul snapshot ? ». Si non, c'est
 // ici qu'il manque un champ.
 
-const PROTOCOL_VERSION = 2;
+const PROTOCOL_VERSION = 4;
 
 // Champ de bits de l'etat d'un kart. Compact parce qu'il part dix fois par
 // seconde a chaque spectateur (voir §6.7 du document de migration).
@@ -21,6 +21,8 @@ const FLAG_HIT = 2;       // percute -> tete-a-queue
 const FLAG_STOPPED = 4;   // immobilise apres impact -> sprite fige
 const FLAG_STAR = 8;      // etoile active -> halo
 const FLAG_FINISHED = 16; // a franchi la ligne -> tour d'honneur
+const FLAG_SHRUNK = 32;   // rapetisse par l'eclair -> sprite reduit
+const FLAG_BILL = 64;     // transforme en Bill Ball -> sprite remplace
 
 function round(value, decimals) {
     const factor = Math.pow(10, decimals);
@@ -34,6 +36,8 @@ function kartFlags(kart) {
     if (kart.stopped) flags |= FLAG_STOPPED;
     if (kart.isInvincible) flags |= FLAG_STAR;
     if (kart.finished) flags |= FLAG_FINISHED;
+    if (kart.isShrunk) flags |= FLAG_SHRUNK;
+    if (kart.isBill) flags |= FLAG_BILL;
     return flags;
 }
 
@@ -81,6 +85,18 @@ function itemTuple(item) {
     ];
 }
 
+// [debut, frappe, fin, lanceur], en temps serveur, ou null hors orage. Les trois
+// dates suffisent au client a placer la scene ou qu'il en soit : le ciel
+// s'assombrit de `debut` a `frappe`, la foudre tombe a `frappe`, le jour revient
+// a `fin`. C'est le minimum pour qu'un spectateur arrive en plein orage le voie
+// au bon stade au lieu de le rejouer depuis le debut. Le lanceur suit : c'est le
+// seul que la foudre epargne, et le client doit l'epargner aussi.
+function stormTuple(state) {
+    const storm = state.storm;
+    if (!storm) return null;
+    return [Math.round(storm.startedAt), Math.round(storm.strikeAt), Math.round(storm.until), storm.shooterId];
+}
+
 // [groupe, image]. Le drapeau s'anime cote client : seul le groupe part.
 function signTuple(state) {
     if (!state.sign) return null;
@@ -108,6 +124,7 @@ function buildSnapshot(state, simTime) {
         ph: state.phase,
         lp: state.leaderLap,
         sg: signTuple(state),
+        st: stormTuple(state),
         fo: state.finishOrder
     };
 }
@@ -143,12 +160,17 @@ function buildHello(cfg, state, simTime, t0) {
             },
             // Cadence d'animation des carapaces en orbite, derivee du temps.
             shellAnimSpeed: cfg.itemAnim.greenShell.animSpeed,
+            // Cadence des trois images du Bill Ball, derivee du temps elle aussi.
+            billAnimSpeed: cfg.itemAnim.bill.animSpeed,
 
             laps: cfg.race.laps,
             flagAnimSpeed: 220,
             // Rayon du souffle de la bleue : le client en tire la taille dessinee,
             // pour que l'effet couvre exactement la zone touchee.
-            blastRadius: cfg.blueShell.blastRadiusX
+            blastRadius: cfg.blueShell.blastRadiusX,
+            // Taille d'un kart rapetisse, en fraction de sa taille normale : le
+            // client ne decide pas de l'ampleur d'un malus de gameplay.
+            shrinkScale: cfg.lightning.scale
         },
 
         karts: state.karts.map(kart => ({ id: kart.id, char: kart.charName })),
@@ -186,6 +208,8 @@ module.exports = {
     FLAG_STOPPED,
     FLAG_STAR,
     FLAG_FINISHED,
+    FLAG_SHRUNK,
+    FLAG_BILL,
     buildHello,
     buildSnapshot,
     filterEvents

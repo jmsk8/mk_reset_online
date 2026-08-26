@@ -5,6 +5,19 @@
 // (vitesses, hitboxes, delais, distribution des objets) n'existent plus ici :
 // elles vivent dans le service `race`, qui en transmet le strict necessaire
 // dans son `hello` (voir WORLD plus bas, et docs/MIGRATION_BANNER_WSS.md).
+// L'eclair n'a pas d'asset : il est dessine ici en SVG plutot que d'attendre un
+// PNG. Meme traitement que n'importe quel objet tenu ensuite — c'est une source
+// d'image comme une autre.
+const LIGHTNING_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 32">' +
+    '<path d="M15 1 L4 18 L10 18 L8 31 L20 12 L13 12 Z" fill="#ffcf1a" ' +
+    'stroke="#4a3300" stroke-width="2.5" stroke-linejoin="round"/>' +
+    '<path d="M13.5 6 L8 16.5 L11.5 16.5 L10 24 L16.5 13.5 L12 13.5 Z" fill="#fff6b0"/>' +
+    '</svg>';
+
+const LIGHTNING_SRC = 'data:image/svg+xml,' + encodeURIComponent(LIGHTNING_SVG);
+
+
 const GAME_CONFIG = {
     debugMode: true,
 
@@ -24,7 +37,9 @@ const GAME_CONFIG = {
             lakitu: (group, frame) => `static/img/lakitu/${group}/${frame}.png`,
             banana: 'static/img/items/banana/banana.png',
             shroom: 'static/img/items/shroom/shroom.png',
-            star: 'static/img/items/star/star.png'
+            star: 'static/img/items/star/star.png',
+            lightning: LIGHTNING_SRC,
+            bill: (frame) => `static/img/items/bill-ball/${frame}.png`
         }
     },
     rendering: {
@@ -61,6 +76,8 @@ const GAME_CONFIG = {
         banana: { width: 32, widthMobile: 28 },
         shroom: { width: 36, widthMobile: 26 },
         star: { width: 36, widthMobile: 26 },
+        lightning: { width: 30, widthMobile: 22 },
+        bill: { width: 69, widthMobile: 51 },
         box: { sizePC: 42, sizeMobile: 42 },
         // Taille du souffle : voir WORLD.blastRadius, transmis par le serveur.
     },
@@ -100,7 +117,9 @@ const OFFLINE_WORLD = {
     roadPPS: 250,
     hitDuration: 2000,
     orbit: { count: 3, radiusX: 62, radiusY: 3.2 },
-    shellAnimSpeed: 100
+    shellAnimSpeed: 100,
+    billAnimSpeed: 70,
+    shrinkScale: 0.5
 };
 
 let WORLD = OFFLINE_WORLD;
@@ -147,6 +166,8 @@ let worldState = {
     phase: 'countdown',
     leaderLap: 1,
     sign: null,
+    // [debut, frappe, fin] en temps serveur, ou null hors orage.
+    storm: null,
     finishOrder: []
 };
 
@@ -227,6 +248,7 @@ function preloadImages() {
         cache(`greenShell_${i}`, GAME_CONFIG.resources.paths.greenShell(i));
         cache(`redShell_${i}`, GAME_CONFIG.resources.paths.redShell(i));
         cache(`blueShell_${i}`, GAME_CONFIG.resources.paths.blueShell(i));
+        cache(`bill_${i}`, GAME_CONFIG.resources.paths.bill(i));
     }
 
     // Lakitu : feux de depart, panneaux de tour, drapeau a damier.
@@ -652,6 +674,18 @@ function getItemVisualConfig(itemType) {
                 src: imageCache['star'] ? imageCache['star'].src : GAME_CONFIG.resources.paths.star,
                 holdPosition: 'hands'
             };
+        case 'lightning':
+            return {
+                size: cachedIsMobile ? GAME_CONFIG.visuals.lightning.widthMobile : GAME_CONFIG.visuals.lightning.width,
+                src: GAME_CONFIG.resources.paths.lightning,
+                holdPosition: 'hands'
+            };
+        case 'bill':
+            return {
+                size: cachedIsMobile ? GAME_CONFIG.visuals.bill.widthMobile : GAME_CONFIG.visuals.bill.width,
+                src: imageCache['bill_1'] ? imageCache['bill_1'].src : GAME_CONFIG.resources.paths.bill(1),
+                holdPosition: 'hands'
+            };
         default:
             return { size: 32, src: '', holdPosition: 'behind' };
     }
@@ -893,6 +927,11 @@ function ensureKartEl(kart) {
     wrapper.style.bottom = `${kart.yPercent}%`;
     wrapper.style.zIndex = getZIndex(kart.yPercent);
 
+    // Intercalaire dédié au rapetissement de l'éclair : il porte une transition,
+    // que le miroir du tête-à-queue ne doit surtout pas subir.
+    const scaler = document.createElement('div');
+    scaler.classList.add('kart-scaler');
+
     // Intercalaire dédié au miroir : snesBounce occupe déjà `transform`
     // sur l'img, on ne peut pas y empiler un scaleX(-1).
     const sprite = document.createElement('div');
@@ -905,14 +944,15 @@ function ensureKartEl(kart) {
     alignAnimationPhase(img, 300);
 
     sprite.appendChild(img);
-    wrapper.appendChild(sprite);
+    scaler.appendChild(sprite);
+    wrapper.appendChild(scaler);
     cachedContainer.appendChild(wrapper);
 
     // `spinFrame` decrit ce que cet element affiche : il vit donc avec lui, et
     // non dans l'etat du kart, qui est reconstruit a chaque `hello`. Sinon le
     // rendu croirait n'avoir rien a changer et laisserait le sprite fige sur
     // une image de tete-a-queue. 0 correspond au sprite pose ci-dessus.
-    els = { wrapper: wrapper, sprite: sprite, img: img, spinFrame: 0 };
+    els = { wrapper: wrapper, scaler: scaler, sprite: sprite, img: img, spinFrame: 0, billOn: false, billFrame: 0 };
     kartEls[kart.id] = els;
 
     return els;
@@ -1026,6 +1066,15 @@ function reconcileStar(kart) {
     if (pp) pp.classList.toggle('pp-star-active', on);
 }
 
+// Le rapetissement est un etat, pas une animation : il se lit dans le snapshot
+// et se pose en classe. La transition CSS fait le reste, a l'aller comme au
+// retour — un arrivant en cours de malus voit un kart deja petit, sans a-coup.
+function reconcileShrink(kart) {
+    const els = kartEls[kart.id];
+    if (!els) return;
+    els.scaler.style.setProperty('--kart-scale', kart.isShrunk ? WORLD.shrinkScale : 1);
+}
+
 function reconcileDom() {
     for (let i = 0; i < worldState.karts.length; i++) ensureKartEl(worldState.karts[i]);
 
@@ -1041,7 +1090,10 @@ function reconcileDom() {
     reconcileItems();
     reconcileLeaderboard();
 
-    for (let i = 0; i < worldState.karts.length; i++) reconcileStar(worldState.karts[i]);
+    for (let i = 0; i < worldState.karts.length; i++) {
+        reconcileStar(worldState.karts[i]);
+        reconcileShrink(worldState.karts[i]);
+    }
 }
 
 // Les evenements ne creent et ne detruisent plus rien : ils ne declenchent que
@@ -1084,6 +1136,198 @@ function applyKartSpinFrame(kart, els, frameIndex) {
     const frame = GAME_CONFIG.kartSpin.frames[frameIndex];
     els.img.src = getKartFrameSrc(kart.charName, frame.dir);
     els.sprite.classList.toggle('kart-mirrored', frame.mirror);
+}
+
+// Orage de l'eclair. Deux mecaniques distinctes dans le meme calque :
+//
+//  - l'assombrissement est **derive du temps**, recalcule a chaque frame depuis
+//    les trois dates du snapshot. C'est ce qui garantit qu'un spectateur arrive
+//    en plein orage trouve le ciel au bon niveau de noir, et le voie se lever au
+//    meme instant que tout le monde ;
+//  - les eclairs sont une animation ponctuelle, jouee une fois au passage de la
+//    frappe. Un arrivant en retard les rate, et c'est sans consequence : la
+//    scene reste juste sans eux.
+//
+// Trois traits, dessines en SVG. Le cadre fait 40x120, les bolts sont etires
+// verticalement par le CSS jusqu'au bas du ciel.
+//
+// Chaque trace se termine **a droite** de son point de depart : les karts vont
+// vers la droite, un eclair qui derive vers la gauche donne l'impression de
+// tomber derriere eux. Les ancres sont decalees dans le meme sens, pour que la
+// pointe touche le sol devant le kart plutot que dans son sillage.
+// `tip` est l'abscisse ou le trait touche le sol, dans le repere du viewBox :
+// ce n'est pas l'ancre, puisque chaque trace derive vers la droite.
+const STORM_VIEWBOX_W = 40;
+const STORM_BOLTS = [
+    { left: 22, tip: 29, path: 'M12 0 L24 42 L13 47 L29 120' },
+    { left: 54, tip: 34, path: 'M10 0 L22 38 L11 44 L34 120' },
+    { left: 83, tip: 31, path: 'M14 0 L26 46 L15 51 L31 120' }
+];
+
+// Largeur des traits, miroir de .storm-bolt en CSS : l'ecart se calcule en
+// pixels de conteneur, il lui faut la meme mesure que le rendu.
+const STORM_BOLT_W = { pc: 60, mobile: 40 };
+
+// Marge entre la pointe et le bord du kart epargne.
+const STORM_BOLT_CLEARANCE = 8;
+
+let stormEls = null;
+
+function ensureStormEls() {
+    if (stormEls) return stormEls;
+
+    const wrapper = document.querySelector('.game-content-wrapper');
+    if (!wrapper) return null;
+
+    const layer = document.createElement('div');
+    layer.className = 'storm-layer';
+    layer.setAttribute('aria-hidden', 'true');
+
+    const dim = document.createElement('div');
+    dim.className = 'storm-dim';
+    layer.appendChild(dim);
+
+    const bolts = document.createElement('div');
+    bolts.className = 'storm-bolts';
+
+    STORM_BOLTS.forEach(spec => {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'storm-bolt');
+        svg.setAttribute('viewBox', '0 0 40 120');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.style.left = `${spec.left}%`;
+
+        // Deux traits sur le meme chemin : le large porte la lueur jaune, le fin
+        // le coeur blanc. Un seul trait donnerait une barre plate.
+        const glow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        glow.setAttribute('d', spec.path);
+        glow.setAttribute('class', 'storm-bolt-glow');
+
+        const core = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        core.setAttribute('d', spec.path);
+        core.setAttribute('class', 'storm-bolt-core');
+
+        svg.appendChild(glow);
+        svg.appendChild(core);
+        bolts.appendChild(svg);
+    });
+
+    layer.appendChild(bolts);
+
+    const flash = document.createElement('div');
+    flash.className = 'storm-flash';
+    layer.appendChild(flash);
+
+    wrapper.appendChild(layer);
+
+    stormEls = { layer: layer, bolts: bolts, flash: flash, struckFor: 0 };
+    return stormEls;
+}
+
+// Le lanceur traverse son propre orage indemne : le trait qui viserait sa
+// position est ecarte juste assez pour tomber a cote. Au plus un est concerne,
+// les ancres etant trop espacees pour qu'un meme kart en couvre deux.
+function placeStormBolts(els, shooterId, screenWidth) {
+    const svgs = els.bolts.children;
+    const boltW = cachedIsMobile ? STORM_BOLT_W.mobile : STORM_BOLT_W.pc;
+    const kartW = cachedIsMobile ? GAME_CONFIG.rendering.kartWidth.mobile
+                                 : GAME_CONFIG.rendering.kartWidth.pc;
+
+    // Les karts sont ancres par leur coin gauche : le milieu du sprite est a
+    // une demi-largeur de la.
+    const shooter = (shooterId === null || shooterId === undefined)
+        ? null : worldState.kartsById[shooterId];
+    const shooterCx = shooter
+        ? getScreenPosition(shooter.worldX, renderCameraX, screenWidth) + kartW / 2
+        : null;
+
+    for (let i = 0; i < STORM_BOLTS.length && i < svgs.length; i++) {
+        const spec = STORM_BOLTS[i];
+        const svg = svgs[i];
+        svg.style.display = '';
+
+        let anchor = (spec.left / 100) * screenWidth;
+
+        if (shooterCx !== null) {
+            const tipOffset = (spec.tip / STORM_VIEWBOX_W) * boltW - boltW / 2;
+            const keepOut = kartW / 2 + STORM_BOLT_CLEARANCE;
+
+            if (Math.abs(anchor + tipOffset - shooterCx) < keepOut) {
+                const half = boltW / 2;
+                const before = shooterCx - keepOut - tipOffset;
+                const after = shooterCx + keepOut - tipOffset;
+                const beforeFits = before - half > 0;
+                const afterFits = after + half < screenWidth;
+
+                // On decale du cote ou le trait etait deja ; l'autre sert de
+                // repli quand celui-la sort de l'ecran.
+                if (beforeFits && (anchor <= shooterCx || !afterFits)) {
+                    anchor = before;
+                } else if (afterFits) {
+                    anchor = after;
+                } else {
+                    // Nulle part ou tomber : plutot pas de trait du tout.
+                    svg.style.display = 'none';
+                    continue;
+                }
+            }
+        }
+
+        svg.style.left = `${(anchor / screenWidth) * 100}%`;
+    }
+}
+
+function renderStorm(gameNow, screenWidth) {
+    const storm = worldState.storm;
+
+    if (!storm) {
+        if (stormEls && stormEls.layer.style.display !== 'none') {
+            stormEls.layer.style.display = 'none';
+            stormEls.bolts.classList.remove('storm-firing');
+            stormEls.flash.classList.remove('storm-firing');
+            stormEls.struckFor = 0;
+        }
+        return;
+    }
+
+    const els = ensureStormEls();
+    if (!els) return;
+
+    const startedAt = storm[0];
+    const strikeAt = storm[1];
+    const until = storm[2];
+
+    // Le ciel se charge jusqu'a la frappe, tient, puis se degage sur la fin.
+    // Avec strikeAt a zero la premiere branche ne sert pas : le noir est pose
+    // d'un coup, sur la frame meme ou les eclairs partent. Elle reste la pour
+    // qu'un `strikeAt` non nul redonne un ciel qui se charge.
+    const STORM_CLEAR_MS = 700;
+    let level;
+    if (gameNow < strikeAt) {
+        const build = Math.max(1, strikeAt - startedAt);
+        level = (gameNow - startedAt) / build;
+    } else if (gameNow > until - STORM_CLEAR_MS) {
+        level = (until - gameNow) / STORM_CLEAR_MS;
+    } else {
+        level = 1;
+    }
+    level = Math.max(0, Math.min(1, level));
+
+    els.layer.style.display = 'block';
+    els.layer.style.opacity = level.toFixed(3);
+
+    // Une seule fois par orage, au passage de la frappe. Le retrait/reflow/repose
+    // est ce qui relance une animation CSS deja jouee : sans lui, un second
+    // orage dans la meme course laisserait le ciel noir sans le moindre eclair.
+    if (gameNow >= strikeAt && els.struckFor !== strikeAt) {
+        els.struckFor = strikeAt;
+        placeStormBolts(els, storm[3], screenWidth);
+        els.bolts.classList.remove('storm-firing');
+        els.flash.classList.remove('storm-firing');
+        void els.bolts.offsetWidth;
+        els.bolts.classList.add('storm-firing');
+        els.flash.classList.add('storm-firing');
+    }
 }
 
 // Lakitu est ancre sur la ligne de depart : c'est la camera qui le fait entrer
@@ -1201,6 +1445,7 @@ function renderState(gameNow, screenWidth) {
     }
 
     renderLakitu(gameNow, screenWidth);
+    renderStorm(gameNow, screenWidth);
 
     // Les trois calques de decor sont des textures, pas des elements places :
     // ils ne passent pas par getScreenPosition et doivent donc appliquer le
@@ -1293,10 +1538,38 @@ function renderState(gameNow, screenWidth) {
             const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
             if (wrapper.style.zIndex != zVal) wrapper.style.zIndex = zVal;
 
-            const spinFrame = getSpinFrameIndex(kart, gameNow);
-            if (els.spinFrame !== spinFrame) {
-                els.spinFrame = spinFrame;
-                applyKartSpinFrame(kart, els, spinFrame);
+            // Pendant le vol, le sprite du personnage cede la place au bill : plus
+            // de tete-a-queue, plus de miroir, plus de rebond. `spinFrame` est
+            // remis a -1 pour qu'au retour la frame courante soit forcement vue
+            // comme un changement et le personnage repose.
+            if (kart.isBill) {
+                if (!els.billOn) {
+                    els.billOn = true;
+                    els.sprite.classList.remove('kart-mirrored');
+                    els.wrapper.classList.add('kart-bill');
+                    els.spinFrame = -1;
+                }
+
+                // Trois images, cadencees par le temps de jeu comme les carapaces :
+                // rien a memoriser, et deux bills en vol restent en phase.
+                const billFrame = (Math.floor(gameNow / WORLD.billAnimSpeed) % 3) + 1;
+                if (els.billFrame !== billFrame) {
+                    els.billFrame = billFrame;
+                    const cached = imageCache[`bill_${billFrame}`];
+                    els.img.src = cached ? cached.src : GAME_CONFIG.resources.paths.bill(billFrame);
+                }
+            } else {
+                if (els.billOn) {
+                    els.billOn = false;
+                    els.billFrame = 0;
+                    els.wrapper.classList.remove('kart-bill');
+                }
+
+                const spinFrame = getSpinFrameIndex(kart, gameNow);
+                if (els.spinFrame !== spinFrame) {
+                    els.spinFrame = spinFrame;
+                    applyKartSpinFrame(kart, els, spinFrame);
+                }
             }
 
             if (kart.heldItem && kart.heldItem.holdPosition === 'orbit') {
@@ -1451,6 +1724,8 @@ function writeKart(kart, ta, tb, t) {
     kart.stopped = !!(flags & 4);
     kart.isInvincible = !!(flags & 8);
     kart.finished = !!(flags & 16);
+    kart.isShrunk = !!(flags & 32);
+    kart.isBill = !!(flags & 64);
     kart.rank = ta[5];
 
     // Un serveur qui ne date pas le malus (`hitEnd` absent) ne doit pas priver
@@ -1557,6 +1832,7 @@ function applyState(a, b, t) {
     worldState.phase = a.ph;
     worldState.leaderLap = a.lp;
     worldState.sign = a.sg;
+    worldState.storm = a.st || null;
     worldState.finishOrder = a.fo;
 }
 
@@ -1625,7 +1901,7 @@ const bannerNet = {
         }
 
         if (msg.t === 'hello') {
-            if (msg.protocol !== 2) {
+            if (msg.protocol !== 4) {
                 // Version incompatible : mieux vaut le decor seul qu'une scene
                 // interpretee de travers.
                 console.warn(`banner : protocole ${msg.protocol} non gere`);

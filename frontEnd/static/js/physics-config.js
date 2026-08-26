@@ -35,8 +35,9 @@
             width: 7680,
             finishLineX: 1440,
             sunX: 1920,
-            // A mi-tour de la ligne.
-            itemBoxX: 5280,
+            // Au tiers du tour depuis la ligne : finishLineX + width / 3.
+            // A recalculer si l'une des deux bouge.
+            itemBoxX: 4000,
             itemBoxCount: 4
         },
         road: {
@@ -142,7 +143,7 @@
         // peloton et s'effacent a l'arriere ou champignon et etoile prennent le
         // relais. Le triple rouge, le plus offensif, culmine en milieu de peloton.
         itemDistribution: {
-            leaderTier: { weights: { banana: 55, tripleBanana: 10, greenShell: 25, tripleGreenShell: 10, redShell: 0,  tripleRedShell: 0,  shroom: 0,  star: 0  } },
+            leaderTier: { weights: { banana: 55, tripleBanana: 10, greenShell: 25, tripleGreenShell: 10, redShell: 0,  tripleRedShell: 0,  shroom: 0,  star: 0,  bill: 0  } },
             // Seuils d'etoile, cales sur les bornes de paliers ci-dessous : T4
             // s'ouvre a 2000 et T5 a 3000, si bien qu'un kart entrant dans un
             // palier porteur d'etoile y a droit immediatement, sans fenetre morte.
@@ -153,16 +154,22 @@
             // tiree la deciderait la course avant qu'elle commence.
             starMinRaceMs: 10000,
             tiers: [
-                { maxDistance: 500,   weights: { banana: 31, tripleBanana: 12, greenShell: 25, tripleGreenShell: 12, redShell: 12, tripleRedShell: 8,  shroom: 0,  star: 0  } },
-                { maxDistance: 1000,  weights: { banana: 10, tripleBanana: 10, greenShell: 14, tripleGreenShell: 12, redShell: 26, tripleRedShell: 12, shroom: 16, star: 0  } },
-                { maxDistance: 2000,  weights: { banana: 5,  tripleBanana: 7,  greenShell: 8,  tripleGreenShell: 7,  redShell: 22, tripleRedShell: 8,  shroom: 40, star: 3  } },
-                { maxDistance: 3000,  weights: { banana: 0,  tripleBanana: 3,  greenShell: 3,  tripleGreenShell: 4,  redShell: 13, tripleRedShell: 2,  shroom: 45, star: 30 } },
-                { maxDistance: 3500,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 45, star: 50 } },
+                { maxDistance: 500,   weights: { banana: 31, tripleBanana: 12, greenShell: 25, tripleGreenShell: 12, redShell: 12, tripleRedShell: 8,  shroom: 0,  star: 0,  bill: 0  } },
+                { maxDistance: 1000,  weights: { banana: 10, tripleBanana: 10, greenShell: 14, tripleGreenShell: 12, redShell: 26, tripleRedShell: 12, shroom: 16, star: 0,  bill: 0  } },
+                { maxDistance: 2000,  weights: { banana: 5,  tripleBanana: 7,  greenShell: 8,  tripleGreenShell: 7,  redShell: 22, tripleRedShell: 8,  shroom: 40, star: 3,  bill: 0  } },
+                // >>> REGLAGE DE TEST — bill gonfle sur les trois derniers paliers.
+                // Valeurs de production a remettre telles quelles :
+                //   T4  shroom: 42, star: 28, bill: 5
+                //   T5  shroom: 43, star: 40, bill: 12
+                //   T6  shroom: 20, star: 60, bill: 20
+                { maxDistance: 3000,  weights: { banana: 0,  tripleBanana: 3,  greenShell: 3,  tripleGreenShell: 4,  redShell: 13, tripleRedShell: 2,  shroom: 32, star: 18, bill: 25 } },
+                { maxDistance: 3500,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 25, star: 20, bill: 50 } },
                 // Dernier palier : c'est aussi le repli quand aucune borne ne
                 // correspond, il couvre donc tout au-dela de 3500. Un kart
                 // decroche a ce point la n'a plus rien a defendre, seule
                 // l'etoile le ramene dans la course.
-                { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 0,  tripleRedShell: 0,  shroom: 20, star: 80 } }
+                { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 0,  tripleRedShell: 0,  shroom: 15, star: 25, bill: 60 } }
+                // <<< fin du reglage de test
             ]
         },
         // Carapace bleue. Elle ne sort pas des paliers de distribution : elle a
@@ -212,6 +219,111 @@
             blastMs: 300
         },
 
+        // Eclair. Comme la bleue, il ne passe pas par les paliers : c'est l'objet
+        // du decroche, pas celui du peloton. Il ne se lance pas sur quelqu'un,
+        // il tombe sur toute la piste d'un coup.
+        lightning: {
+            // Les trois derniers, et seulement s'ils ont vraiment lache prise :
+            // 2000 est la borne haute du T3, la condition se lit donc « au moins
+            // T4 ». Un fond de peloton encore accroche n'y a pas droit.
+            //
+            // Cale a 3000 (« au moins T5 »), l'eclair ne sortait jamais : a cet
+            // ecart le kart recoit 50 a 80 % de champignon ou d'etoile, soit
+            // exactement ce qui le ramene sous le seuil. La fenetre se refermait
+            // avant qu'une boite soit ramassee.
+            lastRanks: 3,
+            minDistance: 2000,
+            chance: 0.12,
+
+            // Pas avant ce tour. `leaderLap` compte a partir de 1, la course en
+            // fait cinq : l'eclair s'ouvre donc a la mi-course. Les ecarts des
+            // deux premiers tours sont encore ceux de la grille, pas ceux d'une
+            // course — punir le peloton la-dessus n'aurait rien merite.
+            minLap: 3,
+
+            // Rythme de l'orage, en ms depuis le lancer. `strikeAt` est
+            // l'instant unique ou tout arrive d'un coup : le ciel bascule dans le
+            // noir, les eclairs tombent, et le malus s'applique. A zero, il n'y a
+            // donc aucun temps de chargement — c'est une coupure franche, comme
+            // la foudre. Le monter reintroduirait un ciel qui se charge avant la
+            // frappe, mais l'assombrissement ne serait alors plus simultane des
+            // eclairs. Le jour revient sur la fin de `totalMs`.
+            strikeAt: 0,
+            totalMs: 2600,
+
+            // Malus. La vitesse est divisee et le kart reduit pour toute la duree.
+            speedFactor: 0.5,
+            scale: 0.5,
+
+            // Duree du rapetissement, interpolee lineairement sur l'ecart au
+            // premier. Le leader paie plein tarif, celui qui est deja largue s'en
+            // sort vite : l'eclair vient du fond de grille, il n'a pas a enfoncer
+            // ceux qui y sont deja. Au-dela de `shrinkFalloffDistance` c'est le
+            // minimum pour tout le monde.
+            shrinkMsMax: 8000,
+            shrinkMsMin: 2000,
+            shrinkFalloffDistance: 3500
+        },
+
+        // Bill Ball. Ce n'est pas un projectile : le kart lui-meme se transforme
+        // et fonce au milieu de la piste, comme l'etoile est un etat et non un
+        // objet lance. Tout est reglable ici, rien n'est en dur dans la physique.
+        bill: {
+            // Vitesse de croisiere, en multiple de la pointe du personnage —
+            // meme unite que starSpeedMultiplier, et a garder au-dessus de lui
+            // (1.4), sinon le bill se fait rattraper par ce qu'il double.
+            //
+            // Le baisser rallonge le vol pour de bon, et pas seulement a l'oeil :
+            // moins vite veut dire moins de karts doubles par seconde, donc moins
+            // de `overtakeCostMs` retires. Vitesse et duree sont liees par la.
+            speedMultiplier: 1.65,
+
+            // Marge minimale du bill sur la meilleure pointe qu'un autre objet
+            // permet, tous personnages confondus : le multiplicateur ci-dessus
+            // ne compare un kart qu'a lui-meme.
+            minLeadRatio: 1.08,
+
+            // Duree du vol. Chaque kart double la raccourcit de `overtakeCostMs`,
+            // sans jamais tomber sous `minDurationMs` : le bill sert a remonter,
+            // pas a prendre la tete et a s'y installer. Mettre `overtakeCostMs` a
+            // 0 rend la duree fixe.
+            durationMs: 7000,
+            overtakeCostMs: 900,
+            minDurationMs: 2000,
+
+            // Retour au calme. La vitesse redescend lineairement de la vitesse de
+            // croisiere a celle du kart sur cette duree ; le kart a deja repris sa
+            // forme, il finit seulement sur son elan.
+            slowdownMs: 1000,
+
+            // Recentrage : le bill rejoint le milieu de la piste a cette vitesse,
+            // en pourcents de profondeur par seconde, et n'en bouge plus.
+            centerSpeed: 25,
+
+            // Ce qu'il balaie au passage, a tenir en face de la taille dessinee.
+            //
+            // `x` est le long de la piste, le meme axe que la largeur du sprite a
+            // l'ecran, et le monde est a l'echelle 1:1 du pixel : `x` vaut donc la
+            // demi-largeur dessinee. A 198 % de la largeur d'un kart (soit 198 px),
+            // 99 place le front de collision pile au bord du dessin. Toucher a la
+            // taille du bill dans .kart-bill sans reporter la moitie ici casse cet
+            // accord. Reference : kartVsKart vaut 60 pour un kart de 100 %.
+            //
+            // `y` est la profondeur de piste, pas la hauteur du sprite : les deux
+            // n'ont aucun rapport, la profondeur etant portee par la position du
+            // kart et non par son image. Il ne suit donc PAS l'agrandissement.
+            // A 11 sur une piste de 30 de profond, le bill part du milieu et
+            // balaie de 4 a 26 : les deux bords restent des refuges. Le doubler
+            // couvrirait toute la piste et le rendrait inevitable.
+            hitbox: { x: 99, y: 11 },
+
+            // Deux bills ne se font aucun degat, mais ils partagent la voie du
+            // milieu : ils se bousculent, a cette fraction de la poussee normale.
+            // A 0, ils se traverseraient — le seul endroit du jeu ou deux karts
+            // s'ignoreraient completement.
+            pushFactor: 0.45
+        },
+
         // Objets qu'un kart peut trainer derriere lui.
         trailableItems: ['banana', 'greenShell', 'redShell'],
 
@@ -241,14 +353,8 @@
             // banane — a distance egale, le temps pour reagir n'a rien de
             // comparable. Le plafond evite de s'ecarter d'un objet hors ecran.
             //
-            // La fenetre est divisee par le handling : un kart lourd est plus
-            // long a repondre et se deporte moins vite, il lui faut donc
-            // anticiper d'autant. Plate, elle condamnait Bowser a encaisser
-            // toute banane pleine voie — il la voyait 470 ms avant l'impact et
-            // lui en fallait 520. L'echelle en 1/handling annule exactement le
-            // handling dans la distance couverte avant impact (regime en h,
-            // temps en 1/h) : tous les karts voient venir avec la meme marge,
-            // et c'est la reponse qui les separe, pas la vue.
+            // La fenetre est divisee par le handling : un kart lourd repond plus
+            // tard et se deporte moins vite, il lui faut anticiper d'autant.
             threatWindowMs: 900,
             threatMaxDistance: 900,
 
@@ -263,17 +369,9 @@
             edgeBrakeFactor: 0.78,
             edgeBrakeMs: 700,
 
-            // Esquive contrariee. Le bord condamnant le cote naturel, le kart
-            // regarde s'il a le temps de couper de l'autre cote, devant
-            // l'objet : il lui faut franchir l'ecart qui l'en separe, plus la
-            // demi-hitbox verticale et cette marge.
+            // Traversee du mauvais cote : degagement a prendre au-dela de la
+            // hitbox, et erreur d'appreciation du temps disponible.
             crossDodgeMargin: 2,
-
-            // L'estimation se fait a vue, jamais au centimetre : la distance
-            // qu'il se croit capable de couvrir est tiree dans un intervalle
-            // autour de la vraie, d'autant plus large qu'il manoeuvre mal. Un
-            // kart lourd s'engage donc parfois dans une traversee qu'il ne
-            // finira pas, et renonce parfois a une qu'il aurait tenue.
             crossJudgeError: 0.25,
 
             // Latence de reflexe, inversement proportionnelle au handling et
@@ -290,11 +388,9 @@
             reactionBaseMs: 280,
             reactionJitterMin: 0.8, reactionJitterMax: 1.35,
 
-            // Inattention. Le taux n'est plein que pour une esquive tout juste
-            // jouable : un objet isole, vu de loin, sur une route libre ne se
-            // rate pas — la bourde se voit trop et ne ressemble a rien d'autre
-            // qu'a un bug. Au-dela de dodgeEasyRatio fois la marge necessaire,
-            // le tirage ne joue plus du tout.
+            // L'inattention n'est plein tarif que pour une esquive tout juste
+            // jouable ; au-dela de dodgeEasyRatio fois la marge necessaire, le
+            // tirage ne joue plus.
             dodgeMissChance: 0.1,
             dodgeEasyRatio: 2.5,
             overtakeDetectionRange: 120, overtakeMinDistance: 12, overtakeSideSpeed: 10,
@@ -390,7 +486,8 @@
         itemAnim: {
             greenShell: { animSpeed: 100 },
             redShell: { animSpeed: 100 },
-            blueShell: { animSpeed: 90 }
+            blueShell: { animSpeed: 90 },
+            bill: { animSpeed: 70 }
         }
     };
 });
