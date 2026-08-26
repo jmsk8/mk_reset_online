@@ -215,6 +215,21 @@
 /* Porte le miroir du tête-à-queue : les orientations ouest n'existent pas en
    asset, on retourne leur symétrique est. Élément dédié car snesBounce occupe
    déjà `transform` sur l'img. */
+/* Porte le rapetissement de l'éclair, et lui seul. Élément distinct de
+   .kart-sprite parce que celui-ci s'inverse à chaque image du tête-à-queue :
+   empiler l'échelle dessus ferait passer la transition sur le miroir, et le
+   kart s'écraserait à chaque changement de frame au lieu de se retourner net.
+   Origine au sol, pour qu'un kart réduit reste sur ses roues.
+   --kart-scale est posée par reconcileShrink() : l'ampleur du malus est une
+   valeur de gameplay, elle vient du serveur et n'a pas à être écrite ici. */
+.kart-scaler {
+    width: 100%;
+    line-height: 0;
+    transform: scale(var(--kart-scale, 1));
+    transform-origin: bottom center;
+    transition: transform 220ms ease-out;
+}
+
 .kart-sprite {
     width: 100%;
     line-height: 0;
@@ -748,5 +763,204 @@
     .leaderboard-pp {
         width: 28px;
         height: 28px;
+    }
+}
+
+/* ==========================================================================
+   Orage de l'éclair
+   ==========================================================================
+   Un seul calque, sous les karts (z-index 400) : la scène s'assombrit, les
+   karts restent lisibles. L'opacité du calque est posée à chaque frame par
+   renderStorm() d'après les dates du snapshot ; le CSS ne décrit que l'aspect,
+   jamais le déroulé — sinon deux spectateurs verraient l'orage à des phases
+   différentes. */
+.storm-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    display: none;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+/* Le ciel encaisse tout, la piste presque rien : c'est ce dégradé qui fait lire
+   l'assombrissement comme une couverture nuageuse et non comme un fondu au
+   noir. Le point de bascule est à 65 %, la hauteur du calque de ciel. */
+.storm-dim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom,
+        rgba(10, 12, 34, 0.86) 0%,
+        rgba(14, 18, 46, 0.78) 45%,
+        rgba(20, 26, 58, 0.5) 65%,
+        rgba(24, 30, 64, 0.18) 85%,
+        rgba(24, 30, 64, 0.08) 100%);
+}
+
+.storm-bolts {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 70%;
+}
+
+.storm-bolt {
+    position: absolute;
+    top: -4%;
+    width: 60px;
+    height: 100%;
+    margin-left: -30px;
+    opacity: 0;
+    overflow: visible;
+}
+
+@media screen and (max-width: 768px) {
+    .storm-bolt {
+        width: 40px;
+        margin-left: -20px;
+    }
+}
+
+/* Halo jaune large sous un cœur blanc fin : c'est le décalage entre les deux
+   qui donne la brûlure. non-scaling-stroke parce que le SVG est étiré en
+   hauteur — sans lui l'épaisseur du trait s'écraserait avec. */
+.storm-bolt-glow {
+    fill: none;
+    stroke: #ffd84d;
+    stroke-width: 9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    filter: drop-shadow(0 0 10px rgba(255, 226, 120, 0.95))
+            drop-shadow(0 0 26px rgba(255, 196, 60, 0.7));
+}
+
+.storm-bolt-core {
+    fill: none;
+    stroke: #ffffff;
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+/* Les trois traits partent en cascade : un éclair unique ferait plat, trois
+   simultanés feraient guirlande. */
+.storm-bolts.storm-firing .storm-bolt {
+    animation: stormBolt 420ms ease-out both;
+}
+
+.storm-bolts.storm-firing .storm-bolt:nth-child(2) {
+    animation-delay: 110ms;
+}
+
+.storm-bolts.storm-firing .storm-bolt:nth-child(3) {
+    animation-delay: 210ms;
+}
+
+/* Le trait se déchire vers le bas, puis clignote : deux coupures franches, pas
+   un fondu — un éclair ne s'éteint pas doucement. */
+@keyframes stormBolt {
+    0%   { opacity: 0;    transform: scaleY(0.35); }
+    6%   { opacity: 1;    transform: scaleY(1); }
+    22%  { opacity: 0.15; }
+    34%  { opacity: 1; }
+    52%  { opacity: 0.2; }
+    64%  { opacity: 0.95; }
+    100% { opacity: 0;    transform: scaleY(1); }
+}
+
+/* Le contrecoup lumineux de la frappe, sur toute la scène. Volontairement bref
+   et jamais tout à fait blanc : le banner tourne en fond de page d'accueil. */
+.storm-flash {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 25%,
+        rgba(255, 255, 255, 0.9) 0%,
+        rgba(214, 232, 255, 0.55) 40%,
+        rgba(180, 210, 255, 0) 75%);
+    opacity: 0;
+}
+
+.storm-flash.storm-firing {
+    animation: stormFlash 620ms ease-out both;
+}
+
+@keyframes stormFlash {
+    0%   { opacity: 0; }
+    5%   { opacity: 1; }
+    18%  { opacity: 0.1; }
+    30%  { opacity: 0.75; }
+    100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .storm-bolts.storm-firing .storm-bolt,
+    .storm-flash.storm-firing {
+        animation: none;
+    }
+    .storm-bolts.storm-firing .storm-bolt {
+        opacity: 0.9;
+    }
+}
+
+/* ==========================================================================
+   Bill Ball
+   ==========================================================================
+   Le kart n'est pas masqué : c'est son image qui est remplacée par celle du
+   bill, le temps du vol. Tout ce qui suit est de l'habillage — la vitesse, la
+   trajectoire et les dégâts sont côté serveur.
+
+   Pas de traits de vitesse ici : la flamme est déjà dans l'asset (3 images,
+   animées par le rendu). En rajouter ferait doublon.
+
+   LA TAILLE À L'ÉCRAN SE RÈGLE ICI, PAS DANS LE PNG. La règle de base
+   .kart-static-png impose `width: 100%`, donc la largeur rendue vaut toujours
+   celle du conteneur du kart quelle que soit la définition du fichier :
+   redimensionner le PNG ne change que sa netteté.
+
+   TROIS RÈGLES, et une seule dépend de la taille :
+
+   - `max-width: none` N'EST PAS DÉCORATIF, c'est lui qui rend `width`
+     opérant. Bulma applique `img { max-width: 100% }` à toutes les images du
+     site ; sans ce garde-fou la largeur ci-dessous est plafonnée à celle du
+     conteneur du kart, et la changer n'a alors STRICTEMENT AUCUN EFFET, quel
+     que soit le chiffre écrit — le bill reste figé à la taille d'un kart.
+     Si un jour la taille cesse à nouveau de répondre, c'est ici qu'il faut
+     regarder avant de toucher au reste.
+   - `margin-left` vaut toujours -(width - 100) / 2. C'est ce qui garde le
+     sprite centré horizontalement sur le kart, donc sur sa hitbox.
+     La largeur elle-même se tient en face de `bill.hitbox.x` côté physique :
+     à `width: N%`, le dessin déborde de N/2 pixels de chaque côté du centre
+     du kart, et `hitbox.x` vaut exactement ce N/2. Les faire diverger donne
+     soit un bill qui touche dans le vide, soit un bill qui traverse sans
+     rien faire.
+   - `translateY` ne se recalcule JAMAIS quand la largeur change. L'image est
+     ancrée par le bas, comme le sprite du personnage : sa base EST la position
+     réelle lue par la physique. L'agrandir la fait monter, et c'est correct.
+     Compenser pour garder son centre fixe ferait descendre sa base sous la
+     piste, et le dessin ne correspondrait plus à la hitbox — c'est exactement
+     le bug qui a été observé.
+
+   Le léger relèvement n'est là que pour décoller le bill du sol : un projectile
+   vole, il ne roule pas. */
+
+/* Ni rebond ni toupie : un projectile ne cahote pas. */
+.kart-container-moving.kart-bill .kart-static-png {
+    animation: none;
+    max-width: none;
+    width: 198%;
+    margin-left: -49%;
+    transform: translateY(-12px);
+    filter: drop-shadow(0 0 12px rgba(255, 190, 90, 0.75))
+            drop-shadow(0 0 26px rgba(255, 140, 40, 0.45))
+            drop-shadow(4px 4px 0 rgba(0, 0, 0, 0.45));
+}
+
+@media screen and (max-width: 768px) {
+    .kart-container-moving.kart-bill .kart-static-png {
+        transform: translateY(-10px);
     }
 }

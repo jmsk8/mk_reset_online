@@ -36,6 +36,27 @@
         return stats.topSpeed * variation;
     }
 
+    // Meilleure pointe qu'un objet autre que le bill permet d'atteindre, tous
+    // personnages confondus.
+    function fastestBoostedSpeed(cfg) {
+        const names = Object.keys(cfg.characterStats);
+        let best = 0;
+        for (let i = 0; i < names.length; i++) {
+            const top = cfg.characterStats[names[i]].topSpeed;
+            const shroom = top + cfg.speeds.shroomBoost;
+            const star = top * cfg.speeds.starSpeedMultiplier;
+            if (shroom > best) best = shroom;
+            if (star > best) best = star;
+        }
+        return best;
+    }
+
+    // Vitesse de croisiere du bill : le multiplicateur du porteur, releve au
+    // plancher commun quand celui-ci est plus haut.
+    function getBillSpeed(cfg, state, kart) {
+        return Math.max(kart.stats.topSpeed * cfg.bill.speedMultiplier, state.billFloorSpeed);
+    }
+
     // Retire avec un sursis : l'objet reste affiche le temps qu'on voie le choc,
     // sans plus rien pouvoir heurter.
     function spendItem(cfg, item, now) {
@@ -53,40 +74,32 @@
     }
 
     // Distance laterale qu'un kart couvre en `ms` millisecondes, en partant a
-    // l'arret. Le lissage lui interdit d'atteindre sa vitesse d'esquive d'un
-    // coup : sur une reaction courte, la moitie du trajet part dans la montee
-    // en regime. L'ignorer ferait croire a un poids lourd qu'il coupe devant
-    // n'importe quoi. `tau` est la constante de temps du filtre applique plus
-    // bas a `vy`, maniabilite comprise — elle pese donc deux fois, sur le
-    // regime atteint comme sur le temps mis a l'atteindre.
+    // l'arret. `tau` est la constante de temps du lissage applique plus bas a
+    // `vy` : sur une reaction courte, une bonne part du trajet passe dans la
+    // montee en regime.
     function lateralReach(cfg, handling, intensity, ms) {
         const t = ms / 1000;
         const tau = 1 / (cfg.physics.smoothingFactor * handling);
         return intensity * (t - tau * (1 - Math.exp(-t / tau)));
     }
 
-    // Probabilite qu'un kart ne voie pas venir la menace.
-    //
-    // Elle ne vaut plein tarif que pour une esquive tout juste jouable. Un
-    // objet aperçu de loin sur une route libre, lui, ne se rate pas : le kart
-    // qui foncerait dedans sans un geste ne passerait pas pour distrait, mais
-    // pour casse. La difficulte se mesure en distance — ce que le kart peut
-    // couvrir avant l'impact, rapporte a ce qu'il doit couvrir pour degager —
-    // et le tirage s'efface a mesure que cette marge grandit.
+    // Probabilite qu'un kart ne voie pas venir la menace. La difficulte se
+    // mesure en distance : ce qu'il peut couvrir avant l'impact, rapporte a ce
+    // qu'il doit couvrir pour degager. Le tirage s'efface a mesure que cette
+    // marge grandit.
     function missChance(cfg, kart, threatY, spareMs) {
         const ai = cfg.ai;
         const handling = kart.stats.handling;
         const base = ai.dodgeMissChance / handling;
 
-        // Il passe deja assez a cote pour que la hitbox le manque : rater cette
-        // menace-la ne lui coute rien.
+        // Il passe deja assez a cote pour que la hitbox le manque.
         const need = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin
             - Math.abs(threatY - kart.yPercent);
         if (need <= 0) return 0;
         if (spareMs <= 0) return base;
 
-        // Capacite type et non celle du coup a jouer : l'intensite reelle n'est
-        // tiree qu'au moment de s'ecarter, une fois le reflexe passe.
+        // Capacite type : l'intensite reelle n'est tiree qu'au moment de
+        // s'ecarter.
         const intensity = (ai.dodgeIntensityMin + ai.dodgeIntensityMax) * 0.5 * handling;
         const ease = lateralReach(cfg, handling, intensity, spareMs) / need;
 
@@ -96,15 +109,12 @@
     }
 
     // Cote d'esquive et intensite, arretes une fois pour toutes a la premiere
-    // reaction a une menace donnee — un kart qui rechoisirait a chaque tick
-    // hesiterait sur place au lieu de s'ecarter.
+    // reaction a une menace donnee.
     //
     // Le cote naturel est celui qui eloigne de l'objet. Quand le bord de piste
-    // le condamne, le kart ne renonce pas pour autant : il jauge la traversee
-    // par l'autre cote, devant l'objet. Il lui faut alors la place ET le temps,
-    // et il n'estime le second qu'a vue (cf. ai.crossJudgeError) : la traversee
-    // ratee fait partie du jeu. Sans issue des deux cotes, il ne reste que le
-    // frein.
+    // le condamne, le kart jauge la traversee par l'autre cote, devant l'objet :
+    // il lui faut la place et le temps, et il n'estime le second qu'a vue (cf.
+    // ai.crossJudgeError). Sans issue des deux cotes, il ne reste que le frein.
     function planDodge(cfg, rng, kart, threatId, threatY, ttc) {
         const ai = cfg.ai;
         const handling = kart.stats.handling;
@@ -119,8 +129,7 @@
         const naturalDir = (threatY > kart.yPercent) ? -1 : 1;
 
         // Ecart au-dela duquel l'objet ne touche plus, et ecart actuel : la
-        // detection ouvre plus large que la hitbox, un kart peut donc etre
-        // alerte alors qu'il passe deja a cote.
+        // detection ouvre plus large que la hitbox.
         const clear = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin;
         const gap = Math.abs(threatY - kart.yPercent);
 
@@ -153,8 +162,8 @@
             return;
         }
 
-        // Colle au bord : il pousse quand meme du cote naturel, ce qui lui
-        // grappille le peu de place restante, et lache les gaz.
+        // Colle au bord : il pousse quand meme du cote naturel, pour grappiller
+        // le peu de place restante, et lache les gaz.
         kart.dodgeDir = naturalDir;
         kart.dodgeStuck = true;
         kart.dodgeCrossing = false;
@@ -169,6 +178,18 @@
         const handling = kart.stats.handling;
         const ai = cfg.ai;
 
+        // Un bill ne se pilote pas : il rejoint le milieu de la piste et n'en
+        // bouge plus. Ni esquive, ni depassement, ni derive — il ne voit rien, et
+        // de toute facon rien ne peut le toucher.
+        if (kart.isBill) {
+            const mid = (cfg.road.minY + cfg.road.maxY) / 2;
+            const diff = mid - kart.yPercent;
+            const speed = cfg.bill.centerSpeed;
+            kart.targetVy = Math.abs(diff) < 0.2 ? 0 : (diff > 0 ? speed : -speed);
+            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
+            return;
+        }
+
         // Menace la plus urgente, mesuree en temps avant impact. Un objet qui
         // s'eloigne n'en est pas une — ce qui evite au passage qu'un kart fuie
         // la carapace qu'il vient de tirer.
@@ -176,8 +197,7 @@
         let threatY = 0;
         let threatTtc = Infinity;
 
-        // Le lourd doit regarder plus loin que le vif pour disposer de la meme
-        // marge de manoeuvre — voir ai.threatWindowMs.
+        // Le lourd regarde plus loin que le vif — voir ai.threatWindowMs.
         const threatWindow = ai.threatWindowMs / handling;
 
         const itemsLen = state.items.length;
@@ -245,9 +265,9 @@
                     * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
                 kart.threatReactAt = now + reactMs;
 
-                // Ce qui restera une fois le reflexe passe : c'est ce temps-la,
-                // et non le delai brut avant impact, qui dit si l'esquive etait
-                // a sa portee.
+                // Ce qui restera une fois le reflexe passe, et non le delai
+                // brut avant impact : c'est lui qui dit si l'esquive etait a
+                // sa portee.
                 kart.threatIgnored = rng() < missChance(cfg, kart, threatY, threatTtc - reactMs);
             }
 
@@ -259,8 +279,8 @@
                 avoidDirection = kart.dodgeDir;
 
                 // Le frein n'accompagne que les esquives qui ne sont pas
-                // franches : acculle il n'a plus que lui, en traversee il
-                // recule l'impact le temps de passer devant l'objet.
+                // franches : acculle il n'a plus que lui, en traversee il recule
+                // l'impact le temps de passer devant l'objet.
                 if (kart.dodgeStuck || kart.dodgeCrossing) {
                     kart.brakeUntil = now + ai.edgeBrakeMs;
                 }
@@ -405,6 +425,14 @@
         return remainingDistance(kart) - remainingDistance(leader);
     }
 
+    // Etoile et bill sont le meme etat vu de la physique : intouchable, et
+    // blessant au contact. Toutes les collisions posent cette question-la, jamais
+    // « a-t-il une etoile » — sans quoi chaque nouvel objet de ce genre obligerait
+    // a repasser sur les huit sites de collision.
+    function isRamming(kart) {
+        return kart.isInvincible || kart.isBill;
+    }
+
     // Interrupteur global : un type present dans cfg.disabledItems ne sort
     // jamais d'une boite, son poids etant force a 0 dans tous les paliers.
     function isItemEnabled(cfg, itemType) {
@@ -431,6 +459,28 @@
         return state.blueShellChance > 0 && rng() < state.blueShellChance;
     }
 
+    // L'eclair non plus ne passe pas par les paliers. Un seul orage a la fois, et
+    // un seul eclair en circulation : deux ciels noirs qui se chevauchent ne
+    // voudraient plus rien dire, et le second n'aurait plus personne a rapetisser
+    // que le premier n'ait deja touche.
+    function rollLightning(cfg, state, rng, kart, distToLeader) {
+        const spec = cfg.lightning;
+        if (!isItemEnabled(cfg, 'lightning')) return false;
+        if (state.storm) return false;
+        // Le tour du premier, et non celui du kart : c'est la mesure d'avancement
+        // de la course, la meme que celle qui fait monter la chance de la bleue.
+        if (state.leaderLap < spec.minLap) return false;
+        if (kart.rank <= state.karts.length - spec.lastRanks) return false;
+        if (distToLeader < spec.minDistance) return false;
+
+        for (let i = 0; i < state.karts.length; i++) {
+            const held = state.karts[i].heldItem;
+            if (held && held.type === 'lightning') return false;
+        }
+
+        return rng() < spec.chance;
+    }
+
     function rollItem(cfg, state, rng, now, kart) {
         const distToLeader = getDistanceToLeader(state, kart);
 
@@ -438,6 +488,8 @@
             state.blueShellChance /= cfg.blueShell.chanceDecay;
             return 'blueShell';
         }
+
+        if (rollLightning(cfg, state, rng, kart, distToLeader)) return 'lightning';
 
         const itemDist = cfg.itemDistribution;
         const tiers = itemDist.tiers;
@@ -793,6 +845,60 @@
             return;
         }
 
+        // L'eclair ne part pas vers quelqu'un : il declenche un orage, et c'est
+        // l'orage qui frappe. Ciel noir, eclairs et malus tombent ensemble, a
+        // `strikeAt` — la date reste un cran de reglage, mais elle vaut zero.
+        if (held.type === 'lightning') {
+            const spec = cfg.lightning;
+
+            state.storm = {
+                shooterId: kart.id,
+                startedAt: now,
+                strikeAt: now + spec.strikeAt,
+                until: now + spec.totalMs,
+                struck: false
+            };
+
+            events.push({ type: 'lightningCast', kartId: kart.id });
+            events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
+            kart.heldItem = null;
+            kart.trailTime = 0;
+            return;
+        }
+
+        // Le bill ne se lance pas : le kart devient le projectile. Meme famille
+        // que l'etoile — un etat du kart, avec sa date de fin.
+        if (held.type === 'bill') {
+            const spec = cfg.bill;
+
+            kart.isBill = true;
+            kart.billStartedAt = now;
+            kart.billEndTime = now + spec.durationMs;
+            kart.billSlowUntil = 0;
+            // Ceux qui sont devant a l'instant du declenchement. Chacun rattrape
+            // se retire de la liste et raccourcit le vol : la liste est donc a la
+            // fois le compteur et la memoire de qui reste a doubler.
+            kart.billAhead = [];
+            for (let i = 0; i < state.karts.length; i++) {
+                const other = state.karts[i];
+                if (other.id !== kart.id && other.totalDistance > kart.totalDistance) {
+                    kart.billAhead.push(other.id);
+                }
+            }
+
+            // La transformation efface le rapetissement, comme l'etoile : on ne
+            // part pas en trombe en etant ecrase.
+            kart.shrinkEndTime = 0;
+            kart.absoluteVelocity = getBillSpeed(cfg, state, kart);
+            kart.momentum = 1.0;
+
+            events.push({ type: 'billOn', kartId: kart.id });
+            events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
+            kart.heldItem = null;
+            kart.trailTime = 0;
+            return;
+        }
+
         if (held.type === 'shroom') {
             kart.boostEndTime = now + cfg.speeds.shroomDuration;
             kart.absoluteVelocity = kart.stats.topSpeed;
@@ -806,6 +912,9 @@
         if (held.type === 'star') {
             kart.starEndTime = now + cfg.speeds.starDuration;
             kart.isInvincible = true;
+            // On ne peut pas etre invincible et ecrase en meme temps : l'etoile
+            // rend sa taille au kart, comme elle le protege de la foudre a venir.
+            kart.shrinkEndTime = 0;
             kart.absoluteVelocity = kart.stats.topSpeed;
             kart.momentum = 1.0;
             events.push({ type: 'starOn', kartId: kart.id });
@@ -920,9 +1029,9 @@
                     const dy = Math.abs(pos.y - victim.yPercent);
                     if (dx >= cfg.hitboxes.orbitItemVsKart.x || dy >= cfg.hitboxes.orbitItemVsKart.y) continue;
 
-                    // Une etoile encaisse l'objet sans etre ralentie, mais le
-                    // consomme quand meme : le bouclier s'use au contact.
-                    if (!victim.isInvincible) {
+                    // Une etoile ou un bill encaisse l'objet sans etre ralenti,
+                    // mais le consomme quand meme : le bouclier s'use au contact.
+                    if (!isRamming(victim)) {
                         victim.state = 'hit';
                         victim.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
                         events.push({ type: 'kartHit', kartId: victim.id });
@@ -1199,16 +1308,131 @@
         if (state.bgCameraX >= width) state.bgCameraX -= width;
     }
 
-    // Etoile et champignon sont les deux seules sorties.
-    function blastKart(cfg, state, now, kart, events) {
-        if (kart.state !== 'running') return;
-        if (kart.isInvincible) return;
-        if (kart.boostEndTime > now) return;
+    // Un kart depossede de ce qu'il tenait. Une orbite compte autant d'elements
+    // DOM que d'orbes cote client : chacun a besoin de son evenement, sinon les
+    // survivants resteraient a tourner autour d'un kart qui n'a plus rien.
+    function loseHeldItem(kart, events) {
+        const held = kart.heldItem;
+        if (!held) return;
 
+        if (held.holdPosition === 'orbit') {
+            for (let i = 0; i < held.orbs.length; i++) {
+                events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.orbs[i].id });
+            }
+        } else {
+            events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
+        }
+
+        kart.heldItem = null;
+        kart.trailTime = 0;
+    }
+
+    // Duree du rapetissement : maximale pour le premier, minimale pour qui est
+    // deja largue, lineaire entre les deux. C'est ce qui fait de l'eclair une
+    // arme de fond de grille — il coute cher a ceux qui ont quelque chose a
+    // perdre, et presque rien a celui qui l'a lance.
+    function shrinkDuration(cfg, state, kart) {
+        const spec = cfg.lightning;
+        const dist = Math.min(getDistanceToLeader(state, kart), spec.shrinkFalloffDistance);
+        const ratio = spec.shrinkFalloffDistance > 0 ? dist / spec.shrinkFalloffDistance : 0;
+        return spec.shrinkMsMax + (spec.shrinkMsMin - spec.shrinkMsMax) * ratio;
+    }
+
+    // La foudre tombe sur toute la piste d'un coup : tete-a-queue, rapetissement,
+    // vitesse divisee et mains vides.
+    function strikeAll(cfg, state, now, events) {
+        const storm = state.storm;
+
+        for (let i = 0; i < state.karts.length; i++) {
+            const kart = state.karts[i];
+            if (kart.id === storm.shooterId) continue;
+            if (kart.state !== 'running' && kart.state !== 'hit') continue;
+            if (kart.finished) continue;
+            // Etoile et bill sont les seules protections, et elles sont totales.
+            if (isRamming(kart)) continue;
+
+            kart.shrinkEndTime = now + shrinkDuration(cfg, state, kart);
+            // Pose des maintenant, et pas seulement a la prochaine passe de
+            // vitesse : celle-ci ne tourne que pour les karts 'running', or ils
+            // partent tous en tete-a-queue juste en dessous. Sans ca ils
+            // tourneraient a taille normale avant de rapetisser d'un coup.
+            kart.isShrunk = true;
+
+            // Un champignon en cours ne survit pas a la foudre : le laisser
+            // courir reviendrait a rendre l'eclair invisible sur ce kart-la.
+            kart.boostEndTime = 0;
+
+            // Avant le tete-a-queue : sinon spinOutKart reprogrammerait le tir
+            // d'un objet que le kart n'a deja plus.
+            loseHeldItem(kart, events);
+
+            // Un kart deja en toupie n'en repart pas pour un tour : il encaisse
+            // le rapetissement, pas un second malus par-dessus le premier.
+            if (kart.state === 'running') spinOutKart(cfg, now, kart, events);
+
+            events.push({ type: 'lightningHit', kartId: kart.id });
+        }
+    }
+
+    // L'orage est dans l'etat, pas dans un evenement : un spectateur qui arrive
+    // le ciel deja noir doit le voir noir, et le voir se lever au bon moment.
+    function updateStorm(cfg, state, now, events) {
+        const storm = state.storm;
+        if (!storm) return;
+
+        if (!storm.struck && now >= storm.strikeAt) {
+            storm.struck = true;
+            strikeAll(cfg, state, now, events);
+        }
+
+        if (now >= storm.until) state.storm = null;
+    }
+
+    // Le vol du bill. Deux choses par frame : compter ce qui vient d'etre double,
+    // et rendre la main quand la duree est epuisee.
+    function updateBill(cfg, state, now, kart, events) {
+        if (!kart.isBill) return;
+        const spec = cfg.bill;
+
+        // Parcours a l'envers : on retire de la liste pendant qu'on la lit.
+        for (let i = kart.billAhead.length - 1; i >= 0; i--) {
+            const other = state.kartsById[kart.billAhead[i]];
+            if (!other || kart.totalDistance > other.totalDistance) {
+                kart.billAhead.splice(i, 1);
+                // Plancher compte depuis le depart et non depuis maintenant : dix
+                // depassements d'affilee ne peuvent pas couper le vol net.
+                kart.billEndTime = Math.max(
+                    kart.billStartedAt + spec.minDurationMs,
+                    kart.billEndTime - spec.overtakeCostMs
+                );
+            }
+        }
+
+        if (now >= kart.billEndTime) {
+            kart.isBill = false;
+            kart.billAhead.length = 0;
+            // Il a repris sa forme, il finit sur son elan.
+            kart.billSlowUntil = now + spec.slowdownMs;
+            events.push({ type: 'billOff', kartId: kart.id });
+        }
+    }
+
+    // Le tete-a-queue lui-meme, sans aucune condition : c'est a l'appelant de
+    // decider qui l'encaisse. Chaque source a ses propres immunites.
+    function spinOutKart(cfg, now, kart, events) {
         kart.state = 'hit';
         kart.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
         events.push({ type: 'kartHit', kartId: kart.id });
         if (kart.heldItem) kart.throwTime = kart.hitEndTime + cfg.delays.throwDelayAfterHit;
+    }
+
+    // Etoile et champignon sont les deux seules sorties.
+    function blastKart(cfg, state, now, kart, events) {
+        if (kart.state !== 'running') return;
+        if (isRamming(kart)) return;
+        if (kart.boostEndTime > now) return;
+
+        spinOutKart(cfg, now, kart, events);
     }
 
     // Un kart n'est touche que lorsque le front l'atteint, et une seule fois :
@@ -1364,6 +1588,7 @@
         const events = [];
 
         updateRace(cfg, state, rng, now, deltaTime, events);
+        updateStorm(cfg, state, now, events);
         updateCamera(cfg, state, deltaTime);
 
         if (state.sign && now > state.sign.until) state.sign = null;
@@ -1412,8 +1637,12 @@
                 }
 
                 updateAI(cfg, state, rng, now, kart, deltaTime);
+                updateBill(cfg, state, now, kart, events);
 
-                const isBoosted = kart.boostEndTime > now || kart.starEndTime > now;
+                // Le bill compte comme un boost : sans ca son elan interne
+                // retomberait pendant le vol, et il sortirait de sa transformation
+                // au ralenti au lieu de finir sur sa lancee.
+                const isBoosted = kart.boostEndTime > now || kart.starEndTime > now || kart.isBill;
 
                 if (isBoosted) {
                     kart.absoluteVelocity = kart.stats.topSpeed;
@@ -1462,6 +1691,32 @@
                 } else if (kart.isInvincible) {
                     kart.isInvincible = false;
                     events.push({ type: 'starOff', kartId: kart.id });
+                }
+
+                // Applique en dernier, et sur le resultat de tout le reste : un
+                // kart rapetisse est lent quoi qu'il tienne. Le drapeau double la
+                // date parce que le protocole n'a pas d'horloge — il se lit tel
+                // quel dans le snapshot, comme celui de l'etoile.
+                if (kart.shrinkEndTime > now) {
+                    effectiveSpeed *= cfg.lightning.speedFactor;
+                    kart.isShrunk = true;
+                } else if (kart.isShrunk) {
+                    kart.isShrunk = false;
+                    events.push({ type: 'shrinkOff', kartId: kart.id });
+                }
+
+                // Le bill passe en dernier et prime sur tout : rien ne ralentit un
+                // projectile. La descente qui suit ramene la vitesse a celle du
+                // kart, sans jamais le freiner en dessous — d'ou le Math.max.
+                const billSpeed = getBillSpeed(cfg, state, kart);
+                if (kart.isBill) {
+                    effectiveSpeed = billSpeed;
+                } else if (kart.billSlowUntil > now) {
+                    const left = (kart.billSlowUntil - now) / cfg.bill.slowdownMs;
+                    effectiveSpeed = Math.max(
+                        effectiveSpeed,
+                        kart.stats.topSpeed + (billSpeed - kart.stats.topSpeed) * left
+                    );
                 }
 
                 const moveDist = effectiveSpeed * deltaTime;
@@ -1515,32 +1770,42 @@
                     if (other.state !== 'running') continue;
                     const dx = Math.abs(getShortestDistance(cfg, other.worldX, kart.worldX));
                     const dy = Math.abs(other.yPercent - kart.yPercent);
-                    if (dx < cfg.hitboxes.kartVsKart.x && dy < cfg.hitboxes.kartVsKart.y) {
-                         if (kart.isInvincible && other.isInvincible) continue;
-                         if (kart.isInvincible) {
+                    // Le bill balaie plus large qu'un contact de carrosserie : il
+                    // traverse la piste en trombe, il ne se faufile pas.
+                    const box = (kart.isBill || other.isBill) ? cfg.bill.hitbox : cfg.hitboxes.kartVsKart;
+                    if (dx < box.x && dy < box.y) {
+                         // Deux intouchables ne se blessent pas : c'est ce qui met
+                         // l'etoile hors d'atteinte du bill, et l'inverse.
+                         //
+                         // Deux bills font exception au « sans rien » : ils tiennent
+                         // tous les deux le milieu de la piste, s'y traverser serait
+                         // le seul endroit du jeu ou deux karts s'ignorent. Ils se
+                         // bousculent donc, en tombant dans le bloc de poussee plus
+                         // bas, mais attenue et sans degats.
+                         const billOnBill = kart.isBill && other.isBill;
+
+                         if (isRamming(kart) && isRamming(other) && !billOnBill) continue;
+
+                         if (!billOnBill && isRamming(kart)) {
                              if (other.hitInvincibleUntil > now) continue;
-                             other.state = 'hit';
-                             other.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
-                             events.push({ type: 'kartHit', kartId: other.id });
-                             if (other.heldItem) other.throwTime = other.hitEndTime + cfg.delays.throwDelayAfterHit;
+                             spinOutKart(cfg, now, other, events);
                              continue;
                          }
-                         if (other.isInvincible) {
+                         if (!billOnBill && isRamming(other)) {
                              if (kart.hitInvincibleUntil > now) continue;
-                             kart.state = 'hit';
-                             kart.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
-                             events.push({ type: 'kartHit', kartId: kart.id });
-                             if (kart.heldItem) kart.throwTime = kart.hitEndTime + cfg.delays.throwDelayAfterHit;
+                             spinOutKart(cfg, now, kart, events);
                              continue;
                          }
+
+                         const pushScale = billOnBill ? cfg.bill.pushFactor : 1;
                          const myWeight = kart.stats.weight;
                          const otherWeight = other.stats.weight;
                          const totalWeight = myWeight + otherWeight;
                          const myRatio = otherWeight / totalWeight;
                          const otherRatio = myWeight / totalWeight;
-                         const pushForce = cfg.physics.pushForce;
-                         const myBounceY = cfg.physics.collisionBounceY * myRatio;
-                         const otherBounceY = cfg.physics.collisionBounceY * otherRatio;
+                         const pushForce = cfg.physics.pushForce * pushScale;
+                         const myBounceY = cfg.physics.collisionBounceY * myRatio * pushScale;
+                         const otherBounceY = cfg.physics.collisionBounceY * otherRatio * pushScale;
                          if (kart.yPercent > other.yPercent) {
                              kart.yPercent += pushForce * myRatio; kart.vy = myBounceY;
                              other.yPercent -= pushForce * otherRatio; other.vy = -otherBounceY;
@@ -1569,7 +1834,7 @@
                         const hitThresholdY = 8;
 
                         if (dx < cfg.hitboxes.itemVsKart.x && dy < hitThresholdY) {
-                            if (victim.isInvincible) {
+                            if (isRamming(victim)) {
                                 events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                                 kart.heldItem = null;
                                 kart.trailTime = 0;
@@ -1774,7 +2039,7 @@
                 if ((item.type === 'greenShell' || item.type === 'redShell') && kart.id === item.shooterId) continue;
                 if (kart.state !== 'running' && kart.state !== 'hit') continue;
 
-                if (kart.isInvincible) {
+                if (isRamming(kart)) {
                     const dk = Math.abs(getShortestDistance(cfg, item.worldX, kart.worldX));
                     const dky = Math.abs(item.y - kart.yPercent);
                     if (dk < cfg.hitboxes.itemVsKart.x && dky < cfg.hitboxes.itemVsKart.y) {
@@ -1927,6 +2192,19 @@
                 isInvincible: false,
                 hitInvincibleUntil: 0,
 
+                // Rapetissement par l'eclair. La date pilote la simulation, le
+                // booleen part dans le snapshot.
+                shrinkEndTime: 0,
+                isShrunk: false,
+
+                // Bill Ball. `billAhead` retient qui reste a doubler : la vider
+                // est ce qui raccourcit le vol.
+                isBill: false,
+                billStartedAt: 0,
+                billEndTime: 0,
+                billSlowUntil: 0,
+                billAhead: [],
+
                 trailTime: 0,
                 brakeUntil: 0,
                 shotDirection: 1,
@@ -1985,6 +2263,10 @@
 
             nextItemId: 1,
             blueShellChance: 0,
+            // Plancher de vitesse du bill : ne depend que de la config.
+            billFloorSpeed: fastestBoostedSpeed(cfg) * cfg.bill.minLeadRatio,
+            // Orage en cours, ou null. Un seul a la fois.
+            storm: null,
             previousRanking: [],
             lastLeaderboardUpdate: 0
         };
