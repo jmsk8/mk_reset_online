@@ -65,9 +65,27 @@
             projectileSpeed: 880,
             redShellSpeed: 840,
             redShellTrackingSpeed: 8,
-            // Cible trop proche pour qu'un tir ait du sens : la rouge passe a la
-            // suivante. Si tout le monde est colle, elle part sans cible.
-            redShellMinTarget: 250,
+            // Choix de cible de la rouge. Ces trois valeurs decrivent une pente,
+            // pas un seuil : le classement des candidats se fait dans
+            // redShellTargetScore(), cote physique.
+            //
+            // Plancher dur. En dessous, viser est sans effet : l'objet ne s'arme
+            // qu'a `itemArmDistance` (110) du tireur et traverse tout avant. La
+            // marge au-dessus de 110 couvre le cas ou la cible freine et vient
+            // au-devant de la carapace avant qu'elle soit armee.
+            redShellMinTarget: 150,
+
+            // Au-dela, la rouge a tout le temps de se recaler : le candidat vaut
+            // son ecart brut. Entre le plancher et ce confort, il reste eligible
+            // mais penalise. Ce n'est pas la portee de la rouge, qui est infinie
+            // — c'est la distance a partir de laquelle une cible est « facile ».
+            redShellComfortTarget: 340,
+
+            // Ce que coute au maximum d'etre au contact, en unites de distance
+            // ajoutees a la note d'un candidat colle au plancher. Le monter fait
+            // preferer les cibles lointaines et ramene le comportement d'avant ;
+            // le baisser fait viser au plus pres a tout prix.
+            redShellClosePenalty: 260,
 
             shroomBoost: 250,
             shroomDuration: 1500,
@@ -138,53 +156,194 @@
             dropIntervalMin: 1200,
             dropIntervalMax: 3500
         },
-        // Chaque ligne somme a 100, les poids se lisent donc directement en %.
-        // Les triples sont des objets defensifs, ils pesent en tete et en milieu de
-        // peloton et s'effacent a l'arriere ou champignon et etoile prennent le
-        // relais. Le triple rouge, le plus offensif, culmine en milieu de peloton.
+        // Distribution des objets. Une seule mecanique pour tout le monde, bleue
+        // comprise : cinq mesures normalisees entre 0 et 1 (p rang, d ecart au
+        // premier, s etape de course, g ecart au kart de devant, i isolement du
+        // peloton) donnent une pression unique :
+        //
+        //   pression = (rankShare * p + (1 - rankShare) * d)
+        //            * (stageBoost.base + stageBoost.gain * s)
+        //            * (packBoost.base  + packBoost.gain  * i)
+        //
+        // Les objets tactiques (banane, verte, rouge, champignon) suivent leurs
+        // propres courbes sur p/d/s/g ; les objets puissants (etoile, bill,
+        // eclair) ne lisent que la pression, avec un seuil d'ouverture chacun.
+        // Ajouter un objet = une entree dans `items`, rien a renormaliser.
         itemDistribution: {
-            leaderTier: { weights: { banana: 55, tripleBanana: 10, greenShell: 25, tripleGreenShell: 10, redShell: 0,  tripleRedShell: 0,  shroom: 0,  star: 0,  bill: 0  } },
-            // Seuils d'etoile, cales sur les bornes de paliers ci-dessous : T4
-            // s'ouvre a 2000 et T5 a 3000, si bien qu'un kart entrant dans un
-            // palier porteur d'etoile y a droit immediatement, sans fenetre morte.
-            starMinDistTop: 3000,
-            starMinDistMid: 2000,
-            // Delai d'ouverture de l'etoile, compte depuis le depart : les ecarts
-            // du premier bloc d'objets ne veulent encore rien dire, une etoile
-            // tiree la deciderait la course avant qu'elle commence.
-            starMinRaceMs: 10000,
-            tiers: [
-                { maxDistance: 500,   weights: { banana: 31, tripleBanana: 12, greenShell: 25, tripleGreenShell: 12, redShell: 12, tripleRedShell: 8,  shroom: 0,  star: 0,  bill: 0  } },
-                { maxDistance: 1000,  weights: { banana: 10, tripleBanana: 10, greenShell: 14, tripleGreenShell: 12, redShell: 26, tripleRedShell: 12, shroom: 16, star: 0,  bill: 0  } },
-                { maxDistance: 2000,  weights: { banana: 5,  tripleBanana: 7,  greenShell: 8,  tripleGreenShell: 7,  redShell: 22, tripleRedShell: 8,  shroom: 40, star: 3,  bill: 0  } },
-                // >>> REGLAGE DE TEST — bill gonfle sur les trois derniers paliers.
-                // Valeurs de production a remettre telles quelles :
-                //   T4  shroom: 42, star: 28, bill: 5
-                //   T5  shroom: 43, star: 40, bill: 12
-                //   T6  shroom: 20, star: 60, bill: 20
-                { maxDistance: 3000,  weights: { banana: 0,  tripleBanana: 3,  greenShell: 3,  tripleGreenShell: 4,  redShell: 13, tripleRedShell: 2,  shroom: 32, star: 18, bill: 25 } },
-                { maxDistance: 3500,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 5,  tripleRedShell: 0,  shroom: 25, star: 20, bill: 50 } },
-                // Dernier palier : c'est aussi le repli quand aucune borne ne
-                // correspond, il couvre donc tout au-dela de 3500. Un kart
-                // decroche a ce point la n'a plus rien a defendre, seule
-                // l'etoile le ramene dans la course.
-                { maxDistance: 4000,  weights: { banana: 0,  tripleBanana: 0,  greenShell: 0,  tripleGreenShell: 0,  redShell: 0,  tripleRedShell: 0,  shroom: 15, star: 25, bill: 60 } }
-                // <<< fin du reglage de test
-            ]
-        },
-        // Carapace bleue. Elle ne sort pas des paliers de distribution : elle a
-        // ses propres conditions, et reste rare par construction.
-        blueShell: {
-            // Ni le peloton de tete, ni le dernier.
-            minRank: 5,
-            maxRank: 7,
+            // Unites monde. Un tour vaut world.width, ~500 u/s : 3500 ~= 7 s de
+            // retard, la ou l'echelle sature.
+            distanceRef: 3500,
+            // Etalement du peloton et ecart au kart de devant, memes unites.
+            spreadRef: 4000,
+            gapRef: 1200,
 
-            // La chance court sur toute la course : nulle au depart, elle gagne
-            // `chancePerLap` a chaque tour sans depasser `chanceCap`, et chaque
-            // bleue lancee la coupe en deux.
-            chancePerLap: 0.05,
-            chanceCap: 0.15,
-            chanceDecay: 2,
+            // Part de l'etalement global dans l'isolement, le reste allant a
+            // l'ecart local (g).
+            spreadShare: 0.65,
+
+            // Part du rang dans la pression, le reste allant a l'ecart au premier.
+            rankShare: 0.45,
+
+            // Etape de course, effet leger : x0.85 au depart, x1.15 a l'arrivee.
+            // Les verrous `minStage` de chaque objet decident du calendrier.
+            stageBoost: { base: 0.85, gain: 0.30 },
+
+            // Peloton, effet fort : x0.55 peloton colle, x1 course eclatee.
+            packBoost: { base: 0.48, gain: 0.52 },
+
+            // Poids de l'objet deja recu au ramassage precedent, multiplie par
+            // ceci. A 1, neutralise.
+            repeatPenalty: 0.4,
+
+            // Profil de chaque objet : une courbe est une liste de facteurs
+            // multiplies entre eux (1 quand absent) :
+            //
+            //   { rise: [a, b], floor: f }   f en a (0 par defaut), 1 en b
+            //   { fall: [a, b], depth: p }   1 en a, 1 - p en b (p = 1 par defaut)
+            //   { bell: c, width: w }        1 en c, 0 a c - w et c + w
+            //
+            // Courbes disponibles : `rank` (p), `dist` (d), `stage` (s), `gap` (g).
+            // `packBonus` s'applique a tous : poids x (1 + packBonus * (1 - i)).
+            //
+            // Verrous, facultatifs, poids force a 0 hors condition :
+            //   minStage, minRank, lastRanks, minDist, unique
+            //
+            // Decote, pour toute la course et non le seul porteur :
+            //   decay        chaque exemplaire distribue multiplie par ceci le
+            //                poids du suivant
+            //   regenPerLap  ce que la decote regagne par tour du premier
+            items: {
+                // --- Objets tactiques -------------------------------------
+                // Seuls ceux-la restent non nuls en p = 0 : le premier n'a que
+                // banane et verte.
+
+                // Objet de tete : decroit avec le rang, chute avec l'ecart sans
+                // s'annuler (depth 0.90 laisse un dixieme du poids).
+                banana: {
+                    base: 100,
+                    rank:  [{ fall: [0, 1], depth: 0.80 }],
+                    dist:  [{ fall: [0, 0.50], depth: 0.85 }, { fall: [0.45, 0.75], depth: 0.90 }],
+                    stage: [{ fall: [0, 1], depth: 0.25 }],
+                    packBonus: 0.30
+                },
+
+                // Culmine en deuxieme/troisieme. Meme traitement que la banane
+                // a grand ecart.
+                greenShell: {
+                    base: 95,
+                    rank:  [{ rise: [0, 0.30], floor: 0.55 }, { fall: [0.30, 1], depth: 0.55 }],
+                    dist:  [{ fall: [0, 0.55], depth: 0.80 }, { fall: [0.50, 0.82], depth: 0.90 }],
+                    stage: [{ fall: [0, 1], depth: 0.20 }],
+                    packBonus: 0.35
+                },
+
+                // Nul pour le premier. Cible le kart de rang superieur, donc
+                // `gap` commande ; `dist` ne garde qu'un role de fond.
+                redShell: {
+                    base: 95,
+                    rank:  [{ rise: [0, 0.14] }, { fall: [0.55, 1], depth: 0.45 }],
+                    dist:  [{ bell: 0.35, width: 0.72 }],
+                    gap:   [{ fall: [0.55, 1.20] }],
+                    packBonus: 0.20
+                },
+
+                // Seul objet de remontee sans condition d'etape. Plancher d'ecart
+                // pour rester present en peloton colle, s'efface a tres grand
+                // ecart.
+                shroom: {
+                    base: 70,
+                    rank:  [{ rise: [0, 0.14] }],
+                    dist:  [{ rise: [0, 0.45], floor: 0.30 }, { fall: [0.70, 1], depth: 0.55 }],
+                    packBonus: 0.45
+                },
+
+                // --- Objets puissants -------------------------------------
+                // Trois seuils decales sur la meme pression. `minStage` tient le
+                // calendrier : rien au tour 1, etoile au tour 2, bill et eclair
+                // a partir du tour 3.
+
+                star: {
+                    base: 58,
+                    power: { open: 0.28, full: 0.66 },
+                    minStage: 0.20,
+                    minRank: 2
+                },
+
+                bill: {
+                    base: 34,
+                    power: { open: 0.45, full: 0.86 },
+                    minStage: 0.40,
+                    minRank: 4,
+                    minDist: 0.30
+                },
+
+                // Tombe sur toute la piste, ne vise personne. Un seul en
+                // circulation, jamais pendant un orage. Decote un peu plus
+                // severe que la bleue (0.35 contre 0.45).
+                lightning: {
+                    base: 20,
+                    power: { open: 0.58, full: 0.95 },
+                    minStage: 0.45,
+                    lastRanks: 3,
+                    minDist: 0.40,
+                    unique: true,
+                    decay: 0.35,
+                    regenPerLap: 0.25
+                },
+
+                // --- Triples (desactives, voir disabledItems) --------------
+                // Defensifs : pesent en tete et milieu de peloton, s'effacent a
+                // l'arriere.
+                tripleBanana: {
+                    base: 40,
+                    rank:  [{ fall: [0.30, 1], depth: 0.90 }],
+                    dist:  [{ fall: [0, 0.55], depth: 0.85 }, { fall: [0.55, 0.90] }],
+                    stage: [{ fall: [0, 1], depth: 0.25 }],
+                    packBonus: 0.30
+                },
+                tripleGreenShell: {
+                    base: 40,
+                    rank:  [{ rise: [0, 0.15], floor: 0.50 }, { fall: [0.35, 0.85] }],
+                    dist:  [{ fall: [0, 0.60], depth: 0.80 }, { fall: [0.60, 0.95] }],
+                    stage: [{ fall: [0, 1], depth: 0.20 }],
+                    packBonus: 0.35
+                },
+                tripleRedShell: {
+                    base: 40,
+                    rank:  [{ rise: [0, 0.14] }, { fall: [0.60, 1], depth: 0.60 }],
+                    dist:  [{ bell: 0.35, width: 0.55 }],
+                    packBonus: 0.20
+                }
+            }
+        },
+        // Carapace bleue : tirage a part, joue avant les poids de
+        // itemDistribution. Declenchee par l'echappee du premier, pas par
+        // l'ecart du tireur.
+        //
+        //   chance = baseChance * montee(stageWindow)
+        //          * (leadFloor + leadGain * echappee) * poids de rang * decote
+        blueShell: {
+            baseChance: 0.14,
+
+            // Nulle avant, pleine apres : les ecarts des deux premiers tours sont
+            // encore ceux de la grille.
+            stageWindow: { from: 0.35, to: 0.85 },
+
+            // Echappee du premier sur le deuxieme, rapportee a leadRef.
+            leadRef: 2200,
+            leadFloor: 0.30,
+            leadGain: 0.95,
+
+            // Poids par rang ; absent = jamais de bleue.
+            rankWeights: { 3: 0.65, 4: 0.65, 5: 1.00, 6: 1.00, 7: 0.75 },
+
+            // Chaque bleue lancee multiplie la chance par `decay`, regagnee
+            // ensuite de `regenPerLap` a chaque tour du premier.
+            decay: 0.45,
+            regenPerLap: 0.30,
+
+            // Garde-fou dur : jamais deux bleues coup sur coup.
+            cooldownMs: 12000,
 
             // Trajet en ligne droite au milieu de la piste, au-dessus de tout.
             speed: 1500,
@@ -219,28 +378,9 @@
             blastMs: 300
         },
 
-        // Eclair. Comme la bleue, il ne passe pas par les paliers : c'est l'objet
-        // du decroche, pas celui du peloton. Il ne se lance pas sur quelqu'un,
-        // il tombe sur toute la piste d'un coup.
+        // Eclair : conditions de sortie dans itemDistribution.items.lightning.
+        // Ici, seulement ce qui suit le lancer.
         lightning: {
-            // Les trois derniers, et seulement s'ils ont vraiment lache prise :
-            // 2000 est la borne haute du T3, la condition se lit donc « au moins
-            // T4 ». Un fond de peloton encore accroche n'y a pas droit.
-            //
-            // Cale a 3000 (« au moins T5 »), l'eclair ne sortait jamais : a cet
-            // ecart le kart recoit 50 a 80 % de champignon ou d'etoile, soit
-            // exactement ce qui le ramene sous le seuil. La fenetre se refermait
-            // avant qu'une boite soit ramassee.
-            lastRanks: 3,
-            minDistance: 2000,
-            chance: 0.12,
-
-            // Pas avant ce tour. `leaderLap` compte a partir de 1, la course en
-            // fait cinq : l'eclair s'ouvre donc a la mi-course. Les ecarts des
-            // deux premiers tours sont encore ceux de la grille, pas ceux d'une
-            // course — punir le peloton la-dessus n'aurait rien merite.
-            minLap: 3,
-
             // Rythme de l'orage, en ms depuis le lancer. `strikeAt` est
             // l'instant unique ou tout arrive d'un coup : le ciel bascule dans le
             // noir, les eclairs tombent, et le malus s'applique. A zero, il n'y a
@@ -331,21 +471,48 @@
             holdItemMin: 500, holdItemMax: 8000,
 
             // Un objet arrive en main, sans hitbox. Le kart decide ensuite, ou
-            // non, de le sortir derriere lui.
-            trailChance: 0.6,
+            // non, de le sortir derriere lui. Le premier le fait plus souvent
+            // que les autres : n'ayant personne a viser, son objet vaut mieux
+            // comme bouclier que dans sa main.
+            trailChance: { leader: 0.85, pack: 0.6, last: 0.6 },
 
             // Probabilite qu'une carapace parte vers l'arriere, par type et par
-            // place. Le leader n'a personne devant, le dernier personne
-            // derriere.
+            // place. Le dernier n'a personne derriere. Le premier est a 1 et le
+            // restera : la physique lui interdit de tirer devant lui, ces
+            // valeurs ne font que dire la meme chose au meme endroit que les
+            // autres.
             shellBackwardChance: {
-                greenShell: { leader: 0.9, pack: 0.2, last: 0.05 },
-                redShell: { leader: 0.95, pack: 0.05, last: 0 }
+                greenShell: { leader: 1, pack: 0.2, last: 0.05 },
+                redShell: { leader: 1, pack: 0.05, last: 0 }
             },
 
             // Banane lancee en cloche devant plutot que lachee derriere.
             bananaLobChance: { leader: 0, pack: 0.2, last: 0.7 },
             trailDelayMin: 400, trailDelayMax: 3000,
             trailHoldMin: 1200, trailHoldMax: 6000,
+
+            // Agressivite : un kart mal place joue ses objets plus vite et les
+            // garde moins derriere lui. Rang et ecart comptent ensemble, par
+            // moyenne geometrique — dernier dans le peloton, ou deuxieme a une
+            // demi-piste, ne suffit pas ; il faut les deux. L'etape de course
+            // module ensuite le tout : c'est le temps qui reste pour remonter.
+            aggression: {
+                // Ecart au premier ou le terme distance sature, meme ordre que
+                // les paliers d'objets.
+                distanceRef: 3000,
+
+                // Part de l'agressivite qui s'exprime au depart. Elle atteint sa
+                // pleine valeur au dernier tour, et ne la depasse jamais : etre
+                // dernier ne presse a rien tant qu'il reste quatre tours pour
+                // revenir.
+                startRatio: 0.3,
+
+                // Delais d'attente et probabilite de trainer l'objet, en
+                // fraction de leur valeur normale, pour un kart au maximum de
+                // son agressivite.
+                hurryRatio: 0.35,
+                trailRatio: 0.4
+            },
             dodgeIntensityMin: 20, dodgeIntensityMax: 50,
 
             // Perception : le seuil est un temps avant impact, non une distance.
@@ -394,7 +561,9 @@
             dodgeMissChance: 0.1,
             dodgeEasyRatio: 2.5,
             overtakeDetectionRange: 120, overtakeMinDistance: 12, overtakeSideSpeed: 10,
-            boxDetectionRange: 400, boxSeekIntensity: 25,
+            // Ecart en deca duquel la boite est consideree dans l'axe : le kart
+            // tient sa ligne au lieu de la corriger.
+            boxDetectionRange: 400, boxSeekIntensity: 25, boxAlignTolerance: 2,
             wanderIntervalMin: 2000, wanderIntervalMax: 6000,
             wanderDurationMin: 500, wanderDurationMax: 1500, wanderSpeed: 4
         },

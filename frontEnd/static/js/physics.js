@@ -169,6 +169,55 @@
         kart.dodgeCrossing = false;
     }
 
+    // Un kart devant, dans la voie de la boite, la prendra le premier : de son
+    // point de vue elle est deja partie. Meme condition d'etat que la collecte,
+    // une toupie ramasse aussi bien qu'un kart lance.
+    function isBoxContested(cfg, state, kart, box, boxDist) {
+        for (let i = 0; i < state.karts.length; i++) {
+            const other = state.karts[i];
+            if (other.id === kart.id) continue;
+            if (other.state !== 'running' && other.state !== 'hit') continue;
+            if (other.finished) continue;
+
+            const d = getShortestDistance(cfg, other.worldX, kart.worldX);
+            if (d <= 0 || d > boxDist) continue;
+            if (Math.abs(other.yPercent - box.y) < cfg.hitboxes.itemBox.y) return true;
+        }
+        return false;
+    }
+
+    // Boite visee : la plus proche de sa trajectoire. Elles sont toutes sur la
+    // meme verticale, l'ecart se mesure donc en profondeur, et celle d'en face
+    // gagne d'office quand elle est libre. Aucune de libre, il tente quand meme
+    // la plus proche : le kart qui la lui bouche peut encore la manquer.
+    function findTargetBox(cfg, state, kart) {
+        let free = null;
+        let freeDiff = Infinity;
+        let fallback = null;
+        let fallbackDiff = Infinity;
+
+        for (let i = 0; i < state.itemBoxes.length; i++) {
+            const box = state.itemBoxes[i];
+            if (!box.active) continue;
+
+            const dist = getShortestDistance(cfg, box.worldX, kart.worldX);
+            if (dist <= 0 || dist > cfg.ai.boxDetectionRange) continue;
+
+            const diff = Math.abs(box.y - kart.yPercent);
+            if (diff < fallbackDiff) {
+                fallbackDiff = diff;
+                fallback = box;
+            }
+
+            if (diff < freeDiff && !isBoxContested(cfg, state, kart, box, dist)) {
+                freeDiff = diff;
+                free = box;
+            }
+        }
+
+        return free || fallback;
+    }
+
     function updateAI(cfg, state, rng, now, kart, deltaTime) {
         if (kart.state !== 'running') return;
 
@@ -301,7 +350,7 @@
         // se faire toucher en visant reste prioritaire — et avant le
         // depassement.
         if (isAiming(cfg, kart) && now > kart.throwTime - ai.aimLeadMs) {
-            const dir = kart.shotDirection;
+            const dir = getShotDirection(state, kart);
             let target = null;
             let targetDist = Infinity;
 
@@ -360,19 +409,16 @@
 
         let boxTargetFound = false;
         if (!kart.heldItem) {
-            const boxesLen = state.itemBoxes.length;
-            for (let i = 0; i < boxesLen; i++) {
-                const box = state.itemBoxes[i];
-                if (!box.active) continue;
-                let dist = getShortestDistance(cfg, box.worldX, kart.worldX);
-                if (dist > 0 && dist < cfg.ai.boxDetectionRange) {
-                    const diffY = box.y - kart.yPercent;
-                    if (Math.abs(diffY) > 2) {
-                        kart.targetVy = ((diffY > 0) ? cfg.ai.boxSeekIntensity : -cfg.ai.boxSeekIntensity) * handling;
-                        boxTargetFound = true;
-                        break;
-                    }
-                }
+            const box = findTargetBox(cfg, state, kart);
+            if (box) {
+                const diffY = box.y - kart.yPercent;
+                boxTargetFound = true;
+
+                // Deja dans l'axe : il tient sa ligne. Le laisser repartir en
+                // maraude le ferait deriver hors de la boite qu'il vise.
+                kart.targetVy = (Math.abs(diffY) > cfg.ai.boxAlignTolerance)
+                    ? ((diffY > 0) ? cfg.ai.boxSeekIntensity : -cfg.ai.boxSeekIntensity) * handling
+                    : 0;
             }
         }
 
@@ -447,102 +493,227 @@
         return (specs && specs[itemType]) ? specs[itemType] : null;
     }
 
-    // La bleue ne passe pas par les paliers : elle a ses propres conditions.
-    function rollBlueShell(cfg, state, rng, kart) {
-        const spec = cfg.blueShell;
-        if (!isItemEnabled(cfg, 'blueShell')) return false;
-        if (kart.rank < spec.minRank || kart.rank > spec.maxRank) return false;
+    // Distribution des objets : modele documente en tete de `itemDistribution`
+    // dans physics-config.js. Ce qui suit n'en est que l'evaluation, aucun
+    // objet n'est nomme ici.
 
-        const leader = getRacingLeader(state);
-        if (!leader || leader.id === kart.id) return false;
-
-        return state.blueShellChance > 0 && rng() < state.blueShellChance;
+    function clamp01(value) {
+        return value < 0 ? 0 : (value > 1 ? 1 : value);
     }
 
-    // L'eclair non plus ne passe pas par les paliers. Un seul orage a la fois, et
-    // un seul eclair en circulation : deux ciels noirs qui se chevauchent ne
-    // voudraient plus rien dire, et le second n'aurait plus personne a rapetisser
-    // que le premier n'ait deja touche.
-    function rollLightning(cfg, state, rng, kart, distToLeader) {
-        const spec = cfg.lightning;
-        if (!isItemEnabled(cfg, 'lightning')) return false;
-        if (state.storm) return false;
-        // Le tour du premier, et non celui du kart : c'est la mesure d'avancement
-        // de la course, la meme que celle qui fait monter la chance de la bleue.
-        if (state.leaderLap < spec.minLap) return false;
-        if (kart.rank <= state.karts.length - spec.lastRanks) return false;
-        if (distToLeader < spec.minDistance) return false;
+    // Monte de 0 en `from` a 1 en `to`, plate au-dela des deux bornes.
+    function ramp(value, from, to) {
+        if (to === from) return value < from ? 0 : 1;
+        return clamp01((value - from) / (to - from));
+    }
 
+    // Un descripteur illisible vaut 1 plutot que de faire disparaitre l'objet.
+    function curveFactor(seg, x) {
+        if (seg.rise) {
+            const floor = seg.floor || 0;
+            return floor + (1 - floor) * ramp(x, seg.rise[0], seg.rise[1]);
+        }
+        if (seg.fall) {
+            const depth = (seg.depth === undefined) ? 1 : seg.depth;
+            return 1 - depth * ramp(x, seg.fall[0], seg.fall[1]);
+        }
+        if (seg.bell !== undefined) {
+            return Math.max(0, 1 - Math.abs(x - seg.bell) / seg.width);
+        }
+        return 1;
+    }
+
+    // Produit des facteurs d'une courbe ; absente, elle vaut 1.
+    function curve(segments, x) {
+        if (!segments) return 1;
+        let value = 1;
+        for (let i = 0; i < segments.length; i++) value *= curveFactor(segments[i], x);
+        return value > 0 ? value : 0;
+    }
+
+    // Le dernier encore en course. Pendant de getRacingLeader : ensemble ils
+    // donnent l'etalement du peloton.
+    function getRacingTail(state) {
+        let worst = null;
+        for (let i = 0; i < state.karts.length; i++) {
+            const kart = state.karts[i];
+            if (kart.finished) continue;
+            if (kart.state !== 'running' && kart.state !== 'hit') continue;
+            if (!worst || kart.rank > worst.rank) worst = kart;
+        }
+        return worst;
+    }
+
+    // Avancement du premier, 0 au depart a 1 a l'arrivee : mesure d'etape
+    // commune a tous les karts.
+    function getRaceStage(state) {
+        const leader = state.cachedLeader;
+        if (!leader || !leader.finishDistance) return 0;
+        return clamp01(leader.totalDistance / leader.finishDistance);
+    }
+
+    // Les mesures dont depend toute la distribution, calculees a la demande.
+    function computeItemAxes(cfg, state, kart) {
+        const spec = cfg.itemDistribution;
+        const count = state.karts.length;
+
+        const p = count > 1 ? clamp01((kart.rank - 1) / (count - 1)) : 0;
+        const d = clamp01(getDistanceToLeader(state, kart) / spec.distanceRef);
+        const s = getRaceStage(state);
+
+        const ahead = getKartByRank(state, kart.rank - 1);
+        const gapAhead = ahead ? remainingDistance(kart) - remainingDistance(ahead) : 0;
+        const g = clamp01(gapAhead / spec.gapRef);
+
+        const tail = getRacingTail(state);
+        const spread = tail ? getDistanceToLeader(state, tail) : 0;
+        const i = spec.spreadShare * clamp01(spread / spec.spreadRef)
+            + (1 - spec.spreadShare) * g;
+
+        const pressure = (spec.rankShare * p + (1 - spec.rankShare) * d)
+            * (spec.stageBoost.base + spec.stageBoost.gain * s)
+            * (spec.packBoost.base + spec.packBoost.gain * i);
+
+        return { p: p, d: d, s: s, g: g, i: i, pressure: pressure };
+    }
+
+    // Rang minimal exige ; `lastRanks` se compte depuis la fin de grille et
+    // l'emporte s'il est plus restrictif.
+    function minRankFor(profile, kartCount) {
+        let min = profile.minRank || 1;
+        if (profile.lastRanks) min = Math.max(min, kartCount - profile.lastRanks + 1);
+        return min;
+    }
+
+    // Decote : chaque exemplaire distribue divise le poids du suivant, pour
+    // tout le monde, resorbee tour apres tour. La bleue suit la meme regle via
+    // son propre bloc de config.
+    function decaySpecFor(cfg, itemType) {
+        if (itemType === 'blueShell') return cfg.blueShell;
+        const profile = cfg.itemDistribution.items[itemType];
+        return (profile && profile.decay) ? profile : null;
+    }
+
+    // 1 tant qu'aucun exemplaire n'a ete distribue.
+    function itemDecayOf(state, itemType) {
+        const value = state.itemDecay[itemType];
+        return (value === undefined) ? 1 : value;
+    }
+
+    function applyItemDecay(cfg, state, itemType) {
+        const spec = decaySpecFor(cfg, itemType);
+        if (!spec) return;
+        state.itemDecay[itemType] = itemDecayOf(state, itemType) * spec.decay;
+    }
+
+    // A chaque tour entame par le premier.
+    function regenItemDecay(cfg, state) {
+        for (const itemType in state.itemDecay) {
+            const spec = decaySpecFor(cfg, itemType);
+            if (!spec || !spec.regenPerLap) continue;
+            state.itemDecay[itemType] = Math.min(1, state.itemDecay[itemType] + spec.regenPerLap);
+        }
+    }
+
+    // Un seul exemplaire en circulation ; un orage en cours compte pour l'eclair.
+    function isSingletonFree(state, itemType) {
+        if (itemType === 'lightning' && state.storm) return false;
         for (let i = 0; i < state.karts.length; i++) {
             const held = state.karts[i].heldItem;
-            if (held && held.type === 'lightning') return false;
+            if (held && held.type === itemType) return false;
+        }
+        return true;
+    }
+
+    // Poids d'un objet pour ce kart, dans cette situation. Zero se lit « pas
+    // lui, pas ici, pas maintenant » : desactive, verrouille, ou courbe eteinte.
+    function itemWeight(cfg, state, kart, itemType, profile, axes) {
+        if (!isItemEnabled(cfg, itemType)) return 0;
+        if (profile.minStage && axes.s < profile.minStage) return 0;
+        if (profile.minDist && axes.d < profile.minDist) return 0;
+        if (kart.rank < minRankFor(profile, state.karts.length)) return 0;
+        if (profile.unique && !isSingletonFree(state, itemType)) return 0;
+
+        let weight = profile.base;
+
+        if (profile.power) {
+            // Les objets puissants ne lisent que la pression.
+            weight *= ramp(axes.pressure, profile.power.open, profile.power.full);
+        } else {
+            weight *= curve(profile.rank, axes.p);
+            weight *= curve(profile.dist, axes.d);
+            weight *= curve(profile.stage, axes.s);
+            weight *= curve(profile.gap, axes.g);
         }
 
-        return rng() < spec.chance;
+        if (profile.packBonus) weight *= 1 + profile.packBonus * (1 - axes.i);
+        if (kart.lastItem === itemType) weight *= cfg.itemDistribution.repeatPenalty;
+        weight *= itemDecayOf(state, itemType);
+
+        return weight > 0 ? weight : 0;
+    }
+
+    // Tirage a part, joue avant les poids : declenche par l'echappee du
+    // premier, pas par le retard du tireur.
+    function rollBlueShell(cfg, state, rng, now, kart) {
+        const spec = cfg.blueShell;
+        if (!isItemEnabled(cfg, 'blueShell')) return false;
+        if (now - state.blueShellLastAt < spec.cooldownMs) return false;
+
+        // Un rang absent de la table n'en recoit jamais.
+        const rankWeight = spec.rankWeights[kart.rank] || 0;
+        if (rankWeight <= 0) return false;
+
+        const leader = state.cachedLeader;
+        if (!leader || leader.id === kart.id) return false;
+
+        const second = getKartByRank(state, 2);
+        const lead = second ? remainingDistance(second) - remainingDistance(leader) : 0;
+        const escape = clamp01(lead / spec.leadRef);
+
+        const chance = spec.baseChance
+            * ramp(getRaceStage(state), spec.stageWindow.from, spec.stageWindow.to)
+            * (spec.leadFloor + spec.leadGain * escape)
+            * rankWeight
+            * itemDecayOf(state, 'blueShell');
+
+        return chance > 0 && rng() < chance;
     }
 
     function rollItem(cfg, state, rng, now, kart) {
-        const distToLeader = getDistanceToLeader(state, kart);
-
-        if (rollBlueShell(cfg, state, rng, kart)) {
-            state.blueShellChance /= cfg.blueShell.chanceDecay;
+        if (rollBlueShell(cfg, state, rng, now, kart)) {
+            applyItemDecay(cfg, state, 'blueShell');
+            state.blueShellLastAt = now;
             return 'blueShell';
         }
 
-        if (rollLightning(cfg, state, rng, kart, distToLeader)) return 'lightning';
+        const profiles = cfg.itemDistribution.items;
+        const axes = computeItemAxes(cfg, state, kart);
 
-        const itemDist = cfg.itemDistribution;
-        const tiers = itemDist.tiers;
-
-        let tier;
-        if (kart.rank === 1) {
-            tier = itemDist.leaderTier;
-        } else {
-            tier = tiers.find(t => distToLeader <= t.maxDistance) || tiers[tiers.length - 1];
+        // Seuls les poids non nuls entrent dans le tirage : un objet verrouille
+        // ne peut donc pas etre choisi par un rng() rendant exactement 0.
+        const pool = [];
+        let total = 0;
+        for (const itemType in profiles) {
+            const weight = itemWeight(cfg, state, kart, itemType, profiles[itemType], axes);
+            if (weight <= 0) continue;
+            pool.push({ type: itemType, weight: weight });
+            total += weight;
         }
 
-        const totalKarts = state.karts.length;
-        const isLastTwo = kart.rank >= totalKarts - 1;
-        // Fenetre morte au depart : tant qu'elle dure, aucun rang n'y a droit,
-        // les ecarts du premier bloc d'objets ne signifiant encore rien.
-        const raceMs = now - state.startAt;
-        let canGetStar = false;
-        if (raceMs < itemDist.starMinRaceMs) {
-            canGetStar = false;
-        } else if (kart.rank === 1) {
-            canGetStar = false;
-        } else if (kart.rank <= 3) {
-            canGetStar = distToLeader >= itemDist.starMinDistTop;
-        } else if (isLastTwo) {
-            canGetStar = true;
-        } else {
-            canGetStar = distToLeader >= itemDist.starMinDistMid;
-        }
-
-        const weights = {};
-        for (const key in tier.weights) {
-            let w = tier.weights[key];
-            if (key === 'star' && !canGetStar) w = 0;
-            if (!isItemEnabled(cfg, key)) w = 0;
-            weights[key] = w;
-        }
-
-        const total = Object.values(weights).reduce((s, w) => s + w, 0);
-        // Tout le palier peut etre desactive : dans ce cas le kart repart sans
-        // objet plutot que d'en recevoir un que la config interdit.
+        // Tout peut etre verrouille au meme instant : dans ce cas le kart repart
+        // sans objet plutot que d'en recevoir un que la config interdit.
         if (total <= 0) return null;
 
         let roll = rng() * total;
-        let last = null;
-        for (const [itemType, weight] of Object.entries(weights)) {
-            // Les poids nuls sont sautes, sinon un rng() rendant exactement 0
-            // selectionnerait la premiere cle meme interdite.
-            if (weight <= 0) continue;
-            last = itemType;
-            roll -= weight;
-            if (roll <= 0) return itemType;
+        let chosen = pool[pool.length - 1].type;
+        for (let i = 0; i < pool.length; i++) {
+            roll -= pool[i].weight;
+            if (roll <= 0) { chosen = pool[i].type; break; }
         }
-        return last;
+
+        applyItemDecay(cfg, state, chosen);
+        return chosen;
     }
 
     function getKartByRank(state, rank) {
@@ -582,6 +753,44 @@
         return held.type === 'banana' && kart.lobbing;
     }
 
+    // Agressivite du kart, de 0 a 1. Le rang et l'ecart au premier se
+    // multiplient : etre dernier au milieu du peloton, ou deuxieme a une demi
+    // piste, ne suffit pas — il faut les deux pour n'avoir plus rien a perdre.
+    // La racine remonte le resultat, sans quoi deux moities donneraient un
+    // quart et personne ne serait jamais agressif.
+    //
+    // L'etape de course pondere le tout : un dernier a quatre tours de la fin a
+    // le temps de voir venir, le meme dans le dernier tour n'a plus que ses
+    // objets. Le facteur vaut 1 a l'arrivee, jamais plus : la fin de course
+    // retrouve exactement l'agressivite d'avant ce terme, le debut est calme.
+    function getAggression(cfg, state, kart) {
+        const spec = cfg.ai.aggression;
+        const total = state.karts.length;
+
+        const rankTerm = (total > 1) ? (kart.rank - 1) / (total - 1) : 0;
+
+        const dist = getDistanceToLeader(state, kart);
+        const distTerm = (spec.distanceRef > 0)
+            ? Math.min(Math.max(dist, 0), spec.distanceRef) / spec.distanceRef
+            : 0;
+
+        // Lue sur le premier : c'est lui qui decide du temps qu'il reste aux
+        // autres, pas le retard de celui qui le subit.
+        const pace = state.cachedLeader || kart;
+        const progress = (pace.finishDistance > 0)
+            ? Math.min(Math.max(pace.totalDistance / pace.finishDistance, 0), 1)
+            : 0;
+        const raceTerm = spec.startRatio + (1 - spec.startRatio) * progress;
+
+        return Math.sqrt(rankTerm * distTerm) * raceTerm;
+    }
+
+    // Ce par quoi multiplier une attente : 1 pour qui mene, hurryRatio pour qui
+    // n'a plus rien a perdre.
+    function hurryFactor(cfg, aggression) {
+        return 1 - aggression * (1 - cfg.ai.aggression.hurryRatio);
+    }
+
     // Decide de la vie de l'objet : sorti derriere le kart a un moment, ou garde
     // en main jusqu'au tir.
     // Le sens du tir est arrete des la reception : le kart doit savoir de quel
@@ -599,16 +808,28 @@
             kart.shotDirection = kart.lobbing ? 1 : -1;
         }
 
+        // Le premier defend : rien ne part devant lui, la banane est posee et
+        // non lobee. Son attaque, c'est la verte ou la banane laissee derriere.
+        if (kart.rank === 1) {
+            kart.lobbing = false;
+            kart.shotDirection = -1;
+        }
+
         kart.aimError = randomRange(rng, -ai.aimErrorMax, ai.aimErrorMax) / kart.stats.handling;
 
-        if (isTrailable(cfg, itemType) && rng() < ai.trailChance) {
-            kart.trailTime = now + randomRange(rng, ai.trailDelayMin, ai.trailDelayMax);
-            kart.throwTime = kart.trailTime + randomRange(rng, ai.trailHoldMin, ai.trailHoldMax);
+        const aggression = getAggression(cfg, state, kart);
+        const hurry = hurryFactor(cfg, aggression);
+        const trailChance = rankChance(ai.trailChance, state, kart)
+            * (1 - aggression * (1 - ai.aggression.trailRatio));
+
+        if (isTrailable(cfg, itemType) && rng() < trailChance) {
+            kart.trailTime = now + randomRange(rng, ai.trailDelayMin, ai.trailDelayMax) * hurry;
+            kart.throwTime = kart.trailTime + randomRange(rng, ai.trailHoldMin, ai.trailHoldMax) * hurry;
             return;
         }
 
         kart.trailTime = 0;
-        kart.throwTime = now + randomRange(rng, ai.holdItemMin, ai.holdItemMax);
+        kart.throwTime = now + randomRange(rng, ai.holdItemMin, ai.holdItemMax) * hurry;
     }
 
     // Orbite elliptique autour du kart, en coordonnees monde donc identique sur
@@ -658,6 +879,8 @@
         const itemType = rollItem(cfg, state, rng, now, kart);
         if (!itemType) return;
 
+        kart.lastItem = itemType;
+
         const holdPosition = getHoldPosition(cfg, itemType);
         const spec = getOrbitSpec(cfg, itemType);
 
@@ -692,7 +915,8 @@
                 });
             }
 
-            kart.throwTime = now + randomRange(rng, cfg.ai.holdItemMin, cfg.ai.holdItemMax);
+            kart.throwTime = now + randomRange(rng, cfg.ai.holdItemMin, cfg.ai.holdItemMax)
+                * hurryFactor(cfg, getAggression(cfg, state, kart));
             return;
         }
 
@@ -715,11 +939,45 @@
         return table.pack;
     }
 
-    // Le plus proche devant, en sautant ceux qui sont colles au tireur. Null si
-    // tout le monde est trop proche : la rouge part alors sans cible.
+    // Note d'un candidat pour la rouge, exprimee en distance equivalente : la
+    // plus basse gagne. Au-dela de `redShellComfortTarget`, un kart vaut son
+    // ecart brut, comme avant. En dessous il reste eligible, mais recule dans le
+    // classement d'autant plus qu'il est colle au tireur.
+    //
+    // C'est une pente et non un seuil, et c'est tout l'objet de la fonction. Avec
+    // le simple plancher d'avant, un kart a un pixel sous la barre etait ecarte
+    // exactement comme un kart au pare-chocs : la rouge allait viser derriere lui
+    // — ou partait sans cible du tout quand il etait seul devant — en laissant
+    // filer une proie qu'elle pouvait parfaitement toucher. C'est le « saute un
+    // ennemi en face » qu'on observait.
+    //
+    // Le plancher qui subsiste est le seul que la physique impose : l'objet ne
+    // s'arme qu'a `itemArmDistance` du tireur (voir la boucle d'armement dans
+    // stepPhysics) et traverse tout sans effet avant ca. Viser plus pres que
+    // cette distance n'est pas « difficile », c'est litteralement sans effet.
+    //
+    // Rend Infinity pour un candidat inatteignable, ce qui l'exclut de fait —
+    // les karts derriere le tireur compris, leur `dist` etant negative.
+    function redShellTargetScore(cfg, dist) {
+        const floor = cfg.speeds.redShellMinTarget;
+        if (dist < floor) return Infinity;
+
+        const comfort = cfg.speeds.redShellComfortTarget;
+        if (dist >= comfort) return dist;
+
+        // Au carre : la penalite reste negligeable au bord du confort et ne mord
+        // vraiment que sur les cibles au contact. Une penalite lineaire ferait
+        // exactement l'inverse de ce qu'on cherche, en decalant tout le monde.
+        const shortfall = (comfort - dist) / (comfort - floor);
+        return dist + cfg.speeds.redShellClosePenalty * shortfall * shortfall;
+    }
+
+    // Le meilleur candidat devant, au sens de la note ci-dessus. Null seulement
+    // si personne n'est atteignable, c'est-a-dire si tout le monde est sous le
+    // plancher d'armement : la rouge part alors sans cible.
     function findRedShellTarget(cfg, state, kart) {
         let best = null;
-        let bestDist = Infinity;
+        let bestScore = Infinity;
 
         for (let i = 0; i < state.karts.length; i++) {
             const other = state.karts[i];
@@ -727,14 +985,23 @@
             if (other.state !== 'running' && other.state !== 'hit') continue;
 
             const dist = getShortestDistance(cfg, other.worldX, kart.worldX);
-            if (dist < cfg.speeds.redShellMinTarget) continue;
-            if (dist < bestDist) {
-                bestDist = dist;
+            const score = redShellTargetScore(cfg, dist);
+            if (score < bestScore) {
+                bestScore = score;
                 best = other;
             }
         }
 
         return best;
+    }
+
+    // Sens de tir effectif. Le premier ne lance jamais devant lui : il n'a
+    // personne a viser de ce cote, et une carapace qui part vers l'avant depuis
+    // la tete ne peut que revenir sur un retardataire au tour suivant. La regle
+    // est ici et non dans un tirage, pour qu'elle tienne aussi quand le kart
+    // prend la tete entre la reception de l'objet et son lancer.
+    function getShotDirection(state, kart) {
+        return (kart.rank === 1) ? -1 : kart.shotDirection;
     }
 
     function rollShellDirection(cfg, rng, state, kart, itemType) {
@@ -819,6 +1086,7 @@
             removeOrbitItem(kart, 0);
 
             let startX, startY;
+            let dir = 1;
             if (child === 'banana') {
                 // Un piege est simplement lache : on part de la position d'orbite
                 // courante, donc sans saut visuel. Le rayon vertical deborde la
@@ -830,17 +1098,21 @@
             } else {
                 // Une carapace est tiree vers l'avant, comme depuis la main :
                 // la faire partir de l'arriere de l'orbite la ferait traverser
-                // son propre kart.
-                startX = kart.worldX + cfg.offsets.world.shellSpawn;
+                // son propre kart. Le premier tire derriere, elle part donc de
+                // l'arriere.
+                dir = getShotDirection(state, kart);
+                startX = kart.worldX + (dir > 0 ? cfg.offsets.world.shellSpawn
+                                                : cfg.offsets.world.heldItemBehind);
                 startY = kart.yPercent;
             }
 
             // L'objet reprend son id : son element DOM est reutilise tel quel par
             // le rendu des items en jeu.
-            spawnLaunchedItem(cfg, state, rng, now, kart, child, orb.id, startX, startY, events);
+            spawnLaunchedItem(cfg, state, rng, now, kart, child, orb.id, startX, startY, events, dir);
 
             if (kart.heldItem) {
-                kart.throwTime = now + randomRange(rng, cfg.orbit.dropIntervalMin, cfg.orbit.dropIntervalMax);
+                kart.throwTime = now + randomRange(rng, cfg.orbit.dropIntervalMin, cfg.orbit.dropIntervalMax)
+                    * hurryFactor(cfg, getAggression(cfg, state, kart));
             }
             return;
         }
@@ -964,10 +1236,10 @@
         let lobbed = false;
 
         if (held.type === 'greenShell' || held.type === 'redShell') {
-            direction = kart.shotDirection;
+            direction = getShotDirection(state, kart);
             startX = kart.worldX + (direction > 0 ? cfg.offsets.world.shellSpawn
                                                   : cfg.offsets.world.heldItemBehind);
-        } else if (held.type === 'banana' && kart.lobbing) {
+        } else if (held.type === 'banana' && kart.lobbing && kart.rank !== 1) {
             lobbed = true;
             startX = kart.worldX + cfg.offsets.world.shellSpawn;
         }
@@ -1195,11 +1467,11 @@
             if (lap !== state.leaderLap) {
                 state.leaderLap = lap;
 
-                // Chaque tour entame rend la bleue un peu plus probable.
-                state.blueShellChance = Math.min(
-                    cfg.blueShell.chanceCap,
-                    state.blueShellChance + cfg.blueShell.chancePerLap
-                );
+                // Les decotes laissees par les objets deja sortis se resorbent
+                // d'un cran a chaque tour entame : une bleue ou un eclair lance
+                // tot pese sur le suivant sans fermer la porte pour le reste de
+                // la course.
+                regenItemDecay(cfg, state);
             }
 
             // Le panneau se declenche sur ce qu'il reste a parcourir au premier :
@@ -1972,14 +2244,15 @@
                         // Cible de repli cherchee dans le sens de deplacement.
                         const dir = item.vx >= 0 ? 1 : -1;
                         let newTarget = null;
-                        let bestDist = Infinity;
+                        let bestScore = Infinity;
                         for (let k = 0; k < kartsLen; k++) {
                             const candidate = state.karts[k];
                             if (candidate.id === item.shooterId) continue;
                             if (candidate.state !== 'running') continue;
                             const dist = getShortestDistance(cfg, candidate.worldX, item.worldX) * dir;
-                            if (dist >= cfg.speeds.redShellMinTarget && dist < bestDist) {
-                                bestDist = dist;
+                            const score = redShellTargetScore(cfg, dist);
+                            if (score < bestScore) {
+                                bestScore = score;
                                 newTarget = candidate;
                             }
                         }
@@ -2233,7 +2506,11 @@
                 finishRank: 0,
                 startStallUntil: 0,
 
-                currentSpinFrame: 0
+                currentSpinFrame: 0,
+
+                // Dernier objet recu, lu par le tirage suivant pour freiner
+                // deux fois de suite le meme.
+                lastItem: null
             };
 
             karts.push(kart);
@@ -2262,7 +2539,12 @@
             sign: { group: 'start', frame: 1, until: now + countdownMs + race.goSignMs },
 
             nextItemId: 1,
-            blueShellChance: 0,
+            // Decotes en cours, par type d'objet : absent vaut 1, c'est-a-dire
+            // intact. Un type n'y entre qu'une fois sorti au moins une fois.
+            itemDecay: {},
+            // Garde-fou de delai propre a la bleue, arme des le depart pour ne
+            // rien bloquer au premier tour.
+            blueShellLastAt: now - cfg.blueShell.cooldownMs,
             // Plancher de vitesse du bill : ne depend que de la config.
             billFloorSpeed: fastestBoostedSpeed(cfg) * cfg.bill.minLeadRatio,
             // Orage en cours, ou null. Un seul a la fois.
@@ -2280,6 +2562,7 @@
         getInitialKartSpeed,
         getShortestDistance,
         getDistanceToLeader,
+        computeItemAxes,
         updateAI,
         rollItem,
         getKartByRank,
