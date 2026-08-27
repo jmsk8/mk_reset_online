@@ -98,8 +98,13 @@
             <span class="race-status-label">connexion</span>
         </div>
 
-        {# Classement final : rempli au fil des arrivées, effacé au départ suivant. #}
+        {# Ordre d'arrivée : rempli au fil des arrivées, effacé quand le tableau
+           des scores prend le relais. #}
         <div id="race-results" class="race-results"></div>
+
+        {# Tableau des scores du grand prix, au centre : points de la course qui
+           vient de finir et cumul du bloc. Affiché pendant la phase 'results'. #}
+        <div id="race-gp" class="race-gp" aria-hidden="true"></div>
 
         <div id="race-leaderboard"></div>
 

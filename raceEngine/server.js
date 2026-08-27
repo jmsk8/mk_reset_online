@@ -101,9 +101,15 @@ let race = null;
 let idleTimer = null;
 let totalRaces = 0;
 
-// Grille de la course suivante, vainqueur en pole. Conserve y compris quand le
+// Grille de la course suivante, vainqueur en pole. A null, elle est tiree au
+// sort : c'est ce qui ouvre chaque grand prix. Conserve y compris quand le
 // service se met au repos faute de spectateurs.
 let lastFinishOrder = null;
+
+// Grand prix en cours : { round, points }. Il court sur plusieurs courses, donc
+// il vit ici et non dans l'etat du monde, refait a chaque depart. A null, la
+// prochaine course ouvre un bloc neuf.
+let grandPrix = null;
 
 function startRace() {
     const now = Date.now();
@@ -113,7 +119,7 @@ function startRace() {
         // le temps reel. C'est elle qui date les snapshots.
         simTime: now,
         t0: now,
-        state: PH.createWorldState(CFG, rng, now, lastFinishOrder),
+        state: PH.createWorldState(CFG, rng, now, lastFinishOrder, grandPrix),
 
         accumulator: 0,
         lastRealTime: now,
@@ -131,7 +137,10 @@ function startRace() {
 
     race.loop = setInterval(tick, DT_MS);
     totalRaces++;
-    console.log(`[course] grille — ${race.state.karts.map(k => k.charName).join(', ')}`);
+    console.log(
+        `[course] grand prix ${race.state.gpRound}/${CFG.grandPrix.races}` +
+        ` — grille : ${race.state.karts.map(k => k.charName).join(', ')}`
+    );
 }
 
 function stopRace() {
@@ -160,9 +169,14 @@ function beginNewRace() {
     }
 }
 
-// Redemarrage a chaud demande de l'exterieur (`make restart-race`).
+// Redemarrage a chaud demande de l'exterieur (`make restart-race`). Il repart
+// de zero et pas seulement d'une course neuve : grand prix efface, scores
+// remis a zero, grille tiree au sort. C'est ce qu'on attend d'un redemarrage —
+// reprendre le bloc en cours a la troisieme manche n'aurait aucun sens.
 function restartRace() {
-    console.log('[course] redemarrage demande.');
+    console.log('[course] redemarrage demande — grand prix remis a zero.');
+    grandPrix = null;
+    lastFinishOrder = null;
     beginNewRace();
 }
 
@@ -182,6 +196,21 @@ function scheduleIdleStop() {
     }, IDLE_GRACE_MS);
 }
 
+// Classement lu a la console a la fin de chaque course : la manche qui vient de
+// finir, puis le general du bloc.
+function logStandings(ev) {
+    const board = Object.entries(ev.gpPoints)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, points]) => `${name} ${points}`)
+        .join('  ');
+
+    const label = ev.gpComplete
+        ? `grand prix termine (${CFG.grandPrix.races} courses)`
+        : `manche ${ev.gpRound}/${CFG.grandPrix.races}`;
+
+    console.log(`[course] ${label} — general : ${board}`);
+}
+
 function tick() {
     const now = Date.now();
     let elapsed = (now - race.lastRealTime) / 1000;
@@ -196,6 +225,7 @@ function tick() {
     const startedAt = Date.now();
 
     let finishedOrder = null;
+    let nextGrandPrix = null;
 
     while (race.accumulator >= DT && steps < MAX_CATCHUP_STEPS) {
         race.simTime += DT_MS;
@@ -204,6 +234,15 @@ function tick() {
         for (const ev of events) {
             if (ev.type === 'raceOver') {
                 finishedOrder = ev.order.map(id => race.state.kartsById[id].charName);
+
+                // Bloc termine : scores remis a zero et grille tiree au sort au
+                // depart suivant. Sinon on reporte le cumul et on avance d'une
+                // manche.
+                nextGrandPrix = ev.gpComplete
+                    ? { round: 1, points: {} }
+                    : { round: ev.gpRound + 1, points: ev.gpPoints };
+
+                logStandings(ev);
             } else if (ev.type === 'kartFinished') {
                 const kart = race.state.kartsById[ev.kartId];
                 console.log(`[course] ${ev.rank}. ${kart.charName}`);
@@ -218,7 +257,10 @@ function tick() {
     }
 
     if (finishedOrder) {
-        lastFinishOrder = finishedOrder;
+        // Un grand prix neuf repart d'une grille au hasard : `lastFinishOrder` a
+        // null fait tirer createWorldState.
+        lastFinishOrder = (nextGrandPrix.round === 1) ? null : finishedOrder;
+        grandPrix = nextGrandPrix;
         beginNewRace();
         return;
     }
@@ -249,13 +291,43 @@ function tick() {
 
 const clients = new Map(); // ws -> { hidden, alive }
 
+// ── Vote de redemarrage ─────────────────────────────────────────────────────
+//
+// Chaque spectateur peut poser une voix, et la retirer. Quand ils l'ont tous
+// posee, la course repart de zero — grand prix compris. L'unanimite plutot
+// qu'une majorite : a deux spectateurs, une majorite laisserait l'un des deux
+// relancer seul la course de l'autre.
+
+function voteTally() {
+    let count = 0;
+    for (const meta of clients.values()) if (meta.voted) count++;
+    return [count, clients.size];
+}
+
+function clearVotes() {
+    for (const meta of clients.values()) meta.voted = false;
+}
+
+// Une voix de plus, ou un spectateur de moins : les deux completent le quorum,
+// d'ou l'appel aussi bien a la fermeture d'une connexion qu'au vote.
+function checkVotes() {
+    const [count, total] = voteTally();
+    if (total === 0 || count < total) return;
+
+    console.log(`[course] redemarrage vote a l'unanimite (${total} spectateur(s)).`);
+    // Avant le redemarrage : le `hello` qui suit doit annoncer un compteur
+    // remis a zero, sinon les boutons resteraient allumes sur la course neuve.
+    clearVotes();
+    restartRace();
+}
+
 function broadcast() {
     if (clients.size === 0) {
         race.pendingEvents.length = 0;
         return;
     }
 
-    const snapshot = protocol.buildSnapshot(race.state, race.simTime);
+    const snapshot = protocol.buildSnapshot(race.state, race.simTime, voteTally());
     if (race.pendingEvents.length) {
         snapshot.ev = race.pendingEvents;
         race.pendingEvents = [];
@@ -273,7 +345,9 @@ function broadcast() {
 }
 
 function sendHello(ws) {
-    ws.send(JSON.stringify(protocol.buildHello(CFG, race.state, race.simTime, race.t0)));
+    ws.send(JSON.stringify(
+        protocol.buildHello(CFG, race.state, race.simTime, race.t0, voteTally())
+    ));
 }
 
 // ── Transport ───────────────────────────────────────────────────────────────
@@ -344,7 +418,7 @@ httpServer.on('upgrade', (req, socket, head) => {
 wss.on('connection', ws => {
     ensureRunning();
 
-    clients.set(ws, { hidden: false, alive: true });
+    clients.set(ws, { hidden: false, alive: true, voted: false });
     sendHello(ws);
 
     ws.on('message', data => {
@@ -367,6 +441,12 @@ wss.on('connection', ws => {
             return;
         }
 
+        if (msg.t === 'vote') {
+            meta.voted = !meta.voted;
+            checkVotes();
+            return;
+        }
+
         if (msg.t === 'vis') {
             const wasHidden = meta.hidden;
             meta.hidden = !!msg.hidden;
@@ -383,11 +463,13 @@ wss.on('connection', ws => {
 
     ws.on('close', () => {
         clients.delete(ws);
+        checkVotes();
         scheduleIdleStop();
     });
 
     ws.on('error', () => {
         clients.delete(ws);
+        checkVotes();
         scheduleIdleStop();
     });
 });

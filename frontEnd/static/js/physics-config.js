@@ -281,14 +281,25 @@
                 // circulation, jamais pendant un orage. Decote un peu plus
                 // severe que la bleue (0.35 contre 0.45).
                 lightning: {
-                    base: 20,
+                    // Releve pour compenser le reflux ci-dessous : sans ca,
+                    // ecreter le dernier tour reduirait le nombre d'orages par
+                    // course au lieu de les redistribuer. Cale sur une mesure :
+                    // a 24 le banc rendait 0.38 orage par course contre 0.55
+                    // avant le reflux, d'ou ce nouveau palier.
+                    base: 35,
                     power: { open: 0.58, full: 0.95 },
                     minStage: 0.45,
                     lastRanks: 3,
                     minDist: 0.40,
                     unique: true,
                     decay: 0.35,
-                    regenPerLap: 0.25
+                    regenPerLap: 0.25,
+
+                    // Reflux marque : sans lui, pres des deux tiers des orages
+                    // tombaient au dernier tour. La profondeur est forte, mais
+                    // elle ne mord que sur les 28 derniers pourcents de la
+                    // course — avant `from`, rien n'est touche.
+                    lateFade: { from: 0.72, to: 1.00, depth: 0.95 }
                 },
 
                 // --- Triples (desactives, voir disabledItems) --------------
@@ -326,8 +337,15 @@
             baseChance: 0.14,
 
             // Nulle avant, pleine apres : les ecarts des deux premiers tours sont
-            // encore ceux de la grille.
-            stageWindow: { from: 0.35, to: 0.85 },
+            // encore ceux de la grille. La borne haute est calee sur le
+            // quatrieme tour et non sur l'arrivee, pour que le pic de
+            // probabilite tombe la plutot qu'au dernier tour.
+            stageWindow: { from: 0.35, to: 0.75 },
+
+            // Reflux de fin de course, meme mecanique que pour l'eclair. Plus
+            // doux ici : la bleue penchait moins vers le dernier tour, sa montee
+            // n'etant pas portee par la pression mais par l'echappee du premier.
+            lateFade: { from: 0.72, to: 1.00, depth: 0.30 },
 
             // Echappee du premier sur le deuxieme, rapportee a leadRef.
             leadRef: 2200,
@@ -471,10 +489,17 @@
             holdItemMin: 500, holdItemMax: 8000,
 
             // Un objet arrive en main, sans hitbox. Le kart decide ensuite, ou
-            // non, de le sortir derriere lui. Le premier le fait plus souvent
-            // que les autres : n'ayant personne a viser, son objet vaut mieux
-            // comme bouclier que dans sa main.
-            trailChance: { leader: 0.85, pack: 0.6, last: 0.6 },
+            // non, de le sortir derriere lui. Le premier le fait presque
+            // toujours : n'ayant personne a viser, son objet vaut mieux comme
+            // bouclier que dans sa main. Le dernier a l'inverse n'a personne
+            // derriere a tenir a distance, un objet pose ne lui sert a rien.
+            trailChance: { leader: 0.92, pack: 0.6, last: 0.45 },
+
+            // Duree pendant laquelle l'objet reste pose derriere, en multiple de
+            // trailHoldMin/Max. Le premier le garde bien plus longtemps : c'est
+            // sa seule protection, et le relacher tot le laisse a nu jusqu'a la
+            // boite suivante — soit la moitie d'un tour.
+            trailHoldFactor: { leader: 1.8, pack: 1, last: 1 },
 
             // Probabilite qu'une carapace parte vers l'arriere, par type et par
             // place. Le dernier n'a personne derriere. Le premier est a 1 et le
@@ -583,6 +608,17 @@
 
         // Deroulement d'une course. Durees en millisecondes, distances en
         // unites monde.
+        // Grand prix : les courses s'enchainent par blocs de `races`, chacune
+        // rapportant les points de `points` selon la place a l'arrivee. Le bloc
+        // fini, les scores repartent de zero et la grille est tiree au sort.
+        grandPrix: {
+            races: 4,
+            // Indexe par place d'arrivee, du premier au dernier. Une place
+            // au-dela de ce tableau ne rapporte rien : allonger la liste suffit
+            // pour un plateau plus grand.
+            points: [10, 8, 6, 5, 4, 3, 2, 1]
+        },
+
         race: {
             laps: 5,
 
@@ -600,7 +636,20 @@
             // camera passe devant pendant ce delai.
             finalSignMs: 6000,
 
-            resultsDelayMs: 7000,
+            // La course s'arrete des que ce nombre de karts a franchi la ligne :
+            // les retardataires sont classes d'office dans l'ordre ou ils
+            // roulent. Attendre le dernier ne montrait qu'un kart seul en piste.
+            stopAtFinisher: 7,
+
+            // Duree du tableau des scores : la premiere valeur entre deux
+            // courses, la seconde apres la derniere du grand prix, ou il faut
+            // le temps de lire le classement general. L'animation du tableau
+            // (arrivee -> compteur -> remaniement, cf smk-banner.js) prend
+            // deja plus de 5s a elle seule, d'ou la marge laissee ici pour
+            // encore admirer le resultat une fois pose.
+            resultsDelayMs: 10000,
+            finalResultsDelayMs: 20000,
+
             // Au-dela, les karts encore en piste sont classes d'office.
             maxRaceMs: 180000,
 
