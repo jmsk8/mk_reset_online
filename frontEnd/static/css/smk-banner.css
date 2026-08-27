@@ -406,6 +406,135 @@
     .race-result-rank { font-size: 9px; }
 }
 
+/* ── Tableau des scores du grand prix ─────────────────────────────────────
+   Au centre de la scène entre deux courses. Il prend le relais du panneau
+   d'arrivées, qui s'efface : les deux ensemble surchargeraient le bandeau. */
+.race-gp {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 660;
+    transform: translate(-50%, -46%);
+    padding: 14px 20px;
+    border-radius: 12px;
+    background-color: rgba(0, 0, 0, 0.82);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+    border: 2px solid rgba(255, 204, 0, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.race-gp.is-visible {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+}
+
+/* Le classement final est l'aboutissement des quatre courses : il se distingue
+   du simple point d'étape. */
+.race-gp.is-final {
+    border-color: #ffcc00;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55), 0 0 22px rgba(255, 204, 0, 0.35);
+}
+
+.race-gp-title {
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-align: center;
+    color: #ffcc00;
+    text-shadow: 2px 2px 0 #cc0000;
+    margin-bottom: 10px;
+}
+
+.race-gp-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+/* Colonnes fixes : place, vignette, nom, points de la course, cumul. Les deux
+   colonnes de chiffres sont à largeur fixe pour que les unités s'alignent. */
+.race-gp-row {
+    display: grid;
+    grid-template-columns: 16px 26px 1fr 30px 28px;
+    align-items: center;
+    gap: 8px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #ffffff;
+    /* Le passage a l'ordre general glisse depuis l'ordre d'arrivee plutot que
+       de sauter : la transform est posee puis relachee en JS (technique FLIP). */
+    transition: transform 0.9s ease;
+}
+
+.race-gp-rank {
+    font-weight: bold;
+    color: #ffcc00;
+    text-align: right;
+}
+
+.race-gp-row img {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+    object-fit: cover;
+    background-color: #333;
+}
+
+.race-gp-name {
+    text-transform: capitalize;
+    white-space: nowrap;
+}
+
+/* Ce que la course vient de rapporter, en retrait du cumul. Une fois digere
+   dans le total (classe is-settled posee par le compteur JS), il s'efface :
+   son role s'arrete la ou le cumul a fini de monter. */
+.race-gp-gained {
+    text-align: right;
+    color: #7ee787;
+    opacity: 1;
+    transition: opacity 0.4s ease;
+}
+
+.race-gp-row.is-settled .race-gp-gained {
+    opacity: 0;
+}
+
+.race-gp-total {
+    text-align: right;
+    font-weight: bold;
+    color: #ffcc00;
+}
+
+@media screen and (max-width: 768px) {
+    .race-gp {
+        padding: 9px 12px;
+        border-width: 1px;
+    }
+
+    .race-gp-title {
+        font-size: 11px;
+        margin-bottom: 6px;
+    }
+
+    .race-gp-rows { gap: 1px; }
+
+    .race-gp-row {
+        grid-template-columns: 12px 18px 1fr 24px 22px;
+        gap: 5px;
+        font-size: 9px;
+    }
+
+    .race-gp-row img {
+        width: 18px;
+        height: 18px;
+        border-width: 1px;
+    }
+}
+
 /* ── Rideau de départ ─────────────────────────────────────────────────────
    Damier noir et blanc qui couvre la scène le temps qu'elle soit prête, puis
    se lève. Il masque la reconstruction du décor et, plus tard, celle d'une
@@ -696,6 +825,59 @@
     fill: #ffffff;
 }
 
+/* Vote de redémarrage, à gauche de la caméra. Même gabarit qu'elle : 40 px de
+   large posés à -92 px, soit juste au-delà des -46 px de la caméra. Les deux
+   décalages se tiennent, déplacer l'un demande de reprendre l'autre. */
+.leaderboard-vote {
+    left: -92px;
+    background-color: #111111;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+.leaderboard-vote svg {
+    width: 21px;
+    height: 21px;
+    fill: #ffffff;
+}
+
+/* Voix posée : le bouton s'allume, et un second clic la retire. */
+.leaderboard-vote.is-voted {
+    background-color: #1d6f3f;
+    border-color: #7ee787;
+    box-shadow: 0 0 8px rgba(126, 231, 135, 0.8);
+}
+
+.leaderboard-vote.is-voted svg {
+    fill: #7ee787;
+}
+
+/* Décompte collé en bas à droite du bouton. Vide quand on est seul : « 0/1 »
+   n'apprendrait rien à un spectateur unique. */
+.leaderboard-vote-count {
+    position: absolute;
+    right: -4px;
+    bottom: -3px;
+    min-width: 15px;
+    padding: 0 3px;
+    border-radius: 8px;
+    background-color: #111111;
+    border: 1px solid #ffffff;
+    font-family: monospace;
+    font-size: 9px;
+    line-height: 13px;
+    text-align: center;
+    color: #ffffff;
+}
+
+.leaderboard-vote-count:empty {
+    display: none;
+}
+
 /* Repère discret sur la vue active : un liseré, rien de plus. */
 .leaderboard-pp.is-focused img,
 .leaderboard-camera.is-focused {
@@ -711,6 +893,24 @@
     .leaderboard-camera svg {
         width: 15px;
         height: 15px;
+    }
+
+    /* Vignettes à 28 px : la caméra tient de -32 à -4, le vote de -64 à -36. */
+    .leaderboard-vote {
+        left: -64px;
+    }
+
+    .leaderboard-vote svg {
+        width: 15px;
+        height: 15px;
+    }
+
+    .leaderboard-vote-count {
+        right: -3px;
+        bottom: -2px;
+        min-width: 13px;
+        font-size: 8px;
+        line-height: 11px;
     }
 }
 

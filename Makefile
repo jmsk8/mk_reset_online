@@ -106,13 +106,25 @@ re-front:            ## Rebuild and restart frontend
 re-back:             ## Rebuild and restart backend
 	$(COMPOSE) up --build -d --no-deps backend
 
-re-race:             ## Rebuild and restart the banner race engine
-	$(COMPOSE) up --build -d --no-deps race
+# --force-recreate : physics.js et physics-config.js sont montes, pas copies
+# dans l'image. Sans lui, quand seuls ces deux fichiers changent l'image reste
+# identique, compose repond « up-to-date » et ne recree rien — le process Node
+# garde alors l'ancienne config en cache (require au demarrage). Avec, le
+# moteur repart toujours d'un process neuf, donc d'un grand prix neuf.
+re-race:             ## Rebuild and restart the banner race engine (nouveau grand prix)
+	$(COMPOSE) up --build -d --no-deps --force-recreate race
 
-# SIGHUP plutot qu'un redemarrage de conteneur : la course repart de zero, mais
-# le service, les connexions WebSocket et l'image restent en place.
-restart-race:        ## Relance une course neuve sans couper le service
+# SIGHUP plutot qu'un redemarrage de conteneur : le service, les connexions
+# WebSocket et l'image restent en place, mais le grand prix repart de zero —
+# scores effaces et grille tiree au sort.
+restart-race:        ## Relance un grand prix neuf sans couper le service
 	$(COMPOSE) kill -s HUP race
+
+# A lancer apres une modification de nginx/. Le rechargement relit la config et
+# reresout les upstreams, sans couper les connexions en cours.
+reload-nginx:        ## Recharge la configuration nginx
+	$(COMPOSE) exec nginx nginx -t
+	$(COMPOSE) exec nginx nginx -s reload
 
 re-db:               ## Recreate database (schema + seed)
 	$(COMPOSE) stop db
@@ -191,6 +203,14 @@ race-deps:           ## Installe ws dans raceEngine/node_modules (pour les tests
 race-soak:           ## Soak du moteur seul, 10 min, sans WebSocket (DURATION=... pour changer)
 	$(RACE_NODE) node server.js --duration $${DURATION:-600} --always-on
 
+# Banc d'equilibrage : enchaine des courses hors horloge, des milliers en
+# quelques secondes. RACES=... pour la taille de l'echantillon, SEED=... pour
+# rejouer la meme campagne, CHAIN=1 pour enchainer les grilles comme en prod
+# (vainqueur en pole) au lieu de tirer au sort a chaque course.
+race-sim:            ## Simule N courses et sort les stats (RACES=1000 SEED=42 CHAIN=1 CSV=1)
+	$(RACE_NODE) node tools/simulate.js --races $${RACES:-200} \
+		$(if $(SEED),--seed $(SEED),) $(if $(CHAIN),--chain,) $(if $(CSV),--csv,)
+
 race-spectate:       ## Test de l'arrivant contre le service `race` en cours d'execution (AFTER=... secondes)
 	$(COMPOSE) exec race node tools/spectate.js --after $${AFTER:-30}
 
@@ -210,8 +230,8 @@ help:                ## Show this help
 
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
-        race-deps race-soak race-spectate race-nginx \
-        logs logs-nginx logs-front logs-back logs-race logs-db ps \
+        race-deps race-soak race-sim race-spectate race-nginx \
+        reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help
 
 .DEFAULT_GOAL := help

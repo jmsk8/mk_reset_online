@@ -168,8 +168,19 @@ let worldState = {
     sign: null,
     // [debut, frappe, fin] en temps serveur, ou null hors orage.
     storm: null,
-    finishOrder: []
+    finishOrder: [],
+    // [manche, points de la course, points du grand prix], les deux tableaux
+    // etant alignes sur les identifiants de kart.
+    gp: null,
+    // [voix posees, spectateurs connectes]. Le snapshot etant commun a tous, il
+    // ne porte que le total : savoir si c'est nous qui avons vote est une
+    // affaire locale, tenue par `myVote`.
+    vote: [0, 0]
 };
+
+// Notre propre voix. Effacee a chaque course neuve, le serveur remettant alors
+// tous les compteurs a zero.
+let myVote = false;
 
 const kartEls = {};
 const itemEls = {};
@@ -186,6 +197,7 @@ let leaderboardState = {
     container: null,
     slots: [],
     cameraEl: null,
+    voteEl: null,
     bound: false
 };
 
@@ -343,10 +355,45 @@ function updateFocusMarks() {
 }
 
 function onLeaderboardClick(event) {
-    const target = event.target.closest('.leaderboard-camera, [data-kart-id]');
+    const target = event.target.closest('.leaderboard-vote, .leaderboard-camera, [data-kart-id]');
     if (!target) return;
 
+    if (target.classList.contains('leaderboard-vote')) {
+        toggleVote();
+        return;
+    }
+
     setFocus(target.classList.contains('leaderboard-camera') ? null : Number(target.dataset.kartId));
+}
+
+// Le serveur tient le decompte : on ne fait qu'annoncer un changement d'avis et
+// attendre le snapshot qui l'enterine. Basculer le compteur localement le
+// ferait osciller a chaque envoi refuse.
+function toggleVote() {
+    if (!bannerNet.send({ t: 'vote' })) return;
+    myVote = !myVote;
+    renderVote();
+}
+
+// Compteur du vote de redemarrage. Reconstruit depuis le snapshot, comme tout
+// le reste : un arrivant voit le vote en cours et non un compteur a zero.
+function renderVote() {
+    const el = leaderboardState.voteEl;
+    if (!el) return;
+
+    const tally = worldState.vote || [0, 0];
+    const count = tally[0] || 0;
+    const total = tally[1] || 0;
+
+    // Seul spectateur : le bouton relance a lui tout seul, un compteur « 0/1 »
+    // n'apprendrait rien.
+    const label = el.querySelector('.leaderboard-vote-count');
+    if (label) label.textContent = total > 1 ? `${count}/${total}` : '';
+
+    el.classList.toggle('is-voted', myVote);
+    el.title = myVote
+        ? 'Annuler le vote de redemarrage'
+        : 'Voter le redemarrage (grand prix remis a zero)';
 }
 
 function initLeaderboard() {
@@ -370,7 +417,18 @@ function initLeaderboard() {
     leaderboardState.container.appendChild(camera);
     leaderboardState.cameraEl = camera;
 
+    // Vote de redemarrage, a gauche de la camera. Le compteur est pose par
+    // renderVote() : ici on ne construit que la coquille.
+    const vote = document.createElement('div');
+    vote.className = 'leaderboard-pp leaderboard-vote visible';
+    vote.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+        '<path d="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>' +
+        '<span class="leaderboard-vote-count"></span>';
+    leaderboardState.container.appendChild(vote);
+    leaderboardState.voteEl = vote;
+
     updateFocusMarks();
+    renderVote();
 
     const totalKarts = GAME_CONFIG.resources.characters.length;
     for (let i = 0; i < totalKarts; i++) {
@@ -542,10 +600,12 @@ function clearScene() {
     worldState.items = [];
     worldState.itemBoxes = [];
     worldState.finishOrder = [];
+    worldState.gp = null;
     worldState.sign = null;
     domDirty = true;
     reconcileDom();
     renderResults();
+    renderGrandPrix();
 }
 
 // Date de depart de la course en cours. Un `hello` peut arriver pour deux
@@ -568,6 +628,8 @@ function wipeSceneElements() {
         lakituEls = null;
     }
     resultsShown = -1;
+    gpShown = '';
+    myVote = false;
 
     for (const id in kartEls) {
         kartEls[id].wrapper.remove();
@@ -1391,6 +1453,26 @@ function renderLakitu(gameNow, screenWidth) {
 
 let resultsEl = null;
 let resultsShown = -1;
+let gpEl = null;
+// Empreinte du tableau affiche, pour ne le reconstruire qu'a un vrai changement.
+let gpShown = '';
+// Anime le tableau du grand prix en trois temps : arrivee de la course, gains
+// qui montent dans le cumul, puis remise en ordre sur le general. `null` hors
+// animation en cours.
+let gpAnim = null;
+
+// Pause de lecture avant que les scores ne bougent, duree du compteur qui
+// fait monter le cumul, pause avant le remaniement, puis duree du glissement
+// vers l'ordre general (voir aussi la transition CSS de .race-gp-row). Le
+// tout tient sous resultsDelayMs, avec de la marge pour admirer le resultat
+// une fois les lignes rangees.
+const GP_COUNT_DELAY_MS = 2200;
+const GP_COUNT_DURATION_MS = 2600;
+const GP_REORDER_DELAY_MS = 350;
+
+function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+}
 
 // Reconstruit entierement depuis `finishOrder` : un spectateur qui arrive en
 // plein classement le voit en entier, sans avoir assiste aux arrivees.
@@ -1398,8 +1480,10 @@ function renderResults() {
     if (!resultsEl) resultsEl = document.getElementById('race-results');
     if (!resultsEl) return;
 
+    // Il accompagne les arrivees, puis s'efface : le tableau des scores prend
+    // le relais et les deux ensemble surchargeraient la scene.
     const order = worldState.finishOrder || [];
-    const visible = order.length > 0;
+    const visible = order.length > 0 && worldState.phase !== 'results';
 
     resultsEl.classList.toggle('is-visible', visible);
     if (!visible) {
@@ -1433,6 +1517,197 @@ function renderResults() {
     });
 }
 
+// Tableau des scores du grand prix, au centre de la scene pendant la phase
+// 'results'. Reconstruit entierement depuis le snapshot : un spectateur qui se
+// connecte pendant le tableau le voit rempli, sans rien savoir des courses
+// precedentes.
+//
+// Poser le tableau ne fait que la premiere image, l'ordre d'arrivee de la
+// course qui vient de finir. Le passage au cumul puis au classement general
+// est anime image par image par stepGrandPrixAnimation, appelee a chaque
+// frame independamment de l'arrivee des snapshots.
+function renderGrandPrix(gameNow) {
+    if (!gpEl) gpEl = document.getElementById('race-gp');
+    if (!gpEl) return;
+
+    const gp = worldState.gp;
+    const visible = !!gp && worldState.phase === 'results';
+
+    gpEl.classList.toggle('is-visible', visible);
+    gpEl.setAttribute('aria-hidden', visible ? 'false' : 'true');
+
+    if (!visible) {
+        gpShown = '';
+        gpAnim = null;
+        gpEl.innerHTML = '';
+        return;
+    }
+
+    const round = gp[0];
+    const racePoints = gp[1] || [];
+    const totalPoints = gp[2] || [];
+
+    // Le tableau ne bouge plus une fois pose : on ne le reconstruit que si son
+    // contenu a change, sinon chaque frame recreerait huit images.
+    const stamp = round + '|' + racePoints.join(',') + '|' + totalPoints.join(',');
+    if (gpShown === stamp) return;
+    gpShown = stamp;
+
+    const total = (WORLD && WORLD.gpRaces) || round;
+    const isFinal = round >= total;
+
+    gpEl.innerHTML = '';
+    gpEl.classList.toggle('is-final', isFinal);
+
+    const title = document.createElement('div');
+    title.className = 'race-gp-title';
+    title.textContent = isFinal ? 'CLASSEMENT FINAL' : `COURSE ${round} / ${total}`;
+    gpEl.appendChild(title);
+
+    const rows = document.createElement('div');
+    rows.className = 'race-gp-rows';
+
+    // Premiere image du tableau : l'ordre d'arrivee de la course qui vient de
+    // finir, pas encore le general. Un spectateur qui se connecte pendant
+    // l'animation retombe sur ses pieds : il manque juste le compteur.
+    const arrivalOrder = worldState.finishOrder.length
+        ? worldState.finishOrder
+        : worldState.karts.map(kart => kart.id);
+
+    const entries = arrivalOrder
+        .map(id => worldState.kartsById[id])
+        .filter(Boolean);
+
+    const animRows = [];
+
+    entries.forEach((kart, index) => {
+        const gained = racePoints[kart.id] || 0;
+        const target = totalPoints[kart.id] || 0;
+        // Le cumul affiche part d'avant cette course : c'est lui qui monte
+        // jusqu'au total pendant que le tableau est a l'ecran.
+        const base = target - gained;
+
+        const row = document.createElement('div');
+        row.className = 'race-gp-row';
+
+        const rank = document.createElement('span');
+        rank.className = 'race-gp-rank';
+        rank.textContent = index + 1;
+
+        const img = document.createElement('img');
+        img.src = GAME_CONFIG.resources.paths.pp(kart.charName);
+        img.alt = kart.charName;
+
+        const name = document.createElement('span');
+        name.className = 'race-gp-name';
+        name.textContent = kart.charName;
+
+        const gainedEl = document.createElement('span');
+        gainedEl.className = 'race-gp-gained';
+        gainedEl.textContent = gained > 0 ? `+${gained}` : '';
+
+        const scoreEl = document.createElement('span');
+        scoreEl.className = 'race-gp-total';
+        scoreEl.textContent = base;
+
+        row.appendChild(rank);
+        row.appendChild(img);
+        row.appendChild(name);
+        row.appendChild(gainedEl);
+        row.appendChild(scoreEl);
+        rows.appendChild(row);
+
+        animRows.push({
+            id: kart.id, row, rankEl: rank, gainedEl, scoreEl,
+            base, target, gained, finishIndex: index
+        });
+    });
+
+    gpEl.appendChild(rows);
+
+    gpAnim = {
+        rowsEl: rows,
+        rows: animRows,
+        startAt: gameNow,
+        phase: 'count',
+        reorderAt: 0
+    };
+}
+
+// Bascule les lignes de l'ordre d'arrivee vers le general, en rejouant le
+// deplacement plutot qu'en le faisant apparaitre d'un coup (technique FLIP :
+// position relevee avant le reordonnancement, puis rejouee depuis la ou
+// chaque ligne se trouvait).
+function settleGrandPrixReorder(anim) {
+    const before = new Map();
+    anim.rows.forEach(entry => before.set(entry.id, entry.row.getBoundingClientRect()));
+
+    const standings = anim.rows.slice().sort((a, b) => {
+        const diff = b.target - a.target;
+        // A egalite de points, la course qui vient de finir departage.
+        return diff !== 0 ? diff : a.finishIndex - b.finishIndex;
+    });
+
+    standings.forEach((entry, index) => {
+        anim.rowsEl.appendChild(entry.row);
+        entry.rankEl.textContent = index + 1;
+    });
+
+    standings.forEach(entry => {
+        const after = entry.row.getBoundingClientRect();
+        const dy = before.get(entry.id).top - after.top;
+        if (!dy) return;
+
+        entry.row.style.transition = 'none';
+        entry.row.style.transform = `translateY(${dy}px)`;
+        // Force le reflow : sans lui le navigateur fusionnerait les deux
+        // changements de style et sauterait la transition.
+        entry.row.getBoundingClientRect();
+        entry.row.style.transition = '';
+        entry.row.style.transform = '';
+    });
+
+    anim.rows = standings;
+}
+
+// Fait vivre le tableau du grand prix image par image, independamment de
+// l'arrivee des snapshots serveur (10 Hz) : un compteur ou un glissement
+// cales sur ce rythme saccaderait.
+function stepGrandPrixAnimation(gameNow) {
+    const anim = gpAnim;
+    if (!anim || anim.phase === 'done') return;
+
+    const elapsed = gameNow - anim.startAt;
+
+    if (anim.phase === 'count') {
+        if (elapsed < GP_COUNT_DELAY_MS) return;
+
+        const t = Math.min(1, (elapsed - GP_COUNT_DELAY_MS) / GP_COUNT_DURATION_MS);
+        const eased = easeOutCubic(t);
+        anim.rows.forEach(entry => {
+            // Le total se remplit et le gain se vide au meme rythme : c'est le
+            // meme point qui se deplace de l'un vers l'autre, un transfert.
+            const filled = Math.round(lerp(entry.base, entry.target, eased));
+            entry.scoreEl.textContent = filled;
+
+            const remaining = entry.target - filled;
+            entry.gainedEl.textContent = remaining > 0 ? `+${remaining}` : '';
+        });
+
+        if (t >= 1) {
+            anim.rows.forEach(entry => entry.row.classList.add('is-settled'));
+            anim.phase = 'settled';
+            anim.reorderAt = gameNow + GP_REORDER_DELAY_MS;
+        }
+        return;
+    }
+
+    if (anim.phase === 'settled' && gameNow >= anim.reorderAt) {
+        settleGrandPrixReorder(anim);
+        anim.phase = 'done';
+    }
+}
+
 function renderState(gameNow, screenWidth) {
     const renderMargin = GAME_CONFIG.rendering.bufferZone;
 
@@ -1442,7 +1717,13 @@ function renderState(gameNow, screenWidth) {
         domDirty = false;
         reconcileDom();
         renderResults();
+        renderGrandPrix(gameNow);
+        renderVote();
     }
+
+    // Hors du bloc ci-dessus : le compteur et le glissement vers le general
+    // doivent avancer a chaque frame, pas seulement quand un snapshot arrive.
+    stepGrandPrixAnimation(gameNow);
 
     renderLakitu(gameNow, screenWidth);
     renderStorm(gameNow, screenWidth);
@@ -1679,6 +1960,12 @@ const PING_INTERVAL_MS = 30000;
 // jamais faite gagne pour toujours — y compris apres que l'horloge locale a
 // change sous nos pieds.
 const CLOCK_SAMPLE_TTL_MS = 120000;
+// Doit valoir exactement PROTOCOL_VERSION dans raceEngine/protocol.js. Le
+// serveur l'annonce dans son `hello` et le client refuse tout ce qui ne
+// correspond pas : mieux vaut le decor seul qu'une scene interpretee de
+// travers. Les deux se modifient donc ensemble, jamais l'un sans l'autre.
+const PROTOCOL_VERSION = 6;
+
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 
@@ -1834,6 +2121,8 @@ function applyState(a, b, t) {
     worldState.sign = a.sg;
     worldState.storm = a.st || null;
     worldState.finishOrder = a.fo;
+    worldState.gp = a.gp || null;
+    worldState.vote = a.vt || [0, 0];
 }
 
 const bannerNet = {
@@ -1901,7 +2190,7 @@ const bannerNet = {
         }
 
         if (msg.t === 'hello') {
-            if (msg.protocol !== 4) {
+            if (msg.protocol !== PROTOCOL_VERSION) {
                 // Version incompatible : mieux vaut le decor seul qu'une scene
                 // interpretee de travers.
                 console.warn(`banner : protocole ${msg.protocol} non gere`);
@@ -1962,9 +2251,16 @@ const bannerNet = {
         this.buffer.push(msg.snapshot);
     },
 
+    // Renvoie false si le lien est coupe : l'appelant garde alors son etat
+    // inchange plutot que d'afficher une action qui n'est jamais partie.
+    send(msg) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
+        this.ws.send(JSON.stringify(msg));
+        return true;
+    },
+
     ping() {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-        this.ws.send(JSON.stringify({ t: 'ping', c: Date.now() }));
+        this.send({ t: 'ping', c: Date.now() });
     },
 
     // On garde la meilleure mesure plutot que la moyenne : un aller-retour

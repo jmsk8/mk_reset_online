@@ -615,6 +615,24 @@
         }
     }
 
+    // Reflux de fin de course.
+    //
+    // Les objets rares se concentrent naturellement sur le dernier tour : c'est
+    // la que les ecarts sont les plus grands, donc la pression aussi, et pour la
+    // bleue l'echappee du premier. Le systeme fonctionne, mais le resultat n'est
+    // pas souhaitable — une bleue ou un eclair quasi certains au dernier tour
+    // tuent le suspense, puisque ce qui est acquis n'a plus d'enjeu.
+    //
+    // Ce terme ne corrige pas la pression : il s'applique par-dessus, et
+    // seulement sur la fin. Un objet qui ne declare pas `lateFade` n'est pas
+    // concerne. Applique aussi bien aux objets puissants qu'aux tactiques, la
+    // bleue le lisant de son propre bloc de config.
+    function lateFadeFactor(spec, stage) {
+        const fade = spec && spec.lateFade;
+        if (!fade) return 1;
+        return 1 - fade.depth * ramp(stage, fade.from, fade.to);
+    }
+
     // Un seul exemplaire en circulation ; un orage en cours compte pour l'eclair.
     function isSingletonFree(state, itemType) {
         if (itemType === 'lightning' && state.storm) return false;
@@ -647,6 +665,7 @@
         }
 
         if (profile.packBonus) weight *= 1 + profile.packBonus * (1 - axes.i);
+        weight *= lateFadeFactor(profile, axes.s);
         if (kart.lastItem === itemType) weight *= cfg.itemDistribution.repeatPenalty;
         weight *= itemDecayOf(state, itemType);
 
@@ -671,8 +690,10 @@
         const lead = second ? remainingDistance(second) - remainingDistance(leader) : 0;
         const escape = clamp01(lead / spec.leadRef);
 
+        const stage = getRaceStage(state);
         const chance = spec.baseChance
-            * ramp(getRaceStage(state), spec.stageWindow.from, spec.stageWindow.to)
+            * ramp(stage, spec.stageWindow.from, spec.stageWindow.to)
+            * lateFadeFactor(spec, stage)
             * (spec.leadFloor + spec.leadGain * escape)
             * rankWeight
             * itemDecayOf(state, 'blueShell');
@@ -810,7 +831,10 @@
 
         // Le premier defend : rien ne part devant lui, la banane est posee et
         // non lobee. Son attaque, c'est la verte ou la banane laissee derriere.
-        if (kart.rank === 1) {
+        // La place au moment du plan est retenue : si le kart se fait doubler
+        // avant de lancer, ce plan ne vaudra plus rien (voir getShotDirection).
+        kart.shotAsLeader = (kart.rank === 1);
+        if (kart.shotAsLeader) {
             kart.lobbing = false;
             kart.shotDirection = -1;
         }
@@ -823,8 +847,10 @@
             * (1 - aggression * (1 - ai.aggression.trailRatio));
 
         if (isTrailable(cfg, itemType) && rng() < trailChance) {
+            const holdFactor = rankChance(ai.trailHoldFactor, state, kart);
             kart.trailTime = now + randomRange(rng, ai.trailDelayMin, ai.trailDelayMax) * hurry;
-            kart.throwTime = kart.trailTime + randomRange(rng, ai.trailHoldMin, ai.trailHoldMax) * hurry;
+            kart.throwTime = kart.trailTime
+                + randomRange(rng, ai.trailHoldMin, ai.trailHoldMax) * hurry * holdFactor;
             return;
         }
 
@@ -995,13 +1021,22 @@
         return best;
     }
 
-    // Sens de tir effectif. Le premier ne lance jamais devant lui : il n'a
-    // personne a viser de ce cote, et une carapace qui part vers l'avant depuis
-    // la tete ne peut que revenir sur un retardataire au tour suivant. La regle
-    // est ici et non dans un tirage, pour qu'elle tienne aussi quand le kart
-    // prend la tete entre la reception de l'objet et son lancer.
+    // Sens de tir effectif : le plan arrete a la reception, corrige des deux
+    // changements de place qui l'invalident.
+    //
+    // Le premier ne lance jamais devant lui — personne a viser de ce cote, et
+    // une carapace partie vers l'avant depuis la tete ne peut que revenir sur un
+    // retardataire au tour suivant. A l'inverse, un kart qui tenait la tete a la
+    // reception et s'est fait doubler depuis n'a plus aucune raison de tirer
+    // derriere : son plan valait pour une place qu'il n'occupe plus, il vise
+    // devant comme n'importe quel poursuivant.
+    //
+    // Les deux regles sont ici et non dans le tirage, pour qu'elles suivent la
+    // place reelle au moment du lancer.
     function getShotDirection(state, kart) {
-        return (kart.rank === 1) ? -1 : kart.shotDirection;
+        if (kart.rank === 1) return -1;
+        if (kart.shotAsLeader) return 1;
+        return kart.shotDirection;
     }
 
     function rollShellDirection(cfg, rng, state, kart, itemType) {
@@ -1321,10 +1356,13 @@
         }
     }
 
-    function updateLeaderboard(state, now, events) {
-        if (now - state.lastLeaderboardUpdate < 500) return;
-        state.lastLeaderboardUpdate = now;
-
+    // Classement reel, recalcule a chaque pas. Il porte `rank` et
+    // `cachedLeader`, dont dependent la distribution d'objets, l'agressivite et
+    // toutes les regles de place de l'IA — un rang vieux d'une demi-seconde
+    // ferait planifier un objet avec la place precedente, et le premier tirer
+    // vers l'avant juste apres avoir pris la tete. Trier huit karts ne coute
+    // rien ; c'est l'animation de depassement, plus bas, qui doit etre cadencee.
+    function updateRanks(state) {
         const karts = state.karts;
         const kartsLen = karts.length;
 
@@ -1333,7 +1371,7 @@
             const k = karts[i];
             if (k.state === 'running' || k.state === 'hit') activeKarts.push(k);
         }
-        if (activeKarts.length === 0) return;
+        if (activeKarts.length === 0) return null;
 
         // Position reelle en course = distance restante jusqu'a la ligne, et
         // non distance parcourue : la grille etant en quinconce, les huit karts
@@ -1349,23 +1387,36 @@
             }
             return remainingDistance(a) - remainingDistance(b);
         });
+
         state.cachedLeader = activeKarts[0];
+        for (let i = 0; i < activeKarts.length; i++) activeKarts[i].rank = i + 1;
+
+        return activeKarts;
+    }
+
+    // Les evenements de depassement, eux, restent cadences : chacun declenche
+    // une animation de glissement cote client, qui ne peut pas rejouer trente
+    // fois par seconde. `previousRanking` n'avance qu'avec eux, pour que le
+    // client voie bien le trajet complet d'une place a l'autre.
+    function updateLeaderboard(state, now, events) {
+        const activeKarts = updateRanks(state);
+        if (!activeKarts) return;
+
+        if (now - state.lastLeaderboardUpdate < 500) return;
+        state.lastLeaderboardUpdate = now;
 
         const newRanking = [];
         const prevRanking = state.previousRanking;
 
         for (let i = 0; i < activeKarts.length; i++) {
             const kart = activeKarts[i];
-            const newPosition = i;
-            kart.rank = newPosition + 1;
             newRanking.push(kart.id);
 
-            const prevPosition = prevRanking.indexOf(kart.id);
             events.push({
                 type: 'leaderboardPosition',
                 kartId: kart.id,
-                newPosition: newPosition,
-                prevPosition: prevPosition
+                newPosition: i,
+                prevPosition: prevRanking.indexOf(kart.id)
             });
         }
 
@@ -1427,10 +1478,42 @@
         state.sign = { group: group, frame: frame, until: now + duration };
     }
 
+    // Points du grand prix, attribues une fois la course close. `racePoints`
+    // ne vaut que pour la course qui vient de finir, `gpPoints` cumule depuis le
+    // debut du bloc. Les deux sont indexes par personnage et non par kart : les
+    // identifiants sont refaits a chaque course, les personnages non.
+    function awardRacePoints(cfg, state) {
+        const table = cfg.grandPrix.points;
+
+        for (let i = 0; i < state.finishOrder.length; i++) {
+            const kart = state.kartsById[state.finishOrder[i]];
+            const points = (i < table.length) ? table[i] : 0;
+            state.racePoints[kart.charName] = points;
+            state.gpPoints[kart.charName] = (state.gpPoints[kart.charName] || 0) + points;
+        }
+    }
+
     // Enchainement des phases, et pilotage de la camera qui en decoule.
     function updateRace(cfg, state, rng, now, deltaTime, events) {
         const race = cfg.race;
         const leader = getLeader(state);
+
+        // Tour du premier. `lapCount` compte les franchissements ; le premier
+        // cloture le trajet depuis la grille et non un tour, d'ou le plancher a 1.
+        //
+        // Suivi hors de la machine a phases, et c'est essentiel : la camera passe
+        // en approche deux tours avant la fin, si bien que tenir ce compteur dans
+        // la seule phase 'racing' le figeait a 3 pour les deux derniers tours de
+        // chaque course. Avec lui les decotes d'objets, qui ne se resorbaient
+        // alors plus jamais — une bleue lancee au troisieme tour restait a demi
+        // probabilite jusqu'a l'arrivee.
+        if (state.phase === 'racing' || state.phase === 'finishing') {
+            const lap = Math.min(race.laps, Math.max(1, leader.lapCount));
+            if (lap !== state.leaderLap) {
+                state.leaderLap = lap;
+                regenItemDecay(cfg, state);
+            }
+        }
 
         if (state.phase === 'countdown') {
             // Un feu par seconde jusqu'au depart : les quatre images de
@@ -1459,21 +1542,6 @@
         }
 
         if (state.phase === 'racing') {
-            // Seul le dernier tour est signale.
-            // `lapCount` compte les franchissements. Le premier cloture le
-            // trajet depuis la grille, pas un tour : le tour affiche vaut donc
-            // le nombre de franchissements, au minimum 1.
-            const lap = Math.min(race.laps, Math.max(1, leader.lapCount));
-            if (lap !== state.leaderLap) {
-                state.leaderLap = lap;
-
-                // Les decotes laissees par les objets deja sortis se resorbent
-                // d'un cran a chaque tour entame : une bleue ou un eclair lance
-                // tot pese sur le suivant sans fermer la porte pour le reste de
-                // la course.
-                regenItemDecay(cfg, state);
-            }
-
             // Le panneau se declenche sur ce qu'il reste a parcourir au premier :
             // c'est la seule mesure qui dise vraiment « il lui reste un tour ».
             if (!state.finalSignShown && remainingDistance(leader) <= cfg.world.width) {
@@ -1503,20 +1571,28 @@
                 setSign(state, 'finish', 1, now, race.maxRaceMs);
             }
 
-            // Un kart bloque ne doit pas figer le service : passe un delai
-            // large, on classe les retardataires dans l'ordre ou ils courent et
-            // on enchaine.
-            if (now > state.startAt + race.maxRaceMs) {
-                for (const kart of state.karts) {
-                    if (kart.finished) continue;
+            // Deux facons de clore la course : le quota d'arrivees est atteint,
+            // ou le delai large est depasse — un kart bloque ne doit pas figer
+            // le service. Dans les deux cas les retardataires sont classes dans
+            // l'ordre ou ils roulent.
+            const quotaReached = state.finishOrder.length >= race.stopAtFinisher;
+            const timedOut = now > state.startAt + race.maxRaceMs;
+
+            if ((quotaReached || timedOut) && !state.resultsAt) {
+                const stragglers = state.karts.filter(kart => !kart.finished)
+                    .sort((a, b) => a.rank - b.rank);
+                for (const kart of stragglers) {
                     kart.finished = true;
                     kart.finishRank = state.finishOrder.length + 1;
                     state.finishOrder.push(kart.id);
                 }
-            }
 
-            if (state.finishOrder.length === state.karts.length && !state.resultsAt) {
-                state.resultsAt = now + race.resultsDelayMs;
+                awardRacePoints(cfg, state);
+
+                // La derniere course du bloc porte le classement general : on
+                // laisse le temps de le lire.
+                const isFinalRace = state.gpRound >= cfg.grandPrix.races;
+                state.resultsAt = now + (isFinalRace ? race.finalResultsDelayMs : race.resultsDelayMs);
                 state.phase = 'results';
                 events.push({ type: 'raceFinished' });
             }
@@ -1525,8 +1601,16 @@
 
         if (state.phase === 'results' && now >= state.resultsAt) {
             // Le service en tire une course neuve : c'est lui qui detient
-            // createWorldState et les connexions a prevenir.
-            events.push({ type: 'raceOver', order: state.finishOrder.slice() });
+            // createWorldState et les connexions a prevenir. `gpComplete` lui
+            // dit s'il repart sur un bloc neuf — scores remis a zero et grille
+            // tiree au sort — ou sur la course suivante du bloc en cours.
+            events.push({
+                type: 'raceOver',
+                order: state.finishOrder.slice(),
+                gpRound: state.gpRound,
+                gpComplete: state.gpRound >= cfg.grandPrix.races,
+                gpPoints: Object.assign({}, state.gpPoints)
+            });
             state.resultsAt = now + race.resultsDelayMs;
         }
     }
@@ -2396,8 +2480,13 @@
     }
 
     // `startOrder` est l'ordre d'arrivee de la course precedente : le vainqueur
-    // repart en pole. Absent, la grille est tiree au sort.
-    function createWorldState(cfg, rng, now, startOrder) {
+    // repart en pole. Absent, la grille est tiree au sort — c'est le cas au
+    // premier tour d'un nouveau grand prix.
+    //
+    // `grandPrix` reporte le bloc en cours : { round, points }, ou `round`
+    // compte a partir de 1 et `points` cumule les scores par personnage. Absent,
+    // la course ouvre un bloc neuf.
+    function createWorldState(cfg, rng, now, startOrder, grandPrix) {
         const roadHeight = cfg.road.maxY - cfg.road.minY;
         const race = cfg.race;
         const countdownMs = countdownDuration(race);
@@ -2481,6 +2570,9 @@
                 trailTime: 0,
                 brakeUntil: 0,
                 shotDirection: 1,
+                // Le plan de tir a-t-il ete fait en tete ? Il ne vaut plus rien
+                // si le kart s'est fait doubler depuis.
+                shotAsLeader: false,
                 lobbing: false,
                 aimError: 0,
                 threatItemId: 0,
@@ -2534,6 +2626,13 @@
             finalSignShown: false,
             flagShown: false,
             finishOrder: [],
+
+            // Grand prix. `gpRound` est le numero de cette course dans le bloc,
+            // `gpPoints` le cumul par personnage a l'entree, `racePoints` ce que
+            // cette course rapporte — vide tant qu'elle n'est pas close.
+            gpRound: (grandPrix && grandPrix.round) || 1,
+            gpPoints: Object.assign({}, (grandPrix && grandPrix.points) || null),
+            racePoints: {},
             cameraSpeed: cfg.speeds.roadPPS,
             // Panneau tenu par Lakitu : { group, frame, until }.
             sign: { group: 'start', frame: 1, until: now + countdownMs + race.goSignMs },

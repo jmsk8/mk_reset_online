@@ -12,7 +12,7 @@
 // demander « un arrivant peut-il le deduire du seul snapshot ? ». Si non, c'est
 // ici qu'il manque un champ.
 
-const PROTOCOL_VERSION = 4;
+const PROTOCOL_VERSION = 6;
 
 // Champ de bits de l'etat d'un kart. Compact parce qu'il part dix fois par
 // seconde a chaque spectateur (voir §6.7 du document de migration).
@@ -97,6 +97,19 @@ function stormTuple(state) {
     return [Math.round(storm.startedAt), Math.round(storm.strikeAt), Math.round(storm.until), storm.shooterId];
 }
 
+// [manche, points de la course, points du grand prix]. Les deux tableaux sont
+// alignes sur l'ordre de `state.karts`, qui est aussi celui des identifiants et
+// celui du `hello` : le client lit la case i pour le kart i, sans avoir a
+// transporter les noms a chaque envoi. Les points de la course restent a zero
+// tant qu'elle n'est pas close.
+function grandPrixTuple(state) {
+    return [
+        state.gpRound,
+        state.karts.map(kart => state.racePoints[kart.charName] || 0),
+        state.karts.map(kart => state.gpPoints[kart.charName] || 0)
+    ];
+}
+
 // [groupe, image]. Le drapeau s'anime cote client : seul le groupe part.
 function signTuple(state) {
     if (!state.sign) return null;
@@ -106,7 +119,13 @@ function signTuple(state) {
 // Les deux cameras pourraient se deduire du temps ecoule ; elles voyagent quand
 // meme dans chaque snapshot, contre la certitude qu'aucun spectateur ne verra le
 // decor decale.
-function buildSnapshot(state, simTime) {
+//
+// `vote` est le decompte du vote de redemarrage, [poses, spectateurs]. Il ne
+// vient pas de l'etat du monde mais du service, seul a connaitre les
+// connexions — d'ou ce parametre plutot qu'une lecture dans `state`. Le
+// snapshot etant serialise une fois pour tout le monde, il ne peut porter que
+// le total : chaque client se souvient seul de son propre vote.
+function buildSnapshot(state, simTime, vote) {
     return {
         t: 's',
         // Arrondi a la milliseconde : l'horloge de simulation avance par pas de
@@ -125,7 +144,16 @@ function buildSnapshot(state, simTime) {
         lp: state.leaderLap,
         sg: signTuple(state),
         st: stormTuple(state),
-        fo: state.finishOrder
+        fo: state.finishOrder,
+
+        // Le grand prix suit le meme principe que l'ordre d'arrivee : un
+        // spectateur qui se connecte pendant le tableau des scores doit le voir
+        // rempli, sans avoir assiste aux trois courses precedentes.
+        gp: grandPrixTuple(state),
+
+        // Meme regle : un arrivant doit voir le vote en cours, pas un compteur
+        // a zero qui sauterait au snapshot suivant.
+        vt: vote || [0, 0]
     };
 }
 
@@ -136,7 +164,7 @@ function buildSnapshot(state, simTime) {
 // Le client ne garde aucune copie des constantes de simulation : elles arrivent
 // toutes ici. C'est ce qui evite qu'un reglage de gameplay change d'un cote
 // sans l'autre (§6.9).
-function buildHello(cfg, state, simTime, t0) {
+function buildHello(cfg, state, simTime, t0, vote) {
     return {
         t: 'hello',
         protocol: PROTOCOL_VERSION,
@@ -164,6 +192,8 @@ function buildHello(cfg, state, simTime, t0) {
             billAnimSpeed: cfg.itemAnim.bill.animSpeed,
 
             laps: cfg.race.laps,
+            // Nombre de courses d'un grand prix, pour l'entete « course N / M ».
+            gpRaces: cfg.grandPrix.races,
             flagAnimSpeed: 220,
             // Rayon du souffle de la bleue : le client en tire la taille dessinee,
             // pour que l'effet couvre exactement la zone touchee.
@@ -176,7 +206,7 @@ function buildHello(cfg, state, simTime, t0) {
         karts: state.karts.map(kart => ({ id: kart.id, char: kart.charName })),
         boxes: state.itemBoxes.map(box => ({ x: round(box.worldX, 2), y: round(box.y, 2) })),
 
-        snapshot: buildSnapshot(state, simTime)
+        snapshot: buildSnapshot(state, simTime, vote)
     };
 }
 
