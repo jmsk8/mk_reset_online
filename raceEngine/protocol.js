@@ -12,7 +12,7 @@
 // demander « un arrivant peut-il le deduire du seul snapshot ? ». Si non, c'est
 // ici qu'il manque un champ.
 
-const PROTOCOL_VERSION = 6;
+const PROTOCOL_VERSION = 7;
 
 // Champ de bits de l'etat d'un kart. Compact parce qu'il part dix fois par
 // seconde a chaque spectateur (voir §6.7 du document de migration).
@@ -23,6 +23,7 @@ const FLAG_STAR = 8;      // etoile active -> halo
 const FLAG_FINISHED = 16; // a franchi la ligne -> tour d'honneur
 const FLAG_SHRUNK = 32;   // rapetisse par l'eclair -> sprite reduit
 const FLAG_BILL = 64;     // transforme en Bill Ball -> sprite remplace
+const FLAG_BUMPED = 128;  // arrete net par un pipe -> sprite de face, recul
 
 function round(value, decimals) {
     const factor = Math.pow(10, decimals);
@@ -38,11 +39,12 @@ function kartFlags(kart) {
     if (kart.finished) flags |= FLAG_FINISHED;
     if (kart.isShrunk) flags |= FLAG_SHRUNK;
     if (kart.isBill) flags |= FLAG_BILL;
+    if (kart.bumped) flags |= FLAG_BUMPED;
     return flags;
 }
 
 // [id, worldX, yPercent, totalDistance, flags, rank, heldId, heldType,
-//  heldHold, orbitAngle, orbIds, hitEnd]
+//  heldHold, orbitAngle, orbIds, hitEnd, bumpEnd]
 //
 // `heldType` est indispensable : sans lui le client ne peut pas choisir le
 // sprite de l'objet tenu, et un arrivant verrait une banane a la place d'une
@@ -52,6 +54,10 @@ function kartFlags(kart) {
 // `hitEnd` est la fin du malus, en temps serveur. Le tete-a-queue est une
 // animation derivee du temps : sans cette date, un arrivant saurait qu'un kart
 // est percute mais pas depuis quand, et le ferait tourner a contretemps.
+//
+// `bumpEnd` joue le meme role pour le choc contre un pipe : le recul se joue au
+// debut de l'arret, pas a la fin, et un arrivant doit savoir ou en est le kart
+// qu'il trouve immobile contre un tuyau.
 function kartTuple(kart) {
     const held = kart.heldItem;
     const orbit = held && held.holdPosition === 'orbit';
@@ -68,7 +74,8 @@ function kartTuple(kart) {
         held ? held.holdPosition : null,
         orbit ? round(held.orbitAngle, 3) : null,
         orbit ? held.orbs.map(o => o.id) : null,
-        kart.state === 'hit' ? Math.round(kart.hitEndTime) : null
+        kart.state === 'hit' ? Math.round(kart.hitEndTime) : null,
+        kart.bumped ? Math.round(kart.bumpEndTime) : null
     ];
 }
 
@@ -206,6 +213,12 @@ function buildHello(cfg, state, simTime, t0, vote) {
         karts: state.karts.map(kart => ({ id: kart.id, char: kart.charName })),
         boxes: state.itemBoxes.map(box => ({ x: round(box.worldX, 2), y: round(box.y, 2) })),
 
+        // Les pipes ne bougent ni ne se detruisent : le `hello` suffit, ils
+        // n'ont rien a faire dans un snapshot envoye dix fois par seconde.
+        // L'ordre est celui de `state.pipes`, et c'est lui que porte l'index
+        // d'un evenement `pipeShaken`.
+        pipes: state.pipes.map(pipe => ({ x: round(pipe.worldX, 2), y: round(pipe.y, 2) })),
+
         snapshot: buildSnapshot(state, simTime, vote)
     };
 }
@@ -214,7 +227,10 @@ function buildHello(cfg, state, simTime, t0, vote) {
 // photo a l'impact, et le glissement au classement. Tous les autres decrivent
 // des creations ou des destructions, que la reconciliation deduit deja du
 // snapshot — les transmettre ne ferait que donner deux sources de verite.
-const BROADCAST_EVENTS = new Set(['kartHit', 'leaderboardPosition']);
+// `pipeShaken` en fait partie parce qu'il ne se deduit d'aucun snapshot : le
+// tuyau est au meme endroit avant et apres, seul le sursaut a eu lieu. Le choc
+// d'un kart, lui, n'y est pas — il se lit dans son drapeau et sa date de fin.
+const BROADCAST_EVENTS = new Set(['kartHit', 'leaderboardPosition', 'pipeShaken']);
 
 function filterEvents(events) {
     return events.filter(ev => {
@@ -240,6 +256,7 @@ module.exports = {
     FLAG_FINISHED,
     FLAG_SHRUNK,
     FLAG_BILL,
+    FLAG_BUMPED,
     buildHello,
     buildSnapshot,
     filterEvents

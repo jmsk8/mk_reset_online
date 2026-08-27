@@ -28,13 +28,88 @@
 
             mass:  { min: 0.72, max: 1.25 },
             force: { min: 0.85, max: 1.40 },
-            grip:  { min: 0.85, max: 1.35 },
+            grip:  { min: 0.45, max: 1.32 },
 
-            massDragAccel: 0.60,
-            accelClamp: { min: 0.75, max: 1.45 },
+            // Forme de l'axe handling : `grip = lerp(min, max, handling ^ gripCurve)`.
+            //
+            // A 1, l'axe est droit et chaque point de handling vaut le meme
+            // grip. Le plateau tenait alors dans un rapport de x2 entre le
+            // meilleur et le pire, et tout le monde sauf Koopa se pilotait
+            // comme un kart maniable — les poids moyens compris.
+            //
+            // Au-dessus de 1, la courbe s'ecrase par le bas : seuls les tres
+            // gros scores de handling gardent leur grip, le reste decroche de
+            // plus en plus vite. Le sommet, lui, ne bouge pas — c'est ce qui
+            // permet de resserrer le plateau sans toucher au kart de reference.
+            //
+            // Regler ce couple, c'est deplacer le milieu sans deplacer le haut :
+            // `gripCurve` monte, et `grip.min` descend. `grip.max` se recale
+            // ensuite pour que Koopa — handling 9, le meilleur du plateau, et le
+            // kart de reference : c'est lui qui a la maniabilite voulue — retombe
+            // sur son agilite de 1.548. Reperes en agilite Mario / Bowser, a
+            // massDragAgility 1.70 :
+            //
+            //   curve 1.6  min 0.62  max 1.28 -> 0.905 / 0.475   (rapport x3.26)
+            //   curve 2.1  min 0.52  max 1.30 -> 0.720 / 0.396   (rapport x3.91)
+            //   curve 2.5  min 0.45  max 1.32 -> 0.619 / 0.334   (rapport x4.64)
+            //   curve 2.8  min 0.40  max 1.36 -> 0.553 / 0.296   (rapport x5.23)
+            //
+            // La courbe frappe selon le handling, donc tout le plateau a la
+            // fois. Pour viser les lourds en particulier, c'est
+            // `massDragAgility` plus bas — les deux se combinent, et `grip.max`
+            // se recale a chaque fois.
+            gripCurve: 2.5,
 
-            massDragAgility: 0.90,
-            agilityClamp: { min: 0.60, max: 1.70 },
+            // Ce que la masse coute a l'acceleration, en exposant :
+            // `acceleration = force / masse ^ massDragAccel`.
+            //
+            // L'exposant fait pivoter tout le plateau autour de la masse 1, soit
+            // le poids moyen : le monter creuse l'ecart des deux cotes a la
+            // fois, les legers gagnant autant que les lourds perdent. Mario, pile
+            // au milieu, ne bouge pas — c'est ce qui en fait la reference.
+            //
+            // Passe de 0.90 a 1.25 pour accentuer l'ecart leger/lourd sur la
+            // relance. Sur un retour a la vitesse de croisiere depuis l'arret —
+            // ce que coute un item ou un pipe — Toad passe de 1.84 s a 1.68 s et
+            // Bowser de 2.99 s a 3.18 s : l'ecart entre les deux extremes passe
+            // de x1.62 a x1.89. Le plateau ne se reordonne pas, il s'etire.
+            //
+            // La plage de masse (0.72 a 1.25) etant etroite, l'exposant est un
+            // levier doux : chaque dixieme ne vaut qu'environ 0.05 s aux deux
+            // bouts. Le pousser au-dela de ~1.5 rend les lourds injouables
+            // depuis les pipes, qui remettent les karts a l'arret plusieurs fois
+            // par tour, bien avant de rendre les legers spectaculaires.
+            massDragAccel: 1.25,
+
+            // Garde-fou contre une combinaison de stats absurde, pas un reglage :
+            // il ne doit jamais mordre sur le plateau en place, sinon il ecrete
+            // en silence l'effet qu'on vient de regler. Le plafond suit
+            // l'exposant : monte de 1.55 a 1.85 avec le passage a 1.25, ou Toad
+            // atteint 1.628 et l'ancien plafond lui aurait pris la moitie de son
+            // gain. Bowser, a 0.899, reste loin du plancher.
+            accelClamp: { min: 0.75, max: 1.85 },
+
+            // Ce que la masse coute a la maniabilite, en exposant :
+            // `agilite = grip / masse ^ massDragAgility`. Meme forme que
+            // `massDragAccel`, mais l'axe vise est le poids et non la puissance.
+            //
+            // C'est le levier a poids, la ou `gripCurve` est le levier a
+            // handling : il pivote autour de la masse 1 — le poids moyen — donc
+            // il ne touche presque pas le milieu du plateau et mord surtout aux
+            // deux bouts. Monte de 0.90 a 1.70 pour enfoncer les lourds sans
+            // redescendre les moyens.
+            //
+            // 1.70 est le plafond pratique : au-dela, le gain rendu aux tres
+            // legers fait repasser Toad devant Koopa et le haut du plateau se
+            // reordonne. Pour aller plus loin, il ne reste que `gripCurve`.
+            massDragAgility: 1.70,
+            // Le plancher suit les deux leviers ci-dessus : a curve 2.5 et
+            // massDragAgility 1.70, Bowser tombe a 0.334, la ou le plancher
+            // d'origine (0.60) lui aurait rendu en silence les deux cinquiemes
+            // de la maniabilite qu'on vient de lui retirer. Comme pour l'accel,
+            // c'est un garde-fou contre une stat absurde, pas un reglage : il ne
+            // doit jamais mordre sur le plateau en place, d'ou la marge.
+            agilityClamp: { min: 0.25, max: 1.70 },
 
             speedBase: 450,
             speedPerPower: 110,
@@ -45,22 +120,34 @@
                 dk:     { weight: 8, power: 5, handling: 2 },
                 mario:  { weight: 5, power: 5, handling: 5 },
                 luigi:  { weight: 4, power: 6, handling: 5 },
-                yoshi:  { weight: 4, power: 4, handling: 7 },
+                yoshi:  { weight: 4, power: 5, handling: 6 },
                 peach:  { weight: 3, power: 6, handling: 6 },
-                toad:   { weight: 1, power: 6, handling: 8 },
+                toad:   { weight: 2, power: 5, handling: 8 },
                 koopa:  { weight: 2, power: 4, handling: 9 }
             }
         },
         world: {
-            width: 7680,
-            finishLineX: 1440,
-            sunX: 1920,
-            // Au tiers du tour depuis la ligne : finishLineX + width / 3.
-            // A recalculer si l'une des deux bouge.
-            itemBoxX: 4000,
-            itemBoxCount: 4
+            // La geometrie du circuit — longueur du tour, ligne d'arrivee,
+            // boites a objets — ne vit plus ici : elle se dessine dans tracks/
+            // et vient se poser sur cette config au demarrage
+            // (raceEngine/track.js, `applyTrack`). Un circuit dessine se relit,
+            // se compare et se change sans toucher au moteur ; quatre nombres
+            // en dur ne se voyaient qu'une fois a l'ecran.
+            //
+            // Ce que `applyTrack` ajoute ici : `width`, `finishLineX`,
+            // `itemBoxes`. Appeler `createWorldState` sans cette etape est une
+            // erreur, et refuse de demarrer plutot que de simuler un monde vide.
+
+            // Le soleil, lui, n'est pas sur la piste : il est pose dans le fond
+            // en parallaxe, que le dessin ne decrit pas.
+            sunX: 1920
         },
         road: {
+            // La largeur de la piste, elle, reste ici : elle ne varie pas le
+            // long du tour. Les rangees dessinees entre les deux bords d'un
+            // circuit se repartissent sur cet intervalle — la rangee du haut au
+            // fond (maxY), celle du bas au premier plan (minY). Le dessin donne
+            // donc la finesse de placement, pas la largeur.
             minY: 0,
             maxY: 30,
             laneTolerance: 12,
@@ -69,7 +156,19 @@
             wanderMargin: 8
         },
         physics: {
-            smoothingFactor: 5,
+            // Reponse du volant : vitesse a laquelle `vy` rejoint la consigne
+            // laterale, en 1/s. Commune a tout le plateau — c'est le point du
+            // systeme de maniabilite : un personnage se decale plus ou moins
+            // loin qu'un autre, jamais plus ou moins tot.
+            //
+            // Se lit comme un delai : la constante de temps vaut `1 /
+            // steerResponse`, soit 200 ms a 5. Monter la valeur rend le volant
+            // sec et les esquives plus faciles pour tout le monde ; la baisser
+            // donne des karts qui s'inscrivent en douceur et ratent plus.
+            //
+            // Le temps de reaction, lui, se regle a cote : `ai.reactionBaseMs`
+            // et son jitter.
+            steerResponse: 5,
             pushForce: 0.5,
             collisionBounceY: 10,
         },
@@ -496,11 +595,124 @@
             // couvrirait toute la piste et le rendrait inevitable.
             hitbox: { x: 99, y: 11 },
 
+            // Degagement pris pour contourner un pipe, au-dela de la hitbox. Le
+            // bill ne manoeuvre pas, il devie : juste ce qu'il faut pour passer
+            // a cote, et il revient au milieu aussitot apres.
+            pipeClearance: 3,
+
             // Deux bills ne se font aucun degat, mais ils partagent la voie du
             // milieu : ils se bousculent, a cette fraction de la poussee normale.
             // A 0, ils se traverseraient — le seul endroit du jeu ou deux karts
             // s'ignoreraient completement.
             pushFactor: 0.45
+        },
+
+        // Le pipe : le seul element du monde de masse infinie. Il ne bouge pas,
+        // ne se detruit pas, et ne cede jamais — il se contourne. Il se dessine
+        // par un `P` dans tracks/, comme une boite par un `B`.
+        pipe: {
+            // Aucune constante ne convertit ici la profondeur en pixels, et
+            // c'est voulu. Le rebond choisit sa face en comparant des durees —
+            // depuis combien de temps chacune a ete franchie — et une duree se
+            // compare a une duree quelle que soit l'unite de l'axe. Un facteur
+            // pixels-par-profondeur aurait ete une convention de plus a tenir
+            // face a la hauteur reelle de la banniere, qui n'est pas la meme sur
+            // mobile (§6.1 du document de migration).
+
+            // Emprise au sol, en unites natives : `x` en pixels de monde, `y` en
+            // profondeur. Le tuyau est rond a l'ecran, sa hitbox est une boite,
+            // comme toutes les autres du moteur. Une carapace rebondit sur ses
+            // faces, et c'est la face touchee qui decide de l'angle.
+            //
+            // `y` est bien plus plat que le sprite n'est large, et c'est
+            // volontaire : la piste ne fait que 30 unites de profondeur pour 108
+            // px a l'ecran. Une emprise aussi profonde que large en boucherait
+            // les trois quarts a elle seule, et deux pipes fermeraient le
+            // circuit.
+            //
+            // Reduite de 20 % depuis la premiere version (42 / 5.5) : le tuyau
+            // etait presque aussi large qu'un kart, et deux d'entre eux ne
+            // laissaient plus de porte praticable. La taille dessinee suit dans
+            // GAME_CONFIG.visuals.pipe, qui vaut exactement 2 * x.
+            hitbox: { x: 33.6, y: 4.4 },
+
+            // Ce qu'un choc frontal coute a un kart. Bien moins qu'un objet
+            // (2000 ms de tete-a-queue) : un mur se croise a chaque tour, un
+            // objet non.
+            bumpMs: 600,
+            // Recul, en pixels de monde et en millisecondes. Il entame aussi la
+            // distance parcourue : position et progression restent cousues.
+            recoilPx: 90,
+            recoilMs: 250,
+            // Sursis avant qu'un nouveau choc soit possible. Sans lui, un kart
+            // encore au contact rejouerait le choc a chaque pas de simulation.
+            immuneMs: 700,
+            // Poussee laterale donnee au choc, vers le cote le plus degage. Sans
+            // elle, un kart pousse par le peloton resterait plaque contre le
+            // tuyau jusqu'a la fin de la course, et le chien de garde du service
+            // se contenterait de le constater.
+            slideAway: 18,
+
+            // Distance a laquelle l'IA commence a voir un pipe. Plus loin que
+            // `ai.threatMaxDistance` (900) : un objet s'esquive au reflexe, un
+            // mur se contourne, et il faut voir venir.
+            seeDistance: 1100,
+
+            // Contournement. Le kart choisit un couloir et le rejoint a une
+            // vitesse proportionnelle a l'ecart restant : `laneSeekGain`
+            // convertit cet ecart en vitesse laterale, `laneSeekSpeed` la
+            // plafonne.
+            //
+            // C'est ce qui donne une diagonale franche qui s'aplatit en
+            // arrivant. Une poussee constante — ce que fait l'esquive d'un objet
+            // — depasse le couloir puis corrige, et le kart parait hesiter.
+            laneSeekGain: 6,
+            laneSeekSpeed: 45,
+
+            // En deca de cet ecart, le couloir est considere tenu : le kart
+            // arrete de corriger au lieu de trembler autour de sa cible.
+            laneTolerance: 0.6,
+
+            // Deux couloirs de largeurs proches a moins que ca se valent : c'est
+            // alors le plus proche du kart qui l'emporte. Sans cette marge, un
+            // tuyau au milieu enverrait les huit karts du meme cote, celui que
+            // l'arithmetique designe au dixieme pres.
+            laneTieMargin: 1.5,
+
+            // Vertes : nombre de rebonds tolere, pipes et bords de piste
+            // confondus. Au suivant, la carapace se detruit. C'est aussi ce qui
+            // donne enfin une duree de vie a une verte, qui n'en avait aucune.
+            maxShellBounces: 10,
+
+            // Integration des projectiles par sous-pas. A 880 px/s et 45 degres,
+            // une verte traverse la piste en un dixieme de seconde : en un seul
+            // pas de 33 ms elle avancerait de 8 unites de profondeur, soit plus
+            // que la hitbox d'un kart (5) — elle enjamberait ses victimes sans
+            // les toucher. Chaque sous-pas est borne a cette avance.
+            maxSubStepY: 1.5,
+            maxSubSteps: 12,
+
+            // Marge de degagement apres un rebond, en fraction du rayon. Sans
+            // elle, la carapace repart depuis la surface exacte de l'ellipse,
+            // y rentre au sous-pas suivant et vibre sur place.
+            escapeMargin: 0.06,
+
+            // Passage libre minimal, mesure en positions de centre de kart : la
+            // demi-carrosserie est deja dans `kartVsPipe`, si bien qu'un
+            // passage de zero se franchirait en theorie. Celui-ci demande de la
+            // marge, parce qu'un kart arrive rarement pile dans l'axe.
+            //
+            // A 6, un pipe pose au milieu de la piste passe des deux cotes
+            // (7 de libre de chaque cote, pour un kart profond de 5), et deux
+            // pipes qui ne laissent qu'un couloir de moins de 6 sont refuses.
+            // Le monter a 8 refuserait le cas le plus naturel de tous : un seul
+            // tuyau au centre.
+            //
+            // Un circuit qui n'en laisse pas autant est refuse au chargement :
+            // un mur de pipes rendrait la course infinissable sans qu'aucune
+            // erreur ne soit levee — les karts se cogneraient jusqu'au delai
+            // maximum, et le classement d'office ne dirait pas pourquoi.
+            minPassageY: 6
         },
 
         // Objets qu'un kart peut trainer derriere lui.
@@ -616,6 +828,15 @@
     hitboxes: {
             kartVsKart: { x: 60, y: 5 },
             itemVsKart: { x: 40, y: 5 },
+            // Kart contre pipe. Comme les autres, c'est un ecart entre centres :
+            // l'emprise du tuyau (pipe.hitbox) plus la demi-carrosserie. Un kart
+            // vaut 60 en x et 5 en profondeur face a un autre kart, d'ou
+            // 33.6 + 30 et 4.4 + 2.5.
+            //
+            // Seule la part du tuyau a ete reduite de 20 % : le kart, lui, n'a
+            // pas maigri. Rogner les deux aurait fait passer les karts dans des
+            // trous ou ils ne tiennent pas.
+            kartVsPipe: { x: 63.6, y: 6.9 },
             // itemVsKart.y elargi de radiusY : l'objet oscille en profondeur avec
             // son orbite, ce supplement lui rend la meme tolerance effective qu'un
             // objet pose (5) pour une victime qui roule sur la meme voie.
@@ -706,11 +927,17 @@
             // garer pile quand le leader franchit la ligne, puis s'y bloque.
             //
             // C'est ce qui impose d'ouvrir l'approche deux tours avant la fin :
-            // au pire elle doit couvrir un tour complet, soit 7680 unites, et a
-            // sa vitesse normale il lui faut 30,7 s — exactement le temps que
-            // met le leader a parcourir ces deux tours. A recalculer si
-            // world.width, roadPPS ou la vitesse des karts changent.
-            cameraApproachDistance: 15400,
+            // au pire elle doit couvrir un tour complet, et a sa vitesse normale
+            // il lui faut le temps que met le leader a parcourir ces deux tours.
+            //
+            // La distance d'approche elle-meme n'est donc pas un reglage mais un
+            // calcul : deux tours du circuit en cours, plus cette marge. C'est
+            // `applyTrack` qui la pose, une fois la longueur du tour connue —
+            // sans quoi chaque nouveau dessin demanderait de la recalculer a la
+            // main, et le jour ou on l'oublierait la camera raterait la ligne.
+            // Sur l'anneau d'origine : 2 * 7680 + 40 = 15400, la valeur qui a
+            // toujours tourne.
+            cameraApproachMargin: 40,
             cameraMinSpeedRatio: 0.35,
             cameraMaxCatchupRatio: 1
         },

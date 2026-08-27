@@ -79,8 +79,25 @@ const GAME_CONFIG = {
         lightning: { width: 30, widthMobile: 22 },
         bill: { width: 69, widthMobile: 51 },
         box: { sizePC: 42, sizeMobile: 42 },
+        // Le pipe est dessine a exactement deux fois pipe.hitbox.x du serveur
+        // (33.6), pour que le kart s'arrete pile au bord du tuyau et non dans le
+        // vide a cote. Toucher a l'un sans reporter l'autre casse cet accord.
+        // La hauteur suit les proportions de l'image (95 x 124).
+        //
+        // Reduit de 20 % depuis la premiere version (84 x 110) : a 84 px de
+        // large pour un kart de 100, le tuyau mangeait trop de piste.
+        //
+        // Une seule taille, PC comme mobile : la hitbox, elle, ne depend pas de
+        // l'appareil, et deux tailles dessinees donneraient deux tuyaux
+        // differents pour un meme obstacle.
+        pipe: { width: 67.2, height: 88 },
         // Taille du souffle : voir WORLD.blastRadius, transmis par le serveur.
     },
+    // Choc contre un pipe. Pas de tête-à-queue : un mur n'envoie pas en
+    // toupie, il arrête. Le kart se retrouve face à la route, plaqué contre le
+    // tuyau, et le recul se lit dans sa position.
+    kartBump: { dir: 'front', mirror: false },
+
     // Tête-à-queue joué pendant l'état 'hit'. La durée du malus n'est pas
     // configurable ici : elle reste delays.hitDecelDuration + hitPauseDuration.
     // durationRatio ne règle que la vitesse de la toupie, en la jouant sur une
@@ -160,6 +177,9 @@ let worldState = {
     kartsById: {},
     items: [],
     itemBoxes: [],
+    // Statiques et indestructibles : ils arrivent dans le `hello` et ne
+    // bougent plus. Aucun snapshot ne les porte.
+    pipes: [],
     finishLine: null,
     sun: null,
 
@@ -561,6 +581,7 @@ function realignAnimations() {
 }
 
 const boxEls = [];
+const pipeEls = [];
 
 function initScene() {
     cachedContainer = document.getElementById('karts-container');
@@ -642,6 +663,7 @@ function wipeSceneElements() {
     for (const id in ppEls) removePPEl(id);
 
     while (boxEls.length) boxEls.pop().remove();
+    while (pipeEls.length) pipeEls.pop().remove();
 }
 
 function isNewRace(hello) {
@@ -675,6 +697,8 @@ function buildWorldFromHello(hello) {
     for (const kart of worldState.karts) worldState.kartsById[kart.id] = kart;
 
     worldState.itemBoxes = hello.boxes.map(box => ({ worldX: box.x, y: box.y, active: true }));
+    // Un circuit sans obstacle n'envoie pas de liste : elle vaut alors vide.
+    worldState.pipes = (hello.pipes || []).map(pipe => ({ worldX: pipe.x, y: pipe.y }));
     worldState.items = [];
 
     if (worldState.finishLine) worldState.finishLine.worldX = WORLD.finishLineX;
@@ -1047,6 +1071,41 @@ function ensureBoxEl(box, index) {
     return el;
 }
 
+// Le tuyau est ancre par sa base a sa profondeur, comme un kart, et centre sur
+// sa position : la hitbox du serveur l'est aussi, et un element pose par son
+// bord gauche s'arreterait une demi-largeur trop loin.
+function ensurePipeEl(pipe, index) {
+    if (pipeEls[index]) return pipeEls[index];
+
+    if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
+    if (!cachedContainer) return null;
+
+    const size = GAME_CONFIG.visuals.pipe;
+    const el = document.createElement('div');
+    el.classList.add('pipe');
+    el.style.width = `${size.width}px`;
+    el.style.height = `${size.height}px`;
+    el.style.bottom = `${pipe.y}%`;
+    el.style.zIndex = getZIndex(pipe.y);
+
+    // Le dessin vit dans un enfant, et non sur l'element place. Le defilement
+    // pose une `transform` a chaque frame sur le parent ; une animation CSS sur
+    // la meme propriete l'emporterait dans la cascade et figerait le tuyau a
+    // l'ecran pendant tout son sursaut.
+    const sprite = document.createElement('div');
+    sprite.classList.add('pipe-sprite');
+    el.appendChild(sprite);
+
+    // Le sursaut se joue en ajoutant une classe. Sans ce retrait a la fin, un
+    // second passage d'etoile ne rejouerait rien. L'evenement remonte de
+    // l'enfant anime jusqu'ici.
+    el.addEventListener('animationend', () => el.classList.remove('pipe-shaken'));
+
+    cachedContainer.appendChild(el);
+    pipeEls[index] = el;
+    return el;
+}
+
 // Un objet peut exister a trois endroits : libre sur la piste, tenu par un
 // kart, ou en orbite autour de lui (auquel cas ce sont les orbes qui portent
 // les ids, pas le groupe). Tout ce qui n'est dans aucun des trois est un
@@ -1149,6 +1208,9 @@ function reconcileDom() {
     for (let i = 0; i < worldState.itemBoxes.length; i++) ensureBoxEl(worldState.itemBoxes[i], i);
     while (boxEls.length > worldState.itemBoxes.length) boxEls.pop().remove();
 
+    for (let i = 0; i < worldState.pipes.length; i++) ensurePipeEl(worldState.pipes[i], i);
+    while (pipeEls.length > worldState.pipes.length) pipeEls.pop().remove();
+
     reconcileItems();
     reconcileLeaderboard();
 
@@ -1170,6 +1232,22 @@ function applyEvent(ev) {
             triggerPPHitAnimation(ev.kartId);
             break;
         }
+        // Un pipe traverse par une etoile : il sursaute, et se remet en place.
+        // Purement decoratif, et invisible dans le snapshot — le tuyau est au
+        // meme endroit avant et apres. Un arrivant en retard le rate sans que sa
+        // scene en soit fausse.
+        case 'pipeShaken': {
+            const el = pipeEls[ev.pipeIndex];
+            if (el) {
+                el.classList.remove('pipe-shaken');
+                // Force le navigateur a reprendre l'animation depuis le debut :
+                // sans cette lecture, retirer puis remettre la classe dans la
+                // meme frame ne relance rien.
+                void el.offsetWidth;
+                el.classList.add('pipe-shaken');
+            }
+            break;
+        }
         case 'leaderboardPosition': {
             // Le glissement n'a de sens que si la photo etait deja quelque part.
             if (ppEls[ev.kartId]) applyLeaderboardPosition(ev.kartId, ev.newPosition, ev.prevPosition);
@@ -1182,6 +1260,11 @@ function applyEvent(ev) {
 // rendu à maintenir, donc rien qui puisse désynchroniser du reste de la course.
 // Le kart boucle kartSpin.turns fois sur la fraction durationRatio du malus,
 // puis reste sur side-right jusqu'à ce qu'il reparte.
+// Valeur de `spinFrame` qui signale la pose de choc contre un pipe. Hors de la
+// plage de kartSpin (0..7) et distincte du -1 qui force un repaint au retour de
+// bill : les trois ne doivent pas se confondre.
+const BUMP_POSE_FRAME = -2;
+
 function getSpinFrameIndex(kart, gameNow) {
     if (kart.state !== 'hit') return 0;
 
@@ -1788,6 +1871,23 @@ function renderState(gameNow, screenWidth) {
         }
     }
 
+    for (let i = 0; i < worldState.pipes.length; i++) {
+        const pipe = worldState.pipes[i];
+        const el = pipeEls[i];
+        if (!el) continue;
+
+        // Centre sur sa position, comme la hitbox du serveur.
+        const rx = getScreenPosition(pipe.worldX, renderCameraX, screenWidth)
+            - GAME_CONFIG.visuals.pipe.width / 2;
+
+        if (rx > -renderMargin && rx < screenWidth + renderMargin) {
+            el.style.display = 'block';
+            el.style.transform = `translate3d(${rx}px, 0, 0)`;
+        } else {
+            el.style.display = 'none';
+        }
+    }
+
     const kartsLen = worldState.karts.length;
     for (let i = 0; i < kartsLen; i++) {
         const kart = worldState.karts[i];
@@ -1846,10 +1946,21 @@ function renderState(gameNow, screenWidth) {
                     els.wrapper.classList.remove('kart-bill');
                 }
 
-                const spinFrame = getSpinFrameIndex(kart, gameNow);
-                if (els.spinFrame !== spinFrame) {
-                    els.spinFrame = spinFrame;
-                    applyKartSpinFrame(kart, els, spinFrame);
+                // Le choc contre un pipe prime sur le tete-a-queue : un kart
+                // percute puis arrete par un tuyau est arrete, pas en toupie.
+                if (kart.bumped) {
+                    if (els.spinFrame !== BUMP_POSE_FRAME) {
+                        els.spinFrame = BUMP_POSE_FRAME;
+                        const pose = GAME_CONFIG.kartBump;
+                        els.img.src = getKartFrameSrc(kart.charName, pose.dir);
+                        els.sprite.classList.toggle('kart-mirrored', pose.mirror);
+                    }
+                } else {
+                    const spinFrame = getSpinFrameIndex(kart, gameNow);
+                    if (els.spinFrame !== spinFrame) {
+                        els.spinFrame = spinFrame;
+                        applyKartSpinFrame(kart, els, spinFrame);
+                    }
                 }
             }
 
@@ -1964,7 +2075,7 @@ const CLOCK_SAMPLE_TTL_MS = 120000;
 // serveur l'annonce dans son `hello` et le client refuse tout ce qui ne
 // correspond pas : mieux vaut le decor seul qu'une scene interpretee de
 // travers. Les deux se modifient donc ensemble, jamais l'un sans l'autre.
-const PROTOCOL_VERSION = 6;
+const PROTOCOL_VERSION = 7;
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
@@ -2013,6 +2124,7 @@ function writeKart(kart, ta, tb, t) {
     kart.finished = !!(flags & 16);
     kart.isShrunk = !!(flags & 32);
     kart.isBill = !!(flags & 64);
+    kart.bumped = !!(flags & 128);
     kart.rank = ta[5];
 
     // Un serveur qui ne date pas le malus (`hitEnd` absent) ne doit pas priver
@@ -2023,6 +2135,8 @@ function writeKart(kart, ta, tb, t) {
     } else {
         kart.hitEndTime = 0;
     }
+
+    kart.bumpEndTime = kart.bumped ? (ta[12] || kart.bumpEndTime || 0) : 0;
 
     if (ta[6] === null) {
         kart.heldItem = null;
@@ -2711,6 +2825,7 @@ const bannerDev = {
         if (leaderboardState.container) leaderboardState.container.innerHTML = '';
 
         boxEls.length = 0;
+        pipeEls.length = 0;
         for (const id in kartEls) delete kartEls[id];
         for (const id in itemEls) delete itemEls[id];
         for (const id in ppEls) delete ppEls[id];

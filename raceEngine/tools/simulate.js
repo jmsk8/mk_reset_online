@@ -12,6 +12,7 @@
 //   node tools/simulate.js --chain            grilles enchainees comme en prod
 //   node tools/simulate.js --seed 42          tirage reproductible
 //   node tools/simulate.js --csv              une ligne par course, pour tableur
+//   node tools/simulate.js --track anneau     un seul circuit au lieu de tous
 //
 // Deux facons de mesurer, et elles ne repondent pas a la meme question :
 //
@@ -37,6 +38,7 @@ function loadShared(name) {
 
 const PH = loadShared('physics.js');
 const CFG = loadShared('physics-config.js');
+const track = require('../track');
 
 // Meme cadence que le service : changer l'une sans l'autre ferait mesurer une
 // physique qui n'est pas celle qui tourne.
@@ -57,6 +59,41 @@ const RACES = Math.max(1, Number(argValue('--races', 200)) || 200);
 const CHAIN = args.includes('--chain');
 const CSV = args.includes('--csv');
 const SEED = Number(argValue('--seed', 0)) || 0;
+
+// Les circuits du service, dessines dans tracks/. Par defaut le banc les
+// enchaine comme le fait un grand prix : la campagne mesure alors le jeu tel
+// qu'il se joue, tous circuits confondus. `--track` en isole un — c'est ce
+// qu'il faut pour juger un trace en particulier, sans que les autres diluent la
+// mesure.
+let TRACKS;
+try {
+    TRACKS = track.loadTracks(track.resolveTracksDir(path.join(__dirname, '..')), CFG);
+} catch (err) {
+    console.error(`Circuits illisibles : ${err.message}`);
+    process.exit(1);
+}
+const TRACK_FILTER = argValue('--track', null);
+
+function selectTracks() {
+    if (!TRACK_FILTER) return TRACKS;
+
+    const needle = TRACK_FILTER.toLowerCase();
+    const found = TRACKS.filter(t => t.source.toLowerCase().indexOf(needle) !== -1
+        || t.name.toLowerCase().indexOf(needle) !== -1);
+
+    if (!found.length) {
+        console.error(`Aucun circuit ne correspond a "${TRACK_FILTER}". Disponibles : `
+            + TRACKS.map(t => t.source).join(', '));
+        process.exit(1);
+    }
+    return found;
+}
+
+// Les configs sont construites une fois pour toutes : une campagne de plusieurs
+// milliers de courses n'a pas a reposer le meme circuit sur la meme config a
+// chaque tour de boucle.
+const RUNNING = selectTracks();
+const RACE_CFGS = RUNNING.map(t => track.applyTrack(CFG, t));
 
 // Generateur reproductible (mulberry32) : deux campagnes lancees avec la meme
 // graine donnent le meme resultat, ce qui permet de comparer deux reglages sans
@@ -114,15 +151,19 @@ const ITEM_TYPES = Object.keys(CFG.itemDistribution.items)
 // distance decalait le changement de tour de 392 unites en moyenne, soit 4 %
 // de la course — assez pour declencher l'alerte de coherence a chaque campagne.
 // `finishDistance` porte cet ecart, on l'y retrouve sans avoir a le transporter.
-function trueLap(state) {
+//
+// La longueur du tour vient de la config de la course et non de `CFG` : elle
+// change d'un circuit a l'autre, et la lire au mauvais endroit ferait compter
+// les tours d'une piste sur la longueur d'une autre.
+function trueLap(cfg, state) {
     let leader = null;
     for (const kart of state.karts) {
         if (!leader || kart.totalDistance > leader.totalDistance) leader = kart;
     }
     if (!leader) return 1;
 
-    const gapToLine = leader.finishDistance - LAPS * CFG.world.width;
-    const crossings = Math.floor((leader.totalDistance - gapToLine) / CFG.world.width) + 1;
+    const gapToLine = leader.finishDistance - LAPS * cfg.world.width;
+    const crossings = Math.floor((leader.totalDistance - gapToLine) / cfg.world.width) + 1;
     return Math.min(LAPS, Math.max(1, crossings));
 }
 
@@ -134,8 +175,8 @@ function trueLap(state) {
 // Deux moments distincts sont releves pour chaque objet — celui ou il est
 // ramasse, et celui ou il part. Pour la bleue et l'eclair l'ecart entre les deux
 // n'est pas anecdotique : c'est le temps que le porteur le garde en main.
-function runRace(startOrder) {
-    const state = PH.createWorldState(CFG, rng, 0, startOrder, null);
+function runRace(startOrder, cfg) {
+    const state = PH.createWorldState(cfg, rng, 0, startOrder, null);
     let simTime = 0;
 
     const got = {};      // type -> nombre ramasse
@@ -151,10 +192,15 @@ function runRace(startOrder) {
     // seconde valeur qui dit ce que vaut vraiment l'acceleration, l'arret etant
     // de duree fixe pour tout le monde.
     const hits = {};
+    // Chocs contre un pipe. Compte a part des tete-a-queue : ils ne coutent pas
+    // la meme chose, et c'est en les separant qu'on voit si un trace punit
+    // surtout les lourds — ce sont eux qui redemarrent le plus lentement.
+    const bumps = {};
     const slowMs = {};
     const raceMs = {};
     for (const kart of state.karts) {
         hits[kart.charName] = 0;
+        bumps[kart.charName] = 0;
         slowMs[kart.charName] = 0;
         raceMs[kart.charName] = 0;
     }
@@ -173,8 +219,8 @@ function runRace(startOrder) {
 
     for (let tick = 0; tick < MAX_TICKS; tick++) {
         simTime += DT_MS;
-        const events = PH.stepPhysics(CFG, state, rng, simTime, DT);
-        const lap = trueLap(state);
+        const events = PH.stepPhysics(cfg, state, rng, simTime, DT);
+        const lap = trueLap(cfg, state);
         if (state.leaderLap !== lap) lapDrift++;
 
         if (lap > seenLap) {
@@ -200,6 +246,10 @@ function runRace(startOrder) {
         for (const ev of events) {
             if (ev.type === 'kartHit') {
                 hits[state.kartsById[ev.kartId].charName]++;
+                continue;
+            }
+            if (ev.type === 'kartBumped') {
+                bumps[state.kartsById[ev.kartId].charName]++;
                 continue;
             }
             if (ev.type === 'spawnHeldItem') {
@@ -235,7 +285,7 @@ function runRace(startOrder) {
                     grid: state.karts.map(k => k.charName),
                     ms: simTime,
                     got, gotLap, fired, firedLap, lapDrift, ticks: tick + 1,
-                    hits, slowMs, raceMs
+                    hits, bumps, slowMs, raceMs
                 };
             }
         }
@@ -247,7 +297,7 @@ function runRace(startOrder) {
 
 const stat = {};
 for (const name of ROSTER) {
-    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, slowMs: 0, raceMs: 0 };
+    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, bumps: 0, slowMs: 0, raceMs: 0 };
 }
 
 // Places tour par tour. `lapSum` sert la trajectoire moyenne, `lapDist` la
@@ -293,7 +343,7 @@ if (CSV) console.log('course,' + ROSTER.map((_, i) => 'p' + (i + 1)).join(',')
 
 for (let r = 0; r < RACES; r++) {
     const grid = CHAIN && startOrder ? startOrder : PH.shuffleArray(ROSTER.slice(), rng);
-    const race = runRace(grid);
+    const race = runRace(grid, RACE_CFGS[r % RACE_CFGS.length]);
 
     if (!race) { aborted++; continue; }
     totalMs += race.ms;
@@ -314,6 +364,7 @@ for (let r = 0; r < RACES; r++) {
 
     for (const name of ROSTER) {
         stat[name].hits += race.hits[name] || 0;
+        stat[name].bumps += race.bumps[name] || 0;
         stat[name].slowMs += race.slowMs[name] || 0;
         stat[name].raceMs += race.raceMs[name] || 0;
     }
@@ -353,8 +404,9 @@ const elapsed = (Date.now() - started) / 1000;
 // condition d'arret, pas d'un desequilibre.
 if (done === 0) {
     console.error(`\nAucune des ${RACES} courses n'a abouti en ${MAX_TICKS} pas simules.`);
-    console.error('La condition d\'arret n\'est jamais atteinte : verifier race.stopAtFinisher,');
-    console.error('race.maxRaceMs et race.cameraApproachDistance dans physics-config.js.');
+    console.error('La condition d\'arret n\'est jamais atteinte : verifier race.stopAtFinisher');
+    console.error('et race.maxRaceMs dans physics-config.js, ainsi que la longueur des circuits');
+    console.error('de tracks/ — cinq tours d\'un trace trop long depassent le delai maximum.');
     process.exit(1);
 }
 
@@ -396,6 +448,12 @@ if (health.length) {
 console.log(`Banc d'equilibrage — ${done} courses` + (aborted ? ` (${aborted} abandonnees)` : ''));
 console.log(`grille : ${CHAIN ? 'enchainee (vainqueur en pole)' : 'tiree au sort a chaque course'}`
     + `   graine : ${seed}`);
+// Le nombre de pipes figure ici parce que c'est lui qui explique le plus gros
+// des ecarts d'une campagne a l'autre : un tuyau de plus, et les lourds perdent
+// du terrain a chaque tour sans qu'aucun reglage de kart n'ait bouge.
+console.log(`circuits : ${RUNNING.map(t => `${t.name} (${t.columns} col, `
+    + `${t.pipes.length} pipe${t.pipes.length > 1 ? 's' : ''})`).join(', ')}`
+    + (RUNNING.length > 1 ? '   enchaines a tour de role' : ''));
 console.log(`temps simule : ${Math.round(totalMs / 1000)} s   temps reel : ${elapsed.toFixed(1)} s`
     + `   acceleration : x${Math.round(totalMs / 1000 / Math.max(elapsed, 0.001))}`);
 
@@ -440,19 +498,21 @@ console.log(`budget : ${CFG.kartStats.budget} points par kart, chaque axe dans `
 // ne les distinguent pas.
 console.log('');
 console.log('Ce que la course coute a chaque kart');
-console.log(pad('kart', w) + padL('agi', 6) + padL('touches', 10)
+console.log(pad('kart', w) + padL('agi', 6) + padL('touches', 10) + padL('pipes', 8)
     + padL('hors rythme', 13) + padL('part de course', 16));
-console.log('-'.repeat(w + 6 + 10 + 13 + 16));
+console.log('-'.repeat(w + 6 + 10 + 8 + 13 + 16));
 for (const name of rows) {
     const s = stat[name];
     console.log(pad(name, w)
         + padL(STATS[name].agility.toFixed(2), 6)
         + padL((s.hits / done).toFixed(2), 10)
+        + padL((s.bumps / done).toFixed(2), 8)
         + padL((s.slowMs / done / 1000).toFixed(1) + ' s', 13)
         + padL(pct(s.slowMs, s.raceMs).toFixed(1) + ' %', 16));
 }
 console.log('');
-console.log(`  touches : tete-a-queue subis par course. hors rythme : temps passe`);
+console.log(`  touches : tete-a-queue subis par course. pipes : chocs contre un`);
+console.log(`  tuyau, par course. hors rythme : temps passe`);
 console.log(`  sous ${(SLOW_RATIO * 100).toFixed(0)} % de sa propre pointe, arret et relance compris.`);
 console.log(`attendu si tous egaux : ${(100 * p0).toFixed(1)} % de victoires, place moyenne ${((N + 1) / 2).toFixed(2)}`);
 console.log(`bruit d'echantillonnage a ${done} courses : +/- ${sigma.toFixed(1)} point (1 ecart-type)`);
