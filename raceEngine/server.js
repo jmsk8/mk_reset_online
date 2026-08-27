@@ -21,6 +21,7 @@ const path = require('path');
 const { WebSocketServer } = require('ws');
 
 const protocol = require('./protocol');
+const track = require('./track');
 
 // Le moteur et sa configuration sont les fichiers du front, tels quels : aucune
 // copie, donc aucune derive possible entre ce qui est simule et ce qui est
@@ -37,6 +38,41 @@ function loadShared(name) {
 
 const PH = loadShared('physics.js');
 const CFG = loadShared('physics-config.js');
+
+// Les circuits sont des dessins, pas du code : ils vivent dans tracks/, monte
+// en lecture seule comme le moteur. Charges une fois au demarrage, puis relus a
+// chaque redemarrage a chaud — dessiner un circuit et faire `make restart-race`
+// suffit a le voir tourner, sans reconstruire l'image.
+const TRACKS_DIR = track.resolveTracksDir(__dirname);
+
+let TRACKS;
+try {
+    TRACKS = track.loadTracks(TRACKS_DIR, CFG);
+} catch (err) {
+    // Un dessin faux est une erreur d'auteur, pas un plantage : le message dit
+    // quoi corriger, la pile d'appels ne dirait rien de plus. Et l'arret a lieu
+    // ici, avant meme d'ecouter — plutot qu'au depart d'une course, ou le
+    // conteneur relancerait le service en boucle a chaque spectateur.
+    console.error(`[circuits] ${err.message}`);
+    console.error('[circuits] `make race-tracks` verifie les dessins sans rien demarrer.');
+    process.exit(1);
+}
+
+function announceTracks() {
+    console.log(`[circuits] ${TRACKS.length} charge(s) depuis ${TRACKS_DIR} : `
+        + TRACKS.map(t => `${t.name} (${t.columns} col, ${t.pipes.length} pipes)`).join(', '));
+}
+
+// Relecture du dossier. Un dessin faux ne doit pas emporter le service : on
+// garde ceux qui tournaient et on dit ou regarder.
+function reloadTracks() {
+    try {
+        TRACKS = track.loadTracks(TRACKS_DIR, CFG);
+        announceTracks();
+    } catch (err) {
+        console.error(`[circuits] relecture refusee, on garde les precedents — ${err.message}`);
+    }
+}
 
 // ── Parametres ──────────────────────────────────────────────────────────────
 
@@ -114,12 +150,32 @@ let grandPrix = null;
 function startRace() {
     const now = Date.now();
 
+    // Une manche, un circuit : le grand prix parcourt le dossier dans l'ordre
+    // des noms de fichiers. Le choix se fait ici et pas plus bas parce que le
+    // circuit est dans la config — la longueur du tour, la ligne et les boites
+    // en font partie — et que la config doit etre complete avant que le monde
+    // ne soit construit.
+    const round = (grandPrix && grandPrix.round) || 1;
+    const circuit = track.forRound(TRACKS, round);
+    const cfg = track.applyTrack(CFG, circuit);
+
+    for (const warning of circuit.warnings) {
+        console.warn(`[circuits] ${circuit.source} — ${warning}`);
+    }
+
     race = {
         // Horloge de simulation : elle n'avance que par pas fixes, jamais par
         // le temps reel. C'est elle qui date les snapshots.
         simTime: now,
         t0: now,
-        state: PH.createWorldState(CFG, rng, now, lastFinishOrder, grandPrix),
+
+        // La config de cette course-ci, circuit compris. Toute la course s'y
+        // refere : `CFG` seule ne decrit aucun tour, et deux manches d'un meme
+        // grand prix ne tournent pas sur la meme piste.
+        cfg: cfg,
+        track: circuit,
+
+        state: PH.createWorldState(cfg, rng, now, lastFinishOrder, grandPrix),
 
         accumulator: 0,
         lastRealTime: now,
@@ -139,6 +195,7 @@ function startRace() {
     totalRaces++;
     console.log(
         `[course] grand prix ${race.state.gpRound}/${CFG.grandPrix.races}` +
+        ` sur ${circuit.name} (${cfg.world.width} px)` +
         ` — grille : ${race.state.karts.map(k => k.charName).join(', ')}`
     );
 }
@@ -175,6 +232,9 @@ function beginNewRace() {
 // reprendre le bloc en cours a la troisieme manche n'aurait aucun sens.
 function restartRace() {
     console.log('[course] redemarrage demande — grand prix remis a zero.');
+    // Le dossier est relu au passage : c'est ce qui fait d'un circuit un
+    // dessin qu'on retouche, et non un fichier qui demande un rebuild.
+    reloadTracks();
     grandPrix = null;
     lastFinishOrder = null;
     beginNewRace();
@@ -229,7 +289,7 @@ function tick() {
 
     while (race.accumulator >= DT && steps < MAX_CATCHUP_STEPS) {
         race.simTime += DT_MS;
-        const events = PH.stepPhysics(CFG, race.state, rng, race.simTime, DT);
+        const events = PH.stepPhysics(race.cfg, race.state, rng, race.simTime, DT);
 
         for (const ev of events) {
             if (ev.type === 'raceOver') {
@@ -346,7 +406,7 @@ function broadcast() {
 
 function sendHello(ws) {
     ws.send(JSON.stringify(
-        protocol.buildHello(CFG, race.state, race.simTime, race.t0, voteTally())
+        protocol.buildHello(race.cfg, race.state, race.simTime, race.t0, voteTally())
     ));
 }
 
@@ -358,6 +418,7 @@ const httpServer = http.createServer((req, res) => {
         res.end(JSON.stringify({
             ok: true,
             racing: !!race,
+            track: race ? race.track.name : null,
             clients: clients.size,
             ticks: race ? race.ticks : 0,
             races: totalRaces,
@@ -619,6 +680,7 @@ httpServer.listen(PORT, () => {
     console.log(ALWAYS_ON
         ? 'Mode : simulation permanente.'
         : 'Mode : course a la demande (depart a la premiere connexion, arret 30 s apres la derniere).');
+    announceTracks();
 
     if (ALWAYS_ON) startRace();
 });

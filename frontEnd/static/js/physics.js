@@ -63,7 +63,9 @@
 
             const mass  = lerp(spec.mass.min, spec.mass.max, norm.weight);
             const force = lerp(spec.force.min, spec.force.max, norm.power);
-            const grip  = lerp(spec.grip.min, spec.grip.max, norm.handling);
+            // L'axe handling est courbe, pas droit : cf. `gripCurve` en config.
+            const grip  = lerp(spec.grip.min, spec.grip.max,
+                               Math.pow(norm.handling, spec.gripCurve));
 
             const traction = spec.traction.base + spec.traction.gain * norm.weight;
 
@@ -137,14 +139,306 @@
         return diff;
     }
 
+    // ── Pipes ───────────────────────────────────────────────────────────────
+    //
+    // Un pipe est une boite posee au sol : large le long de la piste, plate en
+    // profondeur. Ses deux axes n'ont pas la meme unite — `worldX` est en pixels
+    // de monde, `y` en profondeur de piste — et rien ici ne les convertit l'un
+    // en l'autre. Le rebond n'en a pas besoin : il choisit sa face en comparant
+    // des durees, et une duree se compare a une duree quel que soit l'axe.
+
+    // Un rebond de plus au compteur d'une verte. Rend true si c'etait celui de
+    // trop, la carapace etant alors detruite.
+    //
+    // Bords de piste et pipes comptent pareil. C'est aussi ce qui donne enfin
+    // une duree de vie a une verte : jusqu'ici rien ne la tuait, et une
+    // carapace qui ne touchait personne tournait indefiniment.
+    function registerBounce(cfg, item, now) {
+        if (item.type !== 'greenShell') return false;
+
+        item.bounces++;
+        if (item.bounces > cfg.pipe.maxShellBounces) {
+            spendItem(cfg, item, now);
+            return true;
+        }
+        return false;
+    }
+
+    // Rebond d'une carapace sur un pipe. Rend true si le contact a eu lieu.
+    //
+    // Le tuyau est rond a l'ecran, sa hitbox est une boite — comme toutes les
+    // autres du moteur. Le rebond se fait donc face par face : la carapace
+    // renverse la composante perpendiculaire a la face touchee et garde l'autre
+    // intacte. Un tir de plein fouet repart d'ou il vient ; le meme tir qui
+    // effleure le tuyau par le flanc ressort renvoye a travers la piste. L'angle
+    // sort de la face touchee et de sa propre trajectoire, sans qu'aucune valeur
+    // ne soit choisie a la main.
+    //
+    // La face touchee est celle qui vient d'etre franchie le plus recemment :
+    // c'est par la que la carapace est entree, donc c'est elle qui renvoie.
+    //
+    // Ce choix se fait sur des **temps**, pas sur des profondeurs d'enfoncement.
+    // Comparer les enfoncements reviendrait a mettre des pixels en face
+    // d'unites de piste, et surtout : un tir de plein fouet, qui n'a aucune
+    // vitesse verticale, se retrouverait classe en contact par le flanc — il n'y
+    // aurait rien a renverser, et la carapace traverserait le tuyau sans le
+    // voir. Le temps, lui, vaut l'infini sur un axe qu'elle ne franchit pas, et
+    // designe donc toujours la bonne face.
+    function bounceItemOffPipe(cfg, pipe, item) {
+        const box = cfg.pipe.hitbox;
+        const margin = 1 + cfg.pipe.escapeMargin;
+
+        const dx = getShortestDistance(cfg, item.worldX, pipe.worldX);
+        const dy = item.y - pipe.y;
+
+        const sideX = dx >= 0 ? 1 : -1;
+        const sideY = dy >= 0 ? 1 : -1;
+
+        // Vitesse d'enfoncement sur chaque axe : positive quand elle rapproche
+        // du centre du tuyau, negative quand la carapace en ressort deja.
+        const intoX = -item.vx * sideX;
+        const intoY = -item.vy * sideY;
+
+        // Depuis combien de temps chaque face a ete franchie. L'infini marque un
+        // axe qu'elle ne traverse pas : soit elle en ressort, soit elle etait
+        // deja entre les deux faces avant le contact.
+        const timeX = intoX > 0 ? (box.x - Math.abs(dx)) / intoX : Infinity;
+        const timeY = intoY > 0 ? (box.y - Math.abs(dy)) / intoY : Infinity;
+
+        // Elle ressort des deux cotes a la fois : la renvoyer la ferait rentrer.
+        if (timeX === Infinity && timeY === Infinity) return false;
+
+        // Un pipe colle au bord deborde de la piste : ressortir par ce flanc-la
+        // poserait la carapace hors du bitume, ou le rebond de bord la
+        // renverrait aussitot dans le tuyau. Elle repart alors par le bout.
+        const depthOut = pipe.y + sideY * box.y * margin;
+        const depthBlocked = depthOut > cfg.road.maxY || depthOut < cfg.road.minY;
+
+        if (timeY < timeX && !depthBlocked) {
+            // Flanc : c'est la profondeur qui se renverse.
+            item.vy = -item.vy;
+            item.y = depthOut;
+            return true;
+        }
+
+        // Face de bout : c'est l'avance le long de la piste qui se renverse.
+        // C'est aussi le repli quand le flanc ne donne pas sur la piste — et
+        // s'il n'y a rien a renverser la non plus, le sous-pas suivant
+        // retrouvera une geometrie franche.
+        if (intoX <= 0) return false;
+
+        item.vx = -item.vx;
+        item.worldX = pipe.worldX + sideX * box.x * margin;
+        if (item.worldX < 0) item.worldX += cfg.world.width;
+        if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
+        return true;
+    }
+
+    // Avance d'un projectile sur un pas de simulation, en sous-pas.
+    //
+    // Un seul pas de 33 ms ne suffit plus des que la profondeur bouge vite : a
+    // 45 degres une verte avance de huit unites de profondeur par pas, pour une
+    // hitbox de kart qui en fait cinq. Elle enjamberait ses victimes, et
+    // traverserait un tuyau sans jamais le voir. Le sous-pas borne cette avance
+    // a `maxSubStepY`, ce qui rend a la fois les impacts et les rebonds fiables.
+    function advanceProjectile(cfg, state, item, deltaTime, now) {
+        const spec = cfg.pipe;
+
+        let steps = Math.ceil(Math.abs(item.vy * deltaTime) / spec.maxSubStepY);
+        if (!(steps >= 1)) steps = 1;
+        if (steps > spec.maxSubSteps) steps = spec.maxSubSteps;
+
+        const dt = deltaTime / steps;
+        const pipes = state.pipes;
+
+        // Une banane ne bouge pas et la bleue vole : ni l'une ni l'autre ne
+        // rencontre un tuyau.
+        const meetsPipes = pipes.length > 0
+            && (item.type === 'greenShell' || item.type === 'redShell');
+
+        for (let s = 0; s < steps; s++) {
+            item.worldX += item.vx * dt;
+            item.y += item.vy * dt;
+
+            if (item.y > cfg.road.maxY) {
+                item.y = cfg.road.maxY;
+                if (item.type !== 'redShell') {
+                    item.vy = -item.vy;
+                    if (registerBounce(cfg, item, now)) return;
+                }
+            } else if (item.y < cfg.road.minY) {
+                item.y = cfg.road.minY;
+                if (item.type !== 'redShell') {
+                    item.vy = -item.vy;
+                    if (registerBounce(cfg, item, now)) return;
+                }
+            }
+
+            if (!meetsPipes) continue;
+
+            for (let p = 0; p < pipes.length; p++) {
+                const pipe = pipes[p];
+                if (Math.abs(getShortestDistance(cfg, item.worldX, pipe.worldX)) >= spec.hitbox.x) continue;
+                if (Math.abs(item.y - pipe.y) >= spec.hitbox.y) continue;
+
+                // La rouge se brise dessus : elle n'a qu'une trajectoire, celle
+                // de sa cible, et rien a faire d'un rebond.
+                if (item.type === 'redShell') {
+                    spendItem(cfg, item, now);
+                    return;
+                }
+
+                if (bounceItemOffPipe(cfg, pipe, item)) {
+                    // Renvoyee par un tuyau, elle redevient dangereuse pour
+                    // celui qui l'a tiree : c'est lui qui l'a mise la.
+                    item.pipeBounced = true;
+                    if (registerBounce(cfg, item, now)) return;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Le projectile a-t-il croise cette profondeur pendant le pas ?
+    //
+    // Comparer la seule position d'arrivee suffisait tant qu'une carapace
+    // derivait a peine. Depuis qu'elle peut traverser la piste en trois pas, il
+    // faut regarder le segment parcouru : sinon elle passe d'un cote a l'autre
+    // d'un kart entre deux images, sans jamais avoir ete a sa hauteur.
+    function crossedDepth(item, targetY, tolerance) {
+        const from = item.prevY;
+        const to = item.y;
+        const lo = (from < to ? from : to) - tolerance;
+        const hi = (from > to ? from : to) + tolerance;
+        return targetY > lo && targetY < hi;
+    }
+
+    // Le kart contre le tuyau.
+    //
+    // Masse infinie : rien ne se transmet au pipe, tout est pour le kart. Il est
+    // arrete net, recule un peu, puis repart de zero — c'est son acceleration
+    // qui decide de ce que le choc lui aura coute, ce qui fait payer les lourds
+    // plus cher que les vifs, sans qu'aucune penalite ne soit ecrite pour eux.
+    //
+    // Une etoile et un bill le traversent : rien ne les arrete. Le tuyau, lui,
+    // encaisse — un sursaut, et il se remet en place. C'est le seul effet qu'un
+    // kart puisse avoir sur lui, et il est purement visuel.
+    //
+    // Le sursis est retenu par tuyau et non globalement : un kart qui vient d'en
+    // heurter un doit encore pouvoir se cogner au suivant, sans quoi deux pipes
+    // cote a cote ne feraient qu'un seul mur franchissable.
+    function collideKartWithPipes(cfg, state, kart, now, events) {
+        const pipes = state.pipes;
+        if (!pipes.length) return;
+
+        const reach = cfg.hitboxes.kartVsPipe;
+
+        for (let p = 0; p < pipes.length; p++) {
+            if (p === kart.lastPipeIndex && now < kart.pipeImmuneUntil) continue;
+
+            const pipe = pipes[p];
+            if (Math.abs(getShortestDistance(cfg, kart.worldX, pipe.worldX)) >= reach.x) continue;
+            if (Math.abs(kart.yPercent - pipe.y) >= reach.y) continue;
+
+            kart.lastPipeIndex = p;
+            kart.pipeImmuneUntil = now + cfg.pipe.immuneMs;
+
+            if (isRamming(kart)) {
+                events.push({ type: 'pipeShaken', pipeIndex: p, kartId: kart.id });
+                return;
+            }
+
+            kart.bumpEndTime = now + cfg.pipe.bumpMs;
+            kart.bumpRecoilLeft = cfg.pipe.recoilPx;
+            kart.absoluteVelocity = 0;
+            kart.momentum = 0;
+
+            // Ecarte vers le cote le plus degage. Sans ca, un kart pousse par le
+            // peloton resterait plaque contre le tuyau : le chien de garde du
+            // service finirait par le signaler, sans pour autant le liberer.
+            let dir = kart.yPercent >= pipe.y ? 1 : -1;
+            if (Math.abs(kart.yPercent - pipe.y) < 0.5) {
+                dir = (cfg.road.maxY - kart.yPercent) >= (kart.yPercent - cfg.road.minY) ? 1 : -1;
+            }
+            kart.vy = dir * cfg.pipe.slideAway;
+
+            // Le plan en cours ne vaut plus rien : il visait a passer, et le
+            // kart est arrete contre le tuyau. Il rechoisira un couloir au
+            // redemarrage, depuis la position ou la poussee laterale l'a mis.
+            kart.aiState = 'cruising';
+            kart.dodgePlanId = 0;
+            kart.pipeTargetIndex = -1;
+
+            events.push({ type: 'kartBumped', kartId: kart.id, pipeIndex: p });
+            return;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Maniabilite
+    //
+    // Une seule regle, et tout le pilotage latera passe par elle : `agility`
+    // dit COMBIEN un kart se decale, jamais EN COMBIEN DE TEMPS il s'y met.
+    //
+    // Le temps de reaction est commun a tout le plateau. Il a deux etages, et
+    // aucun des deux ne regarde les stats :
+    //   - le reflexe de l'IA, `ai.reactionBaseMs` tire au sort a chaque
+    //     menace : c'est lui qui varie, et il varie pour tout le monde pareil ;
+    //   - l'inertie du volant, `physics.steerResponse` : la vitesse a laquelle
+    //     `vy` rejoint la consigne, identique d'un personnage a l'autre.
+    //
+    // Ce qui distingue les karts vient apres : a consigne egale, un kart
+    // maniable vise un decalage plus grand. C'est la seule chose qu'`agility`
+    // achete.
+    //
+    // Deux fonctions, et elles sont les seules a toucher `targetVy` et `vy` :
+    //   - `steerSpeed(kart, base)`         : la consigne, a l'echelle du kart ;
+    //   - `applySteering(cfg, kart, dt)`   : la reponse du volant, commune.
+    // Ajouter une manoeuvre, c'est poser un `kart.targetVy = steerSpeed(...)`
+    // puis appeler `applySteering`. Rien d'autre ne doit ecrire dans `vy`.
+    // -----------------------------------------------------------------------
+
+    // Consigne laterale d'un kart pour une vitesse de reference donnee.
+    function steerSpeed(kart, base) {
+        return base * kart.stats.agility;
+    }
+
+    // Rapproche `vy` de `targetVy`. Le facteur est borne a 1 : sur une frame
+    // longue — onglet en arriere-plan, machine qui peine — le lissage non borne
+    // depassait la consigne et faisait osciller le kart. Avec la borne, une
+    // frame lente se contente d'arriver pile sur la consigne.
+    function applySteering(cfg, kart, deltaTime) {
+        const k = cfg.physics.steerResponse * deltaTime;
+        kart.vy += (kart.targetVy - kart.vy) * (k > 1 ? 1 : k);
+    }
+
     // Distance laterale qu'un kart couvre en `ms` millisecondes, en partant a
-    // l'arret. `tau` est la constante de temps du lissage applique plus bas a
-    // `vy` : sur une reaction courte, une bonne part du trajet passe dans la
-    // montee en regime.
+    // l'arret. `tau` est la constante de temps de `applySteering` : sur une
+    // reaction courte, une bonne part du trajet passe dans la montee en regime.
+    // Elle ne depend pas du personnage — seule `intensity` en depend.
     function lateralReach(cfg, agility, intensity, ms) {
         const t = ms / 1000;
-        const tau = 1 / (cfg.physics.smoothingFactor * agility);
+        const tau = 1 / cfg.physics.steerResponse;
         return intensity * (t - tau * (1 - Math.exp(-t / tau)));
+    }
+
+    // Agilite moyenne du plateau. Sert d'etalon partout ou il faut juger une
+    // situation et non un personnage — elle suit automatiquement le plateau,
+    // sans constante a retoucher quand les stats bougent.
+    const referenceAgilityCache = new WeakMap();
+
+    function referenceAgility(cfg) {
+        const cached = referenceAgilityCache.get(cfg);
+        if (cached !== undefined) return cached;
+
+        const table = deriveCharacterStats(cfg);
+        const names = Object.keys(table);
+        let sum = 0;
+        for (let i = 0; i < names.length; i++) sum += table[names[i]].agility;
+        const mean = sum / names.length;
+
+        referenceAgilityCache.set(cfg, mean);
+        return mean;
     }
 
     // Probabilite qu'un kart ne voie pas venir la menace. La difficulte se
@@ -153,7 +447,6 @@
     // marge grandit.
     function missChance(cfg, kart, threatY, spareMs) {
         const ai = cfg.ai;
-        const agility = kart.stats.agility;
         const base = ai.dodgeMissChance;
 
         // Il passe deja assez a cote pour que la hitbox le manque.
@@ -162,8 +455,11 @@
         if (need <= 0) return 0;
         if (spareMs <= 0) return base;
 
-        // Capacite type : l'intensite reelle n'est tiree qu'au moment de
-        // s'ecarter.
+        // Etalonne sur l'agilite de reference, pas sur celle du kart : ce
+        // tirage dit s'il a VU venir la menace, et un kart maniable n'est pas
+        // plus attentif qu'un autre. Savoir l'esquiver se joue apres, dans le
+        // decalage lui-meme.
+        const agility = referenceAgility(cfg);
         const intensity = (ai.dodgeIntensityMin + ai.dodgeIntensityMax) * 0.5 * agility;
         const ease = lateralReach(cfg, agility, intensity, spareMs) / need;
 
@@ -186,8 +482,8 @@
 
         kart.dodgePlanId = threatId;
         kart.dodgeIntensity = randomRange(rng,
-            ai.dodgeIntensityMin * agility,
-            ai.dodgeIntensityMax * agility
+            steerSpeed(kart, ai.dodgeIntensityMin),
+            steerSpeed(kart, ai.dodgeIntensityMax)
         );
 
         const naturalDir = (threatY > kart.yPercent) ? -1 : 1;
@@ -250,10 +546,14 @@
         return false;
     }
 
-    // Boite visee : la plus proche de sa trajectoire. Elles sont toutes sur la
-    // meme verticale, l'ecart se mesure donc en profondeur, et celle d'en face
-    // gagne d'office quand elle est libre. Aucune de libre, il tente quand meme
-    // la plus proche : le kart qui la lui bouche peut encore la manquer.
+    // Boite visee : la plus proche de sa trajectoire. L'ecart se mesure en
+    // profondeur et non en distance — un kart change de voie bien plus vite
+    // qu'il ne rattrape du terrain, donc celle d'en face gagne d'office quand
+    // elle est libre, meme un peu plus loin. Aucune de libre, il tente quand
+    // meme la plus proche : le kart qui la lui bouche peut encore la manquer.
+    //
+    // Rien ici ne suppose un rideau de boites aligne sur une verticale : le
+    // dessin du circuit les pose ou il veut, y compris seule ou en diagonale.
     function findTargetBox(cfg, state, kart) {
         let free = null;
         let freeDiff = Infinity;
@@ -282,24 +582,218 @@
         return free || fallback;
     }
 
+    // Profondeur visee par un bill : le milieu de la piste, ou le premier
+    // degagement si un tuyau s'y trouve.
+    //
+    // Il ne regarde que le tuyau qui bouche vraiment sa voie, et choisit le cote
+    // le plus proche de lui : un bill ne manoeuvre pas, il devie.
+    function billAimDepth(cfg, state, kart) {
+        const mid = (cfg.road.minY + cfg.road.maxY) / 2;
+        const pipes = state.pipes;
+        if (!pipes.length) return mid;
+
+        const clear = cfg.hitboxes.kartVsPipe.y + cfg.bill.pipeClearance;
+
+        let blocking = null;
+        let bestDist = Infinity;
+
+        for (let p = 0; p < pipes.length; p++) {
+            const pipe = pipes[p];
+            const dist = getShortestDistance(cfg, pipe.worldX, kart.worldX);
+            if (dist <= 0 || dist > cfg.pipe.seeDistance) continue;
+            if (Math.abs(pipe.y - mid) >= clear) continue;
+            if (dist < bestDist) {
+                bestDist = dist;
+                blocking = pipe;
+            }
+        }
+
+        if (!blocking) return mid;
+
+        const above = blocking.y + clear;
+        const below = blocking.y - clear;
+        const canAbove = above <= cfg.road.maxY;
+        const canBelow = below >= cfg.road.minY;
+
+        if (canAbove && canBelow) {
+            return Math.abs(above - kart.yPercent) <= Math.abs(below - kart.yPercent) ? above : below;
+        }
+        if (canAbove) return above;
+        if (canBelow) return below;
+
+        // Aucun cote ne tient. Le chargement des circuits l'interdit, mais si
+        // cela arrivait le bill traverserait plutot que de se figer devant.
+        return mid;
+    }
+
+    // Couloir choisi pour passer un tuyau : le milieu du plus large passage
+    // libre a sa hauteur.
+    //
+    // Tous les tuyaux voisins comptent, pas seulement celui qu'on vise. Deux
+    // pipes dessines dans la meme colonne laissent un couloir entre eux : viser
+    // le bord de l'un des deux mene droit dans l'autre. On ouvre deux fois la
+    // portee de collision pour prendre aussi ceux qui arrivent juste apres, sans
+    // quoi le kart choisirait un couloir qu'il devrait quitter aussitot.
+    //
+    // Viser le milieu et non le bord donne au kart de la marge des deux cotes :
+    // c'est ce qui lui permet d'encaisser une bousculade sans se retrouver dans
+    // le tuyau.
+    //
+    // A largeur egale — le cas d'un tuyau pose au milieu, qui laisse autant de
+    // place de chaque cote — c'est le couloir le plus proche du kart qui gagne.
+    // Sans ce depart, les huit karts plongeraient tous du meme cote et s'y
+    // bousculeraient, alors que la piste offre deux passages.
+    function choosePipeLane(cfg, state, kart, pipe) {
+        const pipes = state.pipes;
+        const reach = cfg.hitboxes.kartVsPipe;
+        const lo = cfg.road.minY + cfg.road.edgeSafetyMargin;
+        const hi = cfg.road.maxY - cfg.road.edgeSafetyMargin;
+
+        const blocked = [];
+        for (let p = 0; p < pipes.length; p++) {
+            if (Math.abs(getShortestDistance(cfg, pipes[p].worldX, pipe.worldX)) >= reach.x * 2) continue;
+            blocked.push([pipes[p].y - reach.y, pipes[p].y + reach.y]);
+        }
+        blocked.sort((a, b) => a[0] - b[0]);
+
+        let bestLane = (lo + hi) / 2;
+        let bestWidth = -1;
+
+        // Deux couloirs se valent quand leurs largeurs se tiennent dans cette
+        // marge : au-dela, la place prime sur la proximite.
+        const tie = cfg.pipe.laneTieMargin;
+
+        function consider(from, to) {
+            const width = to - from;
+            if (width <= 0) return;
+            const lane = from + width / 2;
+
+            if (width > bestWidth + tie) {
+                bestWidth = width;
+                bestLane = lane;
+                return;
+            }
+            if (width > bestWidth - tie
+                && Math.abs(lane - kart.yPercent) < Math.abs(bestLane - kart.yPercent)) {
+                bestWidth = Math.max(bestWidth, width);
+                bestLane = lane;
+            }
+        }
+
+        let cursor = lo;
+        for (let i = 0; i < blocked.length; i++) {
+            consider(cursor, blocked[i][0]);
+            if (blocked[i][1] > cursor) cursor = blocked[i][1];
+        }
+        consider(cursor, hi);
+
+        return Math.min(hi, Math.max(lo, bestLane));
+    }
+
+    // Contournement d'un pipe. Rend true s'il commande la trajectoire.
+    //
+    // Un tuyau n'est pas une menace au sens de `planDodge`. Celui-ci est un
+    // reflexe, taille pour un objet qui file et qu'on evite d'un ecart : on le
+    // voit tard, on s'ecarte fort, c'est fini. Un mur se voit venir de loin, ne
+    // bouge pas, et se negocie en trajectoire — on choisit un couloir et on le
+    // tient.
+    //
+    // Les faire passer par la meme machinerie donnait exactement ce qu'on
+    // voyait a l'ecran : le kart freinait (le frein d'esquive, inutile devant un
+    // obstacle immobile), s'ecartait, se croyait tire d'affaire des qu'il
+    // degageait la hitbox, se faisait ramener vers sa ligne d'origine — donc
+    // vers le tuyau — par le retour au calme, et recommencait avec un nouveau
+    // delai de reflexe. D'ou l'hesitation.
+    //
+    // Trois regles en sortent :
+    //   - le tuyau vise le reste jusqu'a ce qu'il soit derriere, pas jusqu'a ce
+    //     que la hitbox soit degagee ;
+    //   - le couloir est choisi une seule fois, sinon le kart change d'avis a
+    //     chaque pas puisque son ecart au tuyau evolue ;
+    //   - la visee est proportionnelle a l'ecart restant, ce qui trace une
+    //     diagonale franche qui s'aplatit en arrivant.
+    //
+    // Et aucun frein : ralentir devant un mur immobile ne fait que retarder le
+    // moment de le contourner.
+    function steerAroundPipes(cfg, state, kart, deltaTime) {
+        const pipes = state.pipes;
+        if (!pipes.length) return false;
+
+        const reach = cfg.hitboxes.kartVsPipe;
+        const spec = cfg.pipe;
+
+        // Le tuyau vise le reste tant qu'il n'est pas franchi. C'est la regle
+        // qui tient toute la manoeuvre : la lacher des que la hitbox est
+        // degagee, c'est relacher le kart en plein travers.
+        if (kart.pipeTargetIndex >= 0) {
+            const held = pipes[kart.pipeTargetIndex];
+            const dist = held ? getShortestDistance(cfg, held.worldX, kart.worldX) : 0;
+            if (!held || dist < -reach.x || dist > spec.seeDistance) kart.pipeTargetIndex = -1;
+        }
+
+        if (kart.pipeTargetIndex < 0) {
+            let index = -1;
+            let nearest = Infinity;
+
+            for (let p = 0; p < pipes.length; p++) {
+                const dist = getShortestDistance(cfg, pipes[p].worldX, kart.worldX);
+                if (dist <= 0 || dist > spec.seeDistance) continue;
+                // Il ne barre pas la route : rien a contourner.
+                if (Math.abs(pipes[p].y - kart.yPercent) >= reach.y) continue;
+                if (dist < nearest) {
+                    nearest = dist;
+                    index = p;
+                }
+            }
+
+            if (index < 0) return false;
+
+            kart.pipeTargetIndex = index;
+            kart.pipeLaneY = choosePipeLane(cfg, state, kart, pipes[index]);
+        }
+
+        const diff = kart.pipeLaneY - kart.yPercent;
+
+        if (Math.abs(diff) <= spec.laneTolerance) {
+            // Couloir tenu : il ne corrige plus, sinon il tremble autour.
+            kart.targetVy = 0;
+        } else {
+            const speed = steerSpeed(kart, spec.laneSeekSpeed);
+            const seek = steerSpeed(kart, diff * spec.laneSeekGain);
+            kart.targetVy = Math.max(-speed, Math.min(speed, seek));
+        }
+
+        // `originalLaneY` suit le couloir, et non la ligne d'avant la manoeuvre :
+        // c'est lui que le retour au calme rejoint une fois le tuyau passe. Le
+        // laisser en arriere y ramenerait le kart, c'est-a-dire dans le tuyau.
+        kart.aiState = 'pipe';
+        kart.originalLaneY = kart.pipeLaneY;
+
+        applySteering(cfg, kart, deltaTime);
+        return true;
+    }
+
     function updateAI(cfg, state, rng, now, kart, deltaTime) {
         if (kart.state !== 'running') return;
 
         let dangerFound = false;
         let avoidDirection = 0;
 
-        const agility = kart.stats.agility;
         const ai = cfg.ai;
 
         // Un bill ne se pilote pas : il rejoint le milieu de la piste et n'en
         // bouge plus. Ni esquive, ni depassement, ni derive — il ne voit rien, et
-        // de toute facon rien ne peut le toucher.
+        // de toute facon rien ne peut le toucher. Un pipe fait exception : il ne
+        // l'arreterait pas — il le traverse comme une etoile — mais un
+        // projectile qui laboure le decor en ligne droite n'a rien d'un vol. On
+        // lui rend donc juste assez de pilotage pour le contourner, et rien de
+        // plus : c'est la seule chose qu'un bill regarde encore.
         if (kart.isBill) {
-            const mid = (cfg.road.minY + cfg.road.maxY) / 2;
+            const mid = billAimDepth(cfg, state, kart);
             const diff = mid - kart.yPercent;
             const speed = cfg.bill.centerSpeed;
             kart.targetVy = Math.abs(diff) < 0.2 ? 0 : (diff > 0 ? speed : -speed);
-            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
+            applySteering(cfg, kart, deltaTime);
             return;
         }
 
@@ -405,9 +899,17 @@
                 kart.originalLaneY = kart.yPercent;
             }
             kart.targetVy = avoidDirection * kart.dodgeIntensity;
-            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
+            applySteering(cfg, kart, deltaTime);
             return;
         }
+
+        // Le tuyau passe avant la visee, le depassement et la maraude : c'est le
+        // seul obstacle certain de la piste, les autres ne sont que des
+        // occasions. Il passe apres l'esquive d'un objet en revanche — une
+        // carapace coute deux secondes, un choc six dixiemes — et ce n'est pas
+        // un probleme : le couloir reste memorise pendant l'ecart, si bien que
+        // le kart y revient de lui-meme des que la carapace est passee.
+        if (steerAroundPipes(cfg, state, kart, deltaTime)) return;
 
         // Visee, dans le sens de tir choisi a la reception. Apres l'esquive —
         // se faire toucher en visant reste prioritaire — et avant le
@@ -435,11 +937,11 @@
                 const diff = desired - kart.yPercent;
 
                 if (Math.abs(diff) > 0.5) {
-                    const speed = ai.aimSpeed * agility;
+                    const speed = steerSpeed(kart, ai.aimSpeed);
                     kart.aiState = 'aiming';
                     kart.originalLaneY = kart.yPercent;
                     kart.targetVy = Math.max(-speed, Math.min(speed, diff * ai.aimSpeed));
-                    kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
+                    applySteering(cfg, kart, deltaTime);
                     return;
                 }
             }
@@ -459,14 +961,14 @@
                 let dir = (kart.yPercent > other.yPercent) ? 1 : -1;
                 if (kart.yPercent > cfg.road.maxY - cfg.road.overtakeMargin) dir = -1;
                 if (kart.yPercent < cfg.road.minY + cfg.road.overtakeMargin) dir = 1;
-                kart.targetVy = dir * cfg.ai.overtakeSideSpeed * agility;
+                kart.targetVy = dir * steerSpeed(kart, cfg.ai.overtakeSideSpeed);
                 break;
             }
         }
 
         if (overtakeFound) {
             kart.originalLaneY = kart.yPercent;
-            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
+            applySteering(cfg, kart, deltaTime);
             return;
         }
 
@@ -480,13 +982,13 @@
                 // Deja dans l'axe : il tient sa ligne. Le laisser repartir en
                 // maraude le ferait deriver hors de la boite qu'il vise.
                 kart.targetVy = (Math.abs(diffY) > cfg.ai.boxAlignTolerance)
-                    ? ((diffY > 0) ? cfg.ai.boxSeekIntensity : -cfg.ai.boxSeekIntensity) * agility
+                    ? (diffY > 0 ? 1 : -1) * steerSpeed(kart, cfg.ai.boxSeekIntensity)
                     : 0;
             }
         }
 
         if (boxTargetFound) {
-            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
+            applySteering(cfg, kart, deltaTime);
             return;
         }
 
@@ -496,7 +998,7 @@
             let dir = (rng() > 0.5) ? 1 : -1;
             if (kart.yPercent > cfg.road.maxY - cfg.road.wanderMargin) dir = -1;
             if (kart.yPercent < cfg.road.minY + cfg.road.wanderMargin) dir = 1;
-            kart.wanderVy = dir * cfg.ai.wanderSpeed * agility;
+            kart.wanderVy = dir * steerSpeed(kart, cfg.ai.wanderSpeed);
         }
 
         if (now < kart.wanderEndTime) {
@@ -510,7 +1012,7 @@
                     kart.yPercent = kart.originalLaneY;
                     kart.aiState = 'cruising';
                 } else {
-                    kart.targetVy = (diff > 0 ? 1 : -1) * cfg.speeds.returnLane * agility;
+                    kart.targetVy = (diff > 0 ? 1 : -1) * steerSpeed(kart, cfg.speeds.returnLane);
                 }
             } else {
                 kart.targetVy = 0;
@@ -518,7 +1020,7 @@
             }
         }
 
-        kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
+        applySteering(cfg, kart, deltaTime);
     }
 
     // Ecart au premier, mesure en distance restante : deux karts partis de
@@ -1152,6 +1654,17 @@
             currentFrame: 1,
             lastAnimTime: 0,
             isDead: false,
+
+            // Profondeur au pas precedent : les impacts se testent sur le
+            // segment parcouru, pas sur la seule position d'arrivee.
+            prevY: startY,
+            // Rebonds encaisses, bords de piste et pipes confondus. Au-dela de
+            // `pipe.maxShellBounces` la carapace se detruit — c'est sa seule
+            // duree de vie.
+            bounces: 0,
+            // Passe a true au premier tuyau touche. Une verte epargne son
+            // lanceur, mais plus une fois qu'un pipe la lui a renvoyee.
+            pipeBounced: false,
 
             // Vol en cloche. `hop` est la hauteur de l'arc, en pixels de rendu.
             // `rising` couvre la montee, pendant laquelle l'objet survole tout
@@ -2045,6 +2558,13 @@
 
             if (kart.state === 'grid') continue;
 
+            // Double la date en booleen, comme l'etoile et l'eclair : le
+            // protocole n'a pas d'horloge, le drapeau se lit tel quel dans le
+            // snapshot. Pose ici et pas dans la branche 'running' : un kart
+            // percute pendant son choc garderait sinon un drapeau fige jusqu'a
+            // son retour en course.
+            kart.bumped = now < kart.bumpEndTime;
+
             if (kart.state === 'running') {
                 // Depart rate : le kart reste sur place, moteur noye.
                 if (kart.startStallUntil > now) continue;
@@ -2138,7 +2658,26 @@
                     );
                 }
 
-                const moveDist = effectiveSpeed * deltaTime;
+                let moveDist = effectiveSpeed * deltaTime;
+
+                // Choc contre un pipe : arret net, puis contrecoup. Le recul
+                // entame `totalDistance` autant que l'avance — position et
+                // progression restent ainsi cousues l'une a l'autre. Les
+                // dissocier ferait franchir la ligne d'arrivee a un kart encore
+                // en amont a l'ecran, la distance parcourue etant seule a
+                // decider de la fin de course.
+                if (now < kart.bumpEndTime) {
+                    moveDist = 0;
+                    if (kart.bumpRecoilLeft > 0) {
+                        const back = Math.min(
+                            kart.bumpRecoilLeft,
+                            (cfg.pipe.recoilPx * 1000 / cfg.pipe.recoilMs) * deltaTime
+                        );
+                        kart.bumpRecoilLeft -= back;
+                        moveDist = -back;
+                    }
+                }
+
                 kart.totalDistance += moveDist;
 
                 const prevWorldX = kart.worldX;
@@ -2146,9 +2685,16 @@
                 kart.yPercent += kart.vy * deltaTime;
 
                 const finishX = cfg.world.finishLineX;
-                if (prevWorldX < finishX && kart.worldX >= finishX) {
-                    kart.lapCount++;
-                    kart.hasPassedFinishLine = true;
+                if (moveDist >= 0) {
+                    if (prevWorldX < finishX && kart.worldX >= finishX) {
+                        kart.lapCount++;
+                        kart.hasPassedFinishLine = true;
+                    }
+                } else if (prevWorldX >= finishX && kart.worldX < finishX) {
+                    // Repousse a travers la ligne : le compteur se defait. Sans
+                    // ce miroir, le tour serait compte une seconde fois a la
+                    // prochaine traversee.
+                    kart.lapCount--;
                 }
 
                 if (!kart.finished && kart.totalDistance >= kart.finishDistance) {
@@ -2183,6 +2729,10 @@
 
                 if (kart.yPercent > cfg.road.maxY) { kart.yPercent = cfg.road.maxY; kart.vy = 0; }
                 if (kart.yPercent < cfg.road.minY) { kart.yPercent = cfg.road.minY; kart.vy = 0; }
+
+                // Apres le deplacement et le recadrage sur la piste : le tuyau
+                // se juge sur la position ou le kart vient d'arriver.
+                collideKartWithPipes(cfg, state, kart, now, events);
 
                 for (let j = i + 1; j < kartsLen; j++) {
                     const other = state.karts[j];
@@ -2290,7 +2840,9 @@
                 const elapsed = now - hitStart;
                 const decelDuration = cfg.delays.hitDecelDuration;
 
-                if (elapsed < decelDuration) {
+                // Un tuyau arrete aussi une toupie : elle glisse, mais pas a
+                // travers le decor.
+                if (elapsed < decelDuration && now >= kart.bumpEndTime) {
                     const decelProgress = elapsed / decelDuration;
                     const hitSpeedFactor = 0.3 * Math.max(0, 1.0 - decelProgress * decelProgress);
                     const moveDist = cfg.speeds.roadPPS * hitSpeedFactor * deltaTime;
@@ -2304,6 +2856,8 @@
                 if (kart.worldX >= cfg.world.width) {
                     kart.worldX -= cfg.world.width;
                 }
+
+                collideKartWithPipes(cfg, state, kart, now, events);
                 if (now > kart.hitEndTime) {
                     kart.state = 'running';
                     kart.stopped = false;
@@ -2341,6 +2895,12 @@
         for (let i = state.items.length - 1; i >= 0; i--) {
             const item = state.items[i];
             if (item.isDead) continue;
+
+            // Profondeur d'ou l'objet part sur ce pas. Les impacts se testent
+            // sur le segment parcouru et non sur la seule position d'arrivee :
+            // une verte renvoyee par un tuyau traverse la piste en trois pas et
+            // passerait sinon d'un cote a l'autre d'un kart sans le toucher.
+            item.prevY = item.y;
 
             if (item.type === 'blueShell') {
                 updateBlueShell(cfg, state, now, item, deltaTime, events);
@@ -2412,16 +2972,9 @@
                     }
                 }
 
-                item.worldX += item.vx * deltaTime;
-                item.y += item.vy * deltaTime;
-
-                if (item.y > cfg.road.maxY) {
-                    item.y = cfg.road.maxY;
-                    if (item.type !== 'redShell') item.vy = -item.vy;
-                } else if (item.y < cfg.road.minY) {
-                    item.y = cfg.road.minY;
-                    if (item.type !== 'redShell') item.vy = -item.vy;
-                }
+                // Bords de piste et pipes sont traites la, par sous-pas : c'est
+                // le seul endroit ou une carapace change de trajectoire.
+                advanceProjectile(cfg, state, item, deltaTime, now);
             }
 
             if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
@@ -2456,13 +3009,17 @@
             for (let k = 0; k < kartsLen; k++) {
                 const kart = state.karts[k];
                 if (item.type === 'banana' && kart.id === item.shooterId && !item.armed) continue;
-                if ((item.type === 'greenShell' || item.type === 'redShell') && kart.id === item.shooterId) continue;
+                if (item.type === 'redShell' && kart.id === item.shooterId) continue;
+                // Une verte epargne son lanceur — jusqu'a ce qu'un tuyau la lui
+                // renvoie. Elle ne revient pas par hasard : c'est lui qui a
+                // choisi de tirer dans cette direction, et le mur etait visible.
+                if (item.type === 'greenShell' && kart.id === item.shooterId && !item.pipeBounced) continue;
                 if (kart.state !== 'running' && kart.state !== 'hit') continue;
 
                 if (isRamming(kart)) {
                     const dk = Math.abs(getShortestDistance(cfg, item.worldX, kart.worldX));
-                    const dky = Math.abs(item.y - kart.yPercent);
-                    if (dk < cfg.hitboxes.itemVsKart.x && dky < cfg.hitboxes.itemVsKart.y) {
+                    if (dk < cfg.hitboxes.itemVsKart.x
+                        && crossedDepth(item, kart.yPercent, cfg.hitboxes.itemVsKart.y)) {
                         spendItem(cfg, item, now);
                         break;
                     }
@@ -2476,9 +3033,8 @@
                     if (hX >= cfg.world.width) hX -= cfg.world.width;
 
                     const dh = Math.abs(getShortestDistance(cfg, item.worldX, hX));
-                    const dhy = Math.abs(item.y - kart.yPercent);
-
-                    if (dh < cfg.hitboxes.itemVsKart.x && dhy < cfg.hitboxes.itemVsKart.y) {
+                    if (dh < cfg.hitboxes.itemVsKart.x
+                        && crossedDepth(item, kart.yPercent, cfg.hitboxes.itemVsKart.y)) {
                          events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                          kart.heldItem = null;
                          kart.trailTime = 0;
@@ -2492,9 +3048,8 @@
                     for (let b = held.orbs.length - 1; b >= 0; b--) {
                         const pos = getOrbitItemPosition(cfg, kart, held.orbs[b], held.orbitAngle);
                         const dh = Math.abs(getShortestDistance(cfg, item.worldX, pos.worldX));
-                        const dhy = Math.abs(item.y - pos.y);
-
-                        if (dh < cfg.hitboxes.itemVsKart.x && dhy < cfg.hitboxes.itemVsKart.y) {
+                        if (dh < cfg.hitboxes.itemVsKart.x
+                            && crossedDepth(item, pos.y, cfg.hitboxes.itemVsKart.y)) {
                             destroyOrbitItem(kart, b, events);
                             spendItem(cfg, item, now);
                             hitHeldItem = true;
@@ -2506,9 +3061,8 @@
                 if (hitHeldItem) break;
 
                 const dk = Math.abs(getShortestDistance(cfg, item.worldX, kart.worldX));
-                const dky = Math.abs(item.y - kart.yPercent);
-
-                if (dk < cfg.hitboxes.itemVsKart.x && dky < cfg.hitboxes.itemVsKart.y) {
+                if (dk < cfg.hitboxes.itemVsKart.x
+                    && crossedDepth(item, kart.yPercent, cfg.hitboxes.itemVsKart.y)) {
                     if (kart.state === 'running' && kart.hitInvincibleUntil <= now) {
                         kart.state = 'hit';
                         kart.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
@@ -2554,15 +3108,31 @@
         const race = cfg.race;
         const countdownMs = countdownDuration(race);
 
-        const itemBoxes = [];
-        for (let i = 0; i < cfg.world.itemBoxCount; i++) {
-            itemBoxes.push({
-                worldX: cfg.world.itemBoxX,
-                y: cfg.road.minY + (i * (roadHeight / (cfg.world.itemBoxCount - 1))),
-                active: true,
-                reactivateTime: 0
-            });
+        // Le circuit vient du dessin, pose sur la config par
+        // raceEngine/track.js. Sans lui il n'y a pas de monde a construire :
+        // autant le dire ici plutot que de faire tourner une course sur un tour
+        // de largeur NaN, ou personne ne croise jamais de boite.
+        const drawnBoxes = cfg.world.itemBoxes;
+        if (!cfg.world.width || !drawnBoxes || !drawnBoxes.length) {
+            throw new Error('cfg.world sans circuit : appeler track.applyTrack(cfg, circuit) '
+                + 'avant createWorldState. Les circuits se dessinent dans tracks/.');
         }
+
+        const itemBoxes = drawnBoxes.map(box => ({
+            worldX: box.x,
+            y: box.y,
+            active: true,
+            reactivateTime: 0
+        }));
+
+        // Les pipes ne connaissent aucun etat : ni actifs, ni repris, ni
+        // detruits. Ils sont recopies ici quand meme, pour que tout le contenu
+        // du monde se lise au meme endroit que le reste — et parce qu'un jour
+        // l'un d'eux voudra peut-etre bouger.
+        const pipes = (cfg.world.pipes || []).map(pipe => ({
+            worldX: pipe.x,
+            y: pipe.y
+        }));
 
         const statsTable = deriveCharacterStats(cfg);
         const roster = Object.keys(statsTable);
@@ -2609,6 +3179,24 @@
                 dodgeIntensity: 30,
 
                 hitEndTime: 0,
+
+                // Choc contre un pipe. `bumpEndTime` porte l'arret net,
+                // `bumpRecoilLeft` ce qu'il reste a reculer. Le sursis est
+                // retenu par tuyau : un kart qui vient d'en heurter un doit
+                // pouvoir se cogner au suivant.
+                bumpEndTime: 0,
+                bumpRecoilLeft: 0,
+                bumped: false,
+                pipeImmuneUntil: 0,
+                lastPipeIndex: -1,
+
+                // Tuyau en cours de contournement, et couloir choisi pour le
+                // passer. L'index tient jusqu'a ce que le tuyau soit derriere :
+                // c'est ce qui donne une trajectoire au lieu d'une suite
+                // d'ecarts.
+                pipeTargetIndex: -1,
+                pipeLaneY: 0,
+
                 heldItem: null,
                 throwTime: 0,
                 pendingItemGrantTime: 0,
@@ -2680,6 +3268,7 @@
             kartsById: kartsById,
             items: [],
             itemBoxes: itemBoxes,
+            pipes: pipes,
             cachedLeader: null,
 
             phase: 'countdown',

@@ -99,6 +99,9 @@ services:
       # possible entre ce qui est simulé et ce qui est affiché.
       - ./frontEnd/static/js/physics.js:/app/physics.js:ro
       - ./frontEnd/static/js/physics-config.js:/app/physics-config.js:ro
+      # Les circuits sont dessinés, pas compilés : montés, ils se retouchent
+      # sans reconstruire l'image. `make restart-race` relit le dossier.
+      - ./tracks:/app/tracks:ro
     environment:
       - PORT=3000
       # Vide = toutes origines acceptées. À renseigner en production, sinon

@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
-COPY server.js protocol.js ./
+COPY server.js protocol.js track.js ./
 COPY tools/ tools/
 
 # physics.js et physics-config.js ne sont volontairement PAS copiés ici : ils
@@ -15,6 +15,10 @@ COPY tools/ tools/
 # mêmes que le navigateur reçoit, donc il n'en existe qu'une version — la
 # simulation ne peut pas dériver de ce qui est affiché. Sans ces montages, le
 # service refuse de démarrer avec un message explicite.
+#
+# tracks/ non plus, et pour une autre raison : ce sont des dessins, pas du code.
+# Monté, un circuit retouché part en course au prochain `make restart-race` ;
+# copié, il faudrait reconstruire l'image pour déplacer une boîte à objets.
 
 # Convention du dépôt : aucun service ne tourne en root. L'image node fournit
 # déjà un utilisateur `node` en uid 1000.

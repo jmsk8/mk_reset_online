@@ -200,6 +200,12 @@ RACE_NODE   = $(RACE_DOCKER) $(RACE_IMAGE)
 race-deps:           ## Installe ws dans raceEngine/node_modules (pour les tests hors conteneur)
 	$(RACE_NODE) npm install --no-audit --no-fund
 
+# Relit les circuits dessines dans tracks/ et les traduit en chiffres : longueur
+# du tour, place de la ligne, profondeur des boites. A passer apres chaque coup
+# de crayon — le service, lui, refuse de demarrer sur un dessin faux.
+race-tracks:         ## Verifie les circuits de tracks/ (ORDER=1 pour l'ordre des manches)
+	$(RACE_NODE) node tools/tracks.js $(if $(ORDER),--order,)
+
 race-soak:           ## Soak du moteur seul, 10 min, sans WebSocket (DURATION=... pour changer)
 	$(RACE_NODE) node server.js --duration $${DURATION:-600} --always-on
 
@@ -207,9 +213,14 @@ race-soak:           ## Soak du moteur seul, 10 min, sans WebSocket (DURATION=..
 # quelques secondes. RACES=... pour la taille de l'echantillon, SEED=... pour
 # rejouer la meme campagne, CHAIN=1 pour enchainer les grilles comme en prod
 # (vainqueur en pole) au lieu de tirer au sort a chaque course.
-race-sim:            ## Simule N courses et sort les stats (RACES=1000 SEED=42 CHAIN=1 CSV=1)
+#
+# Par defaut la campagne enchaine tous les circuits de tracks/, comme le fait un
+# grand prix : c'est le jeu tel qu'il se joue. TRACK=... n'en garde qu'un, pour
+# juger un trace en particulier sans que les autres diluent la mesure.
+race-sim:            ## Simule N courses et sort les stats (RACES=1000 SEED=42 CHAIN=1 CSV=1 TRACK=anneau)
 	$(RACE_NODE) node tools/simulate.js --races $${RACES:-200} \
-		$(if $(SEED),--seed $(SEED),) $(if $(CHAIN),--chain,) $(if $(CSV),--csv,)
+		$(if $(SEED),--seed $(SEED),) $(if $(CHAIN),--chain,) $(if $(CSV),--csv,) \
+		$(if $(TRACK),--track $(TRACK),)
 
 race-spectate:       ## Test de l'arrivant contre le service `race` en cours d'execution (AFTER=... secondes)
 	$(COMPOSE) exec race node tools/spectate.js --after $${AFTER:-30}
@@ -230,8 +241,9 @@ help:                ## Show this help
 
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
-        race-deps race-soak race-sim race-spectate race-nginx \
+        race-deps race-tracks race-soak race-sim race-spectate race-nginx \
         reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help
 
 .DEFAULT_GOAL := help
+

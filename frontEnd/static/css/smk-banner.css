@@ -190,6 +190,44 @@
     will-change: transform;
 }
 
+/* Le tuyau, planté sur la piste. Ancré par sa base à sa profondeur, comme un
+   kart : le z-index posé par le JS le fait passer devant ou derrière selon qui
+   roule le plus près du spectateur. */
+.pipe {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    z-index: 90;
+    will-change: transform;
+}
+
+/* Le dessin est dans l'enfant : le parent porte le défilement, et une
+   animation sur sa transform le figerait à l'écran. */
+.pipe-sprite {
+    width: 100%;
+    height: 100%;
+    /* Il est planté dans le sol : c'est par là qu'il s'écrase et se détend. */
+    transform-origin: 50% 100%;
+    background-image: url('../img/decor/pipe-green.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+}
+
+.pipe.pipe-shaken .pipe-sprite {
+    animation: pipeShake 320ms ease-out;
+}
+
+/* Sursaut d'un tuyau traversé par une étoile. Il repart d'où il était : rien
+   ne bouge vraiment, l'obstacle reste au même endroit pour la simulation. */
+@keyframes pipeShake {
+    0%   { transform: translate3d(0, 0, 0)     scale(1, 1); }
+    18%  { transform: translate3d(0, -9px, 0)  scale(0.94, 1.08); }
+    45%  { transform: translate3d(0, 0, 0)     scale(1.06, 0.93); }
+    70%  { transform: translate3d(0, -3px, 0)  scale(0.98, 1.03); }
+    100% { transform: translate3d(0, 0, 0)     scale(1, 1); }
+}
+
 .item-box {
     position: absolute;
     background-image: url('../img/items/item-box/item-box.png');
