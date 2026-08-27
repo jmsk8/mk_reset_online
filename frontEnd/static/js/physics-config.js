@@ -21,15 +21,35 @@
     'use strict';
 
     return {
-        characterStats: {
-            mario:  { topSpeed: 510, acceleration: 1.0,  handling: 1.0,  weight: 1.0  },
-            luigi:  { topSpeed: 505, acceleration: 1.05, handling: 1.05, weight: 0.95 },
-            peach:  { topSpeed: 495, acceleration: 1.15, handling: 1.2,  weight: 0.8  },
-            toad:   { topSpeed: 490, acceleration: 1.3,  handling: 1.3,  weight: 0.7  },
-            yoshi:  { topSpeed: 500, acceleration: 1.1,  handling: 1.15, weight: 0.85 },
-            bowser: { topSpeed: 530, acceleration: 0.7,  handling: 0.7,  weight: 1.4  },
-            dk:     { topSpeed: 525, acceleration: 0.75, handling: 0.8,  weight: 1.3  },
-            koopa:  { topSpeed: 485, acceleration: 1.25, handling: 1.25, weight: 0.75 }
+        kartStats: {
+            budget: 15,
+            minPoints: 0,
+            maxPoints: 10,
+
+            mass:  { min: 0.72, max: 1.25 },
+            force: { min: 0.85, max: 1.40 },
+            grip:  { min: 0.85, max: 1.35 },
+
+            massDragAccel: 0.60,
+            accelClamp: { min: 0.75, max: 1.45 },
+
+            massDragAgility: 0.90,
+            agilityClamp: { min: 0.60, max: 1.70 },
+
+            speedBase: 450,
+            speedPerPower: 110,
+            traction: { base: 0.65, gain: 0.70 },
+
+            characters: {
+                bowser: { weight: 9, power: 5, handling: 1 },
+                dk:     { weight: 8, power: 5, handling: 2 },
+                mario:  { weight: 5, power: 5, handling: 5 },
+                luigi:  { weight: 4, power: 6, handling: 5 },
+                yoshi:  { weight: 4, power: 4, handling: 7 },
+                peach:  { weight: 3, power: 6, handling: 6 },
+                toad:   { weight: 1, power: 6, handling: 8 },
+                koopa:  { weight: 2, power: 4, handling: 9 }
+            }
         },
         world: {
             width: 7680,
@@ -57,6 +77,7 @@
             roadPPS: 250,
 
             momentumMinRatio: 0.78,
+            momentumFloor: { base: 0.44, weightGain: 0 },
             momentumChangeSpeed: 0.25,
             momentumDriftMin: 3000,
             momentumDriftMax: 7000,
@@ -544,9 +565,6 @@
             // Une carapace de face approche a plus du triple de la vitesse d'une
             // banane — a distance egale, le temps pour reagir n'a rien de
             // comparable. Le plafond evite de s'ecarter d'un objet hors ecran.
-            //
-            // La fenetre est divisee par le handling : un kart lourd repond plus
-            // tard et se deporte moins vite, il lui faut anticiper d'autant.
             threatWindowMs: 900,
             threatMaxDistance: 900,
 
@@ -566,25 +584,24 @@
             crossDodgeMargin: 2,
             crossJudgeError: 0.25,
 
-            // Latence de reflexe, inversement proportionnelle au handling et
-            // tiree au sort a chaque menace. Un kart peut aussi ne pas voir
-            // l'objet, d'autant plus qu'il est lourd a manoeuvrer.
-            // Visee : le kart se recale sur sa cible avant de tirer.
-            // `aimErrorMax` est divise par le handling — la hitbox verticale
-            // d'un objet valant 5, une erreur de cet ordre suffit a rater.
+            // Latence de reflexe, tiree au sort a chaque menace.
+            reactionBaseMs: 280,
+            reactionJitterMin: 0.8, reactionJitterMax: 1.35,
+
+            // Visee : le kart se recale sur sa cible avant de tirer. La hitbox
+            // verticale d'un objet valant 5, une erreur de cet ordre suffit a
+            // rater.
             aimLeadMs: 1300,
             aimScanDistance: 900,
             aimErrorMax: 3.5,
             aimSpeed: 12,
-
-            reactionBaseMs: 280,
-            reactionJitterMin: 0.8, reactionJitterMax: 1.35,
 
             // L'inattention n'est plein tarif que pour une esquive tout juste
             // jouable ; au-dela de dodgeEasyRatio fois la marge necessaire, le
             // tirage ne joue plus.
             dodgeMissChance: 0.1,
             dodgeEasyRatio: 2.5,
+
             overtakeDetectionRange: 120, overtakeMinDistance: 12, overtakeSideSpeed: 10,
             // Ecart en deca duquel la boite est consideree dans l'axe : le kart
             // tient sa ligne au lieu de la corriger.

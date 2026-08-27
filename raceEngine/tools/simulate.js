@@ -76,7 +76,15 @@ function makeRng(seed) {
 const seed = SEED || (Math.random() * 0xFFFFFFFF) >>> 0;
 const rng = makeRng(seed);
 
-const ROSTER = Object.keys(CFG.characterStats);
+const STATS = PH.deriveCharacterStats(CFG);
+const ROSTER = Object.keys(STATS);
+
+// En dessous de cette fraction de sa propre pointe, un kart est considere comme
+// hors rythme. Rapporte a sa pointe et non a une vitesse absolue : sinon un kart
+// lent serait compte en retard en permanence, et la mesure ne dirait plus rien
+// du temps perdu. La croisiere tourne autour de 0.94, d'ou ce seuil juste en
+// dessous : il attrape l'arret et la relance, pas les creux d'elan ordinaires.
+const SLOW_RATIO = 0.90;
 const N = ROSTER.length;
 const LAPS = CFG.race.laps;
 
@@ -137,6 +145,20 @@ function runRace(startOrder) {
     const typeOfItem = new Map(); // itemId -> type, pour relier launchItem
     let lapDrift = 0;             // pas ou le compteur du moteur diverge du reel
 
+    // Ce que la course coute a chaque kart. `hits` compte les tete-a-queue,
+    // `slowMs` mesure le temps passe loin de sa vitesse de croisiere : l'arret
+    // lui-meme, puis la relance jusqu'a retrouver son rythme. C'est cette
+    // seconde valeur qui dit ce que vaut vraiment l'acceleration, l'arret etant
+    // de duree fixe pour tout le monde.
+    const hits = {};
+    const slowMs = {};
+    const raceMs = {};
+    for (const kart of state.karts) {
+        hits[kart.charName] = 0;
+        slowMs[kart.charName] = 0;
+        raceMs[kart.charName] = 0;
+    }
+
     // Place de chaque kart a la fin de chaque tour. Le releve se fait au moment
     // ou le premier entame le tour suivant, et le dernier tour est renseigne par
     // l'ordre d'arrivee : la trajectoire se lit ainsi d'un bout a l'autre, du
@@ -164,7 +186,22 @@ function runRace(startOrder) {
             seenLap = lap;
         }
 
+        // La grille et le tour d'honneur sont hors sujet : avant le depart tout
+        // le monde est a l'arret, apres l'arrivee tout le monde est bride.
+        for (const kart of state.karts) {
+            if (kart.state === 'grid' || kart.finished) continue;
+            raceMs[kart.charName] += DT_MS;
+            if (kart.state !== 'running'
+                || kart.absoluteVelocity < SLOW_RATIO * kart.stats.topSpeed) {
+                slowMs[kart.charName] += DT_MS;
+            }
+        }
+
         for (const ev of events) {
+            if (ev.type === 'kartHit') {
+                hits[state.kartsById[ev.kartId].charName]++;
+                continue;
+            }
             if (ev.type === 'spawnHeldItem') {
                 // Les identifiants sont uniques dans une course : ce garde-fou
                 // n'est la que pour ne jamais compter deux fois le meme objet.
@@ -197,7 +234,8 @@ function runRace(startOrder) {
                     order: state.finishOrder.map(id => state.kartsById[id].charName),
                     grid: state.karts.map(k => k.charName),
                     ms: simTime,
-                    got, gotLap, fired, firedLap, lapDrift, ticks: tick + 1
+                    got, gotLap, fired, firedLap, lapDrift, ticks: tick + 1,
+                    hits, slowMs, raceMs
                 };
             }
         }
@@ -209,7 +247,7 @@ function runRace(startOrder) {
 
 const stat = {};
 for (const name of ROSTER) {
-    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0 };
+    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, slowMs: 0, raceMs: 0 };
 }
 
 // Places tour par tour. `lapSum` sert la trajectoire moyenne, `lapDist` la
@@ -272,6 +310,12 @@ for (let r = 0; r < RACES; r++) {
             lapCount[name][lap]++;
             lapDist[name][lap][pos - 1]++;
         }
+    }
+
+    for (const name of ROSTER) {
+        stat[name].hits += race.hits[name] || 0;
+        stat[name].slowMs += race.slowMs[name] || 0;
+        stat[name].raceMs += race.raceMs[name] || 0;
     }
 
     race.order.forEach((name, index) => {
@@ -361,13 +405,14 @@ const rows = ROSTER.slice().sort((a, b) => stat[b].wins - stat[a].wins);
 const w = Math.max(...ROSTER.map(n => n.length), 6);
 
 console.log('');
-console.log(pad('kart', w) + padL('top', 6) + padL('acc', 6) + padL('main', 6) + padL('poids', 7)
+console.log(pad('kart', w) + padL('poi/pui/man', 13)
+    + padL('top', 6) + padL('acc', 6) + padL('agi', 6) + padL('masse', 7)
     + padL('victoires', 12) + padL('podium', 9) + padL('dernier', 9) + padL('place moy.', 12));
-console.log('-'.repeat(w + 6 + 6 + 6 + 7 + 12 + 9 + 9 + 12));
+console.log('-'.repeat(w + 13 + 6 + 6 + 6 + 7 + 12 + 9 + 9 + 12));
 
 for (const name of rows) {
     const s = stat[name];
-    const c = CFG.characterStats[name];
+    const c = STATS[name];
     const winPct = pct(s.wins, done);
     // Ecart a l'attendu, en ecarts-types : au-dela de 2, ce n'est plus du bruit.
     const z = sigma > 0 ? (winPct - 100 * p0) / sigma : 0;
@@ -375,8 +420,9 @@ for (const name of rows) {
 
     console.log(
         pad(name, w)
-        + padL(c.topSpeed, 6) + padL(c.acceleration.toFixed(2), 6)
-        + padL(c.handling.toFixed(2), 6) + padL(c.weight.toFixed(2), 7)
+        + padL(`${c.raw.weight}/${c.raw.power}/${c.raw.handling}`, 13)
+        + padL(Math.round(c.topSpeed), 6) + padL(c.acceleration.toFixed(2), 6)
+        + padL(c.agility.toFixed(2), 6) + padL(c.mass.toFixed(2), 7)
         + padL(winPct.toFixed(1) + ' %' + flag, 12)
         + padL(pct(s.podium, done).toFixed(1) + ' %', 9)
         + padL(pct(s.last, done).toFixed(1) + ' %', 9)
@@ -385,6 +431,29 @@ for (const name of rows) {
 }
 
 console.log('');
+console.log(`budget : ${CFG.kartStats.budget} points par kart, chaque axe dans `
+    + `[${CFG.kartStats.minPoints}, ${CFG.kartStats.maxPoints}]`);
+
+// Ce que la course coute. Sans ces deux colonnes, impossible de dire si
+// l'agilite sert a quelque chose : un kart peut perdre parce qu'il est lent, ou
+// parce qu'il se fait toucher deux fois plus souvent. Les taux de victoire seuls
+// ne les distinguent pas.
+console.log('');
+console.log('Ce que la course coute a chaque kart');
+console.log(pad('kart', w) + padL('agi', 6) + padL('touches', 10)
+    + padL('hors rythme', 13) + padL('part de course', 16));
+console.log('-'.repeat(w + 6 + 10 + 13 + 16));
+for (const name of rows) {
+    const s = stat[name];
+    console.log(pad(name, w)
+        + padL(STATS[name].agility.toFixed(2), 6)
+        + padL((s.hits / done).toFixed(2), 10)
+        + padL((s.slowMs / done / 1000).toFixed(1) + ' s', 13)
+        + padL(pct(s.slowMs, s.raceMs).toFixed(1) + ' %', 16));
+}
+console.log('');
+console.log(`  touches : tete-a-queue subis par course. hors rythme : temps passe`);
+console.log(`  sous ${(SLOW_RATIO * 100).toFixed(0)} % de sa propre pointe, arret et relance compris.`);
 console.log(`attendu si tous egaux : ${(100 * p0).toFixed(1)} % de victoires, place moyenne ${((N + 1) / 2).toFixed(2)}`);
 console.log(`bruit d'echantillonnage a ${done} courses : +/- ${sigma.toFixed(1)} point (1 ecart-type)`);
 console.log('  ++ / -- signale un ecart d\'au moins 2 ecarts-types, soit ce qui ne s\'explique plus par le hasard');

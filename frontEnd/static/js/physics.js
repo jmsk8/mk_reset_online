@@ -20,9 +20,72 @@
         return rng() * (max - min) + min;
     }
 
-    function getNewMomentumTarget(rng, stats) {
-        const weightFactor = Math.min(stats.weight / 1.4, 1.0);
-        const minMomentum = 0.55 - weightFactor * 0.15;
+    function lerp(min, max, t) {
+        return min + (max - min) * t;
+    }
+
+    function clamp(v, min, max) {
+        return v < min ? min : (v > max ? max : v);
+    }
+
+    const derivedStatsCache = new WeakMap();
+
+    function deriveCharacterStats(cfg) {
+        const cached = derivedStatsCache.get(cfg);
+        if (cached) return cached;
+
+        const spec = cfg.kartStats;
+        const span = (spec.maxPoints - spec.minPoints) || 1;
+        const axes = ['weight', 'power', 'handling'];
+        const table = {};
+
+        for (const name of Object.keys(spec.characters)) {
+            const raw = spec.characters[name];
+
+            for (const axis of axes) {
+                const v = raw[axis];
+                if (typeof v !== 'number' || v < spec.minPoints || v > spec.maxPoints) {
+                    throw new Error(`kartStats : ${name}.${axis} vaut ${v}, hors de `
+                        + `[${spec.minPoints}, ${spec.maxPoints}]`);
+                }
+            }
+            const total = raw.weight + raw.power + raw.handling;
+            if (total !== spec.budget) {
+                throw new Error(`kartStats : ${name} totalise ${total} points `
+                    + `au lieu des ${spec.budget} du budget`);
+            }
+
+            const norm = {
+                weight:   (raw.weight - spec.minPoints) / span,
+                power:    (raw.power - spec.minPoints) / span,
+                handling: (raw.handling - spec.minPoints) / span
+            };
+
+            const mass  = lerp(spec.mass.min, spec.mass.max, norm.weight);
+            const force = lerp(spec.force.min, spec.force.max, norm.power);
+            const grip  = lerp(spec.grip.min, spec.grip.max, norm.handling);
+
+            const traction = spec.traction.base + spec.traction.gain * norm.weight;
+
+            table[name] = {
+                raw: raw,
+                norm: norm,
+                mass: mass,
+                topSpeed: spec.speedBase + spec.speedPerPower * norm.power * traction,
+                acceleration: clamp(force / Math.pow(mass, spec.massDragAccel),
+                                    spec.accelClamp.min, spec.accelClamp.max),
+                agility: clamp(grip / Math.pow(mass, spec.massDragAgility),
+                               spec.agilityClamp.min, spec.agilityClamp.max)
+            };
+        }
+
+        derivedStatsCache.set(cfg, table);
+        return table;
+    }
+
+    function getNewMomentumTarget(rng, cfg, stats) {
+        const floor = cfg.speeds.momentumFloor;
+        const minMomentum = floor.base + floor.weightGain * stats.norm.weight;
         return randomRange(rng, minMomentum, 1.0);
     }
 
@@ -39,10 +102,11 @@
     // Meilleure pointe qu'un objet autre que le bill permet d'atteindre, tous
     // personnages confondus.
     function fastestBoostedSpeed(cfg) {
-        const names = Object.keys(cfg.characterStats);
+        const table = deriveCharacterStats(cfg);
+        const names = Object.keys(table);
         let best = 0;
         for (let i = 0; i < names.length; i++) {
-            const top = cfg.characterStats[names[i]].topSpeed;
+            const top = table[names[i]].topSpeed;
             const shroom = top + cfg.speeds.shroomBoost;
             const star = top * cfg.speeds.starSpeedMultiplier;
             if (shroom > best) best = shroom;
@@ -77,9 +141,9 @@
     // l'arret. `tau` est la constante de temps du lissage applique plus bas a
     // `vy` : sur une reaction courte, une bonne part du trajet passe dans la
     // montee en regime.
-    function lateralReach(cfg, handling, intensity, ms) {
+    function lateralReach(cfg, agility, intensity, ms) {
         const t = ms / 1000;
-        const tau = 1 / (cfg.physics.smoothingFactor * handling);
+        const tau = 1 / (cfg.physics.smoothingFactor * agility);
         return intensity * (t - tau * (1 - Math.exp(-t / tau)));
     }
 
@@ -89,8 +153,8 @@
     // marge grandit.
     function missChance(cfg, kart, threatY, spareMs) {
         const ai = cfg.ai;
-        const handling = kart.stats.handling;
-        const base = ai.dodgeMissChance / handling;
+        const agility = kart.stats.agility;
+        const base = ai.dodgeMissChance;
 
         // Il passe deja assez a cote pour que la hitbox le manque.
         const need = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin
@@ -100,8 +164,8 @@
 
         // Capacite type : l'intensite reelle n'est tiree qu'au moment de
         // s'ecarter.
-        const intensity = (ai.dodgeIntensityMin + ai.dodgeIntensityMax) * 0.5 * handling;
-        const ease = lateralReach(cfg, handling, intensity, spareMs) / need;
+        const intensity = (ai.dodgeIntensityMin + ai.dodgeIntensityMax) * 0.5 * agility;
+        const ease = lateralReach(cfg, agility, intensity, spareMs) / need;
 
         if (ease <= 1) return base;
         if (ease >= ai.dodgeEasyRatio) return 0;
@@ -117,13 +181,13 @@
     // ai.crossJudgeError). Sans issue des deux cotes, il ne reste que le frein.
     function planDodge(cfg, rng, kart, threatId, threatY, ttc) {
         const ai = cfg.ai;
-        const handling = kart.stats.handling;
+        const agility = kart.stats.agility;
         const margin = cfg.road.edgeSafetyMargin;
 
         kart.dodgePlanId = threatId;
         kart.dodgeIntensity = randomRange(rng,
-            ai.dodgeIntensityMin * handling,
-            ai.dodgeIntensityMax * handling
+            ai.dodgeIntensityMin * agility,
+            ai.dodgeIntensityMax * agility
         );
 
         const naturalDir = (threatY > kart.yPercent) ? -1 : 1;
@@ -151,8 +215,8 @@
             ? (cfg.road.maxY - margin) - kart.yPercent
             : kart.yPercent - (cfg.road.minY + margin);
 
-        const err = ai.crossJudgeError / handling;
-        const judged = lateralReach(cfg, handling, kart.dodgeIntensity, ttc)
+        const err = ai.crossJudgeError;
+        const judged = lateralReach(cfg, agility, kart.dodgeIntensity, ttc)
             * randomRange(rng, 1 - err, 1 + err);
 
         if (gap < clear && roomCross >= crossNeed && judged >= crossNeed) {
@@ -224,7 +288,7 @@
         let dangerFound = false;
         let avoidDirection = 0;
 
-        const handling = kart.stats.handling;
+        const agility = kart.stats.agility;
         const ai = cfg.ai;
 
         // Un bill ne se pilote pas : il rejoint le milieu de la piste et n'en
@@ -235,7 +299,7 @@
             const diff = mid - kart.yPercent;
             const speed = cfg.bill.centerSpeed;
             kart.targetVy = Math.abs(diff) < 0.2 ? 0 : (diff > 0 ? speed : -speed);
-            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
+            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
             return;
         }
 
@@ -246,8 +310,7 @@
         let threatY = 0;
         let threatTtc = Infinity;
 
-        // Le lourd regarde plus loin que le vif — voir ai.threatWindowMs.
-        const threatWindow = ai.threatWindowMs / handling;
+        const threatWindow = ai.threatWindowMs;
 
         const itemsLen = state.items.length;
         for (let i = 0; i < itemsLen; i++) {
@@ -310,7 +373,7 @@
             if (kart.threatItemId !== threatId) {
                 kart.threatItemId = threatId;
 
-                const reactMs = (ai.reactionBaseMs / handling)
+                const reactMs = ai.reactionBaseMs
                     * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
                 kart.threatReactAt = now + reactMs;
 
@@ -342,7 +405,7 @@
                 kart.originalLaneY = kart.yPercent;
             }
             kart.targetVy = avoidDirection * kart.dodgeIntensity;
-            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
+            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
             return;
         }
 
@@ -372,11 +435,11 @@
                 const diff = desired - kart.yPercent;
 
                 if (Math.abs(diff) > 0.5) {
-                    const speed = ai.aimSpeed * handling;
+                    const speed = ai.aimSpeed * agility;
                     kart.aiState = 'aiming';
                     kart.originalLaneY = kart.yPercent;
                     kart.targetVy = Math.max(-speed, Math.min(speed, diff * ai.aimSpeed));
-                    kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
+                    kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
                     return;
                 }
             }
@@ -396,14 +459,14 @@
                 let dir = (kart.yPercent > other.yPercent) ? 1 : -1;
                 if (kart.yPercent > cfg.road.maxY - cfg.road.overtakeMargin) dir = -1;
                 if (kart.yPercent < cfg.road.minY + cfg.road.overtakeMargin) dir = 1;
-                kart.targetVy = dir * cfg.ai.overtakeSideSpeed * handling;
+                kart.targetVy = dir * cfg.ai.overtakeSideSpeed * agility;
                 break;
             }
         }
 
         if (overtakeFound) {
             kart.originalLaneY = kart.yPercent;
-            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
+            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
             return;
         }
 
@@ -417,13 +480,13 @@
                 // Deja dans l'axe : il tient sa ligne. Le laisser repartir en
                 // maraude le ferait deriver hors de la boite qu'il vise.
                 kart.targetVy = (Math.abs(diffY) > cfg.ai.boxAlignTolerance)
-                    ? ((diffY > 0) ? cfg.ai.boxSeekIntensity : -cfg.ai.boxSeekIntensity) * handling
+                    ? ((diffY > 0) ? cfg.ai.boxSeekIntensity : -cfg.ai.boxSeekIntensity) * agility
                     : 0;
             }
         }
 
         if (boxTargetFound) {
-            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
+            kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
             return;
         }
 
@@ -433,7 +496,7 @@
             let dir = (rng() > 0.5) ? 1 : -1;
             if (kart.yPercent > cfg.road.maxY - cfg.road.wanderMargin) dir = -1;
             if (kart.yPercent < cfg.road.minY + cfg.road.wanderMargin) dir = 1;
-            kart.wanderVy = dir * cfg.ai.wanderSpeed * handling;
+            kart.wanderVy = dir * cfg.ai.wanderSpeed * agility;
         }
 
         if (now < kart.wanderEndTime) {
@@ -447,7 +510,7 @@
                     kart.yPercent = kart.originalLaneY;
                     kart.aiState = 'cruising';
                 } else {
-                    kart.targetVy = (diff > 0 ? 1 : -1) * cfg.speeds.returnLane * handling;
+                    kart.targetVy = (diff > 0 ? 1 : -1) * cfg.speeds.returnLane * agility;
                 }
             } else {
                 kart.targetVy = 0;
@@ -455,7 +518,7 @@
             }
         }
 
-        kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * handling * deltaTime;
+        kart.vy += (kart.targetVy - kart.vy) * cfg.physics.smoothingFactor * agility * deltaTime;
     }
 
     // Ecart au premier, mesure en distance restante : deux karts partis de
@@ -839,7 +902,7 @@
             kart.shotDirection = -1;
         }
 
-        kart.aimError = randomRange(rng, -ai.aimErrorMax, ai.aimErrorMax) / kart.stats.handling;
+        kart.aimError = randomRange(rng, -ai.aimErrorMax, ai.aimErrorMax);
 
         const aggression = getAggression(cfg, state, kart);
         const hurry = hurryFactor(cfg, aggression);
@@ -2006,7 +2069,7 @@
                     kart.nextMomentumChange = now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax);
                 } else {
                     if (now > kart.nextMomentumChange) {
-                        kart.momentumTarget = getNewMomentumTarget(rng, kart.stats);
+                        kart.momentumTarget = getNewMomentumTarget(rng, cfg, kart.stats);
                         kart.nextMomentumChange = now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax);
                     }
                     const mChangeSpeed = cfg.speeds.momentumChangeSpeed;
@@ -2154,11 +2217,11 @@
                          }
 
                          const pushScale = billOnBill ? cfg.bill.pushFactor : 1;
-                         const myWeight = kart.stats.weight;
-                         const otherWeight = other.stats.weight;
-                         const totalWeight = myWeight + otherWeight;
-                         const myRatio = otherWeight / totalWeight;
-                         const otherRatio = myWeight / totalWeight;
+                         const myMass = kart.stats.mass;
+                         const otherMass = other.stats.mass;
+                         const totalMass = myMass + otherMass;
+                         const myRatio = otherMass / totalMass;
+                         const otherRatio = myMass / totalMass;
                          const pushForce = cfg.physics.pushForce * pushScale;
                          const myBounceY = cfg.physics.collisionBounceY * myRatio * pushScale;
                          const otherBounceY = cfg.physics.collisionBounceY * otherRatio * pushScale;
@@ -2501,7 +2564,8 @@
             });
         }
 
-        const roster = Object.keys(cfg.characterStats);
+        const statsTable = deriveCharacterStats(cfg);
+        const roster = Object.keys(statsTable);
         const names = (startOrder && startOrder.length === roster.length)
             ? startOrder.slice()
             : shuffleArray(roster, rng);
@@ -2520,7 +2584,7 @@
             const depth = race.grid.lanes[col] + row * race.grid.laneSlope;
             const verticalPos = Math.min(cfg.road.maxY,
                                          Math.max(cfg.road.minY, cfg.road.minY + roadHeight * depth));
-            const stats = cfg.characterStats[charName];
+            const stats = statsTable[charName];
 
             const kart = {
                 id: index,
@@ -2532,7 +2596,7 @@
                 stats: stats,
                 absoluteVelocity: 0,
                 momentum: 0,
-                momentumTarget: getNewMomentumTarget(rng, stats),
+                momentumTarget: getNewMomentumTarget(rng, cfg, stats),
                 nextMomentumChange: now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax),
                 vy: 0,
                 targetVy: 0,
@@ -2656,6 +2720,7 @@
     return {
         shuffleArray,
         randomRange,
+        deriveCharacterStats,
         getNewMomentumTarget,
         getMomentumSpeed,
         getInitialKartSpeed,
