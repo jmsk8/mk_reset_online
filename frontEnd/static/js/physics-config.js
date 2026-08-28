@@ -345,12 +345,52 @@
             // le baisser fait viser au plus pres a tout prix.
             redShellClosePenalty: 260,
 
-            shroomBoost: 250,
-            shroomDuration: 1500,
+            // ── Vitesse sous objet ───────────────────────────────────────
+            //
+            // Champignon, etoile et bill partagent un seul modele, et c'est tout
+            // ce qu'il y a a regler ici. Chacun repond a deux questions :
+            //
+            //   POINTE : `multiplier`, en multiple de la pointe du kart. C'est
+            //   la seule chose qui la fixe — un objet ne donne pas la meme
+            //   vitesse a tout le monde, il donne a chacun la sienne, majoree
+            //   d'autant. Les persos gardent donc leur ordre sous objet, et
+            //   `topSpeed` reste le seul endroit ou se decide qui est rapide.
+            //
+            //   MONTEE : `ramp`, en multiples de la relance normale. La pointe
+            //   n'est jamais instantanee : le kart y monte a
+            //   `accelerationRate * acceleration * ramp` px/s². Le facteur
+            //   `acceleration` est ce qui met un leger legerement devant un
+            //   lourd sous le meme objet — c'est la seule difference entre eux,
+            //   et elle ne joue que sur la montee, jamais sur la pointe.
+            //
+            // Regler la montee se lit en une phrase : `ramp: 6` veut dire « six
+            // fois plus vif qu'une relance normale ». Le baisser rend l'objet
+            // mou a la prise sans toucher a ce qu'il finit par donner ; le
+            // monter le ramene vers le coup de fouet instantane d'avant.
+            //
+            // Ordres de grandeur des reglages ci-dessous, mesures depuis la
+            // croisiere, du plus vif (koopa) au plus lourd (bowser) :
+            // champignon 240-390 ms, etoile 75-120 ms, bill 90-145 ms.
+            boosts: {
+                // Le champignon est le seul dont la montee se voit : elle mange
+                // un cinquieme de sa duree. C'est ce qui le distingue de
+                // l'etoile, qui dure quatre fois plus longtemps pour une pointe
+                // plus basse.
+                //
+                // `durationMs` sert aussi au turbo de depart (race.turboBoostMs
+                // en fixe la duree, la pointe et la montee viennent d'ici).
+                shroom: { multiplier: 1.50, durationMs: 1500, ramp: 6 },
 
-            starSpeedMultiplier: 1.4,
-            // Duree fixe, identique quel que soit le rang.
-            starDuration: 7500,
+                // Duree fixe, identique quel que soit le rang. La pointe est en
+                // dessous de celle du champignon : l'etoile ne s'achete pas en
+                // vitesse de pointe mais en duree et en invincibilite.
+                star: { multiplier: 1.40, durationMs: 6000, ramp: 16 },
+
+                // A garder au-dessus de l'etoile, sinon le bill se fait
+                // rattraper par ce qu'il double. Sa duree de vol n'est pas ici :
+                // elle se negocie au fil des depassements, cf. `bill`.
+                bill: { multiplier: 1.65, ramp: 20 }
+            },
 
             // Banane lancee en cloche. La hauteur est un decalage de rendu en
             // pixels, sans effet sur la profondeur de piste.
@@ -676,7 +716,7 @@
             // sort vite : l'eclair vient du fond de grille, il n'a pas a enfoncer
             // ceux qui y sont deja. Au-dela de `shrinkFalloffDistance` c'est le
             // minimum pour tout le monde.
-            shrinkMsMax: 8000,
+            shrinkMsMax: 10000,
             shrinkMsMin: 2000,
             shrinkFalloffDistance: 3500
         },
@@ -685,18 +725,19 @@
         // et fonce au milieu de la piste, comme l'etoile est un etat et non un
         // objet lance. Tout est reglable ici, rien n'est en dur dans la physique.
         bill: {
-            // Vitesse de croisiere, en multiple de la pointe du personnage —
-            // meme unite que starSpeedMultiplier, et a garder au-dessus de lui
-            // (1.4), sinon le bill se fait rattraper par ce qu'il double.
+            // Sa vitesse de croisiere et sa montee vivent avec celles des deux
+            // autres objets, dans `speeds.boosts.bill` : les trois ne se reglent
+            // qu'en les comparant. Ce qui reste ici est ce qui n'appartient
+            // qu'au bill.
             //
-            // Le baisser rallonge le vol pour de bon, et pas seulement a l'oeil :
-            // moins vite veut dire moins de karts doubles par seconde, donc moins
-            // de `overtakeCostMs` retires. Vitesse et duree sont liees par la.
-            speedMultiplier: 1.65,
+            // A savoir en la reglant : la baisser rallonge le vol pour de bon,
+            // et pas seulement a l'oeil. Moins vite veut dire moins de karts
+            // doubles par seconde, donc moins de `overtakeCostMs` retires.
+            // Vitesse et duree sont liees par la.
 
             // Marge minimale du bill sur la meilleure pointe qu'un autre objet
-            // permet, tous personnages confondus : le multiplicateur ci-dessus
-            // ne compare un kart qu'a lui-meme.
+            // permet, tous personnages confondus : son multiplicateur ne le
+            // compare qu'a lui-meme.
             minLeadRatio: 1.08,
 
             // Duree du vol. Chaque kart double la raccourcit de `overtakeCostMs`,
