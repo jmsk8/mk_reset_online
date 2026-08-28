@@ -67,13 +67,18 @@
             const grip  = lerp(spec.grip.min, spec.grip.max,
                                Math.pow(norm.handling, spec.gripCurve));
 
-            const traction = spec.traction.base + spec.traction.gain * norm.weight;
-
             table[name] = {
                 raw: raw,
                 norm: norm,
                 mass: mass,
-                topSpeed: spec.speedBase + spec.speedPerPower * norm.power * traction,
+                // Pointe additive : chaque axe apporte ses px/s, et les apporte
+                // seul. La forme multiplicative d'avant faisait dependre le
+                // rendement du poids de la puissance du kart, si bien qu'un
+                // point lache sur la puissance devaluait les deux autres axes en
+                // meme temps — il n'y avait plus de triangle, juste un axe fort.
+                topSpeed: spec.speedBase
+                    + spec.speedPerWeight * norm.weight
+                    + spec.speedPerPower * norm.power,
                 acceleration: clamp(force / Math.pow(mass, spec.massDragAccel),
                                     spec.accelClamp.min, spec.accelClamp.max),
                 agility: clamp(grip / Math.pow(mass, spec.massDragAgility),

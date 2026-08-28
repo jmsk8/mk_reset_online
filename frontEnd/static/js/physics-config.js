@@ -111,9 +111,31 @@
             // doit jamais mordre sur le plateau en place, d'ou la marge.
             agilityClamp: { min: 0.25, max: 1.70 },
 
-            speedBase: 450,
-            speedPerPower: 110,
-            traction: { base: 0.65, gain: 0.70 },
+            // ── La pointe ────────────────────────────────────────────────
+            //
+            // `topSpeed = speedBase + speedPerWeight * poids + speedPerPower * puissance`,
+            // les deux axes normalises dans [0, 1]. Additif, et c'est le point :
+            // chaque coefficient se lit directement en px/s gagnes entre un
+            // score de 0 et un score de 10, sans que l'autre axe s'en mele.
+            //
+            // Le poids mene, la puissance suit — c'est ce qui rend le poids
+            // payant. Un kart lourd achete sa pointe et la paie deux fois, en
+            // acceleration et en maniabilite (masse, cf. `massDrag*`) ; un kart
+            // leger fait l'echange inverse. La puissance, elle, s'achete
+            // surtout en relance : elle ne vaut ici qu'un appoint.
+            //
+            // L'ENVELOPPE EST LE REGLAGE SENSIBLE DU JEU, et de loin. Mesure au
+            // banc : la pointe pese environ 0.5 point de taux de victoire par
+            // px/s d'ecart entre deux karts. Les 35 px/s d'ecart de l'ancien
+            // modele valaient donc a eux seuls 17 points de taux de victoire —
+            // assez pour renverser tout le reste du systeme. Ne pas elargir
+            // `speedPerWeight` sans elargir d'autant ce que la masse coute.
+            //
+            // Repere de conversion pour arbitrer : 1 s de temps de course vaut
+            // environ 4.5 px/s de pointe, soit ~2 points de taux de victoire.
+            speedBase: 490,
+            speedPerWeight: 20,
+            speedPerPower: 12,
 
             characters: {
                 bowser: { weight: 9, power: 5, handling: 1 },
