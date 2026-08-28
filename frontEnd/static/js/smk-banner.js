@@ -131,7 +131,8 @@ const OFFLINE_WORLD = {
     orbit: { count: 3, radiusX: 62, radiusY: 3.2 },
     shellAnimSpeed: 100,
     billAnimSpeed: 70,
-    shrinkScale: 0.5
+    shrinkScale: 0.5,
+    laps: 5
 };
 
 let WORLD = OFFLINE_WORLD;
@@ -354,9 +355,82 @@ function updateRenderCamera() {
     lastFocusCameraX = kart.worldX;
 }
 
+// ── Le cartouche du kart suivi ──────────────────────────────────────────────
+//
+// Tour et vitesse, en bas a gauche, et seulement quand la camera suit un kart :
+// c'est une lecture de son tableau de bord, elle n'a pas de sens sur la vue
+// d'ensemble.
+//
+// Les deux se DEDUISENT de `totalDistance`, qui est la seule chose transmise
+// des deux. Le tour parce qu'il n'est pas diffuse — le classement de debug le
+// derive deja de la meme facon. La vitesse parce que ce qui interesse un
+// spectateur n'est pas la consigne du moteur mais le terrain reellement couvert :
+// un kart bloque derriere un autre, en tete-a-queue ou en train de reculer
+// contre un tuyau roule a ce que dit sa position, pas a ce que dit sa vitesse
+// moteur. C'est la meme mesure que celle du banc de reglage.
+//
+// Rien n'est donc a ajouter au protocole.
+let focusHudEl = null;
+let focusHudPrevDistance = null;
+let focusHudSpeed = 0;
+let focusHudText = '';
+
+// Constante de temps du lissage, en ms. La distance est interpolee entre deux
+// snapshots : la derivee brute saute a chaque arrivee de paquet, et un compteur
+// qui clignote est illisible. Assez court pour qu'un champignon se voie tout de
+// suite, assez long pour ne pas trembler.
+const FOCUS_HUD_SMOOTH_MS = 220;
+
+function resetFocusHud() {
+    focusHudPrevDistance = null;
+    focusHudSpeed = 0;
+    focusHudText = '';
+    if (focusHudEl) focusHudEl.classList.remove('is-on');
+}
+
+function updateFocusHud(frameMs) {
+    if (!focusHudEl) {
+        focusHudEl = document.getElementById('race-focus-hud');
+        if (!focusHudEl) return;
+    }
+
+    const kart = focusedKartId === null ? null : worldState.kartsById[focusedKartId];
+    if (!kart) {
+        if (focusHudPrevDistance !== null) resetFocusHud();
+        return;
+    }
+
+    // Le premier passage n'a pas de pas precedent : il pose le repere et
+    // n'affiche pas encore de vitesse, plutot que d'en inventer une.
+    if (focusHudPrevDistance === null) {
+        focusHudPrevDistance = kart.totalDistance;
+        focusHudEl.classList.add('is-on');
+    } else if (frameMs > 0) {
+        const moved = kart.totalDistance - focusHudPrevDistance;
+        focusHudPrevDistance = kart.totalDistance;
+
+        // Un recul contre un tuyau rendrait une vitesse negative : le compteur
+        // affiche l'allure, pas le sens de la marche.
+        const raw = Math.max(0, (moved * 1000) / frameMs);
+        const k = frameMs / FOCUS_HUD_SMOOTH_MS;
+        focusHudSpeed += (raw - focusHudSpeed) * (k > 1 ? 1 : k);
+    }
+
+    const lap = Math.min(WORLD.laps || 1, Math.floor(kart.totalDistance / WORLD.width) + 1);
+    const text = `TOUR ${lap}/${WORLD.laps || 1} \u00B7 ${Math.round(focusHudSpeed)} px/s`;
+
+    // Le DOM n'est touche que quand le texte change vraiment : a 60 images par
+    // seconde, la vitesse arrondie ne bouge pas a chaque frame.
+    if (text !== focusHudText) {
+        focusHudText = text;
+        focusHudEl.textContent = text;
+    }
+}
+
 function setFocus(kartId) {
     focusedKartId = kartId;
     lastFocusCameraX = null;
+    resetFocusHud();
     updateFocusMarks();
 }
 
@@ -638,6 +712,9 @@ let currentRaceT0 = null;
 function wipeSceneElements() {
     focusedKartId = null;
     lastFocusCameraX = null;
+    // Le cartouche mesure une vitesse par ecarts de distance : son repere ne
+    // vaut plus rien quand les compteurs repartent de zero.
+    resetFocusHud();
 
     if (lakituEls) {
         lakituEls.wrapper.remove();
@@ -1189,6 +1266,16 @@ function reconcileShrink(kart) {
     const els = kartEls[kart.id];
     if (!els) return;
     els.scaler.style.setProperty('--kart-scale', kart.isShrunk ? WORLD.shrinkScale : 1);
+
+    // L'ecrasement se pose sur le meme calque, et les deux se multiplient : un
+    // kart peut etre petit ET aplati, ou aplati mais deja regrossi, les deux
+    // comptes a rebours etant independants.
+    //
+    // Contrairement au rapetissement, l'ampleur est ecrite en CSS et non
+    // transmise : la taille du petit est une valeur de gameplay — elle decide de
+    // qui passe sous qui — alors qu'un kart aplati a exactement la meme emprise
+    // qu'avant. Ce n'est plus que du dessin.
+    els.scaler.classList.toggle('is-flat', !!kart.isFlat);
 }
 
 function reconcileDom() {
@@ -1781,10 +1868,11 @@ function stepGrandPrixAnimation(gameNow) {
     }
 }
 
-function renderState(gameNow, screenWidth) {
+function renderState(gameNow, screenWidth, frameMs) {
     const renderMargin = GAME_CONFIG.rendering.bufferZone;
 
     updateRenderCamera();
+    updateFocusHud(frameMs);
 
     if (domDirty) {
         domDirty = false;
@@ -2118,6 +2206,7 @@ function writeKart(kart, ta, tb, t) {
     kart.isShrunk = !!(flags & 32);
     kart.isBill = !!(flags & 64);
     kart.bumped = !!(flags & 128);
+    kart.isFlat = !!(flags & 256);
     kart.rank = ta[5];
 
     // Un serveur qui ne date pas le malus (`hitEnd` absent) ne doit pas priver
@@ -2541,10 +2630,14 @@ function animate(timestamp) {
             worldState.bgCameraX = (worldState.bgCameraX + advance / 2) % WORLD.width;
         }
 
+        // Duree de l'image, bornee : un onglet revenu au premier plan rend un
+        // premier ecart de plusieurs secondes, dont personne n'a rien a faire.
+        const frameMs = lastFrameTime ? Math.min(timestamp - lastFrameTime, 100) : 0;
+
         // Les positions affichees sont celles de `renderTime` : la toupie, les
         // frames de carapace et la levitation des boites doivent suivre la meme
         // horloge, sinon elles avancent 120 ms devant la scene.
-        renderState(renderTime, screenWidth);
+        renderState(renderTime, screenWidth, frameMs);
     }
 
     lastFrameTime = timestamp;

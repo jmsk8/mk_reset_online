@@ -24,6 +24,7 @@ const FLAG_FINISHED = 16; // a franchi la ligne -> tour d'honneur
 const FLAG_SHRUNK = 32;   // rapetisse par l'eclair -> sprite reduit
 const FLAG_BILL = 64;     // transforme en Bill Ball -> sprite remplace
 const FLAG_BUMPED = 128;  // arrete net par un pipe : arret et recul, sprite inchange
+const FLAG_FLAT = 256;    // ecrase par un kart reste grand -> sprite aplati
 
 function round(value, decimals) {
     const factor = Math.pow(10, decimals);
@@ -40,6 +41,7 @@ function kartFlags(kart) {
     if (kart.isShrunk) flags |= FLAG_SHRUNK;
     if (kart.isBill) flags |= FLAG_BILL;
     if (kart.bumped) flags |= FLAG_BUMPED;
+    if (kart.isFlat) flags |= FLAG_FLAT;
     return flags;
 }
 
@@ -257,6 +259,7 @@ module.exports = {
     FLAG_SHRUNK,
     FLAG_BILL,
     FLAG_BUMPED,
+    FLAG_FLAT,
     buildHello,
     buildSnapshot,
     filterEvents

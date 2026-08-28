@@ -263,9 +263,18 @@
 .kart-scaler {
     width: 100%;
     line-height: 0;
-    transform: scale(var(--kart-scale, 1));
+    transform: scale(var(--kart-scale, 1)) scale(var(--kart-flat-x, 1), var(--kart-flat-y, 1));
     transform-origin: bottom center;
     transition: transform 220ms ease-out;
+}
+
+/* Écrasé par un kart resté grand. Deuxième facteur d'échelle et non un
+   remplacement du premier : un kart peut être petit ET aplati, les deux malus
+   ayant leur propre compte à rebours. Le sprite s'élargit un peu en même temps
+   qu'il s'aplatit — une galette, pas un kart rétréci en hauteur. */
+.kart-scaler.is-flat {
+    --kart-flat-x: 1.35;
+    --kart-flat-y: 0.28;
 }
 
 .kart-sprite {
@@ -679,6 +688,32 @@
 .race-status.is-offline .race-status-dot {
     background-color: #e5534b;
     box-shadow: 0 0 6px rgba(229, 83, 75, 0.9);
+}
+
+/* ── Cartouche du kart suivi ──────────────────────────────────────────────
+   Pendant de .race-status, dans le coin oppose : meme calque, meme typo, meme
+   retrait du pointeur. Masque par defaut — il n'apparait que quand la camera
+   suit un kart, et `is-on` est pose par le rendu. */
+.race-focus-hud {
+    position: absolute;
+    bottom: 8px;
+    left: 12px;
+    z-index: 800;
+    font-family: monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: #ffffff;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.35);
+    padding: 3px 8px;
+    border-radius: 3px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.race-focus-hud.is-on {
+    opacity: 0.9;
 }
 
 @keyframes statusPulse {

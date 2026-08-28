@@ -851,6 +851,34 @@
             // Ecart au premier a partir duquel on ne paie plus que le minimum.
             shrinkFalloffDistance: 3500,
 
+            // ── L'ecrasement ─────────────────────────────────────────────
+            //
+            // Un kart rapetisse passe sous un kart reste normal : il ne se fait
+            // pas bousculer, il se fait rouler dessus. C'est le seul contact du
+            // jeu ou les deux karts ne s'echangent rien — le gros ne sent rien,
+            // le petit garde sa trajectoire, et tout le prix est dans l'etat qui
+            // suit.
+            //
+            // Une etoile ou un bill n'ecrasent pas : ils blessent, et le petit
+            // part en tete-a-queue comme devant n'importe quel objet. Ecraser est
+            // une affaire de gabarit, pas de puissance.
+            //
+            // Duree maximale, et non duree ferme : l'aplatissement s'arrete a
+            // la fin du rapetissement s'il tombe avant. On n'ecrase que ce qui
+            // est petit, donc redevenir grand rend sa forme au kart.
+            //
+            // Le marche va dans les deux sens, et c'est ce qui le rend juste :
+            // se faire ecraser au dernier moment ne coute presque rien, et en
+            // echange l'ecrasement ne retarde JAMAIS le retour a la taille
+            // normale. Le rapetissement garde son propre calendrier.
+            flatMs: 3000,
+
+            // Ce que coute d'etre aplati, en facteur de vitesse. Il s'applique
+            // par-dessus tout le reste, `speedFactor` compris : un kart a la
+            // fois petit et aplati roule a 0.5 * 0.9. Ca ne l'arrete pas — c'est
+            // un kart qui traine, pas un kart en panne.
+            flatSpeedFactor: 0.9,
+
             // Ce qui decide entre les deux bornes : la part du RANG face a celle
             // de la DISTANCE, entre 0 et 1.
             //

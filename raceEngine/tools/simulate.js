@@ -182,6 +182,33 @@ function trueLap(cfg, state) {
 // compte en centaines.
 const CALM_BUMP_EPS = 1;
 
+// Un pas tranquille se scinde en deux, et les distinguer est tout l'objet de la
+// decomposition : le kart peut rouler SUR sa cible d'elan — c'est la croisiere —
+// ou EN DESSOUS, en train d'y remonter.
+//
+// Le second cas n'a aucun drapeau pour le signaler : apres un tete-a-queue le
+// moteur remet la vitesse a zero et rend la main, si bien que la remontee depuis
+// l'arret se presente exactement comme une croisiere ordinaire. C'est la cible
+// qui les separe, et elle seule.
+//
+// Le kart peut aussi se trouver AU-DESSUS de sa cible : quand elle redescend, la
+// deceleration est quatre fois plus lente que la relance. C'est de la croisiere
+// aussi — d'ou un seuil et non une egalite.
+const CRUISE_EPS = 0.02;
+
+// En dessous de la moitie de sa cible, le kart ne rattrape plus un ecart d'elan :
+// il repart d'un arret. Le seuil ne separe pas deux mecanismes — c'est le meme
+// rattrapage — mais deux ordres de grandeur, et c'est ce qui permet de dire si
+// le retard vient des chocs ou du suivi ordinaire.
+const DEEP_RATIO = 0.5;
+
+// Meme formule que `getMomentumSpeed` dans le moteur. Recopiee ici faute d'etre
+// exportee : si elle change la-bas, cette decomposition ment sans rien signaler.
+function targetSpeedOf(cfg, kart) {
+    const minRatio = cfg.speeds.momentumMinRatio;
+    return kart.stats.topSpeed * (minRatio + (1.0 - minRatio) * kart.momentum);
+}
+
 function isCalm(cfg, kart, now) {
     return kart.state === 'running'
         && !kart.finished
@@ -244,6 +271,13 @@ function runRace(startOrder, cfg) {
     const calmDist = {};
     const calmMs = {};
     const prevCalm = {};
+    // La scission du temps tranquille. `cruiseMs + catchMs` vaut exactement
+    // `calmMs` : la decomposition ne perd ni ne double aucun pas.
+    const cruiseDist = {};
+    const cruiseMs = {};
+    const catchMs = {};
+    const deepMs = {};
+    const prevSettled = {};
     for (const kart of state.karts) {
         hits[kart.charName] = 0;
         bumps[kart.charName] = 0;
@@ -254,6 +288,11 @@ function runRace(startOrder, cfg) {
         calmDist[kart.charName] = 0;
         calmMs[kart.charName] = 0;
         prevCalm[kart.charName] = false;
+        cruiseDist[kart.charName] = 0;
+        cruiseMs[kart.charName] = 0;
+        catchMs[kart.charName] = 0;
+        deepMs[kart.charName] = 0;
+        prevSettled[kart.charName] = false;
     }
 
     // Place de chaque kart a la fin de chaque tour. Le releve se fait au moment
@@ -293,11 +332,28 @@ function runRace(startOrder, cfg) {
             prevDist[kart.charName] = kart.totalDistance;
 
             const calm = isCalm(cfg, kart, simTime);
+            const target = targetSpeedOf(cfg, kart);
+            const settled = kart.absoluteVelocity >= target * (1 - CRUISE_EPS);
+
             if (calm && prevCalm[kart.charName]) {
                 calmDist[kart.charName] += moved;
                 calmMs[kart.charName] += DT_MS;
+
+                // Encadre des deux cotes, comme le pas tranquille lui-meme : le
+                // deplacement a eu lieu pendant l'intervalle, il ne revient a la
+                // croisiere que si les deux bouts y sont.
+                if (settled && prevSettled[kart.charName]) {
+                    cruiseDist[kart.charName] += moved;
+                    cruiseMs[kart.charName] += DT_MS;
+                } else {
+                    catchMs[kart.charName] += DT_MS;
+                    if (kart.absoluteVelocity < target * DEEP_RATIO) {
+                        deepMs[kart.charName] += DT_MS;
+                    }
+                }
             }
             prevCalm[kart.charName] = calm;
+            prevSettled[kart.charName] = settled;
 
             if (kart.state === 'grid' || kart.finished) continue;
             raceMs[kart.charName] += DT_MS;
@@ -350,7 +406,8 @@ function runRace(startOrder, cfg) {
                     grid: state.karts.map(k => k.charName),
                     ms: simTime,
                     got, gotLap, fired, firedLap, lapDrift, ticks: tick + 1,
-                    hits, bumps, slowMs, raceMs, dist, calmDist, calmMs
+                    hits, bumps, slowMs, raceMs, dist, calmDist, calmMs,
+                    cruiseDist, cruiseMs, catchMs, deepMs
                 };
             }
         }
@@ -362,7 +419,8 @@ function runRace(startOrder, cfg) {
 
 const stat = {};
 for (const name of ROSTER) {
-    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, bumps: 0, slowMs: 0, raceMs: 0, dist: 0, calmDist: 0, calmMs: 0 };
+    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, bumps: 0, slowMs: 0, raceMs: 0, dist: 0, calmDist: 0, calmMs: 0,
+        cruiseDist: 0, cruiseMs: 0, catchMs: 0, deepMs: 0 };
 }
 
 // Places tour par tour. `lapSum` sert la trajectoire moyenne, `lapDist` la
@@ -435,6 +493,10 @@ for (let r = 0; r < RACES; r++) {
         stat[name].dist += race.dist[name] || 0;
         stat[name].calmDist += race.calmDist[name] || 0;
         stat[name].calmMs += race.calmMs[name] || 0;
+        stat[name].cruiseDist += race.cruiseDist[name] || 0;
+        stat[name].cruiseMs += race.cruiseMs[name] || 0;
+        stat[name].catchMs += race.catchMs[name] || 0;
+        stat[name].deepMs += race.deepMs[name] || 0;
     }
 
     race.order.forEach((name, index) => {
@@ -600,6 +662,52 @@ console.log('  que l\'elan ne decide de la vitesse — ni objet, ni choc, ni bor
 console.log('  piste, ni freinage. C\'est le rythme de croisiere nu, celui que');
 console.log('  `momentum` produit a lui seul. part tranq. : la part de la course');
 console.log('  passee dans ce regime — un kart souvent bouscule la voit fondre.');
+// Le regime tranquille, decompose. La colonne `vit. tranq.` melange deux choses
+// que rien ne distingue de l'exterieur : rouler a son rythme, et y remonter
+// apres un arret. Les separer repond a une question precise — l'ecart de croisiere
+// entre karts vient-il du regime lui-meme, ou seulement du temps passe a le
+// rejoindre ?
+//
+// La cible d'elan est tiree dans le meme intervalle pour tous les karts, et
+// `momentumChangeSpeed` ne depend d'aucune statistique : si la croisiere pure se
+// tient sur une seule valeur, c'est que le regime est bien identique pour tous et
+// que tout l'ecart vit dans le rattrapage. Sinon, le suivi de cible coute
+// vraiment quelque chose, et l'acceleration est une seconde stat de vitesse.
+console.log('');
+console.log('Le regime tranquille, decompose');
+console.log(pad('kart', w) + padL('acc', 6) + padL('croisiere', 11) + padL('% pointe', 10)
+    + padL('rattrapage', 12) + padL('dont relance', 14) + padL('vit. tranq.', 13));
+console.log('-'.repeat(w + 6 + 11 + 10 + 12 + 14 + 13));
+for (const name of rows) {
+    const s = stat[name];
+    const cruiseSpeed = s.cruiseMs ? s.cruiseDist / (s.cruiseMs / 1000) : 0;
+    const calmSpeed = s.calmMs ? s.calmDist / (s.calmMs / 1000) : 0;
+    console.log(pad(name, w)
+        + padL(STATS[name].acceleration.toFixed(2), 6)
+        + padL(Math.round(cruiseSpeed), 11)
+        + padL(pct(cruiseSpeed, STATS[name].topSpeed).toFixed(1) + ' %', 10)
+        + padL((s.catchMs / done / 1000).toFixed(1) + ' s', 12)
+        + padL((s.deepMs / done / 1000).toFixed(1) + ' s', 14)
+        + padL(Math.round(calmSpeed), 13));
+}
+console.log('');
+console.log('  croisiere : vitesse tenue pendant les seuls pas ou le kart est deja');
+console.log('  sur sa cible d\'elan. rattrapage : temps par course passe tranquille');
+console.log('  mais SOUS cette cible — le moteur n\'a rien pour le signaler, seule la');
+console.log('  cible le revele. dont relance : la part de ce rattrapage passee sous');
+console.log(`  ${(DEEP_RATIO * 100).toFixed(0)} % de la cible, soit un redemarrage apres arret et non un`);
+console.log('  simple retard de suivi.');
+const cruiseRatios = ROSTER.map(n => stat[n].cruiseMs
+    ? 100 * (stat[n].cruiseDist / (stat[n].cruiseMs / 1000)) / STATS[n].topSpeed : 0);
+const cruiseSpread = Math.max(...cruiseRatios) - Math.min(...cruiseRatios);
+console.log(`  ecart de croisiere entre le meilleur et le pire : ${cruiseSpread.toFixed(1)} point`
+    + ' de sa propre pointe.');
+console.log(cruiseSpread < 1
+    ? '  Sous un point : le regime de croisiere est le meme pour tous, et tout'
+      + ' l\'ecart\n  de vitesse tranquille vient du rattrapage.'
+    : '  Au-dessus d\'un point : suivre sa cible coute vraiment quelque chose, et'
+      + ' l\'acceleration\n  agit sur la vitesse et pas seulement sur la relance.');
+
 console.log(`attendu si tous egaux : ${(100 * p0).toFixed(1)} % de victoires, place moyenne ${((N + 1) / 2).toFixed(2)}`);
 console.log(`bruit d'echantillonnage a ${done} courses : +/- ${sigma.toFixed(1)} point (1 ecart-type)`);
 console.log('  ++ / -- signale un ecart d\'au moins 2 ecarts-types, soit ce qui ne s\'explique plus par le hasard');
