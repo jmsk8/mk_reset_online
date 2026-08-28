@@ -2596,6 +2596,32 @@
         // sans degats. Deux autres intouchables, eux, se traversent.
         const billOnBill = a.isBill && b.isBill;
         if (bothRam && !billOnBill) return;
+
+        // ── L'ecrasement ────────────────────────────────────────────────────
+        //
+        // Un kart rapetisse qui rencontre un kart reste normal passe dessous. Le
+        // couple ne s'echange alors RIEN : pas d'impulsion, pas de refus de
+        // braquage, pas de separation. C'est le seul contact du jeu qui sorte
+        // sans avoir rien deplace, et les trois consequences voulues en
+        // decoulent d'un coup — le gros roule comme s'il n'avait rien touche, le
+        // petit garde sa trajectoire, et les carrosseries se traversent.
+        //
+        // Place APRES le bloc des intouchables, et c'est ce qui donne la regle
+        // « une etoile ne l'ecrase pas, elle le blesse » : le tete-a-queue a
+        // deja ete pose au-dessus, et `isRamming` disqualifie ici l'ecraseur.
+        //
+        // Rien a defaire quand le petit regrossit : le tick suivant le trouve a
+        // taille normale, la paire retombe dans le cas ordinaire, et le
+        // chevauchement accumule se resorbe en poussant l'ecraseur. La poussee
+        // du retour a la taille normale n'est donc ecrite nulle part — elle est
+        // ce qui reste quand cette exception cesse de s'appliquer.
+        const crushA = isShrunkAt(a, now) && !isShrunkAt(b, now) && !isRamming(b);
+        const crushB = isShrunkAt(b, now) && !isShrunkAt(a, now) && !isRamming(a);
+        if (crushA || crushB) {
+            crushKart(cfg, now, crushA ? a : b, events);
+            return;
+        }
+
         const scale = billOnBill ? cfg.bill.pushFactor : 1;
 
         const iA = contactInertia(cfg, a);
@@ -3070,6 +3096,35 @@
         }
     }
 
+    // Rapetisse a l'instant present. La date fait foi et non le drapeau : celui-ci
+    // n'est rafraichi qu'une fois par tick, avant les contacts, et un kart qui
+    // regrossit pile pendant la passe doit deja compter comme grand.
+    function isShrunkAt(kart, now) {
+        return kart.shrinkEndTime > now;
+    }
+
+    // L'ecrasement. Le petit est aplati, et c'est tout ce qui se passe : aucune
+    // impulsion, aucune separation, aucun tete-a-queue. Voir `lightning.flatMs`.
+    //
+    // La date est bornee par la fin du rapetissement : on n'ecrase que ce qui
+    // est petit, donc redevenir grand rend sa forme au kart, meme si les trois
+    // secondes ne sont pas ecoulees. Se faire ecraser au dernier moment ne coute
+    // donc presque rien — c'est la contrepartie de ce que l'ecrasement ne
+    // retarde jamais le regrossissement.
+    //
+    // La borne est posee ici, une fois, plutot que relue a chaque tick : le
+    // marche se conclut a l'instant du contact, et l'etat n'a ensuite qu'une
+    // seule date a regarder comme tous les autres.
+    //
+    // Repoussee tant que le contact dure — un gros qui reste dessus le garde
+    // plat — mais l'evenement ne part qu'a la premiere fois, sans quoi il
+    // tomberait trente fois par seconde.
+    function crushKart(cfg, now, kart, events) {
+        const wasFlat = now < kart.flatEndTime;
+        kart.flatEndTime = Math.min(now + cfg.lightning.flatMs, kart.shrinkEndTime);
+        if (!wasFlat) events.push({ type: 'kartCrushed', kartId: kart.id });
+    }
+
     // Le tete-a-queue lui-meme, sans aucune condition : c'est a l'appelant de
     // decider qui l'encaisse. Chaque source a ses propres immunites.
     function spinOutKart(cfg, now, kart, events) {
@@ -3286,6 +3341,12 @@
             // son retour en course.
             kart.bumped = now < kart.bumpEndTime;
 
+            // Meme raison et meme place que le precedent : le protocole n'a pas
+            // d'horloge, le drapeau se lit tel quel dans le snapshot. Pose hors
+            // de la branche 'running' pour qu'un kart aplati puis percute ne
+            // garde pas un drapeau fige pendant son tete-a-queue.
+            kart.isFlat = now < kart.flatEndTime;
+
             // Les deux canaux de choc s'amortissent seuls, avant d'etre
             // consommes par le deplacement. Ils valent pour les deux etats : une
             // toupie encaisse un choc et le porte, elle aussi.
@@ -3396,6 +3457,14 @@
                 } else if (kart.isShrunk) {
                     kart.isShrunk = false;
                     events.push({ type: 'shrinkOff', kartId: kart.id });
+                }
+
+                // Apres le rapetissement, et multiplie par-dessus : les deux
+                // malus se cumulent. Un kart aplati traine, il ne s'arrete pas —
+                // c'est la difference avec le tete-a-queue, et c'est pour ca que
+                // rien d'autre que la vitesse n'est touche ici.
+                if (kart.isFlat) {
+                    effectiveSpeed *= cfg.lightning.flatSpeedFactor;
                 }
 
                 // La descente de fin de vol. Elle ne peut pas passer par
@@ -3944,6 +4013,13 @@
                 bumpEndTime: 0,
                 bumpRecoilLeft: 0,
                 bumped: false,
+
+                // Ecrase par un kart reste grand. Date et drapeau, comme le
+                // reste. La date ne depasse jamais celle du rapetissement : un
+                // kart redevenu grand n'est plus plat.
+                flatEndTime: 0,
+                isFlat: false,
+
                 // Contact en cours avec un tuyau pendant un tete-a-queue : la
                 // toupie est bloquee tant qu'il tient, sans que ce soit un choc.
                 pipeBlocked: false,
