@@ -369,6 +369,27 @@
                 // maniabilite sans etre touchee.
                 massBias: 2.0,
 
+                // Ce que pese un bill dans un contact, en multiples de la masse
+                // qu'aurait le kart sous la carapace. Il ne se lit pas comme un
+                // poids mais comme un RAPPORT : a 60, un bill encaisse environ
+                // un soixantieme de ce qu'il inflige — assez pour que rien de ce
+                // qu'il percute ne le devie de sa ligne.
+                //
+                // C'est un multiplicateur et non un terme de `massBias` : le
+                // bill n'est pas un kart lourd, c'est un projectile, et son
+                // immunite ne doit pas bouger quand on rejoue l'ecart de poids
+                // du plateau.
+                //
+                // Deux bills portent tous les deux ce facteur, qui s'annule
+                // entre eux : ils retombent sur un partage moitie-moitie,
+                // attenue par `bill.pushFactor`. Un bill reste donc la seule
+                // chose qui devie un bill, et ce chiffre n'a pas a le dire.
+                //
+                // Le monter davantage ne se verrait plus : a 60 la deviation
+                // residuelle vaut deja un tiers de profondeur, que le
+                // recentrage du bill (`bill.centerSpeed`) efface aussitot.
+                billMassFactor: 60,
+
                 // Un kart en tete-a-queue ne pilote plus, il encaisse — mais il
                 // n'est plus un fantome pour autant. Ce facteur majore sa masse :
                 // au-dessus de 1, il fait plus obstacle qu'il ne se fait pousser,

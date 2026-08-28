@@ -2387,13 +2387,30 @@
     // legers perdent, et un plateau de masses egales reste a 50/50 quel que
     // soit le reglage.
     //
-    // Le facteur de tete-a-queue reste un multiplicateur pose par-dessus, et
-    // non un terme de l'exposant : un kart en toupie ne pilote plus, il traverse
-    // la piste en travers sans rien pour se rattraper. Il fait obstacle plutot
-    // qu'il ne se laisse pousser, et ca vaut pareil pour un leger et un lourd.
+    // Les deux facteurs d'etat sont des multiplicateurs poses par-dessus, et non
+    // des termes de l'exposant : ils ne decrivent pas un gabarit mais une
+    // situation, et valent donc pareil pour un leger et pour un lourd.
+    //
+    //   TETE-A-QUEUE : un kart en toupie ne pilote plus, il traverse la piste en
+    //   travers sans rien pour se rattraper. Il fait obstacle plutot qu'il ne se
+    //   laisse pousser.
+    //
+    //   BILL : ce n'est plus un kart, c'est un projectile lance. Rien de ce
+    //   qu'il percute ne le devie, et ca se dit ici et nulle part ailleurs — pas
+    //   par une exception dans la resolution, mais par le seul chiffre qui
+    //   decide deja qui cede a qui. Les deux karts se parlent donc toujours dans
+    //   la meme langue, la masse, et les trois effets d'un contact suivent d'un
+    //   coup : le bill n'est pas ejecte, ne perd pas son cap, et ne recule pas
+    //   d'un pouce a la separation.
+    //
+    //   Deux bills, eux, portent le meme facteur : il s'annule entre eux et ils
+    //   retombent sur un partage moitie-moitie, attenue par `bill.pushFactor`.
+    //   C'est ce qui fait qu'un bill reste la seule chose qui devie un bill,
+    //   sans avoir a l'ecrire nulle part.
     function contactMass(cfg, kart) {
         const c = cfg.physics.contact;
         const m = Math.pow(kart.stats.mass, c.massBias);
+        if (kart.isBill) return m * c.billMassFactor;
         return kart.state === 'hit' ? m * c.spinMassFactor : m;
     }
 
