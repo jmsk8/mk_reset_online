@@ -170,6 +170,50 @@
             // et son jitter.
             steerResponse: 5,
 
+            // ── Le bord de piste ─────────────────────────────────────────
+            //
+            // Un mur glissant : infranchissable, mais sans rebond ni arret. Le
+            // kart garde son cap, il y perd seulement de la vitesse en raclant.
+            // A ne pas confondre avec le tuyau (`pipe`), qui lui arrete net,
+            // fait reculer et fige le sprite sur une pose de choc.
+            //
+            // Le frottement se declenche sur la seule PRESENCE au bord, pas sur
+            // un choc : etre plaque contre le mur suffit. Un kart qui s'y fait
+            // pousser et un kart qui doit s'y coller pour esquiver paient donc
+            // exactement pareil, ce qui est bien le meme prix a payer.
+            //
+            // Il n'y a rien ici pour les objets : carapaces et bananes gardent
+            // leur rebond, le mur n'est glissant que pour les karts.
+            wall: {
+                // Ce que le mur coute, et c'est le seul chiffre a bouger pour
+                // durcir ou adoucir la mecanique : la vitesse vers laquelle il
+                // tire, en fraction de la pointe du kart. A 1 il ne coute plus
+                // rien ; a 0.5 longer le mur revient a se prendre un eclair.
+                //
+                // A comparer a ses deux voisins pour se situer : le frein de
+                // bord de l'IA vaut 0.78 (`ai.edgeBrakeFactor`) et le
+                // rapetissement 0.50 (`lightning.speedFactor`). Racler est plus
+                // cher que lever le pied, moins cher que se faire ecraser.
+                //
+                // Le plancher n'est jamais tout a fait atteint : la relance du
+                // moteur pousse en sens inverse pendant qu'on frotte, et
+                // l'equilibre se pose `accelerationRate * acceleration / grip`
+                // au-dessus — une vingtaine de px/s aux reglages actuels. Un
+                // lourd, qui relance moins bien, y descend donc un peu plus bas
+                // qu'un vif : le mur coute a chacun ce que vaut sa reprise.
+                speedFactor: 0.72,
+
+                // Vitesse a laquelle le frottement mord, en 1/s, et rien de
+                // plus — le plafond du malus reste `speedFactor`. Se lit comme
+                // les autres taux du moteur : 8 vaut une constante de temps de
+                // 125 ms, donc un mur qui se fait sentir presque tout de suite.
+                //
+                // Le baisser rend le mur pardonnable en le touchant du bout de
+                // l'aile, et ne se paie qu'en y restant ; le monter fait payer
+                // le moindre frottement plein tarif.
+                grip: 8
+            },
+
             // ── Contact entre karts ──────────────────────────────────────
             //
             // Un contact n'est plus un saut de position : c'est un choc, et il
@@ -302,6 +346,29 @@
                 // poussee continue qu'il remplace.
                 decay: 5.5,
 
+                // Ce que le poids pese dans un contact, en exposant sur la
+                // masse : `masse ^ massBias`. Meme forme que `massDragAccel` et
+                // `massDragAgility`, et meme lecture — le pivot est la masse 1,
+                // soit le poids moyen, donc les lourds gagnent exactement ce que
+                // les legers perdent et un plateau de masses egales reste a
+                // 50/50 quoi qu'on mette ici.
+                //
+                // A 1, le contact prend la masse telle quelle, et l'axe poids ne
+                // rend que 1.45 entre bowser et koopa : le choc etait presque
+                // equitable la ou on attend qu'un poids lourd fasse valoir son
+                // poids. A 2, le leger encaisse 2.1 fois ce que prend le lourd.
+                //
+                // Ce que ca deplace, dans l'ordre de ce qui se voit :
+                // qui part le plus loin apres l'ejection, qui garde son volant
+                // (`steerDeny`), et qui cede le terrain a la separation. Le
+                // monter donne au lourd un jeu de bulldozer ; le baisser vers 1
+                // rend les contacts a la trajectoire plutot qu'au gabarit.
+                //
+                // C'est le seul levier a poids des contacts, et il n'agit que
+                // la : la masse continue de servir a l'acceleration et a la
+                // maniabilite sans etre touchee.
+                massBias: 2.0,
+
                 // Un kart en tete-a-queue ne pilote plus, il encaisse — mais il
                 // n'est plus un fantome pour autant. Ce facteur majore sa masse :
                 // au-dessus de 1, il fait plus obstacle qu'il ne se fait pousser,
@@ -379,7 +446,7 @@
                 //
                 // `durationMs` sert aussi au turbo de depart (race.turboBoostMs
                 // en fixe la duree, la pointe et la montee viennent d'ici).
-                shroom: { multiplier: 1.50, durationMs: 1500, ramp: 6 },
+                shroom: { multiplier: 1.50, durationMs: 1500, ramp: 10 },
 
                 // Duree fixe, identique quel que soit le rang. La pointe est en
                 // dessous de celle du champignon : l'etoile ne s'achete pas en
@@ -745,8 +812,8 @@
             // pas a prendre la tete et a s'y installer. Mettre `overtakeCostMs` a
             // 0 rend la duree fixe.
             durationMs: 7000,
-            overtakeCostMs: 900,
-            minDurationMs: 2000,
+            overtakeCostMs: 800,
+            minDurationMs: 3000,
 
             // Retour au calme. La vitesse redescend lineairement de la vitesse de
             // croisiere a celle du kart sur cette duree ; le kart a deja repris sa
