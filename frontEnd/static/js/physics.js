@@ -109,8 +109,9 @@
         let best = 0;
         for (let i = 0; i < names.length; i++) {
             const top = table[names[i]].topSpeed;
-            const shroom = top + cfg.speeds.shroomBoost;
-            const star = top * cfg.speeds.starSpeedMultiplier;
+            const boosts = cfg.speeds.boosts;
+            const shroom = top * boosts.shroom.multiplier;
+            const star = top * boosts.star.multiplier;
             if (shroom > best) best = shroom;
             if (star > best) best = star;
         }
@@ -120,7 +121,35 @@
     // Vitesse de croisiere du bill : le multiplicateur du porteur, releve au
     // plancher commun quand celui-ci est plus haut.
     function getBillSpeed(cfg, state, kart) {
-        return Math.max(kart.stats.topSpeed * cfg.bill.speedMultiplier, state.billFloorSpeed);
+        return Math.max(kart.stats.topSpeed * cfg.speeds.boosts.bill.multiplier,
+                        state.billFloorSpeed);
+    }
+
+    // La pointe qu'un kart sous objet vise, et la vivacite avec laquelle il y
+    // monte. Un seul modele pour les trois objets : cf. `speeds.boosts`.
+    //
+    // Rend null quand aucun n'est actif — c'est ce null, et lui seul, qui fait
+    // basculer la vitesse entre le regime « elan » et le regime « objet ».
+    //
+    // Quand deux se cumulent, la pointe la plus haute gagne, avec sa propre
+    // montee. Le bill est traite a part et prime sur tout : c'est un projectile,
+    // rien ne le module — pas meme un champignon qu'il aurait garde.
+    function getActiveBoost(cfg, state, kart, now) {
+        const boosts = cfg.speeds.boosts;
+
+        if (kart.isBill) {
+            return { peak: getBillSpeed(cfg, state, kart), ramp: boosts.bill.ramp };
+        }
+
+        let best = null;
+        if (kart.starEndTime > now) {
+            best = { peak: kart.stats.topSpeed * boosts.star.multiplier, ramp: boosts.star.ramp };
+        }
+        if (kart.boostEndTime > now) {
+            const peak = kart.stats.topSpeed * boosts.shroom.multiplier;
+            if (!best || peak > best.peak) best = { peak: peak, ramp: boosts.shroom.ramp };
+        }
+        return best;
     }
 
     // Retire avec un sursis : l'objet reste affiche le temps qu'on voie le choc,
@@ -1983,6 +2012,12 @@
             kart.billStartedAt = now;
             kart.billEndTime = now + spec.durationMs;
             kart.billSlowUntil = 0;
+            // Meme regle que l'etoile : on ne peut pas etre intouchable et
+            // ecrase en meme temps. Le bill l'obtenait avant en primant sur le
+            // rapetissement dans le calcul de vitesse ; il l'efface maintenant,
+            // ce qui rend aussi sa taille au sprite au lieu de le laisser voler
+            // en miniature.
+            kart.shrinkEndTime = 0;
             // Ceux qui sont devant a l'instant du declenchement. Chacun rattrape
             // se retire de la liste et raccourcit le vol : la liste est donc a la
             // fois le compteur et la memoire de qui reste a doubler.
@@ -2008,9 +2043,11 @@
         }
 
         if (held.type === 'shroom') {
-            kart.boostEndTime = now + cfg.speeds.shroomDuration;
-            kart.absoluteVelocity = kart.stats.topSpeed;
-            kart.momentum = 1.0;
+            // Rien n'est pose sur la vitesse : elle part d'ou le kart en est et
+            // monte. La poser a `topSpeed` ici escamotait toute la premiere
+            // moitie de la montee, et un champignon pris a l'arret rendait
+            // autant qu'un champignon pris a pleine allure.
+            kart.boostEndTime = now + cfg.speeds.boosts.shroom.durationMs;
             events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
             kart.heldItem = null;
             kart.trailTime = 0;
@@ -2018,13 +2055,11 @@
         }
 
         if (held.type === 'star') {
-            kart.starEndTime = now + cfg.speeds.starDuration;
+            kart.starEndTime = now + cfg.speeds.boosts.star.durationMs;
             kart.isInvincible = true;
             // On ne peut pas etre invincible et ecrase en meme temps : l'etoile
             // rend sa taille au kart, comme elle le protege de la foudre a venir.
             kart.shrinkEndTime = 0;
-            kart.absoluteVelocity = kart.stats.topSpeed;
-            kart.momentum = 1.0;
             events.push({ type: 'starOn', kartId: kart.id });
             events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
             kart.heldItem = null;
@@ -3113,13 +3148,31 @@
                 updateAI(cfg, state, rng, now, kart, deltaTime);
                 updateBill(cfg, state, now, kart, events);
 
-                // Le bill compte comme un boost : sans ca son elan interne
-                // retomberait pendant le vol, et il sortirait de sa transformation
-                // au ralenti au lieu de finir sur sa lancee.
-                const isBoosted = kart.boostEndTime > now || kart.starEndTime > now || kart.isBill;
+                // Deux regimes, et un seul les separe : `boost`. Sous objet, la
+                // vitesse vise la pointe de l'objet et rien d'autre ; hors objet,
+                // elle suit l'elan du kart. Le bill compte comme un objet — sans
+                // ca son elan interne retomberait pendant le vol, et il sortirait
+                // de sa transformation au ralenti au lieu de finir sur sa lancee.
+                const boost = getActiveBoost(cfg, state, kart, now);
 
-                if (isBoosted) {
-                    kart.absoluteVelocity = kart.stats.topSpeed;
+                if (boost) {
+                    // La montee, et c'est tout ce qui se passe sous objet. Le
+                    // taux est celui d'une relance normale, multiplie par la
+                    // vivacite de l'objet : le kart le plus vif y monte donc un
+                    // peu plus vite, mais tous finissent sur leur propre pointe.
+                    //
+                    // Le `else` ramene d'un coup quand la pointe visee baisse —
+                    // un champignon qui s'eteint pendant une etoile, un bill qui
+                    // rend la main. Le regime « elan » n'a de toute facon pas le
+                    // droit de tenir une vitesse au-dessus de `topSpeed`.
+                    const rampRate = cfg.speeds.accelerationRate * kart.stats.acceleration * boost.ramp;
+                    if (kart.absoluteVelocity < boost.peak) {
+                        kart.absoluteVelocity = Math.min(boost.peak,
+                            kart.absoluteVelocity + rampRate * deltaTime);
+                    } else {
+                        kart.absoluteVelocity = boost.peak;
+                    }
+
                     kart.momentum = 1.0;
                     kart.nextMomentumChange = now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax);
                 } else {
@@ -3146,21 +3199,28 @@
                     }
                 }
 
+                // La pointe sous objet est deja dans `absoluteVelocity` : il ne
+                // reste ici que ce qui peut la rogner.
                 let effectiveSpeed = kart.absoluteVelocity;
-                if (kart.boostEndTime > now) {
-                    effectiveSpeed = kart.stats.topSpeed + cfg.speeds.shroomBoost;
+
+                // Freiner au bord et rentrer au ralenti apres l'arrivee sont deux
+                // decisions de pilotage, et un objet n'est pas du pilotage : il
+                // ne se module pas. L'etoile et le bill y echappaient deja, le
+                // champignon les rejoint — c'est la seule facon que les trois
+                // rendent bien le multiplicateur qu'on leur donne.
+                if (!boost) {
+                    if (kart.finished) {
+                        effectiveSpeed = Math.min(effectiveSpeed,
+                            kart.stats.topSpeed * cfg.race.finishedSpeedRatio);
+                    }
+                    if (now < kart.brakeUntil) {
+                        effectiveSpeed *= cfg.ai.edgeBrakeFactor;
+                    }
                 }
 
-                if (kart.finished) {
-                    effectiveSpeed = Math.min(effectiveSpeed, kart.stats.topSpeed * cfg.race.finishedSpeedRatio);
-                }
-
-                if (now < kart.brakeUntil) {
-                    effectiveSpeed *= cfg.ai.edgeBrakeFactor;
-                }
-
+                // L'invincibilite ne dit plus rien de la vitesse : elle ne suit
+                // que la date de l'etoile.
                 if (kart.starEndTime > now) {
-                    effectiveSpeed = Math.max(effectiveSpeed, kart.stats.topSpeed * cfg.speeds.starSpeedMultiplier);
                     kart.isInvincible = true;
                 } else if (kart.isInvincible) {
                     kart.isInvincible = false;
@@ -3179,13 +3239,13 @@
                     events.push({ type: 'shrinkOff', kartId: kart.id });
                 }
 
-                // Le bill passe en dernier et prime sur tout : rien ne ralentit un
-                // projectile. La descente qui suit ramene la vitesse a celle du
-                // kart, sans jamais le freiner en dessous — d'ou le Math.max.
+                // La descente de fin de vol. Elle ne peut pas passer par
+                // `absoluteVelocity` : le kart n'est plus sous objet, et le
+                // regime « elan » le ramenerait a `topSpeed` d'un coup. Elle
+                // ramene donc la vitesse a celle du kart en `slowdownMs`, sans
+                // jamais le freiner en dessous — d'ou le Math.max.
                 const billSpeed = getBillSpeed(cfg, state, kart);
-                if (kart.isBill) {
-                    effectiveSpeed = billSpeed;
-                } else if (kart.billSlowUntil > now) {
+                if (!kart.isBill && kart.billSlowUntil > now) {
                     const left = (kart.billSlowUntil - now) / cfg.bill.slowdownMs;
                     effectiveSpeed = Math.max(
                         effectiveSpeed,
