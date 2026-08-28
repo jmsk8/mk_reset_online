@@ -799,14 +799,37 @@
             speedFactor: 0.5,
             scale: 0.5,
 
-            // Duree du rapetissement, interpolee lineairement sur l'ecart au
-            // premier. Le leader paie plein tarif, celui qui est deja largue s'en
-            // sort vite : l'eclair vient du fond de grille, il n'a pas a enfoncer
-            // ceux qui y sont deja. Au-dela de `shrinkFalloffDistance` c'est le
-            // minimum pour tout le monde.
+            // Duree du rapetissement. Le leader paie plein tarif, celui qui est
+            // deja largue s'en sort vite : l'eclair vient du fond de grille, il
+            // n'a pas a enfoncer ceux qui y sont deja.
+            //
+            // Ces deux bornes sont atteintes quoi qu'on regle en dessous : le
+            // premier prend `shrinkMsMax`, le dernier largue au-dela de
+            // `shrinkFalloffDistance` prend `shrinkMsMin`.
             shrinkMsMax: 10000,
             shrinkMsMin: 2000,
-            shrinkFalloffDistance: 3500
+
+            // Ecart au premier a partir duquel on ne paie plus que le minimum.
+            shrinkFalloffDistance: 3500,
+
+            // Ce qui decide entre les deux bornes : la part du RANG face a celle
+            // de la DISTANCE, entre 0 et 1.
+            //
+            // A 0, seul l'ecart compte — deux karts au coude a coude paient
+            // rigoureusement pareil, et mener ne coute rien de plus qu'etre
+            // deuxieme a un cheveu. A 1, seule la place compte, et un premier
+            // avec un tour d'avance paie autant qu'un premier talonne.
+            //
+            // Entre les deux, chaque place gagnee vaut d'office
+            // `(shrinkMsMax - shrinkMsMin) * shrinkRankWeight / (places - 1)`
+            // de malus en plus, ecart nul ou pas : a 0.35 et huit karts, 400 ms
+            // par place. C'est ce qui fait qu'un premier au coude a coude reste
+            // petit un peu plus longtemps que son second — assez pour que mener
+            // se paie, trop peu pour effacer un ecart reel.
+            //
+            // Le monter rapproche l'eclair d'une sanction du classement ; le
+            // baisser le rend a la geographie de la course.
+            shrinkRankWeight: 0.5
         },
 
         // Bill Ball. Ce n'est pas un projectile : le kart lui-meme se transforme

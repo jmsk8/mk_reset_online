@@ -23,7 +23,7 @@ const FLAG_STAR = 8;      // etoile active -> halo
 const FLAG_FINISHED = 16; // a franchi la ligne -> tour d'honneur
 const FLAG_SHRUNK = 32;   // rapetisse par l'eclair -> sprite reduit
 const FLAG_BILL = 64;     // transforme en Bill Ball -> sprite remplace
-const FLAG_BUMPED = 128;  // arrete net par un pipe -> sprite de face, recul
+const FLAG_BUMPED = 128;  // arrete net par un pipe : arret et recul, sprite inchange
 
 function round(value, decimals) {
     const factor = Math.pow(10, decimals);
