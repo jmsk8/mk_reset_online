@@ -2225,6 +2225,12 @@
         });
 
         state.cachedLeader = activeKarts[0];
+        // Combien de places il y a a prendre, et non combien de karts existent :
+        // c'est l'echelle sur laquelle un rang se lit. Un plateau ampute — des
+        // karts encore en grille, une course a six — doit rendre les memes
+        // extremes qu'un plateau complet, sinon le rang ne veut plus dire la
+        // meme chose d'une course a l'autre.
+        state.rankedCount = activeKarts.length;
         for (let i = 0; i < activeKarts.length; i++) activeKarts[i].rank = i + 1;
 
         return activeKarts;
@@ -2922,11 +2928,38 @@
     // deja largue, lineaire entre les deux. C'est ce qui fait de l'eclair une
     // arme de fond de grille — il coute cher a ceux qui ont quelque chose a
     // perdre, et presque rien a celui qui l'a lance.
+    // Combien de temps un kart reste rapetisse. Deux lectures de la meme
+    // question — « a quel point est-il devant ? » — melangees par `rankWeight`.
+    //
+    //   LA DISTANCE dit l'ecart reel. Elle est juste, mais aveugle a une chose :
+    //   deux karts au coude a coude sont a egalite pour elle, alors que l'un des
+    //   deux mene.
+    //
+    //   LE RANG dit la place, et rien qu'elle. Il est grossier — il ne fait pas
+    //   la difference entre un leader colle au deuxieme et un leader qui a un
+    //   tour d'avance — mais il tranche toujours.
+    //
+    // Les deux tombent d'accord aux extremes : le premier est a la fois au rang
+    // 1 et a distance nulle du leader, le dernier est au dernier rang et le plus
+    // loin. `shrinkMsMax` et `shrinkMsMin` restent donc les bornes exactes du
+    // malus quel que soit `rankWeight` — ce reglage ne change pas ce que
+    // l'eclair peut couter, seulement comment le cout se repartit au milieu.
     function shrinkDuration(cfg, state, kart) {
         const spec = cfg.lightning;
+
         const dist = Math.min(getDistanceToLeader(state, kart), spec.shrinkFalloffDistance);
-        const ratio = spec.shrinkFalloffDistance > 0 ? dist / spec.shrinkFalloffDistance : 0;
-        return spec.shrinkMsMax + (spec.shrinkMsMin - spec.shrinkMsMax) * ratio;
+        const distRatio = spec.shrinkFalloffDistance > 0 ? dist / spec.shrinkFalloffDistance : 0;
+
+        // Rapporte au nombre de places a prendre : le pas d'un rang vaut la
+        // meme chose a huit qu'a quatre. Une course a un seul kart n'a pas de
+        // rang qui veuille dire quoi que ce soit — elle retombe sur la distance.
+        const places = state.rankedCount - 1;
+        const rankRatio = places > 0 ? (kart.rank - 1) / places : 0;
+
+        const w = spec.shrinkRankWeight;
+        const mix = distRatio * (1 - w) + rankRatio * w;
+
+        return spec.shrinkMsMax + (spec.shrinkMsMin - spec.shrinkMsMax) * mix;
     }
 
     // La foudre tombe sur toute la piste d'un coup : tete-a-queue, rapetissement,
@@ -3968,6 +4001,7 @@
             itemBoxes: itemBoxes,
             pipes: pipes,
             cachedLeader: null,
+            rankedCount: 0,
 
             phase: 'countdown',
             countdownMs: countdownMs,

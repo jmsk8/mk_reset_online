@@ -93,11 +93,6 @@ const GAME_CONFIG = {
         pipe: { width: 67.2, height: 88 },
         // Taille du souffle : voir WORLD.blastRadius, transmis par le serveur.
     },
-    // Choc contre un pipe. Pas de tête-à-queue : un mur n'envoie pas en
-    // toupie, il arrête. Le kart se retrouve face à la route, plaqué contre le
-    // tuyau, et le recul se lit dans sa position.
-    kartBump: { dir: 'front', mirror: false },
-
     // Tête-à-queue joué pendant l'état 'hit'. La durée du malus n'est pas
     // configurable ici : elle reste delays.hitDecelDuration + hitPauseDuration.
     // durationRatio ne règle que la vitesse de la toupie, en la jouant sur une
@@ -1260,11 +1255,6 @@ function applyEvent(ev) {
 // rendu à maintenir, donc rien qui puisse désynchroniser du reste de la course.
 // Le kart boucle kartSpin.turns fois sur la fraction durationRatio du malus,
 // puis reste sur side-right jusqu'à ce qu'il reparte.
-// Valeur de `spinFrame` qui signale la pose de choc contre un pipe. Hors de la
-// plage de kartSpin (0..7) et distincte du -1 qui force un repaint au retour de
-// bill : les trois ne doivent pas se confondre.
-const BUMP_POSE_FRAME = -2;
-
 function getSpinFrameIndex(kart, gameNow) {
     if (kart.state !== 'hit') return 0;
 
@@ -1946,23 +1936,24 @@ function renderState(gameNow, screenWidth) {
                     els.wrapper.classList.remove('kart-bill');
                 }
 
-                // Le choc contre un pipe prime sur la course, mais pas sur le
-                // tete-a-queue : un kart qui prend un objet juste apres s'etre
-                // cogne tourne quand meme. L'inverse figeait la toupie sur la
-                // pose de choc, puis la relachait au milieu du tour.
-                if (kart.bumped && kart.state !== 'hit') {
-                    if (els.spinFrame !== BUMP_POSE_FRAME) {
-                        els.spinFrame = BUMP_POSE_FRAME;
-                        const pose = GAME_CONFIG.kartBump;
-                        els.img.src = getKartFrameSrc(kart.charName, pose.dir);
-                        els.sprite.classList.toggle('kart-mirrored', pose.mirror);
-                    }
-                } else {
-                    const spinFrame = getSpinFrameIndex(kart, gameNow);
-                    if (els.spinFrame !== spinFrame) {
-                        els.spinFrame = spinFrame;
-                        applyKartSpinFrame(kart, els, spinFrame);
-                    }
+                // Le choc contre un pipe ne touche PAS au sprite. Le kart garde
+                // la pose qu'il avait, et le choc se lit entierement dans ce
+                // qu'il fait : l'arret net, le recul, la glissade sur le cote.
+                //
+                // La pose de face qu'il prenait avant se lisait mal — elle
+                // arrivait sur une frame et repartait sur une autre, sans que
+                // rien dans le mouvement ne l'annonce, et un kart qui reculait
+                // face a la route donnait l'impression d'un bug plutot que d'un
+                // choc. Ce que le joueur entend et voit trembler vient de
+                // l'evenement `kartBumped`, pas d'ici — le drapeau `kart.bumped`
+                // du snapshot ne pilote donc plus rien au rendu.
+                //
+                // Ne reste ici que le tete-a-queue, qui lui a bien ses frames a
+                // jouer.
+                const spinFrame = getSpinFrameIndex(kart, gameNow);
+                if (els.spinFrame !== spinFrame) {
+                    els.spinFrame = spinFrame;
+                    applyKartSpinFrame(kart, els, spinFrame);
                 }
             }
 
