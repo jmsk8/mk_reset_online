@@ -391,11 +391,15 @@
     // maniable vise un decalage plus grand. C'est la seule chose qu'`agility`
     // achete.
     //
-    // Deux fonctions, et elles sont les seules a toucher `targetVy` et `vy` :
+    // Trois fonctions, et elles sont les seules a toucher `targetVy` et `vy` :
     //   - `steerSpeed(kart, base)`         : la consigne, a l'echelle du kart ;
-    //   - `applySteering(cfg, kart, dt)`   : la reponse du volant, commune.
+    //   - `applySteering(cfg, kart, dt)`   : la reponse du volant, commune ;
+    //   - `steerClamped(cfg, state, ...)`  : la meme, mais qui refuse d'envoyer
+    //     le kart dans un obstacle (cf. sa propre note).
     // Ajouter une manoeuvre, c'est poser un `kart.targetVy = steerSpeed(...)`
-    // puis appeler `applySteering`. Rien d'autre ne doit ecrire dans `vy`.
+    // puis appeler l'une des deux dernieres — `steerClamped` par defaut,
+    // `applySteering` seulement si la manoeuvre juge la place elle-meme. Rien
+    // d'autre ne doit ecrire dans `vy`.
     // -----------------------------------------------------------------------
 
     // Consigne laterale d'un kart pour une vitesse de reference donnee.
@@ -468,17 +472,114 @@
         return base * (1 - (ease - 1) / (ai.dodgeEasyRatio - 1));
     }
 
+    // Place libre d'un cote du kart, en profondeur de piste.
+    //
+    // Le bord de piste la borne, et ce qui est pose devant la borne de la meme
+    // facon : un tuyau, un objet au sol, l'objet traine par un autre kart.
+    // S'ecarter vers eux, c'est troquer la menace contre une autre — et vers un
+    // tuyau, c'est le mauvais cote du marche. Un kart qui plonge sous une
+    // carapace pour se planter dans le tuyau d'a cote donne exactement
+    // l'impression d'une esquive qui vise mal, parce que c'en est une : le plan
+    // ne regardait que les deux bords.
+    //
+    // Ne comptent que ceux qui sont encore devant — ou a hauteur — et assez
+    // proches pour que l'ecart n'ait pas eu le temps de retomber quand le kart y
+    // arrive (ai.dodgeGuardDistance). `skipId` est la menace elle-meme : elle
+    // n'a pas a se fermer le passage.
+    function sideRoom(cfg, state, kart, dir, skipId) {
+        const ai = cfg.ai;
+        const guard = ai.dodgeGuardDistance;
+        const margin = cfg.road.edgeSafetyMargin;
+
+        let limit = (dir > 0) ? (cfg.road.maxY - margin) : (cfg.road.minY + margin);
+
+        // Face tournee vers le kart. Elle ne ferme le cote que si elle est
+        // vraiment de ce cote-la : un obstacle que le kart chevauche deja est
+        // derriere sa propre face, et refermer sur lui rendrait une place
+        // negative pour un obstacle qu'aucun ecart ne peut plus eviter.
+        function closeAt(y, halfDepth) {
+            const face = y - dir * halfDepth;
+            if (dir > 0 ? (face > kart.yPercent && face < limit)
+                        : (face < kart.yPercent && face > limit)) {
+                limit = face;
+            }
+        }
+
+        const pipeReach = cfg.hitboxes.kartVsPipe;
+        const pipes = state.pipes;
+        for (let p = 0; p < pipes.length; p++) {
+            const dx = getShortestDistance(cfg, pipes[p].worldX, kart.worldX);
+            if (dx < -pipeReach.x || dx > guard) continue;
+            closeAt(pipes[p].y, pipeReach.y);
+        }
+
+        const clear = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin;
+
+        for (let i = 0; i < state.items.length; i++) {
+            const item = state.items[i];
+            if (item.id === skipId || item.isDead || item.spent) continue;
+            if (cfg.trailableItems.indexOf(item.type) === -1) continue;
+
+            const dx = getShortestDistance(cfg, item.worldX, kart.worldX);
+            if (dx <= 0 || dx > guard) continue;
+            closeAt(item.y, clear);
+        }
+
+        // Objets traines : ils suivent leur porteur, donc c'est sa hauteur a lui
+        // qui ferme le cote, comme dans la detection de menace.
+        for (let i = 0; i < state.karts.length; i++) {
+            const other = state.karts[i];
+            if (other.id === kart.id || other.state !== 'running') continue;
+
+            const held = other.heldItem;
+            if (!held || held.id === skipId || held.holdPosition !== 'behind') continue;
+
+            const dx = getShortestDistance(cfg, other.worldX, kart.worldX);
+            if (dx <= 0 || dx > guard) continue;
+            closeAt(other.yPercent, clear);
+        }
+
+        return Math.max(0, dir * (limit - kart.yPercent));
+    }
+
+    // Dernier filtre avant le volant : une consigne laterale ne doit pas
+    // envoyer le kart dans ce qu'il avait sous les yeux.
+    //
+    // Les manoeuvres de confort — visee, depassement, collecte, maraude, retour
+    // au calme — ne connaissent pas les tuyaux, et n'ont pas a les connaitre :
+    // chacune repond a sa propre question, et les rendre toutes prudentes
+    // reviendrait a ecrire cinq fois le meme test. Sans ce filtre, un kart qui
+    // venait d'enfiler proprement deux tuyaux se decalait pour doubler, ou
+    // partait chercher une boite, et se plantait dans le second — le couloir
+    // etait bon, c'est ce qui s'est passe ensuite qui ne l'etait pas.
+    //
+    // Le seuil est la course restante et non zero : s'arreter pile a la face du
+    // tuyau demande de lever le pied avant de la toucher.
+    //
+    // Le contournement de tuyau et l'esquive n'y passent pas, et c'est voulu :
+    // eux traversent sciemment, l'un pour rejoindre un couloir situe derriere le
+    // tuyau, l'autre pour passer devant l'objet. Chacun a son propre jugement de
+    // place — `choosePipeLane` et `planDodge`, tous deux batis sur `sideRoom`.
+    function steerClamped(cfg, state, kart, deltaTime) {
+        if (kart.targetVy) {
+            const dir = kart.targetVy > 0 ? 1 : -1;
+            const settle = Math.max(0, dir * kart.vy) / cfg.physics.steerResponse;
+            if (sideRoom(cfg, state, kart, dir, 0) <= settle) kart.targetVy = 0;
+        }
+        applySteering(cfg, kart, deltaTime);
+    }
+
     // Cote d'esquive et intensite, arretes une fois pour toutes a la premiere
     // reaction a une menace donnee.
     //
-    // Le cote naturel est celui qui eloigne de l'objet. Quand le bord de piste
-    // le condamne, le kart jauge la traversee par l'autre cote, devant l'objet :
-    // il lui faut la place et le temps, et il n'estime le second qu'a vue (cf.
+    // Le cote naturel est celui qui eloigne de l'objet. Quand il n'y a pas la
+    // place — le bord de piste, ou ce qui est pose devant, cf. `sideRoom` — le
+    // kart jauge la traversee par l'autre cote, devant l'objet : il lui faut la
+    // place et le temps, et il n'estime le second qu'a vue (cf.
     // ai.crossJudgeError). Sans issue des deux cotes, il ne reste que le frein.
-    function planDodge(cfg, rng, kart, threatId, threatY, ttc) {
+    function planDodge(cfg, state, rng, kart, threatId, threatY, ttc) {
         const ai = cfg.ai;
         const agility = kart.stats.agility;
-        const margin = cfg.road.edgeSafetyMargin;
 
         kart.dodgePlanId = threatId;
         kart.dodgeIntensity = randomRange(rng,
@@ -493,9 +594,7 @@
         const clear = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin;
         const gap = Math.abs(threatY - kart.yPercent);
 
-        const roomNatural = (naturalDir > 0)
-            ? (cfg.road.maxY - margin) - kart.yPercent
-            : kart.yPercent - (cfg.road.minY + margin);
+        const roomNatural = sideRoom(cfg, state, kart, naturalDir, threatId);
 
         if (roomNatural >= Math.max(0, clear - gap)) {
             kart.dodgeDir = naturalDir;
@@ -507,9 +606,7 @@
         // Traverser coute l'ecart entier, plus le degagement de l'autre cote.
         const crossDir = -naturalDir;
         const crossNeed = gap + clear;
-        const roomCross = (crossDir > 0)
-            ? (cfg.road.maxY - margin) - kart.yPercent
-            : kart.yPercent - (cfg.road.minY + margin);
+        const roomCross = sideRoom(cfg, state, kart, crossDir, threatId);
 
         const err = ai.crossJudgeError;
         const judged = lateralReach(cfg, agility, kart.dodgeIntensity, ttc)
@@ -522,8 +619,8 @@
             return;
         }
 
-        // Colle au bord : il pousse quand meme du cote naturel, pour grappiller
-        // le peu de place restante, et lache les gaz.
+        // Aucun des deux cotes ne s'ouvre : il pousse quand meme du cote
+        // naturel, pour grappiller le peu de place restante, et lache les gaz.
         kart.dodgeDir = naturalDir;
         kart.dodgeStuck = true;
         kart.dodgeCrossing = false;
@@ -627,13 +724,37 @@
     }
 
     // Couloir choisi pour passer un tuyau : le milieu du plus large passage
-    // libre a sa hauteur.
+    // libre, non pas a la hauteur du tuyau vise, mais sur toute la sequence de
+    // tuyaux qu'il ouvre.
     //
-    // Tous les tuyaux voisins comptent, pas seulement celui qu'on vise. Deux
-    // pipes dessines dans la meme colonne laissent un couloir entre eux : viser
-    // le bord de l'un des deux mene droit dans l'autre. On ouvre deux fois la
-    // portee de collision pour prendre aussi ceux qui arrivent juste apres, sans
-    // quoi le kart choisirait un couloir qu'il devrait quitter aussitot.
+    // Les voisins comptent, et « voisin » se mesure en avant, pas seulement a
+    // hauteur. Deux pipes dessines dans la meme colonne laissent un couloir
+    // entre eux : viser le bord de l'un des deux mene droit dans l'autre. Mais
+    // deux pipes decales de quelques colonnes posent le meme probleme, en pire :
+    // le kart degage le premier, se retrouve pile dans la voie du second, et ne
+    // le prend pour cible qu'une fois le premier derriere lui — il traverse
+    // alors la piste en catastrophe, quand il y arrive. C'est ce que donnait une
+    // fenetre limitee a deux fois la portee de collision, soit 127 px la ou une
+    // manoeuvre en couvre plusieurs centaines.
+    //
+    // Le couloir s'enfile donc de proche en proche : on part du tuyau vise, on
+    // ajoute le suivant, puis celui d'apres, tant qu'il reste un passage
+    // praticable (pipe.minPassageY, le meme seuil qu'au chargement d'un
+    // circuit). Le premier qui ferme la sequence arrete le compte, et le kart
+    // garde le couloir qui traverse tout ce qui precede. Rien a regler : la
+    // portee est celle de la vue, et c'est le trace qui dit ou s'arreter.
+    //
+    // Ce qui vient apres n'est pas perdu pour autant : le kart rejouera ce choix
+    // des ce tuyau-la franchi, avec la piste degagee d'autant.
+    //
+    // Et un couloir ne compte que s'il est a portee. C'est la seconde moitie du
+    // probleme, et la plus visible a l'ecran : le plus large passage est souvent
+    // de l'autre cote de la piste, derriere le tuyau lui-meme. Le viser sans
+    // regarder la distance restante, c'est s'engager dans une traversee qu'on ne
+    // finit pas — le kart s'ecarte franchement, et se plante dans le tuyau qu'il
+    // etait en train de doubler. Il ne retient donc que les couloirs dont il
+    // atteint le bord avant d'arriver au tuyau, et se rabat sur le plus proche
+    // quand aucun n'est tenable.
     //
     // Viser le milieu et non le bord donne au kart de la marge des deux cotes :
     // c'est ce qui lui permet d'encaisser une bousculade sans se retrouver dans
@@ -643,51 +764,105 @@
     // place de chaque cote — c'est le couloir le plus proche du kart qui gagne.
     // Sans ce depart, les huit karts plongeraient tous du meme cote et s'y
     // bousculeraient, alors que la piste offre deux passages.
-    function choosePipeLane(cfg, state, kart, pipe) {
+    function choosePipeLane(cfg, state, kart, pipe, ttc) {
         const pipes = state.pipes;
         const reach = cfg.hitboxes.kartVsPipe;
+        const spec = cfg.pipe;
         const lo = cfg.road.minY + cfg.road.edgeSafetyMargin;
         const hi = cfg.road.maxY - cfg.road.edgeSafetyMargin;
 
-        const blocked = [];
-        for (let p = 0; p < pipes.length; p++) {
-            if (Math.abs(getShortestDistance(cfg, pipes[p].worldX, pipe.worldX)) >= reach.x * 2) continue;
-            blocked.push([pipes[p].y - reach.y, pipes[p].y + reach.y]);
-        }
-        blocked.sort((a, b) => a[0] - b[0]);
-
-        let bestLane = (lo + hi) / 2;
-        let bestWidth = -1;
-
         // Deux couloirs se valent quand leurs largeurs se tiennent dans cette
         // marge : au-dela, la place prime sur la proximite.
-        const tie = cfg.pipe.laneTieMargin;
+        const tie = spec.laneTieMargin;
 
-        function consider(from, to) {
-            const width = to - from;
-            if (width <= 0) return;
-            const lane = from + width / 2;
+        // Ecart lateral que le kart couvre d'ici le tuyau, a la vitesse de
+        // rejointe du couloir. Le `laneTolerance` de marge paie l'optimisme du
+        // calcul : la rejointe ralentit en fin de course (`laneSeekGain`), ce
+        // que `lateralReach` ne modelise pas.
+        const budget = lateralReach(cfg, kart.stats.agility,
+            steerSpeed(kart, spec.laneSeekSpeed), ttc) - spec.laneTolerance;
 
-            if (width > bestWidth + tie) {
-                bestWidth = width;
-                bestLane = lane;
-                return;
+        // Milieu du plus large passage que `blocked` laisse ouvert, et sa
+        // largeur — c'est elle qui dit si le couloir est praticable. La liste
+        // est triee par bord bas. `limit` borne l'ecart que le kart accepte pour
+        // y entrer ; a l'infini, il prend le meilleur sans regarder la distance.
+        function widestLane(blocked, limit) {
+            let bestLane = (lo + hi) / 2;
+            let bestWidth = -1;
+
+            function consider(from, to) {
+                const width = to - from;
+                if (width <= 0) return;
+                const lane = from + width / 2;
+
+                // Ce qu'il faut couvrir pour entrer dans ce couloir. Nul s'il y
+                // est deja : tenir sa ligne ne coute rien.
+                const need = (kart.yPercent < from) ? from - kart.yPercent
+                    : (kart.yPercent > to) ? kart.yPercent - to
+                    : 0;
+                if (need > limit) return;
+
+                if (width > bestWidth + tie) {
+                    bestWidth = width;
+                    bestLane = lane;
+                    return;
+                }
+                if (width > bestWidth - tie
+                    && Math.abs(lane - kart.yPercent) < Math.abs(bestLane - kart.yPercent)) {
+                    bestWidth = Math.max(bestWidth, width);
+                    bestLane = lane;
+                }
             }
-            if (width > bestWidth - tie
-                && Math.abs(lane - kart.yPercent) < Math.abs(bestLane - kart.yPercent)) {
-                bestWidth = Math.max(bestWidth, width);
-                bestLane = lane;
+
+            let cursor = lo;
+            for (let i = 0; i < blocked.length; i++) {
+                consider(cursor, blocked[i][0]);
+                if (blocked[i][1] > cursor) cursor = blocked[i][1];
             }
+            consider(cursor, hi);
+
+            return { lane: Math.min(hi, Math.max(lo, bestLane)), width: bestWidth };
         }
 
-        let cursor = lo;
-        for (let i = 0; i < blocked.length; i++) {
-            consider(cursor, blocked[i][0]);
-            if (blocked[i][1] > cursor) cursor = blocked[i][1];
+        // Les tuyaux a enfiler, du plus proche au plus lointain, mesures depuis
+        // le kart : il n'enfile que ce qu'il voit, et le tuyau vise est par
+        // construction le premier qui barre sa route. Ceux poses a sa hauteur —
+        // tuyaux d'une meme colonne — suivent immediatement.
+        const ahead = [];
+        for (let p = 0; p < pipes.length; p++) {
+            const dx = getShortestDistance(cfg, pipes[p].worldX, kart.worldX);
+            if (dx < -reach.x || dx > spec.seeDistance) continue;
+            ahead.push({ dx: dx, y: pipes[p].y, pipe: pipes[p] });
         }
-        consider(cursor, hi);
+        ahead.sort((a, b) => a.dx - b.dx);
 
-        return Math.min(hi, Math.max(lo, bestLane));
+        // Le tuyau vise ouvre la liste quoi qu'il arrive : c'est celui qu'il
+        // faut passer, les autres ne font que restreindre le choix. Sans ce
+        // depart, un tuyau plus proche mais hors trajectoire pourrait arreter
+        // l'enfilage avant meme qu'on ait pris en compte la cible.
+        const target = [pipe.y - reach.y, pipe.y + reach.y];
+        const blocked = [target];
+        let chosen = widestLane(blocked, budget);
+
+        for (let i = 0; i < ahead.length; i++) {
+            if (ahead[i].pipe === pipe) continue;
+
+            blocked.push([ahead[i].y - reach.y, ahead[i].y + reach.y]);
+            blocked.sort((a, b) => a[0] - b[0]);
+
+            const lane = widestLane(blocked, budget);
+            // Celui-la ferme la sequence : on s'en tient a ce qui precede.
+            if (lane.width < spec.minPassageY) break;
+            chosen = lane;
+        }
+
+        // Rien a portee, faute de distance ou faute de place : il vise le
+        // meilleur passage du seul tuyau qui le concerne encore, et grappille ce
+        // qu'il peut d'ici la. Arriver contre le bord du tuyau vaut mieux que
+        // rester sur sa ligne, et la poussee du choc l'en degagera.
+        if (chosen.width < 0) chosen = widestLane([target], Infinity);
+
+        return chosen.lane;
     }
 
     // Contournement d'un pipe. Rend true s'il commande la trajectoire.
@@ -748,11 +923,37 @@
 
             if (index < 0) return false;
 
+            // Temps restant avant le tuyau : c'est lui qui dit quels couloirs
+            // sont encore a portee. Un kart a l'arret — pousse, en tete-a-queue
+            // — n'a pas de temps infini pour autant, il n'a simplement pas
+            // encore reduit la distance.
+            const ttc = (nearest / Math.max(kart.absoluteVelocity, 1)) * 1000;
+
             kart.pipeTargetIndex = index;
-            kart.pipeLaneY = choosePipeLane(cfg, state, kart, pipes[index]);
+            kart.pipeLaneY = choosePipeLane(cfg, state, kart, pipes[index], ttc);
         }
 
-        const diff = kart.pipeLaneY - kart.yPercent;
+        // Le kart compare le couloir a l'endroit ou il s'arreterait, et non a
+        // celui ou il est.
+        //
+        // Le volant a 200 ms d'inertie (1 / steerResponse). Une consigne
+        // proportionnelle au seul ecart courant commande donc encore du
+        // braquage quand le couloir est deja sous les roues : le systeme
+        // (`diff'' + steerResponse * diff' + steerResponse * laneSeekGain *
+        // diff = 0`) est sous-amorti a ces reglages, et le kart depasse sa cible
+        // d'environ deux unites et demie. Sur un passage etroit — six unites,
+        // soit trois de chaque cote — ce depassement le fait ressortir par
+        // l'autre bord, dans le tuyau meme qu'il contournait. C'est exactement
+        // ce qu'on voyait : un ecart franc, puis un choc du cote oppose.
+        //
+        // Retrancher la course restante — `vy / steerResponse`, ce que le kart
+        // parcourt encore s'il relache tout — change les modes du systeme en
+        // `-steerResponse` et `-laneSeekGain`, tous deux reels : la reponse
+        // devient aperiodique. Plus aucun depassement, et sans ralentir la
+        // manoeuvre puisque les deux constantes de temps restent celles des
+        // reglages.
+        const settleY = kart.yPercent + kart.vy / cfg.physics.steerResponse;
+        const diff = kart.pipeLaneY - settleY;
 
         if (Math.abs(diff) <= spec.laneTolerance) {
             // Couloir tenu : il ne corrige plus, sinon il tremble autour.
@@ -880,7 +1081,7 @@
             if (!kart.threatIgnored && now >= kart.threatReactAt) {
                 dangerFound = true;
                 if (kart.dodgePlanId !== threatId) {
-                    planDodge(cfg, rng, kart, threatId, threatY, threatTtc);
+                    planDodge(cfg, state, rng, kart, threatId, threatY, threatTtc);
                 }
                 avoidDirection = kart.dodgeDir;
 
@@ -941,7 +1142,7 @@
                     kart.aiState = 'aiming';
                     kart.originalLaneY = kart.yPercent;
                     kart.targetVy = Math.max(-speed, Math.min(speed, diff * ai.aimSpeed));
-                    applySteering(cfg, kart, deltaTime);
+                    steerClamped(cfg, state, kart, deltaTime);
                     return;
                 }
             }
@@ -968,7 +1169,7 @@
 
         if (overtakeFound) {
             kart.originalLaneY = kart.yPercent;
-            applySteering(cfg, kart, deltaTime);
+            steerClamped(cfg, state, kart, deltaTime);
             return;
         }
 
@@ -988,7 +1189,7 @@
         }
 
         if (boxTargetFound) {
-            applySteering(cfg, kart, deltaTime);
+            steerClamped(cfg, state, kart, deltaTime);
             return;
         }
 
@@ -1020,7 +1221,7 @@
             }
         }
 
-        applySteering(cfg, kart, deltaTime);
+        steerClamped(cfg, state, kart, deltaTime);
     }
 
     // Ecart au premier, mesure en distance restante : deux karts partis de
@@ -2070,6 +2271,308 @@
     }
 
     // Enchainement des phases, et pilotage de la camera qui en decoule.
+    // ── Contact entre karts ─────────────────────────────────────────────────
+    //
+    // Une passe a part, jouee apres que TOUS les karts ont bouge. C'est la
+    // premiere chose a comprendre ici : le contact etait autrefois resolu au
+    // milieu de la boucle de deplacement, ce qui voulait dire qu'un kart etait
+    // pousse contre un adversaire qui n'avait pas encore avance de son propre
+    // pas. Le resultat dependait de l'ordre du tableau. Ici, tout le monde a
+    // deja sa position du tick avant que la premiere paire soit regardee.
+    //
+    // Un contact repond a trois questions, dans cet ordre.
+    //
+    //   PAR OU ?    La boite d'une paire est tres allongee (60 x 5). L'axe du
+    //               choc est celui ou le chevauchement est le plus faible une
+    //               fois RAPPORTE A LA BOITE : 2 de chevauchement sur 5 en
+    //               profondeur est plus profond que 20 sur 60 en longueur.
+    //               C'est ce rapport, et rien d'autre, qui separe le coup
+    //               d'epaule du tamponnement — autrement dit l'angle du choc.
+    //
+    //   A QUELLE VITESSE ? L'impulsion vaut la vitesse de rapprochement le long
+    //               de cette normale. Se faire effleurer et se faire emboutir
+    //               ne peuvent pas rendre le meme choc, ce qui etait pourtant
+    //               le cas avec l'ancienne constante unique.
+    //
+    //   QUI CEDE ?  La masse, et de deux facons. Elle repartit l'impulsion, et
+    //               elle decide de la part de braquage que chacun perd. Ce
+    //               second point est celui qui fait qu'un lourd force le
+    //               passage : le leger qui tente d'esquiver a travers lui perd
+    //               l'essentiel de son volant tant que le contact dure.
+    //
+    // Les chocs vivent dans `bumpVy` et `bumpVx`, deux canaux tenus a l'ecart
+    // de `vy` et de la vitesse moteur. Ce n'est pas un detail : un choc ecrit
+    // dans `vy` etait ramene vers la consigne de l'IA par `applySteering` en
+    // 200 ms, soit avant meme que les deux karts se soient decolles.
+
+    // Demi-emprise d'un kart. La boite d'une paire est la somme des deux, d'ou
+    // ce detour : aujourd'hui tous les karts ont la meme et la somme redonne
+    // exactement `hitboxes.kartVsKart`, mais c'est ici que passera une
+    // carrosserie plus large pour les lourds, sans toucher au reste.
+    function kartHalfExtents(cfg, kart) {
+        const box = cfg.hitboxes.kartVsKart;
+        return { x: box.x * 0.5, y: box.y * 0.5 };
+    }
+
+    // Masse vue par un contact. Un kart en tete-a-queue ne pilote plus : il
+    // traverse la piste en travers, sans rien pour se rattraper. Il pese donc
+    // un peu plus lourd qu'en course — il fait obstacle plutot qu'il ne se
+    // laisse pousser.
+    function contactMass(cfg, kart) {
+        const m = kart.stats.mass;
+        return kart.state === 'hit' ? m * cfg.physics.contact.spinMassFactor : m;
+    }
+
+    // Une toupie n'est plus un fantome : elle bouscule et se fait bousculer
+    // comme n'importe qui. Seul l'etat 'grid' — et un kart pas encore lance —
+    // reste hors de la passe.
+    function isContactActive(kart) {
+        return kart.state === 'running' || kart.state === 'hit';
+    }
+
+    // Combien de profondeur il reste a ce kart dans la direction `n` avant le
+    // bord de piste. Sert au sandwich : un kart plaque contre le bord ne peut
+    // pas reculer davantage, sa part de separation doit passer a l'autre.
+    function roomToward(cfg, kart, n) {
+        return n > 0 ? cfg.road.maxY - kart.yPercent : kart.yPercent - cfg.road.minY;
+    }
+
+    // Deplace un kart le long de la piste en gardant position et progression
+    // cousues l'une a l'autre, exactement comme le fait la boucle de
+    // deplacement. Le compteur de tours en fait partie : une separation
+    // longitudinale ne vaut que quelques pixels, mais rien n'interdit qu'elle
+    // tombe pile sur la ligne d'arrivee.
+    function shiftKartAlongTrack(cfg, kart, dist) {
+        if (!dist) return;
+        const prevWorldX = kart.worldX;
+        kart.totalDistance += dist;
+        kart.worldX += dist;
+        if (kart.worldX >= cfg.world.width) kart.worldX -= cfg.world.width;
+        if (kart.worldX < 0) kart.worldX += cfg.world.width;
+
+        const finishX = cfg.world.finishLineX;
+        if (dist >= 0) {
+            if (prevWorldX < finishX && kart.worldX >= finishX) {
+                kart.lapCount++;
+                kart.hasPassedFinishLine = true;
+            }
+        } else if (prevWorldX >= finishX && kart.worldX < finishX) {
+            kart.lapCount--;
+        }
+    }
+
+    // Un intouchable fait toupiller ce qu'il percute. Deux gardes, et elles
+    // comptent toutes les deux : on ne relance pas un tete-a-queue deja en
+    // cours — la passe se rejoue a chaque tick tant que le contact dure, et
+    // sans cette garde la victime tournerait indefiniment — et on respecte le
+    // sursis d'apres-choc.
+    function spinOnContact(cfg, now, kart, events) {
+        if (kart.state !== 'running') return;
+        if (kart.hitInvincibleUntil > now) return;
+        spinOutKart(cfg, now, kart, events);
+    }
+
+    // Resolution d'une paire. `withImpulse` n'est vrai qu'a la premiere passe :
+    // les suivantes ne font que finir de decoller les positions. Appliquer
+    // l'impulsion a chaque passe la compterait deux fois.
+    function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
+        const c = cfg.physics.contact;
+
+        let boxX, boxY;
+        if (a.isBill || b.isBill) {
+            // Le bill balaie plus large qu'une carrosserie : il traverse la
+            // piste en trombe, il ne se faufile pas.
+            boxX = cfg.bill.hitbox.x;
+            boxY = cfg.bill.hitbox.y;
+        } else {
+            const halfA = kartHalfExtents(cfg, a);
+            const halfB = kartHalfExtents(cfg, b);
+            boxX = halfA.x + halfB.x;
+            boxY = halfA.y + halfB.y;
+        }
+
+        // `dx` est signe : positif quand `a` est devant `b`. `dy` de meme,
+        // positif quand `a` est du cote des grandes profondeurs.
+        const dx = getShortestDistance(cfg, a.worldX, b.worldX);
+        const penX = boxX - Math.abs(dx);
+        if (penX <= 0) return;
+        const dy = a.yPercent - b.yPercent;
+        const penY = boxY - Math.abs(dy);
+        if (penY <= 0) return;
+
+        // Deux intouchables ne se blessent pas : c'est ce qui met l'etoile hors
+        // d'atteinte du bill, et l'inverse.
+        const bothRam = isRamming(a) && isRamming(b);
+        if (!bothRam) {
+            if (isRamming(a)) spinOnContact(cfg, now, b, events);
+            else if (isRamming(b)) spinOnContact(cfg, now, a, events);
+        }
+
+        // Deux bills font exception au « sans rien » : ils tiennent tous les
+        // deux le milieu de la piste, s'y traverser serait le seul endroit du
+        // jeu ou deux karts s'ignorent. Ils se bousculent donc, attenues et
+        // sans degats. Deux autres intouchables, eux, se traversent.
+        const billOnBill = a.isBill && b.isBill;
+        if (bothRam && !billOnBill) return;
+        const scale = billOnBill ? cfg.bill.pushFactor : 1;
+
+        const mA = contactMass(cfg, a);
+        const mB = contactMass(cfg, b);
+        const total = mA + mB;
+        // Part du choc encaissee par chacun : c'est la masse D'EN FACE qui la
+        // fixe. Le lourd bouge peu, le leger part.
+        const shareA = mB / total;
+        const shareB = mA / total;
+
+        // Fraction du chevauchement resorbee sur ce pas, bornee a 1 comme le
+        // lissage du volant : une image longue se contente d'arriver pile a la
+        // separation, elle ne la depasse pas.
+        const k = c.separationRate * deltaTime;
+        const sep = k > 1 ? 1 : k;
+
+        // ── La normale du choc ──────────────────────────────────────────────
+        //
+        // Les deux axes n'ont ni la meme unite ni la meme echelle : 60 pixels de
+        // long contre 5 de profondeur. Les comparer directement n'a aucun sens.
+        // On passe donc en ESPACE NORMALISE — chaque ecart rapporte a sa boite —
+        // ou le contact redevient rond, et ou une direction se calcule.
+        //
+        // C'est ce qui donne l'angle. Un tamponnement pile dans l'axe rend une
+        // normale horizontale ; le meme tamponnement avec un demi-kart de
+        // decalage en profondeur rend une diagonale, et le kart percute part en
+        // biais — vers le bas si celui qui arrive etait plus haut que lui. Le
+        // choix d'axe unique d'avant ne pouvait pas exprimer ca : il rangeait ce
+        // contact dans « tamponnement » et poussait tout droit.
+        let ux = dx / boxX;
+        let uy = dy / boxY;
+        let len = Math.sqrt(ux * ux + uy * uy);
+        if (len < 1e-6) {
+            // Superposition parfaite. Arrive pour de vrai — deux karts clampes
+            // au meme endroit du bord de piste — et se tranche sur
+            // l'identifiant, pour que la passe reste reproductible.
+            ux = 0;
+            uy = a.id < b.id ? 1 : -1;
+            len = 1;
+        }
+        // Unitaire, pointe de `b` vers `a`.
+        const nx = ux / len;
+        const ny = uy / len;
+
+        if (withImpulse) {
+            // Vitesse de rapprochement, un axe a la fois et dans son unite :
+            // l'elan reel du tick pour la longueur, volant et choc en cours
+            // confondus pour la profondeur.
+            const sgnX = nx >= 0 ? 1 : -1;
+            const sgnY = ny >= 0 ? 1 : -1;
+            const closeX = (b.contactSpeed - a.contactSpeed) * sgnX;
+            const closeY = ((b.vy + b.bumpVy) - (a.vy + a.bumpVy)) * sgnY;
+
+            // Rapprochement le long de la normale, ramene en boites par seconde
+            // — la seule facon de melanger les deux axes sans comparer des
+            // pixels a de la profondeur.
+            const approach = (closeX / boxX) * Math.abs(nx)
+                           + (closeY / boxY) * Math.abs(ny);
+
+            // LA porte du modele : une impulsion ne part que s'ils se
+            // rapprochent ENCORE. Deux karts qui se touchent en s'ecartant
+            // deja n'ont plus rien a se dire — les repousser a chaque tick est
+            // exactement ce qui les collait l'un a l'autre.
+            if (approach > 0) {
+                let force = c.ejectBase + approach * c.restitution;
+                if (force > c.maxEject) force = c.maxEject;
+                force *= scale;
+
+                // Un seul coup, reparti sur les deux axes par la normale : la
+                // diagonale sort d'elle-meme du rapport `nx`/`ny`.
+                const jx = force * nx * c.ejectX;
+                const jy = force * ny * c.ejectY;
+                a.bumpVx = clamp(a.bumpVx + jx * shareA, -c.maxBumpX, c.maxBumpX);
+                a.bumpVy = clamp(a.bumpVy + jy * shareA, -c.maxBumpY, c.maxBumpY);
+                b.bumpVx = clamp(b.bumpVx - jx * shareB, -c.maxBumpX, c.maxBumpX);
+                b.bumpVy = clamp(b.bumpVy - jy * shareB, -c.maxBumpY, c.maxBumpY);
+            }
+
+            // Refus de braquage, lui applique a chaque tick du contact et non au
+            // seul rapprochement : ce n'est pas une poussee mais un appui qui se
+            // derobe. Chacun perd la part de son volant qui pousse dans l'autre,
+            // en proportion de la masse d'en face — c'est ici, et nulle part
+            // ailleurs, qu'un lourd force le passage sur un leger.
+            //
+            // Dose par `ny` : un tamponnement pur ne prend le volant de
+            // personne, il n'y a pas de flanc a disputer.
+            const denyReach = Math.abs(ny) * scale;
+            const intoA = -a.vy * sgnY;
+            if (intoA > 0) a.vy += intoA * c.steerDeny * shareA * denyReach * sgnY;
+            const intoB = b.vy * sgnY;
+            if (intoB > 0) b.vy -= intoB * c.steerDeny * shareB * denyReach * sgnY;
+        }
+
+        // ── Separation ──────────────────────────────────────────────────────
+        //
+        // Le filet de securite, pas le moteur du choc : l'ejection fait le
+        // travail, ceci empeche seulement deux carrosseries de rester l'une dans
+        // l'autre. Le chevauchement se corrige le long de la meme normale, donc
+        // en diagonale lui aussi.
+        const corrX = Math.max(penX - c.slopX, 0) * sep * Math.abs(nx);
+        const corrY = Math.max(penY - c.slopY, 0) * sep * Math.abs(ny);
+
+        // Le sandwich contre le bord se traite ici : un kart sans place devant
+        // lui rend sa part a l'autre, sinon la paire reste collee au bord
+        // jusqu'a ce que l'IA la decolle.
+        const dirY = ny >= 0 ? 1 : -1;
+        let corrAy = corrY * shareA;
+        let corrBy = corrY * shareB;
+        const roomA = Math.max(0, roomToward(cfg, a, dirY));
+        const roomB = Math.max(0, roomToward(cfg, b, -dirY));
+        if (corrAy > roomA) { corrBy += corrAy - roomA; corrAy = roomA; }
+        if (corrBy > roomB) { corrAy = Math.min(corrAy + (corrBy - roomB), roomA); corrBy = roomB; }
+        a.yPercent += corrAy * dirY;
+        b.yPercent -= corrBy * dirY;
+
+        const dirX = nx >= 0 ? 1 : -1;
+        shiftKartAlongTrack(cfg, a, corrX * shareA * dirX);
+        shiftKartAlongTrack(cfg, b, -corrX * shareB * dirX);
+    }
+
+    // Passe complete : plusieurs relaxations sur toutes les paires, puis remise
+    // en ordre. Une seule passe laisse un paquet de trois karts en
+    // chevauchement, celui du milieu etant repousse par l'un dans l'autre.
+    //
+    // La remise en ordre finale n'est pas optionnelle : un contact peut pousser
+    // un kart hors de la piste ou dans un tuyau, et ces deux verdicts ont ete
+    // rendus plus tot dans le tick, sur une position qui n'est plus la sienne.
+    function resolveKartContacts(cfg, state, now, deltaTime, events) {
+        const c = cfg.physics.contact;
+        const kartsLen = state.karts.length;
+
+        for (let pass = 0; pass < c.iterations; pass++) {
+            const withImpulse = pass === 0;
+            for (let i = 0; i < kartsLen; i++) {
+                const a = state.karts[i];
+                if (!isContactActive(a)) continue;
+                for (let j = i + 1; j < kartsLen; j++) {
+                    const b = state.karts[j];
+                    if (!isContactActive(b)) continue;
+                    resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events);
+                }
+            }
+        }
+
+        for (let i = 0; i < kartsLen; i++) {
+            const kart = state.karts[i];
+            if (!isContactActive(kart)) continue;
+
+            if (kart.yPercent > cfg.road.maxY) { kart.yPercent = cfg.road.maxY; kart.vy = 0; kart.bumpVy = 0; }
+            if (kart.yPercent < cfg.road.minY) { kart.yPercent = cfg.road.minY; kart.vy = 0; kart.bumpVy = 0; }
+
+            // Le sursis par tuyau de `collideKartWithPipes` rend ce second
+            // passage sans danger : le tuyau deja encaisse dans le tick est
+            // saute, seul un tuyau ou la poussee vient de mettre le kart peut
+            // encore le cogner.
+            collideKartWithPipes(cfg, state, kart, now, events);
+        }
+    }
+
     function updateRace(cfg, state, rng, now, deltaTime, events) {
         const race = cfg.race;
         const leader = getLeader(state);
@@ -2565,6 +3068,14 @@
             // son retour en course.
             kart.bumped = now < kart.bumpEndTime;
 
+            // Les deux canaux de choc s'amortissent seuls, avant d'etre
+            // consommes par le deplacement. Ils valent pour les deux etats : une
+            // toupie encaisse un choc et le porte, elle aussi.
+            const bumpDecay = cfg.physics.contact.decay * deltaTime;
+            const bumpKeep = bumpDecay > 1 ? 0 : 1 - bumpDecay;
+            kart.bumpVy *= bumpKeep;
+            kart.bumpVx *= bumpKeep;
+
             if (kart.state === 'running') {
                 // Depart rate : le kart reste sur place, moteur noye.
                 if (kart.startStallUntil > now) continue;
@@ -2658,7 +3169,11 @@
                     );
                 }
 
-                let moveDist = effectiveSpeed * deltaTime;
+                // Le choc longitudinal s'ajoute a la vitesse moteur, borne a
+                // l'arret : emboutir coute son elan au kart de derriere, ca ne
+                // le fait pas repartir en marche arriere.
+                const shovedSpeed = effectiveSpeed + kart.bumpVx;
+                let moveDist = (shovedSpeed > 0 ? shovedSpeed : 0) * deltaTime;
 
                 // Choc contre un pipe : arret net, puis contrecoup. Le recul
                 // entame `totalDistance` autant que l'avance — position et
@@ -2680,9 +3195,11 @@
 
                 kart.totalDistance += moveDist;
 
+                kart.contactSpeed = deltaTime > 0 ? moveDist / deltaTime : 0;
+
                 const prevWorldX = kart.worldX;
                 kart.worldX += moveDist;
-                kart.yPercent += kart.vy * deltaTime;
+                kart.yPercent += (kart.vy + kart.bumpVy) * deltaTime;
 
                 const finishX = cfg.world.finishLineX;
                 if (moveDist >= 0) {
@@ -2727,63 +3244,17 @@
                     kart.worldX += cfg.world.width;
                 }
 
-                if (kart.yPercent > cfg.road.maxY) { kart.yPercent = cfg.road.maxY; kart.vy = 0; }
-                if (kart.yPercent < cfg.road.minY) { kart.yPercent = cfg.road.minY; kart.vy = 0; }
+                if (kart.yPercent > cfg.road.maxY) { kart.yPercent = cfg.road.maxY; kart.vy = 0; kart.bumpVy = 0; }
+                if (kart.yPercent < cfg.road.minY) { kart.yPercent = cfg.road.minY; kart.vy = 0; kart.bumpVy = 0; }
 
                 // Apres le deplacement et le recadrage sur la piste : le tuyau
                 // se juge sur la position ou le kart vient d'arriver.
+                //
+                // Les contacts entre karts, eux, ne sont PAS ici : ils se
+                // resolvent dans `resolveKartContacts`, une fois que tout le
+                // monde a bouge. Les traiter dans cette boucle poussait un kart
+                // contre un adversaire qui n'avait pas encore fait son pas.
                 collideKartWithPipes(cfg, state, kart, now, events);
-
-                for (let j = i + 1; j < kartsLen; j++) {
-                    const other = state.karts[j];
-                    if (other.state !== 'running') continue;
-                    const dx = Math.abs(getShortestDistance(cfg, other.worldX, kart.worldX));
-                    const dy = Math.abs(other.yPercent - kart.yPercent);
-                    // Le bill balaie plus large qu'un contact de carrosserie : il
-                    // traverse la piste en trombe, il ne se faufile pas.
-                    const box = (kart.isBill || other.isBill) ? cfg.bill.hitbox : cfg.hitboxes.kartVsKart;
-                    if (dx < box.x && dy < box.y) {
-                         // Deux intouchables ne se blessent pas : c'est ce qui met
-                         // l'etoile hors d'atteinte du bill, et l'inverse.
-                         //
-                         // Deux bills font exception au « sans rien » : ils tiennent
-                         // tous les deux le milieu de la piste, s'y traverser serait
-                         // le seul endroit du jeu ou deux karts s'ignorent. Ils se
-                         // bousculent donc, en tombant dans le bloc de poussee plus
-                         // bas, mais attenue et sans degats.
-                         const billOnBill = kart.isBill && other.isBill;
-
-                         if (isRamming(kart) && isRamming(other) && !billOnBill) continue;
-
-                         if (!billOnBill && isRamming(kart)) {
-                             if (other.hitInvincibleUntil > now) continue;
-                             spinOutKart(cfg, now, other, events);
-                             continue;
-                         }
-                         if (!billOnBill && isRamming(other)) {
-                             if (kart.hitInvincibleUntil > now) continue;
-                             spinOutKart(cfg, now, kart, events);
-                             continue;
-                         }
-
-                         const pushScale = billOnBill ? cfg.bill.pushFactor : 1;
-                         const myMass = kart.stats.mass;
-                         const otherMass = other.stats.mass;
-                         const totalMass = myMass + otherMass;
-                         const myRatio = otherMass / totalMass;
-                         const otherRatio = myMass / totalMass;
-                         const pushForce = cfg.physics.pushForce * pushScale;
-                         const myBounceY = cfg.physics.collisionBounceY * myRatio * pushScale;
-                         const otherBounceY = cfg.physics.collisionBounceY * otherRatio * pushScale;
-                         if (kart.yPercent > other.yPercent) {
-                             kart.yPercent += pushForce * myRatio; kart.vy = myBounceY;
-                             other.yPercent -= pushForce * otherRatio; other.vy = -otherBounceY;
-                         } else {
-                             kart.yPercent -= pushForce * myRatio; kart.vy = -myBounceY;
-                             other.yPercent += pushForce * otherRatio; other.vy = otherBounceY;
-                         }
-                    }
-                }
 
                 if (kart.heldItem && kart.state === 'running' && kart.heldItem.holdPosition === 'behind') {
                     let itemWorldX = kart.worldX + cfg.offsets.world.heldItemBehind;
@@ -2842,19 +3313,41 @@
 
                 // Un tuyau arrete aussi une toupie : elle glisse, mais pas a
                 // travers le decor.
+                // Une toupie glisse sur son erre, et elle encaisse : le choc
+                // longitudinal s'ajoute a cette erre, borne a l'arret comme pour
+                // un kart en course. Se faire tamponner pendant son tete-a-queue
+                // pousse donc vraiment, au lieu de ne rien faire.
+                let hitSpeed = 0;
                 if (elapsed < decelDuration && now >= kart.bumpEndTime) {
                     const decelProgress = elapsed / decelDuration;
                     const hitSpeedFactor = 0.3 * Math.max(0, 1.0 - decelProgress * decelProgress);
-                    const moveDist = cfg.speeds.roadPPS * hitSpeedFactor * deltaTime;
-                    kart.worldX += moveDist;
-                    kart.totalDistance += moveDist;
+                    hitSpeed = cfg.speeds.roadPPS * hitSpeedFactor;
                     kart.stopped = false;
                 } else {
                     kart.stopped = true;
                 }
 
+                const shovedHitSpeed = hitSpeed + kart.bumpVx;
+                const hitMove = (shovedHitSpeed > 0 ? shovedHitSpeed : 0) * deltaTime;
+                kart.contactSpeed = deltaTime > 0 ? hitMove / deltaTime : 0;
+                kart.worldX += hitMove;
+                kart.totalDistance += hitMove;
+
+                // Le choc lateral la deplace aussi. Sans ces trois lignes, une
+                // toupie encaissait une poussee en profondeur sans jamais s'y
+                // deplacer : elle restait plantee dans le kart qui la percutait.
+                kart.yPercent += kart.bumpVy * deltaTime;
+                if (kart.yPercent > cfg.road.maxY) { kart.yPercent = cfg.road.maxY; kart.bumpVy = 0; }
+                if (kart.yPercent < cfg.road.minY) { kart.yPercent = cfg.road.minY; kart.bumpVy = 0; }
+
                 if (kart.worldX >= cfg.world.width) {
                     kart.worldX -= cfg.world.width;
+                }
+                // Le pendant du precedent : depuis qu'un tamponnement peut
+                // ralentir une toupie sous zero, elle peut reculer a travers
+                // l'origine du monde.
+                if (kart.worldX < 0) {
+                    kart.worldX += cfg.world.width;
                 }
 
                 collideKartWithPipes(cfg, state, kart, now, events);
@@ -2869,6 +3362,9 @@
                 }
             }
         }
+
+        // Tout le monde a bouge : les carrosseries peuvent enfin se parler.
+        resolveKartContacts(cfg, state, now, deltaTime, events);
 
         updateOrbitItems(cfg, state, now, deltaTime, events);
 
@@ -3170,6 +3666,20 @@
                 nextMomentumChange: now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax),
                 vy: 0,
                 targetVy: 0,
+
+                // Canaux de choc, tenus a l'ecart du pilotage et du moteur.
+                // `bumpVy` est en profondeur/s, `bumpVx` en pixels/s. Les deux
+                // s'ajoutent au deplacement puis s'amortissent seuls : ecrire un
+                // choc dans `vy` le faisait effacer par `applySteering` avant que
+                // les karts se soient decolles.
+                bumpVy: 0,
+                bumpVx: 0,
+
+                // Vitesse le long de la piste sur le tick ecoule, en pixels/s.
+                // Relevee a la fin du deplacement et lue par la passe de contact,
+                // qui a besoin d'une vitesse de rapprochement reelle — recul de
+                // pipe et tete-a-queue compris — et non de la consigne moteur.
+                contactSpeed: 0,
 
                 state: 'grid',
                 rank: index + 1,

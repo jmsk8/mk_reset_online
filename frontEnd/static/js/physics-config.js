@@ -169,8 +169,146 @@
             // Le temps de reaction, lui, se regle a cote : `ai.reactionBaseMs`
             // et son jitter.
             steerResponse: 5,
-            pushForce: 0.5,
-            collisionBounceY: 10,
+
+            // ── Contact entre karts ──────────────────────────────────────
+            //
+            // Un contact n'est plus un saut de position : c'est un choc, et il
+            // se lit sur trois questions, dans cet ordre.
+            //
+            //   1. PAR OU ? La boite de contact est un rectangle tres allonge
+            //      (60 x 5). L'axe du choc est celui ou le chevauchement est le
+            //      plus faible **une fois rapporte a la demi-boite** : chevaucher
+            //      de 2 en profondeur sur 5 est plus profond que chevaucher de 20
+            //      en longueur sur 60. Ce rapport, et lui seul, separe le coup
+            //      d'epaule (normale en Y) du tamponnement (normale en X).
+            //
+            //   2. A QUELLE VITESSE ? L'impulsion vaut la vitesse de
+            //      rapprochement le long de cette normale, pas une constante. Se
+            //      laisser rattraper de 5 px/s et emboutir a 200 px/s ne peuvent
+            //      pas produire le meme choc.
+            //
+            //   3. QUI CEDE ? Toujours la masse, et de deux facons : elle
+            //      repartit l'impulsion, et elle decide de quelle part de son
+            //      braquage chacun perd (`steerDeny`). C'est le second point qui
+            //      fait qu'un lourd force le passage sur un leger.
+            //
+            // Les vitesses de choc vivent dans `bumpVy` / `bumpVx`, deux canaux
+            // separes de `vy` et de la vitesse moteur. C'est indispensable :
+            // ecrire dans `vy` faisait absorber le choc par `applySteering` en
+            // 200 ms, avant meme que les karts se soient decolles.
+            contact: {
+                // Passes de resolution par tick. Une seule passe laisse les
+                // paquets de trois karts en chevauchement : le kart du milieu est
+                // repousse par l'un dans l'autre. Deux suffisent, au-dela le gain
+                // est invisible.
+                iterations: 2,
+
+                // Chevauchement tolere avant de corriger la position, par axe.
+                // Sans cette marge, deux karts cote a cote se repoussent d'un
+                // cheveu a chaque tick et vibrent.
+                slopX: 2,
+                slopY: 0.2,
+
+                // Vitesse de resorption du chevauchement, en 1/s. Meme forme
+                // que `steerResponse` : la part corrigee sur un pas vaut
+                // `separationRate * dt`, bornee a 1. A 12 et 30 Hz, un contact
+                // perd 40 % de son chevauchement par passe. Monter la valeur
+                // decolle les karts d'un coup — on retombe sur la
+                // teleportation d'avant ; la baisser les laisse se traverser
+                // quand ils se rejoignent vite.
+                //
+                // Exprime en 1/s et non en fraction par pas pour que le
+                // comportement ne soit pas silencieusement accroche a
+                // `TICK_HZ` cote serveur.
+                separationRate: 12,
+
+                // ── L'ejection ───────────────────────────────────────────
+                //
+                // Un contact est un COUP, pas un appui. La regle qui le tient :
+                // une impulsion ne part que si les deux karts se RAPPROCHENT
+                // encore. Des qu'ils s'ecartent, plus rien ne les pousse — seule
+                // la separation de position finit le travail.
+                //
+                // C'est ce qui separe un choc net d'une bousculade molle.
+                // Pousser a chaque tick tant que les carrosseries se touchent
+                // donnait deux karts colles qui se raclaient l'un contre
+                // l'autre sur des secondes ; avec la porte du rapprochement, le
+                // choc part une fois, fort, et le contact est fini.
+                //
+                // Force d'un choc, sans unite : `ejectBase` a l'accrochage le
+                // plus lent, plus la vitesse de rapprochement. A 1, le choc vaut
+                // exactement `ejectX` / `ejectY` avant partage des masses.
+                ejectBase: 1.0,
+
+                // Ce que rend la vitesse de rapprochement, en plus du plancher.
+                // 0 = tout contact ejecte pareil, quelle que soit l'allure ;
+                // au-dela de 1 un tamponnement rend plus qu'il n'a pris.
+                restitution: 0.6,
+
+                // Ce que vaut une ejection de force 1, par axe et dans l'unite
+                // de l'axe : pixels/s le long de la piste, profondeur/s en
+                // travers. Les deux sont separes parce que les axes n'ont ni la
+                // meme unite ni la meme echelle — 60 px de boite contre 5 de
+                // profondeur. C'est ici qu'on dose « ca ejecte assez fort ».
+                //
+                // Ces deux-la et les deux plafonds plus bas se tiennent : monter
+                // l'un sans l'autre ne se voit pas, le plafond rognant le
+                // supplement avant qu'il arrive au kart.
+                ejectX: 135,
+                ejectY: 27,
+
+                // Plafond de la force d'un choc. Sans lui, un bill lance a
+                // pleine vitesse dans un kart a l'arret produirait une ejection
+                // proportionnelle a l'ecart de vitesse, sans borne.
+                maxEject: 4,
+
+                // Part du braquage perdue par le kart le plus leger, a masse
+                // egale. La repartition passe ensuite par les masses : contre un
+                // adversaire deux fois plus lourd, on en perd les deux tiers.
+                //
+                // Contrairement a l'ejection, celui-ci s'applique a CHAQUE tick
+                // du contact : ce n'est pas une poussee, c'est un refus d'appui.
+                // Il ne peut donc pas coller les karts entre eux — il ne fait
+                // qu'annuler la part de volant qui pousse dans l'autre.
+                //
+                // C'est le reglage du « il force le passage ». A 0, chacun garde
+                // son cap et le lourd ne pese plus que par l'ejection ; a 1, le
+                // leger colle a l'adversaire perd tout appui et ne peut plus
+                // esquiver du tout tant que le contact dure.
+                steerDeny: 0.7,
+
+                // Plafonds des deux canaux, en pixels/s et en profondeur/s.
+                // Distincts de `maxEject`, qui ne borne qu'un seul coup : deux
+                // chocs rapproches s'ajoutent dans le meme canal, et
+                // l'amortissement ne les efface pas assez vite pour l'empecher.
+                //
+                // Ce qu'ils autorisent se lit en distance, pas en vitesse : un
+                // choc dure le temps de `decay`, soit 180 ms, donc le kart
+                // parcourt environ un cinquieme de la valeur ci-dessous. A 210
+                // et 45, une ejection franche vaut les trois quarts d'une
+                // longueur de kart le long de la piste et un quart de la largeur
+                // de piste en travers.
+                //
+                // Les ordres de grandeur qui les encadrent : une pointe vaut
+                // 450 a 560 px/s, et un ecart d'esquive va de 5 a 85 de
+                // profondeur par seconde selon la maniabilite.
+                maxBumpX: 210,
+                maxBumpY: 45,
+
+                // Amortissement des deux canaux de choc, en 1/s. Se lit comme
+                // un delai : 5.5 vaut une constante de temps de 180 ms. Court,
+                // et c'est voulu — une ejection doit claquer puis retomber. Un
+                // amortissement long etale le coup et le fait ressembler a la
+                // poussee continue qu'il remplace.
+                decay: 5.5,
+
+                // Un kart en tete-a-queue ne pilote plus, il encaisse — mais il
+                // n'est plus un fantome pour autant. Ce facteur majore sa masse :
+                // au-dessus de 1, il fait plus obstacle qu'il ne se fait pousser,
+                // ce qui est le comportement d'une carcasse qui derape en travers
+                // de la piste.
+                spinMassFactor: 1.2
+            }
         },
         speeds: {
             roadPPS: 250,
@@ -796,6 +934,23 @@
             crossDodgeMargin: 2,
             crossJudgeError: 0.25,
 
+            // Ce qui ferme un cote, en plus du bord de piste : un tuyau, ou un
+            // autre objet pose la. S'ecarter vers eux, c'est troquer la menace
+            // contre une autre — et le tuyau est le mauvais cote du marche, une
+            // carapace coute deux secondes de tete-a-queue quand un mur en
+            // coute six dixiemes plus le recul.
+            //
+            // Cette distance dit jusqu'ou en avant ils comptent : environ une
+            // demi-seconde de course, la duree d'un ecart. Au-dela, l'ecart sera
+            // retombe avant que le kart n'arrive a leur hauteur, et fermer un
+            // cote pour un tuyau si lointain reviendrait a freiner pour rien.
+            //
+            // Bien plus court que pipe.seeDistance (1100), et c'est la meme
+            // difference qu'entre les deux manoeuvres : un tuyau se contourne en
+            // trajectoire, en le voyant venir de loin ; une esquive est un
+            // reflexe qui ne regarde que le pas suivant.
+            dodgeGuardDistance: 500,
+
             // Latence de reflexe, tiree au sort a chaque menace.
             reactionBaseMs: 280,
             reactionJitterMin: 0.8, reactionJitterMax: 1.35,
@@ -826,6 +981,12 @@
     itemArmDistance: 110,
 
     hitboxes: {
+            // Boite de contact d'une PAIRE de karts : un ecart entre centres,
+            // comme toutes les hitboxes du moteur. La physique la lit par
+            // `kartHalfExtents()`, qui en rend la moitie pour chaque kart et
+            // resomme les deux — detour inutile aujourd'hui, ou tous les karts
+            // ont la meme emprise, mais c'est par la que passera une carrosserie
+            // plus large pour les lourds sans rien changer au reste.
             kartVsKart: { x: 60, y: 5 },
             itemVsKart: { x: 40, y: 5 },
             // Kart contre pipe. Comme les autres, c'est un ecart entre centres :
