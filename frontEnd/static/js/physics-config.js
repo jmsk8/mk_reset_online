@@ -346,6 +346,16 @@
                 // poussee continue qu'il remplace.
                 decay: 5.5,
 
+                // ── L'inertie d'un contact ───────────────────────────────
+                //
+                // Ce qu'un kart oppose a un choc n'est pas sa masse mais son
+                // inertie : `masse ^ massBias * allure ^ speedBias`, ou l'allure
+                // est sa vitesse du moment rapportee a sa propre pointe.
+                //
+                // Deux exposants pour deux questions independantes — combien le
+                // GABARIT compte, et combien l'ALLURE compte — et on peut tourner
+                // l'un sans toucher a l'autre.
+
                 // Ce que le poids pese dans un contact, en exposant sur la
                 // masse : `masse ^ massBias`. Meme forme que `massDragAccel` et
                 // `massDragAgility`, et meme lecture — le pivot est la masse 1,
@@ -368,6 +378,35 @@
                 // la : la masse continue de servir a l'acceleration et a la
                 // maniabilite sans etre touchee.
                 massBias: 2.0,
+
+                // Ce que l'allure pese, meme forme et meme lecture : un exposant
+                // qui pivote autour de l'allure 1, soit un kart lance a sa
+                // propre pointe. Aller plus vite que d'habitude fait donc peser
+                // plus lourd, aller moins vite fait peser moins.
+                //
+                // A 0, l'allure ne compte plus et on retombe sur le contact
+                // purement au gabarit : un kart sous champignon encaisse son
+                // propre tamponnement comme s'il etait a l'arret. A 1, l'inertie
+                // vaut exactement la quantite de mouvement, `masse * vitesse`,
+                // et c'est le reglage honnete — celui qui rend au choc ce que la
+                // physique lui donne.
+                //
+                // Au-dela de 1 le boost devient un jeu a lui seul : a 2, un
+                // poids plume sous champignon domine un poids lourd lance. C'est
+                // jouable, mais ce n'est plus de l'inertie.
+                //
+                // Repere : sous champignon (allure 1.5 contre 0.9 en croisiere),
+                // un kart pese 1.67 fois plus a speedBias 1 — de quoi tenir tete
+                // a un lourd sans le renverser.
+                speedBias: 1.0,
+
+                // Garde-fou sur l'allure, pas un reglage : il ne doit jamais
+                // mordre sur une situation normale. Le plancher empeche deux
+                // choses — qu'un recul de tuyau, qui rend une vitesse negative,
+                // inverse le partage, et qu'un kart a l'arret devienne un
+                // fantome que tout traverse. Le plafond couvre le bill, seul a
+                // depasser sa propre pointe de plus de moitie.
+                speedClamp: { min: 0.55, max: 1.80 },
 
                 // Ce que pese un bill dans un contact, en multiples de la masse
                 // qu'aurait le kart sous la carapace. Il ne se lit pas comme un
@@ -829,7 +868,7 @@
             //
             // Le monter rapproche l'eclair d'une sanction du classement ; le
             // baisser le rend a la geographie de la course.
-            shrinkRankWeight: 0.5
+            shrinkRankWeight: 0.35
         },
 
         // Bill Ball. Ce n'est pas un projectile : le kart lui-meme se transforme
