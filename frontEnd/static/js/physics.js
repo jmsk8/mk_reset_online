@@ -2373,13 +2373,28 @@
         return { x: box.x * 0.5, y: box.y * 0.5 };
     }
 
-    // Masse vue par un contact. Un kart en tete-a-queue ne pilote plus : il
-    // traverse la piste en travers, sans rien pour se rattraper. Il pese donc
-    // un peu plus lourd qu'en course — il fait obstacle plutot qu'il ne se
-    // laisse pousser.
+    // Masse vue par un contact — et elle n'est pas la masse du kart.
+    //
+    // L'axe poids ne rend que 0.72 a 1.25 de masse, soit un rapport de 1.45
+    // entre le plus lourd et le plus leger. Reparti tel quel, ca donnait un
+    // choc presque equitable la ou le joueur attend qu'un poids lourd fasse
+    // valoir son poids. `massBias` reouvre cet ecart sans toucher a la masse
+    // elle-meme, qui sert aussi a l'acceleration et a la maniabilite : ce qui
+    // se regle ici ne se paie que dans les contacts.
+    //
+    // Meme forme que `massDragAccel` et `massDragAgility` : un exposant, donc
+    // un pivot autour de la masse 1 — les lourds gagnent exactement ce que les
+    // legers perdent, et un plateau de masses egales reste a 50/50 quel que
+    // soit le reglage.
+    //
+    // Le facteur de tete-a-queue reste un multiplicateur pose par-dessus, et
+    // non un terme de l'exposant : un kart en toupie ne pilote plus, il traverse
+    // la piste en travers sans rien pour se rattraper. Il fait obstacle plutot
+    // qu'il ne se laisse pousser, et ca vaut pareil pour un leger et un lourd.
     function contactMass(cfg, kart) {
-        const m = kart.stats.mass;
-        return kart.state === 'hit' ? m * cfg.physics.contact.spinMassFactor : m;
+        const c = cfg.physics.contact;
+        const m = Math.pow(kart.stats.mass, c.massBias);
+        return kart.state === 'hit' ? m * c.spinMassFactor : m;
     }
 
     // Une toupie n'est plus un fantome : elle bouscule et se fait bousculer
@@ -2387,6 +2402,63 @@
     // reste hors de la passe.
     function isContactActive(kart) {
         return kart.state === 'running' || kart.state === 'hit';
+    }
+
+    // ── Le bord de piste ────────────────────────────────────────────────────
+    //
+    // Un mur glissant, et les trois mots comptent.
+    //
+    //   MUR : on ne le traverse pas. La position est ramenee au bord, comme
+    //   avant.
+    //
+    //   GLISSANT : on n'y rebondit pas et on n'y est pas arrete. Le kart garde
+    //   son cap et repart quand il veut — c'est toute la difference avec le
+    //   tuyau, qui stoppe net, fait reculer et pose une pose de choc.
+    //
+    //   FROTTEMENT : y rester coute de la vitesse. Le mur tire le moteur vers
+    //   `topSpeed * speedFactor` tant que le kart est plaque contre lui.
+    //
+    // Le declencheur n'est pas un choc mais une PRESENCE : etre au bord suffit.
+    // C'est ce qui couvre d'un seul coup les deux cas — se faire pousser contre
+    // le mur, et devoir s'y coller pour esquiver — sans rien avoir a memoriser
+    // ni a distinguer. Des que le kart braque vers l'interieur, `yPercent`
+    // decolle du bord au pas suivant et le frottement s'arrete de lui-meme.
+    //
+    // Seule la composante SORTANTE du mouvement lateral est annulee. L'annuler
+    // dans les deux sens collerait pour de bon au mur un kart qui essaie d'en
+    // partir : au bord exact, son braquage de retour serait efface avant d'avoir
+    // servi.
+    //
+    // Les objets ne passent pas par ici. Carapaces et bananes gardent leur
+    // rebond a eux (`bounceItemOffPipe` et le clamp de `updateItem`) : le mur
+    // n'est glissant que pour les karts.
+    function clampKartToRoad(cfg, kart, deltaTime) {
+        const road = cfg.road;
+        let atWall = false;
+
+        if (kart.yPercent >= road.maxY) {
+            kart.yPercent = road.maxY;
+            if (kart.vy > 0) kart.vy = 0;
+            if (kart.bumpVy > 0) kart.bumpVy = 0;
+            atWall = true;
+        } else if (kart.yPercent <= road.minY) {
+            kart.yPercent = road.minY;
+            if (kart.vy < 0) kart.vy = 0;
+            if (kart.bumpVy < 0) kart.bumpVy = 0;
+            atWall = true;
+        }
+
+        if (!atWall) return;
+
+        // Meme forme que `applySteering` et que la separation des contacts : un
+        // taux en 1/s, borne a 1 pour qu'une frame longue arrive pile sur le
+        // plancher au lieu de le depasser.
+        const wall = cfg.physics.wall;
+        const floor = kart.stats.topSpeed * wall.speedFactor;
+        if (kart.absoluteVelocity > floor) {
+            const k = wall.grip * deltaTime;
+            kart.absoluteVelocity += (floor - kart.absoluteVelocity) * (k > 1 ? 1 : k);
+        }
     }
 
     // Combien de profondeur il reste a ce kart dans la direction `n` avant le
@@ -2480,6 +2552,12 @@
         const total = mA + mB;
         // Part du choc encaissee par chacun : c'est la masse D'EN FACE qui la
         // fixe. Le lourd bouge peu, le leger part.
+        //
+        // Ces deux parts sont le seul endroit ou le poids se fait sentir dans un
+        // contact, mais elles servent aux TROIS effets d'un choc : l'ejection,
+        // le refus de braquage, et la separation des carrosseries. Regler
+        // `massBias` les deplace donc ensemble — un lourd est repousse moins
+        // loin, garde plus de volant et cede moins de terrain, d'un seul coup.
         const shareA = mB / total;
         const shareB = mA / total;
 
@@ -2621,8 +2699,10 @@
             const kart = state.karts[i];
             if (!isContactActive(kart)) continue;
 
-            if (kart.yPercent > cfg.road.maxY) { kart.yPercent = cfg.road.maxY; kart.vy = 0; kart.bumpVy = 0; }
-            if (kart.yPercent < cfg.road.minY) { kart.yPercent = cfg.road.minY; kart.vy = 0; kart.bumpVy = 0; }
+            // Un kart que la passe de contacts vient de plaquer contre le bord
+            // y frotte comme s'il s'y etait mis lui-meme : c'est le cas « pousse
+            // contre le mur », et il n'a pas a etre traite a part.
+            clampKartToRoad(cfg, kart, deltaTime);
 
             // Le sursis par tuyau de `collideKartWithPipes` rend ce second
             // passage sans danger : le tuyau deja encaisse dans le tick est
@@ -3328,8 +3408,7 @@
                     kart.worldX += cfg.world.width;
                 }
 
-                if (kart.yPercent > cfg.road.maxY) { kart.yPercent = cfg.road.maxY; kart.vy = 0; kart.bumpVy = 0; }
-                if (kart.yPercent < cfg.road.minY) { kart.yPercent = cfg.road.minY; kart.vy = 0; kart.bumpVy = 0; }
+                clampKartToRoad(cfg, kart, deltaTime);
 
                 // Apres le deplacement et le recadrage sur la piste : le tuyau
                 // se juge sur la position ou le kart vient d'arriver.
@@ -3424,8 +3503,10 @@
                 // toupie encaissait une poussee en profondeur sans jamais s'y
                 // deplacer : elle restait plantee dans le kart qui la percutait.
                 kart.yPercent += kart.bumpVy * deltaTime;
-                if (kart.yPercent > cfg.road.maxY) { kart.yPercent = cfg.road.maxY; kart.bumpVy = 0; }
-                if (kart.yPercent < cfg.road.minY) { kart.yPercent = cfg.road.minY; kart.bumpVy = 0; }
+                // Le frottement ne mord pas sur une toupie : sa glissade ne
+                // passe pas par le moteur mais par `hitSpeed`, et elle est deja
+                // en train de s'arreter toute seule.
+                clampKartToRoad(cfg, kart, deltaTime);
 
                 if (kart.worldX >= cfg.world.width) {
                     kart.worldX -= cfg.world.width;
