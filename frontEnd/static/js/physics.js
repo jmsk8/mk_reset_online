@@ -2393,6 +2393,22 @@
     // legers perdent, et un plateau de masses egales reste a 50/50 quel que
     // soit le reglage.
     //
+    // Ce qu'un kart oppose a un choc. Ce n'est pas sa masse : c'est son INERTIE,
+    // masse et vitesse ensemble.
+    //
+    // La masse seule ne pouvait pas dire ce qu'un choc a pourtant de plus
+    // evident — qu'emboutir a pleine vitesse et se faire rejoindre au ralenti ne
+    // sont pas le meme evenement. Un kart sous champignon tapait plus fort, mais
+    // recevait sa part du choc comme s'il etait a l'arret : il se punissait
+    // lui-meme d'avoir accelere. La vitesse manquait des deux cotes de la
+    // balance, pas d'un seul.
+    //
+    // Elle entre donc ici, au seul endroit qui decide de qui cede a qui, et
+    // rapportee a la pointe DU KART : ce qui compte n'est pas de rouler vite
+    // dans l'absolu mais de pousser plus fort que d'habitude. Un poids plume
+    // lance ne devient pas un poids lourd — il cesse seulement d'etre traite
+    // comme un poids plume a l'arret.
+
     // Les deux facteurs d'etat sont des multiplicateurs poses par-dessus, et non
     // des termes de l'exposant : ils ne decrivent pas un gabarit mais une
     // situation, et valent donc pareil pour un leger et pour un lourd.
@@ -2413,9 +2429,21 @@
     //   retombent sur un partage moitie-moitie, attenue par `bill.pushFactor`.
     //   C'est ce qui fait qu'un bill reste la seule chose qui devie un bill,
     //   sans avoir a l'ecrire nulle part.
-    function contactMass(cfg, kart) {
+    function contactInertia(cfg, kart) {
         const c = cfg.physics.contact;
-        const m = Math.pow(kart.stats.mass, c.massBias);
+
+        // Allure du moment, en fraction de la pointe du kart. `contactSpeed` est
+        // le deplacement reellement effectue sur le tick : boosts, frottement de
+        // mur et chocs en cours y sont deja, il n'y a rien a recomposer. Le
+        // garde-fou n'est pas un reglage — il empeche le recul d'un tuyau (qui
+        // rend une vitesse negative) d'inverser le partage, et un kart a l'arret
+        // de devenir un fantome que tout traverse.
+        const top = kart.stats.topSpeed;
+        let pace = top > 0 ? kart.contactSpeed / top : 1;
+        if (pace < c.speedClamp.min) pace = c.speedClamp.min;
+        else if (pace > c.speedClamp.max) pace = c.speedClamp.max;
+
+        const m = Math.pow(kart.stats.mass, c.massBias) * Math.pow(pace, c.speedBias);
         if (kart.isBill) return m * c.billMassFactor;
         return kart.state === 'hit' ? m * c.spinMassFactor : m;
     }
@@ -2570,19 +2598,20 @@
         if (bothRam && !billOnBill) return;
         const scale = billOnBill ? cfg.bill.pushFactor : 1;
 
-        const mA = contactMass(cfg, a);
-        const mB = contactMass(cfg, b);
-        const total = mA + mB;
-        // Part du choc encaissee par chacun : c'est la masse D'EN FACE qui la
-        // fixe. Le lourd bouge peu, le leger part.
+        const iA = contactInertia(cfg, a);
+        const iB = contactInertia(cfg, b);
+        const total = iA + iB;
+        // Part du choc encaissee par chacun : c'est l'inertie D'EN FACE qui la
+        // fixe. Celui qui pese et qui pousse bouge peu, l'autre part.
         //
-        // Ces deux parts sont le seul endroit ou le poids se fait sentir dans un
-        // contact, mais elles servent aux TROIS effets d'un choc : l'ejection,
-        // le refus de braquage, et la separation des carrosseries. Regler
-        // `massBias` les deplace donc ensemble — un lourd est repousse moins
-        // loin, garde plus de volant et cede moins de terrain, d'un seul coup.
-        const shareA = mB / total;
-        const shareB = mA / total;
+        // Ces deux parts sont le seul endroit ou le gabarit et l'allure se font
+        // sentir dans un contact, mais elles servent aux TROIS effets d'un choc :
+        // l'ejection, le refus de braquage, et la separation des carrosseries.
+        // Regler `massBias` ou `speedBias` les deplace donc ensemble — celui qui
+        // domine le contact est repousse moins loin, garde plus de volant et
+        // cede moins de terrain, d'un seul coup.
+        const shareA = iB / total;
+        const shareB = iA / total;
 
         // Fraction du chevauchement resorbee sur ce pas, bornee a 1 comme le
         // lissage du volant : une image longue se contente d'arriver pile a la

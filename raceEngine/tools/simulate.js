@@ -167,6 +167,37 @@ function trueLap(cfg, state) {
     return Math.min(LAPS, Math.max(1, crossings));
 }
 
+// Un pas « tranquille » : le kart roule, et rien d'autre que son elan ne decide
+// de sa vitesse. C'est le regime du `else` de la branche moteur — celui ou
+// `momentum` seul fixe la vitesse visee — debarrasse de tout ce qui vient
+// ensuite la rogner ou la doper.
+//
+// Les drapeaux sont lus sur le kart plutot que deduits : `getActiveBoost` n'est
+// pas exporte, mais ses trois entrees (bill, etoile, champignon) le sont, et le
+// bord de piste se lit sur `yPercent` comme le fait `clampKartToRoad`.
+//
+// Un reste de choc longitudinal disqualifie le pas : `bumpVx` s'amortit de
+// facon continue et ne retombe jamais a zero exactement, d'ou le seuil — sous
+// un pixel par seconde, la poussee ne pese plus rien face a une pointe qui se
+// compte en centaines.
+const CALM_BUMP_EPS = 1;
+
+function isCalm(cfg, kart, now) {
+    return kart.state === 'running'
+        && !kart.finished
+        && kart.startStallUntil <= now
+        && !kart.isBill
+        && kart.starEndTime <= now
+        && kart.boostEndTime <= now
+        && kart.billSlowUntil <= now
+        && kart.shrinkEndTime <= now
+        && kart.brakeUntil <= now
+        && kart.bumpEndTime <= now
+        && Math.abs(kart.bumpVx) < CALM_BUMP_EPS
+        && kart.yPercent < cfg.road.maxY
+        && kart.yPercent > cfg.road.minY;
+}
+
 // ── Une course ──────────────────────────────────────────────────────────────
 
 // Rendue des que le classement est complet : les secondes de tableau des scores
@@ -198,11 +229,31 @@ function runRace(startOrder, cfg) {
     const bumps = {};
     const slowMs = {};
     const raceMs = {};
+    // Distance reellement couverte pendant que le kart court, relevee pas a pas
+    // sur `totalDistance` plutot que sur `absoluteVelocity` : la vitesse affichee
+    // par le moteur n'est pas toujours celle a laquelle le kart avance (blocage
+    // derriere un autre, tete-a-queue, recul). Rapportee a `raceMs`, elle donne
+    // la vitesse moyenne observee — ce que le kart tient vraiment en course, par
+    // opposition a sa pointe theorique.
+    const dist = {};
+    const prevDist = {};
+    // Meme mesure, restreinte aux pas tranquilles. Le pas n'est retenu que si le
+    // kart etait deja tranquille au pas precedent : le deplacement releve ici a
+    // eu lieu pendant l'intervalle, et l'encadrer des deux cotes evite de lui
+    // attribuer la fin d'un boost ou le debut d'un choc.
+    const calmDist = {};
+    const calmMs = {};
+    const prevCalm = {};
     for (const kart of state.karts) {
         hits[kart.charName] = 0;
         bumps[kart.charName] = 0;
         slowMs[kart.charName] = 0;
         raceMs[kart.charName] = 0;
+        dist[kart.charName] = 0;
+        prevDist[kart.charName] = kart.totalDistance;
+        calmDist[kart.charName] = 0;
+        calmMs[kart.charName] = 0;
+        prevCalm[kart.charName] = false;
     }
 
     // Place de chaque kart a la fin de chaque tour. Le releve se fait au moment
@@ -235,8 +286,22 @@ function runRace(startOrder, cfg) {
         // La grille et le tour d'honneur sont hors sujet : avant le depart tout
         // le monde est a l'arret, apres l'arrivee tout le monde est bride.
         for (const kart of state.karts) {
+            // Le repere avance meme pour les karts hors mesure : sans cela, la
+            // distance parcourue en grille ou apres l'arrivee retomberait d'un
+            // bloc dans le premier pas compte.
+            const moved = kart.totalDistance - prevDist[kart.charName];
+            prevDist[kart.charName] = kart.totalDistance;
+
+            const calm = isCalm(cfg, kart, simTime);
+            if (calm && prevCalm[kart.charName]) {
+                calmDist[kart.charName] += moved;
+                calmMs[kart.charName] += DT_MS;
+            }
+            prevCalm[kart.charName] = calm;
+
             if (kart.state === 'grid' || kart.finished) continue;
             raceMs[kart.charName] += DT_MS;
+            dist[kart.charName] += moved;
             if (kart.state !== 'running'
                 || kart.absoluteVelocity < SLOW_RATIO * kart.stats.topSpeed) {
                 slowMs[kart.charName] += DT_MS;
@@ -285,7 +350,7 @@ function runRace(startOrder, cfg) {
                     grid: state.karts.map(k => k.charName),
                     ms: simTime,
                     got, gotLap, fired, firedLap, lapDrift, ticks: tick + 1,
-                    hits, bumps, slowMs, raceMs
+                    hits, bumps, slowMs, raceMs, dist, calmDist, calmMs
                 };
             }
         }
@@ -297,7 +362,7 @@ function runRace(startOrder, cfg) {
 
 const stat = {};
 for (const name of ROSTER) {
-    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, bumps: 0, slowMs: 0, raceMs: 0 };
+    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, bumps: 0, slowMs: 0, raceMs: 0, dist: 0, calmDist: 0, calmMs: 0 };
 }
 
 // Places tour par tour. `lapSum` sert la trajectoire moyenne, `lapDist` la
@@ -367,6 +432,9 @@ for (let r = 0; r < RACES; r++) {
         stat[name].bumps += race.bumps[name] || 0;
         stat[name].slowMs += race.slowMs[name] || 0;
         stat[name].raceMs += race.raceMs[name] || 0;
+        stat[name].dist += race.dist[name] || 0;
+        stat[name].calmDist += race.calmDist[name] || 0;
+        stat[name].calmMs += race.calmMs[name] || 0;
     }
 
     race.order.forEach((name, index) => {
@@ -499,21 +567,39 @@ console.log(`budget : ${CFG.kartStats.budget} points par kart, chaque axe dans `
 console.log('');
 console.log('Ce que la course coute a chaque kart');
 console.log(pad('kart', w) + padL('agi', 6) + padL('touches', 10) + padL('pipes', 8)
-    + padL('hors rythme', 13) + padL('part de course', 16));
-console.log('-'.repeat(w + 6 + 10 + 8 + 13 + 16));
+    + padL('hors rythme', 13) + padL('part de course', 16)
+    + padL('vit. moy.', 11) + padL('% pointe', 10)
+    + padL('vit. tranq.', 13) + padL('% pointe', 10) + padL('part tranq.', 13));
+console.log('-'.repeat(w + 6 + 10 + 8 + 13 + 16 + 11 + 10 + 13 + 10 + 13));
 for (const name of rows) {
     const s = stat[name];
+    const meanSpeed = s.raceMs ? s.dist / (s.raceMs / 1000) : 0;
+    const calmSpeed = s.calmMs ? s.calmDist / (s.calmMs / 1000) : 0;
     console.log(pad(name, w)
         + padL(STATS[name].agility.toFixed(2), 6)
         + padL((s.hits / done).toFixed(2), 10)
         + padL((s.bumps / done).toFixed(2), 8)
         + padL((s.slowMs / done / 1000).toFixed(1) + ' s', 13)
-        + padL(pct(s.slowMs, s.raceMs).toFixed(1) + ' %', 16));
+        + padL(pct(s.slowMs, s.raceMs).toFixed(1) + ' %', 16)
+        + padL(Math.round(meanSpeed), 11)
+        + padL(pct(meanSpeed, STATS[name].topSpeed).toFixed(1) + ' %', 10)
+        + padL(Math.round(calmSpeed), 13)
+        + padL(pct(calmSpeed, STATS[name].topSpeed).toFixed(1) + ' %', 10)
+        + padL(pct(s.calmMs, s.raceMs).toFixed(1) + ' %', 13));
 }
 console.log('');
 console.log(`  touches : tete-a-queue subis par course. pipes : chocs contre un`);
 console.log(`  tuyau, par course. hors rythme : temps passe`);
 console.log(`  sous ${(SLOW_RATIO * 100).toFixed(0)} % de sa propre pointe, arret et relance compris.`);
+console.log('  vit. moy. : distance reellement couverte divisee par le temps passe en');
+console.log('  course, grille et tour d\'honneur exclus. % pointe : ce que cela');
+console.log('  represente de sa vitesse de pointe — c\'est la part de sa pointe que le');
+console.log('  kart exploite vraiment, une fois les objets et le trafic deduits.');
+console.log('  vit. tranq. : la meme mesure, mais sur les seuls pas ou rien d\'autre');
+console.log('  que l\'elan ne decide de la vitesse — ni objet, ni choc, ni bord de');
+console.log('  piste, ni freinage. C\'est le rythme de croisiere nu, celui que');
+console.log('  `momentum` produit a lui seul. part tranq. : la part de la course');
+console.log('  passee dans ce regime — un kart souvent bouscule la voit fondre.');
 console.log(`attendu si tous egaux : ${(100 * p0).toFixed(1)} % de victoires, place moyenne ${((N + 1) / 2).toFixed(2)}`);
 console.log(`bruit d'echantillonnage a ${done} courses : +/- ${sigma.toFixed(1)} point (1 ecart-type)`);
 console.log('  ++ / -- signale un ecart d\'au moins 2 ecarts-types, soit ce qui ne s\'explique plus par le hasard');
