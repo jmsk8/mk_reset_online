@@ -1946,9 +1946,11 @@ function renderState(gameNow, screenWidth) {
                     els.wrapper.classList.remove('kart-bill');
                 }
 
-                // Le choc contre un pipe prime sur le tete-a-queue : un kart
-                // percute puis arrete par un tuyau est arrete, pas en toupie.
-                if (kart.bumped) {
+                // Le choc contre un pipe prime sur la course, mais pas sur le
+                // tete-a-queue : un kart qui prend un objet juste apres s'etre
+                // cogne tourne quand meme. L'inverse figeait la toupie sur la
+                // pose de choc, puis la relachait au milieu du tour.
+                if (kart.bumped && kart.state !== 'hit') {
                     if (els.spinFrame !== BUMP_POSE_FRAME) {
                         els.spinFrame = BUMP_POSE_FRAME;
                         const pose = GAME_CONFIG.kartBump;

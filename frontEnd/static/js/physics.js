@@ -313,6 +313,16 @@
         return targetY > lo && targetY < hi;
     }
 
+    // De quel cote un kart plaque contre un tuyau doit s'ecarter. Le cote ou il
+    // deborde deja, et s'il est pile en face, le cote le plus degage : un kart
+    // pousse contre le tuyau resterait sinon plaque dessus.
+    function pipeSlideDir(cfg, kart, pipe) {
+        if (Math.abs(kart.yPercent - pipe.y) < 0.5) {
+            return (cfg.road.maxY - kart.yPercent) >= (kart.yPercent - cfg.road.minY) ? 1 : -1;
+        }
+        return kart.yPercent >= pipe.y ? 1 : -1;
+    }
+
     // Le kart contre le tuyau.
     //
     // Masse infinie : rien ne se transmet au pipe, tout est pour le kart. Il est
@@ -328,17 +338,35 @@
     // heurter un doit encore pouvoir se cogner au suivant, sans quoi deux pipes
     // cote a cote ne feraient qu'un seul mur franchissable.
     function collideKartWithPipes(cfg, state, kart, now, events) {
+        kart.pipeBlocked = false;
+
         const pipes = state.pipes;
         if (!pipes.length) return;
 
         const reach = cfg.hitboxes.kartVsPipe;
 
         for (let p = 0; p < pipes.length; p++) {
-            if (p === kart.lastPipeIndex && now < kart.pipeImmuneUntil) continue;
-
             const pipe = pipes[p];
             if (Math.abs(getShortestDistance(cfg, kart.worldX, pipe.worldX)) >= reach.x) continue;
             if (Math.abs(kart.yPercent - pipe.y) >= reach.y) continue;
+
+            // Une toupie ne se cogne pas : elle est deja hors de controle. Le
+            // tuyau l'arrete et la fait glisser le long, un point c'est tout —
+            // pas de nouveau choc, pas de recul, pas d'evenement.
+            //
+            // Lui rejouer le choc du kart en course rallongeait `bumpEndTime`
+            // par a-coups tant que la toupie restait collee au tuyau, et le
+            // rendu basculait entre la pose de choc et le tete-a-queue a chaque
+            // fin de sursis : c'etait le clignotement du sprite. Le sursis par
+            // tuyau ne protege de rien ici — il est saute a dessein, sans
+            // quoi la toupie traverserait le tuyau qu'elle vient de toucher.
+            if (kart.state === 'hit') {
+                kart.pipeBlocked = true;
+                kart.bumpVy = pipeSlideDir(cfg, kart, pipe) * cfg.pipe.slideAway;
+                return;
+            }
+
+            if (p === kart.lastPipeIndex && now < kart.pipeImmuneUntil) continue;
 
             kart.lastPipeIndex = p;
             kart.pipeImmuneUntil = now + cfg.pipe.immuneMs;
@@ -356,11 +384,7 @@
             // Ecarte vers le cote le plus degage. Sans ca, un kart pousse par le
             // peloton resterait plaque contre le tuyau : le chien de garde du
             // service finirait par le signaler, sans pour autant le liberer.
-            let dir = kart.yPercent >= pipe.y ? 1 : -1;
-            if (Math.abs(kart.yPercent - pipe.y) < 0.5) {
-                dir = (cfg.road.maxY - kart.yPercent) >= (kart.yPercent - cfg.road.minY) ? 1 : -1;
-            }
-            kart.vy = dir * cfg.pipe.slideAway;
+            kart.vy = pipeSlideDir(cfg, kart, pipe) * cfg.pipe.slideAway;
 
             // Le plan en cours ne vaut plus rien : il visait a passer, et le
             // kart est arrete contre le tuyau. Il rechoisira un couloir au
@@ -3312,13 +3336,16 @@
                 const decelDuration = cfg.delays.hitDecelDuration;
 
                 // Un tuyau arrete aussi une toupie : elle glisse, mais pas a
-                // travers le decor.
+                // travers le decor. `pipeBlocked` porte ce contact — il dure
+                // tant que les deux se touchent, la ou `bumpEndTime` compte un
+                // choc unique reserve aux karts en course.
+                //
                 // Une toupie glisse sur son erre, et elle encaisse : le choc
                 // longitudinal s'ajoute a cette erre, borne a l'arret comme pour
                 // un kart en course. Se faire tamponner pendant son tete-a-queue
                 // pousse donc vraiment, au lieu de ne rien faire.
                 let hitSpeed = 0;
-                if (elapsed < decelDuration && now >= kart.bumpEndTime) {
+                if (elapsed < decelDuration && now >= kart.bumpEndTime && !kart.pipeBlocked) {
                     const decelProgress = elapsed / decelDuration;
                     const hitSpeedFactor = 0.3 * Math.max(0, 1.0 - decelProgress * decelProgress);
                     hitSpeed = cfg.speeds.roadPPS * hitSpeedFactor;
@@ -3697,6 +3724,9 @@
                 bumpEndTime: 0,
                 bumpRecoilLeft: 0,
                 bumped: false,
+                // Contact en cours avec un tuyau pendant un tete-a-queue : la
+                // toupie est bloquee tant qu'il tient, sans que ce soit un choc.
+                pipeBlocked: false,
                 pipeImmuneUntil: 0,
                 lastPipeIndex: -1,
 
