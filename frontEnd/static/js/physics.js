@@ -694,6 +694,53 @@
     // mesure en distance : ce qu'il peut couvrir avant l'impact, rapporte a ce
     // qu'il doit couvrir pour degager. Le tirage s'efface a mesure que cette
     // marge grandit.
+    // A partir de QUAND une menace en est une, pour CE kart-la.
+    //
+    // ── Le defaut que ca corrige ─────────────────────────────────────────
+    //
+    // `ai.threatWindowMs` valait 900 ms pour tout le monde. Or il faut d'abord
+    // reagir (`reactionBaseMs`, jusqu'a 378 ms), puis couvrir le degagement —
+    // 7 unites de profondeur pour une banane pleine face. Un lourd esquive a
+    // 7.8 unites par seconde au plus faible de son tirage : il lui faut plus de
+    // 1400 ms. On lui en donnait 900.
+    //
+    // Consequence mesuree au banc, sur une banane POSEE, immobile, visible
+    // pendant pres de trois secondes : bowser et dk la prenaient 100 % du
+    // temps, mario 67 %. Ce n'etait ni de l'inattention (`dodgeMissChance`, 10 %)
+    // ni un manque d'agilite — le kart n'avait tout simplement pas le droit de
+    // commencer. Il regardait la banane arriver.
+    //
+    // La fenetre se taille donc sur le besoin : le temps de s'en apercevoir,
+    // plus le temps de s'ecarter. `threatWindowMs` reste le PLANCHER — un vif
+    // n'y gagne rien et garde exactement le comportement d'avant.
+    //
+    // Et elle se calcule au PIRE TIRAGE d'intensite (`dodgeIntensityMin`), pas
+    // au tirage moyen : l'esquive tire son urgence au sort, et une fenetre
+    // calee sur la moyenne laisse tomber une fois sur deux celui qui tire bas.
+    // Au banc c'est tout l'ecart entre 49 % de prises et 12 %.
+    function threatWindow(cfg, kart, threatY) {
+        const ai = cfg.ai;
+        const need = cfg.hitboxes.itemVsKart.y + cfg.vision.place.margin.item
+            - Math.abs(threatY - kart.yPercent);
+        if (need <= 0) return ai.threatWindowMs;
+
+        const cap = steerCap(cfg, kart, ai.dodgeIntensityMin);
+        const own = ai.reactionBaseMs * ai.reactionJitterMax
+            + steerDelay(cfg, cap, need);
+        return (own > ai.threatWindowMs) ? own : ai.threatWindowMs;
+    }
+
+    // La laisse en distance qui accompagne la fenetre. Elle existe pour ne pas
+    // s'alarmer de ce qui converge de tres loin ; elle n'a aucune raison de
+    // refuser ce que la fenetre vient d'accepter. Sans ce plancher, allonger la
+    // fenetre pour un lourd ne servait a rien : `threatMaxDistance` la
+    // rattrapait aussitot.
+    function threatLeash(cfg, windowMs, rel) {
+        const reach = (rel > 0) ? (rel * windowMs) / 1000 : 0;
+        const leash = cfg.ai.threatMaxDistance;
+        return (reach > leash) ? reach : leash;
+    }
+
     function missChance(cfg, kart, threatY, spareMs) {
         const ai = cfg.ai;
         const base = ai.dodgeMissChance;
@@ -1089,6 +1136,7 @@
         sight.pressureY = 0;
         sight.pressureId = 0;
         sight.spanCount = 0;
+        sight.crowdCount = 0;
 
         scanCount = 0;
         shadowCount = 0;
@@ -1253,8 +1301,9 @@
             const rel = speed - item.vx;
             const ttc = (rel !== 0) ? (dx / rel) * 1000 : Infinity;
 
-            if (ttc > 0 && ttc <= ai.threatWindowMs
-                && (dx < 0 ? -dx : dx) <= ai.threatMaxDistance
+            const itemWindow = threatWindow(cfg, kart, item.y);
+            if (ttc > 0 && ttc <= itemWindow
+                && (dx < 0 ? -dx : dx) <= threatLeash(cfg, itemWindow, rel)
                 && Math.abs(item.y - kart.yPercent) < lane) {
                 e.role |= SEE_THREAT;
                 e.kind = 'spin';
@@ -1307,7 +1356,12 @@
                 if (isRamming(other) && !ramming) {
                     const rel = speed - other.absoluteVelocity;
                     const ttc = (rel !== 0) ? (dx / rel) * 1000 : Infinity;
-                    if (ttc > 0 && ttc <= ai.threatWindowMs
+
+                    // Meme fenetre taillee au besoin que pour un objet : ce qui
+                    // arrive au contact ne se juge pas autrement selon que c'est
+                    // une carapace ou une etoile. Un lourd avait ici le meme
+                    // handicap, sur une menace qui coute plus cher encore.
+                    if (ttc > 0 && ttc <= threatWindow(cfg, kart, other.yPercent)
                         && Math.abs(other.yPercent - kart.yPercent) < lane) {
                         e.role |= SEE_THREAT;
                         e.kind = 'spin';
@@ -1450,6 +1504,28 @@
 
             if (seen) {
                 if (e.role & SEE_BLOCK) pushSpan(sight, e);
+
+                // ── Qui roule avec lui ───────────────────────────────
+                //
+                // Une carrosserie ne ferme un couloir que sur `kartVsKart.x * 2`
+                // — 120 px — et c'est juste : au-dela on ne se touche pas. Mais
+                // le couloir d'un tuyau se choisit jusqu'a 1100 px, et a cette
+                // distance-la plus personne n'est visible. Le kart decidait donc
+                // toujours d'un passage comme s'il etait seul, et se retrouvait
+                // a huit dans le meme trou.
+                //
+                // Ce releve repond a une AUTRE question que le span : non pas
+                // « vais-je le toucher » mais « ce passage sera-t-il pris quand
+                // j'y serai ». On ne garde que la profondeur : ce qui compte est
+                // combien ils sont et ou, pas leur geometrie.
+                //
+                // Ce qui est masque n'y entre pas, comme partout ailleurs : un
+                // kart aveugle par celui qui le precede croit le passage libre,
+                // et c'est exactement le prix d'une vue bouchee.
+                if (e.kartId >= 0 && e.dx > 0 && e.dx <= vis.crowd.distance) {
+                    sight.crowdY[sight.crowdCount] = e.y;
+                    sight.crowdCount++;
+                }
 
                 if (e.role & SEE_THREAT) {
                     // Un tuyau ne surprend personne : il est dans le trace. Ni
@@ -1810,6 +1886,37 @@
             if (clear < s.margin) {
                 risk += s.cost * w * cfg.vision.place.graze * (1 - clear / s.margin);
             }
+        }
+
+        // ── L'ENCOMBREMENT ───────────────────────────────────────────────
+        //
+        // Ce que coute un passage DEJA PRIS. Ce n'est pas un risque de choc —
+        // les carrosseries proches ont leur span pour ca — c'est une file : on
+        // y arrive derriere quelqu'un, on n'y double pas, et on s'y fait
+        // bousculer par ceux qui poussent.
+        //
+        // Sans ce terme, `laneRisk` jugeait chaque passage comme si le kart
+        // etait seul en piste : au banc, 44 % des couloirs retenus en
+        // contenaient deja deux karts ou plus, et 13 % en contenaient trois.
+        // C'est ce qu'on voit a l'ecran quand tout le monde s'entasse dans le
+        // meme trou alors que l'autre est vide.
+        //
+        // Il se cumule, et c'est le point : un kart devant, on passe derriere ;
+        // trois, le passage n'existe plus vraiment. La note monte donc avec la
+        // foule, sans qu'aucun seuil ne soit ecrit.
+        //
+        // La bande n'est pas un reglage de plus : c'est la hitbox entre karts
+        // plus leur marge de confort. Au-dela, on n'est plus dans le meme
+        // passage.
+        const crowd = cfg.vision.crowd;
+        if (crowd.cost > 0 && sight.crowdCount > 0) {
+            const band = cfg.hitboxes.kartVsKart.y + cfg.vision.place.margin.kart;
+            let press = 0;
+            for (let i = 0; i < sight.crowdCount; i++) {
+                const d = Math.abs(y - sight.crowdY[i]);
+                if (d < band) press += 1 - d / band;
+            }
+            if (press > 0) risk += crowd.cost * press;
         }
 
         // Le bord de piste ne ferme rien — on roule dessus, `clampKartToRoad` le
@@ -2650,33 +2757,39 @@
 
         kart.aiState = 'pipe';
 
-        // INSISTER, et seulement quand il le faut vraiment.
+        // ── Le contournement ne freine plus ─────────────────────────────
         //
-        // Le contournement n'a longtemps pas freine, et le commentaire le
-        // defendait : « ralentir devant un mur immobile ne fait que retarder le
-        // moment de le contourner ». C'est vrai quand on arrive a passer, et
-        // faux quand on n'y arrive pas — or on n'y arrive pas des que quelqu'un
-        // occupe le couloir qu'on visait. Le volant etant deja a son maximum,
-        // lever le pied est la seule chose qui reste pour se donner le temps de
-        // traverser.
+        // Il y avait ici un coup de frein, arme quand `laneRisk` rendait
+        // l'infini sur la ligne du moment et que le couloir vise semblait hors
+        // d'atteinte : « ou je suis, je tape, et je n'y arriverai pas ». L'idee
+        // se defendait — le volant etant deja au maximum, lever le pied est la
+        // seule chose qui reste.
         //
-        // MAIS il faut que tenir sa ligne mene vraiment dans le decor. La
-        // manoeuvre s'engage des qu'un MEILLEUR couloir existe, pas seulement
-        // quand le sien est bouche : freiner sur le seul ecart a couvrir
-        // revenait a lever le pied a chaque tuyau du circuit, pour un
-        // repositionnement de confort — 22 % de vitesse en moins (le frein) la
-        // ou la contrainte de virage en coute 3.
+        // Sauf que les deux conditions etaient vraies presque tout le temps, et
+        // pour des raisons qui n'avaient rien a voir avec le freinage :
         //
-        // `laneRisk` a l'infini, c'est exactement « ou je suis, je tape ». C'est
-        // la seule situation ou ralentir se paie moins cher que le choc.
-        const cap = steerCap(cfg, kart, lane.speed);
-        const doomed = laneRisk(cfg, kart, settle, cap, laneSlop(cfg, kart, cap, lane)) === Infinity;
-
-        const spare = (Math.max(dist, 0) / Math.max(kart.absoluteVelocity, 1)) * 1000;
-        if (doomed && steerDelay(cfg, cap, need) > spare) {
-            kart.brakeUntil = now + cfg.ai.edgeBrakeMs;
-        }
-
+        //   - `laneRisk` rendait l'infini des qu'un mur LOINTAIN croisait la
+        //     ligne, comme si le kart ne pouvait plus bouger d'ici la. C'est
+        //     corrige (cf. la dette de deplacement dans `laneRisk`), mais c'est
+        //     ce qui armait `doomed` a tour de bras.
+        //   - `steerDelay` chiffrait la traversee au plein braquage, que le
+        //     volant n'engageait jamais pour un ecart ordinaire : le kart se
+        //     croyait en retard sur une manoeuvre qu'il ratait pour cause de
+        //     gain trop bas. C'est corrige aussi (`steering.pipe.gain`).
+        //
+        // Resultat a l'ecran : un coup de frein qui LATCHE 700 ms a 78 % de la
+        // vitesse (`ai.edgeBrakeMs`, `ai.edgeBrakeFactor`), deux fois par tour,
+        // le plus souvent pour une situation deja degagee. Une surcompensation,
+        // pas une precaution.
+        //
+        // Les deux corrections l'avaient deja fait tomber de 2.0 a 0.5
+        // declenchement par tour. Ce qui restait ne gagnait plus rien : au banc,
+        // avec ou sans, les tuyaux touches valent 0.06 par tour. On ne garde pas
+        // une perte de vitesse qui n'achete aucun choc evite.
+        //
+        // Le frein existe toujours ailleurs, la ou il travaille vraiment :
+        // acculer au bord et poursuivre un objet traine (cf. `plan.stuck` et
+        // `plan.crossing`).
         steer(cfg, kart, deltaTime, kart.pipeLaneY, lane.speed, lane);
         return true;
     }
@@ -5912,6 +6025,11 @@
 
                     spans: [],
                     spanCount: 0,
+
+                    // Les profondeurs des karts qui roulent avec lui — cf.
+                    // `vision.crowd` et l'encombrement dans `laneRisk`.
+                    crowdY: [],
+                    crowdCount: 0,
 
                     pipeIndex: -1,
                     pipeDist: 0,
