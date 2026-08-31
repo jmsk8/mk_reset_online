@@ -286,11 +286,33 @@
                 // l'absolu mais d'etre lance pour soi. Un poids plume n'est pas
                 // avantage d'avoir une pointe plus basse.
                 //
-                // Effet de bord voulu, et il tombe du bon cote : la remise en
-                // route apres un incident se fait a allure reduite, donc avec
-                // du volant en plus. Un kart qui repart se replace ; un kart
-                // lance tient sa ligne.
-                pace: { drag: 0.35, curve: 1.0 },
+                // ── Et ce qu'on n'a pas ENCORE, faute d'avancer ──────────
+                //
+                // `drag` ne dit rien du bas de l'echelle, et le bas de l'echelle
+                // etait faux : a l'arret l'allure vaut 0, donc la perte vaut 0,
+                // donc un kart IMMOBILE disposait de son volant MAXIMUM.
+                //
+                // Le commentaire qui tenait ici defendait meme l'effet — « la
+                // remise en route se fait a allure reduite, donc avec du volant
+                // en plus, un kart qui repart se replace ». A l'ecran c'est
+                // faux : un kart qui vient d'encaisser un objet repartait au
+                // ralenti en se decalant plus vite qu'a pleine pointe. Il
+                // partait en crabe, et pres d'un tuyau ca ressemblait a une
+                // embardee sortie de nulle part. On ne change pas de direction
+                // sans avancer.
+                //
+                // `bite` est l'allure a partir de laquelle le volant mord
+                // entierement. Au-dessus, rien ne change — la croisiere est a
+                // 0.94, donc tout ce qui a ete regle jusqu'ici tient trait pour
+                // trait. En dessous, le volant s'efface avec l'allure, et le
+                // deplacement lateral redevient une fraction du deplacement tout
+                // court.
+                //
+                // A 0.5, un kart qui repart d'un tete-a-queue retrouve tout son
+                // volant a la moitie de sa pointe. Le monter rend les remises en
+                // route plus poussives, le descendre les rend a nouveau
+                // vives — a 0 la mecanique disparait et on retrouve l'embardee.
+                pace: { drag: 0.35, curve: 1.0, bite: 0.5 },
 
                 // ── Le volant sous objet de vitesse ──────────────────────
                 //
@@ -1486,13 +1508,54 @@
             // parce qu'il regardait ailleurs — spectaculairement bete, et
             // invisible pour le spectateur qui, lui, voit le tuyau.
             glanceIntervalMs: 1400,
-            glanceDurationMs: 350,
 
-            // Probabilite de tourner la tete, par place. Le premier n'a que
-            // l'arriere a surveiller ; le dernier n'a personne derriere et tout
-            // a rattraper devant. Interpole lineairement sur le rang.
-            backChanceLeader: 0.55,
-            backChanceLast: 0.10,
+            // Combien de temps la tete reste tournee, tire au sort.
+            //
+            // C'etait 350 ms fixes, et c'est LA raison pour laquelle rien de ce
+            // qui venait de derriere n'etait jamais evite. Un objet ou un kart
+            // n'entre dans le balayage que du cote regarde : une verte qui
+            // rattrape n'existe que pendant le coup d'oeil. A 350 ms toutes les
+            // 1400, le kart passait un quart de seconde a regarder une seconde
+            // et demie de piste — il ne voyait rien arriver, jamais.
+            //
+            // A 0.5-1.2 s il a le temps de constater, et le tirage desynchronise
+            // les retours de tete : a duree fixe, huit karts qui se retournent
+            // au meme tirage reviennent devant ensemble.
+            //
+            // Ca se paie : pendant ce temps le trafic DEVANT n'existe pas non
+            // plus, le garde-fou de `steer` refuse les consignes guidees et les
+            // plans sont marques `coarse`. Le decor, lui, reste vu — cf. la note
+            // ci-dessus. Monter le maximum rend les karts plus surs derriere et
+            // plus betes devant.
+            glanceDurationMin: 500,
+            glanceDurationMax: 1200,
+
+            // Probabilite de tourner la tete, par place.
+            //
+            // Le premier n'a plus que l'arriere a surveiller. Le peloton a tout
+            // devant lui a jouer et n'y jette qu'un oeil. Le dernier n'a
+            // personne derriere : il le fait parfois, sans raison, et c'est tout
+            // ce qu'on lui demande.
+            //
+            // L'interpolation lineaire sur le rang a disparu : elle donnait au
+            // 4e une valeur intermediaire qui ne repond a aucune question. Les
+            // trois cas qui existent sont premier / peloton / dernier, comme
+            // pour tout le reste du fichier (`rankChance`).
+            backChance: { leader: 0.30, pack: 0.10, last: 0.04 },
+
+            // Il vient de ramasser quelque chose : il a de quoi se defendre, et
+            // une raison de regarder qui arrive. Vaut pour tout le monde, et
+            // seulement pendant `armedGlanceMs`.
+            backChanceArmed: 0.30,
+            armedGlanceMs: 4000,
+
+            // Il a VU le danger. La surveillance ne redescend plus tant que le
+            // souvenir est frais (`pressureMemoryMs`) : c'est ce qui transforme
+            // une observation en attention soutenue.
+            //
+            // Ces trois valeurs ne s'ajoutent pas aux precedentes, elles les
+            // remplacent quand elles sont plus hautes — cf. `updateGlance`.
+            backChanceDanger: { leader: 0.45, pack: 0.40, last: 0.40 },
 
             // ── Le danger latent ─────────────────────────────────────────
             //
@@ -1523,32 +1586,24 @@
             // qu'on ne voit.
             pressureRange: 700,
 
-            // Vise dans le dos, on regarde derriere plus souvent.
+            // Duree de vie du souvenir « il y a un danger derriere moi ».
             //
-            // Le gain porte sur la CADENCE du coup d'oeil, pas sur sa
-            // probabilite. Le temps moyen entre deux coups d'oeil valant
-            // `glanceIntervalMs / chance`, les deux formes sont la meme loi —
-            // sauf qu'une probabilite sature a 1. A 0.55 de base pour le
-            // premier, multiplier la chance par 2.2 donnait 1.21 : le gain
-            // tombait dans le vide pour celui qui a le plus de raisons de
-            // regarder derriere. En fond de peloton, ou rien ne saturait, les
-            // deux formes coincident exactement.
-            pressureGlanceGain: 2.2,
-
-            // Duree de vie du releve « quelqu'un d'arme derriere moi ».
-            //
-            // Ce n'est pas un confort, c'est ce qui rend le gain ci-dessus
+            // Ce n'est pas un confort, c'est ce qui rend tout le reste
             // atteignable. Le tirage du coup d'oeil n'a jamais lieu PENDANT un
-            // coup d'oeil : au moment ou il tombe, le dernier balayage regardait
-            // forcement devant. Lu sur le balayage courant, le gain repondait
-            // donc a un porteur situe DEVANT — l'exact contraire de ce qu'il
-            // nomme, et zero chance de se declencher sur le cas pour lequel il
-            // est ecrit.
+            // coup d'oeil : au moment ou il tombe, la tete est forcement revenue
+            // devant, et le kart ne voit plus ce qui le suit. Sans souvenir, il
+            // oublierait la carapace entre deux clignements et retomberait a sa
+            // chance de base juste avant l'impact.
+            //
+            // Elle sert trois choses a la fois, et c'est voulu : la surveillance
+            // soutenue (`backChanceDanger`), la duree pendant laquelle un objet
+            // reste garde en bouclier (`ai.shield`), et donc le moment ou l'un
+            // et l'autre retombent.
             //
             // A tenir au-dessus de `glanceIntervalMs` (1400), sans quoi le
-            // souvenir se perime avant le tirage suivant et le gain redevient
-            // inerte. A 2500, une seule observation presse deux ou trois
-            // tirages, puis on oublie.
+            // souvenir se perime avant le tirage suivant et rien ne se
+            // declenche jamais. A 2500, une observation couvre deux tirages,
+            // puis il faut regarder de nouveau pour rester inquiet.
             pressureMemoryMs: 2500,
 
             // Et on se retourne franchement quand c'est SOI qui prepare un tir
@@ -1564,9 +1619,12 @@
             // Monter la valeur rend le tireur plus adroit, pas plus rapide : il
             // trouve son moment plus souvent, il ne vise pas mieux.
             //
-            // Comme `pressureGlanceGain`, il porte sur la cadence du coup d'oeil
-            // et non sur sa probabilite : c'est la meme loi sans le plafond, et
-            // les deux gains se composent alors sans se manger l'un l'autre.
+            // Il porte sur la CADENCE du coup d'oeil et non sur sa probabilite :
+            // c'est la meme loi sans le plafond (cf. la note de `updateGlance`).
+            // C'est le dernier gain de ce genre — celui de la pression est
+            // devenu une probabilite (`backChanceDanger`), parce que la meme
+            // chose comptee deux fois laissait le kart tourne vers l'arriere.
+            // Ici il n'y a pas de doublon : viser soi-meme n'est pas etre vise.
             aimGlanceGain: 2.0,
 
             // Duree de vie du RELEVE : la profondeur vue pendant le coup d'oeil,
@@ -1930,6 +1988,28 @@
             // bouclier que dans sa main. Le dernier a l'inverse n'a personne
             // derriere a tenir a distance, un objet pose ne lui sert a rien.
             trailChance: { leader: 0.92, pack: 0.6, last: 0.45 },
+
+            // ── Le bouclier ──────────────────────────────────────────────
+            //
+            // Ce que devient un objet trainable quand un danger apparait
+            // DERRIERE, apres que le plan de tir a ete fait. Le plan d'origine
+            // se prend a la prise de l'objet, quand le kart ne sait encore rien
+            // de ce qui va le suivre ; ceci le lui fait reconsiderer une fois,
+            // et une seule, par episode de danger (cf. `updateShield`).
+            //
+            //   `shot`      une carapace deja lancee. Le bouclier est la seule
+            //               chose qui la mange, et il n'y a plus le temps de
+            //               faire autre chose.
+            //   `carrier`   quelqu'un qui en porte une. Il reste la possibilite
+            //               de le prendre de vitesse, donc un vrai choix.
+            //   `backThrow` s'il s'en sert plutot que de s'en couvrir, la part
+            //               qui part vers le danger — c'est de ce cote qu'il y
+            //               a quelqu'un a toucher.
+            //
+            // Une etoile ou un bill ne figurent pas ici : rien de trainable ne
+            // les arrete. Ce qu'on leur oppose, c'est de la place, et c'est
+            // l'esquive qui s'en charge.
+            shield: { shot: 0.98, carrier: 0.90, backThrow: 0.60 },
 
             // Duree pendant laquelle l'objet reste pose derriere, en multiple de
             // trailHoldMin/Max. Le premier le garde bien plus longtemps : c'est
