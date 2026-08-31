@@ -387,7 +387,7 @@ function broadcast() {
         return;
     }
 
-    const snapshot = protocol.buildSnapshot(race.state, race.simTime, voteTally());
+    const snapshot = protocol.buildSnapshot(race.cfg, race.state, race.simTime, voteTally());
     if (race.pendingEvents.length) {
         snapshot.ev = race.pendingEvents;
         race.pendingEvents = [];

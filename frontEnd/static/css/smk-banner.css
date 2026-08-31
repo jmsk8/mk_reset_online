@@ -716,6 +716,44 @@
     opacity: 0.9;
 }
 
+/* Releve de decision du kart suivi, sous la banniere. Il n'appartient pas a la
+   scene : il l'explique, et il ne s'affiche qu'en mode debug. Une ligne par
+   sujet, largeur fixe, pour que rien ne saute quand un etat change. */
+.race-ai-hud {
+    display: none;
+    max-width: 640px;
+    margin: 6px auto 0;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    color: #d8d8d8;
+}
+
+.race-ai-hud.is-on { display: block; }
+
+.race-ai-hud .ai-row {
+    display: flex;
+    gap: 10px;
+    white-space: nowrap;
+}
+
+/* Largeur fixe : l'oeil retrouve la valeur au meme endroit d'une frame a
+   l'autre, ce qui est toute la difference entre lisible et clignotant. */
+.race-ai-hud .ai-key {
+    width: 92px;
+    flex: none;
+    color: #8a8a8a;
+}
+
+.race-ai-hud .ai-val { color: #ffffff; }
+.race-ai-hud .ai-off { color: #5a5a5a; }
+.race-ai-hud .ai-warn { color: #ffcf4d; }
+.race-ai-hud .ai-hot { color: #ff6b6b; }
+
 @keyframes statusPulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.35; }

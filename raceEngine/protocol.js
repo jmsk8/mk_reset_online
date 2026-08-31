@@ -12,7 +12,7 @@
 // demander « un arrivant peut-il le deduire du seul snapshot ? ». Si non, c'est
 // ici qu'il manque un champ.
 
-const PROTOCOL_VERSION = 7;
+const PROTOCOL_VERSION = 8;
 
 // Champ de bits de l'etat d'un kart. Compact parce qu'il part dix fois par
 // seconde a chaque spectateur (voir §6.7 du document de migration).
@@ -25,6 +25,54 @@ const FLAG_SHRUNK = 32;   // rapetisse par l'eclair -> sprite reduit
 const FLAG_BILL = 64;     // transforme en Bill Ball -> sprite remplace
 const FLAG_BUMPED = 128;  // arrete net par un pipe : arret et recul, sprite inchange
 const FLAG_FLAT = 256;    // ecrase par un kart reste grand -> sprite aplati
+
+// ── Le releve de decision, pour le HUD de debug ──────────────────────────
+//
+// Ce que le kart VOIT et ce qu'il en FAIT, en un seul entier par kart.
+//
+// Il part toujours, et c'est un choix : le fichier pose en regle que le
+// snapshot fait foi, et un releve qui ne serait la que sur demande obligerait a
+// redemarrer le service pour observer un comportement qu'on vient de voir. A
+// huit karts et dix envois par seconde, un entier tient dans quelques dizaines
+// d'octets — moins que le tableau des points, qui voyage pour la meme raison.
+//
+// Rien ici ne pilote le rendu : c'est une observation, jamais un etat de jeu.
+// Un client qui l'ignore affiche exactement la meme course.
+// L'ORDRE de ces deux tables est le contrat : le client n'envoie pas les mots,
+// il lit l'indice et affiche son propre libelle. Les tables jumelles sont dans
+// `smk-banner.js`, sous le meme nom. Y inserer une valeur au milieu decale tout
+// l'affichage en silence — on ajoute a la fin, ou on incremente
+// PROTOCOL_VERSION.
+const AI_STATES = ['cruising', 'pipe', 'dodging', 'safety', 'giveWay', 'aiming'];
+const AI_DANGERS = ['', 'carrier', 'ram', 'shot'];
+
+function aiTuple(cfg, kart, now) {
+    const sight = kart.sight;
+    const plan = kart.plan;
+    if (!sight) return 0;
+
+    let v = Math.max(0, AI_STATES.indexOf(kart.aiState));
+
+    // Ce qu'il a dans le dos, tant que le souvenir tient. Meme peremption que
+    // celle qui pilote le comportement, sans quoi l'affichage dirait autre chose
+    // que ce que le kart croit.
+    const fresh = (now - sight.dangerAt) <= cfg.vision.pressureMemoryMs;
+    const danger = fresh ? AI_DANGERS.indexOf(sight.dangerKind) : 0;
+    v |= (danger > 0 ? danger : 0) << 4;
+
+    if (sight.back) v |= 1 << 6;
+    if (now < kart.brakeUntil) v |= 1 << 7;
+    if (kart.shieldHold && kart.heldItem) v |= 1 << 8;
+    if (sight.redBehindCount > 1) v |= 1 << 9;
+
+    // La menace de DEVANT que la table de cout a retenue — celle qui commande,
+    // s'il y en a une.
+    const kind = plan && plan.threatId ? plan.kind : '';
+    v |= (kind === 'spin' ? 1 : 0) << 10;
+    if (sight.pipeIndex >= 0) v |= 1 << 11;
+
+    return v;
+}
 
 function round(value, decimals) {
     const factor = Math.pow(10, decimals);
@@ -134,7 +182,7 @@ function signTuple(state) {
 // connexions — d'ou ce parametre plutot qu'une lecture dans `state`. Le
 // snapshot etant serialise une fois pour tout le monde, il ne peut porter que
 // le total : chaque client se souvient seul de son propre vote.
-function buildSnapshot(state, simTime, vote) {
+function buildSnapshot(cfg, state, simTime, vote) {
     return {
         t: 's',
         // Arrondi a la milliseconde : l'horloge de simulation avance par pas de
@@ -144,6 +192,10 @@ function buildSnapshot(state, simTime, vote) {
         cx: round(state.cameraX, 2),
         bx: round(state.bgCameraX, 2),
         k: state.karts.map(kartTuple),
+
+        // Le releve de decision. Purement informatif — cf. `aiTuple`.
+        ai: state.karts.map(kart => aiTuple(cfg, kart, simTime)),
+
         i: state.items.map(itemTuple),
         b: state.itemBoxes.map(box => (box.active ? 1 : 0)),
 
@@ -221,7 +273,7 @@ function buildHello(cfg, state, simTime, t0, vote) {
         // d'un evenement `pipeShaken`.
         pipes: state.pipes.map(pipe => ({ x: round(pipe.worldX, 2), y: round(pipe.y, 2) })),
 
-        snapshot: buildSnapshot(state, simTime, vote)
+        snapshot: buildSnapshot(cfg, state, simTime, vote)
     };
 }
 

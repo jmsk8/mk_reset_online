@@ -1427,7 +1427,28 @@
             // moteur ne connait que des pixels de monde, la fenetre du
             // spectateur ne lui parvient jamais, et la meme simulation sert tous
             // les spectateurs quelle que soit leur taille d'ecran.
-            range: { front: 1400, back: 700 },
+            // ── Pourquoi l'arriere est passe de 700 a 1000 ───────────────
+            //
+            // Un objet n'existe que du cote regarde : une verte lancee sur soi
+            // n'est visible que pendant son approche DANS la portee arriere. A
+            // 700 px et 390 px/s de rapprochement, ca faisait 1.8 s — et comme
+            // on ne regarde derriere qu'une fraction du temps, un kart du
+            // peloton ne la captait qu'une fois sur huit, reflexe compris. Ce
+            // n'etait pas un defaut de reaction : il ne la voyait pas.
+            //
+            // Allonger la portee vaut mieux que se retourner plus souvent : ca
+            // rend chaque coup d'oeil plus utile sans rien coûter de la vue
+            // AVANT, alors que monter la cadence se paie en aveuglement. A 1000,
+            // la meme verte est visible 2.6 s et se capte une fois sur cinq —
+            // pres du double, pour zero temps de plus la tete tournee.
+            //
+            // L'arriere reste plus court que l'avant, et il le doit : devant on
+            // lit la piste, derriere on jette un oeil.
+            //
+            // `pressureRange` (700) n'en profite pas : il se borne lui-meme, et
+            // c'est voulu — deviner qu'on est dans une ligne de tir n'est pas
+            // voir une carapace arriver.
+            range: { front: 1400, back: 1000 },
 
             // ── La voie ──────────────────────────────────────────────────
             //
@@ -1507,7 +1528,10 @@
             // du DECOR. Sans cette exception, un kart s'encastrerait dans un mur
             // parce qu'il regardait ailleurs — spectaculairement bete, et
             // invisible pour le spectateur qui, lui, voit le tuyau.
-            glanceIntervalMs: 1400,
+            // Cadence a laquelle il se DEMANDE s'il regarde derriere. Baissee
+            // de 1400 a 1150 : a l'ancienne, un kart du peloton ne captait la
+            // verte tiree sur lui qu'une fois sur huit.
+            glanceIntervalMs: 1150,
 
             // Combien de temps la tete reste tournee, tire au sort.
             //
@@ -1669,6 +1693,53 @@
                 retryMs: 900,
                 holdMs: 2000,
                 speed: 14
+            },
+
+            // ── Laisser passer ───────────────────────────────────────────
+            //
+            // Contre une ROUGE, se decaler ne sert a rien : elle se recale sur
+            // la profondeur de sa cible huit fois plus vite qu'un kart ne se
+            // deplace (`speeds.redShellTrackingSpeed`). Un objet traine la mange,
+            // mais encore faut-il en avoir un. Sans rien dans les mains il ne
+            // reste qu'une parade, et elle n'est pas un reflexe : cesser d'etre
+            // la CIBLE. Une rouge vise devant elle ; se faire doubler, c'est
+            // sortir de sa liste.
+            //
+            // D'ou le geste : lever un peu le pied et se ranger pour que le
+            // porteur passe. C'est du calcul de rang, pas de l'esquive, et c'est
+            // pour ca qu'il a sa propre decision plutot que d'etre un cas de la
+            // precaution — laquelle se range hors d'une ligne de tir, ce qui ne
+            // veut rien dire face a un objet qui suit.
+            //
+            //   `chance`      il en voit UNE derriere lui, assez pres.
+            //   `chanceRival` il en voit DEUX. Laisser passer la premiere, c'est
+            //                 se retrouver juste devant la seconde : on change
+            //                 de tireur, pas de sort. Le geste garde une petite
+            //                 chance parce qu'il reste mieux que rien, pas parce
+            //                 qu'il marche.
+            //   `range`       « pas loin » : au-dela, le porteur a le temps de
+            //                 changer d'avis, de se faire doubler, de tirer sur
+            //                 quelqu'un d'autre. 450 px, moins d'une seconde
+            //                 d'ecart en croisiere.
+            //   `brakeFactor` le seul frein du moteur qui serve une INTENTION et
+            //                 non une urgence, d'ou sa douceur : 0.90 contre
+            //                 0.78 pour un kart accule. Il faut lever le pied,
+            //                 sinon celui qui suit ne double jamais et le kart
+            //                 reste range pour rien, toujours devant sa rouge.
+            //
+            // Rien de tout ceci ne se declenche sans avoir REGARDE DERRIERE : la
+            // rouge portee ne se remarque qu'en se retournant, occlusion
+            // comprise. C'est ce qui en fait une decision de pilote et non une
+            // omniscience.
+            giveWay: {
+                chance: 0.35,
+                chanceRival: 0.10,
+                range: 450,
+                retryMs: 900,
+                holdMs: 1600,
+                speed: 14,
+                brakeMs: 900,
+                brakeFactor: 0.90
             },
 
             // ── Le plan ──────────────────────────────────────────────────
@@ -2009,7 +2080,16 @@
             // Une etoile ou un bill ne figurent pas ici : rien de trainable ne
             // les arrete. Ce qu'on leur oppose, c'est de la place, et c'est
             // l'esquive qui s'en charge.
-            shield: { shot: 0.98, carrier: 0.90, backThrow: 0.60 },
+            //   `panic`     une etoile ou un bill ne se trainent pas, ils
+            //               rendent intouchable. C'est la meilleure reponse a
+            //               une rouge, et elle dormait : la date de
+            //               declenchement se tirait a la prise de l'objet, entre
+            //               `holdItemMin` et `holdItemMax` — jusqu'a huit
+            //               secondes. Le kart prenait la rouge avec de quoi
+            //               l'annuler dans les mains. C'est la part des cas ou
+            //               il avance sa date au simple temps de reaction ; il
+            //               ne la recule jamais.
+            shield: { shot: 0.98, carrier: 0.90, backThrow: 0.60, panic: 0.80 },
 
             // Duree pendant laquelle l'objet reste pose derriere, en multiple de
             // trailHoldMin/Max. Le premier le garde bien plus longtemps : c'est

@@ -879,7 +879,8 @@
                 look: 0, dx: 0, y: 0, shadowHalf: 0,
                 blockHalf: 0, blockMargin: 0, blockCost: 0, blockHard: false, blockReach: 0,
                 solid: false, pierces: false, role: 0,
-                id: 0, kartId: -1, pipeIndex: -1, ttc: 0, cost: 0, kind: ''
+                id: 0, kartId: -1, pipeIndex: -1, ttc: 0, cost: 0, kind: '',
+                redHeld: false
             });
         }
         const e = scanPool[scanCount++];
@@ -888,6 +889,7 @@
         e.role = 0;
         e.id = 0;
         e.kartId = -1;
+        e.redHeld = false;
         e.pipeIndex = -1;
         e.ttc = 0;
         e.cost = 0;
@@ -1162,12 +1164,49 @@
     function updateShield(cfg, rng, now, kart) {
         const ai = cfg.ai;
         const held = kart.heldItem;
-        if (!held || !isTrailable(cfg, held.type)) return;
+        if (!held) return;
 
         const danger = dangerBehind(cfg, now, kart);
         if (!danger || danger === 'ram') return;
 
         const sight = kart.sight;
+
+        // ── L'intouchable ────────────────────────────────────────────────
+        //
+        // Une etoile ou un bill ne se posent pas derriere soi : ils rendent
+        // INTOUCHABLE, ce qui est une bien meilleure reponse qu'un bouclier —
+        // la seule qui marche a coup sur contre une rouge, puisqu'elle suit.
+        //
+        // Rien ne les pressait : la date de declenchement se tirait a la prise
+        // de l'objet, entre `holdItemMin` et `holdItemMax`, soit jusqu'a HUIT
+        // SECONDES. Un kart pouvait donc rester assis sur son etoile pendant
+        // qu'une rouge lui arrivait dessus, et la prendre en pleine face avec de
+        // quoi l'annuler dans les mains. Ce n'etait pas un choix, c'etait un
+        // minuteur qui ignorait la piste.
+        //
+        // Il n'avance pas la date a coup sur — `shield.panic` — et il ne la
+        // recule jamais : un kart qui comptait s'en servir tout de suite n'a
+        // aucune raison d'attendre parce qu'on le vise.
+        if (held.type === 'star' || held.type === 'bill') {
+            const red = sight.redBehindDist >= 0
+                && sight.redBehindDist <= cfg.vision.giveWay.range;
+            if (!red && danger !== 'shot') return;
+
+            if (kart.shieldAt !== sight.dangerSince) {
+                kart.shieldAt = sight.dangerSince;
+                if (rng() < ai.shield.panic) {
+                    // Le temps de s'en apercevoir, et rien de plus : c'est le
+                    // meme reflexe que pour tout le reste.
+                    const soon = now + ai.reactionBaseMs
+                        * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
+                    if (soon < kart.throwTime) kart.throwTime = soon;
+                }
+            }
+            return;
+        }
+
+        if (!isTrailable(cfg, held.type)) return;
+
         if (kart.shieldAt !== sight.dangerSince) {
             kart.shieldAt = sight.dangerSince;
 
@@ -1186,7 +1225,16 @@
                     kart.shotAsLeader = (kart.rank === 1);
                 }
                 kart.throwTime = now;
-            } else if (!kart.trailTime && held.holdPosition === 'hands') {
+            } else if (held.holdPosition === 'hands'
+                       && (!kart.trailTime || kart.trailTime > now)) {
+                // TOUT DE SUITE, et pas seulement s'il n'avait rien prevu.
+                //
+                // Le test ne regardait que `!kart.trailTime` : un kart qui avait
+                // deja programme de sortir son objet — dans 800 ms, comme le
+                // veut `trailDelayMin/Max` — n'etait donc pas presse par la
+                // carapace qui arrivait. Il attendait son minuteur avec un
+                // bouclier dans les mains. Decider de se couvrir et le faire
+                // plus tard, ce n'est pas se couvrir.
                 kart.trailTime = now;
             }
         }
@@ -1282,6 +1330,10 @@
         sight.pressureId = 0;
         sight.spanCount = 0;
         sight.crowdCount = 0;
+        sight.redBehindDist = -1;
+        sight.redBehindY = 0;
+        sight.redBehindId = 0;
+        sight.redBehindCount = 0;
 
         scanCount = 0;
         shadowCount = 0;
@@ -1435,7 +1487,34 @@
             }
             if (cfg.trailableItems.indexOf(item.type) === -1) continue;
 
-            const dx = getShortestDistance(cfg, item.worldX, kart.worldX);
+            // ── Une banane en cloche se voit LA OU ELLE VA TOMBER ────────
+            //
+            // En vol elle file a 1060 px/s quand le kart en fait 495 : l'ecart
+            // se CREUSE, donc `rel` est negatif, donc le temps avant impact
+            // l'est aussi, donc elle n'etait une menace pour personne. Elle
+            // n'existait qu'a l'atterrissage — et elle atterrit 480 px devant
+            // son lanceur, pile sur sa ligne, soit moins d'une seconde. Aucun
+            // kart ne couvre les 7 unites de degagement en si peu de temps ; un
+            // lourd en met plus du double. Il se prenait donc sa propre banane
+            // sans l'avoir jamais vue venir.
+            //
+            // Le point d'arrivee est pourtant connu d'avance — c'est `flightTo`,
+            // et la date aussi. Une cloche est un obstacle FUTUR, pas un objet
+            // qui s'echappe : on la perçoit ou elle sera. Le kart a alors le vol
+            // entier en plus pour s'ecarter, et le lanceur voit sa banane se
+            // poser sur sa route au moment ou il la lance.
+            //
+            // Elle est vue immobile pour la meme raison : ce qui compte est
+            // qu'elle ne bougera plus, pas qu'elle bouge encore.
+            const flying = item.flightUntil > now;
+            let atX = item.worldX;
+            if (flying) {
+                atX = item.flightTo;
+                if (atX >= cfg.world.width) atX -= cfg.world.width;
+            }
+            const atVx = flying ? 0 : item.vx;
+
+            const dx = getShortestDistance(cfg, atX, kart.worldX);
             const look = dx * dir;
             if (look < -itemReach.x || look > range) continue;
 
@@ -1466,7 +1545,7 @@
             //
             // Ce qui bouge garde la portee courte : une carapace aura change de
             // place bien avant qu'on arrive a sa hauteur.
-            e.blockReach = (item.vx === 0) ? cfg.pipe.seeDistance : ai.dodgeGuardDistance;
+            e.blockReach = (atVx === 0) ? cfg.pipe.seeDistance : ai.dodgeGuardDistance;
 
             // Un objet ne masque rien : trop petit. Il ferme un passage, et
             // seulement s'il est encore devant.
@@ -1482,7 +1561,7 @@
             // l'ecart se referme, que l'objet soit devant et plus lent ou
             // derriere et plus rapide — c'est tout ce qui manquait pour qu'un
             // kart puisse enfin esquiver ce qui le rattrape.
-            const rel = speed - item.vx;
+            const rel = speed - atVx;
             const ttc = (rel !== 0) ? (dx / rel) * 1000 : Infinity;
 
             const itemWindow = threatWindow(cfg, kart, item.y);
@@ -1531,6 +1610,12 @@
                 e.solid = true;
                 e.role = SEE_BLOCK;
                 e.kartId = other.id;
+
+                // Porte-t-il une ROUGE ? C'est le seul objet auquel se decaler
+                // ne repond pas — elle suit. La seule parade qui reste a qui n'a
+                // rien a lui opposer est de cesser d'etre la cible, donc de le
+                // laisser passer. Cf. `vision.giveWay`.
+                e.redHeld = !!held && held.type === 'redShell';
 
                 // Etoile et bill blessent au contact, et rien dans le pilotage
                 // ne s'en ecartait : c'etait le seul danger immediat du moteur
@@ -1714,6 +1799,24 @@
                 // Ce qui est masque n'y entre pas, comme partout ailleurs : un
                 // kart aveugle par celui qui le precede croit le passage libre,
                 // et c'est exactement le prix d'une vue bouchee.
+                // Les ROUGES derriere. Il faut les avoir VUES, donc s'etre
+                // retourne, et l'occlusion s'applique comme au reste : un porteur
+                // cache derriere un autre kart ne compte pas.
+                //
+                // On retient la plus proche — c'est elle qui vise — et COMBIEN
+                // il y en a : s'en trouver deux, c'est n'avoir nulle part ou se
+                // ranger. Laisser passer la premiere revient a se donner a la
+                // seconde.
+                if (sight.scanBack && e.kartId >= 0 && e.dx < 0 && e.redHeld) {
+                    const gap = -e.dx;
+                    sight.redBehindCount++;
+                    if (sight.redBehindDist < 0 || gap < sight.redBehindDist) {
+                        sight.redBehindDist = gap;
+                        sight.redBehindY = e.y;
+                        sight.redBehindId = -1 - e.kartId;
+                    }
+                }
+
                 if (e.kartId >= 0 && e.dx > 0 && e.dx <= vis.crowd.distance) {
                     sight.crowdY[sight.crowdCount] = e.y;
                     sight.crowdCount++;
@@ -2670,6 +2773,47 @@
             return;
         }
 
+        // ── LAISSER PASSER ───────────────────────────────────────────────
+        //
+        // Une rouge suit. Se decaler n'y change rien — elle se recale sur la
+        // profondeur de sa cible huit fois plus vite qu'un kart ne se deplace —
+        // et un objet en bouclier la mange, mais encore faut-il en avoir un.
+        // Sans rien dans les mains, il ne reste qu'une parade : cesser d'etre la
+        // cible. Une rouge vise devant elle ; se faire doubler, c'est sortir de
+        // sa liste.
+        //
+        // D'ou le geste : lever un peu le pied et se ranger, pour que celui qui
+        // la porte passe. Ce n'est pas une esquive, c'est un calcul de rang.
+        //
+        // ── Et ce qui le rend inutile ───────────────────────────────────
+        //
+        // S'il y en a DEUX derriere, le calcul s'inverse : laisser passer la
+        // premiere, c'est se retrouver juste devant la seconde. On a change de
+        // tireur, pas de sort. Le kart le voit — il compte ce qu'il a dans le
+        // dos — et il ne s'y resout presque plus.
+        //
+        // Elle passe AVANT la precaution : celle-ci se range hors d'une ligne de
+        // tir, ce qui ne veut rien dire face a un objet qui suit.
+        if (!plan.threatId && sight.redBehindDist >= 0
+            && sight.redBehindDist <= vis.giveWay.range
+            && !(kart.heldItem && isTrailable(cfg, kart.heldItem.type))
+            && now >= kart.giveWayRetryAt) {
+            const give = vis.giveWay;
+            kart.giveWayRetryAt = now + give.retryMs;
+
+            const chance = (sight.redBehindCount > 1) ? give.chanceRival : give.chance;
+            if (rng() < chance) {
+                plan.kind = 'giveWay';
+                plan.threatId = sight.redBehindId;
+                plan.threatY = sight.redBehindY;
+                plan.intensity = give.speed;
+                plan.until = now + give.holdMs;
+                plan.reviewAt = now + reviewDelay(cfg, rng);
+                placeSafety(cfg, kart, plan);
+                return;
+            }
+        }
+
         // La decision de securite. Elle ne se prend que faute de mieux a faire :
         // un danger reel occupe deja le plan, et il n'y a aucune raison de
         // lacher une esquive pour une precaution.
@@ -2724,11 +2868,14 @@
         plan.reviewAt = now + reviewDelay(cfg, rng);
         if (!forced && rng() >= vis.reviewChance) return;
 
-        if (plan.kind === 'safety') {
+        if (plan.kind === 'safety' || plan.kind === 'giveWay') {
             // La ligne a quitter est celle d'un kart, et il bouge : la revision
             // la reprend telle qu'elle est maintenant.
             if (sight.pressure && sight.pressureId === plan.threatId) {
                 plan.threatY = sight.pressureY;
+            }
+            if (sight.redBehindDist >= 0 && sight.redBehindId === plan.threatId) {
+                plan.threatY = sight.redBehindY;
             }
             placeSafety(cfg, kart, plan);
             return;
@@ -3081,7 +3228,10 @@
             // Le frein n'accompagne que les esquives qui ne sont pas franches :
             // accule il n'a plus que lui, en traversee il recule l'impact le
             // temps de passer devant l'objet.
-            if (plan.stuck || plan.crossing) kart.brakeUntil = now + ai.edgeBrakeMs;
+            if (plan.stuck || plan.crossing) {
+                kart.brakeUntil = now + ai.edgeBrakeMs;
+                kart.brakeFactor = ai.edgeBrakeFactor;
+            }
 
             steer(cfg, kart, deltaTime, plan.laneY, plan.intensity, ai.steering.dodge);
             return;
@@ -3101,9 +3251,20 @@
         // Avant les manoeuvres de confort en revanche — ne pas prendre de
         // carapace dans le dos vaut mieux que gagner une place ou ramasser une
         // boite.
-        if (plan.threatId && plan.kind === 'safety') {
-            kart.aiState = 'safety';
+        if (plan.threatId && (plan.kind === 'safety' || plan.kind === 'giveWay')) {
+            kart.aiState = plan.kind;
             kart.originalLaneY = kart.yPercent;
+
+            // Se ranger ne suffit pas a laisser passer : il faut aussi lever le
+            // pied, sinon celui qui suit ne double jamais et le kart reste
+            // devant sa rouge, range pour rien. C'est le seul frein qui serve
+            // une intention plutot qu'une urgence, d'ou sa propre severite —
+            // `giveWay.brakeFactor`, bien plus douce que celle d'un kart accule.
+            if (plan.kind === 'giveWay') {
+                kart.brakeUntil = now + vis.giveWay.brakeMs;
+                kart.brakeFactor = vis.giveWay.brakeFactor;
+            }
+
             steer(cfg, kart, deltaTime, plan.laneY, plan.intensity, ai.steering.safety);
             return;
         }
@@ -5526,8 +5687,12 @@
                         effectiveSpeed = Math.min(effectiveSpeed,
                             kart.stats.topSpeed * cfg.race.finishedSpeedRatio);
                     }
+                    // Le frein porte sa propre severite : lever le pied pour
+                    // laisser passer une rouge n'est pas la meme chose que
+                    // freiner devant un mur. Elle est posee avec l'echeance, a
+                    // chaque fois, et `edgeBrakeFactor` reste le defaut.
                     if (now < kart.brakeUntil) {
-                        effectiveSpeed *= cfg.ai.edgeBrakeFactor;
+                        effectiveSpeed *= kart.brakeFactor || cfg.ai.edgeBrakeFactor;
                     }
 
                     // Ce que braquer coute en vitesse. Une seule ligne, parce
@@ -6213,6 +6378,11 @@
                 itemGotAt: -Infinity,
                 shieldAt: -Infinity,
                 shieldHold: false,
+
+                // Severite du frein en cours, et prochaine occasion de decider
+                // de se laisser doubler (cf. `vision.giveWay`).
+                brakeFactor: 0,
+                giveWayRetryAt: 0,
                 shotDirection: 1,
                 // Le plan de tir a-t-il ete fait en tete ? Il ne vaut plus rien
                 // si le kart s'est fait doubler depuis.
@@ -6305,7 +6475,14 @@
                     //             seulement sa trajectoire a quitter
                     dangerAt: -Infinity,
                     dangerSince: -Infinity,
-                    dangerKind: ''
+                    dangerKind: '',
+
+                    // Les rouges apercues derriere : la plus proche, et combien.
+                    // Cf. `vision.giveWay`.
+                    redBehindDist: -1,
+                    redBehindY: 0,
+                    redBehindId: 0,
+                    redBehindCount: 0
                 },
 
                 // Le plan d'evitement en cours. Il survit a la perte de vue :
