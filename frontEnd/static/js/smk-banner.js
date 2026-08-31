@@ -19,7 +19,7 @@ const LIGHTNING_SRC = 'data:image/svg+xml,' + encodeURIComponent(LIGHTNING_SVG);
 
 
 const GAME_CONFIG = {
-    debugMode: false,
+    debugMode: true,
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
@@ -427,9 +427,95 @@ function updateFocusHud(frameMs) {
     }
 }
 
+// ── Le releve de decision, sous la banniere, en mode debug ──────────────
+//
+// Ce que le kart suivi VOIT, et ce qu'il en FAIT. Quatre lignes, pas une de
+// plus : un tableau de bord qu'on ne lit pas d'un coup d'oeil ne sert a rien
+// pendant une course.
+//
+// Tout vient du seul entier `kart.ai` du snapshot (cf. `aiTuple` dans
+// raceEngine/protocol.js). Le client ne DEDUIT rien — il traduit. C'est la meme
+// regle que partout ailleurs : ce qui s'affiche est ce que le moteur a decide,
+// jamais une reconstitution qui pourrait diverger en silence.
+// L'ORDRE est le contrat, pas les mots : le serveur envoie un indice, ces
+// tables sont ses jumelles dans `raceEngine/protocol.js`. Y inserer une valeur
+// au milieu decale tout l'affichage en silence.
+const AI_STATES = ['roule', 'contourne un tuyau', 'esquive', 'se range', 'laisse passer', 'vise'];
+const AI_DANGERS = ['\u2014', 'porteur arme', 'etoile / bill', 'carapace en vol'];
+
+let aiHudEl = null;
+let aiHudValue = -1;
+
+function aiRow(key, value, tone) {
+    const cls = tone || 'ai-val';
+    return `<div class="ai-row"><span class="ai-key">${key}</span>` +
+           `<span class="${cls}">${value}</span></div>`;
+}
+
+function updateAiHud() {
+    if (!aiHudEl) {
+        aiHudEl = document.getElementById('race-ai-hud');
+        if (!aiHudEl) return;
+    }
+
+    const kart = (GAME_CONFIG.debugMode && focusedKartId !== null)
+        ? worldState.kartsById[focusedKartId] : null;
+
+    if (!kart) {
+        if (aiHudValue !== -1) {
+            aiHudValue = -1;
+            aiHudEl.classList.remove('is-on');
+            aiHudEl.innerHTML = '';
+        }
+        return;
+    }
+
+    const v = kart.ai || 0;
+
+    // Le DOM n'est touche que quand l'etat change vraiment. A dix snapshots par
+    // seconde et soixante images, le releve est identique la plupart du temps.
+    if (v === aiHudValue) return;
+    aiHudValue = v;
+
+    const state = AI_STATES[v & 15] || AI_STATES[0];
+    const danger = AI_DANGERS[(v >> 4) & 3];
+    const back = (v >> 6) & 1;
+    const brake = (v >> 7) & 1;
+    const shield = (v >> 8) & 1;
+    const twoReds = (v >> 9) & 1;
+    const itemAhead = (v >> 10) & 1;
+    const pipeAhead = (v >> 11) & 1;
+
+    // Le regard d'abord, parce qu'il conditionne tout le reste : ce qui n'est
+    // pas regarde n'est pas vu, et donc pas traite.
+    const look = back ? 'DERRIERE' : 'devant';
+
+    const rear = ((v >> 4) & 3)
+        ? danger + (twoReds ? '  \u00B7  deux rouges' : '')
+        : '\u2014';
+
+    const front = [];
+    if (pipeAhead) front.push('tuyau');
+    if (itemAhead) front.push('objet');
+
+    const doing = [state];
+    if (brake) doing.push('frein');
+    if (shield) doing.push('bouclier');
+
+    aiHudEl.innerHTML =
+        aiRow('regard', look, back ? 'ai-warn' : 'ai-val') +
+        aiRow('derriere', rear, ((v >> 4) & 3) ? 'ai-hot' : 'ai-off') +
+        aiRow('devant', front.length ? front.join('  \u00B7  ') : '\u2014',
+              front.length ? 'ai-warn' : 'ai-off') +
+        aiRow('decision', doing.join('  \u00B7  '), 'ai-val');
+
+    aiHudEl.classList.add('is-on');
+}
+
 function setFocus(kartId) {
     focusedKartId = kartId;
     lastFocusCameraX = null;
+    aiHudValue = -1;
     resetFocusHud();
     updateFocusMarks();
 }
@@ -2156,7 +2242,7 @@ const CLOCK_SAMPLE_TTL_MS = 120000;
 // serveur l'annonce dans son `hello` et le client refuse tout ce qui ne
 // correspond pas : mieux vaut le decor seul qu'une scene interpretee de
 // travers. Les deux se modifient donc ensemble, jamais l'un sans l'autre.
-const PROTOCOL_VERSION = 7;
+const PROTOCOL_VERSION = 8;
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
@@ -2274,6 +2360,16 @@ function applyState(a, b, t) {
     for (const tuple of a.k) {
         const kart = worldState.kartsById[tuple[0]];
         if (kart) writeKart(kart, tuple, b ? nextKartTuples.get(tuple[0]) : null, t);
+    }
+
+    // Le releve de decision de l'IA. Il ne s'interpole pas — c'est une suite
+    // d'etats, pas une position — et il ne sert qu'au HUD de debug : un client
+    // qui l'ignore affiche exactement la meme course.
+    if (a.ai) {
+        for (let i = 0; i < a.k.length; i++) {
+            const kart = worldState.kartsById[a.k[i][0]];
+            if (kart) kart.ai = a.ai[i] || 0;
+        }
     }
 
     nextItemTuples.clear();
@@ -2643,6 +2739,7 @@ function animate(timestamp) {
     lastFrameTime = timestamp;
 
     if (GAME_CONFIG.debugMode) updateDebugHUD();
+    updateAiHud();
     animationId = requestAnimationFrame(animate);
 }
 

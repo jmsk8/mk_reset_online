@@ -122,6 +122,11 @@
         </div>
     </section>
 
+    {# Releve de decision du kart suivi. Sous la banniere et non dedans : il ne
+       fait pas partie de la scene, il l'explique. Vide et masque hors du mode
+       debug ou sans kart suivi. #}
+    <div id="race-ai-hud" class="race-ai-hud" aria-hidden="true"></div>
+
     <section class="section">
         <div class="container">
             {% if resultats %}
