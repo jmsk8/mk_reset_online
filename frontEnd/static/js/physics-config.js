@@ -79,7 +79,7 @@
             // bouts. Le pousser au-dela de ~1.5 rend les lourds injouables
             // depuis les pipes, qui remettent les karts a l'arret plusieurs fois
             // par tour, bien avant de rendre les legers spectaculaires.
-            massDragAccel: 1.25,
+            massDragAccel: 1.75,
 
             // Garde-fou contre une combinaison de stats absurde, pas un reglage :
             // il ne doit jamais mordre sur le plateau en place, sinon il ecrete
@@ -111,6 +111,67 @@
             // doit jamais mordre sur le plateau en place, d'ou la marge.
             agilityClamp: { min: 0.25, max: 1.70 },
 
+            // ── La tenue en virage ───────────────────────────────────────
+            //
+            // `cornering = handling ^ cornerGripGain * puissance ^ cornerPowerGain
+            //              / poids ^ cornerMassDrag`
+            //
+            // C'est elle qui decide de ce que tourner coute en vitesse
+            // (`corner.cost` plus bas, et `steerCost` dans le moteur). Trois
+            // exposants, un par axe, et ils n'agissent QUE la : regler la tenue
+            // en virage d'un lourd ne touche pas a la vitesse a laquelle il
+            // tourne, qui reste le domaine de `massDragAgility`.
+            //
+            // Cette separation est le point. La tenue s'est d'abord deduite de
+            // la maniabilite — plus court, et `massDragAgility` gouvernait alors
+            // les deux : impossible de creuser le cout d'un lourd sans le rendre
+            // aussi plus pataud, ni l'inverse.
+            //
+            // Les valeurs livrees reproduisent exactement `agility * force`,
+            // d'ou `cornerMassDrag` egal a `massDragAgility`. Bouger l'un ne
+            // bouge plus l'autre.
+
+            // LE LEVIER A POIDS. Meme forme que `massDragAccel` et
+            // `massDragAgility`, donc meme lecture : l'exposant pivote autour de
+            // la masse 1 — le poids moyen — si bien que Mario ne bouge pas et
+            // que les deux bouts s'ecartent symetriquement. C'est un levier
+            // d'ECART, pas de severite : pour la severite, `corner.cost`.
+            //
+            // Il n'y a pas de plafond : monter l'exposant creuse l'ecart aussi
+            // loin qu'on veut. Ce qu'il fait est exact et se calcule de tete —
+            // le rapport entre deux karts est multiplie par
+            // `(masse_lourd / masse_leger) ^ ecart d'exposant`, soit 1.45 puissance
+            // cet ecart pour les deux extremes du plateau. De 1.70 a 5.00, le
+            // rapport bowser/koopa passe ainsi de 4.4x a 15.0x.
+            //
+            // A 0, le poids ne coute plus rien en virage ; il reste l'ecart que
+            // le handling et la puissance creusent seuls. C'est l'interrupteur de
+            // cet axe-la, pas de la mecanique — pour l'eteindre entierement,
+            // `corner.cost: 0`.
+            //
+            // CE QUE CA COUTE VRAIMENT NE S'ECRIT PAS ICI. Une manoeuvre reelle
+            // n'atteint pas le plein braquage, et la part de la course passee a
+            // tourner ne se devine pas : tout chiffre pose dans ce commentaire
+            // serait perime au premier reglage. Le banc le MESURE, colonne
+            // `virage` de « Ce que la course coute a chaque kart ». C'est le seul
+            // endroit ou lire l'effet de cet exposant.
+            cornerMassDrag: 5.00,
+
+            // Ce que le handling rabat sur ce cout. A 1, un point de handling
+            // vaut son plein rendement ; a 0, le handling ne tient plus rien en
+            // virage et il ne reste que le poids et la puissance.
+            //
+            // A noter : l'axe handling est deja courbe en amont par `gripCurve`,
+            // qui vaut pour les deux stats. Cet exposant se pose par-dessus.
+            cornerGripGain: 1.0,
+
+            // Ce que la puissance rabat sur ce cout — un moteur qui pousse fort
+            // ramene plus vite le kart dans son elan quand il s'inscrit.
+            //
+            // Levier doux : la plage de `force` (0.85 a 1.40) etant etroite, il
+            // ne separe bowser (puissance 5) de koopa (puissance 4) que de 5 %.
+            cornerPowerGain: 1.0,
+
             // ── La pointe ────────────────────────────────────────────────
             //
             // `topSpeed = speedBase + speedPerWeight * poids + speedPerPower * puissance`,
@@ -134,8 +195,8 @@
             // Repere de conversion pour arbitrer : 1 s de temps de course vaut
             // environ 4.5 px/s de pointe, soit ~2 points de taux de victoire.
             speedBase: 490,
-            speedPerWeight: 20,
-            speedPerPower: 12,
+            speedPerWeight: 35,
+            speedPerPower: 10,
 
             characters: {
                 bowser: { weight: 9, power: 5, handling: 1 },
@@ -172,25 +233,150 @@
             // donc la finesse de placement, pas la largeur.
             minY: 0,
             maxY: 30,
-            laneTolerance: 12,
+
+            // `laneTolerance` vit maintenant dans `vision.threatLane` : c'est
+            // une distance de perception, pas une propriete du trace. La piste
+            // n'a aucune notion de voie par ailleurs.
             edgeSafetyMargin: 2,
             overtakeMargin: 5,
             wanderMargin: 8
         },
         physics: {
-            // Reponse du volant : vitesse a laquelle `vy` rejoint la consigne
-            // laterale, en 1/s. Commune a tout le plateau — c'est le point du
-            // systeme de maniabilite : un personnage se decale plus ou moins
-            // loin qu'un autre, jamais plus ou moins tot.
+            // ── Le braquage ──────────────────────────────────────────────
             //
-            // Se lit comme un delai : la constante de temps vaut `1 /
-            // steerResponse`, soit 200 ms a 5. Monter la valeur rend le volant
-            // sec et les esquives plus faciles pour tout le monde ; la baisser
-            // donne des karts qui s'inscrivent en douceur et ratent plus.
+            // La LOI de braquage : ce qui vaut pour tout kart qui tourne, quelle
+            // que soit la raison. Les manoeuvres, elles, se decrivent ailleurs —
+            // `ai.steering` — parce qu'elles disent une urgence, pas une
+            // physique.
             //
-            // Le temps de reaction, lui, se regle a cote : `ai.reactionBaseMs`
-            // et son jitter.
-            steerResponse: 5,
+            // Le modele tient en une phrase : une manoeuvre laterale est
+            // toujours une PROFONDEUR A REJOINDRE. La situation dit ou aller, et
+            // elle le dit pareil pour les huit karts ; ce qui les separe est le
+            // TEMPS qu'ils mettent a y arriver.
+            steer: {
+                // Reponse du volant : vitesse a laquelle `vy` rejoint la
+                // consigne laterale, en 1/s. Commune a tout le plateau, et elle
+                // doit le rester — c'est la moitie du systeme de maniabilite :
+                // le REFLEXE ne depend pas du kart, seuls ses moyens d'y
+                // repondre en dependent.
+                //
+                // Se lit comme un delai : la constante de temps vaut
+                // `1 / response`, soit 200 ms a 5. Monter la valeur rend le
+                // volant sec pour tout le monde ; la baisser donne des karts qui
+                // s'inscrivent en douceur et ratent plus.
+                //
+                // Le temps de reaction, lui, se regle a cote : `ai.reactionBaseMs`
+                // et son jitter.
+                response: 5,
+
+                // ── L'appui perdu a l'allure ─────────────────────────────
+                //
+                // Un kart lance tourne moins bien qu'un kart au ralenti. C'est
+                // la seule chose que la vitesse d'avance dit au braquage, et
+                // elle manquait : jusqu'ici un kart a l'arret contre un tuyau
+                // changeait de ligne exactement aussi vite qu'a pleine pointe.
+                //
+                // `drag` est ce qu'on perd de volant a pleine pointe, `curve`
+                // la forme de la perte entre l'arret et la pointe. A `drag: 0`
+                // la mecanique disparait et on retrouve trait pour trait le
+                // comportement d'avant : c'est l'interrupteur.
+                //
+                // L'allure est rapportee a la POINTE DU KART, comme dans
+                // `contact` : ce qui compte n'est pas de rouler vite dans
+                // l'absolu mais d'etre lance pour soi. Un poids plume n'est pas
+                // avantage d'avoir une pointe plus basse.
+                //
+                // Effet de bord voulu, et il tombe du bon cote : la remise en
+                // route apres un incident se fait a allure reduite, donc avec
+                // du volant en plus. Un kart qui repart se replace ; un kart
+                // lance tient sa ligne.
+                pace: { drag: 0.35, curve: 1.0 },
+
+                // ── Le volant sous objet de vitesse ──────────────────────
+                //
+                // LE NOMBRE A BOUGER pour rendre les objets de vitesse plus ou
+                // moins joueurs. Multiplicateur applique au volant tant qu'un
+                // champignon ou une etoile dure. A 1, ils ne changent rien.
+                //
+                // A 1.20, un kart sous objet gagne 20 % de volant. L'appui perdu
+                // a l'allure (`pace` ci-dessus) en reprend une partie — il roule
+                // a 1.5 fois sa pointe — si bien qu'il tourne au net environ 16 %
+                // mieux qu'en croisiere ordinaire. C'est le sens voulu : un
+                // champignon lance ET degage, il ne rend pas pataud au moment
+                // precis ou l'on double.
+                //
+                // Sans lui, l'appui a l'allure faisait l'inverse : le champignon
+                // etait le seul objet qui degradait le pilotage de celui qui le
+                // prenait.
+                //
+                // Le bill n'est pas concerne : `steerCap` le laisse hors des
+                // trois facteurs, il ne pilote pas.
+                boostGain: 1.15,
+
+                // ── La contrainte de virage ─────────────────────────────
+                //
+                // Tourner coute de la vitesse. Le poids l'alourdit, le handling
+                // et la puissance l'allegent (`stats.cornering`), et l'allure
+                // decide du tarif : a l'arret on tourne pour rien, lance on paie
+                // plein pot.
+                //
+                // `cost: 0` DESACTIVE tout, proprement et sans rien d'autre a
+                // toucher. C'est l'interrupteur.
+                //
+                //   `cost`     : la perte a plein braquage, a pleine vitesse,
+                //                pour un kart de `cornering` valant 1. Se lit en
+                //                fraction de la vitesse d'avance, et l'effet est
+                //                LINEAIRE : doubler `cost` double toutes les
+                //                pertes du tableau ci-dessous.
+                //   `fullLock` : ce qui compte pour un plein braquage. C'est la
+                //                consigne laterale la plus forte que le pilotage
+                //                puisse demander — a tenir avec
+                //                `ai.dodgeIntensityMax`, sans quoi `cost` cesse
+                //                de se lire en pourcentage.
+                //   `maxLoss`  : garde-fou, et RIEN D'AUTRE. Mesure au banc de
+                //                scenario : la manoeuvre la plus violente du
+                //                pilotage — une esquive a consigne 50 depuis la
+                //                croisiere — ne monte qu'a 0.52 de plein
+                //                braquage, et une rejointe de couloir en pleine
+                //                relance a 0.67. Le plafond ne se declenche donc
+                //                dans aucun cas de jeu ; il est la pour qu'un
+                //                `cost` absurde ne puisse pas arreter un kart.
+                //
+                // NE PAS LIRE `cost` COMME LE COUT D'UNE MANOEUVRE. Il se
+                // definit au plein braquage, un etat que le pilotage atteint
+                // rarement : la loi de rejointe aplatit la consigne bien avant
+                // la cible, si bien qu'un ecart de 7 unites n'en consomme que la
+                // moitie et qu'il faut une traversee de 20 unites pour y arriver.
+                // `cost` est un COEFFICIENT, pas une prevision.
+                //
+                // Ce que ca coute vraiment se MESURE, et nulle part ailleurs :
+                // colonne `virage` du banc (« Ce que la course coute a chaque
+                // kart »), en pixels perdus par course et en part de la distance.
+                // Le moteur tient le compteur au moment ou il applique la
+                // contrainte — c'est le seul endroit qui connaisse les
+                // conditions du tick, et la seule facon d'avoir un chiffre qui
+                // reste vrai quand on change les exposants.
+                //
+                // Sur une ligne tenue, zero pour tout le monde : `steer` coupe
+                // la consigne des que la cible est tenue, si bien que le cout ne
+                // tombe que pendant les TRANSITIONS. La ligne optimale devient
+                // « choisir tot, et tenir ».
+                //
+                // ATTENTION AU PIEGE si l'on retouche la formule : `vy` porte
+                // DEJA l'agilite du kart. Facturer `|vy|` punit l'agile ;
+                // diviser une seule fois par l'agilite s'annule exactement et ne
+                // produit rien. `steerCost` divise par ce que `steerCap` rend
+                // pour une consigne de 1, ce qui retire tous les facteurs d'un
+                // coup — c'est la seule forme qui reste juste si un facteur
+                // s'ajoute un jour.
+                //
+                // Le test de non-regression est ecrit d'avance : le banc mesurait
+                // les huit karts en croisiere a 94.0-94.2 % de leur propre
+                // pointe. Cette colonne DOIT maintenant diverger, et dans
+                // l'ordre du poids. Si elle reste plate, c'est que le cout
+                // s'annule quelque part.
+                corner: { cost: 0.018, fullLock: 50, maxLoss: 0.30 }
+            },
 
             // ── Le bord de piste ─────────────────────────────────────────
             //
@@ -260,7 +446,7 @@
             //
             // Les vitesses de choc vivent dans `bumpVy` / `bumpVx`, deux canaux
             // separes de `vy` et de la vitesse moteur. C'est indispensable :
-            // ecrire dans `vy` faisait absorber le choc par `applySteering` en
+            // ecrire dans `vy` faisait absorber le choc par le volant (`steer`) en
             // 200 ms, avant meme que les karts se soient decolles.
             contact: {
                 // Passes de resolution par tick. Une seule passe laisse les
@@ -276,7 +462,7 @@
                 slopY: 0.2,
 
                 // Vitesse de resorption du chevauchement, en 1/s. Meme forme
-                // que `steerResponse` : la part corrigee sur un pas vaut
+                // que `steer.response` : la part corrigee sur un pas vaut
                 // `separationRate * dt`, bornee a 1. A 12 et 30 Hz, un contact
                 // perd 40 % de son chevauchement par passe. Monter la valeur
                 // decolle les karts d'un coup — on retombe sur la
@@ -462,8 +648,41 @@
         speeds: {
             roadPPS: 250,
 
+            // ── L'elan ───────────────────────────────────────────────────
+            //
+            // La croisiere n'est pas la pointe : un kart hors objet vise
+            // `topSpeed * (momentumMinRatio + (1 - momentumMinRatio) * momentum)`,
+            // ou `momentum` est retire toutes les `momentumDrift*` ms dans
+            // uniform(`momentumFloor`, 1) et rejoint a `momentumChangeSpeed`.
+            //
+            // Aucune statistique n'entre dans cette loi : c'est un
+            // multiplicateur de la pointe, et les huit karts croisent donc au
+            // meme pourcentage de la leur. Ce qui se regle ici n'est pas qui est
+            // rapide — c'est de combien le rythme respire.
             momentumMinRatio: 0.78,
-            momentumFloor: { base: 0.44, weightGain: 0 },
+
+            // LA LARGEUR DE LA BANDE, par le bas : la croisiere va de
+            // `minRatio + (1 - minRatio) * base` a 100 % de la pointe.
+            //
+            //     base    bande        bruit sur une course   chevauchement
+            //     0.44    87.7-100 %        4.6 px/s          39 px/s
+            //     0.70    93.4-100 %        2.5 px/s           9 px/s   ← livre
+            //     0.78    95.2-100 %        1.8 px/s           aucun
+            //
+            // Le plateau entier tient dans 5.1 % de pointe : une bande a 12.3 %
+            // couvrait les fiches d'un bruit deux fois et demie plus large
+            // qu'elles, a l'ecran comme au banc.
+            //
+            // 0.78 EST LA LIMITE A NE PAS FRANCHIR. Au-dela, le pire moment de
+            // bowser reste plus rapide que le meilleur de koopa : plus aucun
+            // depassement ne peut naitre de la croisiere et le peloton devient
+            // une procession, que seuls les objets et les incidents animent.
+            //
+            // `weightGain` releve ce plancher a proportion du poids. A 0 il ne
+            // fait rien, et c'est voulu : les lourds gagnent deja au-dessus de
+            // l'attendu. A noter s'il devait servir un jour — il ne sait que
+            // RELEVER, et les reprises apres incident ne le lisent pas.
+            momentumFloor: { base: 0.70, weightGain: 0 },
             momentumChangeSpeed: 0.25,
             momentumDriftMin: 3000,
             momentumDriftMax: 7000,
@@ -550,7 +769,6 @@
             // depart est plus vertical.
             bananaLobRise: 0.62,
 
-            returnLane: 20,
             shellVertical: 1.5
         },
         offsets: {
@@ -1009,11 +1227,32 @@
             // les trois quarts a elle seule, et deux pipes fermeraient le
             // circuit.
             //
-            // Reduite de 20 % depuis la premiere version (42 / 5.5) : le tuyau
-            // etait presque aussi large qu'un kart, et deux d'entre eux ne
+            // Reduite de 20 % en `x` depuis la premiere version (42 / 5.5) : le
+            // tuyau etait presque aussi large qu'un kart, et deux d'entre eux ne
             // laissaient plus de porte praticable. La taille dessinee suit dans
             // GAME_CONFIG.visuals.pipe, qui vaut exactement 2 * x.
-            hitbox: { x: 33.6, y: 4.4 },
+            //
+            // `y` suit maintenant LE MEME APLATISSEMENT QUE LE KART, et c'est ce
+            // qui lui donne sa valeur. La piste fait 30 unites de profondeur
+            // pour 108 px a l'ecran, d'ou :
+            //
+            //   kart   30.0 px de large  x   9.0 px de fond   ->  3.33 : 1
+            //   pipe   33.6 px de large  x  10.1 px de fond   ->  3.33 : 1
+            //
+            // A 5.5 puis 4.4, il etait aplati a 2.12 : 1 seulement — 12 % plus
+            // large qu'un kart mais 76 % plus profond. Rien ne le justifiait, et
+            // ca se payait sur le seul endroit ou la profondeur compte : les
+            // couloirs. Un tuyau a y=20 ne laissait que 3.1 unites vers le fond,
+            // dont le point de confort tombait a moins d'une unite du mur — donc
+            // toujours penalise par `vision.cost.edge`, donc jamais choisi. Le
+            // cote large gagnait quelle que soit la position du kart.
+            //
+            // A 2.8, ce meme couloir fait 4.7 et son point de confort se pose a
+            // plus de 2 unites du mur : le cout de bord tombe a zero et la
+            // bascule entre les deux cotes redevient purement geometrique — le
+            // kart prend le cote ou il est deja. Aucune regle n'a ete ecrite
+            // pour ca, c'est la geometrie qui cessait d'etre fausse.
+            hitbox: { x: 33.6, y: 2.8 },
 
             // Ce qu'un choc frontal coute a un kart. Bien moins qu'un objet
             // (2000 ms de tete-a-queue) : un mur se croise a chaque tour, un
@@ -1032,31 +1271,31 @@
             // se contenterait de le constater.
             slideAway: 18,
 
-            // Distance a laquelle l'IA commence a voir un pipe. Plus loin que
-            // `ai.threatMaxDistance` (900) : un objet s'esquive au reflexe, un
-            // mur se contourne, et il faut voir venir.
+            // Distance a laquelle un BILL voit un tuyau. Les karts, eux, n'ont
+            // plus de portee a eux : ils voient par `vision.range`, comme pour
+            // tout le reste. Un bill n'a pas de vue — il ne pilote pas, il vole
+            // — et c'est la seule chose qu'il lui reste a regarder, d'ou cette
+            // constante restee ici.
+            //
+            // A tenir avec `vision.range.front`, qui vaut la meme chose : un
+            // kart n'a aucune raison de voir un mur moins loin qu'un bill.
             seeDistance: 1100,
 
-            // Contournement. Le kart choisit un couloir et le rejoint a une
-            // vitesse proportionnelle a l'ecart restant : `laneSeekGain`
-            // convertit cet ecart en vitesse laterale, `laneSeekSpeed` la
-            // plafonne.
+            // Contournement : le kart choisit un couloir et le rejoint. Le
+            // comment se regle avec les autres manoeuvres laterales, dans
+            // `ai.steering.pipe` — elles partagent une seule loi de pilotage, et
+            // c'est la qu'on voit d'un coup d'oeil ce que chacune en fait.
             //
-            // C'est ce qui donne une diagonale franche qui s'aplatit en
-            // arrivant. Une poussee constante — ce que fait l'esquive d'un objet
-            // — depasse le couloir puis corrige, et le kart parait hesiter.
-            laneSeekGain: 6,
-            laneSeekSpeed: 45,
+            // Ce qui reste ici ne concerne que le trace : ou l'on a le droit de
+            // passer, pas comment on y va.
 
-            // En deca de cet ecart, le couloir est considere tenu : le kart
-            // arrete de corriger au lieu de trembler autour de sa cible.
-            laneTolerance: 0.6,
-
-            // Deux couloirs de largeurs proches a moins que ca se valent : c'est
-            // alors le plus proche du kart qui l'emporte. Sans cette marge, un
-            // tuyau au milieu enverrait les huit karts du meme cote, celui que
-            // l'arithmetique designe au dixieme pres.
-            laneTieMargin: 1.5,
+            // `laneTieMargin` a disparu. Elle departageait deux couloirs « de
+            // largeurs proches » en faveur du plus proche du kart — mais a 1.5
+            // pres, et le plus large gagnait des que l'ecart depassait ca. Face
+            // a 11 contre 3, elle ne se jouait donc jamais, et aucun kart
+            // n'empruntait un passage serre. Le depart se fait maintenant sur la
+            // note complete (`chooseLane`), ou la proximite est un terme parmi
+            // les autres et non un dernier recours.
 
             // Vertes : nombre de rebonds tolere, pipes et bords de piste
             // confondus. Au suivant, la carapace se detruit. C'est aussi ce qui
@@ -1087,6 +1326,13 @@
             // Le monter a 8 refuserait le cas le plus naturel de tous : un seul
             // tuyau au centre.
             //
+            // ATTENTION : ce seuil ne concerne PLUS QUE LE CHARGEMENT. Le
+            // pilotage ne s'en sert plus — il note les couloirs au lieu de les
+            // refuser, et sait donc emprunter un passage plus serre que 6 quand
+            // c'est le moins cher. Et `narrowestPassage` mesure la piste
+            // physique complete, sans marge de bord : un circuit accepte ici
+            // est bien un circuit franchissable.
+            //
             // Un circuit qui n'en laisse pas autant est refuse au chargement :
             // un mur de pipes rendrait la course infinissable sans qu'aucune
             // erreur ne soit levee — les karts se cogneraient jusqu'au delai
@@ -1096,6 +1342,526 @@
 
         // Objets qu'un kart peut trainer derriere lui.
         trailableItems: ['banana', 'greenShell', 'redShell'],
+
+        // ── La vue ───────────────────────────────────────────────────────────
+        //
+        // Un kart ne reagit qu'a ce qu'il voit, il ne regarde qu'un cote a la
+        // fois, et un corps solide lui bouche la vue. Tout ce qui suit regle
+        // cette perception, et elle seule : ce qu'il en fait ensuite se regle
+        // dans `ai`.
+        //
+        // Le systeme est identique pour tout le plateau, et la PORTEE le restera
+        // (cf. `range`) : personne ne voit plus loin que son voisin. Les
+        // statistiques de pilote — vision de jeu, brain, sang-froid — viendront
+        // plus tard moduler ce qu'un kart FAIT de ce qu'il voit : son reflexe
+        // (`ai.reactionBaseMs`), son inattention (`ai.dodgeMissChance`), la
+        // qualite de sa decision (`reviewChance`, `safety.chance`). D'ici la,
+        // personne n'est mieux place que son voisin pour voir venir, ni pour
+        // bien decider.
+        vision: {
+            // Portee du regard, en pixels de monde. L'avant porte plus loin :
+            // de face on lit la piste, derriere on jette un oeil.
+            //
+            // L'avant vaut `pipe.seeDistance` — la plus longue portee du
+            // moteur. Rien ne sert de voir un objet plus loin que l'obstacle
+            // qui commande deja la trajectoire.
+            //
+            // ── LA PORTEE EST LA MEME POUR TOUT LE PLATEAU ───────────────
+            //
+            // C'est une invariante, pas un reglage provisoire : aucun kart ne
+            // voit plus loin qu'un autre, et rien ici ne se module par
+            // personnage. Ce que des statistiques de pilote pourront moduler un
+            // jour, c'est ce qu'un kart FAIT de ce qu'il voit — son reflexe, son
+            // attention, la qualite de sa decision — jamais la distance a
+            // laquelle il voit.
+            //
+            // La seule variation est le SENS du regard, et elle vaut pour les
+            // huit de la meme facon.
+            //
+            // Ces distances ne se rapportent a aucune largeur affichee : le
+            // moteur ne connait que des pixels de monde, la fenetre du
+            // spectateur ne lui parvient jamais, et la meme simulation sert tous
+            // les spectateurs quelle que soit leur taille d'ecran.
+            range: { front: 1100, back: 700 },
+
+            // ── La voie ──────────────────────────────────────────────────
+            //
+            // Bande de profondeur dans laquelle un objet est tenu pour etant sur
+            // la route du kart, donc a surveiller. A ne pas confondre avec le
+            // DEGAGEMENT (`hitboxes.itemVsKart.y` + `ai.crossDodgeMargin` = 7),
+            // qui dit ou l'objet passe a cote pour de bon.
+            //
+            // Elle est plus large que le degagement, et elle doit l'etre : le
+            // kart comme l'objet bougent en profondeur pendant le temps avant
+            // impact, et une esquive doit COMMENCER avant d'etre pile dans
+            // l'axe. Un objet traine se suit sur plusieurs secondes a faible
+            // vitesse relative ; le resserrer au degagement revient a ne le voir
+            // qu'une fois dedans — trop tard pour un kart lourd, qui met plus
+            // d'une seconde a couvrir sept unites en croisiere.
+            //
+            // Elle a valu 7 le temps d'un essai, et les karts sont devenus
+            // incapables d'esquiver quoi que ce soit : les carapaces trainees en
+            // particulier n'etaient plus vues du tout. Constat a l'ecran. La
+            // resserrer est peut-etre juste sur le principe — un objet a 10
+            // unites ne peut pas toucher — mais alors il faut ouvrir la fenetre
+            // de temps en echange, et ca se mesure au banc.
+            //
+            // Elle vivait dans `road.laneTolerance` : la piste n'a aucune notion
+            // de voie, c'est une distance de perception et sa place est ici.
+            threatLane: 12,
+
+            // Periode du balayage. La perception n'a aucune raison de tourner a
+            // la cadence de l'affichage : le reflexe le plus court du plateau
+            // dure 224 ms (`ai.reactionBaseMs` au bas de son jitter), et un
+            // retard de perception cinq fois plus petit ne se voit pas.
+            //
+            // C'est a la fois l'economie — la phase etant decalee par `kart.id`,
+            // un ou deux karts balayent par frame au lieu de huit — et un modele
+            // honnete : l'attention a un tic.
+            //
+            // Le pilotage, lui, reste a la cadence pleine. `steer` est
+            // un filtre : le sous-echantillonner ferait trembler le volant.
+            scanIntervalMs: 80,
+
+            // ── Ce qui bouche la vue ─────────────────────────────────────
+            //
+            // Seuls les corps solides masquent : un kart, un bill, un tuyau. Un
+            // objet au sol est trop petit pour cacher quoi que ce soit — il
+            // ferme un passage, il n'aveugle pas.
+            //
+            // La vue etant de cote, l'ombre ne s'elargit pas avec la distance :
+            // elle occupe la meme tranche de profondeur quel que soit
+            // l'eloignement. Masquer revient donc a tester une appartenance a un
+            // intervalle, et c'est ce qui rend l'occlusion presque gratuite.
+            //
+            // `shadowGain` multiplie la demi-profondeur reelle du corps. A 1
+            // l'ombre est exactement le gabarit — un kart profond de 5 sur une
+            // piste de 30 ne cache presque rien. Monter la valeur rend le
+            // masquage franc sans toucher a aucune hitbox : c'est le seul
+            // reglage de la force de l'occlusion.
+            shadowGain: 2.0,
+
+            // Une rouge traque : elle arrive dans l'axe et par l'arriere, soit
+            // exactement le cas ou un kart la precede et la masque. Soumise a
+            // l'occlusion comme les autres, elle deviendrait inevitable.
+            //
+            // Dans le jeu d'origine, c'est le son qui previent. Ici c'est cette
+            // exception, et le tirage d'inattention (`ai.dodgeMissChance`) garde
+            // sa part de hasard.
+            seeHomingThroughCover: true,
+
+            // ── Le coup d'oeil derriere ──────────────────────────────────
+            //
+            // Regarder derriere coupe la vue de face : c'est une substitution,
+            // pas un ajout. Le kart y gagne les menaces qui le rattrapent — une
+            // carapace tiree vers l'avant n'arrive jamais autrement — et y perd
+            // le trafic devant lui, le temps du coup d'oeil.
+            //
+            // Les tuyaux echappent a la regle : un pilote connait son circuit.
+            // Le coup d'oeil lui retire la perception du TRAFIC, pas la memoire
+            // du DECOR. Sans cette exception, un kart s'encastrerait dans un mur
+            // parce qu'il regardait ailleurs — spectaculairement bete, et
+            // invisible pour le spectateur qui, lui, voit le tuyau.
+            glanceIntervalMs: 1400,
+            glanceDurationMs: 350,
+
+            // Probabilite de tourner la tete, par place. Le premier n'a que
+            // l'arriere a surveiller ; le dernier n'a personne derriere et tout
+            // a rattraper devant. Interpole lineairement sur le rang.
+            backChanceLeader: 0.55,
+            backChanceLast: 0.10,
+
+            // ── Le danger latent ─────────────────────────────────────────
+            //
+            // Quelqu'un qui PEUT vous atteindre, mais n'a encore rien lance. Deux
+            // formes : derriere, un kart qui peut tirer vers l'avant — une
+            // carapace, en main ou en orbite ; devant, un kart qui porte de quoi
+            // finir derriere lui — verte, banane ou rouge. C'est la meme
+            // situation vue des deux bouts : partager sa profondeur avec
+            // quelqu'un d'arme.
+            //
+            // Les deux bouts ne demandent pas la meme chose, et c'est voulu : une
+            // banane ne menace que celui qui SUIT son porteur, une carapace en
+            // orbite ne menace que celui qui le PRECEDE. Le moteur a un predicat
+            // par sens (`isTrailable`, `isArmedForward`) plutot qu'un seul
+            // emprunte a la visee, qui laissait l'orbite dans l'ecart.
+            //
+            // Il ne devient jamais une esquive — il n'y a rien a esquiver — mais
+            // il vaut une precaution : se ranger hors de l'axe. Ce qui l'empeche
+            // de degenerer en zigzag permanent est la condition d'ALIGNEMENT,
+            // posee dans le moteur et non ici : tout le monde porte quelque
+            // chose, presque personne n'est pile dans la ligne.
+            //
+            // Il se percoit comme tout le reste, occlusion comprise : un porteur
+            // cache derriere un autre kart ne fait fuir personne.
+            //
+            // Distance au-dela de laquelle une ligne de tir ne se partage plus.
+            // Bornee par `range` du cote regarde — on ne devine pas plus loin
+            // qu'on ne voit.
+            pressureRange: 700,
+
+            // Vise dans le dos, on regarde derriere plus souvent.
+            //
+            // Le gain porte sur la CADENCE du coup d'oeil, pas sur sa
+            // probabilite. Le temps moyen entre deux coups d'oeil valant
+            // `glanceIntervalMs / chance`, les deux formes sont la meme loi —
+            // sauf qu'une probabilite sature a 1. A 0.55 de base pour le
+            // premier, multiplier la chance par 2.2 donnait 1.21 : le gain
+            // tombait dans le vide pour celui qui a le plus de raisons de
+            // regarder derriere. En fond de peloton, ou rien ne saturait, les
+            // deux formes coincident exactement.
+            pressureGlanceGain: 2.2,
+
+            // Duree de vie du releve « quelqu'un d'arme derriere moi ».
+            //
+            // Ce n'est pas un confort, c'est ce qui rend le gain ci-dessus
+            // atteignable. Le tirage du coup d'oeil n'a jamais lieu PENDANT un
+            // coup d'oeil : au moment ou il tombe, le dernier balayage regardait
+            // forcement devant. Lu sur le balayage courant, le gain repondait
+            // donc a un porteur situe DEVANT — l'exact contraire de ce qu'il
+            // nomme, et zero chance de se declencher sur le cas pour lequel il
+            // est ecrit.
+            //
+            // A tenir au-dessus de `glanceIntervalMs` (1400), sans quoi le
+            // souvenir se perime avant le tirage suivant et le gain redevient
+            // inerte. A 2500, une seule observation presse deux ou trois
+            // tirages, puis on oublie.
+            pressureMemoryMs: 2500,
+
+            // Et on se retourne franchement quand c'est SOI qui prepare un tir
+            // vers l'arriere : viser dans le peloton demande de le regarder.
+            //
+            // C'est ce qui rend le tir arriere jouable pour celui qui le recoit.
+            // Sans lui, le tireur se recalait parfaitement sur une cible qu'il ne
+            // regardait pas : la carapace partait dans l'axe a tous les coups, et
+            // le vise n'avait qu'un reflexe d'esquive pour s'en sortir. Avec lui,
+            // il en a deux — le coup d'oeil du tireur lui laisse le temps de se
+            // decaler, s'il a pris cette decision.
+            //
+            // Monter la valeur rend le tireur plus adroit, pas plus rapide : il
+            // trouve son moment plus souvent, il ne vise pas mieux.
+            //
+            // Comme `pressureGlanceGain`, il porte sur la cadence du coup d'oeil
+            // et non sur sa probabilite : c'est la meme loi sans le plafond, et
+            // les deux gains se composent alors sans se manger l'un l'autre.
+            aimGlanceGain: 2.0,
+
+            // Duree de vie du RELEVE : la profondeur vue pendant le coup d'oeil,
+            // sur laquelle le tireur se recale ensuite, tourne vers l'avant.
+            //
+            // Ce n'est pas un delai de confort, c'est la parade. Viser de memoire,
+            // c'est viser ou l'autre ETAIT : plus le releve vieillit, plus la
+            // cible a eu le temps de bouger. C'est de la que vient la chance du
+            // poursuivant, et elle ne coute aucun tirage — celui qui se decale
+            // apres avoir ete releve se fait manquer, celui qui tient sa ligne se
+            // fait toucher.
+            //
+            // Le monter rend les tirs arriere plus surs, le baisser rend le
+            // decalage de securite plus payant. C'est le meme curseur vu des deux
+            // bouts.
+            //
+            // Il faut aussi que le tireur ait le temps de se recaler apres son
+            // coup d'oeil : bien en dessous de `ai.aimLeadMs` (1300), sinon le
+            // releve se perime avant qu'il ait fini de viser.
+            aimMemoryMs: 900,
+
+            // ── La decision de securite ──────────────────────────────────
+            //
+            // C'EST LE REGLAGE DU DOSAGE, et il est plus sensible qu'il n'en a
+            // l'air. A 1, plus personne ne prend jamais de carapace dans le dos
+            // et la moitie du jeu d'objets ne sert plus a rien. A 0, les karts
+            // restent colles derriere une verte jusqu'a ce qu'elle parte.
+            //
+            // `retryMs` est le temps avant de retenter apres un refus : le
+            // danger, lui, n'a pas disparu, et un kart qui a laisse passer sa
+            // chance doit pouvoir se raviser sans que ce soit immediat.
+            //
+            // `holdMs` est la duree du decalage. Assez long pour depasser le
+            // porteur ou le laisser filer, assez court pour ne pas figer la
+            // trajectoire d'un kart dont le danger s'est eloigne tout seul.
+            //
+            // `speed` est la douceur du geste : bien en dessous de
+            // `ai.dodgeIntensityMin`, parce qu'il n'y a pas urgence. C'est ce qui
+            // distingue une precaution d'une esquive a l'oeil du spectateur.
+            safety: {
+                chance: 0.5,
+                retryMs: 900,
+                holdMs: 2000,
+                speed: 14
+            },
+
+            // ── Le plan ──────────────────────────────────────────────────
+            //
+            // Une decision prise ne se defait pas parce que le regard s'est
+            // porte ailleurs. Elle tient jusqu'a son echeance, ou jusqu'a ce que
+            // le kart CONSTATE que la menace est passee — une absence
+            // d'observation ne constate rien.
+            //
+            // `holdAfterMs` est ce qu'on ajoute au temps avant impact pour poser
+            // l'echeance : de quoi laisser l'objet passer pour de bon avant de
+            // relacher.
+            holdAfterMs: 500,
+
+            // Recalcul de trajectoire. A chaque intervalle, une chance de
+            // reprendre le placement avec la perception fraiche : meilleur trou,
+            // ligne affinee. Rate, la revision est repoussee d'un intervalle.
+            //
+            // C'est le seul endroit ou la precision d'un kart se joue apres la
+            // decision initiale, et donc le point d'accroche naturel de la
+            // future stat `brain`. Commun a tous pour l'instant.
+            reviewIntervalMs: 400,
+            reviewChance: 0.5,
+
+            // Et le tirage sur cet intervalle. Il ne rend pas les karts
+            // meilleurs, il les rend DIFFERENTS : a cadence fixe, huit karts
+            // qui voient la meme piste rejouent la meme decision aux memes
+            // instants et finissent en file indienne derriere le meme couloir.
+            //
+            // C'est aussi ce qui simule un cerveau plus ou moins rapide, et
+            // c'est donc la que se branchera la future stat de decision — un
+            // pilote vif reprend souvent sa ligne et l'affine a mesure qu'il
+            // approche, un lent s'engage tot et n'y revient pas.
+            //
+            // Meme plage pour tous aujourd'hui. A 1 / 1, la cadence redevient
+            // fixe : c'est l'interrupteur.
+            reviewJitterMin: 0.6, reviewJitterMax: 1.6,
+
+            // ── La table de cout ─────────────────────────────────────────
+            //
+            // Ce que coute un choc, en millisecondes perdues. C'est la monnaie
+            // commune qui remplace l'ordre fige des manoeuvres : entre deux
+            // dangers, le plus urgent l'emporte au score `cout / temps restant`.
+            //
+            // Les valeurs ne sont pas des reglages, elles se lisent ailleurs
+            // dans ce fichier :
+            //   spin : delays.hitDecelDuration + delays.hitPauseDuration
+            //   pipe : pipe.bumpMs + pipe.recoilMs, plus 90 px de recul
+            //
+            // C'est ce rapport de 1 a 2.4 qui fait qu'un kart accepte de froler
+            // un tuyau pour eviter une carapace, et jamais l'inverse.
+            //
+            // L'arbitrage vaut EN CONTINU, et pas seulement a la decision : une
+            // esquive en cours cede au tuyau des que celui-ci devient le plus
+            // urgent, puis la reprend. Sans ca la table ne tranchait qu'une fois,
+            // et une menace qui reste en vue — une rouge qui traque, par
+            // exemple, sa cible tenant sa ligne par construction — repoussait
+            // l'echeance de son plan jusqu'a l'impact : le contournement de
+            // tuyau ne tournait plus de toute la poursuite.
+            // Les deux valeurs neuves ne sont pas des delais lus ailleurs — ni
+            // l'une ni l'autre ne pose de pause — mais des equivalents en temps
+            // perdu, du meme ordre que ce qu'elles coutent vraiment :
+            //
+            //   kart : une bousculade. Elle ne stoppe pas, elle deplace. Et le
+            //          corps peut s'ecarter tout seul, ce qu'aucun autre ne
+            //          fait — d'ou le prix le plus bas des trois corps.
+            //   edge : le frottement du mur, qui tire la vitesse a
+            //          `physics.wall.speedFactor` (0.72) tant qu'on est dessus.
+            //          C'est le prix d'un FROLEMENT — deux ou trois dixiemes de
+            //          seconde — et non d'un raclage prolonge : la note s'en
+            //          sert pour juger un couloir de bord, ou le kart passe pres
+            //          du mur sans s'y coller.
+            //
+            //          Il a valu 200 (une seconde pleine de raclage), et c'etait
+            //          assez pour rendre TOUT couloir de bord inatteignable : le
+            //          point de bascule entre les deux cotes d'un tuyau tombait
+            //          a y=22.7 pour koopa, or `road.wanderMargin` (8) borne la
+            //          ligne naturelle a 22. Aucun kart n'etait jamais assez
+            //          haut pour que le couloir etroit gagne, et le trace avait
+            //          beau le dessiner, personne ne le prenait. A 80, la
+            //          bascule redescend a 20.4-21.1 : dans la bande, donc
+            //          jouable, et toujours en faveur du large a mi-piste.
+            //
+            // L'ordre compte plus que les valeurs exactes : spin > pipe > kart >
+            // edge. C'est lui qui dit quel obstacle on accepte de froler pour en
+            // eviter un autre, et il se lit d'un coup d'oeil ici.
+            cost: { spin: 2000, pipe: 850, kart: 300, edge: 80 },
+
+            // ── Le placement ─────────────────────────────────────────────
+            //
+            // Ou se mettre en profondeur. Une note en millisecondes, la meme
+            // monnaie que `cost` : ce qu'on RISQUE a un endroit, plus ce que
+            // coute d'y aller. Cf. `laneRisk` / `chooseLane`.
+            place: {
+                // Ce que pese un detour face a un risque.
+                //
+                // A 1, une seconde de braquage vaut une seconde perdue en choc
+                // — le kart accepte de traverser la piste pour eviter un
+                // tete-a-queue (2000 ms), pas pour eviter un frottement de bord
+                // (200 ms). C'est ce qui produit « pas de danger, pas de
+                // virage » sans qu'aucune regle ne le dise : sans risque, la
+                // note la plus basse est celle de sa propre ligne.
+                //
+                // Le monter rend les karts casaniers, le baisser les fait
+                // zigzaguer pour des gains minuscules. A 0, ils traversent la
+                // piste pour un dixieme de risque.
+                detour: 1.0,
+
+                // Chance de retenir l'option qu'on vient de regarder.
+                //
+                // Le kart descend le classement des couloirs et s'arrete a
+                // chaque marche avec cette probabilite : il prend donc le
+                // meilleur 75 fois sur 100, le deuxieme 19 fois, le troisieme 5.
+                // Une erreur reste une option qui existait — jamais une
+                // absurdite, jamais un mur.
+                //
+                // A 1 le kart est parfait : c'est l'interrupteur pour mesurer au
+                // banc ce que l'imperfection coute. Meme valeur pour les huit
+                // tant qu'aucune stat de pilote n'existe ; le jour ou elle
+                // arrive, c'est CE nombre qu'elle module, et lui seul.
+                chance: 0.75,
+
+                // Le confort qu'on aimerait garder autour de chaque corps, au
+                // dela de sa hitbox. Ce ne sont plus des refus : les entamer
+                // coute, en proportion de ce qu'on entame.
+                //
+                // C'est tout le correctif du couloir serre. Ces marges etaient
+                // fondues dans les hitboxes avant d'etre comparees, si bien
+                // qu'un passage de 3.1 unites en valait 1.1 et se faisait
+                // refuser — le kart ne savait meme pas qu'il y avait un trou.
+                // Elles sont maintenant portees a part, et un passage serre
+                // reste choisissable quand il est le moins cher de la piste.
+                //
+                // `item` valait `ai.crossDodgeMargin`, au milieu des reglages
+                // d'esquive : c'est un degagement, sa place est avec les autres.
+                margin: { pipe: 1.5, item: 2, kart: 1 },
+
+                // L'imprecision d'un kart, en unites de profondeur par unite de
+                // volant (cf. `laneSlop`). Elle s'ajoute a la bande morte du
+                // braquage et gonfle chaque obstacle d'autant, pour ce kart-la
+                // seulement.
+                //
+                // C'est ce qui distingue « le passage est trop petit » de « le
+                // kart est trop imprecis pour ce passage ». Sans elle, la note
+                // jugeait les huit karts capables de se poser au dixieme
+                // d'unite : un couloir de 3 unites passait pour tous, et les
+                // lourds s'y coincaient.
+                //
+                // A 8, en croisiere : ~0.8 pour koopa, ~1.6 pour bowser. Un
+                // couloir de fond de 3.1 unites est donc jouable pour l'un et
+                // refuse a l'autre — un passage serre est un passage pour les
+                // vifs, et c'est le trace qui decide a qui il s'adresse.
+                //
+                // A 0, tous les karts se croient chirurgicaux : c'est
+                // l'interrupteur, et c'est l'etat d'avant.
+                slop: 8,
+
+                // Ce que vaut une boite, en millisecondes gagnees. Seul terme
+                // negatif de la note : une occasion, pas un risque.
+                //
+                // La collecte etait une manoeuvre a part, placee APRES le
+                // contournement de tuyau. Des lors que le contournement s'engage
+                // tot — ce qu'il fait depuis qu'un tuyau est un mur sur toute la
+                // portee du regard — elle n'etait plus jamais atteinte sur un
+                // circuit charge. Une occasion ne se classe pas avant ou apres
+                // un mur : elle se pese contre lui.
+                //
+                // A 400, le kart accepte de longer le bord pour une boite (200)
+                // et refuse de traverser devant un tuyau (850) ou une carapace
+                // (2000) pour elle. C'est l'arbitrage qu'on veut voir, et il ne
+                // s'ecrit nulle part : il tombe de l'ordre des couts.
+                //
+                // A 0, les karts ignorent les boites qui ne sont pas pile sur
+                // leur ligne.
+                boxBonus: 400,
+
+                // Ce qu'un nouveau couloir doit gagner pour qu'on lache celui
+                // qu'on suit, en millisecondes.
+                //
+                // C'est le prix de l'ENGAGEMENT. Chaque reprise peut renvoyer un
+                // couloir different — le trafic bouge, la portee de braquage se
+                // raccourcit a mesure qu'on approche, et un tirage sur quatre ne
+                // retient pas le meilleur (`chance`). Sans seuil, le kart
+                // repartait dans l'autre sens a mi-parcours, ce qui se voit
+                // exactement comme un manque d'agilite : il n'etait pas lent, il
+                // faisait deux fois la moitie du chemin.
+                //
+                // 150 ms, soit un cinquieme d'un choc de tuyau : un couloir
+                // devenu mauvais perd bien plus que ca et la reprise se fait
+                // quand meme. Ce que ce seuil coupe, c'est le changement d'avis
+                // a prix nul.
+                //
+                // A 0, le kart reconsidere tout a chaque reprise.
+                commit: 150,
+
+                // Ce que coute d'entamer TOUT le confort d'un corps sans
+                // toucher sa limite dure, en fraction de ce que coute le
+                // contact.
+                //
+                // Il valait 1 sans etre ecrit nulle part : la rampe de
+                // `laneRisk` montait jusqu'au cout plein. Passer au ras d'un
+                // tuyau se notait donc 850 — exactement le prix de le percuter —
+                // alors que traverser la piste entiere en coute 600 a un vif et
+                // 1900 a un lourd. Un passage serre etait toujours battu par le
+                // grand contournement, y compris quand le kart etait DEJA dedans
+                // et qu'il n'avait qu'a le tenir. C'est le defaut que le
+                // decoupage limite dure / marge de confort devait justement
+                // corriger, et la rampe le reintroduisait par la note.
+                //
+                // Ce n'est pas la meme chose et ca ne doit pas se noter pareil :
+                // la limite dure est un fait — `laneRisk` y rend l'infini, un
+                // tuyau ne se traverse pas — la marge est un CONFORT, et
+                // l'imprecision du kart est deja comptee a part (`slop`).
+                //
+                // A 0.35, froler un tuyau vaut 300 ms : quatre fois un
+                // frottement de bord (80), un tiers du choc. Le kart prend le
+                // passage serre quand il est deja pres, et traverse quand la
+                // traversee est vraiment moins chere — c'est-a-dire quand il est
+                // vif et qu'il a le temps.
+                //
+                // A 1 on retrouve l'ancien comportement : le contournement
+                // systematique. A 0, il rase tout sans jamais preferer l'air
+                // libre.
+                graze: 0.35,
+
+                // Ce que vaut un deplacement REPORTE face au meme deplacement
+                // fait tout de suite.
+                //
+                // Un mur plus lointain que celui qu'on aborde ne coute pas un
+                // choc : il coute d'avoir a en sortir plus tard (cf. la dette
+                // dans `laneRisk`). Mais plus tard n'est pas maintenant — ce
+                // deplacement se fera sous un horizon plus court, dans un trafic
+                // qui aura bouge, et avec une reprise qui peut le rater. Le
+                // majorer, c'est dire au kart de preferer, a prix egal, le
+                // couloir qui degage AUSSI la suite.
+                //
+                // A 2, sur l'anneau du Moai : les tuyaux touches passent de 0.26
+                // a 0.09 par tour, et de 0.90 a 0.12 pour bowser — l'optimum est
+                // un plateau large (1.5 a 2.5) et il se retrouve identique sur
+                // des champs de tuyaux tires au hasard, donc il n'est pas taille
+                // pour ce trace.
+                //
+                // A 1 le kart sous-estime ce qu'il doit et s'engage trop : il
+                // prend le couloir proche et decouvre trop tard qu'il faut en
+                // sortir. Au-dela de 3 il redevient aussi frileux que l'ancien
+                // refus, et cesse de prendre la ligne haute.
+                debt: 2
+            },
+
+            // Menaces deja jugees que le kart garde en tete. Un seul
+            // emplacement — ce qu'il y avait — suffit tant qu'une menace en
+            // chasse une autre pour de bon ; deux menaces qui alternent en
+            // urgence, une banane et une verte, refaisaient alors le tirage de
+            // reflexe a chaque bascule. Le kart pouvait redecouvrir sans fin un
+            // objet qu'il avait deja decide d'ignorer.
+            //
+            // Quatre couvrent tout ce qu'un kart croise dans la meme seconde.
+            memorySlots: 4,
+
+            // Duree de vie d'un verdict, comptee depuis la DERNIERE fois que la
+            // menace a ete vue. Tant qu'elle reste sous les yeux, le verdict
+            // tient : ce qui se perime est l'absence, pas l'observation.
+            //
+            // Sans elle, un verdict etait definitif. Une verte jugee « pas vue »
+            // au premier passage le restait ses dix rebonds durant, quelle que
+            // soit la geometrie ensuite ; et une menace revenue apres un long
+            // detour retrouvait un reflexe deja echu, donc franchi d'avance —
+            // elle etait esquivee sans le moindre temps de reaction.
+            //
+            // Un peu au-dela de `ai.threatWindowMs` (900) plus `holdAfterMs`
+            // (500) : de quoi couvrir une menace qui va jusqu'au bout, pas une
+            // situation qui s'est refaite entre-temps.
+            memoryMs: 1500
+        },
 
         ai: {
             holdItemMin: 500, holdItemMax: 8000,
@@ -1155,7 +1921,55 @@
             // Perception : le seuil est un temps avant impact, non une distance.
             // Une carapace de face approche a plus du triple de la vitesse d'une
             // banane — a distance egale, le temps pour reagir n'a rien de
-            // comparable. Le plafond evite de s'ecarter d'un objet hors ecran.
+            // comparable.
+            //
+            // Le plafond de distance borne l'anticipation : au-dela, la
+            // geometrie aura change avant l'arrivee — la carapace rebondit, le
+            // kart se fait bousculer — et s'engager dessus revient a manoeuvrer
+            // pour une situation qui n'aura pas lieu.
+            //
+            // Il ne dit RIEN de ce qui est a l'ecran, et ne le peut pas : le
+            // moteur ne connait que des pixels de monde. La largeur visible
+            // depend de la fenetre du spectateur (`smk-banner.js`, au rendu
+            // seul), elle differe d'un spectateur a l'autre, et la simulation
+            // est la meme pour tous. Aucun reglage de perception ne doit s'y
+            // adosser, ici ou ailleurs.
+            //
+            // ATTENTION, les deux se lisent en ET : une menace demande les deux
+            // vrais, donc celui qui DECIDE est celui qui devient vrai en
+            // dernier. Ca depend entierement de la vitesse de rapprochement, et
+            // le partage n'est pas celui qu'on lit.
+            //
+            //   banane posee devant   ~480 px/s   900 ms = 432 px   -> le TEMPS
+            //   verte qui rattrape    ~400 px/s   900 ms = 360 px   -> le TEMPS
+            //   verte de face        ~1360 px/s   900 ms = 1224 px  -> la DISTANCE
+            //
+            // La fenetre de temps ne decide donc de rien pour les carapaces de
+            // face — le cas meme qui sert a la justifier deux lignes plus haut.
+            // Une verte de face est vue a 900 px, soit ~660 ms avant impact,
+            // dont 224 a 378 de reflexe.
+            //
+            // Et il y a un TROISIEME plafond au-dessus : `vision.range.front`
+            // (1100), qui decide de ce qui entre dans le balayage. Pour que la
+            // fenetre de temps devienne maitresse sur une verte de face, il
+            // faudrait les deux distances au-dela de ~1240 px — monter ce seul
+            // plafond a 1100 ne ferait que passer la main a la portee du regard.
+            //
+            // Une verte de face esquivable par un kart lourd se paie donc en
+            // portee de vue, pas en fenetre de temps. C'est un changement
+            // d'equilibrage, pas une correction : a passer au banc.
+            //
+            // Enfin, les trois sortes de menace ne sont pas filtrees pareil, et
+            // ca ne se voit qu'en les mettant cote a cote :
+            //
+            //   objet au sol   temps ET distance   (les deux ci-dessous)
+            //   etoile / bill  temps seul          (aucun plafond de distance)
+            //   objet traine   distance seule      (`trailThreatDistance`)
+            //
+            // Chacun se defend a sa ligne — un objet traine avance a la vitesse
+            // de son porteur, son temps avant impact ne dit rien ; une etoile se
+            // rapproche trop lentement pour que 900 ms portent loin. Mais c'est
+            // trois regles, pas une, et rien d'autre ne le dit.
             threatWindowMs: 900,
             threatMaxDistance: 900,
 
@@ -1170,9 +1984,15 @@
             edgeBrakeFactor: 0.78,
             edgeBrakeMs: 700,
 
-            // Traversee du mauvais cote : degagement a prendre au-dela de la
-            // hitbox, et erreur d'appreciation du temps disponible.
-            crossDodgeMargin: 2,
+            // Erreur d'appreciation : le kart se croit un peu plus vif, ou un
+            // peu moins, qu'il ne l'est. Applique a son volant au moment de
+            // choisir ou se mettre, elle se propage donc aux deux choses qui en
+            // dependent — jusqu'ou il croit pouvoir aller, et ce qu'il croit que
+            // le detour lui coute.
+            //
+            // Le degagement qui l'accompagnait (`crossDodgeMargin`) vit
+            // maintenant dans `vision.place.margin.item`, avec les marges des
+            // autres corps.
             crossJudgeError: 0.25,
 
             // Ce qui ferme un cote, en plus du bord de piste : un tuyau, ou un
@@ -1199,10 +2019,20 @@
             // Visee : le kart se recale sur sa cible avant de tirer. La hitbox
             // verticale d'un objet valant 5, une erreur de cet ordre suffit a
             // rater.
+            //
+            // `aimScanDistance` borne la designation de cible dans les deux
+            // sens, et elle passe desormais par la vue des deux cotes : on ne
+            // vise que ce qu'on voit, occlusion comprise. Celui qui se cache
+            // derriere un autre ne se fait donc pas prendre pour cible, devant
+            // comme derriere.
+            //
+            // `vision.range` la borne a son tour : 900 mord devant (portee
+            // 1100), mais c'est la portee du regard qui mord derriere (700).
+            // Monter cette valeur ne porte donc que sur la visee avant tant que
+            // `range.back` reste en dessous.
             aimLeadMs: 1300,
             aimScanDistance: 900,
             aimErrorMax: 3.5,
-            aimSpeed: 12,
 
             // L'inattention n'est plein tarif que pour une esquive tout juste
             // jouable ; au-dela de dodgeEasyRatio fois la marge necessaire, le
@@ -1210,12 +2040,103 @@
             dodgeMissChance: 0.1,
             dodgeEasyRatio: 2.5,
 
-            overtakeDetectionRange: 120, overtakeMinDistance: 12, overtakeSideSpeed: 10,
-            // Ecart en deca duquel la boite est consideree dans l'axe : le kart
-            // tient sa ligne au lieu de la corriger.
-            boxDetectionRange: 400, boxSeekIntensity: 25, boxAlignTolerance: 2,
+            overtakeDetectionRange: 120, overtakeMinDistance: 12,
+            boxDetectionRange: 400,
             wanderIntervalMin: 2000, wanderIntervalMax: 6000,
-            wanderDurationMin: 500, wanderDurationMax: 1500, wanderSpeed: 4
+            wanderDurationMin: 500, wanderDurationMax: 1500,
+
+            // Ecart vise par une derive de maraude, en profondeur de piste.
+            //
+            // C'est un ECART et non une vitesse, et le changement n'est pas
+            // cosmetique : une vitesse de derive mise a l'echelle de l'agilite
+            // faisait vagabonder les legers sur trois fois plus de piste que les
+            // lourds. Tout le monde vise maintenant le meme decalage ; les
+            // lourds mettent seulement plus longtemps a l'atteindre, et les plus
+            // lourds ne l'atteignent pas dans la fenetre de derive. C'est
+            // exactement ce qu'on veut voir a l'ecran.
+            wanderOffset: 4,
+
+            // ── Les profils de braquage ──────────────────────────────────
+            //
+            // Un profil par manoeuvre, et c'est deliberement verbeux : ces
+            // valeurs etaient auparavant celles du contournement de tuyau,
+            // empruntees en silence par l'esquive et par la precaution. Regler
+            // le tuyau retouchait donc trois manoeuvres a la fois, sans que rien
+            // ne le signale. Elles partagent la loi de pilotage, pas l'urgence.
+            //
+            //   `speed`     : le plafond de la consigne laterale, avant mise a
+            //                 l'echelle du kart (`steerCap`). C'est l'urgence de
+            //                 la manoeuvre.
+            //   `gain`      : ce que vaut une unite d'ecart restant en vitesse
+            //                 laterale. C'est lui qui aplatit la trajectoire en
+            //                 fin de course au lieu de la couper net.
+            //   `tolerance` : en deca, la cible est consideree tenue et le kart
+            //                 arrete de corriger — sinon il tremble autour.
+            //   `guard`     : refuse d'envoyer le kart dans ce qu'il a vu.
+            //                 L'esquive, le contournement et la precaution ne
+            //                 l'ont pas, et c'est voulu : eux traversent
+            //                 sciemment, apres avoir juge la place eux-memes.
+            steering: {
+                // L'esquive et la precaution tirent leur urgence du plan
+                // (`plan.intensity`) et non d'ici : une esquive se tire au sort
+                // entre `dodgeIntensityMin` et `dodgeIntensityMax`, une
+                // precaution vaut `vision.safety.speed`. C'est ce qui les rend
+                // reconnaissables a l'oeil.
+                dodge:    { gain: 6, tolerance: 0.6, guard: false },
+                safety:   { gain: 6, tolerance: 0.6, guard: false },
+
+                // Le contournement de tuyau. C'est la manoeuvre la plus urgente
+                // du jeu, et sa vitesse le dit : au-dessus de l'esquive la plus
+                // franche (`dodgeIntensityMax`, 50).
+                //
+                // Rien d'excessif — c'est le seul obstacle CERTAIN du circuit.
+                // Une carapace peut manquer sa cible, un kart peut s'ecarter, un
+                // tuyau ne fait ni l'un ni l'autre : on arrive dessus. A 45 les
+                // karts paraissaient laborieux dans une sequence de tuyaux,
+                // faute d'autorite pour rejoindre leur couloir.
+                //
+                // Elle ne rend personne egal : `steerCap` la met a l'echelle de
+                // l'agilite, donc bowser en tire 14 u/s la ou koopa en tire 64.
+                // Et depuis que le placement compte l'imprecision propre de
+                // chaque kart (`place.slop`), le poids se paie sur le CHOIX du
+                // couloir — un lourd renonce aux passages serres — et non plus
+                // seulement sur le temps mis a le rejoindre.
+                //
+                // Note pour l'equilibrage : `deplacement-karts-stats.md` (D-2)
+                // proposait au contraire de la BAISSER vers 18, pour que le
+                // budget lateral discrimine les karts. Ce reglage-la va dans
+                // l'autre sens, et c'est assume — la discrimination passe
+                // maintenant par `slop`, qui ne coute pas de fluidite.
+                pipe:     { speed: 62, gain: 6, tolerance: 0.6, guard: false },
+
+                // Se recaler sur une cible avant de tirer. Tolerance serree : la
+                // hitbox verticale d'un objet vaut 5, viser large revient a ne
+                // pas viser.
+                aim:      { speed: 12, gain: 6, tolerance: 0.5, guard: true },
+
+                // Sortir de la voie de celui qu'on double.
+                overtake: { speed: 10, gain: 6, tolerance: 0.6, guard: true },
+
+                // Aller chercher une boite. La tolerance est celle de l'axe :
+                // deja dedans, le kart tient sa ligne au lieu de la corriger.
+                box:      { speed: 25, gain: 6, tolerance: 2, guard: true },
+
+                // La derive de confort. Elle n'accomplit rien et ne doit donc
+                // jamais presser : c'est la manoeuvre la plus frequente de la
+                // course, et la seule qui n'ait aucune decision derriere.
+                wander:   { speed: 4, gain: 6, tolerance: 0.6, guard: true },
+
+                // Le retour a sa ligne, une fois l'ecart fini. Tolerance large :
+                // rentrer au dixieme pres n'a aucun interet, et la viser
+                // relancait une correction a chaque bousculade.
+                home:     { speed: 20, gain: 6, tolerance: 1, guard: true },
+
+                // Le bill. Sa vitesse vient de `bill.centerSpeed` : il ne pilote
+                // pas, il devie — et `steerCap` le laisse hors de l'agilite
+                // comme de l'appui a l'allure, sans quoi un bill lance a pleine
+                // vitesse ne pourrait plus contourner le tuyau qu'il vise.
+                bill:     { gain: 6, tolerance: 0.2, guard: false }
+            }
         },
         // Distance dont un objet doit s'ecarter de son lanceur avant de pouvoir le
     // toucher : protege du lancer, sans immuniser pour autant.
@@ -1233,12 +2154,12 @@
             // Kart contre pipe. Comme les autres, c'est un ecart entre centres :
             // l'emprise du tuyau (pipe.hitbox) plus la demi-carrosserie. Un kart
             // vaut 60 en x et 5 en profondeur face a un autre kart, d'ou
-            // 33.6 + 30 et 4.4 + 2.5.
+            // 33.6 + 30 et 2.8 + 2.5.
             //
             // Seule la part du tuyau a ete reduite de 20 % : le kart, lui, n'a
             // pas maigri. Rogner les deux aurait fait passer les karts dans des
             // trous ou ils ne tiennent pas.
-            kartVsPipe: { x: 63.6, y: 6.9 },
+            kartVsPipe: { x: 63.6, y: 5.3 },
             // itemVsKart.y elargi de radiusY : l'objet oscille en profondeur avec
             // son orbite, ce supplement lui rend la meme tolerance effective qu'un
             // objet pose (5) pour une victime qui roule sur la meme voie.

@@ -67,6 +67,7 @@
             const grip  = lerp(spec.grip.min, spec.grip.max,
                                Math.pow(norm.handling, spec.gripCurve));
 
+
             table[name] = {
                 raw: raw,
                 norm: norm,
@@ -82,7 +83,29 @@
                 acceleration: clamp(force / Math.pow(mass, spec.massDragAccel),
                                     spec.accelClamp.min, spec.accelClamp.max),
                 agility: clamp(grip / Math.pow(mass, spec.massDragAgility),
-                               spec.agilityClamp.min, spec.agilityClamp.max)
+                               spec.agilityClamp.min, spec.agilityClamp.max),
+
+                // Ce qui tient un kart quand il tourne, et donc ce que braquer
+                // lui coute en vitesse (cf. `steerCost`).
+                //
+                // Meme forme que ses deux voisines — les trois axes bruts, le
+                // poids au denominateur — et c'est le point : elle a ses PROPRES
+                // exposants, et ne se deduit d'aucune autre stat.
+                //
+                // Elle a d'abord ete batie sur `agility`, qui portait deja le
+                // poids et le handling dans le bon sens. C'etait plus court, mais
+                // ca laissait `massDragAgility` gouverner deux choses a la fois :
+                // la vitesse a laquelle un lourd tourne, ET ce que tourner lui
+                // coute. Impossible alors de regler l'une sans deplacer l'autre.
+                //
+                // Aux valeurs livrees — `cornerMassDrag` egal a
+                // `massDragAgility`, les deux gains a 1 — elle rend exactement
+                // ce que rendait `agility * force`. Le decouplage ne change rien
+                // tant qu'on ne s'en sert pas ; il rend seulement les deux
+                // reglages independants.
+                cornering: Math.pow(grip, spec.cornerGripGain)
+                    * Math.pow(force, spec.cornerPowerGain)
+                    / Math.pow(mass, spec.cornerMassDrag)
             };
         }
 
@@ -414,17 +437,29 @@
             kart.bumpRecoilLeft = cfg.pipe.recoilPx;
             kart.absoluteVelocity = 0;
             kart.momentum = 0;
+            // Un tuyau efface l'elan, y compris celui qu'un objet en cours
+            // tenait de cote : sans ca, la fin de l'objet le rendrait en silence
+            // et le choc n'aurait rien coute a celui qui l'a pris lance.
+            kart.preBoostMomentum = -1;
 
             // Ecarte vers le cote le plus degage. Sans ca, un kart pousse par le
             // peloton resterait plaque contre le tuyau : le chien de garde du
             // service finirait par le signaler, sans pour autant le liberer.
-            kart.vy = pipeSlideDir(cfg, kart, pipe) * cfg.pipe.slideAway;
+            //
+            // Dans `bumpVy`, comme la glissade de la toupie juste au-dessus et
+            // comme tout ce qui est subi. Ecrite dans `vy`, elle offrait a tous
+            // les karts le meme decalage gratuit — 3.6 unites, soit les trois
+            // quarts d'une esquive de bowser contre un sixieme de celle d'un
+            // koopa. Le tuyau rendait donc maniable qui ne l'est pas, et
+            // precisement la ou la maniabilite devrait se payer : au redemarrage
+            // contre un mur, piste encore encombree.
+            kart.bumpVy = pipeSlideDir(cfg, kart, pipe) * cfg.pipe.slideAway;
 
             // Le plan en cours ne vaut plus rien : il visait a passer, et le
             // kart est arrete contre le tuyau. Il rechoisira un couloir au
             // redemarrage, depuis la position ou la poussee laterale l'a mis.
             kart.aiState = 'cruising';
-            kart.dodgePlanId = 0;
+            kart.plan.threatId = 0;
             kart.pipeTargetIndex = -1;
 
             events.push({ type: 'kartBumped', kartId: kart.id, pipeIndex: p });
@@ -433,55 +468,207 @@
     }
 
     // -----------------------------------------------------------------------
-    // Maniabilite
+    // Le braquage
     //
-    // Une seule regle, et tout le pilotage latera passe par elle : `agility`
-    // dit COMBIEN un kart se decale, jamais EN COMBIEN DE TEMPS il s'y met.
+    // ── Le modele ────────────────────────────────────────────────────────
     //
-    // Le temps de reaction est commun a tout le plateau. Il a deux etages, et
-    // aucun des deux ne regarde les stats :
-    //   - le reflexe de l'IA, `ai.reactionBaseMs` tire au sort a chaque
-    //     menace : c'est lui qui varie, et il varie pour tout le monde pareil ;
-    //   - l'inertie du volant, `physics.steerResponse` : la vitesse a laquelle
-    //     `vy` rejoint la consigne, identique d'un personnage a l'autre.
+    // Une manoeuvre laterale est TOUJOURS une profondeur a rejoindre. Le trou
+    // ou passer, la ligne a quitter, la cible a cadrer, la boite a ramasser :
+    // la situation dit OU aller, et elle le dit pareil pour les huit karts.
     //
-    // Ce qui distingue les karts vient apres : a consigne egale, un kart
-    // maniable vise un decalage plus grand. C'est la seule chose qu'`agility`
-    // achete.
+    // Ce qui separe un kart d'un autre est le TEMPS qu'il met a y arriver.
     //
-    // Trois fonctions, et elles sont les seules a toucher `targetVy` et `vy` :
-    //   - `steerSpeed(kart, base)`         : la consigne, a l'echelle du kart ;
-    //   - `applySteering(cfg, kart, dt)`   : la reponse du volant, commune ;
-    //   - `steerClamped(cfg, state, ...)`  : la meme, mais qui refuse d'envoyer
-    //     le kart dans un obstacle (cf. sa propre note).
-    // Ajouter une manoeuvre, c'est poser un `kart.targetVy = steerSpeed(...)`
-    // puis appeler l'une des deux dernieres — `steerClamped` par defaut,
-    // `applySteering` seulement si la manoeuvre juge la place elle-meme. Rien
-    // d'autre ne doit ecrire dans `vy`.
+    // C'est le point du systeme, et il a change : plusieurs manoeuvres
+    // calculaient auparavant une AMPLITUDE proportionnelle a l'agilite —
+    // pousser a `4 * agility` pendant une seconde — si bien qu'un kart maniable
+    // ne se contentait pas d'aller plus vite au meme endroit, il allait ailleurs.
+    // Une derive de confort emmenait un koopa sur trois fois plus de piste qu'un
+    // bowser sans que rien, dans la situation, ne le demande. Desormais la
+    // situation fixe la cible, l'agilite fixe la duree.
+    //
+    // Corollaire pratique : toute question de pilotage devient une question de
+    // temps, donc mesurable. « Ce couloir, je l'atteins avant le tuyau ? »
+    // `steerReach` et `steerDelay` y repondent par les deux bouts.
+    //
+    // ── Le reflexe ne depend pas du kart ─────────────────────────────────
+    //
+    // Il a deux etages, et aucun des deux ne regarde les stats :
+    //   - la latence de decision, `ai.reactionBaseMs`, tiree a chaque menace ;
+    //   - l'inertie du volant, `physics.steer.response`.
+    //
+    // Un kart ne voit pas plus tot ni ne decide plus vite qu'un autre. La seule
+    // chose qu'il puisse faire en reponse a un reflexe, a une envie d'esquive ou
+    // de visee, c'est actionner son volant — avec ses moyens a lui.
+    //
+    // ── Ses moyens, justement ────────────────────────────────────────────
+    //
+    // `steerCap` les rassemble, et il n'y en a que deux :
+    //   - `agility`, ce que le personnage vaut au volant ;
+    //   - l'appui qui lui reste a l'allure du moment (`physics.steer.pace`) :
+    //     un kart lance tourne moins bien qu'un kart au ralenti.
+    //
+    // ── Qui ecrit `vy` ───────────────────────────────────────────────────
+    //
+    // Une seule fonction le fait sur ordre : `steer`. L'invariant se verifie en
+    // cherchant `.vy` suivi d'une affectation dans ce fichier ; il ne doit rien
+    // sortir d'autre que `steer`, l'initialisation d'un kart, et ces deux
+    // contraintes — qui ne commandent rien, elles reprennent :
+    //   - `clampKartToRoad` annule la composante SORTANTE au bord de piste ;
+    //   - `resolveKartPair` reprend la part de volant qui pousse dans la
+    //     carrosserie d'en face. Ce n'est pas une consigne, c'est un appui qui
+    //     se derobe.
+    //
+    // Les chocs eux-memes n'y touchent pas : ils vivent dans `bumpVy`, un canal
+    // separe, justement pour ne pas etre effaces par le volant en 200 ms.
+    //
+    // Ajouter une manoeuvre, c'est donc : trouver la profondeur a viser, lui
+    // donner un profil dans `ai.steering`, et appeler `steer`. Rien d'autre.
     // -----------------------------------------------------------------------
 
-    // Consigne laterale d'un kart pour une vitesse de reference donnee.
-    function steerSpeed(kart, base) {
-        return base * kart.stats.agility;
+    // Allure du kart, en fraction de sa propre pointe.
+    //
+    // Rapportee a SA pointe et non a une vitesse absolue, comme pour l'inertie
+    // de contact : ce qui compte n'est pas de rouler vite dans l'absolu mais
+    // d'etre lance pour soi. `contactSpeed` est le deplacement reellement
+    // effectue au tick precedent — boosts, frottement de mur et chocs en cours y
+    // sont deja, il n'y a rien a recomposer.
+    function steerPace(kart) {
+        const top = kart.stats.topSpeed;
+        if (!(top > 0)) return 1;
+        const pace = kart.contactSpeed / top;
+        return pace < 0 ? 0 : (pace > 1 ? 1 : pace);
     }
 
-    // Rapproche `vy` de `targetVy`. Le facteur est borne a 1 : sur une frame
-    // longue — onglet en arriere-plan, machine qui peine — le lissage non borne
-    // depassait la consigne et faisait osciller le kart. Avec la borne, une
-    // frame lente se contente d'arriver pile sur la consigne.
-    function applySteering(cfg, kart, deltaTime) {
-        const k = cfg.physics.steerResponse * deltaTime;
-        kart.vy += (kart.targetVy - kart.vy) * (k > 1 ? 1 : k);
+    // Ce qu'il reste de volant a l'allure du moment. Vaut 1 a l'arret, et
+    // `1 - drag` a pleine pointe.
+    function steerGrip(cfg, kart) {
+        const pace = cfg.physics.steer.pace;
+        if (!pace.drag) return 1;
+        return 1 - pace.drag * Math.pow(steerPace(kart), pace.curve);
     }
 
-    // Distance laterale qu'un kart couvre en `ms` millisecondes, en partant a
-    // l'arret. `tau` est la constante de temps de `applySteering` : sur une
-    // reaction courte, une bonne part du trajet passe dans la montee en regime.
-    // Elle ne depend pas du personnage — seule `intensity` en depend.
-    function lateralReach(cfg, agility, intensity, ms) {
+    // Vitesse laterale maximale d'un kart pour une manoeuvre de reference
+    // donnee. C'est le seul endroit ou le personnage entre dans le braquage.
+    //
+    // Trois facteurs, et pas un de plus : ce que le personnage vaut, ce qu'il
+    // lui reste d'appui a l'allure, et ce qu'un objet de vitesse lui rend
+    // (`kart.steerBoost`, pose une fois par tick).
+    //
+    // Un bill en est exempt des trois : il ne pilote pas, il devie, et il vole a
+    // pleine vitesse par definition. Le soumettre a l'appui a l'allure
+    // reviendrait a lui interdire de contourner le tuyau qu'il vise.
+    function steerCap(cfg, kart, base) {
+        if (kart.isBill) return base;
+        return base * kart.stats.agility * steerGrip(cfg, kart) * kart.steerBoost;
+    }
+
+    // Ce que braquer coute en vitesse d'avance, en multiplicateur a appliquer
+    // tel quel. Vaut 1 quand le kart ne tourne pas, et quand la mecanique est
+    // desactivee (`corner.cost` a 0).
+    //
+    // C'est LA fonction du cout, comme `steer` est celle du braquage : elle est
+    // appelee une fois, au seul endroit qui decide de la vitesse, et rien
+    // d'autre dans le moteur n'a a savoir qu'un virage coute quelque chose.
+    //
+    // ── Le piege, et il invalide les formulations spontanees ─────────────
+    //
+    // `vy` n'est pas la manoeuvre demandee : `steerCap` y a mis l'agilite du
+    // kart, son appui a l'allure et son objet de vitesse. Facturer `|vy|` tel
+    // quel PUNIT l'agile — il paie 4.6 fois plus cher pour la meme manoeuvre ;
+    // et ne retirer qu'une fois l'agilite S'ANNULE exactement, ne produisant
+    // rigoureusement rien.
+    //
+    // Deux temps, donc. D'abord retrouver la CONSIGNE, celle que le pilotage a
+    // demandee et qui ne depend d'aucun personnage : on divise par ce que
+    // `steerCap` rend pour une consigne de 1, ce qui retire les trois facteurs
+    // d'un coup et suivra tout seul si un quatrieme arrive un jour. Puis la
+    // facturer a la tenue du kart.
+    //
+    // ── Ce qui la reduit ────────────────────────────────────────────────
+    //
+    // `stats.cornering` : le handling et la puissance la reduisent, le poids
+    // l'augmente. Un koopa ne perd presque rien, un bowser perd un peu.
+    //
+    // L'allure entre aussi : tourner a l'arret ne coute rien, tourner lance
+    // coute plein tarif. C'est ce qui en fait une contrainte de virage et non
+    // une taxe sur le volant.
+    function steerCost(cfg, kart) {
+        const corner = cfg.physics.steer.corner;
+        if (!corner.cost || !kart.vy || kart.isBill) return 1;
+
+        const unit = steerCap(cfg, kart, 1);
+        if (unit <= 0) return 1;
+
+        // Consigne demandee, rapportee au plein braquage : sans dimension, et
+        // c'est ce qui rend `cost` lisible en pourcentage.
+        const lock = Math.abs(kart.vy) / unit / corner.fullLock;
+
+        const loss = corner.cost * lock * steerPace(kart) / kart.stats.cornering;
+        return 1 - (loss > corner.maxLoss ? corner.maxLoss : loss);
+    }
+
+    // ── La loi de braquage, et ses deux lectures ────────────────────────────
+    //
+    // Le volant est un premier ordre de constante de temps `tau` : lache a
+    // l'arret vers une consigne `cap`, il couvre
+    //
+    //     d(t) = cap * (t - tau * (1 - exp(-t / tau)))
+    //
+    // `steerReach` rend `d` pour un `t`, `steerDelay` rend `t` pour un `d`.
+    // Elles sont exactement inverses l'une de l'autre, et doivent le rester.
+    //
+    // Le moteur n'utilise que la premiere, et pour une raison de cout : les
+    // planificateurs comparent des candidats — quel couloir, quel trou — et une
+    // portee se calcule une fois pour tous, la ou un temps se calculerait par
+    // candidat. « Ce couloir est-il a portee » et « ai-je le temps de l'atteindre »
+    // sont la meme question ; c'est la premiere forme qui est la moins chere.
+    //
+    // La seconde est exportee, et c'est la lecture qui se REGARDE : elle rend
+    // en clair la duree d'une manoeuvre kart par kart, qui est la grandeur que
+    // le systeme promet et que rien ne mesurait. Le banc de scenario s'en sert.
+
+    // Distance laterale couverte en `ms`, en partant a l'arret. Sur une reaction
+    // courte, une bonne part du trajet passe dans la montee en regime : c'est le
+    // terme en `exp`, et c'est lui qui rend le calcul honnete pour un reflexe.
+    function steerReach(cfg, cap, ms) {
+        if (ms <= 0) return 0;
         const t = ms / 1000;
-        const tau = 1 / cfg.physics.steerResponse;
-        return intensity * (t - tau * (1 - Math.exp(-t / tau)));
+        const tau = 1 / cfg.physics.steer.response;
+        return cap * (t - tau * (1 - Math.exp(-t / tau)));
+    }
+
+    // Temps, en ms, qu'il faut pour couvrir `dy` en partant a l'arret. Infini si
+    // le kart n'a aucun volant a offrir — il n'y arrivera jamais, et c'est la
+    // reponse juste.
+    //
+    // L'inversion n'a pas de forme fermee. En posant `u = t / tau` et
+    // `s = dy / (cap * tau)`, il s'agit de resoudre `u - 1 + exp(-u) = s`.
+    //
+    // Newton, amorce sur l'asymptote qui convient : `sqrt(2s)` quand le trajet
+    // tient dans la montee en regime — la loi y est parabolique — et `s + 1`
+    // quand il la depasse, ou la montee n'est plus qu'un retard constant. Les
+    // deux departs sont deja bons a quelques pour cent, et quatre tours rendent
+    // l'inverse a la precision machine.
+    //
+    // Le garde-fou sur la derivee ne se declenche qu'a `u` nul, c'est-a-dire
+    // pour un `dy` deja ecarte plus haut. Il est la pour que la boucle ne puisse
+    // pas diviser par zero si les reglages changent.
+    function steerDelay(cfg, cap, dy) {
+        if (dy <= 0) return 0;
+        if (cap <= 0) return Infinity;
+
+        const tau = 1 / cfg.physics.steer.response;
+        const s = dy / (cap * tau);
+
+        let u = (s < 0.5) ? Math.sqrt(2 * s) : s + 1;
+        for (let i = 0; i < 4; i++) {
+            const e = Math.exp(-u);
+            const slope = 1 - e;
+            if (slope < 1e-12) break;
+            u -= (u - 1 + e - s) / slope;
+        }
+
+        return u * tau * 1000;
     }
 
     // Agilite moyenne du plateau. Sert d'etalon partout ou il faut juger une
@@ -512,7 +699,7 @@
         const base = ai.dodgeMissChance;
 
         // Il passe deja assez a cote pour que la hitbox le manque.
-        const need = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin
+        const need = cfg.hitboxes.itemVsKart.y + cfg.vision.place.margin.item
             - Math.abs(threatY - kart.yPercent);
         if (need <= 0) return 0;
         if (spareMs <= 0) return base;
@@ -521,220 +708,1721 @@
         // tirage dit s'il a VU venir la menace, et un kart maniable n'est pas
         // plus attentif qu'un autre. Savoir l'esquiver se joue apres, dans le
         // decalage lui-meme.
-        const agility = referenceAgility(cfg);
-        const intensity = (ai.dodgeIntensityMin + ai.dodgeIntensityMax) * 0.5 * agility;
-        const ease = lateralReach(cfg, agility, intensity, spareMs) / need;
+        //
+        // Il ne passe pas non plus par `steerCap` : l'appui a l'allure n'a rien
+        // a faire dans un tirage d'attention. Un kart lance ne voit pas moins
+        // bien venir, il s'en sortira moins bien — et ca, c'est le braquage qui
+        // le dira.
+        const cap = (ai.dodgeIntensityMin + ai.dodgeIntensityMax) * 0.5 * referenceAgility(cfg);
+        const ease = steerReach(cfg, cap, spareMs) / need;
 
         if (ease <= 1) return base;
         if (ease >= ai.dodgeEasyRatio) return 0;
         return base * (1 - (ease - 1) / (ai.dodgeEasyRatio - 1));
     }
 
-    // Place libre d'un cote du kart, en profondeur de piste.
+    // -----------------------------------------------------------------------
+    // La vue
     //
-    // Le bord de piste la borne, et ce qui est pose devant la borne de la meme
-    // facon : un tuyau, un objet au sol, l'objet traine par un autre kart.
-    // S'ecarter vers eux, c'est troquer la menace contre une autre — et vers un
-    // tuyau, c'est le mauvais cote du marche. Un kart qui plonge sous une
-    // carapace pour se planter dans le tuyau d'a cote donne exactement
-    // l'impression d'une esquive qui vise mal, parce que c'en est une : le plan
-    // ne regardait que les deux bords.
+    // Un seul balayage par kart, et tout le pilotage lit son resultat.
     //
-    // Ne comptent que ceux qui sont encore devant — ou a hauteur — et assez
-    // proches pour que l'ecart n'ait pas eu le temps de retomber quand le kart y
-    // arrive (ai.dodgeGuardDistance). `skipId` est la menace elle-meme : elle
-    // n'a pas a se fermer le passage.
-    function sideRoom(cfg, state, kart, dir, skipId) {
-        const ai = cfg.ai;
-        const guard = ai.dodgeGuardDistance;
-        const margin = cfg.road.edgeSafetyMargin;
+    // Avant, chaque manoeuvre avait sa propre perception : huit boucles sur les
+    // memes tableaux, huit portees differentes, huit facons de decider ce qui
+    // etait « devant ». Rien ne garantissait qu'elles voient le meme monde, et
+    // elles ne le voyaient pas. L'esquive ne comptait aucune carrosserie, si
+    // bien qu'un kart plongeait sous une carapace pour se planter dans son
+    // voisin ; l'etoile et le bill blessent au contact sans que personne ne s'en
+    // ecarte jamais ; et rien, nulle part, ne regardait derriere — une carapace
+    // tiree vers l'avant rattrape sa victime par l'arriere, donc aucune n'etait
+    // esquivable.
+    //
+    // Le balayage produit quatre choses, et la decision ne lit rien d'autre :
+    //   - LA MENACE retenue, arbitree au cout (`vision.cost`) et non par un
+    //     ordre fige de manoeuvres ;
+    //   - LE DANGER LATENT : le porteur arme le plus proche qui partage la
+    //     ligne, pour la precaution — personne n'a encore rien lance ;
+    //   - L'ENCOMBREMENT de la piste en profondeur, une liste d'intervalles qui
+    //     sert a la fois a masquer la vue et a chercher ou passer. C'est la meme
+    //     donnee pour les deux, et c'est ce qui rend la vue moins chere que les
+    //     huit boucles qu'elle remplace ;
+    //   - LE TRAFIC ET LES OCCASIONS : le kart a doubler, la boite a prendre, et
+    //     la cible sur laquelle se recaler pour tirer.
+    //
+    // Deux regles la gouvernent, et elles ne souffrent AUCUNE exception hors
+    // celles ecrites plus bas :
+    //   - ON NE VOIT QU'UN COTE. Regarder derriere coupe la vue de face.
+    //   - UN CORPS SOLIDE MASQUE : un kart, un bill, un tuyau. Pas un objet au
+    //     sol, trop petit pour cacher quoi que ce soit.
+    //
+    // Tout passe donc par une entree de balayage et par la marche qui la juge —
+    // c'est ce qui rend la regle verifiable. Le danger latent se calculait
+    // autrefois a cote, et echappait de ce fait a l'occlusion sans que rien ne
+    // le dise ; la designation de cible de tir vers l'avant lisait carrement le
+    // monde. Les deux sont rentres dans le rang.
+    //
+    // Et une exception, qui est le pendant des deux : LE DECOR NE SE PERD PAS.
+    // Un tuyau porte une ombre mais n'en subit aucune, et reste vu meme quand le
+    // regard porte derriere. Un pilote connait son circuit — ce que l'attention
+    // lui retire, c'est la perception du trafic, pas la memoire du trace. Sans
+    // cette exception un kart s'encastrerait dans un mur pour avoir regarde
+    // ailleurs, ou pour avoir suivi quelqu'un de trop pres : spectaculairement
+    // bete, et incomprehensible pour le spectateur qui, lui, voit le tuyau.
+    //
+    // Tout ce qui suit est commun a tout le plateau. Les statistiques de pilote
+    // — brain, vision de jeu, sang-froid — viendront plus tard moduler les
+    // memes valeurs kart par kart ; d'ici la, personne ne voit mieux que son
+    // voisin ni ne decide mieux que lui.
+    // -----------------------------------------------------------------------
 
+    // Ce qu'une entree de balayage peut etre. Une meme entree en cumule
+    // plusieurs : un objet traine ferme un passage ET fait mal.
+    const SEE_BLOCK = 1;
+    const SEE_THREAT = 2;
+    const SEE_BOX = 4;
+    const SEE_PRESSURE = 8;
+
+    // Tampon de balayage, partage par tous les karts. `perceive` le remplit et
+    // le consomme dans le meme appel — rien n'en ressort, tout ce qui doit
+    // survivre est recopie dans `kart.sight`. Un seul tampon suffit donc, et il
+    // cesse de grandir des les premieres frames : un balayage n'alloue rien.
+    const scanPool = [];
+    const scanOrder = [];
+    let scanCount = 0;
+
+    function scanTake() {
+        if (scanCount === scanPool.length) {
+            scanPool.push({
+                look: 0, dx: 0, y: 0, shadowHalf: 0,
+                blockHalf: 0, blockMargin: 0, blockCost: 0, blockHard: false, blockReach: 0,
+                solid: false, pierces: false, role: 0,
+                id: 0, kartId: -1, pipeIndex: -1, ttc: 0, cost: 0, kind: ''
+            });
+        }
+        const e = scanPool[scanCount++];
+        e.solid = false;
+        e.pierces = false;
+        e.role = 0;
+        e.id = 0;
+        e.kartId = -1;
+        e.pipeIndex = -1;
+        e.ttc = 0;
+        e.cost = 0;
+        e.kind = '';
+        e.shadowHalf = 0;
+        e.blockHalf = 0;
+        e.blockMargin = 0;
+        e.blockCost = 0;
+        e.blockHard = false;
+        e.blockReach = 0;
+        return e;
+    }
+
+    // Tri du balayage, par distance a l'oeil. Insertion et non `Array.sort` :
+    // la liste depasse rarement la vingtaine, et a cette taille les appels au
+    // comparateur coutent plus cher que les comparaisons elles-memes.
+    function sortScan() {
+        for (let i = 1; i < scanCount; i++) {
+            const idx = scanOrder[i];
+            const look = scanPool[idx].look;
+            let j = i - 1;
+            while (j >= 0 && scanPool[scanOrder[j]].look > look) {
+                scanOrder[j + 1] = scanOrder[j];
+                j--;
+            }
+            scanOrder[j + 1] = idx;
+        }
+    }
+
+    // Les ombres portees, gardees telles quelles au lieu d'etre fusionnees :
+    // avec huit karts et sept tuyaux la liste ne depasse pas la quinzaine, et
+    // tester quinze intervalles coute moins cher que de les tenir tries.
+    const shadowLo = [];
+    const shadowHi = [];
+    let shadowCount = 0;
+
+    // La vue etant de cote, une ombre n'est pas un cone : elle occupe la meme
+    // tranche de profondeur quelle que soit la distance. Masquer se reduit donc
+    // a une appartenance a un intervalle, et c'est ce qui rend l'occlusion
+    // presque gratuite.
+    function shadowHides(y) {
+        for (let i = 0; i < shadowCount; i++) {
+            if (y > shadowLo[i] && y < shadowHi[i]) return true;
+        }
+        return false;
+    }
+
+    // L'urgence d'un danger : ce qu'il coute (`vision.cost`), rapporte au temps
+    // qui reste. C'est la monnaie commune du systeme, et elle se calcule au meme
+    // endroit pour tout le monde — le balayage s'en sert pour designer LA
+    // menace, le pilotage pour savoir si un tuyau vaut d'interrompre une
+    // esquive.
+    function threatScore(cost, ttc) {
+        return cost / Math.max(ttc, 1);
+    }
+
+    // Le tuyau vaut-il d'interrompre l'esquive en cours ?
+    //
+    // La comparaison porte sur le temps qui reste AU PLAN, et surtout pas sur ce
+    // que le balayage tient pour le plus urgent a cet instant. Les deux
+    // questions se ressemblent et n'ont rien a voir : une menace d'esquive cesse
+    // d'etre vue des que le kart s'en est ecarte — c'est le but meme de la
+    // manoeuvre — quand un tuyau, lui, reste vu sur toute la portee du regard.
+    //
+    // Confondre les deux lachait l'esquive a l'instant precis ou elle commencait
+    // a marcher : le kart revenait dans l'objet qu'il venait d'eviter, et comme
+    // le couloir de tuyau se calcule pareil pour les huit, tout le plateau
+    // finissait sur la meme ligne.
+    function pipeOutranksPlan(cfg, kart, now) {
+        const sight = kart.sight;
+        if (sight.pipeIndex < 0) return false;
+
+        const pipeTtc = (sight.pipeDist / Math.max(kart.absoluteVelocity, 1)) * 1000;
+
+        // Ce qui reste de l'echeance du plan, hors le sursis de relachement :
+        // c'est le temps avant impact tel que le kart l'a estime. Negatif, le
+        // plan expire de lui-meme au tour suivant — le score explose, et
+        // l'esquive garde la main jusque-la plutot que d'etre coupee net.
+        const spare = kart.plan.until - now - cfg.vision.holdAfterMs;
+
+        return threatScore(cfg.vision.cost.pipe, pipeTtc)
+             > threatScore(cfg.vision.cost.spin, spare);
+    }
+
+    // Menaces deja jugees : l'emplacement de `id`, ou -1.
+    //
+    // Un verdict a une DUREE DE VIE. Sans elle, une verte jugee « pas vue » a
+    // son premier passage le restait toute sa vie — dix rebonds, plusieurs
+    // secondes, une geometrie qui n'a plus rien a voir — et une menace revenue
+    // apres un long detour retrouvait un reflexe deja echu, donc nul.
+    //
+    // Le releve se rafraichit tant que la menace reste sous les yeux : ce qui
+    // se perime est l'ABSENCE, pas l'observation.
+    function recallThreat(cfg, now, kart, id) {
+        const ids = kart.judgedId;
+        for (let i = 0; i < ids.length; i++) {
+            if (ids[i] !== id) continue;
+            if (now - kart.judgedSeenAt[i] > cfg.vision.memoryMs) return -1;
+            kart.judgedSeenAt[i] = now;
+            return i;
+        }
+        return -1;
+    }
+
+    // L'emplacement a ecraser : le premier libre ou perime, sinon le plus
+    // ancien. L'anneau simple qu'il remplace ecrasait dans l'ordre, et pouvait
+    // donc jeter une menace encore sous les yeux pour en loger une perimee.
+    function judgeSlot(cfg, now, kart) {
+        let oldest = 0;
+        for (let i = 0; i < kart.judgedId.length; i++) {
+            if (!kart.judgedId[i] || now - kart.judgedSeenAt[i] > cfg.vision.memoryMs) return i;
+            if (kart.judgedSeenAt[i] < kart.judgedSeenAt[oldest]) oldest = i;
+        }
+        return oldest;
+    }
+
+    // Premiere perception d'une menace : le reflexe et le tirage d'inattention,
+    // arretes une fois pour toutes et retenus (cf. `vision.memorySlots`).
+    //
+    // C'est ici que se joue toute la marge d'erreur d'un kart, et elle est la
+    // meme pour les huit. Le jour ou les stats de pilote arriveront, elles
+    // n'auront que ces deux lignes a moduler.
+    function judgeThreat(cfg, rng, now, kart, id, y, ttc) {
+        const ai = cfg.ai;
+        const reactMs = ai.reactionBaseMs
+            * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
+
+        const slot = judgeSlot(cfg, now, kart);
+        kart.judgedId[slot] = id;
+        kart.judgedSeenAt[slot] = now;
+        kart.judgedReactAt[slot] = now + reactMs;
+
+        // Ce qui restera une fois le reflexe passe, et non le delai brut avant
+        // impact : c'est lui qui dit si l'esquive etait a sa portee.
+        kart.judgedIgnored[slot] = rng() < missChance(cfg, kart, y, ttc - reactMs);
+        return slot;
+    }
+
+    // L'attention : devant, ou derriere.
+    //
+    // Le tirage suit le rang — le premier n'a plus que l'arriere a surveiller,
+    // le dernier a tout devant lui — et la CADENCE remonte quand quelqu'un le
+    // vise dans le dos, ou quand c'est lui qui prepare un tir arriere.
+    //
+    // ── Pourquoi les gains portent sur l'intervalle et non sur la chance ──
+    //
+    // Le temps moyen entre deux coups d'oeil vaut `intervalle / chance` : y
+    // multiplier la chance ou y diviser l'intervalle donne donc EXACTEMENT la
+    // meme loi — sauf qu'une probabilite sature a 1 et pas une cadence.
+    //
+    // C'est ce qui rendait les deux gains inertes en tete de peloton :
+    // `backChanceLeader` (0.55) fois `pressureGlanceGain` (2.2) fait 1.21, soit
+    // un coup d'oeil a chaque tirage, et tout gain supplementaire tombait dans
+    // le vide. Le premier — celui qui a le plus de raisons de regarder derriere
+    // — etait le seul que la pression ne pressait plus.
+    //
+    // En fond de peloton, ou rien ne saturait, les deux formes coincident au
+    // dixieme de milliseconde pres : ce correctif n'y change rien.
+    function updateGlance(cfg, rng, state, now, kart) {
+        const vis = cfg.vision;
+        const sight = kart.sight;
+
+        if (sight.backUntil > now) {
+            sight.back = true;
+            return;
+        }
+        sight.back = false;
+
+        if (now < sight.nextGlance) return;
+
+        let pace = 1;
+
+        // Etre vise dans le dos ne se CONSTATE qu'en se retournant, et le
+        // tirage n'a jamais lieu pendant un coup d'oeil : c'est donc un
+        // souvenir, jamais une observation du moment. Le lire dans `pressure`
+        // — remis a zero a chaque balayage — revenait a lire le dernier
+        // balayage AVANT, c'est-a-dire un porteur situe DEVANT : le gain
+        // repondait a l'exact contraire de ce qu'il nomme.
+        if (now - sight.pressureBackAt <= vis.pressureMemoryMs) pace *= vis.pressureGlanceGain;
+
+        // Qui prepare un tir vers l'arriere se retourne pour viser. On ne tire
+        // pas dans un peloton qu'on ne regarde pas, et c'est ce qui rend le tir
+        // arriere JOUABLE pour celui qui le recoit : le tireur doit trouver son
+        // moment, et pendant ce temps l'autre a pu se decaler.
+        if (isAiming(cfg, kart) && now > kart.throwTime - cfg.ai.aimLeadMs
+            && getShotDirection(state, kart) < 0) {
+            pace *= vis.aimGlanceGain;
+        }
+
+        sight.nextGlance = now + vis.glanceIntervalMs / pace;
+
+        const total = state.karts.length;
+        const rankTerm = (total > 1) ? (kart.rank - 1) / (total - 1) : 0;
+        const chance = vis.backChanceLeader
+            + (vis.backChanceLast - vis.backChanceLeader) * rankTerm;
+
+        if (rng() < chance) {
+            sight.backUntil = now + vis.glanceDurationMs;
+            sight.back = true;
+        }
+    }
+
+    // Un intervalle de plus dans l'encombrement retenu. Seul ce qui a ete VU y
+    // entre : ce que le kart ne voit pas ne lui ferme aucun passage, et c'est
+    // exactement le prix d'une vue bouchee.
+    //
+    // ── Ce qu'un span dit, et ce qu'il ne dit plus ───────────────────────
+    //
+    // Il portait un seul intervalle, gonfle des marges de confort, et tout le
+    // monde le lisait comme un mur. Un tuyau, une banane et une carrosserie
+    // fermaient donc la piste de la meme facon, alors qu'ils ne se valent pas
+    // du tout : on ne traverse pas un tuyau, on encaisse une banane, on bouscule
+    // un kart. Les couloirs etroits en mouraient — cf. `laneRisk`.
+    //
+    // Il en porte maintenant trois choses distinctes :
+    //
+    //   `lo`/`hi`  la limite DURE, en positions de centre : la hitbox nue, rien
+    //              de plus. C'est de la geometrie, pas une preference.
+    //   `margin`   le confort qu'on aimerait garder au-dela. L'entamer coute,
+    //              proportionnellement — ce n'est pas un refus.
+    //   `cost`     ce que coute le contact, en millisecondes, meme monnaie que
+    //              `vision.cost`.
+    //   `hard`     vrai pour le seul corps qu'on ne traverse pas : le tuyau.
+    //              Tout le reste se paie et se franchit.
+    function pushSpan(sight, e) {
+        const i = sight.spanCount;
+        if (i === sight.spans.length) {
+            sight.spans.push({
+                lo: 0, hi: 0, margin: 0, cost: 0, hard: false,
+                dx: 0, reach: 0, pipeIndex: -1, spare: 0
+            });
+        }
+        const s = sight.spans[i];
+        s.lo = e.y - e.blockHalf;
+        s.hi = e.y + e.blockHalf;
+        s.margin = e.blockMargin;
+        s.cost = e.blockCost;
+        s.hard = e.blockHard;
+        s.dx = e.dx;
+        s.reach = e.blockReach;
+        s.pipeIndex = e.pipeIndex;
+        s.spare = 0;
+        sight.spanCount = i + 1;
+    }
+
+    // Le balayage. Une passe par tableau, puis un tri, puis une seule marche qui
+    // decide de tout : ce qui est vu, ce qui masque, ce qui menace.
+    function perceive(cfg, state, rng, now, kart) {
+        const vis = cfg.vision;
+        const ai = cfg.ai;
+        const sight = kart.sight;
+
+        const dir = sight.back ? -1 : 1;
+        const range = sight.back ? vis.range.back : vis.range.front;
+
+        sight.at = now;
+
+        // Le sens de CE balayage-la. `sight.back` bascule a la cadence de
+        // l'affichage — c'est une attention — quand le balayage, lui, ne tourne
+        // que toutes les `scanIntervalMs`. Au debut d'un coup d'oeil arriere,
+        // `back` est donc deja vrai alors que tout le contenu de la vue vient
+        // encore du balayage AVANT, et le releve de visee arriere mordait
+        // dessus : le tireur relevait la profondeur d'un kart situe devant lui
+        // pour viser derriere, sur environ un quart des coups d'oeil.
+        sight.scanBack = sight.back;
+
+        sight.threatId = 0;
+        sight.threatKind = '';
+        sight.threatY = 0;
+        sight.threatTtc = Infinity;
+        sight.planGone = false;
+        sight.pipeIndex = -1;
+        sight.pipeDist = 0;
+        sight.pipeAheadIndex = -1;
+        sight.pipeAheadDist = 0;
+        sight.aheadKartY = 0;
+        sight.aheadKartDist = -1;
+        sight.seenKartY = 0;
+        sight.seenKartDist = -1;
+        sight.boxY = 0;
+        sight.boxDist = -1;
+        sight.pressure = false;
+        sight.pressureY = 0;
+        sight.pressureId = 0;
+        sight.spanCount = 0;
+
+        scanCount = 0;
+        shadowCount = 0;
+
+        const kartReach = cfg.hitboxes.kartVsKart;
+        const pipeReach = cfg.hitboxes.kartVsPipe;
+        const itemReach = cfg.hitboxes.itemVsKart;
+        // Deux mesures de profondeur, et il ne faut pas les confondre.
+        //
+        // `clear` est le DEGAGEMENT : l'ecart au-dela duquel un objet passe a
+        // cote pour de bon. C'est ce qu'une esquive doit couvrir, ce qu'un objet
+        // ferme comme passage, et ce qu'une precaution cherche a prendre.
+        //
+        // `lane` est la VOIE : la bande de profondeur dans laquelle un objet est
+        // considere comme etant sur la route du kart, donc a surveiller. Elle
+        // est deliberement plus large que le degagement, et elle doit l'etre :
+        // le kart et l'objet bougent tous deux en profondeur pendant le temps
+        // avant impact, et il faut avoir commence a s'ecarter avant d'etre
+        // pile dans l'axe. Un objet traine, en particulier, se suit sur
+        // plusieurs secondes a faible vitesse relative — le resserrer a `clear`
+        // revient a ne le voir qu'une fois dedans, trop tard pour un lourd.
+        //
+        // Les avoir confondues rendait les karts incapables d'esquiver : c'est
+        // mesure a l'ecran, pas deduit.
+        //
+        // Une troisieme distance existe et ne se confond avec aucune des deux :
+        // la LIMITE DURE d'un corps, sa hitbox nue. C'est elle qui borne les
+        // spans (`pushSpan`), et le confort vient par-dessus en marge separee.
+        const place = vis.place;
+        const clear = itemReach.y + place.margin.item;
+        const lane = vis.threatLane;
+        const speed = kart.absoluteVelocity;
+
+        // Demi-profondeur PROPRE d'un corps, celle qui porte son ombre. Les
+        // hitboxes sont des ecarts entre centres : elles contiennent deja la
+        // demi-carrosserie de la victime, qui n'a rien a faire dans une ombre.
+        const kartHalf = kartReach.y * 0.5;
+        const pipeHalf = pipeReach.y - kartHalf;
+        const gain = vis.shadowGain;
+
+        // ── Les tuyaux ───────────────────────────────────────────────────
+        const pipes = state.pipes;
+        for (let p = 0; p < pipes.length; p++) {
+            const dx = getShortestDistance(cfg, pipes[p].worldX, kart.worldX);
+            if (dx < -pipeReach.x || dx > vis.range.front) continue;
+
+            const e = scanTake();
+
+            // `look` est une distance le long du REGARD, pour tout le monde :
+            // c'est ce qui rend le tri du balayage comparable d'une entree a
+            // l'autre. Un tuyau devant, pendant un coup d'oeil arriere, est donc
+            // a une distance negative — il est derriere le regard.
+            //
+            // Sans effet visible aujourd'hui : un tuyau ne porte pas d'ombre
+            // quand on regarde derriere, et n'en subit jamais. Mais c'etait la
+            // seule entree a se mesurer autrement, et le jour ou l'une de ces
+            // deux proprietes bouge, le tri melangeait deux metriques en
+            // silence.
+            e.look = dx * dir;
+            e.dx = dx;
+            e.y = pipes[p].y;
+
+            // LE seul corps qu'on ne traverse pas. Masse infinie, il arrete net
+            // — d'ou `blockHard`, que rien d'autre ne porte. Tout le reste du
+            // decor se paie et se franchit.
+            e.blockHalf = pipeReach.y;
+            e.blockMargin = place.margin.pipe;
+            e.blockCost = vis.cost.pipe;
+            e.blockHard = true;
+
+            // Aussi loin qu'on le voit, et pas une demi-seconde de course.
+            //
+            // Il empruntait `dodgeGuardDistance` (500), taille pour l'esquive :
+            // « au-dela, l'ecart sera retombe avant d'arriver a sa hauteur ».
+            // C'est vrai d'un objet qu'on evite d'un ecart, et faux d'un mur —
+            // un tuyau ne s'en va pas, on ARRIVE dessus. Au-dela de 500 il
+            // cessait donc d'etre un mur, le placement routait a travers, et le
+            // kart ne s'ecartait qu'une fois collé : trop tard pour slalomer,
+            // trop tard pour forcer un passage si quelqu'un occupait le sien.
+            e.blockReach = cfg.pipe.seeDistance;
+            e.shadowHalf = pipeHalf * gain;
+            e.role = SEE_BLOCK;
+            e.pipeIndex = p;
+
+            // Il porte une ombre mais n'en subit aucune, et reste vu de dos :
+            // c'est le decor, il se sait par coeur. Il cesse en revanche de
+            // masquer pendant un coup d'oeil arriere, ou l'ordre des distances
+            // est inverse et ou son ombre ne veut plus rien dire.
+            e.solid = !sight.back;
+            e.pierces = true;
+
+            // Il ne barre la route que dans la voie. Ailleurs il ferme un
+            // passage sans menacer personne.
+            if (dx > 0 && Math.abs(pipes[p].y - kart.yPercent) < pipeReach.y) {
+                e.role |= SEE_THREAT;
+                e.kind = 'pipe';
+                e.cost = vis.cost.pipe;
+                e.ttc = (dx / Math.max(speed, 1)) * 1000;
+            }
+        }
+
+        // ── Les objets au sol ────────────────────────────────────────────
+        const items = state.items;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+
+            // Constat, et non absence : voir l'objet mort est ce qui autorise a
+            // relacher le plan. Cf. `updatePlan`.
+            if (item.isDead || item.spent) {
+                if (item.id === kart.plan.threatId) sight.planGone = true;
+                continue;
+            }
+            if (cfg.trailableItems.indexOf(item.type) === -1) continue;
+
+            const dx = getShortestDistance(cfg, item.worldX, kart.worldX);
+            const look = dx * dir;
+            if (look < -itemReach.x || look > range) continue;
+
+            const e = scanTake();
+            e.look = look;
+            e.dx = dx;
+            e.y = item.y;
+
+            // Un objet se franchit — on ne le traverse pas sans dommage, mais
+            // rien n'empeche physiquement d'y aller. La limite dure est sa
+            // hitbox nue ; le degagement qu'on aimerait garder vient en marge.
+            e.blockHalf = itemReach.y;
+            e.blockMargin = place.margin.item;
+            e.blockCost = vis.cost.spin;
+            e.id = item.id;
+
+            // Un objet A L'ARRET est un obstacle FIXE, au meme titre qu'un
+            // tuyau : il ne s'en va pas, on arrive dessus. Il compte donc aussi
+            // loin qu'on le voit, et le couloir se choisit en le sachant.
+            //
+            // Il empruntait `dodgeGuardDistance` (500), taille pour l'esquive.
+            // Consequence : un couloir de tuyau se choisissait a 1100 px sans
+            // savoir qu'une banane y etait posee, la banane n'apparaissait qu'a
+            // 500 px — et il etait alors trop tard pour traverser vers l'autre
+            // couloir, quand le seuil d'engagement ne l'interdisait pas
+            // carrement. Le kart la prenait en pleine connaissance de cause,
+            // sauf qu'il ne la connaissait pas au moment de decider.
+            //
+            // Ce qui bouge garde la portee courte : une carapace aura change de
+            // place bien avant qu'on arrive a sa hauteur.
+            e.blockReach = (item.vx === 0) ? cfg.pipe.seeDistance : ai.dodgeGuardDistance;
+
+            // Un objet ne masque rien : trop petit. Il ferme un passage, et
+            // seulement s'il est encore devant.
+            if (dx > 0) e.role = SEE_BLOCK;
+
+            // Une rouge traque : elle arrive dans l'axe et par l'arriere, soit
+            // pile le cas ou un kart la precede et la masque. Soumise a
+            // l'occlusion, elle deviendrait inevitable — dans le jeu d'origine
+            // c'est le son qui previent, ici c'est cette exception.
+            e.pierces = vis.seeHomingThroughCover && item.type === 'redShell';
+
+            // Une seule formule pour les deux sens. `dx / rel` est positif quand
+            // l'ecart se referme, que l'objet soit devant et plus lent ou
+            // derriere et plus rapide — c'est tout ce qui manquait pour qu'un
+            // kart puisse enfin esquiver ce qui le rattrape.
+            const rel = speed - item.vx;
+            const ttc = (rel !== 0) ? (dx / rel) * 1000 : Infinity;
+
+            if (ttc > 0 && ttc <= ai.threatWindowMs
+                && (dx < 0 ? -dx : dx) <= ai.threatMaxDistance
+                && Math.abs(item.y - kart.yPercent) < lane) {
+                e.role |= SEE_THREAT;
+                e.kind = 'spin';
+                e.cost = vis.cost.spin;
+                e.ttc = ttc;
+            }
+        }
+
+        // ── Les karts ────────────────────────────────────────────────────
+        const karts = state.karts;
+        const ramming = isRamming(kart);
+        for (let k = 0; k < karts.length; k++) {
+            const other = karts[k];
+            if (other.id === kart.id || !isContactActive(other)) continue;
+
+            const dx = getShortestDistance(cfg, other.worldX, kart.worldX);
+            const look = dx * dir;
+            const held = other.heldItem;
+
+            if (look >= -kartReach.x && look <= range) {
+                const e = scanTake();
+                e.look = look;
+                e.dx = dx;
+                e.y = other.yPercent;
+
+                // Une carrosserie se bouscule : elle coute le moins cher des
+                // trois corps, et elle bouge — c'est le seul obstacle qui peut
+                // s'ecarter tout seul.
+                e.blockHalf = kartReach.y;
+                e.blockMargin = place.margin.kart;
+                e.blockCost = vis.cost.kart;
+                e.shadowHalf = kartHalf * gain;
+
+                // Une carrosserie ne ferme un passage que sur la longueur ou les
+                // deux karts peuvent se toucher. Un kart trois cents pixels
+                // devant roule a la meme allure : il sera toujours trois cents
+                // pixels devant quand l'ecart sera fini, et le compter fermait
+                // la piste pour rien — sept esquives sur dix se declaraient
+                // acculees.
+                e.blockReach = kartReach.x * 2;
+                e.solid = true;
+                e.role = SEE_BLOCK;
+                e.kartId = other.id;
+
+                // Etoile et bill blessent au contact, et rien dans le pilotage
+                // ne s'en ecartait : c'etait le seul danger immediat du moteur
+                // que personne ne voyait venir. L'identifiant est negatif pour
+                // ne jamais croiser celui d'un objet dans la memoire des
+                // menaces.
+                if (isRamming(other) && !ramming) {
+                    const rel = speed - other.absoluteVelocity;
+                    const ttc = (rel !== 0) ? (dx / rel) * 1000 : Infinity;
+                    if (ttc > 0 && ttc <= ai.threatWindowMs
+                        && Math.abs(other.yPercent - kart.yPercent) < lane) {
+                        e.role |= SEE_THREAT;
+                        e.kind = 'spin';
+                        e.cost = vis.cost.spin;
+                        e.ttc = ttc;
+                        e.id = -1 - other.id;
+                    }
+                }
+
+                // ── Le danger latent ─────────────────────────────────
+                //
+                // Personne n'a rien lance : il n'y a ni temps avant impact, ni
+                // esquive a faire. Ce qui se joue ici est une PRECAUTION —
+                // quitter une ligne de tir avant qu'elle ne serve.
+                //
+                // Deux formes, et la meme reponse, parce que c'est le meme
+                // probleme : partager sa profondeur avec quelqu'un qui peut
+                // vous atteindre.
+                //
+                //   DERRIERE, il peut tirer vers l'avant : une carapace, en
+                //   main ou en orbite (`isArmedForward`). Ne se remarque qu'en
+                //   se retournant.
+                //
+                //   DEVANT, il porte de quoi finir derriere lui — verte, banane
+                //   ou rouge, soit exactement `trailableItems`. Rester dans
+                //   l'axe d'une verte, c'est attendre qu'elle parte en arriere ;
+                //   rester derriere une banane, c'est attendre le moindre coup
+                //   de coude.
+                //
+                // Les deux exigent L'ALIGNEMENT, et c'est ce qui les rend
+                // jouables : hors de sa ligne il ne peut rien contre vous, et se
+                // decaler ne veut rien dire. Sans cette condition, les huit
+                // karts se decaleraient en permanence — tout le monde porte
+                // quelque chose, presque personne n'est dans l'axe.
+                //
+                // Et les deux exigent LE REGARD, du bon cote. Un danger latent
+                // n'est pas un pressentiment : c'est quelqu'un qu'on remarque,
+                // avec quelque chose dans les mains. Qui regarde derriere ne
+                // voit pas la banane du kart devant lui, et inversement — ce qui
+                // donne au coup d'oeil un cout reel, et pas seulement une
+                // portee.
+                //
+                // Il vit sur l'entree de balayage, et non a cote comme avant :
+                // c'etait la SEULE perception du systeme a echapper a
+                // l'occlusion, sans que rien ne le dise — un kart se rangeait
+                // donc pour un porteur qu'il ne pouvait pas voir. Etre une
+                // entree comme les autres lui rend aussi la portee du regard :
+                // `pressureRange` ne peut plus depasser en silence ce que l'oeil
+                // atteint.
+                //
+                // `look` vaut ici l'ecart au kart, les deux etant du meme cote.
+                const behind = dx < 0;
+                if (behind === sight.back
+                    && look <= vis.pressureRange
+                    && Math.abs(other.yPercent - kart.yPercent) < clear
+                    && (behind ? isArmedForward(cfg, other)
+                               : !!held && isTrailable(cfg, held.type))) {
+                    e.role |= SEE_PRESSURE;
+                }
+            }
+
+            // L'objet traine derriere lui. Il avance a la vitesse du porteur, et
+            // c'est la profondeur DU PORTEUR qui compte : l'objet le suit.
+            if (held && held.holdPosition === 'behind') {
+                let hx = other.worldX + cfg.offsets.world.heldItemBehind;
+                if (hx < 0) hx += cfg.world.width;
+                if (hx >= cfg.world.width) hx -= cfg.world.width;
+
+                const hdx = getShortestDistance(cfg, hx, kart.worldX);
+                const hlook = hdx * dir;
+
+                if (hlook > -itemReach.x && hlook <= range) {
+                    const e = scanTake();
+                    e.look = hlook;
+                    e.dx = hdx;
+                    e.y = other.yPercent;
+                    e.blockHalf = itemReach.y;
+                    e.blockMargin = place.margin.item;
+                    e.blockCost = vis.cost.spin;
+                    e.blockReach = ai.trailThreatDistance;
+                    e.id = held.id;
+                    if (hdx > 0) e.role = SEE_BLOCK;
+
+                    // Seul celui qui revient dessus est menace : derriere un
+                    // porteur plus rapide, l'objet s'eloigne.
+                    const rel = speed - other.absoluteVelocity;
+                    const ttc = (rel !== 0) ? (hdx / rel) * 1000 : Infinity;
+
+                    if (ttc > 0 && (hdx < 0 ? -hdx : hdx) <= ai.trailThreatDistance
+                        && Math.abs(other.yPercent - kart.yPercent) < lane) {
+                        e.role |= SEE_THREAT;
+                        e.kind = 'spin';
+                        e.cost = vis.cost.spin;
+                        e.ttc = ttc;
+                    }
+                }
+            }
+
+        }
+
+        // ── Les boites ───────────────────────────────────────────────────
+        //
+        // Une boite masquee par un kart est une boite qu'il prendra le premier :
+        // l'occlusion repond exactement a ce que `isBoxContested` calculait a
+        // part, avec une boucle imbriquee en moins.
+        if (!kart.heldItem && !sight.back) {
+            const boxes = state.itemBoxes;
+            for (let b = 0; b < boxes.length; b++) {
+                if (!boxes[b].active) continue;
+
+                const dx = getShortestDistance(cfg, boxes[b].worldX, kart.worldX);
+                if (dx <= 0 || dx > ai.boxDetectionRange) continue;
+
+                const e = scanTake();
+                e.look = dx;
+                e.dx = dx;
+                e.y = boxes[b].y;
+                e.role = SEE_BOX;
+            }
+        }
+
+        // ── La marche ────────────────────────────────────────────────────
+        //
+        // Du plus proche au plus lointain : chacun est d'abord teste contre les
+        // ombres deja posees, puis pose la sienne. Un corps ne se cache pas
+        // lui-meme, d'ou cet ordre et pas l'autre.
+        scanOrder.length = scanCount;
+        for (let i = 0; i < scanCount; i++) scanOrder[i] = i;
+        sortScan();
+
+        let bestScore = 0;
+        let boxDiff = Infinity;
+        let hiddenDiff = Infinity;
+        let hiddenY = 0;
+        let hiddenDist = -1;
+
+        for (let i = 0; i < scanCount; i++) {
+            const e = scanPool[scanOrder[i]];
+            const seen = e.pierces || !shadowHides(e.y);
+
+            if (seen) {
+                if (e.role & SEE_BLOCK) pushSpan(sight, e);
+
+                if (e.role & SEE_THREAT) {
+                    // Un tuyau ne surprend personne : il est dans le trace. Ni
+                    // reflexe a passer, ni tirage d'inattention — seulement un
+                    // cout et une echeance, comme tout le reste.
+                    let ready = true;
+                    if (e.kind !== 'pipe') {
+                        let slot = recallThreat(cfg, now, kart, e.id);
+                        if (slot < 0) slot = judgeThreat(cfg, rng, now, kart, e.id, e.y, e.ttc);
+                        ready = !kart.judgedIgnored[slot] && now >= kart.judgedReactAt[slot];
+                    }
+
+                    // La table de cout remplace l'ordre fige des manoeuvres :
+                    // le danger le plus cher par unite de temps l'emporte, et
+                    // c'est ce qui fait qu'un kart accepte de froler un tuyau
+                    // pour eviter une carapace, jamais l'inverse.
+                    if (ready) {
+                        const score = threatScore(e.cost, e.ttc);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            sight.threatId = e.id;
+                            sight.threatKind = e.kind;
+                            sight.threatY = e.y;
+                            sight.threatTtc = e.ttc;
+                        }
+                    }
+
+                    // Le tuyau vise reste le plus proche qui BARRE LA ROUTE,
+                    // qu'il ait gagne l'arbitrage ou non : c'est lui qui mesure
+                    // l'urgence du tuyau (`pipeOutranksPlan`), et l'urgence
+                    // demande d'etre dans son axe.
+                    if (e.kind === 'pipe' && (sight.pipeIndex < 0 || e.dx < sight.pipeDist)) {
+                        sight.pipeIndex = e.pipeIndex;
+                        sight.pipeDist = e.dx;
+                    }
+                }
+
+                // Et le tuyau le plus proche DEVANT, aligne ou non. C'est lui
+                // qui declenche le contournement.
+                //
+                // La manoeuvre partait sur `pipeIndex`, donc seulement quand le
+                // tuyau etait deja dans l'axe a 6.9 unites pres. En slalom, le
+                // kart sortait de la voie du premier, se retrouvait hors de la
+                // voie du second — donc sans rien a faire — repartait en maraude
+                // ou rentrait a sa ligne, et ne reprenait la main qu'une fois
+                // revenu dans l'axe du second. D'ou le manque de reaction : il
+                // ne pilotait pas entre les tuyaux, il rebondissait de l'un a
+                // l'autre.
+                //
+                // L'engager tot ne monopolise rien : le placement rend sa propre
+                // ligne quand elle est deja la meilleure, et la manoeuvre rend
+                // alors la main (cf. `steerAroundPipes`).
+                if (e.pipeIndex >= 0 && e.dx > 0
+                    && (sight.pipeAheadIndex < 0 || e.dx < sight.pipeAheadDist)) {
+                    sight.pipeAheadIndex = e.pipeIndex;
+                    sight.pipeAheadDist = e.dx;
+                }
+
+                if (e.role & SEE_BOX) {
+                    const diff = Math.abs(e.y - kart.yPercent);
+                    if (diff < boxDiff) {
+                        boxDiff = diff;
+                        sight.boxY = e.y;
+                        sight.boxDist = e.dx;
+                    }
+                }
+
+                // Le porteur le plus proche l'emporte : c'est sa ligne qui coute
+                // le plus cher a partager. La marche allant du plus proche au
+                // plus lointain, le premier vu est le bon — plus d'ecart a
+                // comparer.
+                if ((e.role & SEE_PRESSURE) && !sight.pressure) {
+                    sight.pressure = true;
+                    sight.pressureY = e.y;
+                    sight.pressureId = -1 - e.kartId;
+
+                    // Vu DERRIERE. C'est ce releve-la, et lui seul, qui fait
+                    // tourner la tete plus souvent : etre vise dans le dos ne se
+                    // constate qu'en se retournant, et le tirage du coup d'oeil
+                    // n'a jamais lieu pendant un coup d'oeil (cf.
+                    // `updateGlance`). Il lui faut donc un souvenir date, pas
+                    // l'etat du balayage courant.
+                    if (sight.scanBack) sight.pressureBackAt = now;
+                }
+
+                // Le kart visible le plus proche dans l'axe du regard, quel
+                // qu'il soit. C'est LA cible de tir, dans les deux sens : on la
+                // releve en regardant derriere, on la vise directement en
+                // regardant devant.
+                //
+                // C'est donc l'occlusion qui decide qui est visable — celui qui
+                // se cache derriere un autre ne se fait pas prendre pour cible —
+                // et ca vaut maintenant devant aussi, ou la visee bouclait sur
+                // le monde et voyait au travers de tout.
+                if (e.kartId >= 0 && e.look > 0 && e.look < ai.aimScanDistance
+                    && (sight.seenKartDist < 0 || e.look < sight.seenKartDist)) {
+                    sight.seenKartDist = e.look;
+                    sight.seenKartY = e.y;
+                }
+
+                if (e.kartId >= 0 && e.dx > 0 && e.dx < ai.overtakeDetectionRange
+                    && Math.abs(e.y - kart.yPercent) < ai.overtakeMinDistance
+                    && (sight.aheadKartDist < 0 || e.dx < sight.aheadKartDist)) {
+                    sight.aheadKartDist = e.dx;
+                    sight.aheadKartY = e.y;
+                }
+            } else if (e.role & SEE_BOX) {
+                const diff = Math.abs(e.y - kart.yPercent);
+                if (diff < hiddenDiff) {
+                    hiddenDiff = diff;
+                    hiddenY = e.y;
+                    hiddenDist = e.dx;
+                }
+            }
+
+            if (e.solid) {
+                shadowLo[shadowCount] = e.y - e.shadowHalf;
+                shadowHi[shadowCount] = e.y + e.shadowHalf;
+                shadowCount++;
+            }
+        }
+
+        // ── Le temps qu'il reste APRES le mur du moment ──────────────────
+        //
+        // Un seul mur s'impose vraiment : le plus proche devant. Ceux d'apres
+        // laissent au kart le trajet qui les en separe pour se replacer, et
+        // c'est ce trajet qu'on releve ici — en temps, parce que c'est en temps
+        // que se compte un braquage, et parce que chaque manoeuvre le convertit
+        // ensuite avec SON volant (cf. `laneRisk`).
+        //
+        // Zero pour le mur du moment lui-meme : rien ne le precede, il n'y a
+        // plus rien a negocier, il refuse.
+        let nearBlock = Infinity;
+        for (let i = 0; i < sight.spanCount; i++) {
+            const s = sight.spans[i];
+            if (s.hard && s.dx > 0 && s.dx < nearBlock) nearBlock = s.dx;
+        }
+        if (nearBlock < Infinity) {
+            const pace = Math.max(kart.absoluteVelocity, 1);
+            for (let i = 0; i < sight.spanCount; i++) {
+                const s = sight.spans[i];
+                const d = s.dx < 0 ? -s.dx : s.dx;
+                s.spare = (s.hard && d > nearBlock) ? ((d - nearBlock) / pace) * 1000 : 0;
+            }
+        }
+
+        // Aucune boite libre : il tente quand meme la plus proche de sa
+        // trajectoire. Le kart qui la lui bouche peut encore la manquer.
+        if (sight.boxDist < 0 && hiddenDist >= 0) {
+            sight.boxY = hiddenY;
+            sight.boxDist = hiddenDist;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Ou se placer
+    //
+    // Une seule question, posee une seule fois : A QUELLE PROFONDEUR VAUT-IL
+    // MIEUX ETRE ? La reponse est une note en millisecondes, et c'est la meme
+    // monnaie que `vision.cost` — ce qu'un choc coute en temps perdu.
+    //
+    //     note = ce qu'on RISQUE en y etant  +  ce que coute d'Y ALLER
+    //
+    // ── Ce que ca remplace, et pourquoi ─────────────────────────────────
+    //
+    // Il y avait deux chercheurs de couloir, `widestLane` (le plus large, pour
+    // une trajectoire) et `bestGap` (le plus proche praticable, pour un
+    // reflexe), et tous deux repondaient par oui ou par non. Trois defauts en
+    // sortaient, tous mesures a l'ecran :
+    //
+    //   LE PLUS LARGE GAGNAIT TOUJOURS. Un tuyau pose pres d'un bord laisse un
+    //   couloir etroit d'un cote et large de l'autre ; le depart par proximite
+    //   de `considerLane` ne se jouait qu'a 1.5 de largeur pres, donc jamais.
+    //   Aucun kart n'empruntait le passage serre, meme place dedans, meme quand
+    //   c'etait de loin le moins cher. Le trace pouvait dessiner ce qu'il
+    //   voulait : il n'y avait qu'une ligne.
+    //
+    //   LES MARGES ETAIENT DES MURS. `edgeSafetyMargin` rognait 2 de chaque
+    //   bord et le degagement d'objet en ajoutait 2 autour de chaque banane,
+    //   avant meme qu'on regarde. Un couloir de fond de 3.1 devenait 1.1, un
+    //   couloir de 6 sous une banane devenait 2, et `minPassageY` / `minWidth`
+    //   les refusaient. Le kart ne savait pas qu'il ne tenait pas : on ne lui
+    //   avait jamais dit qu'il y avait un trou.
+    //
+    //   TOUS LES CORPS SE VALAIENT. Un tuyau, une banane et une carrosserie
+    //   fermaient la piste de la meme facon. Or on ne traverse pas un tuyau, on
+    //   encaisse une banane, on bouscule un kart, et on frotte un bord.
+    //
+    // ── Le modele ───────────────────────────────────────────────────────
+    //
+    // UN SEUL CORPS EST UN MUR : le tuyau. Masse infinie, il arrete net. Tout
+    // le reste se franchit contre son prix, et l'ordre des prix dit le reste :
+    //
+    //     tuyau        infranchissable de pres, puis preference qui s'efface
+    //     objet        2000 ms de tete-a-queue
+    //     carrosserie   300 ms de bousculade, et elle peut s'ecarter seule
+    //     bord           200 ms de frottement, et il ne ferme rien
+    //
+    // Les marges de confort ne refusent plus rien : les entamer COUTE, en
+    // proportion de ce qu'on entame. C'est ce qui rend un passage serre jouable
+    // — cher, mais jouable — quand il est le moins cher de la piste.
+    //
+    // ── Ce qui n'y est pas ──────────────────────────────────────────────
+    //
+    // Aucune notion de manoeuvre. Le placement ne sait pas s'il sert une
+    // esquive, un contournement ou une visee : il rend le meilleur endroit
+    // compte tenu de ce que le kart voit, du temps qu'il a et de son volant.
+    // Ce sont ces trois entrees qui portent la difference entre manoeuvres, et
+    // c'est pour ca qu'il n'y a plus qu'une fonction la ou il y en avait deux.
+    // -----------------------------------------------------------------------
+
+    // Poids d'un obstacle selon sa distance. Plein dans sa portee.
+    //
+    // Au-dela, seul un MUR compte encore, et sa preference s'efface jusqu'a la
+    // limite du regard. C'est ce qui enfile une sequence de tuyaux sans avoir a
+    // les parcourir un par un : le couloir retenu est celui qui traverse le
+    // plus loin, et le tuyau du bout pese moins que celui d'a cote.
+    //
+    // Ce qui bouge — une carrosserie, un objet — garde sa portee propre et
+    // tombe a zero au-dela : il aura change de place avant qu'on y arrive.
+    //
+    // ── Il y avait ici une rampe, et elle n'a jamais tourne ──────────────
+    //
+    // Un mur devait voir sa preference s'effacer entre `s.reach` et
+    // `vision.range.front`, « pour enfiler une sequence de tuyaux sans avoir a
+    // les parcourir un par un ». L'intention etait la bonne. Seulement les deux
+    // bornes valent 1100 toutes les deux — `pipe.seeDistance` et `range.front`
+    // — si bien que la rampe s'etalait sur une fenetre de largeur nulle : TOUT
+    // tuyau visible pesait 1, jusqu'au dernier pixel du regard.
+    //
+    // Ce que ca donnait a l'ecran, sur l'anneau du Moai : un kart deja place
+    // dans le couloir haut du tuyau col 80 se voyait refuser ce couloir, parce
+    // que le tuyau col 87 — a plus de deux secondes devant — bloquait le haut
+    // lui aussi. `laneRisk` cherche UNE profondeur qui degage tous les murs vus
+    // a la fois, comme si le kart ne pouvait plus bouger entre les deux. Toutes
+    // les voies hautes valaient l'infini, et les huit karts plongeaient.
+    //
+    // La rampe est retiree plutot que reparee : ce n'est pas la PREFERENCE d'un
+    // mur lointain qu'il faut effacer, c'est le fait qu'on ait le temps d'en
+    // sortir. Cela se mesure, ça ne s'estompe pas — cf. `s.spare` et la dette
+    // de deplacement dans `laneRisk`.
+    function spanWeight(cfg, s) {
+        const d = s.dx < 0 ? -s.dx : s.dx;
+        return (d <= s.reach) ? 1 : 0;
+    }
+
+    // La place qu'un kart doit se garder EN PLUS de sa hitbox, parce qu'il ne
+    // tient pas sa ligne au centimetre.
+    //
+    // C'etait le trou du modele : la note jugeait tous les karts capables de se
+    // poser au dixieme d'unite. Un couloir de 3 unites etait donc declare
+    // jouable pour les huit, et les lourds s'y coincaient — pas faute de place,
+    // faute de PRECISION. Le passage n'etait pas trop petit, c'est le kart qui
+    // etait trop imprecis pour lui.
+    //
+    // Deux termes, et ils sont dans le volant, pas dans une stat de plus :
+    //
+    //   `tolerance`  la bande morte du braquage. En deca, `steer` coupe la
+    //                consigne — c'est la definition meme de « il ne corrige
+    //                plus », donc le plancher de son imprecision.
+    //   `slop / cap` ce qu'il derive avant de rattraper. Inversement
+    //                proportionnel a son volant : un vif annule une bousculade
+    //                tout de suite, un lourd met une demi-seconde, et pendant
+    //                cette demi-seconde il faut que la place existe.
+    //
+    // Aux reglages actuels, en croisiere : ~0.8 pour koopa, ~1.6 pour bowser.
+    // Un couloir de fond de 3.1 unites passe donc pour l'un et pas pour l'autre,
+    // et c'est exactement ce qu'on veut lire a l'ecran — un passage serre est un
+    // passage pour les vifs.
+    function laneSlop(cfg, kart, cap, spec) {
+        return spec.tolerance + cfg.vision.place.slop / Math.max(cap, 1);
+    }
+
+    // Ce que coute d'ETRE a la profondeur `y`, en millisecondes. `Infinity`
+    // quand le kart ne peut physiquement pas y etre.
+    //
+    // `slop` gonfle chaque corps de l'imprecision du kart : viser le ras d'une
+    // hitbox n'a de sens que si l'on sait s'y tenir.
+    //
+    // Elle ne lit que `kart.sight`, et c'est le point du systeme : ce qui n'a
+    // pas ete vu ne coute rien. Un kart aveugle par celui qui le precede se
+    // place donc au milieu de ce qu'il ne voit pas — et c'est exactement le
+    // prix d'une vue bouchee.
+    // Ce qui separe « pile sur la limite » de « dedans ». Purement numerique :
+    // les candidats sont construits par addition depuis les bornes qu'ils
+    // longent, et l'arrondi decide sinon du sens de l'inegalite.
+    const LANE_EPS = 1e-9;
+
+    function laneRisk(cfg, kart, y, cap, slop) {
+        const road = cfg.road;
+        if (y < road.minY || y > road.maxY) return Infinity;
+
+        const sight = kart.sight;
+        let risk = 0;
+
+        for (let i = 0; i < sight.spanCount; i++) {
+            const s = sight.spans[i];
+            const w = spanWeight(cfg, s);
+            if (w <= 0) continue;
+
+            // ── Les murs d'APRES celui du moment ─────────────────────────
+            //
+            // `laneRisk` cherche une profondeur, une seule, et la juge contre
+            // tout ce qui est vu. Prise au pied de la lettre, cette question
+            // n'a de sens que pour le mur qu'on aborde : ceux d'apres, on aura
+            // bouge d'ici la. Les traiter comme le premier revenait a exiger un
+            // couloir qui traverse toute la sequence d'un trait — souvent
+            // aucun — et a jeter le kart dans le contournement le plus large
+            // alors qu'il etait deja bien place pour le tuyau suivant.
+            //
+            // Ce qu'un tel mur coute n'est donc pas un choc, c'est une DETTE :
+            // le deplacement qu'il faudra faire plus tard pour en sortir. On la
+            // chiffre dans la meme monnaie que tout le reste — le temps de
+            // braquage — et on ne garde le refus que pour ce qui est hors
+            // d'atteinte meme en s'y prenant tout de suite.
+            //
+            // `place.debt` dit ce que vaut un deplacement REPORTE face au meme
+            // deplacement fait maintenant : il se paiera sous un horizon plus
+            // court et dans un trafic qui aura bouge — cf. sa note.
+            if (s.hard && s.spare > 0) {
+                const room = steerReach(cfg, cap, s.spare);
+                const need = (y > s.lo - slop && y < s.hi + slop)
+                    ? Math.min(y - (s.lo - slop), (s.hi + slop) - y)
+                    : 0;
+                if (need > room) return Infinity;
+                if (need > 0) {
+                    risk += cfg.vision.place.detour * cfg.vision.place.debt
+                        * steerDelay(cfg, cap, need);
+                }
+                continue;
+            }
+
+            // Ecart a la limite DURE, negatif quand on est dedans. Pose a zero
+            // pile sur la limite : les hitboxes sont des `>=`, donc la frontiere
+            // elle-meme ne touche pas. C'est la que passe un couloir serre.
+            //
+            // La tolerance n'est pas une precaution, elle est INDISPENSABLE.
+            // `laneCandidates` propose exactement `s.hi + slop`, et le calcul
+            // rend alors un ecart de l'ordre de 1e-16 — de signe imprevisible.
+            // Le candidat ecrit pour rendre un couloir serre choisissable valait
+            // donc 850 ou l'infini selon l'arrondi, et pour koopa il tombait du
+            // mauvais cote : le kart le plus vif du plateau se voyait refuser le
+            // seul passage taille pour lui.
+            const gap = ((y <= s.lo) ? s.lo - y : (y >= s.hi) ? y - s.hi : -1) - slop;
+
+            if (gap < -LANE_EPS) {
+                if (s.hard && w >= 1) return Infinity;
+                risk += s.cost * w;
+                continue;
+            }
+
+            // Le confort entame, et SEULEMENT le confort : la limite dure est
+            // deja passee au-dessus. Entamer tout le confort ne vaut donc pas le
+            // contact, mais `place.graze` de ce contact — cf. sa note. La rampe
+            // montait au cout plein, ce qui notait un frolement au prix d'un
+            // choc et rendait le grand contournement toujours gagnant.
+            const clear = (gap > 0) ? gap : 0;
+            if (clear < s.margin) {
+                risk += s.cost * w * cfg.vision.place.graze * (1 - clear / s.margin);
+            }
+        }
+
+        // Le bord de piste ne ferme rien — on roule dessus, `clampKartToRoad` le
+        // laisse faire — il coute de la vitesse par frottement. C'est le moins
+        // cher des quatre, et c'est ce qui rend enfin jouable la banane posee
+        // pres du bord : longer le mur vaut mieux que la prendre.
+        const edge = Math.min(y - road.minY, road.maxY - y);
+        const width = road.edgeSafetyMargin;
+        if (edge < width) risk += cfg.vision.cost.edge * (1 - edge / width);
+
+        // La boite. Seul terme NEGATIF de la note : une occasion, pas un risque.
+        //
+        // Elle avait sa propre manoeuvre, apres le contournement de tuyau dans
+        // l'ordre de priorite — donc jamais atteinte des lors qu'un tuyau etait
+        // quelque part devant, c'est-a-dire presque toujours. Une occasion ne se
+        // classe pas avant ou apres un mur : elle se PESE contre lui, et c'est
+        // ce que la note sait faire.
+        //
+        // Ce qui en decoule tout seul : le kart passe la prendre quand elle est
+        // sur son chemin ou pas loin, la laisse quand il faudrait traverser
+        // devant un tuyau (850) ou une carapace (2000), et l'accepte au prix
+        // d'un frottement de bord (200). Aucune regle a ecrire pour ca.
+        const box = kart.sight;
+        if (box.boxDist >= 0) {
+            const off = Math.abs(y - box.boxY);
+            const grab = cfg.hitboxes.itemBox.y;
+            if (off < grab) risk -= cfg.vision.place.boxBonus * (1 - off / grab);
+        }
+
+        return risk;
+    }
+
+    // La note d'un candidat.
+    //
+    // Le risque est mesure la ou le kart SERA vraiment, pas la ou il vise : une
+    // profondeur hors de portee dans le temps imparti est ramenee au plus loin
+    // qu'il puisse couvrir. C'est ce qui lui apprend a juger la place qu'il a —
+    // viser un trou qu'on n'atteint pas ne vaut que ce que vaut l'endroit ou
+    // l'on se retrouve a mi-chemin.
+    //
+    // Le detour, lui, se paie sur l'intention. Sans risque nulle part, la note
+    // la plus basse est celle de sa propre ligne : pas de danger, pas de virage.
+    function laneScore(cfg, kart, y, cap, settle, reach, weight, slop) {
+        const target = (y > settle + reach) ? settle + reach
+            : (y < settle - reach) ? settle - reach : y;
+
+        const risk = laneRisk(cfg, kart, target, cap, slop);
+        if (risk === Infinity) return Infinity;
+
+        const move = (target > settle) ? target - settle : settle - target;
+        return risk + weight * steerDelay(cfg, cap, move);
+    }
+
+    // Tampons du choix. Partages par tous les karts, remplis et consommes dans
+    // le meme appel : un choix de placement n'alloue rien.
+    const laneY = [];
+    const laneCost = [];
+    let laneN = 0;
+
+    function laneAdd(cfg, y) {
+        const lo = cfg.road.minY;
+        const hi = cfg.road.maxY;
+        const v = (y < lo) ? lo : (y > hi) ? hi : y;
+
+        for (let i = 0; i < laneN; i++) {
+            if (Math.abs(laneY[i] - v) < 1e-6) return;
+        }
+        laneY[laneN] = v;
+        laneCost[laneN] = 0;
+        laneN++;
+    }
+
+    // Les profondeurs qui valent d'etre examinees.
+    //
+    // Elles ne sont pas prises au hasard ni echantillonnees : ce sont les seuls
+    // endroits ou la note peut avoir un minimum. Sa propre ligne (detour nul),
+    // les deux bords (le refuge le moins cher), et pour chaque obstacle vu les
+    // quatre points qui le bordent — au ras de sa hitbox, et au confort.
+    //
+    // Le ras et le confort sont deux options distinctes ET C'EST LE POINT : le
+    // confort est gratuit en risque mais loin, le ras est proche mais coute. Un
+    // couloir etroit n'offre que le ras, et il reste choisissable. C'est ce
+    // qu'aucun des deux anciens chercheurs ne savait dire.
+    function laneCandidates(cfg, kart, settle, slop) {
+        laneN = 0;
+        laneAdd(cfg, settle);
+        laneAdd(cfg, cfg.road.minY);
+        laneAdd(cfg, cfg.road.maxY);
+
+        const sight = kart.sight;
+
+        // La boite visee en fait partie : c'est une profondeur qui vaut d'etre
+        // examinee, au meme titre qu'un obstacle a border.
+        if (sight.boxDist >= 0) laneAdd(cfg, sight.boxY);
+
+        for (let i = 0; i < sight.spanCount; i++) {
+            const s = sight.spans[i];
+            if (spanWeight(cfg, s) <= 0) continue;
+
+            laneAdd(cfg, s.lo - slop);
+            laneAdd(cfg, s.hi + slop);
+            laneAdd(cfg, s.lo - slop - s.margin);
+            laneAdd(cfg, s.hi + slop + s.margin);
+        }
+    }
+
+    // Ou se placer. Rend la profondeur retenue, ou `null` s'il n'existe aucun
+    // endroit tenable — au kart de freiner, il n'y a plus que ca a faire.
+    //
+    // ── La qualite de decision ──────────────────────────────────────────
+    //
+    // Le meilleur choix n'est pas toujours celui qui est pris. Le kart descend
+    // le classement et s'arrete a chaque marche avec une chance de
+    // `place.chance` : il retient donc le meilleur `chance` fois sur cent, le
+    // deuxieme `chance * (1 - chance)` fois, et ainsi de suite. Une erreur reste
+    // une option qui existait, jamais une absurdite.
+    //
+    // A 1 le kart est parfait — c'est l'interrupteur pour comparer au banc. La
+    // meme valeur pour les huit tant qu'aucune stat de pilote n'existe ; le
+    // jour ou elle arrive, c'est ce seul nombre qu'elle module.
+    function chooseLane(cfg, rng, kart, cap, ttc, spec) {
+        const place = cfg.vision.place;
+        const settle = steerSettle(cfg, kart);
+        const reach = steerReach(cfg, cap, ttc);
+
+        // Trois passes, et les deux dernieres ne servent qu'a NE JAMAIS SE
+        // FIGER. Chacune leve une exigence, dans l'ordre du moins couteux :
+        //
+        //   1. le kart tel qu'il est, imprecision comprise, dans le temps qu'il
+        //      a. C'est la reponse juste, et c'est elle qui refuse a un lourd un
+        //      couloir qu'il ne saurait pas tenir.
+        //   2. sans son imprecision. Tout ce qu'il atteint est trop juste pour
+        //      lui : mieux vaut tenter un passage serre que de ne rien tenter.
+        //   3. sans limite de temps. Il n'atteindra pas le bon couloir avant
+        //      l'obstacle — mais aller VERS lui reste strictement meilleur que
+        //      tenir une ligne qui finit dans le decor.
+        //
+        // La troisieme manquait, et c'est ce qui produisait le pire defaut
+        // visible du systeme : sorti d'un tuyau, le kart avait pour seul horizon
+        // le temps qui restait avant CE tuyau-la — donc une portee de braquage
+        // quasi nulle — et tout ce qu'il pouvait atteindre tombait dans le tuyau
+        // SUIVANT. Tous les candidats infinis, aucun choix rendu, repli sur
+        // « garde ta ligne » : il fonçait droit dans le second sans meme
+        // esquisser un mouvement. Ce n'etait pas un manque de reaction, c'etait
+        // un abandon.
+        //
+        // Regle generale, et elle vaut pour les trois : la portee, la precision
+        // et le temps CLASSENT les passages, ils n'en suppriment aucun.
+        let chosen = null;
+
+        for (let pass = 0; pass < 3; pass++) {
+            const slop = (pass === 0) ? laneSlop(cfg, kart, cap, spec) : 0;
+            const horizon = (pass < 2) ? reach : Infinity;
+
+            laneCandidates(cfg, kart, settle, slop);
+            for (let i = 0; i < laneN; i++) {
+                laneCost[i] = laneScore(cfg, kart, laneY[i], cap, settle, horizon,
+                                        place.detour, slop);
+            }
+
+            chosen = pickLane(cfg, rng);
+            if (chosen !== null) break;
+        }
+
+        return chosen;
+    }
+
+    // Le tirage dans le classement, une fois les notes posees.
+    //
+    // ── Les egalites se tirent au sort ──────────────────────────────────
+    //
+    // Elles ne sont pas rares, elles sont LE cas normal : un tuyau dans l'axe
+    // avec de la place des deux cotes rend deux couloirs de confort a la meme
+    // distance, donc a la meme note, au bit pres. Departagees par un `<` strict,
+    // c'est l'ordre de construction qui tranchait — et `laneCandidates` pose
+    // toujours le cote `lo` avant le cote `hi`. Le kart passait donc EN DESSOUS
+    // huit fois sur dix, indefiniment, sur tous les tuyaux du circuit et pour
+    // les huit personnages : un biais parfaitement systematique, invisible dans
+    // les couts, ecrit nulle part.
+    //
+    // Deux options identiques n'ont aucune raison d'etre departagees : le tirage
+    // uniforme (Vitter) leur donne une chance chacune, et le haut redevient une
+    // trajectoire.
+    function pickLane(cfg, rng) {
+        const place = cfg.vision.place;
+        let chosen = null;
+        for (let round = 0; round < laneN; round++) {
+            let pick = -1;
+            let ties = 0;
+            for (let i = 0; i < laneN; i++) {
+                if (laneCost[i] === Infinity) continue;
+                if (pick < 0 || laneCost[i] < laneCost[pick] - LANE_EPS) {
+                    pick = i;
+                    ties = 1;
+                } else if (laneCost[i] <= laneCost[pick] + LANE_EPS) {
+                    ties++;
+                    if (rng() * ties < 1) pick = i;
+                }
+            }
+            if (pick < 0) break;
+
+            chosen = laneY[pick];
+            if (rng() < place.chance) break;
+
+            // Rate : cette option sort du classement et il regarde la suivante.
+            laneCost[pick] = Infinity;
+        }
+
+        return chosen;
+    }
+
+    // Place libre d'un cote du kart, en profondeur de piste. Le bord la borne, et
+    // tout ce que le kart VOIT pose devant lui la borne de la meme facon : un
+    // tuyau, une carrosserie, un objet au sol, l'objet traine par un autre.
+    //
+    // Elle ne regarde plus le monde mais `kart.sight`, et la difference est le
+    // point du systeme : ce qui n'a pas ete vu ne ferme rien. Un kart aveugle
+    // par celui qui le precede se decale donc vers ce qu'il ne voit pas.
+    function sideRoom(cfg, kart, dir) {
+        const margin = cfg.road.edgeSafetyMargin;
         let limit = (dir > 0) ? (cfg.road.maxY - margin) : (cfg.road.minY + margin);
 
-        // Face tournee vers le kart. Elle ne ferme le cote que si elle est
-        // vraiment de ce cote-la : un obstacle que le kart chevauche deja est
-        // derriere sa propre face, et refermer sur lui rendrait une place
-        // negative pour un obstacle qu'aucun ecart ne peut plus eviter.
-        function closeAt(y, halfDepth) {
-            const face = y - dir * halfDepth;
+        const sight = kart.sight;
+        for (let i = 0; i < sight.spanCount; i++) {
+            const s = sight.spans[i];
+            if (s.dx > s.reach || s.dx < -s.reach) continue;
+
+            // Face tournee vers le kart. Elle ne ferme le cote que si elle est
+            // vraiment de ce cote-la : un obstacle que le kart chevauche deja est
+            // derriere sa propre face, et refermer sur lui rendrait une place
+            // negative pour un obstacle qu'aucun ecart ne peut plus eviter.
+            //
+            // La face de CONFORT, marge comprise, et non la limite dure : c'est
+            // un garde-fou, son travail est de refuser large. Le placement, lui,
+            // note les deux separement (`laneRisk`) — un garde-fou dit oui ou
+            // non, il ne marchande pas.
+            const face = (dir > 0) ? (s.lo - s.margin) : (s.hi + s.margin);
             if (dir > 0 ? (face > kart.yPercent && face < limit)
                         : (face < kart.yPercent && face > limit)) {
                 limit = face;
             }
         }
 
-        const pipeReach = cfg.hitboxes.kartVsPipe;
-        const pipes = state.pipes;
-        for (let p = 0; p < pipes.length; p++) {
-            const dx = getShortestDistance(cfg, pipes[p].worldX, kart.worldX);
-            if (dx < -pipeReach.x || dx > guard) continue;
-            closeAt(pipes[p].y, pipeReach.y);
-        }
-
-        const clear = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin;
-
-        for (let i = 0; i < state.items.length; i++) {
-            const item = state.items[i];
-            if (item.id === skipId || item.isDead || item.spent) continue;
-            if (cfg.trailableItems.indexOf(item.type) === -1) continue;
-
-            const dx = getShortestDistance(cfg, item.worldX, kart.worldX);
-            if (dx <= 0 || dx > guard) continue;
-            closeAt(item.y, clear);
-        }
-
-        // Objets traines : ils suivent leur porteur, donc c'est sa hauteur a lui
-        // qui ferme le cote, comme dans la detection de menace.
-        for (let i = 0; i < state.karts.length; i++) {
-            const other = state.karts[i];
-            if (other.id === kart.id || other.state !== 'running') continue;
-
-            const held = other.heldItem;
-            if (!held || held.id === skipId || held.holdPosition !== 'behind') continue;
-
-            const dx = getShortestDistance(cfg, other.worldX, kart.worldX);
-            if (dx <= 0 || dx > guard) continue;
-            closeAt(other.yPercent, clear);
-        }
-
         return Math.max(0, dir * (limit - kart.yPercent));
     }
 
-    // Dernier filtre avant le volant : une consigne laterale ne doit pas
-    // envoyer le kart dans ce qu'il avait sous les yeux.
-    //
-    // Les manoeuvres de confort — visee, depassement, collecte, maraude, retour
-    // au calme — ne connaissent pas les tuyaux, et n'ont pas a les connaitre :
-    // chacune repond a sa propre question, et les rendre toutes prudentes
-    // reviendrait a ecrire cinq fois le meme test. Sans ce filtre, un kart qui
-    // venait d'enfiler proprement deux tuyaux se decalait pour doubler, ou
-    // partait chercher une boite, et se plantait dans le second — le couloir
-    // etait bon, c'est ce qui s'est passe ensuite qui ne l'etait pas.
-    //
-    // Le seuil est la course restante et non zero : s'arreter pile a la face du
-    // tuyau demande de lever le pied avant de la toucher.
-    //
-    // Le contournement de tuyau et l'esquive n'y passent pas, et c'est voulu :
-    // eux traversent sciemment, l'un pour rejoindre un couloir situe derriere le
-    // tuyau, l'autre pour passer devant l'objet. Chacun a son propre jugement de
-    // place — `choosePipeLane` et `planDodge`, tous deux batis sur `sideRoom`.
-    function steerClamped(cfg, state, kart, deltaTime) {
-        if (kart.targetVy) {
-            const dir = kart.targetVy > 0 ? 1 : -1;
-            const settle = Math.max(0, dir * kart.vy) / cfg.physics.steerResponse;
-            if (sideRoom(cfg, state, kart, dir, 0) <= settle) kart.targetVy = 0;
-        }
-        applySteering(cfg, kart, deltaTime);
+    // Ou le kart s'arreterait s'il relachait tout : sa position, plus la course
+    // que le volant a encore a rendre. C'est la reference de `steer` — cf. sa
+    // note — et c'est aussi la cible d'une manoeuvre qui ne veut rien commander.
+    function steerSettle(cfg, kart) {
+        return kart.yPercent + kart.vy / cfg.physics.steer.response;
     }
 
-    // Cote d'esquive et intensite, arretes une fois pour toutes a la premiere
-    // reaction a une menace donnee.
+    // LA fonction de braquage. Rejoindre une profondeur visee, et la tenir.
     //
-    // Le cote naturel est celui qui eloigne de l'objet. Quand il n'y a pas la
-    // place — le bord de piste, ou ce qui est pose devant, cf. `sideRoom` — le
-    // kart jauge la traversee par l'autre cote, devant l'objet : il lui faut la
-    // place et le temps, et il n'estime le second qu'a vue (cf.
-    // ai.crossJudgeError). Sans issue des deux cotes, il ne reste que le frein.
-    function planDodge(cfg, state, rng, kart, threatId, threatY, ttc) {
-        const ai = cfg.ai;
-        const agility = kart.stats.agility;
+    // Toutes les manoeuvres passent par la, sans exception : esquive,
+    // contournement, precaution, visee, depassement, collecte, maraude, retour
+    // au calme, et jusqu'au bill. Elles ne different que par leur PROFIL —
+    // `ai.steering` — et par la profondeur qu'elles visent. C'est ce qui rend le
+    // systeme verifiable : une seule loi, un seul ecrivain, huit reglages.
+    //
+    //   `laneY` : la profondeur a rejoindre. C'est la SITUATION qui la donne,
+    //             donc elle ne depend pas du personnage.
+    //   `speed` : l'urgence, avant mise a l'echelle du kart. Portee par le
+    //             profil, sauf pour l'esquive et la precaution qui la tirent de
+    //             leur plan.
+    //   `spec`  : `{ gain, tolerance, guard }`, cf. `ai.steering`.
+    //
+    // ── Pourquoi viser un point et non pousser d'un cote ─────────────────
+    //
+    // Le kart compare la cible a l'endroit ou il s'ARRETERAIT, non a celui ou il
+    // est. Le volant a 200 ms d'inertie (1 / `steer.response`) : une consigne
+    // proportionnelle au seul ecart courant commande encore du braquage quand la
+    // cible est deja sous les roues, le systeme est sous-amorti a ces reglages,
+    // et le kart depasse d'environ deux unites et demie. Sur un passage etroit —
+    // six unites, trois de chaque cote — ce depassement le fait ressortir par
+    // l'autre bord, dans ce qu'il etait en train d'eviter.
+    //
+    // Retrancher la course restante — `vy / response`, ce que le kart parcourt
+    // encore s'il relache tout — rend la reponse aperiodique. Plus aucun
+    // depassement, et sans ralentir la manoeuvre.
+    //
+    // Les manoeuvres qui poussaient a intensite constante jusqu'a ce que la
+    // situation change depassaient leur cible par construction, et le kart
+    // paraissait hesiter la ou il ne faisait que corriger. Il n'en reste
+    // aucune.
+    //
+    // ── Le garde-fou ────────────────────────────────────────────────────
+    //
+    // `guard` refuse d'envoyer le kart dans ce qu'il avait sous les yeux. Le
+    // seuil est la course restante et non zero : s'arreter pile a la face de
+    // l'obstacle demande de lever le pied avant de la toucher.
+    //
+    // L'esquive, le contournement et la precaution ne l'ont pas, et c'est voulu :
+    // eux traversent sciemment — l'un pour passer devant l'objet, l'autre pour
+    // rejoindre un couloir situe derriere le tuyau — apres avoir juge la place
+    // eux-memes, par `chooseLane`. Les manoeuvres de confort, elles, ne connaissent
+    // pas les obstacles et n'ont pas a les connaitre : chacune repond a sa
+    // propre question, et les rendre toutes prudentes reviendrait a ecrire cinq
+    // fois le meme test.
+    function steer(cfg, kart, deltaTime, laneY, speed, spec) {
+        const response = cfg.physics.steer.response;
+        const diff = laneY - steerSettle(cfg, kart);
 
-        kart.dodgePlanId = threatId;
-        kart.dodgeIntensity = randomRange(rng,
-            steerSpeed(kart, ai.dodgeIntensityMin),
-            steerSpeed(kart, ai.dodgeIntensityMax)
-        );
-
-        const naturalDir = (threatY > kart.yPercent) ? -1 : 1;
-
-        // Ecart au-dela duquel l'objet ne touche plus, et ecart actuel : la
-        // detection ouvre plus large que la hitbox.
-        const clear = cfg.hitboxes.itemVsKart.y + ai.crossDodgeMargin;
-        const gap = Math.abs(threatY - kart.yPercent);
-
-        const roomNatural = sideRoom(cfg, state, kart, naturalDir, threatId);
-
-        if (roomNatural >= Math.max(0, clear - gap)) {
-            kart.dodgeDir = naturalDir;
-            kart.dodgeStuck = false;
-            kart.dodgeCrossing = false;
-            return;
+        if (Math.abs(diff) <= spec.tolerance) {
+            // Cible tenue : il ne corrige plus, sinon il tremble autour.
+            kart.targetVy = 0;
+        } else {
+            const cap = steerCap(cfg, kart, speed);
+            const seek = steerCap(cfg, kart, diff * spec.gain);
+            kart.targetVy = Math.max(-cap, Math.min(cap, seek));
         }
 
-        // Traverser coute l'ecart entier, plus le degagement de l'autre cote.
-        const crossDir = -naturalDir;
-        const crossNeed = gap + clear;
-        const roomCross = sideRoom(cfg, state, kart, crossDir, threatId);
+        if (spec.guard && kart.targetVy) {
+            // Il faut avoir REGARDE DEVANT pour garantir la place devant.
+            //
+            // `sight.spans` ne decrit qu'un cote du kart : celui que le dernier
+            // balayage regardait. Sur un balayage arriere la piste devant y est
+            // donc VIDE — non pas degagee, mais jamais consultee — et le
+            // garde-fou laissait alors passer n'importe quelle consigne. Un kart
+            // qui se recalait pour tirer juste apres un coup d'oeil derriere se
+            // decalait ainsi droit dans un tuyau qu'il n'avait pas regarde.
+            //
+            // Il refuse plutot que d'inventer. Le kart tient sa ligne le temps
+            // du coup d'oeil, ce qui est aussi ce qu'on fait en regardant par
+            // dessus son epaule.
+            //
+            // L'esquive, le contournement et la precaution n'ont pas de
+            // garde-fou et ne sont donc pas concernes : eux jugent la place
+            // eux-memes, par `chooseLane`, et doivent pouvoir manoeuvrer meme mal
+            // renseignes — leur plan est marque `coarse` et repris au premier
+            // balayage de face.
+            const dir = kart.targetVy > 0 ? 1 : -1;
+            const settle = Math.max(0, dir * kart.vy) / response;
+            if (kart.sight.scanBack || sideRoom(cfg, kart, dir) <= settle) kart.targetVy = 0;
+        }
 
-        const err = ai.crossJudgeError;
-        const judged = lateralReach(cfg, agility, kart.dodgeIntensity, ttc)
+        // La reponse du volant. Le facteur est borne a 1 : sur une frame longue
+        // — onglet en arriere-plan, machine qui peine — le lissage non borne
+        // depassait la consigne et faisait osciller le kart. Avec la borne, une
+        // frame lente se contente d'arriver pile sur la consigne.
+        const k = response * deltaTime;
+        kart.vy += (kart.targetVy - kart.vy) * (k > 1 ? 1 : k);
+    }
+
+    // -----------------------------------------------------------------------
+    // Le plan
+    //
+    // Une decision prise ne se defait pas parce que le regard s'est porte
+    // ailleurs. C'est la regle qui manquait le plus : l'esquive etait recalculee
+    // de zero a chaque frame, si bien qu'un objet sorti de la fenetre de
+    // detection une seule frame — ce qui arrive PARCE QUE le kart est en train
+    // de l'esquiver — relachait la manoeuvre, et le retour au calme ramenait le
+    // kart droit dans l'objet.
+    //
+    // Une absence d'observation ne prouve rien. Seule une echeance, ou une
+    // menace VUE disparue, ferme un plan.
+    // -----------------------------------------------------------------------
+
+    // Ou passer, et de quel cote. Appele a la decision, puis a chaque revision.
+    //
+    // Il vise une POSITION et non une direction. L'ancienne version poussait
+    // d'un cote a intensite constante, apres avoir jauge la place cote par cote
+    // sans jamais compter les carrosseries : un kart plongeait sous une carapace
+    // pour se planter dans son voisin. Viser le milieu du meilleur passage
+    // repond a la meme question sans avoir a la poser deux fois.
+    //
+    // Toute la marge d'erreur tient dans une ligne : `crossJudgeError` deforme
+    // la distance que le kart croit pouvoir couvrir. Il vise donc parfois un
+    // trou hors de portee, et renonce parfois a un trou qu'il aurait atteint.
+    // Le delai avant la prochaine reprise de trajectoire.
+    //
+    // Il est TIRE AU SORT a chaque fois, et c'est le remede a la monotonie :
+    // a cadence fixe, huit karts qui voient la meme piste rejouent la meme
+    // decision aux memes instants et tracent la meme ligne. Un intervalle
+    // irregulier les desynchronise sans rien changer a ce que chacun decide.
+    //
+    // C'est aussi le point d'accroche naturel de la future stat de decision :
+    // un cerveau rapide reprend souvent sa ligne et l'affine a mesure qu'il
+    // approche, un cerveau lent s'engage tot et ne revient pas dessus. Commun
+    // a tous pour l'instant, comme le reste de la perception.
+    function reviewDelay(cfg, rng) {
+        const vis = cfg.vision;
+        return vis.reviewIntervalMs
+            * randomRange(rng, vis.reviewJitterMin, vis.reviewJitterMax);
+    }
+
+    function placePlan(cfg, rng, kart, plan, ttc) {
+        // Toute la marge d'erreur d'appreciation tient ici : le kart se croit
+        // un peu plus vif, ou un peu moins, qu'il ne l'est. Il juge donc mal ce
+        // qu'il peut atteindre — parfois il vise un trou hors de portee,
+        // parfois il renonce a un trou qu'il aurait pris.
+        //
+        // C'est le meme `crossJudgeError` qu'avant, applique au volant plutot
+        // qu'a une distance limite : ca dit la meme chose et ca se propage tout
+        // seul aux deux endroits qui en dependent, la portee et le detour.
+        const err = cfg.ai.crossJudgeError;
+        const cap = steerCap(cfg, kart, plan.intensity)
             * randomRange(rng, 1 - err, 1 + err);
 
-        if (gap < clear && roomCross >= crossNeed && judged >= crossNeed) {
-            kart.dodgeDir = crossDir;
-            kart.dodgeStuck = false;
-            kart.dodgeCrossing = true;
+        const lane = chooseLane(cfg, rng, kart, cap, ttc, cfg.ai.steering.dodge);
+
+        // Vraiment nulle part ou aller : tout ce qu'il peut atteindre est un
+        // mur. Il ne reste que le frein, et la place qu'il grappillera.
+        plan.stuck = lane === null;
+
+        // Tout se mesure depuis le POINT D'ARRET — la ou le kart finirait s'il
+        // relachait le volant — et non depuis sa position. C'est la reference du
+        // braquage (cf. `steer`), et s'en ecarter ici ferait dire au plan qu'il
+        // commande quelque chose alors que le volant, lui, n'a rien a faire.
+        const settle = steerSettle(cfg, kart);
+
+        plan.laneY = (lane === null) ? settle : lane;
+        plan.dir = (plan.laneY > settle) ? 1 : (plan.laneY < settle) ? -1 : 0;
+
+        // Rien a commander : le kart est deja la ou il veut etre. Le plan reste
+        // en place — il tient l'emplacement de menace et evite d'etre rejoue a
+        // chaque balayage — mais il rend la main au reste du pilotage. Sans ca,
+        // un kart deja tire d'affaire se figeait le temps que sa propre esquive
+        // expire, tuyau compris.
+        //
+        // Le seuil est celui du braquage lui-meme, et il le faut : le placement
+        // rend une profondeur exacte, qui ne retombe donc pratiquement jamais
+        // pile sur le point d'arret. Tester l'egalite laisserait l'esquive
+        // commander en permanence une consigne que `steer` juge deja tenue —
+        // exactement le figeage que ce drapeau existe pour eviter.
+        plan.idle = !plan.stuck
+            && Math.abs(plan.laneY - settle) <= cfg.ai.steering.dodge.tolerance;
+
+        // Traverser, c'est passer DEVANT l'objet au lieu de s'en ecarter. Ca
+        // coute l'ecart entier et ne se rattrape pas : le frein accompagne, le
+        // temps de passer.
+        const natural = (plan.threatY > kart.yPercent) ? -1 : 1;
+        plan.crossing = plan.dir !== 0 && plan.dir !== natural;
+
+        // Un plan arrete sur un balayage arriere n'a pas vu le trafic devant :
+        // il a choisi son cote sur le seul decor. Il est marque, et le premier
+        // balayage de face le reprend d'office.
+        //
+        // C'est le SENS DU BALAYAGE qui compte, jamais l'attention du moment :
+        // les deux se decalent jusqu'a `scanIntervalMs`, et c'est ce qu'on lit
+        // dans `sight` qui a servi ici. Meme regle qu'au releve de visee.
+        plan.coarse = kart.sight.scanBack;
+    }
+
+    // Le decalage de securite : quitter la ligne de celui qui porte l'objet.
+    //
+    // Il ne passe pas par `chooseLane`, et c'est delibere : celui-ci cherche le
+    // meilleur ENDROIT, or la ligne a quitter n'est pas un endroit. Rien ne
+    // barre la piste — le danger est une profondeur, pas un corps, et le kart
+    // qui la porte est souvent trop loin devant pour compter comme obstacle.
+    //
+    // La question est donc plus simple : de quel cote ai-je la place, et
+    // combien faut-il pour que l'objet me manque. `sideRoom` repond a la
+    // premiere sur la meme vue que tout le reste, `clear` a la seconde.
+    //
+    // Le cote naturel gagne quand il s'ouvre — on s'ecarte du danger, on ne le
+    // contourne pas. Un decalage de securite qui traverserait la ligne de tir
+    // pour se ranger de l'autre cote serait exactement ce qu'on cherche a
+    // eviter.
+    function placeSafety(cfg, kart, plan) {
+        const clear = cfg.hitboxes.itemVsKart.y + cfg.vision.place.margin.item;
+        const lo = cfg.road.minY + cfg.road.edgeSafetyMargin;
+        const hi = cfg.road.maxY - cfg.road.edgeSafetyMargin;
+
+        // Le jeu au-dela du degagement strict, et il n'est pas decoratif : c'est
+        // ce qui empeche la decision de se reprendre en boucle.
+        //
+        // Vise pile a la limite d'alignement, le kart s'y arrete — et la
+        // premiere derive de maraude l'y ramene, ce qui redeclenche la meme
+        // decision, indefiniment. Une demi-carrosserie de marge suffit a ce que
+        // la derive normale ne suffise plus a le rendre a l'axe. C'est la meme
+        // valeur que vise une esquive, pour la meme raison.
+        const slack = clear + cfg.hitboxes.kartVsKart.y * 0.5;
+
+        const natural = (plan.threatY > kart.yPercent) ? -1 : 1;
+        const need = clear - Math.abs(kart.yPercent - plan.threatY);
+
+        const roomNatural = sideRoom(cfg, kart, natural);
+        const dir = (roomNatural >= need || roomNatural >= sideRoom(cfg, kart, -natural))
+            ? natural : -natural;
+
+        plan.dir = dir;
+        plan.laneY = Math.min(hi, Math.max(lo, plan.threatY + dir * slack));
+
+        // Une precaution ne freine pas et ne se declare jamais acculee : au pire
+        // elle ne sert a rien, et le kart continue sa course.
+        plan.stuck = false;
+        plan.crossing = false;
+        plan.idle = false;
+        plan.coarse = kart.sight.scanBack;
+    }
+
+    function updatePlan(cfg, rng, now, kart) {
+        const vis = cfg.vision;
+        const sight = kart.sight;
+        const plan = kart.plan;
+
+        // La menace toujours en vue repousse l'echeance : le plan tient tant
+        // qu'elle converge encore.
+        //
+        // Sans ca, un plan pose sur une ESTIMATION du temps avant impact
+        // expirait avant l'impact reel — il suffit que l'un des deux ralentisse
+        // — et le kart revenait sur sa ligne juste a temps pour s'y faire
+        // cueillir. L'echeance n'est la que pour les menaces qu'on ne revoit
+        // pas, pas pour celles qu'on a sous les yeux.
+        if (plan.threatId && sight.threatId === plan.threatId
+            && sight.threatTtc !== Infinity) {
+            plan.until = now + sight.threatTtc + vis.holdAfterMs;
+        }
+
+        if (plan.threatId && (now >= plan.until || sight.planGone)) {
+            plan.threatId = 0;
+            plan.kind = '';
+            plan.until = 0;
+            plan.idle = false;
+        }
+
+        // Une menace plus urgente prend la main ; la meme ne rejoue rien.
+        //
+        // La nature compte autant que l'identite : un kart qu'on evitait par
+        // precaution — il portait une banane — et qui ramasse une etoile garde
+        // le meme identifiant tout en devenant mortel. Sans le test de nature,
+        // il continuerait a etre traite avec des egards.
+        if (sight.threatKind === 'spin'
+            && (sight.threatId !== plan.threatId || plan.kind !== 'spin')) {
+            plan.kind = 'spin';
+            plan.threatId = sight.threatId;
+            plan.threatY = sight.threatY;
+            plan.intensity = randomRange(rng, cfg.ai.dodgeIntensityMin, cfg.ai.dodgeIntensityMax);
+            plan.until = now + sight.threatTtc + vis.holdAfterMs;
+            plan.reviewAt = now + reviewDelay(cfg, rng);
+            placePlan(cfg, rng, kart, plan, sight.threatTtc);
             return;
         }
 
-        // Aucun des deux cotes ne s'ouvre : il pousse quand meme du cote
-        // naturel, pour grappiller le peu de place restante, et lache les gaz.
-        kart.dodgeDir = naturalDir;
-        kart.dodgeStuck = true;
-        kart.dodgeCrossing = false;
-    }
+        // La decision de securite. Elle ne se prend que faute de mieux a faire :
+        // un danger reel occupe deja le plan, et il n'y a aucune raison de
+        // lacher une esquive pour une precaution.
+        //
+        // Elle a sa CHANCE de ne pas etre prise, et c'est le coeur du reglage.
+        // Un kart qui s'ecarterait a tous les coups rendrait le jeu d'objets
+        // inoffensif — plus personne ne prendrait jamais de carapace dans le
+        // dos ; un kart qui ne le ferait jamais resterait colle derriere une
+        // verte jusqu'a ce qu'elle parte. Ratee, la decision se retente apres
+        // `retryMs` : le danger, lui, n'a pas disparu.
+        if (!plan.threatId && sight.pressure && now >= kart.safetyRetryAt) {
+            const safety = vis.safety;
+            kart.safetyRetryAt = now + safety.retryMs;
 
-    // Un kart devant, dans la voie de la boite, la prendra le premier : de son
-    // point de vue elle est deja partie. Meme condition d'etat que la collecte,
-    // une toupie ramasse aussi bien qu'un kart lance.
-    function isBoxContested(cfg, state, kart, box, boxDist) {
-        for (let i = 0; i < state.karts.length; i++) {
-            const other = state.karts[i];
-            if (other.id === kart.id) continue;
-            if (other.state !== 'running' && other.state !== 'hit') continue;
-            if (other.finished) continue;
-
-            const d = getShortestDistance(cfg, other.worldX, kart.worldX);
-            if (d <= 0 || d > boxDist) continue;
-            if (Math.abs(other.yPercent - box.y) < cfg.hitboxes.itemBox.y) return true;
-        }
-        return false;
-    }
-
-    // Boite visee : la plus proche de sa trajectoire. L'ecart se mesure en
-    // profondeur et non en distance — un kart change de voie bien plus vite
-    // qu'il ne rattrape du terrain, donc celle d'en face gagne d'office quand
-    // elle est libre, meme un peu plus loin. Aucune de libre, il tente quand
-    // meme la plus proche : le kart qui la lui bouche peut encore la manquer.
-    //
-    // Rien ici ne suppose un rideau de boites aligne sur une verticale : le
-    // dessin du circuit les pose ou il veut, y compris seule ou en diagonale.
-    function findTargetBox(cfg, state, kart) {
-        let free = null;
-        let freeDiff = Infinity;
-        let fallback = null;
-        let fallbackDiff = Infinity;
-
-        for (let i = 0; i < state.itemBoxes.length; i++) {
-            const box = state.itemBoxes[i];
-            if (!box.active) continue;
-
-            const dist = getShortestDistance(cfg, box.worldX, kart.worldX);
-            if (dist <= 0 || dist > cfg.ai.boxDetectionRange) continue;
-
-            const diff = Math.abs(box.y - kart.yPercent);
-            if (diff < fallbackDiff) {
-                fallbackDiff = diff;
-                fallback = box;
-            }
-
-            if (diff < freeDiff && !isBoxContested(cfg, state, kart, box, dist)) {
-                freeDiff = diff;
-                free = box;
+            if (rng() < safety.chance) {
+                plan.kind = 'safety';
+                plan.threatId = sight.pressureId;
+                plan.threatY = sight.pressureY;
+                plan.intensity = safety.speed;
+                plan.until = now + safety.holdMs;
+                plan.reviewAt = now + reviewDelay(cfg, rng);
+                placeSafety(cfg, kart, plan);
+                return;
             }
         }
 
-        return free || fallback;
+        if (!plan.threatId) return;
+
+        // Le recalcul : une chance, a intervalle regulier, de reprendre le
+        // placement avec la perception fraiche. C'est le seul endroit ou la
+        // precision se joue APRES la decision — et donc le point d'accroche
+        // naturel de la future stat de decision. Commun a tous pour l'instant.
+        //
+        // Un plan approximatif, lui, ne tire pas et n'attend pas son tour :
+        // arrete sur un balayage arriere, il n'a pas vu le trafic devant, et le
+        // PREMIER BALAYAGE DE FACE le reprend. C'est ce qui permet de decider en
+        // regardant derriere sans manoeuvrer a l'aveugle plus de quelques
+        // dixiemes — la decision, elle, ne se rejoue pas : seul son trace se
+        // corrige.
+        //
+        // Il faut un balayage de face, pas un simple retour de l'attention. Ce
+        // test lisait `sight.back`, qui bascule a la cadence de l'affichage
+        // quand le balayage ne tourne que toutes les `scanIntervalMs` : la
+        // reprise partait donc au premier tick suivant la fin du coup d'oeil,
+        // ou deux fois sur trois — a 30 Hz pour 80 ms de balayage — `sight`
+        // contenait encore la vue ARRIERE. Elle se rejouait sur les donnees
+        // qu'elle etait censee remplacer, puis effacait le marquage : le
+        // garde-fou se consommait sans avoir rien corrige.
+        const forced = plan.coarse && !sight.scanBack;
+
+        if (!forced && now < plan.reviewAt) return;
+        plan.reviewAt = now + reviewDelay(cfg, rng);
+        if (!forced && rng() >= vis.reviewChance) return;
+
+        if (plan.kind === 'safety') {
+            // La ligne a quitter est celle d'un kart, et il bouge : la revision
+            // la reprend telle qu'elle est maintenant.
+            if (sight.pressure && sight.pressureId === plan.threatId) {
+                plan.threatY = sight.pressureY;
+            }
+            placeSafety(cfg, kart, plan);
+            return;
+        }
+
+        // Meme raison, et elle manquait ici. Un objet ne derive pas en
+        // profondeur, mais les menaces de CONTACT — etoile, bill — sont des
+        // karts qui manoeuvrent. `placePlan` en tire `crossing`, qui declenche
+        // le frein : sur une profondeur perimee, un kart freinait pour une
+        // position que l'etoile avait quittee.
+        if (sight.threatId === plan.threatId) plan.threatY = sight.threatY;
+
+        // Le temps qui reste, mais jamais moins que d'ici la prochaine reprise :
+        // c'est l'horizon sur lequel le kart se place, et a zero il ne pourrait
+        // plus atteindre nulle part — il se replacerait sur sa propre ligne et
+        // lacherait l'esquive juste avant l'impact.
+        placePlan(cfg, rng, kart, plan,
+            Math.max(plan.until - now - vis.holdAfterMs, vis.reviewIntervalMs));
     }
 
     // Profondeur visee par un bill : le milieu de la piste, ou le premier
@@ -781,264 +2469,229 @@
         return mid;
     }
 
-    // Couloir choisi pour passer un tuyau : le milieu du plus large passage
-    // libre, non pas a la hauteur du tuyau vise, mais sur toute la sequence de
-    // tuyaux qu'il ouvre.
+    // Couloir choisi pour passer un tuyau.
     //
-    // Les voisins comptent, et « voisin » se mesure en avant, pas seulement a
-    // hauteur. Deux pipes dessines dans la meme colonne laissent un couloir
-    // entre eux : viser le bord de l'un des deux mene droit dans l'autre. Mais
-    // deux pipes decales de quelques colonnes posent le meme probleme, en pire :
-    // le kart degage le premier, se retrouve pile dans la voie du second, et ne
-    // le prend pour cible qu'une fois le premier derriere lui — il traverse
-    // alors la piste en catastrophe, quand il y arrive. C'est ce que donnait une
-    // fenetre limitee a deux fois la portee de collision, soit 127 px la ou une
-    // manoeuvre en couvre plusieurs centaines.
+    // Il n'y a plus rien de specifique au tuyau ici : c'est `chooseLane`, avec
+    // le temps qui reste avant de l'atteindre et le profil de contournement.
     //
-    // Le couloir s'enfile donc de proche en proche : on part du tuyau vise, on
-    // ajoute le suivant, puis celui d'apres, tant qu'il reste un passage
-    // praticable (pipe.minPassageY, le meme seuil qu'au chargement d'un
-    // circuit). Le premier qui ferme la sequence arrete le compte, et le kart
-    // garde le couloir qui traverse tout ce qui precede. Rien a regler : la
-    // portee est celle de la vue, et c'est le trace qui dit ou s'arreter.
-    //
-    // Ce qui vient apres n'est pas perdu pour autant : le kart rejouera ce choix
-    // des ce tuyau-la franchi, avec la piste degagee d'autant.
-    //
-    // Et un couloir ne compte que s'il est a portee. C'est la seconde moitie du
-    // probleme, et la plus visible a l'ecran : le plus large passage est souvent
-    // de l'autre cote de la piste, derriere le tuyau lui-meme. Le viser sans
-    // regarder la distance restante, c'est s'engager dans une traversee qu'on ne
-    // finit pas — le kart s'ecarte franchement, et se plante dans le tuyau qu'il
-    // etait en train de doubler. Il ne retient donc que les couloirs dont il
-    // atteint le bord avant d'arriver au tuyau, et se rabat sur le plus proche
-    // quand aucun n'est tenable.
-    //
-    // Viser le milieu et non le bord donne au kart de la marge des deux cotes :
-    // c'est ce qui lui permet d'encaisser une bousculade sans se retrouver dans
-    // le tuyau.
-    //
-    // A largeur egale — le cas d'un tuyau pose au milieu, qui laisse autant de
-    // place de chaque cote — c'est le couloir le plus proche du kart qui gagne.
-    // Sans ce depart, les huit karts plongeraient tous du meme cote et s'y
-    // bousculeraient, alors que la piste offre deux passages.
-    function choosePipeLane(cfg, state, kart, pipe, ttc) {
-        const pipes = state.pipes;
-        const reach = cfg.hitboxes.kartVsPipe;
-        const spec = cfg.pipe;
-        const lo = cfg.road.minY + cfg.road.edgeSafetyMargin;
-        const hi = cfg.road.maxY - cfg.road.edgeSafetyMargin;
+    // Ce qu'il remplace enfilait les tuyaux de proche en proche — on partait du
+    // tuyau vise, on ajoutait le suivant tant qu'il restait un passage
+    // `minPassageY`, et le premier qui fermait la sequence arretait le compte.
+    // La note rend ce comportement toute seule et en mieux : un tuyau proche est
+    // un mur, un tuyau lointain une preference qui s'efface (`spanWeight`), si
+    // bien que le couloir retenu est celui qui traverse le plus loin sans qu'on
+    // ait a parcourir la sequence. Et il compte AUSSI les objets au sol et les
+    // carrosseries, que l'enfilage ignorait — un kart pouvait viser un couloir
+    // de tuyau avec une banane posee dedans, et la prenait.
+    function choosePipeLane(cfg, kart, rng, ttc, current) {
+        const place = cfg.vision.place;
+        const lane = cfg.ai.steering.pipe;
+        const cap = steerCap(cfg, kart, lane.speed);
+        const chosen = chooseLane(cfg, rng, kart, cap, ttc, lane);
 
-        // Deux couloirs se valent quand leurs largeurs se tiennent dans cette
-        // marge : au-dela, la place prime sur la proximite.
-        const tie = spec.laneTieMargin;
+        // Aucun endroit tenable d'ici la : il garde sa ligne et grappille ce
+        // qu'il peut. Arriver contre le bord du tuyau vaut mieux que se figer,
+        // et la poussee du choc l'en degagera.
+        if (chosen === null) return kart.yPercent;
+        if (current === null) return chosen;
 
-        // Ecart lateral que le kart couvre d'ici le tuyau, a la vitesse de
-        // rejointe du couloir. Le `laneTolerance` de marge paie l'optimisme du
-        // calcul : la rejointe ralentit en fin de course (`laneSeekGain`), ce
-        // que `lateralReach` ne modelise pas.
-        const budget = lateralReach(cfg, kart.stats.agility,
-            steerSpeed(kart, spec.laneSeekSpeed), ttc) - spec.laneTolerance;
+        // ── S'ENGAGER ────────────────────────────────────────────────────
+        //
+        // On ne change de couloir que si le nouveau est NETTEMENT meilleur.
+        //
+        // Sans ce seuil, chaque reprise pouvait renvoyer un couloir different —
+        // le trafic bouge, la portee de braquage se raccourcit a mesure qu'on
+        // approche, et un tirage sur quatre ne retient de toute facon pas le
+        // meilleur (`place.chance`). Le kart repartait alors dans l'autre sens a
+        // mi-parcours, ce qui se voit exactement comme un manque d'agilite : il
+        // n'etait pas lent, il faisait deux fois la moitie du chemin.
+        //
+        // Le seuil ne fige rien : un couloir devenu mauvais — quelqu'un s'y est
+        // mis, il n'est plus a portee — perd bien plus que ca, et la reprise se
+        // fait. Ce qu'il coupe, c'est le changement d'avis a prix nul.
+        //
+        // ── Et il ne s'applique qu'a mesure qu'on approche ───────────────
+        //
+        // Changer d'avis tot est GRATUIT : il reste tout le temps de traverser.
+        // Changer d'avis tard coute la traversee elle-meme. Le seuil suit donc
+        // ce qu'il reste a faire, de zero quand le kart a encore de quoi couvrir
+        // toute la piste, a plein quand il n'a plus rien.
+        //
+        // Sans ca il defendait des decisions prises EN AVEUGLE, et c'etait le
+        // pire defaut du contournement. Le kart s'engage des que le tuyau entre
+        // dans sa vue, a 1100 px ; sur un tracé ou les tuyaux sont espaces de
+        // 560 px, le SUIVANT est alors a 1660 px, donc invisible. Il choisissait
+        // un couloir qui menait droit dans un tuyau qu'il ne pouvait pas encore
+        // voir, et le seuil l'y maintenait quand il apparaissait. Il decidait
+        // systematiquement un tuyau trop tot.
+        //
+        // La reference est le temps qu'il faut a CE kart pour traverser toute la
+        // profondeur : au-dela, aucune option n'est encore fermee, donc rien a
+        // defendre.
+        const settle = steerSettle(cfg, kart);
+        const reach = steerReach(cfg, cap, ttc);
+        const slop = laneSlop(cfg, kart, cap, lane);
 
-        // Milieu du plus large passage que `blocked` laisse ouvert, et sa
-        // largeur — c'est elle qui dit si le couloir est praticable. La liste
-        // est triee par bord bas. `limit` borne l'ecart que le kart accepte pour
-        // y entrer ; a l'infini, il prend le meilleur sans regarder la distance.
-        function widestLane(blocked, limit) {
-            let bestLane = (lo + hi) / 2;
-            let bestWidth = -1;
+        const cross = steerDelay(cfg, cap, cfg.road.maxY - cfg.road.minY);
+        const grip = (cross > 0) ? 1 - Math.min(1, ttc / cross) : 1;
+        if (grip <= 0) return chosen;
 
-            function consider(from, to) {
-                const width = to - from;
-                if (width <= 0) return;
-                const lane = from + width / 2;
+        const held = laneScore(cfg, kart, current, cap, settle, reach, place.detour, slop);
+        const next = laneScore(cfg, kart, chosen, cap, settle, reach, place.detour, slop);
 
-                // Ce qu'il faut couvrir pour entrer dans ce couloir. Nul s'il y
-                // est deja : tenir sa ligne ne coute rien.
-                const need = (kart.yPercent < from) ? from - kart.yPercent
-                    : (kart.yPercent > to) ? kart.yPercent - to
-                    : 0;
-                if (need > limit) return;
-
-                if (width > bestWidth + tie) {
-                    bestWidth = width;
-                    bestLane = lane;
-                    return;
-                }
-                if (width > bestWidth - tie
-                    && Math.abs(lane - kart.yPercent) < Math.abs(bestLane - kart.yPercent)) {
-                    bestWidth = Math.max(bestWidth, width);
-                    bestLane = lane;
-                }
-            }
-
-            let cursor = lo;
-            for (let i = 0; i < blocked.length; i++) {
-                consider(cursor, blocked[i][0]);
-                if (blocked[i][1] > cursor) cursor = blocked[i][1];
-            }
-            consider(cursor, hi);
-
-            return { lane: Math.min(hi, Math.max(lo, bestLane)), width: bestWidth };
-        }
-
-        // Les tuyaux a enfiler, du plus proche au plus lointain, mesures depuis
-        // le kart : il n'enfile que ce qu'il voit, et le tuyau vise est par
-        // construction le premier qui barre sa route. Ceux poses a sa hauteur —
-        // tuyaux d'une meme colonne — suivent immediatement.
-        const ahead = [];
-        for (let p = 0; p < pipes.length; p++) {
-            const dx = getShortestDistance(cfg, pipes[p].worldX, kart.worldX);
-            if (dx < -reach.x || dx > spec.seeDistance) continue;
-            ahead.push({ dx: dx, y: pipes[p].y, pipe: pipes[p] });
-        }
-        ahead.sort((a, b) => a.dx - b.dx);
-
-        // Le tuyau vise ouvre la liste quoi qu'il arrive : c'est celui qu'il
-        // faut passer, les autres ne font que restreindre le choix. Sans ce
-        // depart, un tuyau plus proche mais hors trajectoire pourrait arreter
-        // l'enfilage avant meme qu'on ait pris en compte la cible.
-        const target = [pipe.y - reach.y, pipe.y + reach.y];
-        const blocked = [target];
-        let chosen = widestLane(blocked, budget);
-
-        for (let i = 0; i < ahead.length; i++) {
-            if (ahead[i].pipe === pipe) continue;
-
-            blocked.push([ahead[i].y - reach.y, ahead[i].y + reach.y]);
-            blocked.sort((a, b) => a[0] - b[0]);
-
-            const lane = widestLane(blocked, budget);
-            // Celui-la ferme la sequence : on s'en tient a ce qui precede.
-            if (lane.width < spec.minPassageY) break;
-            chosen = lane;
-        }
-
-        // Rien a portee, faute de distance ou faute de place : il vise le
-        // meilleur passage du seul tuyau qui le concerne encore, et grappille ce
-        // qu'il peut d'ici la. Arriver contre le bord du tuyau vaut mieux que
-        // rester sur sa ligne, et la poussee du choc l'en degagera.
-        if (chosen.width < 0) chosen = widestLane([target], Infinity);
-
-        return chosen.lane;
+        return (next < held - place.commit * grip) ? chosen : current;
     }
 
     // Contournement d'un pipe. Rend true s'il commande la trajectoire.
     //
-    // Un tuyau n'est pas une menace au sens de `planDodge`. Celui-ci est un
+    // Un tuyau n'est pas une menace au sens de l'esquive. Celle-ci est un
     // reflexe, taille pour un objet qui file et qu'on evite d'un ecart : on le
-    // voit tard, on s'ecarte fort, c'est fini. Un mur se voit venir de loin, ne
-    // bouge pas, et se negocie en trajectoire — on choisit un couloir et on le
-    // tient.
+    // voit tard, on s'ecarte, c'est fini. Un mur se voit venir de loin, ne bouge
+    // pas, et se negocie en trajectoire — on choisit un couloir et on le tient.
     //
-    // Les faire passer par la meme machinerie donnait exactement ce qu'on
-    // voyait a l'ecran : le kart freinait (le frein d'esquive, inutile devant un
-    // obstacle immobile), s'ecartait, se croyait tire d'affaire des qu'il
-    // degageait la hitbox, se faisait ramener vers sa ligne d'origine — donc
-    // vers le tuyau — par le retour au calme, et recommencait avec un nouveau
-    // delai de reflexe. D'ou l'hesitation.
+    // Les faire passer par la meme machinerie donnait exactement ce qu'on voyait
+    // a l'ecran : le kart freinait (le frein d'esquive, inutile devant un
+    // obstacle immobile), s'ecartait, se croyait tire d'affaire des que la
+    // hitbox etait degagee, se faisait ramener vers sa ligne d'origine — donc
+    // vers le tuyau — par le retour au calme, et recommencait. D'ou l'hesitation.
     //
-    // Trois regles en sortent :
+    // Deux regles en sortent, et la table de cout tranche le reste :
     //   - le tuyau vise le reste jusqu'a ce qu'il soit derriere, pas jusqu'a ce
     //     que la hitbox soit degagee ;
     //   - le couloir est choisi une seule fois, sinon le kart change d'avis a
-    //     chaque pas puisque son ecart au tuyau evolue ;
-    //   - la visee est proportionnelle a l'ecart restant, ce qui trace une
-    //     diagonale franche qui s'aplatit en arrivant.
+    //     chaque pas puisque son ecart au tuyau evolue.
     //
     // Et aucun frein : ralentir devant un mur immobile ne fait que retarder le
     // moment de le contourner.
-    function steerAroundPipes(cfg, state, kart, deltaTime) {
+    function steerAroundPipes(cfg, state, rng, now, kart, deltaTime) {
         const pipes = state.pipes;
         if (!pipes.length) return false;
 
         const reach = cfg.hitboxes.kartVsPipe;
-        const spec = cfg.pipe;
+        const sight = kart.sight;
 
         // Le tuyau vise le reste tant qu'il n'est pas franchi. C'est la regle
         // qui tient toute la manoeuvre : la lacher des que la hitbox est
         // degagee, c'est relacher le kart en plein travers.
+        let dist = 0;
         if (kart.pipeTargetIndex >= 0) {
             const held = pipes[kart.pipeTargetIndex];
-            const dist = held ? getShortestDistance(cfg, held.worldX, kart.worldX) : 0;
-            if (!held || dist < -reach.x || dist > spec.seeDistance) kart.pipeTargetIndex = -1;
-        }
-
-        if (kart.pipeTargetIndex < 0) {
-            let index = -1;
-            let nearest = Infinity;
-
-            for (let p = 0; p < pipes.length; p++) {
-                const dist = getShortestDistance(cfg, pipes[p].worldX, kart.worldX);
-                if (dist <= 0 || dist > spec.seeDistance) continue;
-                // Il ne barre pas la route : rien a contourner.
-                if (Math.abs(pipes[p].y - kart.yPercent) >= reach.y) continue;
-                if (dist < nearest) {
-                    nearest = dist;
-                    index = p;
-                }
+            dist = held ? getShortestDistance(cfg, held.worldX, kart.worldX) : 0;
+            if (!held || dist < -reach.x || dist > cfg.vision.range.front) {
+                kart.pipeTargetIndex = -1;
             }
-
-            if (index < 0) return false;
-
-            // Temps restant avant le tuyau : c'est lui qui dit quels couloirs
-            // sont encore a portee. Un kart a l'arret — pousse, en tete-a-queue
-            // — n'a pas de temps infini pour autant, il n'a simplement pas
-            // encore reduit la distance.
-            const ttc = (nearest / Math.max(kart.absoluteVelocity, 1)) * 1000;
-
-            kart.pipeTargetIndex = index;
-            kart.pipeLaneY = choosePipeLane(cfg, state, kart, pipes[index], ttc);
         }
 
-        // Le kart compare le couloir a l'endroit ou il s'arreterait, et non a
-        // celui ou il est.
+        // Temps restant avant le tuyau : c'est lui qui dit jusqu'ou le kart peut
+        // se deplacer d'ici la, donc quels couloirs comptent vraiment. Un kart a
+        // l'arret — pousse, en tete-a-queue — n'a pas un temps infini pour
+        // autant, il n'a simplement pas encore reduit la distance.
         //
-        // Le volant a 200 ms d'inertie (1 / steerResponse). Une consigne
-        // proportionnelle au seul ecart courant commande donc encore du
-        // braquage quand le couloir est deja sous les roues : le systeme
-        // (`diff'' + steerResponse * diff' + steerResponse * laneSeekGain *
-        // diff = 0`) est sous-amorti a ces reglages, et le kart depasse sa cible
-        // d'environ deux unites et demie. Sur un passage etroit — six unites,
-        // soit trois de chaque cote — ce depassement le fait ressortir par
-        // l'autre bord, dans le tuyau meme qu'il contournait. C'est exactement
-        // ce qu'on voyait : un ecart franc, puis un choc du cote oppose.
-        //
-        // Retrancher la course restante — `vy / steerResponse`, ce que le kart
-        // parcourt encore s'il relache tout — change les modes du systeme en
-        // `-steerResponse` et `-laneSeekGain`, tous deux reels : la reponse
-        // devient aperiodique. Plus aucun depassement, et sans ralentir la
-        // manoeuvre puisque les deux constantes de temps restent celles des
-        // reglages.
-        const settleY = kart.yPercent + kart.vy / cfg.physics.steerResponse;
-        const diff = kart.pipeLaneY - settleY;
+        // Jamais moins que d'ici la prochaine reprise, en revanche. Le tuyau
+        // vise reste tenu jusqu'a ce qu'il soit derriere, si bien qu'en fin de
+        // depassement ce temps tend vers zero — et avec lui la portee de
+        // braquage, donc le choix. Le kart se replacait alors sur sa propre
+        // ligne au moment precis ou il aurait du viser le tuyau SUIVANT.
+        const horizon = ms => Math.max(ms, cfg.vision.reviewIntervalMs);
+        if (kart.pipeTargetIndex < 0) {
+            // Le plus proche DEVANT, aligne ou non : on se place pour un tuyau
+            // avant d'etre dans son axe, sinon on ne slalome pas, on rebondit.
+            if (sight.pipeAheadIndex < 0) return false;
 
-        if (Math.abs(diff) <= spec.laneTolerance) {
-            // Couloir tenu : il ne corrige plus, sinon il tremble autour.
-            kart.targetVy = 0;
-        } else {
-            const speed = steerSpeed(kart, spec.laneSeekSpeed);
-            const seek = steerSpeed(kart, diff * spec.laneSeekGain);
-            kart.targetVy = Math.max(-speed, Math.min(speed, seek));
+            kart.pipeTargetIndex = sight.pipeAheadIndex;
+            dist = sight.pipeAheadDist;
+            kart.pipeLaneY = choosePipeLane(cfg, kart, rng,
+                horizon((dist / Math.max(kart.absoluteVelocity, 1)) * 1000), null);
+            kart.pipeReviewAt = now + reviewDelay(cfg, rng);
+
+        } else if (now >= kart.pipeReviewAt) {
+            // LA REPRISE. Le couloir etait choisi une fois pour toutes, a la
+            // seconde ou le tuyau entrait dans la vue — c'est-a-dire au moment
+            // ou le kart en savait le moins, et sur une piste qui avait tout le
+            // temps de changer ensuite. Il s'y tenait, quoi qu'il arrive.
+            //
+            // Il le reprend maintenant a cadence irreguliere, avec la perception
+            // fraiche et la place qui reste : le couloir se corrige quand
+            // quelqu'un vient s'y mettre, et il s'affine a mesure qu'on approche
+            // — plus on est pres, plus la portee de braquage est courte, donc
+            // plus le choix est realiste.
+            //
+            // Et comme la cadence est tiree au sort, deux karts ne reprennent
+            // pas leur ligne au meme instant : c'est ce qui casse le peloton en
+            // file indienne.
+            kart.pipeReviewAt = now + reviewDelay(cfg, rng);
+            if (rng() < cfg.vision.reviewChance) {
+                kart.pipeLaneY = choosePipeLane(cfg, kart, rng,
+                    horizon((Math.max(dist, 0) / Math.max(kart.absoluteVelocity, 1)) * 1000),
+                    kart.pipeLaneY);
+            }
         }
+
+        const lane = cfg.ai.steering.pipe;
+        const settle = steerSettle(cfg, kart);
+        const need = Math.abs(kart.pipeLaneY - settle);
 
         // `originalLaneY` suit le couloir, et non la ligne d'avant la manoeuvre :
-        // c'est lui que le retour au calme rejoint une fois le tuyau passe. Le
-        // laisser en arriere y ramenerait le kart, c'est-a-dire dans le tuyau.
-        kart.aiState = 'pipe';
+        // c'est lui que le retour au calme rejoint. Le laisser en arriere y
+        // ramenerait le kart, c'est-a-dire dans le tuyau. Il est pose AVANT le
+        // desengagement ci-dessous : meme quand le contournement n'a rien a
+        // commander, c'est le couloir qui doit servir de ligne de repos.
         kart.originalLaneY = kart.pipeLaneY;
 
-        applySteering(cfg, kart, deltaTime);
+        // Rien a corriger : sa ligne actuelle EST le meilleur couloir. Il rend
+        // la main plutot que de monopoliser le pilotage — sur un circuit charge,
+        // un tuyau est presque toujours quelque part devant, et s'accrocher ici
+        // priverait le kart de ses boites et de ses depassements pour ne rien
+        // commander.
+        //
+        // C'est ce qui rend l'engagement precoce gratuit : il regarde tot, il
+        // n'agit que s'il y a de quoi.
+        if (need <= lane.tolerance) return false;
+
+        kart.aiState = 'pipe';
+
+        // INSISTER, et seulement quand il le faut vraiment.
+        //
+        // Le contournement n'a longtemps pas freine, et le commentaire le
+        // defendait : « ralentir devant un mur immobile ne fait que retarder le
+        // moment de le contourner ». C'est vrai quand on arrive a passer, et
+        // faux quand on n'y arrive pas — or on n'y arrive pas des que quelqu'un
+        // occupe le couloir qu'on visait. Le volant etant deja a son maximum,
+        // lever le pied est la seule chose qui reste pour se donner le temps de
+        // traverser.
+        //
+        // MAIS il faut que tenir sa ligne mene vraiment dans le decor. La
+        // manoeuvre s'engage des qu'un MEILLEUR couloir existe, pas seulement
+        // quand le sien est bouche : freiner sur le seul ecart a couvrir
+        // revenait a lever le pied a chaque tuyau du circuit, pour un
+        // repositionnement de confort — 22 % de vitesse en moins (le frein) la
+        // ou la contrainte de virage en coute 3.
+        //
+        // `laneRisk` a l'infini, c'est exactement « ou je suis, je tape ». C'est
+        // la seule situation ou ralentir se paie moins cher que le choc.
+        const cap = steerCap(cfg, kart, lane.speed);
+        const doomed = laneRisk(cfg, kart, settle, cap, laneSlop(cfg, kart, cap, lane)) === Infinity;
+
+        const spare = (Math.max(dist, 0) / Math.max(kart.absoluteVelocity, 1)) * 1000;
+        if (doomed && steerDelay(cfg, cap, need) > spare) {
+            kart.brakeUntil = now + cfg.ai.edgeBrakeMs;
+        }
+
+        steer(cfg, kart, deltaTime, kart.pipeLaneY, lane.speed, lane);
         return true;
     }
 
+    // Le pilotage d'un kart pour un pas de temps.
+    //
+    // Il ne regarde plus le monde : il regarde ce que le kart en a vu. Toute la
+    // perception s'est deplacee dans `perceive`, et ce qui reste ici est la
+    // decision — laquelle tient en un ordre de priorite, une fois que la table
+    // de cout a designe le danger.
     function updateAI(cfg, state, rng, now, kart, deltaTime) {
         if (kart.state !== 'running') return;
 
-        let dangerFound = false;
-        let avoidDirection = 0;
-
         const ai = cfg.ai;
+        const vis = cfg.vision;
 
         // Un bill ne se pilote pas : il rejoint le milieu de la piste et n'en
         // bouge plus. Ni esquive, ni depassement, ni derive — il ne voit rien, et
@@ -1048,238 +2701,266 @@
         // lui rend donc juste assez de pilotage pour le contourner, et rien de
         // plus : c'est la seule chose qu'un bill regarde encore.
         if (kart.isBill) {
-            const mid = billAimDepth(cfg, state, kart);
-            const diff = mid - kart.yPercent;
-            const speed = cfg.bill.centerSpeed;
-            kart.targetVy = Math.abs(diff) < 0.2 ? 0 : (diff > 0 ? speed : -speed);
-            applySteering(cfg, kart, deltaTime);
+            steer(cfg, kart, deltaTime, billAimDepth(cfg, state, kart),
+                cfg.bill.centerSpeed, cfg.ai.steering.bill);
             return;
         }
 
-        // Menace la plus urgente, mesuree en temps avant impact. Un objet qui
-        // s'eloigne n'en est pas une — ce qui evite au passage qu'un kart fuie
-        // la carapace qu'il vient de tirer.
-        let threatId = 0;
-        let threatY = 0;
-        let threatTtc = Infinity;
+        const sight = kart.sight;
 
-        const threatWindow = ai.threatWindowMs;
+        // L'attention d'abord : c'est elle qui decide de ce que le balayage
+        // verra. Puis le balayage, amorti — la perception n'a aucune raison de
+        // tourner a la cadence de l'affichage, cf. `vision.scanIntervalMs`.
+        updateGlance(cfg, rng, state, now, kart);
+        if (now - sight.at >= vis.scanIntervalMs) perceive(cfg, state, rng, now, kart);
 
-        const itemsLen = state.items.length;
-        for (let i = 0; i < itemsLen; i++) {
-            const item = state.items[i];
-            if (item.isDead) continue;
-            if (item.type !== 'banana' && item.type !== 'greenShell' && item.type !== 'redShell') continue;
-            if (item.spent) continue;
+        updatePlan(cfg, rng, now, kart);
 
-            const dist = getShortestDistance(cfg, item.worldX, kart.worldX);
-            if (dist <= 0 || dist > ai.threatMaxDistance) continue;
-            if (Math.abs(item.y - kart.yPercent) >= cfg.road.laneTolerance) continue;
-
-            const closing = kart.absoluteVelocity - item.vx;
-            if (closing <= 0) continue;
-
-            const ttc = (dist / closing) * 1000;
-            if (ttc <= threatWindow && ttc < threatTtc) {
-                threatId = item.id;
-                threatY = item.y;
-                threatTtc = ttc;
-            }
-        }
-
-        // Objets traines par les autres karts. Ils avancent a la vitesse de leur
-        // porteur : ils ne menacent donc que celui qui revient vraiment dessus.
-        for (let i = 0; i < state.karts.length; i++) {
-            const other = state.karts[i];
-            if (other.id === kart.id || other.state !== 'running') continue;
-
-            const held = other.heldItem;
-            if (!held || held.holdPosition !== 'behind') continue;
-
-            let hx = other.worldX + cfg.offsets.world.heldItemBehind;
-            if (hx < 0) hx += cfg.world.width;
-            if (hx >= cfg.world.width) hx -= cfg.world.width;
-
-            const dist = getShortestDistance(cfg, hx, kart.worldX);
-            if (dist <= 0 || dist > ai.trailThreatDistance) continue;
-            if (Math.abs(other.yPercent - kart.yPercent) >= cfg.road.laneTolerance) continue;
-
-            // Seul celui qui revient dessus est menace : derriere un porteur
-            // plus rapide, l'objet s'eloigne.
-            const closing = kart.absoluteVelocity - other.absoluteVelocity;
-            if (closing <= 0) continue;
-
-            // Meme etalon que les projectiles, pour departager les menaces.
-            const ttc = (dist / Math.max(closing, 1)) * 1000;
-            if (ttc < threatTtc) {
-                threatId = held.id;
-                threatY = other.yPercent;
-                threatTtc = ttc;
-            }
-        }
-
-        if (!threatId) {
-            kart.threatItemId = 0;
-            kart.dodgePlanId = 0;
-        } else {
-            // Decide a la premiere perception, une fois pour toutes.
-            if (kart.threatItemId !== threatId) {
-                kart.threatItemId = threatId;
-
-                const reactMs = ai.reactionBaseMs
-                    * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
-                kart.threatReactAt = now + reactMs;
-
-                // Ce qui restera une fois le reflexe passe, et non le delai
-                // brut avant impact : c'est lui qui dit si l'esquive etait a
-                // sa portee.
-                kart.threatIgnored = rng() < missChance(cfg, kart, threatY, threatTtc - reactMs);
-            }
-
-            if (!kart.threatIgnored && now >= kart.threatReactAt) {
-                dangerFound = true;
-                if (kart.dodgePlanId !== threatId) {
-                    planDodge(cfg, state, rng, kart, threatId, threatY, threatTtc);
-                }
-                avoidDirection = kart.dodgeDir;
-
-                // Le frein n'accompagne que les esquives qui ne sont pas
-                // franches : acculle il n'a plus que lui, en traversee il recule
-                // l'impact le temps de passer devant l'objet.
-                if (kart.dodgeStuck || kart.dodgeCrossing) {
-                    kart.brakeUntil = now + ai.edgeBrakeMs;
-                }
-            }
-        }
-
-        if (dangerFound) {
+        // ── L'esquive ────────────────────────────────────────────────────
+        //
+        // Elle passe avant le reste, mais PAS avant la table de cout, et c'est
+        // la nuance qui manquait. `perceive` a deja tranche entre le tuyau et
+        // l'objet, au score `cout / temps restant` ; l'esquive ne fait
+        // qu'obeir a cet arbitrage, au lieu d'etre prioritaire par construction.
+        //
+        // Avant, la table ne tranchait qu'a la CREATION du plan. Une fois pose,
+        // celui-ci passait devant le tuyau quel que soit le temps qui restait
+        // avant de le percuter.
+        //
+        // Ceder ne ferme pas le plan, il le suspend : le tuyau franchi, l'ecart
+        // reprend ou il en etait. Les deux cibles etant memorisees —
+        // `plan.laneY` d'un cote, `kart.pipeLaneY` de l'autre — une bascule ne
+        // coute aucune decision, seulement une trajectoire adoucie.
+        //
+        // La comparaison se fait au temps qui reste AU PLAN (`pipeOutranksPlan`)
+        // et non a ce que le balayage tient pour le plus urgent : lire la vue
+        // ici lachait l'esquive des qu'elle commencait a marcher, l'objet
+        // evite cessant d'etre vu pendant que le tuyau, lui, reste en vue.
+        //
+        // Le couloir de tuyau, lui, reste memorise pendant l'ecart, si bien que
+        // le kart y revient de lui-meme des que l'objet est passe.
+        const plan = kart.plan;
+        if (plan.threatId && plan.kind === 'spin' && !plan.idle
+            && !pipeOutranksPlan(cfg, kart, now)) {
             if (kart.aiState !== 'dodging') {
                 kart.aiState = 'dodging';
                 kart.originalLaneY = kart.yPercent;
             }
-            kart.targetVy = avoidDirection * kart.dodgeIntensity;
-            applySteering(cfg, kart, deltaTime);
+
+            // Le frein n'accompagne que les esquives qui ne sont pas franches :
+            // accule il n'a plus que lui, en traversee il recule l'impact le
+            // temps de passer devant l'objet.
+            if (plan.stuck || plan.crossing) kart.brakeUntil = now + ai.edgeBrakeMs;
+
+            steer(cfg, kart, deltaTime, plan.laneY, plan.intensity, ai.steering.dodge);
             return;
         }
 
         // Le tuyau passe avant la visee, le depassement et la maraude : c'est le
         // seul obstacle certain de la piste, les autres ne sont que des
-        // occasions. Il passe apres l'esquive d'un objet en revanche — une
-        // carapace coute deux secondes, un choc six dixiemes — et ce n'est pas
-        // un probleme : le couloir reste memorise pendant l'ecart, si bien que
-        // le kart y revient de lui-meme des que la carapace est passee.
-        if (steerAroundPipes(cfg, state, kart, deltaTime)) return;
+        // occasions.
+        if (steerAroundPipes(cfg, state, rng, now, kart, deltaTime)) return;
+
+        // ── La precaution ────────────────────────────────────────────────
+        //
+        // Apres le tuyau, et la place compte : un mur est certain quand une
+        // ligne de tir n'est qu'une possibilite. Se ranger hors de l'axe d'une
+        // verte ne vaut pas de s'encastrer.
+        //
+        // Avant les manoeuvres de confort en revanche — ne pas prendre de
+        // carapace dans le dos vaut mieux que gagner une place ou ramasser une
+        // boite.
+        if (plan.threatId && plan.kind === 'safety') {
+            kart.aiState = 'safety';
+            kart.originalLaneY = kart.yPercent;
+            steer(cfg, kart, deltaTime, plan.laneY, plan.intensity, ai.steering.safety);
+            return;
+        }
 
         // Visee, dans le sens de tir choisi a la reception. Apres l'esquive —
         // se faire toucher en visant reste prioritaire — et avant le
         // depassement.
-        if (isAiming(cfg, kart) && now > kart.throwTime - ai.aimLeadMs) {
-            const dir = getShotDirection(state, kart);
-            let target = null;
-            let targetDist = Infinity;
+        //
+        // Viser n'est pas percevoir : le kart sait ou est sa cible parce qu'il
+        // l'a choisie, et il n'a pas besoin de la vue pour se recaler dessus.
+        //
+        // Sauf vers l'arriere. Se retourner pour tirer dans le peloton est un
+        // geste, pas une intention, et c'est le seul endroit ou la visee emprunte
+        // quelque chose a la vue. Sans cette condition, le tir arriere etait
+        // gratuit : le tireur se recalait parfaitement sur une cible qu'il ne
+        // regardait pas, et le vise n'avait aucune fenetre pour s'en sortir.
+        //
+        // Ce qu'il faut est d'avoir REGARDE, pas de regarder pendant. La nuance
+        // se paie comptant : exiger le regard pendant toute la visee laissait le
+        // tireur aveugle devant du debut a la fin de sa manoeuvre, et le banc l'a
+        // dit sans ambiguite — trois graines, un plateau nettement plus etale a
+        // chaque fois. Il jette un oeil, il sait ou ils sont, il se recale. C'est
+        // aussi ce que fait un joueur.
+        //
+        // Le tir part a l'heure dite s'il n'a jamais trouve son moment : il tire
+        // alors dans le tas, depuis la ligne ou il se trouvait.
+        const aimDir = isAiming(cfg, kart) ? getShotDirection(state, kart) : 0;
+        const aiming = aimDir !== 0 && now > kart.throwTime - ai.aimLeadMs;
 
-            for (let i = 0; i < state.karts.length; i++) {
-                const other = state.karts[i];
-                if (other.id === kart.id || other.state !== 'running') continue;
+        // LE RELEVE. Pendant le coup d'oeil il ne vise pas : il regarde ou est
+        // l'autre, et c'est tout. Ce qu'il en retient est une profondeur et une
+        // date — pas un kart, pas un suivi. La visee vient apres, tourne vers
+        // l'avant, sur ce souvenir-la.
+        //
+        // C'est de cette peremption que nait la chance du poursuivant, et elle ne
+        // coute aucun tirage : celui qui bouge apres avoir ete releve se fait
+        // manquer, celui qui tient sa ligne se fait toucher. Le decalage de
+        // securite devient donc une vraie parade, et non plus une precaution
+        // decorative.
+        if (aiming && aimDir < 0 && sight.back && sight.scanBack && sight.seenKartDist >= 0) {
+            kart.aimTargetY = sight.seenKartY;
+            kart.aimTargetAt = now;
+        }
 
-                const dist = getShortestDistance(cfg, other.worldX, kart.worldX) * dir;
-                if (dist > 0 && dist < ai.aimScanDistance && dist < targetDist) {
-                    targetDist = dist;
-                    target = other;
-                }
+        // On ne vise qu'en regardant devant. Derriere, on releve.
+        if (aiming && !sight.back) {
+            let targetY = null;
+
+            if (aimDir > 0) {
+                // Devant, il n'a rien a se rappeler : il voit sa cible. Mais il
+                // ne vise que ce que LA VUE lui donne — le kart visible le plus
+                // proche dans l'axe du regard, `perceive` l'a deja designe.
+                //
+                // C'etait le dernier endroit du pilotage a lire le monde
+                // directement : une boucle sur `state.karts`, sans occlusion et
+                // sans portee de regard. Un kart cache derriere un autre s'y
+                // faisait donc prendre pour cible, alors que la meme visee vers
+                // l'arriere le lui interdisait — et l'en-tete de cette fonction
+                // affirmait deja le contraire.
+                //
+                // Meme exigence qu'au releve arriere : le balayage doit avoir
+                // regarde du bon cote. `sight.back` peut etre retombe alors que
+                // `sight` porte encore la vue arriere, et viser DEVANT sur la
+                // profondeur d'un kart situe DERRIERE est exactement le defaut
+                // que le releve a deja corrige.
+                if (!sight.scanBack && sight.seenKartDist >= 0) targetY = sight.seenKartY;
+            } else if (now - kart.aimTargetAt <= vis.aimMemoryMs) {
+                targetY = kart.aimTargetY;
             }
 
-            if (target) {
+            // Sans releve valable, il tire a l'aveugle : depuis sa ligne, a
+            // l'heure dite, sans se decaler pour personne.
+            if (targetY !== null) {
                 const margin = cfg.road.edgeSafetyMargin;
                 const desired = Math.min(cfg.road.maxY - margin,
-                                         Math.max(cfg.road.minY + margin, target.yPercent + kart.aimError));
+                                         Math.max(cfg.road.minY + margin, targetY + kart.aimError));
                 const diff = desired - kart.yPercent;
 
-                if (Math.abs(diff) > 0.5) {
-                    const speed = steerSpeed(kart, ai.aimSpeed);
+                // La visee passe par la meme loi que tout le reste, et elle y a
+                // gagne deux choses. Elle ne depasse plus sa cible — elle coupait
+                // sa consigne a l'alignement et derivait encore de la course
+                // restante, jusqu'a plus de trois unites pour un kart tres
+                // maniable, soit les deux tiers d'une hitbox d'objet ; et son
+                // approche est enfin proportionnelle, la ou l'ancien terme
+                // saturait son propre plafond des le premier dixieme d'unite
+                // d'ecart et rendait le recalage tout-ou-rien pour les huit
+                // karts.
+                const aim = ai.steering.aim;
+                if (Math.abs(diff) > aim.tolerance) {
                     kart.aiState = 'aiming';
                     kart.originalLaneY = kart.yPercent;
-                    kart.targetVy = Math.max(-speed, Math.min(speed, diff * ai.aimSpeed));
-                    steerClamped(cfg, state, kart, deltaTime);
+                    steer(cfg, kart, deltaTime, desired, aim.speed, aim);
                     return;
                 }
             }
         }
 
-        let overtakeFound = false;
-        const kartsLen = state.karts.length;
-        for (let i = 0; i < kartsLen; i++) {
-            const other = state.karts[i];
-            if (other.id === kart.id || other.state !== 'running') continue;
+        // Depassement : le kart le plus proche qui bouche vraiment la voie. Il
+        // sort de la vue comme le reste, donc un kart qui regarde derriere ne
+        // prepare pas de depassement — il a autre chose en tete.
+        if (sight.aheadKartDist >= 0) {
+            let dir = (kart.yPercent > sight.aheadKartY) ? 1 : -1;
+            if (kart.yPercent > cfg.road.maxY - cfg.road.overtakeMargin) dir = -1;
+            if (kart.yPercent < cfg.road.minY + cfg.road.overtakeMargin) dir = 1;
 
-            let dist = getShortestDistance(cfg, other.worldX, kart.worldX);
-            const distY = Math.abs(other.yPercent - kart.yPercent);
-
-            if (dist > 0 && dist < cfg.ai.overtakeDetectionRange && distY < cfg.ai.overtakeMinDistance) {
-                overtakeFound = true;
-                let dir = (kart.yPercent > other.yPercent) ? 1 : -1;
-                if (kart.yPercent > cfg.road.maxY - cfg.road.overtakeMargin) dir = -1;
-                if (kart.yPercent < cfg.road.minY + cfg.road.overtakeMargin) dir = 1;
-                kart.targetVy = dir * steerSpeed(kart, cfg.ai.overtakeSideSpeed);
-                break;
-            }
-        }
-
-        if (overtakeFound) {
+            // Sortir de SA voie, et s'arreter la. C'est deja ce que la poussee
+            // d'avant obtenait, mais sans jamais le dire : elle poussait tant
+            // que l'autre bouchait, donc jusqu'a cet ecart-la. Le viser rend la
+            // manoeuvre lisible, et lui donne une fin.
+            //
+            // La demi-carrosserie de jeu au-dela du seuil n'est pas decorative :
+            // visee pile a la limite, la manoeuvre se relance a la premiere
+            // bousculade.
+            const pass = ai.steering.overtake;
+            const clear = ai.overtakeMinDistance + cfg.hitboxes.kartVsKart.y * 0.5;
             kart.originalLaneY = kart.yPercent;
-            steerClamped(cfg, state, kart, deltaTime);
+            steer(cfg, kart, deltaTime, sight.aheadKartY + dir * clear, pass.speed, pass);
             return;
         }
 
-        let boxTargetFound = false;
-        if (!kart.heldItem) {
-            const box = findTargetBox(cfg, state, kart);
-            if (box) {
-                const diffY = box.y - kart.yPercent;
-                boxTargetFound = true;
-
-                // Deja dans l'axe : il tient sa ligne. Le laisser repartir en
-                // maraude le ferait deriver hors de la boite qu'il vise.
-                kart.targetVy = (Math.abs(diffY) > cfg.ai.boxAlignTolerance)
-                    ? (diffY > 0 ? 1 : -1) * steerSpeed(kart, cfg.ai.boxSeekIntensity)
-                    : 0;
-            }
-        }
-
-        if (boxTargetFound) {
-            steerClamped(cfg, state, kart, deltaTime);
+        // Collecte. La boite visee est la plus proche de sa trajectoire parmi
+        // celles qu'il voit libres — celle qu'un kart lui masque est une boite
+        // que ce kart prendra le premier, et l'occlusion le dit toute seule.
+        if (!kart.heldItem && sight.boxDist >= 0) {
+            // Deja dans l'axe — a la tolerance du profil pres — il tient sa
+            // ligne. Le laisser repartir en maraude le ferait deriver hors de la
+            // boite qu'il vise.
+            const grab = ai.steering.box;
+            steer(cfg, kart, deltaTime, sight.boxY, grab.speed, grab);
             return;
         }
 
         if (now > kart.nextWanderTime) {
-            kart.nextWanderTime = now + randomRange(rng, cfg.ai.wanderIntervalMin, cfg.ai.wanderIntervalMax);
-            kart.wanderEndTime = now + randomRange(rng, cfg.ai.wanderDurationMin, cfg.ai.wanderDurationMax);
+            kart.nextWanderTime = now + randomRange(rng, ai.wanderIntervalMin, ai.wanderIntervalMax);
+            kart.wanderEndTime = now + randomRange(rng, ai.wanderDurationMin, ai.wanderDurationMax);
+            // Plus de biais du danger latent ici : il a sa propre manoeuvre,
+            // decidee et tenue (cf. `placeSafety`). Le faire aussi porter par la
+            // maraude donnait deux mecanismes pour la meme idee, dont un qui
+            // attendait le prochain tirage de derive — jusqu'a six secondes pour
+            // une decision de securite.
             let dir = (rng() > 0.5) ? 1 : -1;
+
             if (kart.yPercent > cfg.road.maxY - cfg.road.wanderMargin) dir = -1;
             if (kart.yPercent < cfg.road.minY + cfg.road.wanderMargin) dir = 1;
-            kart.wanderVy = dir * steerSpeed(kart, cfg.ai.wanderSpeed);
+
+            // Un ECART a rejoindre, et non plus une vitesse a tenir. La derive
+            // emmenait les karts maniables trois fois plus loin que les lourds
+            // sans que rien, dans la situation, ne le demande — c'etait la
+            // derniere manoeuvre a confondre « aller vite » et « aller loin ».
+            // Tout le monde vise le meme decalage ; seul le temps d'y arriver
+            // change, et les plus lourds ne l'atteignent pas dans la fenetre.
+            //
+            // Vise dans la piste et non au-dela : le bord rattrapait ce qui
+            // debordait, mais viser dehors revenait a demander au kart de se
+            // plaquer contre le mur pour rien.
+            kart.wanderY = Math.min(cfg.road.maxY - cfg.road.wanderMargin,
+                Math.max(cfg.road.minY + cfg.road.wanderMargin,
+                         kart.yPercent + dir * ai.wanderOffset));
         }
+
+        const home = ai.steering.home;
 
         if (now < kart.wanderEndTime) {
-            kart.targetVy = kart.wanderVy;
             kart.originalLaneY = kart.yPercent;
-        } else {
-            if (kart.aiState === 'dodging') {
-                const diff = kart.originalLaneY - kart.yPercent;
-                if (Math.abs(diff) < 1) {
-                    kart.targetVy = 0;
-                    kart.yPercent = kart.originalLaneY;
-                    kart.aiState = 'cruising';
-                } else {
-                    kart.targetVy = (diff > 0 ? 1 : -1) * steerSpeed(kart, cfg.speeds.returnLane);
-                }
-            } else {
-                kart.targetVy = 0;
-                kart.aiState = 'cruising';
-            }
+            const drift = ai.steering.wander;
+            steer(cfg, kart, deltaTime, kart.wanderY, drift.speed, drift);
+            return;
         }
 
-        steerClamped(cfg, state, kart, deltaTime);
+        // Le retour a sa ligne apres un ecart. Il ne recale plus la position a
+        // la main : la tolerance du profil dit quand la ligne est tenue, et le
+        // kart s'y arrete de lui-meme au lieu d'y etre pose. C'etait le dernier
+        // endroit du pilotage ou une profondeur s'ecrivait sans passer par le
+        // volant.
+        if (kart.aiState === 'dodging') {
+            if (Math.abs(kart.originalLaneY - kart.yPercent) <= home.tolerance) {
+                kart.aiState = 'cruising';
+            }
+            steer(cfg, kart, deltaTime, kart.originalLaneY, home.speed, home);
+            return;
+        }
+
+        // La croisiere ne vise rien : elle laisse le volant revenir a zero. Dit
+        // dans la langue du systeme, c'est viser l'endroit ou l'on va s'arreter
+        // — la consigne tombe alors d'elle-meme, sans coup de volant en sens
+        // inverse pour aller y chercher.
+        kart.aiState = 'cruising';
+        steer(cfg, kart, deltaTime, steerSettle(cfg, kart), home.speed, home);
     }
 
     // Ecart au premier, mesure en distance restante : deux karts partis de
@@ -1594,6 +3275,23 @@
     function isAiming(cfg, kart) {
         const held = kart.heldItem;
         if (!held || held.holdPosition === 'orbit') return false;
+        if (held.type === 'greenShell' || held.type === 'redShell') return true;
+        return held.type === 'banana' && kart.lobbing;
+    }
+
+    // De quoi atteindre celui qu'on PRECEDE : ce qui peut partir vers l'avant.
+    //
+    // C'est la question du danger latent vu de derriere, et elle n'est pas celle
+    // de `isAiming`, qui dit si un kart execute une manoeuvre de visee. Les deux
+    // se sont longtemps confondues, et l'orbite tombait dans l'ecart : un triple
+    // ne se vise pas — d'ou son exclusion de `isAiming` — mais il se tire, et
+    // celui qui l'avait dans le dos ne s'en mefiait donc jamais.
+    //
+    // Une banane ne compte pas : lachee, elle reste derriere son porteur. Lancee
+    // en cloche, si — et c'est alors une visee, d'ou le meme test qu'ailleurs.
+    function isArmedForward(cfg, kart) {
+        const held = kart.heldItem;
+        if (!held) return false;
         if (held.type === 'greenShell' || held.type === 'redShell') return true;
         return held.type === 'banana' && kart.lobbing;
     }
@@ -2038,7 +3736,6 @@
             // part pas en trombe en etant ecrase.
             kart.shrinkEndTime = 0;
             kart.absoluteVelocity = getBillSpeed(cfg, state, kart);
-            kart.momentum = 1.0;
 
             events.push({ type: 'billOn', kartId: kart.id });
             events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
@@ -2181,7 +3878,7 @@
                     // mais le consomme quand meme : le bouclier s'use au contact.
                     if (!isRamming(victim)) {
                         victim.state = 'hit';
-                        victim.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+                        victim.hitEndTime = now + spinDuration(cfg);
                         events.push({ type: 'kartHit', kartId: victim.id });
                         if (victim.heldItem) victim.throwTime = victim.hitEndTime + cfg.delays.throwDelayAfterHit;
                     }
@@ -2372,7 +4069,7 @@
     //
     // Les chocs vivent dans `bumpVy` et `bumpVx`, deux canaux tenus a l'ecart
     // de `vy` et de la vitesse moteur. Ce n'est pas un detail : un choc ecrit
-    // dans `vy` etait ramene vers la consigne de l'IA par `applySteering` en
+    // dans `vy` etait ramene vers la consigne de l'IA par le volant en
     // 200 ms, soit avant meme que les deux karts se soient decolles.
 
     // Demi-emprise d'un kart. La boite d'une paire est la somme des deux, d'ou
@@ -2506,7 +4203,7 @@
 
         if (!atWall) return;
 
-        // Meme forme que `applySteering` et que la separation des contacts : un
+        // Meme forme que le volant (`steer`) et que la separation des contacts : un
         // taux en 1/s, borne a 1 pour qu'une frame longue arrive pile sur le
         // plancher au lieu de le depasser.
         const wall = cfg.physics.wall;
@@ -3130,11 +4827,25 @@
         if (!wasFlat) events.push({ type: 'kartCrushed', kartId: kart.id });
     }
 
+    // Duree d'un tete-a-queue. La MEME pour tout le monde, et c'est un choix :
+    // une toupie n'est plus du pilotage, il n'y a plus de kart la-dedans, rien
+    // qui puisse tourner mieux ou moins bien. Ce qu'un personnage a de propre se
+    // joue apres, a la relance, et une seule stat y repond — l'acceleration.
+    //
+    // L'indexer sur la masse a ete essaye et retire : `mass` ne depend que du
+    // poids, si bien que deux karts de meme poids et de handling different
+    // tournaient exactement aussi longtemps. Ca elargissait la fenetre du poids
+    // en croyant ouvrir celle du handling, et ca taxait l'axe poids une
+    // troisieme fois pour une seule recompense.
+    function spinDuration(cfg) {
+        return cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+    }
+
     // Le tete-a-queue lui-meme, sans aucune condition : c'est a l'appelant de
     // decider qui l'encaisse. Chaque source a ses propres immunites.
     function spinOutKart(cfg, now, kart, events) {
         kart.state = 'hit';
-        kart.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+        kart.hitEndTime = now + spinDuration(cfg);
         events.push({ type: 'kartHit', kartId: kart.id });
         if (kart.heldItem) kart.throwTime = kart.hitEndTime + cfg.delays.throwDelayAfterHit;
     }
@@ -3352,6 +5063,19 @@
             // garde pas un drapeau fige pendant son tete-a-queue.
             kart.isFlat = now < kart.flatEndTime;
 
+            // Ce que les objets de vitesse rendent au volant. Champignon et
+            // etoile lancent le kart, et un kart lance perdrait de l'appui
+            // (`steer.pace`) : sans ce gain, prendre un champignon reviendrait a
+            // se rendre pataud au moment ou l'on double. Il fait plus que
+            // compenser — sous objet on tourne MIEUX que d'habitude.
+            //
+            // Pose ici, une fois par tick, exactement comme les drapeaux
+            // ci-dessus : c'est ce qui permet a `steerCap` de ne lire qu'un kart,
+            // sans horloge, et donc de valoir pareil pour le pilotage et pour les
+            // planificateurs qui l'appellent hors du tick.
+            kart.steerBoost = (now < kart.boostEndTime || now < kart.starEndTime)
+                ? cfg.physics.steer.boostGain : 1;
+
             // Les deux canaux de choc s'amortissent seuls, avant d'etre
             // consommes par le deplacement. Ils valent pour les deux etats : une
             // toupie encaisse un choc et le porte, elle aussi.
@@ -3398,9 +5122,38 @@
                         kart.absoluteVelocity = boost.peak;
                     }
 
-                    kart.momentum = 1.0;
-                    kart.nextMomentumChange = now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax);
+                    // L'elan est SUSPENDU, pas efface. L'objet porte le kart, et
+                    // le rythme qu'il avait avant l'attend a la sortie.
+                    //
+                    // Il etait force a 1.0 ici, ce qui donnait a tout objet de
+                    // vitesse une seconde prime que personne n'avait decidee : le
+                    // kart ressortait a 100 % de sa pointe au lieu de sa
+                    // croisiere, et y restait le temps d'un tirage entier — le
+                    // compte a rebours etant repousse a chaque tick. Cinq
+                    // secondes en moyenne, soit pres de la moitie de ce que
+                    // rendait le champignon lui-meme.
+                    //
+                    // La mise de cote se fait au premier tick sous objet et vaut
+                    // pour toute la chaine : deux objets qui se recouvrent ne
+                    // font qu'une suspension, et c'est l'elan d'avant le premier
+                    // qui revient. Le compte a rebours est gele avec lui, sinon
+                    // la sortie tomberait sur une horloge qui a tourne dans le
+                    // vide et redemanderait un tirage aussitot.
+                    if (kart.preBoostMomentum < 0) {
+                        kart.preBoostMomentum = kart.momentum;
+                        kart.preBoostDriftLeft = Math.max(0, kart.nextMomentumChange - now);
+                    }
                 } else {
+                    // Fin de suspension : l'elan reprend la main la ou il en
+                    // etait, et pour le temps qu'il lui restait. Pose avant la
+                    // lecture de l'horloge, pour qu'un compte a rebours arrive a
+                    // terme pendant l'objet tire des le premier tick libre.
+                    if (kart.preBoostMomentum >= 0) {
+                        kart.momentum = kart.preBoostMomentum;
+                        kart.nextMomentumChange = now + kart.preBoostDriftLeft;
+                        kart.preBoostMomentum = -1;
+                    }
+
                     if (now > kart.nextMomentumChange) {
                         kart.momentumTarget = getNewMomentumTarget(rng, cfg, kart.stats);
                         kart.nextMomentumChange = now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax);
@@ -3441,6 +5194,39 @@
                     if (now < kart.brakeUntil) {
                         effectiveSpeed *= cfg.ai.edgeBrakeFactor;
                     }
+
+                    // Ce que braquer coute en vitesse. Une seule ligne, parce
+                    // qu'une seule fonction en decide (cf. `steerCost`).
+                    //
+                    // Ici et pas ailleurs : le cout disparait a l'instant ou le
+                    // kart cesse de tourner, sans periode de recuperation, et il
+                    // ne se compose pas avec `acceleration` — rogner
+                    // `targetSpeed` ferait payer la reprise une seconde fois par
+                    // une stat que la masse taxe deja.
+                    //
+                    // Sous objet, rien : un champignon n'est pas du pilotage et
+                    // doit rendre le multiplicateur qu'on lui donne, comme pour
+                    // le frein de bord juste au-dessus. Le volant, lui, y gagne
+                    // (`steer.boostGain`).
+                    //
+                    // Propriete acquise gratuitement : `steer` met la consigne a
+                    // zero des que la cible est tenue, donc le cout ne
+                    // s'accumule que pendant les TRANSITIONS, jamais pendant
+                    // qu'on tient une ligne. La ligne optimale devient
+                    // « choisir tot, et tenir ».
+                    //
+                    // Le compteur est pose ICI, et nulle part ailleurs : c'est
+                    // le seul endroit qui connaisse les conditions du tick — le
+                    // kart tourne, il n'est pas sous objet, il court. Un banc ne
+                    // peut pas le recalculer apres coup sans les refaire, et une
+                    // valeur annoncee dans un commentaire de config finit
+                    // toujours par mentir. Celle-ci se mesure.
+                    //
+                    // Aucune decision ne le lit : c'est une observation, pas un
+                    // etat de jeu.
+                    const cornerMult = steerCost(cfg, kart);
+                    kart.cornerLostPx += effectiveSpeed * (1 - cornerMult) * deltaTime;
+                    effectiveSpeed *= cornerMult;
                 }
 
                 // L'invincibilite ne dit plus rien de la vitesse : elle ne suit
@@ -3601,7 +5387,7 @@
                             kart.trailTime = 0;
 
                             victim.state = 'hit';
-                            victim.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+                            victim.hitEndTime = now + spinDuration(cfg);
                             events.push({ type: 'kartHit', kartId: victim.id });
                             if (victim.heldItem) {
                                 victim.throwTime = victim.hitEndTime + cfg.delays.throwDelayAfterHit;
@@ -3622,10 +5408,11 @@
                 if (kart.heldItem && now > kart.throwTime) activateItem(cfg, state, rng, now, kart, events);
 
             } else if (kart.state === 'hit') {
-                const totalHitTime = cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+                const totalHitTime = spinDuration(cfg);
                 const hitStart = kart.hitEndTime - totalHitTime;
                 const elapsed = now - hitStart;
-                const decelDuration = cfg.delays.hitDecelDuration;
+                const decelDuration = totalHitTime * cfg.delays.hitDecelDuration
+                    / (cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration);
 
                 // Un tuyau arrete aussi une toupie : elle glisse, mais pas a
                 // travers le decor. `pipeBlocked` porte ce contact — il dure
@@ -3679,6 +5466,10 @@
                     kart.momentum = 0.2;
                     kart.momentumTarget = randomRange(rng, 0.6, 1.0);
                     kart.nextMomentumChange = now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax);
+                    // Comme pour le tuyau : le tete-a-queue refait l'elan de
+                    // zero, il n'y a plus rien a rendre a la fin d'un objet qui
+                    // aurait survecu au choc.
+                    kart.preBoostMomentum = -1;
                     kart.hitInvincibleUntil = now + cfg.delays.invincibilityAfterHit;
                 }
             }
@@ -3882,7 +5673,7 @@
                     && crossedDepth(item, kart.yPercent, cfg.hitboxes.itemVsKart.y)) {
                     if (kart.state === 'running' && kart.hitInvincibleUntil <= now) {
                         kart.state = 'hit';
-                        kart.hitEndTime = now + cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+                        kart.hitEndTime = now + spinDuration(cfg);
                         events.push({ type: 'kartHit', kartId: kart.id });
                         if (kart.heldItem) kart.throwTime = kart.hitEndTime + cfg.delays.throwDelayAfterHit;
                     }
@@ -3985,13 +5776,21 @@
                 momentum: 0,
                 momentumTarget: getNewMomentumTarget(rng, cfg, stats),
                 nextMomentumChange: now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax),
+
+                // Elan mis de cote pendant un objet de vitesse, et ce qu'il
+                // restait a son compte a rebours. -1 veut dire « rien en
+                // attente » : c'est le seul etat qui autorise la mise de cote,
+                // et le seul que produit un incident, qui refait l'elan et n'a
+                // donc rien a rendre.
+                preBoostMomentum: -1,
+                preBoostDriftLeft: 0,
                 vy: 0,
                 targetVy: 0,
 
                 // Canaux de choc, tenus a l'ecart du pilotage et du moteur.
                 // `bumpVy` est en profondeur/s, `bumpVx` en pixels/s. Les deux
                 // s'ajoutent au deplacement puis s'amortissent seuls : ecrire un
-                // choc dans `vy` le faisait effacer par `applySteering` avant que
+                // choc dans `vy` le faisait effacer par le volant avant que
                 // les karts se soient decolles.
                 bumpVy: 0,
                 bumpVx: 0,
@@ -4007,7 +5806,6 @@
 
                 aiState: 'cruising',
                 originalLaneY: verticalPos,
-                dodgeIntensity: 30,
 
                 hitEndTime: 0,
 
@@ -4068,16 +5866,121 @@
                 shotAsLeader: false,
                 lobbing: false,
                 aimError: 0,
-                threatItemId: 0,
-                threatReactAt: 0,
-                threatIgnored: false,
-                dodgePlanId: 0,
-                dodgeDir: 0,
-                dodgeStuck: false,
-                dodgeCrossing: false,
+
+                // Le releve d'un tir vers l'arriere : la profondeur vue lors du
+                // coup d'oeil, et sa date. Il se perime (`vision.aimMemoryMs`),
+                // et c'est voulu — viser de memoire, c'est viser ou l'autre
+                // ETAIT.
+                aimTargetY: 0,
+                aimTargetAt: -Infinity,
+
+                // ── La vue ───────────────────────────────────────────
+                //
+                // Tout ce que le kart a percu au dernier balayage, et rien
+                // d'autre : le pilotage ne lit plus le monde. `spans` est un
+                // tampon qui grandit une fois puis se recycle, comme le reste
+                // de la perception.
+                //
+                // Les deux dates de depart sont decalees kart par kart pour
+                // qu'ils ne balayent ni ne tournent la tete tous ensemble.
+                // C'est la moitie de ce que rend `vision.scanIntervalMs`.
+                sight: {
+                    at: now - cfg.vision.scanIntervalMs
+                        + Math.round(index * cfg.vision.scanIntervalMs / names.length),
+                    back: false,
+                    backUntil: 0,
+
+                    // Sens du dernier balayage effectue, a distinguer de `back`
+                    // qui est l'attention du moment (cf. `perceive`).
+                    scanBack: false,
+
+                    nextGlance: now
+                        + Math.round(index * cfg.vision.glanceIntervalMs / names.length),
+
+                    // Date du dernier coup d'oeil en arriere. C'est elle qui
+                    // autorise a viser derriere : avoir regarde, et non regarder
+                    // pendant. Loin dans le passe au depart — personne n'a encore
+                    // rien vu.
+                    seenKartY: 0,
+                    seenKartDist: -1,
+
+                    threatId: 0,
+                    threatKind: '',
+                    threatY: 0,
+                    threatTtc: Infinity,
+                    planGone: false,
+
+                    spans: [],
+                    spanCount: 0,
+
+                    pipeIndex: -1,
+                    pipeDist: 0,
+                    pipeAheadIndex: -1,
+                    pipeAheadDist: 0,
+                    aheadKartY: 0,
+                    aheadKartDist: -1,
+                    boxY: 0,
+                    boxDist: -1,
+                    pressure: false,
+                    pressureY: 0,
+                    pressureId: 0,
+
+                    // Date du dernier porteur arme APERCU DERRIERE. C'est un
+                    // souvenir et non un etat : le tirage du coup d'oeil n'a
+                    // jamais lieu pendant un coup d'oeil, donc il ne peut lire
+                    // que ce qu'on a vu, pas ce qu'on voit (cf. `updateGlance`).
+                    pressureBackAt: -Infinity
+                },
+
+                // Le plan d'evitement en cours. Il survit a la perte de vue :
+                // seule son echeance, ou le constat que la menace est passee,
+                // le ferme. Cf. `updatePlan`.
+                plan: {
+                    kind: '',
+                    threatId: 0,
+                    threatY: 0,
+                    laneY: verticalPos,
+                    dir: 0,
+                    intensity: 30,
+                    until: 0,
+                    reviewAt: 0,
+                    coarse: false,
+                    idle: false,
+                    stuck: false,
+                    crossing: false
+                },
+
+                // Menaces deja jugees : reflexe tire et verdict d'inattention,
+                // retenus le temps qu'elles passent. Ecrase le premier
+                // emplacement libre ou perime, sinon le plus ancien — cf.
+                // `vision.memorySlots` et `vision.memoryMs`. Zero ne designe
+                // aucune menace : les objets s'identifient a partir de 1, les
+                // karts en negatif.
+                judgedId: new Array(cfg.vision.memorySlots).fill(0),
+                judgedSeenAt: new Array(cfg.vision.memorySlots).fill(-Infinity),
+                judgedReactAt: new Array(cfg.vision.memorySlots).fill(0),
+                judgedIgnored: new Array(cfg.vision.memorySlots).fill(false),
+
+                // Prochaine chance de prendre une decision de securite. Elle est
+                // tenue par kart et non par danger : ce qui se retente est la
+                // decision, pas la perception de celui qui la provoque.
+                safetyRetryAt: 0,
+                // Prochaine reprise du couloir de tuyau. Zero : le premier
+                // couloir choisi est aussitot revisable (cf. steerAroundPipes).
+                pipeReviewAt: 0,
+
                 nextWanderTime: now + randomRange(rng, 1000, 5000),
                 wanderEndTime: 0,
-                wanderVy: 0,
+                wanderY: 0,
+
+                // Gain de volant sous objet de vitesse. Neutre au depart, repose
+                // a chaque tick (cf. `stepPhysics`).
+                steerBoost: 1,
+
+                // Distance perdue a la contrainte de virage depuis le depart, en
+                // pixels de monde. Compteur d'observation, jamais lu par le jeu.
+                cornerLostPx: 0,
+
 
                 lapCount: 0,
                 hasPassedFinishLine: false,
@@ -4152,6 +6055,17 @@
         shuffleArray,
         randomRange,
         deriveCharacterStats,
+
+        // La loi de braquage, pour les observateurs : le banc de scenario s'en
+        // sert pour sortir, kart par kart, le temps d'une manoeuvre donnee. Le
+        // moteur, lui, ne braque que par `steer`.
+        steerCap,
+        steerCost,
+        steerGrip,
+        steerPace,
+        steerReach,
+        steerDelay,
+
         getNewMomentumTarget,
         getMomentumSpeed,
         getInitialKartSpeed,
