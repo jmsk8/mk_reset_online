@@ -1278,8 +1278,9 @@
             // constante restee ici.
             //
             // A tenir avec `vision.range.front`, qui vaut la meme chose : un
-            // kart n'a aucune raison de voir un mur moins loin qu'un bill.
-            seeDistance: 1100,
+            // kart n'a aucune raison de voir un mur moins loin qu'un bill. Cf.
+            // la note de `vision.range` pour ce que ces 1400 achetent.
+            seeDistance: 1400,
 
             // Contournement : le kart choisit un couloir et le rejoint. Le
             // comment se regle avec les autres manoeuvres laterales, dans
@@ -1378,11 +1379,33 @@
             // La seule variation est le SENS du regard, et elle vaut pour les
             // huit de la meme facon.
             //
+            // ── Pourquoi 1400 et pas 1100 ────────────────────────────────
+            //
+            // Ce n'est pas la distance a laquelle le kart voit un tuyau qui
+            // decide quand il tranche : il vise le plus proche devant, et sur un
+            // trace ordinaire le suivant est a un ecartement de la, pas a
+            // 1100 px. Au banc, la premiere decision qui vise un tuyau tombe a
+            // 519 px de mediane, et allonger le regard ne bouge pas cette
+            // mediane d'un pixel.
+            //
+            // Ce que le regard allonge change, c'est de combien de tuyaux la
+            // trajectoire est INFORMEE : le couloir retenu pour celui-ci sait
+            // desormais ce qui vient apres le suivant, et la dette de
+            // deplacement (`laneRisk`) le fait payer d'avance. En peloton, ou
+            // les couloirs se prennent, ca compte : les tuyaux touches a huit
+            // tombent de 0.41 a 0.28 par tour.
+            //
+            // Ca se paie un peu en solo — 0.04 a 0.07 — parce qu'un tuyau
+            // lointain tire la trajectoire pour une contrainte qui aura le temps
+            // de changer. Au-dela de 1400 ce prix explose (0.22 a 1700) sans
+            // rien rendre de plus : le kart se met a slalomer pour des murs qu'il
+            // ne verra jamais de pres.
+            //
             // Ces distances ne se rapportent a aucune largeur affichee : le
             // moteur ne connait que des pixels de monde, la fenetre du
             // spectateur ne lui parvient jamais, et la meme simulation sert tous
             // les spectateurs quelle que soit leur taille d'ecran.
-            range: { front: 1100, back: 700 },
+            range: { front: 1400, back: 700 },
 
             // ── La voie ──────────────────────────────────────────────────
             //
@@ -1675,6 +1698,41 @@
             // edge. C'est lui qui dit quel obstacle on accepte de froler pour en
             // eviter un autre, et il se lit d'un coup d'oeil ici.
             cost: { spin: 2000, pipe: 850, kart: 300, edge: 80 },
+
+            // ── L'encombrement d'un passage ──────────────────────────────
+            //
+            // Ce que coute de viser un couloir ou d'autres sont deja engages.
+            //
+            // Une carrosserie ferme un couloir sur `kartVsKart.x * 2`, soit
+            // 120 px, et c'est juste : au-dela on ne se touche pas. Mais le
+            // couloir d'un tuyau se choisit jusqu'a 1100 px, et a cette
+            // distance-la plus aucun kart n'etait visible. Chacun decidait donc
+            // comme s'il etait seul en piste : au banc, 44 % des couloirs
+            // retenus contenaient deja deux karts ou plus, 13 % en contenaient
+            // trois. C'est le tas qu'on voit se former dans un trou pendant que
+            // l'autre reste vide.
+            //
+            //   `distance` jusqu'ou un kart devant compte comme occupant le
+            //              passage. Au-dela il l'aura franchi bien avant nous et
+            //              le trou se sera rouvert ; en deca, on y passe
+            //              ensemble. 560 px, l'ordre de grandeur de l'ecart
+            //              entre deux tuyaux.
+            //   `cost`     ce que vaut un kart pile dans le couloir vise, en
+            //              millisecondes. Il se CUMULE : un devant, on passe
+            //              derriere ; trois, le passage n'existe plus. Aucun
+            //              seuil n'est ecrit, la note monte avec la foule.
+            //
+            // A 200 : les couloirs retenus a trois karts ou plus tombent de 13 %
+            // a 4 %, et ceux pris a vide montent de 28 % a 37 %. Ca se paie —
+            // 0.29 a 0.37 tuyau touche par tour au banc, et un tiers de
+            // deplacement lateral en plus — parce qu'aller dans le second
+            // meilleur passage, c'est aller dans le second meilleur passage. Ce
+            // banc-la n'a pas de reponse au contact entre karts, donc il mesure
+            // tout le prix et rien du gain : le vrai arbitrage se voit a
+            // l'ecran.
+            //
+            // A 0 la notion disparait et chacun redevient seul en piste.
+            crowd: { distance: 560, cost: 200 },
 
             // ── Le placement ─────────────────────────────────────────────
             //
@@ -2070,6 +2128,27 @@
             //   `gain`      : ce que vaut une unite d'ecart restant en vitesse
             //                 laterale. C'est lui qui aplatit la trajectoire en
             //                 fin de course au lieu de la couper net.
+            //
+            //                 Il decide surtout du seuil de PLEIN BRAQUAGE :
+            //                 `speed / gain`. En deca, le kart n'utilise qu'une
+            //                 fraction de son volant. A 6 pour le contournement
+            //                 (`speed: 62`) ce seuil valait 10.3 unites, un
+            //                 tiers de la piste : autrement dit toute manoeuvre
+            //                 ordinaire — un changement de couloir de 3 a 6
+            //                 unites, c'est-a-dire presque toutes — se conduisait
+            //                 a 30-60 % de ce que le kart pouvait faire. Le
+            //                 placement, lui, note les couloirs avec
+            //                 `steerDelay`, qui suppose le plein braquage : le
+            //                 kart planifiait vif et roulait mou, et un ecart de
+            //                 3 unites chiffre a 154 ms en prenait 1167.
+            //
+            //                 Le seuil se lit donc comme un reglage : au-dela de
+            //                 quel ecart le kart cesse de menager son volant. Ce
+            //                 qui protege du depassement n'est pas ce gain mais
+            //                 `steerSettle` — `steer` corrige l'ecart a l'endroit
+            //                 ou le kart S'ARRETERAIT, pas a sa position — et
+            //                 c'est pour ca qu'on peut monter sans le faire
+            //                 osciller : au banc, aucun depassement jusqu'a 40.
             //   `tolerance` : en deca, la cible est consideree tenue et le kart
             //                 arrete de corriger — sinon il tremble autour.
             //   `guard`     : refuse d'envoyer le kart dans ce qu'il a vu.
@@ -2082,8 +2161,12 @@
                 // entre `dodgeIntensityMin` et `dodgeIntensityMax`, une
                 // precaution vaut `vision.safety.speed`. C'est ce qui les rend
                 // reconnaissables a l'oeil.
-                dodge:    { gain: 6, tolerance: 0.6, guard: false },
-                safety:   { gain: 6, tolerance: 0.6, guard: false },
+                //
+                // `gain: 20` — plein braquage des 2.5 unites d'ecart pour une
+                // esquive franche, contre 8.3 avant. Une esquive qui n'engage
+                // pas tout ce qu'elle a n'est pas une esquive.
+                dodge:    { gain: 20, tolerance: 0.6, guard: false },
+                safety:   { gain: 20, tolerance: 0.6, guard: false },
 
                 // Le contournement de tuyau. C'est la manoeuvre la plus urgente
                 // du jeu, et sa vitesse le dit : au-dessus de l'esquive la plus
@@ -2107,7 +2190,14 @@
                 // budget lateral discrimine les karts. Ce reglage-la va dans
                 // l'autre sens, et c'est assume — la discrimination passe
                 // maintenant par `slop`, qui ne coute pas de fluidite.
-                pipe:     { speed: 62, gain: 6, tolerance: 0.6, guard: false },
+                //
+                // `gain: 20` — plein braquage des 3.1 unites, contre 10.3 avant.
+                // Sur l'anneau du Moai les tuyaux touches passent de 0.06 a 0.04
+                // par tour, et de 0.08 a 0.01 sur des champs de tuyaux tires au
+                // hasard : le kart arrive ou il avait decide d'aller. Le prix est
+                // 5 % de deplacement lateral en plus — il ne derive plus faute
+                // d'avoir braque assez.
+                pipe:     { speed: 62, gain: 20, tolerance: 0.6, guard: false },
 
                 // Se recaler sur une cible avant de tirer. Tolerance serree : la
                 // hitbox verticale d'un objet vaut 5, viser large revient a ne
