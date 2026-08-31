@@ -407,7 +407,10 @@ function runRace(startOrder, cfg) {
                     ms: simTime,
                     got, gotLap, fired, firedLap, lapDrift, ticks: tick + 1,
                     hits, bumps, slowMs, raceMs, dist, calmDist, calmMs,
-                    cruiseDist, cruiseMs, catchMs, deepMs
+                    cruiseDist, cruiseMs, catchMs, deepMs,
+                    // Compteur tenu par le moteur : la distance que la
+                    // contrainte de virage a coutee, mesuree et non estimee.
+                    cornerPx: Object.fromEntries(state.karts.map(k => [k.charName, k.cornerLostPx]))
                 };
             }
         }
@@ -420,7 +423,7 @@ function runRace(startOrder, cfg) {
 const stat = {};
 for (const name of ROSTER) {
     stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, bumps: 0, slowMs: 0, raceMs: 0, dist: 0, calmDist: 0, calmMs: 0,
-        cruiseDist: 0, cruiseMs: 0, catchMs: 0, deepMs: 0 };
+        cruiseDist: 0, cruiseMs: 0, catchMs: 0, deepMs: 0, cornerPx: 0 };
 }
 
 // Places tour par tour. `lapSum` sert la trajectoire moyenne, `lapDist` la
@@ -497,6 +500,7 @@ for (let r = 0; r < RACES; r++) {
         stat[name].cruiseMs += race.cruiseMs[name] || 0;
         stat[name].catchMs += race.catchMs[name] || 0;
         stat[name].deepMs += race.deepMs[name] || 0;
+        stat[name].cornerPx += (race.cornerPx && race.cornerPx[name]) || 0;
     }
 
     race.order.forEach((name, index) => {
@@ -594,9 +598,9 @@ const w = Math.max(...ROSTER.map(n => n.length), 6);
 
 console.log('');
 console.log(pad('kart', w) + padL('poi/pui/man', 13)
-    + padL('top', 6) + padL('acc', 6) + padL('agi', 6) + padL('masse', 7)
+    + padL('top', 6) + padL('acc', 6) + padL('agi', 6) + padL('tenue', 8) + padL('masse', 7)
     + padL('victoires', 12) + padL('podium', 9) + padL('dernier', 9) + padL('place moy.', 12));
-console.log('-'.repeat(w + 13 + 6 + 6 + 6 + 7 + 12 + 9 + 9 + 12));
+console.log('-'.repeat(w + 13 + 6 + 6 + 6 + 8 + 7 + 12 + 9 + 9 + 12));
 
 for (const name of rows) {
     const s = stat[name];
@@ -610,7 +614,8 @@ for (const name of rows) {
         pad(name, w)
         + padL(`${c.raw.weight}/${c.raw.power}/${c.raw.handling}`, 13)
         + padL(Math.round(c.topSpeed), 6) + padL(c.acceleration.toFixed(2), 6)
-        + padL(c.agility.toFixed(2), 6) + padL(c.mass.toFixed(2), 7)
+        + padL(c.agility.toFixed(2), 6) + padL(c.cornering.toFixed(2), 8)
+        + padL(c.mass.toFixed(2), 7)
         + padL(winPct.toFixed(1) + ' %' + flag, 12)
         + padL(pct(s.podium, done).toFixed(1) + ' %', 9)
         + padL(pct(s.last, done).toFixed(1) + ' %', 9)
@@ -621,6 +626,9 @@ for (const name of rows) {
 console.log('');
 console.log(`budget : ${CFG.kartStats.budget} points par kart, chaque axe dans `
     + `[${CFG.kartStats.minPoints}, ${CFG.kartStats.maxPoints}]`);
+console.log('  tenue : `stats.cornering`, ce qui tient le kart quand il tourne —');
+console.log('  plus c\'est HAUT, moins tourner lui coute. C\'est un diviseur, pas une');
+console.log('  perte. Ce que le virage coute vraiment se lit plus bas, colonne `virage`.');
 
 // Ce que la course coute. Sans ces deux colonnes, impossible de dire si
 // l'agilite sert a quelque chose : un kart peut perdre parce qu'il est lent, ou
@@ -629,10 +637,11 @@ console.log(`budget : ${CFG.kartStats.budget} points par kart, chaque axe dans `
 console.log('');
 console.log('Ce que la course coute a chaque kart');
 console.log(pad('kart', w) + padL('agi', 6) + padL('touches', 10) + padL('pipes', 8)
+    + padL('virage', 9) + padL('% dist.', 9)
     + padL('hors rythme', 13) + padL('part de course', 16)
     + padL('vit. moy.', 11) + padL('% pointe', 10)
     + padL('vit. tranq.', 13) + padL('% pointe', 10) + padL('part tranq.', 13));
-console.log('-'.repeat(w + 6 + 10 + 8 + 13 + 16 + 11 + 10 + 13 + 10 + 13));
+console.log('-'.repeat(w + 6 + 10 + 8 + 9 + 9 + 13 + 16 + 11 + 10 + 13 + 10 + 13));
 for (const name of rows) {
     const s = stat[name];
     const meanSpeed = s.raceMs ? s.dist / (s.raceMs / 1000) : 0;
@@ -641,6 +650,8 @@ for (const name of rows) {
         + padL(STATS[name].agility.toFixed(2), 6)
         + padL((s.hits / done).toFixed(2), 10)
         + padL((s.bumps / done).toFixed(2), 8)
+        + padL(Math.round(s.cornerPx / done) + ' px', 9)
+        + padL(pct(s.cornerPx, s.dist + s.cornerPx).toFixed(2) + ' %', 9)
         + padL((s.slowMs / done / 1000).toFixed(1) + ' s', 13)
         + padL(pct(s.slowMs, s.raceMs).toFixed(1) + ' %', 16)
         + padL(Math.round(meanSpeed), 11)
@@ -651,7 +662,12 @@ for (const name of rows) {
 }
 console.log('');
 console.log(`  touches : tete-a-queue subis par course. pipes : chocs contre un`);
-console.log(`  tuyau, par course. hors rythme : temps passe`);
+console.log(`  tuyau, par course. virage : distance perdue par course a la`);
+console.log(`  contrainte de virage (physics.steer.corner), relevee dans le moteur`);
+console.log(`  et non estimee — c'est la seule facon d'en avoir un chiffre qui ne`);
+console.log(`  mente pas quand on change les exposants. % dist. : ce que cela`);
+console.log(`  represente de la distance qu'il aurait couverte sans elle.`);
+console.log(`  hors rythme : temps passe`);
 console.log(`  sous ${(SLOW_RATIO * 100).toFixed(0)} % de sa propre pointe, arret et relance compris.`);
 console.log('  vit. moy. : distance reellement couverte divisee par le temps passe en');
 console.log('  course, grille et tour d\'honneur exclus. % pointe : ce que cela');
