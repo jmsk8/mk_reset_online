@@ -1178,6 +1178,12 @@
         const gain = vis.shadowGain;
 
         // ── Les tuyaux ───────────────────────────────────────────────────
+        //
+        // La bande de surveillance et le point d'arret ne dependent pas du
+        // tuyau : ils se posent une fois. Cf. la note du test plus bas.
+        const pipeWatch = pipeReach.y + place.margin.pipe;
+        const pipeSettle = steerSettle(cfg, kart);
+
         const pipes = state.pipes;
         for (let p = 0; p < pipes.length; p++) {
             const dx = getShortestDistance(cfg, pipes[p].worldX, kart.worldX);
@@ -1230,7 +1236,40 @@
 
             // Il ne barre la route que dans la voie. Ailleurs il ferme un
             // passage sans menacer personne.
-            if (dx > 0 && Math.abs(pipes[p].y - kart.yPercent) < pipeReach.y) {
+            //
+            // ── Deux erreurs, et le kart fonçait dedans sans broncher ────
+            //
+            // Ce test decide de `sight.pipeIndex`, et `pipeIndex` est la SEULE
+            // chose qui autorise un tuyau a reprendre le volant a une esquive en
+            // cours (`pipeOutranksPlan`). Rate ici, le tuyau n'existe plus pour
+            // l'arbitrage : le plan garde la main, et le kart va au mur en
+            // ligne droite. Ce n'est pas un manque d'agilite, c'est que la
+            // manoeuvre de contournement n'a jamais ete appelee.
+            //
+            //   1. Il se mesurait a `kart.yPercent`, la profondeur du MOMENT.
+            //      Or quand un plan tient le volant, le kart est justement en
+            //      train de se deplacer en profondeur. Une esquive qui l'emmene
+            //      DANS l'axe d'un tuyau ne le flaggait donc jamais : a chaque
+            //      balayage il n'y etait pas encore. Comme partout ailleurs dans
+            //      le placement, la reference est le point d'arret — la ou le
+            //      kart finira s'il relache — et non la ou il est.
+            //
+            //   2. Il se mesurait a la hitbox NUE. C'est l'erreur contre
+            //      laquelle la note de `vision.threatLane` met en garde : une
+            //      bande de surveillance doit etre plus large que le contact,
+            //      « parce qu'une esquive doit COMMENCER avant d'etre pile dans
+            //      l'axe ». Un objet a 12 pour ca. Le tuyau avait 5.3, et un
+            //      tuyau « un peu excentre » n'inquietait personne jusqu'a ce
+            //      qu'il soit trop tard.
+            //
+            // On prend le DEGAGEMENT — hitbox plus la marge de confort du
+            // placement — et non `threatLane` : de quoi s'alarmer a temps, sans
+            // faire passer le decor devant une carapace pour un tuyau qu'on
+            // longe. L'arbitrage lui-meme ne bouge pas d'un pouce : `threatScore`
+            // continue de valoir 2000 pour un tete-a-queue contre 850 pour un
+            // tuyau, et le tuyau doit toujours etre bien plus proche pour
+            // l'emporter.
+            if (dx > 0 && Math.abs(pipes[p].y - pipeSettle) < pipeWatch) {
                 e.role |= SEE_THREAT;
                 e.kind = 'pipe';
                 e.cost = vis.cost.pipe;
