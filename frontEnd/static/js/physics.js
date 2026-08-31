@@ -557,9 +557,40 @@
     // Un bill en est exempt des trois : il ne pilote pas, il devie, et il vole a
     // pleine vitesse par definition. Le soumettre a l'appui a l'allure
     // reviendrait a lui interdire de contourner le tuyau qu'il vise.
+    // Ce que le volant MORD a l'allure du moment.
+    //
+    // `steerGrip` dit ce qu'on perd de volant en etant lance. Il ne dit rien du
+    // bas de l'echelle, et son bas de l'echelle etait faux : a l'arret `pace`
+    // vaut 0, donc `grip` vaut 1, donc un kart IMMOBILE disposait de son volant
+    // MAXIMUM. Un kart qui vient d'encaisser un objet repartait a 20 km/h en se
+    // deplacant lateralement plus vite qu'a pleine pointe — il partait en crabe,
+    // et pres d'un tuyau ca se voyait comme une embardee sortie de nulle part.
+    //
+    // Le commentaire de `physics.steer.pace` defendait meme l'effet : « la
+    // remise en route se fait a allure reduite, donc avec du volant en plus ».
+    // C'est faux a l'ecran : on ne change pas de direction sans avancer.
+    //
+    // Deux mecaniques distinctes, donc, et il en manquait une :
+    //
+    //   `drag`  ce qu'on perd de volant a FORCE d'aller vite. Existait.
+    //   `bite`  ce qu'on n'a pas encore FAUTE d'avancer. Nouveau.
+    //
+    // Au-dessus de `bite` rien ne change — la croisiere est a 0.94, donc tout ce
+    // qui a ete regle jusqu'ici tient trait pour trait. En dessous, le volant
+    // s'efface avec l'allure, et le deplacement lateral redevient une fraction
+    // du deplacement tout court.
+    function steerBite(cfg, kart) {
+        const bite = cfg.physics.steer.pace.bite;
+        if (!(bite > 0)) return 1;
+
+        const pace = steerPace(kart);
+        return (pace >= bite) ? 1 : pace / bite;
+    }
+
     function steerCap(cfg, kart, base) {
         if (kart.isBill) return base;
-        return base * kart.stats.agility * steerGrip(cfg, kart) * kart.steerBoost;
+        return base * kart.stats.agility * steerGrip(cfg, kart)
+            * steerBite(cfg, kart) * kart.steerBoost;
     }
 
     // Ce que braquer coute en vitesse d'avance, en multiplicateur a appliquer
@@ -724,7 +755,13 @@
             - Math.abs(threatY - kart.yPercent);
         if (need <= 0) return ai.threatWindowMs;
 
+        // A l'arret le volant ne mord plus (`steerBite`), donc le temps
+        // necessaire tend vers l'infini et TOUT deviendrait une menace. Un kart
+        // qui ne bouge pas n'a de toute facon pas de temps avant impact a
+        // calculer : on s'en tient au plancher.
         const cap = steerCap(cfg, kart, ai.dodgeIntensityMin);
+        if (!(cap > 0)) return ai.threatWindowMs;
+
         const own = ai.reactionBaseMs * ai.reactionJitterMax
             + steerDelay(cfg, cap, need);
         return (own > ai.threatWindowMs) ? own : ai.threatWindowMs;
@@ -989,6 +1026,19 @@
         return slot;
     }
 
+    // Ce qui menace dans le dos, du souvenir plutot que de la vue.
+    //
+    // Rend '' quand il n'y a rien, ou plus rien d'assez frais. La duree est
+    // celle de `pressureMemoryMs` : passe ce delai, un danger qu'on ne revoit
+    // pas cesse de compter, et c'est ce qui oblige a se retourner encore pour
+    // rester inquiet. Sans peremption, un kart double une fois resterait sur
+    // ses gardes tout le tour.
+    function dangerBehind(cfg, now, kart) {
+        const sight = kart.sight;
+        if (now - sight.dangerAt > cfg.vision.pressureMemoryMs) return '';
+        return sight.dangerKind;
+    }
+
     // L'attention : devant, ou derriere.
     //
     // Le tirage suit le rang — le premier n'a plus que l'arriere a surveiller,
@@ -1001,14 +1051,18 @@
     // multiplier la chance ou y diviser l'intervalle donne donc EXACTEMENT la
     // meme loi — sauf qu'une probabilite sature a 1 et pas une cadence.
     //
-    // C'est ce qui rendait les deux gains inertes en tete de peloton :
-    // `backChanceLeader` (0.55) fois `pressureGlanceGain` (2.2) fait 1.21, soit
-    // un coup d'oeil a chaque tirage, et tout gain supplementaire tombait dans
-    // le vide. Le premier — celui qui a le plus de raisons de regarder derriere
-    // — etait le seul que la pression ne pressait plus.
+    // C'est ce qui rendait les deux gains inertes en tete de peloton, du temps
+    // ou le premier regardait derriere 55 fois sur 100 : multiplie par
+    // `pressureGlanceGain` (2.2) ca faisait 1.21, soit un coup d'oeil a chaque
+    // tirage, et tout gain supplementaire tombait dans le vide. Le premier —
+    // celui qui a le plus de raisons de regarder derriere — etait le seul que la
+    // pression ne pressait plus.
     //
-    // En fond de peloton, ou rien ne saturait, les deux formes coincident au
-    // dixieme de milliseconde pres : ce correctif n'y change rien.
+    // Les probabilites ont baisse depuis (`vision.backChance`), si bien que la
+    // saturation ne menace plus ; la remarque tient quand meme, et c'est
+    // pourquoi les gains restent sur la cadence. Les deux lois se composent
+    // alors sans se manger : la cadence dit a quelle frequence il se POSE la
+    // question, la probabilite ce qu'il repond.
     function updateGlance(cfg, rng, state, now, kart) {
         const vis = cfg.vision;
         const sight = kart.sight;
@@ -1023,13 +1077,17 @@
 
         let pace = 1;
 
-        // Etre vise dans le dos ne se CONSTATE qu'en se retournant, et le
-        // tirage n'a jamais lieu pendant un coup d'oeil : c'est donc un
-        // souvenir, jamais une observation du moment. Le lire dans `pressure`
-        // — remis a zero a chaque balayage — revenait a lire le dernier
-        // balayage AVANT, c'est-a-dire un porteur situe DEVANT : le gain
-        // repondait a l'exact contraire de ce qu'il nomme.
-        if (now - sight.pressureBackAt <= vis.pressureMemoryMs) pace *= vis.pressureGlanceGain;
+        // Le danger derriere ne presse plus la CADENCE, il releve la
+        // PROBABILITE (`backChanceDanger`, plus bas). C'etait le meme signal
+        // compte deux fois, et avec des coups d'oeil longs ca devenait nuisible :
+        // a `pressureGlanceGain` (2.2) l'intervalle tombait a 636 ms, plus court
+        // que la duree moyenne d'un coup d'oeil. Le kart serait reste tourne
+        // vers l'arriere 60 % du temps — tres attentif a la carapace, et aveugle
+        // a tout le reste.
+        //
+        // `sight.dangerAt` remplace exactement l'ancien `pressureBackAt` : meme
+        // souvenir date, meme portee, mais il couvre aussi la carapace deja
+        // partie et l'etoile, que l'ancien releve ne voyait pas.
 
         // Qui prepare un tir vers l'arriere se retourne pour viser. On ne tire
         // pas dans un peloton qu'on ne regarde pas, et c'est ce qui rend le tir
@@ -1042,15 +1100,102 @@
 
         sight.nextGlance = now + vis.glanceIntervalMs / pace;
 
-        const total = state.karts.length;
-        const rankTerm = (total > 1) ? (kart.rank - 1) / (total - 1) : 0;
-        const chance = vis.backChanceLeader
-            + (vis.backChanceLast - vis.backChanceLeader) * rankTerm;
+        // ── Ce qui donne envie de regarder derriere ──────────────────────
+        //
+        // Trois raisons, de la plus faible a la plus forte, et LE PLUS ELEVE
+        // GAGNE : elles ne s'additionnent pas, ce sont trois lectures de la
+        // meme question. Un kart qui vient d'avoir un objet ET qui sait
+        // quelqu'un derriere ne regarde pas deux fois plus, il regarde pour la
+        // meilleure des deux raisons.
+        //
+        //   sa place       le premier n'a plus que l'arriere a surveiller ; le
+        //                  dernier n'a personne derriere, et n'y jette qu'un
+        //                  oeil distrait.
+        //   son objet      qui vient d'en ramasser un sait qu'il vaut la peine
+        //                  d'etre garde, et regarde qui arrive.
+        //   un danger vu   une carapace, un porteur, une etoile. Tant qu'il
+        //                  est frais, la surveillance ne redescend pas.
+        //
+        // L'interpolation lineaire du rang a disparu : elle donnait au 4e une
+        // valeur intermediaire qui ne voulait rien dire. `rankChance` dit les
+        // trois cas qui existent — premier, peloton, dernier — comme partout
+        // ailleurs dans le fichier.
+        let chance = rankChance(vis.backChance, state, kart);
+
+        if (now - kart.itemGotAt <= vis.armedGlanceMs && vis.backChanceArmed > chance) {
+            chance = vis.backChanceArmed;
+        }
+
+        if (dangerBehind(cfg, now, kart)) {
+            const alert = rankChance(vis.backChanceDanger, state, kart);
+            if (alert > chance) chance = alert;
+        }
 
         if (rng() < chance) {
-            sight.backUntil = now + vis.glanceDurationMs;
+            // La duree se tire au sort. A duree fixe, huit karts qui se
+            // retournent au meme tirage reviennent devant ensemble ; et surtout
+            // un coup d'oeil trop court ne laisse pas le temps de voir arriver
+            // quoi que ce soit — c'est ce qui rendait l'arriere invisible.
+            sight.backUntil = now + randomRange(rng, vis.glanceDurationMin,
+                                                     vis.glanceDurationMax);
             sight.back = true;
         }
+    }
+
+    // Garder son objet derriere soi, ou s'en debarrasser.
+    //
+    // ── Ce qui manquait ──────────────────────────────────────────────────
+    //
+    // Le choix de trainer se prenait UNE FOIS, a la seconde ou l'objet tombait
+    // dans les mains (`chooseItemPlan`), c'est-a-dire au moment ou le kart en
+    // savait le moins. Rien ne pouvait le lui faire reconsiderer ensuite. Un
+    // kart qui avait prevu de tirer devant gardait ce plan pendant qu'une verte
+    // lui arrivait dans le dos, et la prenait avec un bouclier dans les mains.
+    //
+    // Il retranche maintenant sa decision quand un danger apparait derriere, et
+    // une fois par EPISODE de danger — pas a chaque balayage, sinon il tirerait
+    // a pile ou face soixante fois par seconde.
+    //
+    // Contre une etoile ou un bill, rien : un objet traine ne les arrete pas.
+    // Ce qu'il faut leur opposer, c'est de la place, et c'est l'esquive qui s'en
+    // charge.
+    function updateShield(cfg, rng, now, kart) {
+        const ai = cfg.ai;
+        const held = kart.heldItem;
+        if (!held || !isTrailable(cfg, held.type)) return;
+
+        const danger = dangerBehind(cfg, now, kart);
+        if (!danger || danger === 'ram') return;
+
+        const sight = kart.sight;
+        if (kart.shieldAt !== sight.dangerSince) {
+            kart.shieldAt = sight.dangerSince;
+
+            // Une carapace deja partie ne se discute presque plus : le bouclier
+            // est la seule chose qui la mange. Un porteur laisse encore le choix
+            // de le prendre de vitesse.
+            const keep = (danger === 'shot') ? ai.shield.shot : ai.shield.carrier;
+            kart.shieldHold = rng() < keep;
+
+            if (!kart.shieldHold) {
+                // Il s'en sert plutot que de s'en couvrir. Le plus souvent dans
+                // la direction d'ou vient le danger — c'est la que se trouve
+                // quelqu'un a toucher.
+                if (rng() < ai.shield.backThrow) {
+                    kart.shotDirection = -1;
+                    kart.shotAsLeader = (kart.rank === 1);
+                }
+                kart.throwTime = now;
+            } else if (!kart.trailTime && held.holdPosition === 'hands') {
+                kart.trailTime = now;
+            }
+        }
+
+        // Tant que le danger dure, l'echeance de tir recule. Elle cesse d'etre
+        // repoussee des que le souvenir se perime, et l'objet repart alors de
+        // lui-meme : le bouclier ne se garde pas indefiniment, il se garde tant
+        // qu'il sert.
+        if (kart.shieldHold) kart.throwTime = now + cfg.vision.pressureMemoryMs;
     }
 
     // Un intervalle de plus dans l'encombrement retenu. Seul ce qui a ete VU y
@@ -1532,6 +1677,14 @@
         sortScan();
 
         let bestScore = 0;
+
+        // Le pire danger apercu DERRIERE pendant ce balayage, du plus faible au
+        // plus fort. Une carapace deja partie prime sur celui qui la porte ;
+        // une etoile se classe entre les deux, parce qu'on ne peut rien lui
+        // opposer d'autre que de la place.
+        let dangerRank = 0;
+        let dangerKind = '';
+
         let boxDiff = Infinity;
         let hiddenDiff = Infinity;
         let hiddenY = 0;
@@ -1582,6 +1735,16 @@
                     // c'est ce qui fait qu'un kart accepte de froler un tuyau
                     // pour eviter une carapace, jamais l'inverse.
                     if (ready) {
+                        if (sight.scanBack && e.dx < 0 && e.kind === 'spin') {
+                            // `id` negatif : c'est une carrosserie lancee —
+                            // etoile ou bill. Positif : un objet en vol.
+                            const rank = (e.id < 0) ? 2 : 3;
+                            if (rank > dangerRank) {
+                                dangerRank = rank;
+                                dangerKind = (e.id < 0) ? 'ram' : 'shot';
+                            }
+                        }
+
                         const score = threatScore(e.cost, e.ttc);
                         if (score > bestScore) {
                             bestScore = score;
@@ -1641,13 +1804,18 @@
                     sight.pressureY = e.y;
                     sight.pressureId = -1 - e.kartId;
 
-                    // Vu DERRIERE. C'est ce releve-la, et lui seul, qui fait
-                    // tourner la tete plus souvent : etre vise dans le dos ne se
-                    // constate qu'en se retournant, et le tirage du coup d'oeil
-                    // n'a jamais lieu pendant un coup d'oeil (cf.
-                    // `updateGlance`). Il lui faut donc un souvenir date, pas
-                    // l'etat du balayage courant.
-                    if (sight.scanBack) sight.pressureBackAt = now;
+                    // Vu DERRIERE : c'est ce qui fait tourner la tete plus
+                    // souvent. Etre vise dans le dos ne se constate qu'en se
+                    // retournant, et le tirage du coup d'oeil n'a jamais lieu
+                    // pendant un coup d'oeil (cf. `updateGlance`) : il lui faut
+                    // un souvenir date, pas l'etat du balayage courant. C'est le
+                    // plus faible des trois dangers — il n'a encore rien lance.
+                    if (sight.scanBack) {
+                        if (dangerRank < 1) {
+                            dangerRank = 1;
+                            dangerKind = 'carrier';
+                        }
+                    }
                 }
 
                 // Le kart visible le plus proche dans l'axe du regard, quel
@@ -1685,6 +1853,16 @@
                 shadowHi[shadowCount] = e.y + e.shadowHalf;
                 shadowCount++;
             }
+        }
+
+        // Le souvenir du danger. `dangerSince` ne bouge que si le precedent
+        // s'etait perime : c'est la que commence un nouvel EPISODE, et c'est ce
+        // qui fait que le choix du bouclier se tranche une fois et pas a chaque
+        // balayage.
+        if (dangerRank > 0) {
+            if (now - sight.dangerAt > vis.pressureMemoryMs) sight.dangerSince = now;
+            sight.dangerAt = now;
+            sight.dangerKind = dangerKind;
         }
 
         // ── Le temps qu'il reste APRES le mur du moment ──────────────────
@@ -2867,6 +3045,7 @@
         if (now - sight.at >= vis.scanIntervalMs) perceive(cfg, state, rng, now, kart);
 
         updatePlan(cfg, rng, now, kart);
+        updateShield(cfg, rng, now, kart);
 
         // ── L'esquive ────────────────────────────────────────────────────
         //
@@ -3495,6 +3674,10 @@
 
         kart.shotDirection = 1;
         kart.lobbing = false;
+
+        // Ce qui rend le coup d'oeil arriere plus frequent pendant quelques
+        // secondes : on vient de gagner quelque chose a proteger.
+        kart.itemGotAt = now;
 
         if (itemType === 'greenShell' || itemType === 'redShell') {
             kart.shotDirection = rollShellDirection(cfg, rng, state, kart, itemType);
@@ -5615,6 +5798,17 @@
                     kart.state = 'running';
                     kart.stopped = false;
                     kart.absoluteVelocity = 0;
+
+                    // Et le lateral avec, pour la meme raison. `vy` n'est pas
+                    // integre pendant le tete-a-queue mais il n'etait pas remis
+                    // a zero non plus : le kart repartait avec la vitesse
+                    // laterale qu'il avait AVANT le choc, gelee pendant toute la
+                    // toupie, et repartait donc en biais pendant le temps que le
+                    // volant mette a la resorber. Un incident remet l'elan a
+                    // zero ; il n'y a aucune raison qu'il garde une direction.
+                    kart.vy = 0;
+                    kart.targetVy = 0;
+
                     kart.momentum = 0.2;
                     kart.momentumTarget = randomRange(rng, 0.6, 1.0);
                     kart.nextMomentumChange = now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax);
@@ -6012,6 +6206,13 @@
 
                 trailTime: 0,
                 brakeUntil: 0,
+
+                // Quand il a ramasse son objet — le coup d'oeil arriere en
+                // depend (cf. `vision.armedGlanceMs`) — et l'episode de danger
+                // pour lequel il a deja tranche entre bouclier et tir.
+                itemGotAt: -Infinity,
+                shieldAt: -Infinity,
+                shieldHold: false,
                 shotDirection: 1,
                 // Le plan de tir a-t-il ete fait en tete ? Il ne vaut plus rien
                 // si le kart s'est fait doubler depuis.
@@ -6082,11 +6283,29 @@
                     pressureY: 0,
                     pressureId: 0,
 
-                    // Date du dernier porteur arme APERCU DERRIERE. C'est un
-                    // souvenir et non un etat : le tirage du coup d'oeil n'a
-                    // jamais lieu pendant un coup d'oeil, donc il ne peut lire
-                    // que ce qu'on a vu, pas ce qu'on voit (cf. `updateGlance`).
-                    pressureBackAt: -Infinity
+                    // Le danger APERCU DERRIERE, et depuis quand.
+                    //
+                    // C'est un souvenir et non un etat : le tirage du coup
+                    // d'oeil n'a jamais lieu pendant un coup d'oeil, donc il ne
+                    // peut lire que ce qu'on a vu, pas ce qu'on voit.
+                    //
+                    // Meme raison que ci-dessus, et la meme portee : la tete
+                    // revenue devant, le kart ne voit plus ce qui le suit. Sans
+                    // souvenir il oublierait la carapace entre deux clignements,
+                    // et retomberait a sa chance de base juste avant l'impact.
+                    //
+                    // `dangerAt` est rafraichi a chaque coup d'oeil qui le
+                    // revoit ; `dangerSince` marque le debut de l'EPISODE, et
+                    // c'est lui qui evite de rejouer le choix du bouclier a
+                    // chaque balayage.
+                    //
+                    //   'shot'    une carapace en vol, deja lancee
+                    //   'carrier' quelqu'un derriere qui en porte une
+                    //   'ram'     une etoile ou un bill : rien a lui opposer,
+                    //             seulement sa trajectoire a quitter
+                    dangerAt: -Infinity,
+                    dangerSince: -Infinity,
+                    dangerKind: ''
                 },
 
                 // Le plan d'evitement en cours. Il survit a la perte de vue :
