@@ -428,15 +428,22 @@ function buildHello(cfg, state, simTime, t0, vote) {
                     round: true
                 },
                 // Un objet au sol ou en vol — carapace, banane. Meme emprise
-                // pour tous, et deduite comme celle du kart : `itemVsKart` est
-                // un ecart entre centres, on lui retire la demi-carrosserie.
+                // pour tous, et prise DIRECTEMENT dans `bodies.item`.
+                //
+                // Elle se deduisait par soustraction — `itemVsKart` moins la
+                // demi-carrosserie — et c'etait juste tant que la somme et la
+                // carrosserie s'accordaient. Une fois la carrosserie derivee du
+                // sprite et la somme restee figee, la soustraction rendait ce
+                // qui restait : a `fill: 0.75`, une carapace se dessinait quatre
+                // fois trop petite. C'est ce qu'on voyait sur la carte, et
+                // c'etait fidele — l'incoherence etait dans la config.
                 //
                 // La bleue n'en a pas et n'apparait pas ici : elle survole tout,
                 // et son souffle est un rayon qui CROIT avec le temps — deux
                 // choses qu'une emprise fixe ne sait pas dire.
                 item: {
-                    x: cfg.hitboxes.itemVsKart.x - cfg.hitboxes.kartVsKart.x / 2,
-                    y: cfg.hitboxes.itemVsKart.y - cfg.hitboxes.kartVsKart.y / 2
+                    x: cfg.bodies.item.x,
+                    y: cfg.bodies.item.y
                 },
                 // Ou se tient un objet TRAINE derriere son porteur, en ecart
                 // signe au centre du kart. C'est une position et non une
