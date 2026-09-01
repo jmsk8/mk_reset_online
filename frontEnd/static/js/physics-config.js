@@ -66,11 +66,20 @@
     // px dessines, 60 px d'emprise pour une paire, 5 unites de profondeur. Le
     // changement ECARTE les karts autour de cette moyenne, il ne la bouge pas.
     //
-    // Les objets n'y sont pas, et c'est volontaire : `hitboxes.itemVsKart` reste
-    // regle a la main. Une carapace n'a pas de longueur au sens ou un kart en a
-    // une — elle roule, rebondit et se lit a la profondeur — et la faire suivre
-    // le meme chemin retoucherait tout l'equilibrage des esquives sans rien
-    // corriger de visible.
+    // Les objets ne descendent PAS d'un PNG, et c'est volontaire : une carapace
+    // n'a pas de longueur au sens ou un kart en a une — elle roule, rebondit et
+    // se lit a la profondeur — et la faire suivre le meme chemin retoucherait
+    // tout l'equilibrage des esquives sans rien corriger de visible. Son emprise
+    // propre reste donc reglee a la main, dans `bodies.item`.
+    //
+    // Ce qui a change, c'est la SOMME. `hitboxes.itemVsKart` est l'ecart auquel
+    // un objet et un kart se touchent : la part de l'objet plus la part du kart.
+    // Elle etait posee a la main, calee du temps ou la demi-carrosserie valait
+    // 30 pour tout le monde. Une fois la carrosserie derivee, cette somme figee
+    // ne pouvait que mentir — la part de l'objet devenait le RESTE, et fondait a
+    // mesure que `fill` montait. Ce qui se regle est l'emprise d'un corps ; ce
+    // qui se calcule est la distance a laquelle deux corps se rencontrent, et
+    // les deux ne se notent pas au meme endroit.
     function deriveBodies(cfg) {
         const b = cfg.bodies;
         const names = Object.keys(b.sprite.kart);
@@ -171,6 +180,18 @@
         cfg.hitboxes.kartVsPipe = {
             x: cfg.pipe.hitbox.x + b.ref.x,
             y: cfg.pipe.hitbox.y + b.ref.y
+        };
+
+        // Et l'objet, pour la meme raison. Ces sommes etaient posees a la main,
+        // calees sur une demi-carrosserie de 30 : elles mentaient des que la
+        // carrosserie changeait, en rognant en silence la part de l'objet.
+        cfg.hitboxes.itemVsKart = {
+            x: b.item.x + b.ref.x,
+            y: b.item.y + b.ref.y
+        };
+        cfg.hitboxes.orbitItemVsKart = {
+            x: cfg.hitboxes.itemVsKart.x,
+            y: cfg.hitboxes.itemVsKart.y + b.orbitSlack
         };
 
         return cfg;
@@ -2813,7 +2834,7 @@
             // suivaient donc deja la meme regle a un cheveu pres, sans que
             // personne ne l'ait ecrite. La monter fait toucher dans le vide,
             // la baisser fait traverser les silhouettes.
-            fill: 0.6,
+            fill: 0.75,
 
             // L'aplatissement d'un corps vu de dessus : combien de px de
             // longueur pour un px de profondeur. Il ne regle plus qu'UNE chose,
@@ -2842,7 +2863,40 @@
             // 30 unites pour 108 px sur PC. C'est la seule conversion du
             // fichier entre les deux unites du monde, et elle ne sert qu'ici —
             // a comparer une longueur et une profondeur dans la meme mesure.
-            depthPx: 3.6
+            depthPx: 3.6,
+
+            // ── L'emprise propre d'un objet au sol ───────────────────────
+            //
+            // Reglee a la main, et elle le reste : une carapace n'a pas de
+            // longueur au sens ou un kart en a une, elle roule et se lit a la
+            // profondeur. Rien ici ne descend d'un PNG.
+            //
+            // Elle vit dans `bodies` malgre tout, parce que c'est le seul
+            // endroit du fichier ou l'on note ce qu'un corps MESURE, par
+            // opposition a l'ecart auquel deux corps se touchent. La distinction
+            // n'etait pas faite, et ca coutait cher : `hitboxes.itemVsKart`
+            // etait une SOMME posee a la main (40), calee du temps ou la
+            // demi-carrosserie valait 30. Le jour ou la carrosserie s'est mise a
+            // descendre du sprite, la part de l'objet dans cette somme est
+            // devenue ce qui restait — donc n'importe quoi. A `fill: 0.75` la
+            // carrosserie prend 37.5 des 40, et il ne reste que 2.5 a la
+            // carapace : quatre fois moins qu'avant, sans que personne ne l'ait
+            // demande. C'est ce que la carte de debug montrait.
+            //
+            // Maintenant c'est l'objet qui est regle et la somme qui suit. Un
+            // kart au corps plus long se fait toucher d'un peu plus loin, ce qui
+            // est exactement ce qu'un corps plus long veut dire.
+            item: { x: 10, y: 2.5 },
+
+            // Ce qu'un objet en ORBITE reclame en plus, en profondeur. Il
+            // oscille avec sa rotation (cf. `orbit.radiusY`, 3.2), et ce
+            // supplement lui rend la meme tolerance effective qu'un objet pose
+            // pour une victime qui roule sur la meme voie.
+            //
+            // 3 et non 3.2 : c'est la valeur qui redonne le 8 regle a la main
+            // et eprouve depuis. L'arrondi est celui d'origine, on ne le
+            // resserre pas au passage.
+            orbitSlack: 3
         },
 
         hitboxes: {
@@ -2860,8 +2914,17 @@
             // circuits au chargement. Une largeur de couloir ne se decide pas
             // huit fois.
             //
-            //   kartVsKart : { x: 60, y: 5 }
-            itemVsKart: { x: 40, y: 5 },
+            //   kartVsKart : { x: 60, y: 5 }     (a `fill: 0.6`)
+            //
+            // Objet contre kart, meme regle : l'emprise de l'objet
+            // (`bodies.item`) plus la demi-carrosserie de reference, posee par
+            // `deriveBodies()`. C'etait une somme ecrite a la main, et elle est
+            // devenue fausse des que la carrosserie s'est mise a bouger — la
+            // part de l'objet n'etait plus que le reste, et fondait a mesure que
+            // `fill` montait. Ce qui est regle est desormais l'objet, jamais la
+            // somme.
+            //
+            //   itemVsKart : { x: 40, y: 5 }      (a `fill: 0.6`)
             // Kart contre pipe, meme regle : l'emprise du tuyau plus la
             // demi-carrosserie de reference, posee par `deriveBodies()`. Elle ne
             // se regle donc plus du tout — elle suit `pipe.hitbox`, qui suit le
@@ -2871,10 +2934,15 @@
             //
             // Seule la part du tuyau a maigri, jamais celle du kart. Rogner les
             // deux ferait passer les karts dans des trous ou ils ne tiennent pas.
-            // itemVsKart.y elargi de radiusY : l'objet oscille en profondeur avec
-            // son orbite, ce supplement lui rend la meme tolerance effective qu'un
-            // objet pose (5) pour une victime qui roule sur la meme voie.
-            orbitItemVsKart: { x: 40, y: 8 },
+            // L'objet en orbite : `itemVsKart` plus `bodies.orbitSlack` en
+            // profondeur, pose par `deriveBodies()` lui aussi.
+            //
+            //   orbitItemVsKart : { x: 40, y: 8 }  (a `fill: 0.6`)
+            //
+            // La boite a objets, elle, ne bouge pas et ne doit pas bouger : ce
+            // n'est pas une somme de deux corps mais une ZONE DE RAMASSAGE,
+            // l'endroit ou doit passer un CENTRE de kart. Un kart plus long ne
+            // ramasse pas de plus loin.
             itemBox: { x: 10, y: 8 }
         },
 
