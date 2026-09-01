@@ -872,6 +872,18 @@
     opacity: 0.85;
 }
 
+/* La latence, en retrait derriere l'etat : c'est une precision, pas une
+   annonce. Elle n'existe qu'en ligne — hors connexion l'element est vide, et
+   `:empty` le retire du flex pour qu'il n'y laisse pas son `gap`. */
+.race-status-ms {
+    letter-spacing: 0;
+    opacity: 0.55;
+}
+
+.race-status-ms:empty {
+    display: none;
+}
+
 .race-status-dot {
     width: 8px;
     height: 8px;
@@ -1503,6 +1515,14 @@
 .leaderboard-camera.is-focused {
     border-color: #ffcc00;
     box-shadow: 0 0 6px rgba(255, 204, 0, 0.9);
+}
+
+/* Réalisation automatique en cours : l'icône passe au jaune. Elle le reste
+   pendant que la caméra est posée sur un kart — c'est justement là qu'il faut
+   pouvoir dire si la vue va bouger toute seule, le liseré ci-dessus ne parlant
+   que de la vue d'ensemble. */
+.leaderboard-camera.is-auto svg {
+    fill: #ffcc00;
 }
 
 @media screen and (max-width: 768px) {
