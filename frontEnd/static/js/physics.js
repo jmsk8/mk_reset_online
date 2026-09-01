@@ -198,11 +198,29 @@
 
     // ── Pipes ───────────────────────────────────────────────────────────────
     //
-    // Un pipe est une boite posee au sol : large le long de la piste, plate en
-    // profondeur. Ses deux axes n'ont pas la meme unite — `worldX` est en pixels
-    // de monde, `y` en profondeur de piste — et rien ici ne les convertit l'un
-    // en l'autre. Le rebond n'en a pas besoin : il choisit sa face en comparant
-    // des durees, et une duree se compare a une duree quel que soit l'axe.
+    // Un pipe est un DISQUE pose au sol : large le long de la piste, plat en
+    // profondeur, et le seul corps rond du moteur — tous les autres sont des
+    // boites. Ses deux axes n'ont pas la meme unite — `worldX` est en pixels de
+    // monde, `y` en profondeur de piste — et rien ici ne les convertit l'un en
+    // l'autre.
+    //
+    // La rondeur se lit donc dans un ESPACE NORMALISE : chaque ecart divise par
+    // le demi-axe correspondant. Le tuyau y devient le cercle unite, les deux
+    // unites du monde disparaissent, et c'est le seul repere ou un angle veut
+    // dire quelque chose pour lui. C'est ce qui remplace l'ancienne comparaison
+    // de durees : elle existait pour ne pas avoir a mettre des pixels en face
+    // d'unites de piste, et normaliser regle le meme probleme une bonne fois.
+    //
+    // A l'ecran ca donne bien un rond, et sans rien convertir : `pipe.hitbox`
+    // porte deja l'aplatissement de la perspective (3.33 : 1, le meme que le
+    // kart), si bien que le disque au sol se dessine comme le sprite se voit.
+
+    // Cet ecart tombe-t-il dans l'emprise ronde `box` ?
+    function insidePipe(box, dx, dy) {
+        const u = dx / box.x;
+        const v = dy / box.y;
+        return u * u + v * v < 1;
+    }
 
     // Un rebond de plus au compteur d'une verte. Rend true si c'etait celui de
     // trop, la carapace etant alors detruite.
@@ -223,24 +241,37 @@
 
     // Rebond d'une carapace sur un pipe. Rend true si le contact a eu lieu.
     //
-    // Le tuyau est rond a l'ecran, sa hitbox est une boite — comme toutes les
-    // autres du moteur. Le rebond se fait donc face par face : la carapace
-    // renverse la composante perpendiculaire a la face touchee et garde l'autre
-    // intacte. Un tir de plein fouet repart d'ou il vient ; le meme tir qui
-    // effleure le tuyau par le flanc ressort renvoye a travers la piste. L'angle
-    // sort de la face touchee et de sa propre trajectoire, sans qu'aucune valeur
-    // ne soit choisie a la main.
+    // Un corps rond n'a pas de faces : il a une NORMALE, differente en chaque
+    // point. Elle se lit directement sur la position dans l'espace normalise
+    // (cf. l'en-tete de section), et elle sert a deux choses : poser le point de
+    // sortie sur l'arc, et dire ce que la carapace doit renverser.
     //
-    // La face touchee est celle qui vient d'etre franchie le plus recemment :
-    // c'est par la que la carapace est entree, donc c'est elle qui renvoie.
+    // ── Pourquoi un seul axe se renverse ─────────────────────────────────
     //
-    // Ce choix se fait sur des **temps**, pas sur des profondeurs d'enfoncement.
-    // Comparer les enfoncements reviendrait a mettre des pixels en face
-    // d'unites de piste, et surtout : un tir de plein fouet, qui n'a aucune
-    // vitesse verticale, se retrouverait classe en contact par le flanc — il n'y
-    // aurait rien a renverser, et la carapace traverserait le tuyau sans le
-    // voir. Le temps, lui, vaut l'infini sur un axe qu'elle ne franchit pas, et
-    // designe donc toujours la bonne face.
+    // La reflexion complete — renverser la part normale de la vitesse, garder la
+    // tangentielle — est la reponse geometrique, et elle est fausse ICI. Les
+    // deux axes du monde ne portent pas la meme echelle de vitesse : une verte
+    // file a 880 px/s le long de la piste pour 1.5 unite/s de derive en
+    // profondeur (`speeds.projectileSpeed` contre `speeds.shellVertical`), un
+    // rapport que rien ne rapproche de celui des demi-axes du tuyau. Reflechir
+    // pour de bon echange les deux budgets a 12 : 1 — un tir effleurant
+    // ressortait a 70 unites/s en profondeur et traversait la piste en un tiers
+    // de seconde, quand une verte met plusieurs secondes a changer de voie. Elle
+    // enjambait au passage `maxSubStepY`, donc les karts.
+    //
+    // Le rond decide donc de l'ANGLE du renvoi, pas de la vitesse : chaque axe
+    // garde la sienne, comme au rebond sur un bord de piste.
+    //
+    // L'axe renverse est celui qui porte le plus l'ENTREE dans le tuyau, mesuree
+    // sur la normale. Ca remplace l'ancienne comparaison de durees, et pour la
+    // raison meme qui la justifiait : un tir de plein fouet n'a aucune vitesse en
+    // profondeur, et le classer en contact de flanc reviendrait a renverser un
+    // zero — la carapace traverserait le tuyau sans le voir. La normale, elle,
+    // vaut zero sur un axe que la carapace ne franchit pas.
+    //
+    // Ce qui change vraiment par rapport aux quatre faces d'avant, c'est OU
+    // passe la bascule entre bout et flanc : elle suit maintenant l'arc, la ou
+    // deux coins la faisaient sauter d'un coup.
     function bounceItemOffPipe(cfg, pipe, item) {
         const box = cfg.pipe.hitbox;
         const margin = 1 + cfg.pipe.escapeMargin;
@@ -248,46 +279,63 @@
         const dx = getShortestDistance(cfg, item.worldX, pipe.worldX);
         const dy = item.y - pipe.y;
 
-        const sideX = dx >= 0 ? 1 : -1;
-        const sideY = dy >= 0 ? 1 : -1;
+        // La normale au point touche : dans l'espace normalise, c'est la
+        // position elle-meme, ramenee a l'unite.
+        let nu = dx / box.x;
+        let nv = dy / box.y;
+        let norm = Math.sqrt(nu * nu + nv * nv);
 
-        // Vitesse d'enfoncement sur chaque axe : positive quand elle rapproche
-        // du centre du tuyau, negative quand la carapace en ressort deja.
-        const intoX = -item.vx * sideX;
-        const intoY = -item.vy * sideY;
+        // Pile au centre, aucune normale ne se calcule. On la prend alors sur la
+        // trajectoire, ce qui renvoie la carapace d'ou elle vient. Le cas
+        // demande d'entrer par le point exact et ne se verra jamais — mais une
+        // division par zero ne se laisse pas au hasard.
+        if (norm < 1e-6) {
+            nu = -item.vx / box.x;
+            nv = -item.vy / box.y;
+            norm = Math.sqrt(nu * nu + nv * nv);
+            if (norm < 1e-6) return false;
+        }
 
-        // Depuis combien de temps chaque face a ete franchie. L'infini marque un
-        // axe qu'elle ne traverse pas : soit elle en ressort, soit elle etait
-        // deja entre les deux faces avant le contact.
-        const timeX = intoX > 0 ? (box.x - Math.abs(dx)) / intoX : Infinity;
-        const timeY = intoY > 0 ? (box.y - Math.abs(dy)) / intoY : Infinity;
+        nu /= norm;
+        nv /= norm;
 
-        // Elle ressort des deux cotes a la fois : la renvoyer la ferait rentrer.
-        if (timeX === Infinity && timeY === Infinity) return false;
+        // Part de l'entree portee par chaque axe, dans le meme repere. Positive
+        // quand cet axe pousse la carapace vers le centre : le renverser la fait
+        // donc ressortir.
+        const inX = -(item.vx / box.x) * nu;
+        const inY = -(item.vy / box.y) * nv;
+
+        // Elle s'eloigne deja par les deux : la renvoyer la ferait rentrer.
+        if (inX <= 0 && inY <= 0) return false;
+
+        // Reposee sur l'arc le long de la normale, marge comprise : sans ca le
+        // sous-pas suivant la retrouve dedans et la renvoie une seconde fois.
+        let outX = pipe.worldX + nu * box.x * margin;
+        let outY = pipe.y + nv * box.y * margin;
 
         // Un pipe colle au bord deborde de la piste : ressortir par ce flanc-la
         // poserait la carapace hors du bitume, ou le rebond de bord la
-        // renverrait aussitot dans le tuyau. Elle repart alors par le bout.
-        const depthOut = pipe.y + sideY * box.y * margin;
-        const depthBlocked = depthOut > cfg.road.maxY || depthOut < cfg.road.minY;
-
-        if (timeY < timeX && !depthBlocked) {
-            // Flanc : c'est la profondeur qui se renverse.
-            item.vy = -item.vy;
-            item.y = depthOut;
-            return true;
-        }
-
-        // Face de bout : c'est l'avance le long de la piste qui se renverse.
-        // C'est aussi le repli quand le flanc ne donne pas sur la piste — et
+        // renverrait aussitot dans le tuyau. Elle repart alors par le bout — et
         // s'il n'y a rien a renverser la non plus, le sous-pas suivant
         // retrouvera une geometrie franche.
-        if (intoX <= 0) return false;
+        if (outY > cfg.road.maxY || outY < cfg.road.minY) {
+            if (inX <= 0) return false;
+            const sideX = dx >= 0 ? 1 : -1;
+            item.vx = -item.vx;
+            outX = pipe.worldX + sideX * box.x * margin;
+            outY = item.y;
+        } else if (inY > inX) {
+            // Flanc : c'est la profondeur qui se renverse.
+            item.vy = -item.vy;
+        } else {
+            // Bout : c'est l'avance le long de la piste.
+            item.vx = -item.vx;
+        }
 
-        item.vx = -item.vx;
-        item.worldX = pipe.worldX + sideX * box.x * margin;
+        item.worldX = outX;
         if (item.worldX < 0) item.worldX += cfg.world.width;
         if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
+        item.y = outY;
         return true;
     }
 
@@ -335,8 +383,9 @@
 
             for (let p = 0; p < pipes.length; p++) {
                 const pipe = pipes[p];
-                if (Math.abs(getShortestDistance(cfg, item.worldX, pipe.worldX)) >= spec.hitbox.x) continue;
-                if (Math.abs(item.y - pipe.y) >= spec.hitbox.y) continue;
+                const pdx = getShortestDistance(cfg, item.worldX, pipe.worldX);
+                if (Math.abs(pdx) >= spec.hitbox.x) continue;
+                if (!insidePipe(spec.hitbox, pdx, item.y - pipe.y)) continue;
 
                 // La rouge se brise dessus : elle n'a qu'une trajectoire, celle
                 // de sa cible, et rien a faire d'un rebond.
@@ -400,12 +449,39 @@
         const pipes = state.pipes;
         if (!pipes.length) return;
 
-        const reach = cfg.hitboxes.kartVsPipe;
+        const box = cfg.pipe.hitbox;
+
+        // La carrosserie de CE kart, et non celle du kart de reference : c'est
+        // la seule mesure qui decide de ce qui touche, et elle vient de son
+        // sprite (cf. `kartHalfExtents`). Un kart long se cogne donc plus tot
+        // qu'un court, sur le tuyau comme sur un adversaire.
+        //
+        // La carrosserie reste une boite, le tuyau est rond : leur somme est un
+        // rectangle aux coins arrondis, et c'est exactement ce que teste le
+        // rabotage plus bas. La partie PLATE de ce rectangle vaut exactement la
+        // demi-carrosserie — c'est ce que `kartVsPipe - pipe.hitbox` rendait par
+        // soustraction quand la mesure etait la meme pour tous, et qui se lit
+        // maintenant directement.
+        //
+        // Seuls les coins changent. De face comme de flanc, le contact tombe sur
+        // la partie plate et vaut ce qu'il valait — un kart ne passe pas plus
+        // pres, il passe seulement en diagonale la ou la boite le retenait par
+        // un angle que le tuyau n'a pas.
+        const flat = kartHalfExtents(cfg, kart, now);
+        const reachX = box.x + flat.x;
+        const reachY = box.y + flat.y;
 
         for (let p = 0; p < pipes.length; p++) {
             const pipe = pipes[p];
-            if (Math.abs(getShortestDistance(cfg, kart.worldX, pipe.worldX)) >= reach.x) continue;
-            if (Math.abs(kart.yPercent - pipe.y) >= reach.y) continue;
+            const dx = getShortestDistance(cfg, kart.worldX, pipe.worldX);
+            if (Math.abs(dx) >= reachX) continue;
+            const dy = kart.yPercent - pipe.y;
+            if (Math.abs(dy) >= reachY) continue;
+
+            // Hors de la croix plate : c'est l'arc du tuyau qui tranche.
+            const cornerX = Math.abs(dx) - flat.x;
+            const cornerY = Math.abs(dy) - flat.y;
+            if (cornerX > 0 && cornerY > 0 && !insidePipe(box, cornerX, cornerY)) continue;
 
             // Une toupie ne se cogne pas : elle est deja hors de controle. Le
             // tuyau l'arrete et la fait glisser le long, un point c'est tout —
@@ -921,18 +997,66 @@
 
     // Les ombres portees, gardees telles quelles au lieu d'etre fusionnees :
     // avec huit karts et sept tuyaux la liste ne depasse pas la quinzaine, et
-    // tester quinze intervalles coute moins cher que de les tenir tries.
-    const shadowLo = [];
-    const shadowHi = [];
+    // tester quinze volumes coute moins cher que de les tenir tries.
+    //
+    // Une ombre n'est plus une tranche de profondeur mais un VOLUME au sol, vu
+    // depuis la camera de poursuite (cf. `vision.eye`) : deux pentes qui
+    // s'ecartent en s'eloignant de l'oeil, et une longueur au-dela de laquelle
+    // la route se revoit. Quatre nombres par corps au lieu de deux.
+    //
+    // Les pentes sont rapportees a l'oeil, jamais au corps : les rayons partent
+    // de la camera, et une ombre ancree sur l'obstacle pointerait de travers des
+    // que le kart n'est pas sur sa ligne.
+    const shadowLo = [];    // pente basse, en profondeur par pixel
+    const shadowHi = [];    // pente haute
+    const shadowFrom = [];  // distance a l'oeil ou l'ombre commence
+    const shadowTo = [];    // ... et ou elle s'arrete
     let shadowCount = 0;
 
-    // La vue etant de cote, une ombre n'est pas un cone : elle occupe la meme
-    // tranche de profondeur quelle que soit la distance. Masquer se reduit donc
-    // a une appartenance a un intervalle, et c'est ce qui rend l'occlusion
-    // presque gratuite.
-    function shadowHides(y) {
+    // La camera de CE balayage : son recul et la profondeur du kart. Poses par
+    // `perceive`, lus par les deux fonctions ci-dessous — comme les tampons de
+    // balayage, un seul jeu suffit puisque tout se consomme dans le meme appel.
+    let shadowEyeBack = 0;
+    let shadowEyeY = 0;
+    let shadowRun = 0;
+
+    // La distance a l'OEIL d'une entree du balayage. `look` se mesure depuis le
+    // kart ; la camera est en arriere de lui, du cote oppose au regard.
+    function eyeDist(look) {
+        return look + shadowEyeBack;
+    }
+
+    // Ce corps est-il dans l'ombre d'un plus proche ?
+    //
+    // L'ancienne reponse tenait en une appartenance a un intervalle : la vue
+    // etant DE COTE, disait le commentaire, une ombre occupe la meme tranche de
+    // profondeur quelle que soit la distance. C'est vrai de la camera du
+    // SPECTATEUR, et c'est ce qui rendait le raisonnement seduisant — mais le
+    // kart, lui, regarde le long de la piste. De son point de vue une ombre est
+    // bel et bien un cone, et la traiter en tranche donnait a un kart lointain
+    // le meme pouvoir masquant qu'a un kart colle au pare-chocs.
+    //
+    // On compare donc des PENTES, pas des profondeurs — la meme chose qu'un
+    // rayon lance depuis l'oeil, mais exacte et sans budget de rayons : un
+    // lancer echantillonne raterait un passage plus fin que son pas angulaire,
+    // et il en existe (deux karts a trois unites l'un de l'autre, a 800 px).
+    // Une division par entree, et l'occlusion reste presque gratuite.
+    function shadowHides(look, y) {
+        const de = eyeDist(look);
+
+        // Derriere la camera : il n'y a rien a masquer, et la pente n'aurait
+        // aucun sens. Le seuil evite aussi la division qui explose a l'oeil.
+        if (de <= 1) return false;
+
+        const rel = (y - shadowEyeY) / de;
+
         for (let i = 0; i < shadowCount; i++) {
-            if (y > shadowLo[i] && y < shadowHi[i]) return true;
+            // Devant l'obstacle, ou au-dela du bout de son ombre : on voit.
+            // C'est TOUTE la difference avec une vue au ras du sol, ou la
+            // seconde borne n'existait pas et ou un corps cachait tout ce qui
+            // le suivait jusqu'a l'horizon.
+            if (de <= shadowFrom[i] || de >= shadowTo[i]) continue;
+            if (rel > shadowLo[i] && rel < shadowHi[i]) return true;
         }
         return false;
     }
@@ -1113,8 +1237,8 @@
         //   sa place       le premier n'a plus que l'arriere a surveiller ; le
         //                  dernier n'a personne derriere, et n'y jette qu'un
         //                  oeil distrait.
-        //   son objet      qui vient d'en ramasser un sait qu'il vaut la peine
-        //                  d'etre garde, et regarde qui arrive.
+        //   une zone vue   qui vient de traverser des boxes sait que ceux qui
+        //                  l'entourent viennent peut-etre de s'armer.
         //   un danger vu   une carapace, un porteur, une etoile. Tant qu'il
         //                  est frais, la surveillance ne redescend pas.
         //
@@ -1124,8 +1248,9 @@
         // ailleurs dans le fichier.
         let chance = rankChance(vis.backChance, state, kart);
 
-        if (now - kart.itemGotAt <= vis.armedGlanceMs && vis.backChanceArmed > chance) {
-            chance = vis.backChanceArmed;
+        if (now - kart.boxPassedAt <= vis.boxGlanceMs) {
+            const armed = rankChance(vis.backChanceBox, state, kart);
+            if (armed > chance) chance = armed;
         }
 
         if (dangerBehind(cfg, now, kart)) {
@@ -1328,7 +1453,10 @@
         sight.pressure = false;
         sight.pressureY = 0;
         sight.pressureId = 0;
+        sight.pressureBack = false;
         sight.spanCount = 0;
+        sight.hiddenCount = 0;
+        sight.scanRange = range;
         sight.crowdCount = 0;
         sight.redBehindDist = -1;
         sight.redBehindY = 0;
@@ -1337,6 +1465,13 @@
 
         scanCount = 0;
         shadowCount = 0;
+
+        // La camera de poursuite. Elle est TOUJOURS en arriere du regard : un
+        // coup d'oeil arriere la fait passer devant le kart, ce qui est bien ce
+        // qu'on veut — c'est le sens du regard qui la place, pas la marche.
+        shadowEyeBack = vis.eye.back;
+        shadowEyeY = kart.yPercent;
+        shadowRun = vis.eye.run;
 
         const kartReach = cfg.hitboxes.kartVsKart;
         const pipeReach = cfg.hitboxes.kartVsPipe;
@@ -1681,13 +1816,21 @@
                 // `pressureRange` ne peut plus depasser en silence ce que l'oeil
                 // atteint.
                 //
+                // Ni l'un ni l'autre ne demande que l'objet soit DEJA en
+                // trainee. C'est meme tout l'interet : la hitbox d'un objet ne
+                // s'arme qu'au passage de la main au trainage, et un kart colle
+                // derriere un porteur n'aurait alors plus le temps de rien. Un
+                // danger se remarque tant qu'il est dans les mains ; ce qui
+                // compte est ce que le porteur PEUT en faire, pas ce qu'il en a
+                // deja fait.
+                //
                 // `look` vaut ici l'ecart au kart, les deux etant du meme cote.
                 const behind = dx < 0;
                 if (behind === sight.back
                     && look <= vis.pressureRange
                     && Math.abs(other.yPercent - kart.yPercent) < clear
                     && (behind ? isArmedForward(cfg, other)
-                               : !!held && isTrailable(cfg, held.type))) {
+                               : isTrailable(cfg, heldThreatType(held)))) {
                     e.role |= SEE_PRESSURE;
                 }
             }
@@ -1777,7 +1920,24 @@
 
         for (let i = 0; i < scanCount; i++) {
             const e = scanPool[scanOrder[i]];
-            const seen = e.pierces || !shadowHides(e.y);
+            const seen = e.pierces || !shadowHides(e.look, e.y);
+
+            // Ce que l'ombre a MANGE, releve pour l'observateur et pour lui
+            // seul. Rien ne le lit dans le moteur, et c'est justement ce qui
+            // manquait pour comprendre une non-reaction : sans lui, un kart qui
+            // ignore une banane et un kart qui ne la voit pas se ressemblent
+            // trait pour trait. Meme convention de signe que partout ailleurs —
+            // les karts en negatif, les objets a partir de 1.
+            //
+            // Le tableau se reutilise d'un balayage a l'autre, comme les spans :
+            // un balayage n'alloue rien.
+            if (!seen) {
+                const hidden = (e.kartId >= 0) ? (-1 - e.kartId) : e.id;
+                if (hidden) {
+                    sight.hiddenIds[sight.hiddenCount] = hidden;
+                    sight.hiddenCount++;
+                }
+            }
 
             if (seen) {
                 if (e.role & SEE_BLOCK) pushSpan(sight, e);
@@ -1907,6 +2067,13 @@
                     sight.pressureY = e.y;
                     sight.pressureId = -1 - e.kartId;
 
+                    // De quel COTE. Un seul releve porte les deux formes du
+                    // danger latent — le balayage ne regarde qu'un cote a la
+                    // fois, elles ne peuvent pas se croiser — mais ce qu'on en
+                    // fait differe : deux echeances de decision, et un releve
+                    // de debug qui ne les met pas sur la meme ligne.
+                    sight.pressureBack = sight.scanBack;
+
                     // Vu DERRIERE : c'est ce qui fait tourner la tete plus
                     // souvent. Etre vise dans le dos ne se constate qu'en se
                     // retournant, et le tirage du coup d'oeil n'a jamais lieu
@@ -1952,9 +2119,20 @@
             }
 
             if (e.solid) {
-                shadowLo[shadowCount] = e.y - e.shadowHalf;
-                shadowHi[shadowCount] = e.y + e.shadowHalf;
-                shadowCount++;
+                const de = eyeDist(e.look);
+
+                // Un corps derriere la camera ne porte pas d'ombre devant elle.
+                // Le cas existe : la camera recule de `eye.back`, et le balayage
+                // prend les corps jusqu'a une carrosserie en arriere du kart —
+                // ceux-la sont bien entre l'oeil et la route, et projettent.
+                if (de > 1) {
+                    const inv = 1 / de;
+                    shadowLo[shadowCount] = (e.y - e.shadowHalf - shadowEyeY) * inv;
+                    shadowHi[shadowCount] = (e.y + e.shadowHalf - shadowEyeY) * inv;
+                    shadowFrom[shadowCount] = de;
+                    shadowTo[shadowCount] = de * (1 + shadowRun);
+                    shadowCount++;
+                }
             }
         }
 
@@ -1966,6 +2144,95 @@
             if (now - sight.dangerAt > vis.pressureMemoryMs) sight.dangerSince = now;
             sight.dangerAt = now;
             sight.dangerKind = dangerKind;
+        }
+
+        // ── Et le souvenir de la ROUGE qui suit ──────────────────────────
+        //
+        // Il n'y en avait aucun, et c'est ce qui rendait « laisser passer »
+        // presque injouable : le releve ne se remplit que sous un balayage
+        // arriere, et il se vide au suivant. La decision ne pouvait donc se
+        // prendre QUE pendant le coup d'oeil — un dixieme du temps — et la
+        // seconde d'apres le kart ne savait plus que c'etait une rouge.
+        //
+        // A l'ecran ca donnait exactement ce qu'on a observe : un kart qui
+        // reste vaguement inquiet, parce que `dangerKind` tient encore, mais
+        // qui a oublie CE QUI le suit et ne se range donc jamais.
+        //
+        // Meme regle que partout ailleurs : le balayage tourne vers le danger
+        // fait foi, l'autre laisse valoir le souvenir, meme peremption.
+        //
+        // La distance vieillit, et c'est assume : le porteur s'est rapproche ou
+        // eloigne depuis. C'est une approximation, mais elle vaut infiniment
+        // mieux que la seule alternative d'avant — ne rien savoir du tout des
+        // que la tete revient devant.
+        if (sight.scanBack) {
+            if (sight.redBehindDist >= 0) {
+                sight.redMemAt = now;
+                sight.redMemDist = sight.redBehindDist;
+                sight.redMemY = sight.redBehindY;
+                sight.redMemId = sight.redBehindId;
+                sight.redMemCount = sight.redBehindCount;
+            } else {
+                sight.redMemAt = -Infinity;
+            }
+        } else if (now - sight.redMemAt <= vis.pressureMemoryMs) {
+            sight.redBehindDist = sight.redMemDist;
+            sight.redBehindY = sight.redMemY;
+            sight.redBehindId = sight.redMemId;
+            sight.redBehindCount = sight.redMemCount;
+        }
+
+        // Les ombres, recopiees pour l'observateur. Rien dans le pilotage ne
+        // les relit — elles ont deja servi pendant la marche — mais sans elles
+        // la carte ne peut montrer que des entites grisees, jamais OU se trouve
+        // le trou. Une quinzaine d'entrees, dans des tableaux reutilises : c'est
+        // le meme prix que `hiddenIds`, paye pour la meme raison.
+        for (let i = 0; i < shadowCount; i++) {
+            sight.shadowLo[i] = shadowLo[i];
+            sight.shadowHi[i] = shadowHi[i];
+            sight.shadowFrom[i] = shadowFrom[i];
+            sight.shadowTo[i] = shadowTo[i];
+        }
+        sight.shadowCount = shadowCount;
+        sight.eyeBack = shadowEyeBack;
+        sight.eyeY = shadowEyeY;
+
+        // ── Et le souvenir du porteur qu'on SUIT ─────────────────────────
+        //
+        // Il manquait, et c'est la moitie du danger latent qui tombait avec.
+        // La config presente les deux bouts comme la meme situation vue des
+        // deux cotes ; le derriere avait sa memoire datee, le devant n'avait
+        // que le balayage courant.
+        //
+        // Ce qui s'ensuivait : un coup d'oeil arriere — une demi-seconde a une
+        // seconde et quart, et jusqu'a un tiers du temps quand quelqu'un le
+        // suit — EFFACAIT purement et simplement le porteur que le kart avait
+        // devant lui. Au retour de tete la precaution repartait de zero, son
+        // tirage tombait rarement, et le kart restait dans l'axe d'une verte
+        // jusqu'a ce qu'elle parte.
+        //
+        // Le balayage AVANT fait foi, dans les deux sens : il pose le souvenir
+        // quand il voit, il l'efface quand il ne voit plus. Le balayage
+        // arriere, lui, n'a rien a en dire — il le laisse valoir, exactement
+        // comme `dangerBehind` laisse valoir ce qui est dans le dos pendant
+        // qu'on regarde devant. Meme peremption pour les deux : ce qu'on ne
+        // revoit pas cesse de compter.
+        //
+        // Un danger arriere garde la main quand il y en a un : lui peut tirer,
+        // le porteur de devant ne peut que laisser tomber.
+        if (!sight.scanBack) {
+            if (sight.pressure) {
+                sight.frontAt = now;
+                sight.frontY = sight.pressureY;
+                sight.frontId = sight.pressureId;
+            } else {
+                sight.frontAt = -Infinity;
+            }
+        } else if (!sight.pressure && now - sight.frontAt <= vis.pressureMemoryMs) {
+            sight.pressure = true;
+            sight.pressureBack = false;
+            sight.pressureY = sight.frontY;
+            sight.pressureId = sight.frontId;
         }
 
         // ── Le temps qu'il reste APRES le mur du moment ──────────────────
@@ -2824,9 +3091,22 @@
         // dos ; un kart qui ne le ferait jamais resterait colle derriere une
         // verte jusqu'a ce qu'elle parte. Ratee, la decision se retente apres
         // `retryMs` : le danger, lui, n'a pas disparu.
-        if (!plan.threatId && sight.pressure && now >= kart.safetyRetryAt) {
+        //
+        // Une echeance PAR COTE, et il en fallait deux. Un seul compteur tenait
+        // les deux formes du danger latent, si bien qu'elles se volaient leurs
+        // tirages : un de rate contre le porteur qu'on a dans le dos — pendant
+        // un coup d'oeil arriere — rendait sourd pendant `retryMs` a celui
+        // qu'on suit, et reciproquement. Ce sont deux decisions differentes,
+        // prises sur deux dangers differents ; les faire attendre l'une pour
+        // l'autre n'avait aucun sens, et penalisait surtout le devant, dont les
+        // occasions sont les plus longues.
+        const pressBack = sight.pressureBack;
+        const retryAt = pressBack ? kart.safetyRetryBackAt : kart.safetyRetryFrontAt;
+
+        if (!plan.threatId && sight.pressure && now >= retryAt) {
             const safety = vis.safety;
-            kart.safetyRetryAt = now + safety.retryMs;
+            if (pressBack) kart.safetyRetryBackAt = now + safety.retryMs;
+            else kart.safetyRetryFrontAt = now + safety.retryMs;
 
             if (rng() < safety.chance) {
                 plan.kind = 'safety';
@@ -3763,6 +4043,23 @@
         return (cfg.trailableItems || []).indexOf(itemType) !== -1;
     }
 
+    // Le type qui MENACE, pour un objet tenu, et il n'est pas toujours celui
+    // qu'on lit.
+    //
+    // Un triple annonce le type de son GROUPE — `tripleGreenShell` — et non
+    // celui de ce qu'il largue. Lu tel quel, aucun des predicats de danger
+    // latent ne le reconnaissait : ni `isTrailable`, dont la liste ne contient
+    // que des objets simples, ni `isArmedForward`, qui a pourtant ete ecrit
+    // pour fermer cet ecart-la. L'orbite y retombait des deux cotes.
+    //
+    // Sans effet a l'ecran tant que les triples sont dans `disabledItems`, et
+    // c'est bien le probleme : le jour ou on vide cette liste, le trou revient
+    // en silence.
+    function heldThreatType(held) {
+        if (!held) return '';
+        return held.childType || held.type;
+    }
+
     // Une banane simplement lachee derriere soi ne se vise pas.
     function isAiming(cfg, kart) {
         const held = kart.heldItem;
@@ -3782,10 +4079,10 @@
     // Une banane ne compte pas : lachee, elle reste derriere son porteur. Lancee
     // en cloche, si — et c'est alors une visee, d'ou le meme test qu'ailleurs.
     function isArmedForward(cfg, kart) {
-        const held = kart.heldItem;
-        if (!held) return false;
-        if (held.type === 'greenShell' || held.type === 'redShell') return true;
-        return held.type === 'banana' && kart.lobbing;
+        const type = heldThreatType(kart.heldItem);
+        if (!type) return false;
+        if (type === 'greenShell' || type === 'redShell') return true;
+        return type === 'banana' && kart.lobbing;
     }
 
     // Agressivite du kart, de 0 a 1. Le rang et l'ecart au premier se
@@ -3835,10 +4132,6 @@
 
         kart.shotDirection = 1;
         kart.lobbing = false;
-
-        // Ce qui rend le coup d'oeil arriere plus frequent pendant quelques
-        // secondes : on vient de gagner quelque chose a proteger.
-        kart.itemGotAt = now;
 
         if (itemType === 'greenShell' || itemType === 'redShell') {
             kart.shotDirection = rollShellDirection(cfg, rng, state, kart, itemType);
@@ -4368,7 +4661,9 @@
 
                     const dx = Math.abs(getShortestDistance(cfg, pos.worldX, victim.worldX));
                     const dy = Math.abs(pos.y - victim.yPercent);
-                    if (dx >= cfg.hitboxes.orbitItemVsKart.x || dy >= cfg.hitboxes.orbitItemVsKart.y) continue;
+                    const orbit = cfg.hitboxes.orbitItemVsKart;
+                    if (dx >= shrunkReachX(cfg, orbit, victim, now)
+                        || dy >= shrunkReachY(cfg, orbit, victim, now)) continue;
 
                     // Une etoile ou un bill encaisse l'objet sans etre ralenti,
                     // mais le consomme quand meme : le bouclier s'use au contact.
@@ -4568,13 +4863,63 @@
     // dans `vy` etait ramene vers la consigne de l'IA par le volant en
     // 200 ms, soit avant meme que les deux karts se soient decolles.
 
-    // Demi-emprise d'un kart. La boite d'une paire est la somme des deux, d'ou
-    // ce detour : aujourd'hui tous les karts ont la meme et la somme redonne
-    // exactement `hitboxes.kartVsKart`, mais c'est ici que passera une
-    // carrosserie plus large pour les lourds, sans toucher au reste.
-    function kartHalfExtents(cfg, kart) {
-        const box = cfg.hitboxes.kartVsKart;
-        return { x: box.x * 0.5, y: box.y * 0.5 };
+    // Demi-emprise d'un kart, et elle lui est PROPRE : elle vient de la taille
+    // de son sprite, pas d'une constante commune (cf. `bodies` en config). Deux
+    // karts au contact somment donc leurs deux emprises, ce qui fait qu'un long
+    // et un court ne se touchent pas au meme ecart.
+    //
+    // Le repli sur le kart de reference ne devrait jamais servir : la config
+    // refuse de charger si un personnage n'a pas sa mesure. Il est la pour que
+    // le cas impossible reste une course a la taille moyenne du plateau, et non
+    // un plantage en pleine partie.
+    //
+    // ── L'eclair retaille la carrosserie ────────────────────────────────
+    //
+    // Un kart rapetisse est dessine a `lightning.scale` : son emprise l'est
+    // aussi, sur les deux axes. Ca n'allait pas de soi jusqu'ici — `scale`
+    // n'etait qu'une valeur de rendu, et un kart reduit de moitie continuait de
+    // se cogner aux tuyaux avec un corps de taille pleine. Il se faisait
+    // arreter par un mur qu'il venait visiblement de franchir.
+    //
+    // Un objet du monde qui a l'air petit doit toucher petit : c'est la meme
+    // regle que celle qui fait descendre la longueur du sprite, appliquee a un
+    // gabarit qui change en cours de course au lieu d'etre fixe.
+    //
+    // Le chemin rapide ne fabrique rien : hors rapetissement, c'est l'objet de
+    // la config qui ressort tel quel, et cette fonction est appelee pour chaque
+    // paire de karts a chaque pas.
+    function kartHalfExtents(cfg, kart, now) {
+        const body = cfg.bodies.kart[kart.charName] || cfg.bodies.ref;
+        if (!isShrunkAt(kart, now)) return body;
+        const f = cfg.lightning.scale;
+        return { x: body.x * f, y: body.y * f };
+    }
+
+    // Un ecart entre centres KART-OBJET, corrige du rapetissement.
+    //
+    // `box` est l'ecart regle pour un kart de taille normale — `itemVsKart`,
+    // `orbitItemVsKart` — c'est-a-dire la demi-emprise de l'objet PLUS une
+    // demi-carrosserie. Seule la seconde a rapetisse : on retire donc la part
+    // que l'eclair a fait disparaitre, et l'objet garde la sienne entiere.
+    //
+    // La carrosserie retiree est celle du kart de REFERENCE, et non celle de ce
+    // kart-ci. Ce n'est pas une approximation par paresse : les emprises
+    // d'objets sont reglees a la main et n'ont jamais suivi le gabarit des
+    // personnages. Les y faire entrer par cette porte changerait l'equilibrage
+    // des esquives pour tout le monde, alors qu'on ne corrige ici qu'un kart
+    // frappe par la foudre.
+    //
+    // A taille normale la valeur reglee ressort intacte, au bit pres. Et la
+    // formule degrade juste : a `scale` nul, il ne reste que la demi-emprise de
+    // l'objet — le kart est devenu un point.
+    function shrunkReachX(cfg, box, kart, now) {
+        if (!isShrunkAt(kart, now)) return box.x;
+        return box.x - cfg.bodies.ref.x * (1 - cfg.lightning.scale);
+    }
+
+    function shrunkReachY(cfg, box, kart, now) {
+        if (!isShrunkAt(kart, now)) return box.y;
+        return box.y - cfg.bodies.ref.y * (1 - cfg.lightning.scale);
     }
 
     // Masse vue par un contact — et elle n'est pas la masse du kart.
@@ -4765,8 +5110,8 @@
             boxX = cfg.bill.hitbox.x;
             boxY = cfg.bill.hitbox.y;
         } else {
-            const halfA = kartHalfExtents(cfg, a);
-            const halfB = kartHalfExtents(cfg, b);
+            const halfA = kartHalfExtents(cfg, a, now);
+            const halfB = kartHalfExtents(cfg, b, now);
             boxX = halfA.x + halfB.x;
             boxY = halfA.y + halfB.y;
         }
@@ -5519,7 +5864,6 @@
             if (!box.active && now > box.reactivateTime) {
                 box.active = true;
             }
-            if (!box.active) continue;
 
             const kartsLen0 = state.karts.length;
             for (let k = 0; k < kartsLen0; k++) {
@@ -5529,12 +5873,26 @@
 
                 const dist = getShortestDistance(cfg, box.worldX, kart.worldX);
                 const dy = Math.abs(box.y - kart.yPercent);
-                if (Math.abs(dist) < cfg.hitboxes.itemBox.x && dy < cfg.hitboxes.itemBox.y) {
-                    box.active = false;
-                    box.reactivateTime = now + cfg.delays.boxRespawn;
-                    if (!kart.heldItem) {
-                        kart.pendingItemGrantTime = now + cfg.delays.itemGrant;
-                    }
+                if (Math.abs(dist) >= cfg.hitboxes.itemBox.x) continue;
+                if (dy >= cfg.hitboxes.itemBox.y) continue;
+
+                // Le passage se date en premier, et sans condition : la zone se
+                // traverse qu'il y reste un cube ou non, qu'on ait les mains
+                // pleines ou non. C'est l'endroit qui rend prudent, pas le
+                // butin — celui qui suit vient peut-etre d'y prendre de quoi
+                // tirer. Cf. `vision.boxGlanceMs`.
+                //
+                // C'est pour ce releve-la que la boucle ne saute plus les cubes
+                // eteints : elle les parcourt pour leur position, qui ne bouge
+                // jamais, et ne consomme que ceux qui sont encore la.
+                kart.boxPassedAt = now;
+
+                if (!box.active) continue;
+
+                box.active = false;
+                box.reactivateTime = now + cfg.delays.boxRespawn;
+                if (!kart.heldItem) {
+                    kart.pendingItemGrantTime = now + cfg.delays.itemGrant;
                 }
             }
         }
@@ -5875,7 +6233,12 @@
 
                         const hitThresholdY = 8;
 
-                        if (dx < cfg.hitboxes.itemVsKart.x && dy < hitThresholdY) {
+                        // `dx` porte la carrosserie de la victime, donc son
+                        // rapetissement. `dy` non : ce 8 n'est pas une somme de
+                        // corps mais une tolerance de profondeur posee ici, et
+                        // la rogner reviendrait a regler autre chose.
+                        if (dx < shrunkReachX(cfg, cfg.hitboxes.itemVsKart, victim, now)
+                            && dy < hitThresholdY) {
                             if (isRamming(victim)) {
                                 events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                                 kart.heldItem = null;
@@ -6137,8 +6500,9 @@
 
                 if (isRamming(kart)) {
                     const dk = Math.abs(getShortestDistance(cfg, item.worldX, kart.worldX));
-                    if (dk < cfg.hitboxes.itemVsKart.x
-                        && crossedDepth(item, kart.yPercent, cfg.hitboxes.itemVsKart.y)) {
+                    if (dk < shrunkReachX(cfg, cfg.hitboxes.itemVsKart, kart, now)
+                        && crossedDepth(item, kart.yPercent,
+                                        shrunkReachY(cfg, cfg.hitboxes.itemVsKart, kart, now))) {
                         spendItem(cfg, item, now);
                         break;
                     }
@@ -6179,9 +6543,14 @@
 
                 if (hitHeldItem) break;
 
+                // Le contact qui BLESSE, et le seul de cette boucle a mettre en
+                // jeu une carrosserie : les deux tests plus haut opposent
+                // l'objet a un autre objet — celui qu'on traine, celui qui
+                // tourne en orbite — et n'ont pas de corps a rapetisser.
+                const body = cfg.hitboxes.itemVsKart;
                 const dk = Math.abs(getShortestDistance(cfg, item.worldX, kart.worldX));
-                if (dk < cfg.hitboxes.itemVsKart.x
-                    && crossedDepth(item, kart.yPercent, cfg.hitboxes.itemVsKart.y)) {
+                if (dk < shrunkReachX(cfg, body, kart, now)
+                    && crossedDepth(item, kart.yPercent, shrunkReachY(cfg, body, kart, now))) {
                     if (kart.state === 'running' && kart.hitInvincibleUntil <= now) {
                         kart.state = 'hit';
                         kart.hitEndTime = now + spinDuration(cfg);
@@ -6372,10 +6741,10 @@
                 trailTime: 0,
                 brakeUntil: 0,
 
-                // Quand il a ramasse son objet — le coup d'oeil arriere en
-                // depend (cf. `vision.armedGlanceMs`) — et l'episode de danger
-                // pour lequel il a deja tranche entre bouclier et tir.
-                itemGotAt: -Infinity,
+                // Quand il a traverse une zone de boxes — le coup d'oeil
+                // arriere en depend (cf. `vision.boxGlanceMs`) — et l'episode de
+                // danger pour lequel il a deja tranche entre bouclier et tir.
+                boxPassedAt: -Infinity,
                 shieldAt: -Infinity,
                 shieldHold: false,
 
@@ -6436,6 +6805,33 @@
                     spans: [],
                     spanCount: 0,
 
+                    // Ce que le balayage a vu passer sans le voir : ce qui
+                    // tombait dans l'ombre d'un corps plus proche. Purement
+                    // observable — aucune decision ne le lit. Cf. `perceive`.
+                    hiddenIds: [],
+                    hiddenCount: 0,
+
+                    // Les ombres elles-memes, telles que la marche les a
+                    // empilees : deux pentes depuis l'oeil, et les deux
+                    // distances entre lesquelles elles portent. Observable
+                    // aussi — la decision les a deja consommees.
+                    shadowLo: [],
+                    shadowHi: [],
+                    shadowFrom: [],
+                    shadowTo: [],
+                    shadowCount: 0,
+
+                    // Ou etait la camera pendant ce balayage. Sans elle, les
+                    // pentes ci-dessus ne se rattachent a rien.
+                    eyeBack: 0,
+                    eyeY: 0,
+
+                    // La portee du balayage courant, avant ou arriere. Elle se
+                    // deduit du sens et de `vision.range`, mais l'observateur
+                    // n'a pas a refaire ce choix : ce qui s'affiche doit etre ce
+                    // que le moteur a regarde.
+                    scanRange: 0,
+
                     // Les profondeurs des karts qui roulent avec lui — cf.
                     // `vision.crowd` et l'encombrement dans `laneRisk`.
                     crowdY: [],
@@ -6452,6 +6848,19 @@
                     pressure: false,
                     pressureY: 0,
                     pressureId: 0,
+                    // De quel cote vient le releve ci-dessus : un porteur dans
+                    // le dos qui peut tirer, ou un porteur devant qui peut
+                    // lacher. Meme perception, deux decisions.
+                    pressureBack: false,
+
+                    // Le porteur qu'on SUIT, et depuis quand. Meme souvenir
+                    // date que `dangerAt` plus bas, meme peremption, pour la
+                    // meme raison : un coup d'oeil arriere ne doit pas effacer
+                    // ce que le kart a devant lui. Seul un balayage AVANT pose
+                    // ou leve ce souvenir.
+                    frontAt: -Infinity,
+                    frontY: 0,
+                    frontId: 0,
 
                     // Le danger APERCU DERRIERE, et depuis quand.
                     //
@@ -6482,7 +6891,16 @@
                     redBehindDist: -1,
                     redBehindY: 0,
                     redBehindId: 0,
-                    redBehindCount: 0
+                    redBehindCount: 0,
+
+                    // Et leur souvenir, sans lequel le releve ci-dessus
+                    // n'existait que pendant le coup d'oeil. Meme peremption
+                    // que `dangerAt`, et pose par le seul balayage arriere.
+                    redMemAt: -Infinity,
+                    redMemDist: -1,
+                    redMemY: 0,
+                    redMemId: 0,
+                    redMemCount: 0
                 },
 
                 // Le plan d'evitement en cours. Il survit a la perte de vue :
@@ -6514,10 +6932,14 @@
                 judgedReactAt: new Array(cfg.vision.memorySlots).fill(0),
                 judgedIgnored: new Array(cfg.vision.memorySlots).fill(false),
 
-                // Prochaine chance de prendre une decision de securite. Elle est
-                // tenue par kart et non par danger : ce qui se retente est la
-                // decision, pas la perception de celui qui la provoque.
-                safetyRetryAt: 0,
+                // Prochaine chance de prendre une decision de securite, UNE PAR
+                // COTE. Ce qui se retente est la decision et non la perception
+                // de celui qui la provoque — mais se ranger devant un porteur
+                // et se ranger derriere un porteur sont deux decisions, prises
+                // sur deux dangers. Un compteur commun les faisait s'annuler
+                // l'une l'autre (cf. `updatePlan`).
+                safetyRetryFrontAt: 0,
+                safetyRetryBackAt: 0,
                 // Prochaine reprise du couloir de tuyau. Zero : le premier
                 // couloir choisi est aussitot revisable (cf. steerAroundPipes).
                 pipeReviewAt: 0,
