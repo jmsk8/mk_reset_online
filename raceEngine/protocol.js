@@ -12,7 +12,7 @@
 // demander « un arrivant peut-il le deduire du seul snapshot ? ». Si non, c'est
 // ici qu'il manque un champ.
 
-const PROTOCOL_VERSION = 9;
+const PROTOCOL_VERSION = 10;
 
 // Champ de bits de l'etat d'un kart. Compact parce qu'il part dix fois par
 // seconde a chaque spectateur (voir §6.7 du document de migration).
@@ -526,7 +526,14 @@ function buildHello(cfg, state, simTime, t0, vote) {
         // n'ont rien a faire dans un snapshot envoye dix fois par seconde.
         // L'ordre est celui de `state.pipes`, et c'est lui que porte l'index
         // d'un evenement `pipeShaken`.
-        pipes: state.pipes.map(pipe => ({ x: round(pipe.worldX, 2), y: round(pipe.y, 2) })),
+        // `kind` porte la couleur du tuyau, et rien d'autre : le jeu ne la lit
+        // pas, mais le decor ne peut pas la deduire — d'ou sa place ici, comme
+        // le veut la regle du fichier.
+        pipes: state.pipes.map(pipe => ({
+            x: round(pipe.worldX, 2),
+            y: round(pipe.y, 2),
+            kind: pipe.kind || 'green'
+        })),
 
         snapshot: buildSnapshot(cfg, state, simTime, vote)
     };

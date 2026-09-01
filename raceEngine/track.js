@@ -151,14 +151,27 @@ function parseTrack(text, source) {
                 continue;
             }
 
-            if (ch === 'P') {
-                pipes.push({ col: col, row: i - first - 1 });
+            // Deux couleurs, un seul obstacle. `P` plante un tuyau vert, `p`
+            // un rouge, et c'est TOUTE la difference : meme emprise, meme
+            // choc, meme place dans les priorites de l'IA. La couleur ne
+            // voyage que jusqu'au decor.
+            //
+            // Elle n'est donc pas un element de plus a apprendre pour dessiner
+            // un circuit : un tuyau est un tuyau, et le tracé se juge sur les
+            // memes chiffres qu'avant — cf. `narrowestPassage`, qui ne les
+            // distingue pas.
+            if (ch === 'P' || ch === 'p') {
+                pipes.push({
+                    col: col,
+                    row: i - first - 1,
+                    kind: (ch === 'p') ? 'red' : 'green'
+                });
                 continue;
             }
 
             fail(source, lineNo(i), `caractere "${ch}" inconnu en colonne ${col}. `
-                + 'Le dessin ne connait que X (bord), x (ligne), B (boite), P (pipe) '
-                + 'et l\'espace.');
+                + 'Le dessin ne connait que X (bord), x (ligne), B (boite), '
+                + 'P (pipe vert), p (pipe rouge) et l\'espace.');
         }
     }
 
@@ -270,7 +283,10 @@ function applyTrack(cfg, track) {
 
     const pipes = track.pipes.map(pipe => ({
         x: pipe.col * CELL_PX,
-        y: rowY(pipe.row)
+        y: rowY(pipe.row),
+        // Elle ne sert qu'au dessin. Rien de ce qui suit — passage le plus
+        // etroit, avertissements, priorites — ne la regarde.
+        kind: pipe.kind
     }));
 
     // Un mur de pipes ne provoquerait aucune erreur : les karts se cogneraient
@@ -283,7 +299,7 @@ function applyTrack(cfg, track) {
             fail(track.source, 0, `piste bouchee vers x=${Math.round(passage.x)} `
                 + `(colonne ${Math.round(passage.x / CELL_PX)}) : il ne reste que `
                 + `${passage.free.toFixed(1)} de passage libre en profondeur, il en faut `
-                + `${cfg.pipe.minPassageY}. Deplacer ou retirer un P.`);
+                + `${cfg.pipe.minPassageY}. Deplacer ou retirer un pipe (P ou p).`);
         }
     }
 

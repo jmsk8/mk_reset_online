@@ -15,9 +15,9 @@ ressemble exactement à ce qu'elle a toujours été.
 ```track
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
                   x                       B                    P                      P         
-                  x            P          B                                    P               P
-                  x                       B                             P                       
-                  x                       B                      P                     P        
+                  x            P          B                                                    P
+                  x                       B                                                     
+                  x                       B                      p                     P        
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 

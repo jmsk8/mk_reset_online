@@ -90,7 +90,8 @@ for (const circuit of tracks) {
     // tiennent pas de front.
     if (cfg.world.pipes.length) {
         console.log(`   pipes    ${cfg.world.pipes.length} : `
-            + cfg.world.pipes.map(p => `x=${p.x} y=${p.y.toFixed(1)}`).join('  |  '));
+            + cfg.world.pipes.map(p =>
+                `x=${p.x} y=${p.y.toFixed(1)} ${p.kind || 'green'}`).join('  |  '));
 
         const passage = track.narrowestPassage(cfg, cfg.world.pipes, width);
         console.log(`   passage  ${passage.free.toFixed(1)} de libre au plus etroit `

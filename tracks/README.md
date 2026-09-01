@@ -21,7 +21,8 @@ dernière colonne touche la première : le tour boucle.
 | `X` | bord de piste — uniquement la première et la dernière ligne du dessin |
 | `x` | ligne de départ/arrivée — une seule colonne, dessinée sur autant de rangées qu'on veut |
 | `B` | boîte à objets — une par caractère |
-| `P` | pipe — un obstacle infranchissable, facultatif |
+| `P` | pipe vert — un obstacle infranchissable, facultatif |
+| `p` | pipe rouge — le même obstacle, l'autre peinture |
 | espace ou `.` | bitume libre |
 
 ## L'échelle
@@ -31,7 +32,7 @@ dernière colonne touche la première : le tour boucle.
   secondes ;
 - **les rangées entre les deux bords se partagent la profondeur de la piste.**
   La rangée du haut est le fond de la piste, celle du bas le premier plan. Avec
-  quatre rangées, une boîte tombe à 30, 20, 10 ou 0 de profondeur.
+  quatre rangées, une boîte tombe à 35, 23,3, 11,7 ou 0 de profondeur.
 
 Le nombre de rangées n'est qu'une résolution de dessin : il ne change pas la
 largeur de la piste, qui reste fixée par `road.minY`/`road.maxY` dans
@@ -42,6 +43,11 @@ rangées donne simplement deux fois plus de finesse pour placer une boîte.
 
 Un `P` plante un tuyau sur la piste. C'est le seul élément du monde de masse
 infinie : il ne bouge pas, ne se détruit pas, et ne cède jamais.
+
+Un `p` en plante un **rouge**, et la couleur est *tout* ce qui change : même
+emprise, même choc, même place dans les priorités de l'IA, même compte dans le
+passage le plus étroit. Rien dans le moteur ne la lit — elle voyage jusqu'au
+décor et s'arrête là. Mélange les deux librement, ça ne se juge qu'à l'œil.
 
 - **un kart** qui le percute de face est arrêté net, reculé de 90 px, et repart
   de zéro — son accélération décide donc de ce que le choc lui coûte, ce qui
@@ -58,27 +64,33 @@ infinie : il ne bouge pas, ne se détruit pas, et ne cède jamais.
 
 ### Où les poser
 
-Un pipe bloque **6,9 de profondeur de chaque côté** de la ligne où il est
-dessiné, soit près de la moitié d'une piste profonde de 30. Un seul tuyau laisse
-donc largement de quoi passer, mais deux mal placés ferment le circuit — et un
-circuit fermé est refusé au chargement, pas découvert en course.
+Un tuyau est **rond** : son emprise au sol est un disque, aussi profond qu'il est
+long. C'est ce qui le rend cher en profondeur — il bloque **9,2 de chaque côté**
+de la ligne où il est dessiné, soit 53 % d'une piste profonde de 35. Un seul
+tuyau laisse encore de quoi passer partout, mais deux mal placés ferment le
+circuit — et un circuit fermé est refusé au chargement, pas découvert en course.
 
-Ce qui donne, sur un dessin à **4 rangées** (profondeurs 30, 20, 10 et 0) :
+Ce qui donne, sur un dessin à **4 rangées** (profondeurs 35, 23,3, 11,7 et 0) :
 
-| deux `P` aux rangées | profondeurs | passage | |
+| deux pipes aux rangées | profondeurs | passage | |
 |---|---|---|---|
-| 0 + 3 | 30 et 0 | 16,2 | large |
-| 0 + 1 · 2 + 3 | voisines d'un bord | 13,1 | large |
-| 0 + 2 · 1 + 3 | 30 et 10 · 20 et 0 | 6,2 | juste |
-| 1 + 2 | 20 et 10 | 3,1 | **refusé** |
+| 0 + 3 | 35 et 0 | 16,6 | large |
+| 0 + 1 · 2 + 3 | voisines d'un bord | 14,1 | large |
+| 0 + 2 · 1 + 3 | 35 et 11,7 · 23,3 et 0 | 4,9 | **refusé** |
+| 1 + 2 | 23,3 et 11,7 | 2,5 | **refusé** |
 
 Le piège est contre-intuitif : **deux tuyaux côte à côte au milieu ne font pas une
 porte, ils font un mur.** Leurs zones bloquées fusionnent dès qu'ils sont séparés
-de moins de 14 en profondeur. Pour une porte à deux passages, il faut *un seul*
-pipe au milieu — il laisse 8,1 de chaque côté.
+de moins de 18,4 en profondeur — soit plus de la moitié de la piste. À 4 rangées,
+la seule paire qui tienne est celle des deux tuyaux **du même côté**, ou celle
+des deux bords opposés.
 
-**Dessine 7 rangées pour placer un tuyau finement.** C'est là que la profondeur
-15 devient disponible, et avec elle la vraie porte centrale.
+Pour une porte à deux passages, il faut *un seul* pipe au milieu — il laisse 8,3
+de chaque côté, de quoi faire passer un kart (profond de 6,3) sans confort.
+
+**Dessine 7 rangées pour placer un tuyau finement.** Les profondeurs deviennent
+35 · 29,2 · 23,3 · 17,5 · 11,7 · 5,8 · 0, et c'est là que le milieu exact — 17,5,
+la vraie porte centrale — est disponible.
 
 `make race-tracks` affiche le passage le plus étroit d'un tracé. C'est le chiffre
 à regarder : un passage juste au-dessus du minimum se franchit, mais huit karts
