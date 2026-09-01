@@ -160,10 +160,29 @@
         // trace, pas une erreur de mesure. Son emprise se prend donc sur son
         // dessin, comme celle du kart se prend sur le sien.
         //
-        // Sa PROFONDEUR, elle, reste reglee a la main : cf. la note de
-        // `pipe.hitbox`, ou l'argument des couloirs vaut toujours.
-        const pipeHalfX = b.pipeDraw * b.fill * 0.5;
-        cfg.pipe.hitbox = { x: pipeHalfX, y: cfg.pipe.hitboxDepth };
+        // ── Et sa profondeur se prend sur sa longueur : il est ROND ──────
+        //
+        // Un tuyau est un cylindre. Vu de dessus il est rond, et il n'y a rien a
+        // regler la-dedans — d'ou la division par `depthPx`, seule conversion du
+        // fichier entre les deux unites du monde. Elle rend ici exactement ce
+        // qu'elle dit : autant d'unites de fond que la longueur fait de px.
+        //
+        // Il ne passe donc PAS par `flatten`, et c'est la difference avec le
+        // kart. `flatten` n'est pas une loi de la nature, c'est un choix de
+        // jeu : un kart a une emprise plus plate que sa silhouette pour que
+        // rouler cote a cote reste jouable. Un obstacle immobile qu'on contourne
+        // n'a aucune raison de mentir sur sa forme.
+        //
+        // La profondeur etait reglee a la main (2.8), et le rapport tombait a
+        // 2.5 : 1 — le tuyau paraissait se laisser mordre par l'avant. Le
+        // protocole, lui, annonçait deja `round: true` a la carte de debug : le
+        // dessin disait disque, la collision disait ellipse. Ils disent
+        // maintenant la meme chose.
+        //
+        // Ca coute de la piste, et c'est pourquoi `road.maxY` est passe de 30 a
+        // 35 dans le meme mouvement — cf. sa note.
+        const pipeHalfX = b.pipeDraw * b.pipeFill * 0.5;
+        cfg.pipe.hitbox = { x: pipeHalfX, y: pipeHalfX / b.depthPx };
         cfg.pipe.draw = {
             w: b.pipeDraw,
             // La hauteur suit les proportions du fichier, elle ne se regle pas :
@@ -409,7 +428,48 @@
             // fond (maxY), celle du bas au premier plan (minY). Le dessin donne
             // donc la finesse de placement, pas la largeur.
             minY: 0,
-            maxY: 30,
+
+            // ── 35, et non 30 : la route etait deja peinte ───────────────
+            //
+            // `yPercent` se lit tel quel par le client : un kart se pose a
+            // `bottom: yPercent%` de la scene (cf. `depthToWorldPx` dans
+            // smk-banner.js). Or l'asphalte, lui, fait 35 % de cette meme
+            // hauteur — `.layer-ground`, avec la bordure rouge et blanche posee
+            // juste au-dessus. Il y avait donc 5 unites de bitume dessine, au
+            // fond, sur lesquelles rien ne roulait jamais.
+            //
+            // ── Ce que ca N'EST PAS ─────────────────────────────────────
+            //
+            // Ce n'est pas un changement d'echelle. Une unite de profondeur vaut
+            // toujours 3.6 px a l'ecran (`bodies.depthPx`), la piste est
+            // simplement PLUS LONGUE de cinq unites. C'est ce qui rend le
+            // changement sur : aucune des quarante constantes en profondeur du
+            // fichier ne change de sens — `vision.threatLane`, `place.slop`, les
+            // vitesses de braquage en unites par seconde, les tolerances, les
+            // marges de bord gardent exactement la valeur physique qu'elles
+            // avaient.
+            //
+            // Renommer l'unite — 42 unites pour les memes 108 px — aurait ete
+            // l'inverse : tout a retoucher, et rien de gagne. La part de piste
+            // qu'un obstacle bloque vaut `2 * demi-longueur / largeur a
+            // l'ecran`, et le nombre d'unites s'y simplifie. Seuls comptent des
+            // px d'ecran, jamais leur decoupage.
+            //
+            // ── Ce que ca change vraiment ───────────────────────────────
+            //
+            // La piste gagne 16.7 % de profondeur reelle, ce qui paie le tuyau
+            // devenu rond (cf. `pipe.hitbox`). Le decor ne bouge pas d'un pixel.
+            //
+            // En echange, les karts vont desormais jusqu'au bord de l'asphalte :
+            // la marge visuelle de 18 px qui restait au fond disparait, et
+            // `edgeSafetyMargin` devient la seule chose qui les tient a distance
+            // de la bordure.
+            //
+            // Et les traces existants se redistribuent : `rowY` repartit les
+            // rangees dessinees sur `minY..maxY`, donc un tuyau de la rangee 1
+            // sur 4 passe de y=20 a y=23.3. Relire `make race-tracks` apres ce
+            // changement, pas avant.
+            maxY: 35,
 
             // `laneTolerance` vit maintenant dans `vision.threatLane` : c'est
             // une distance de perception, pas une propriete du trace. La piste
@@ -1323,15 +1383,36 @@
             // part en tete-a-queue comme devant n'importe quel objet. Ecraser est
             // une affaire de gabarit, pas de puissance.
             //
-            // Duree maximale, et non duree ferme : l'aplatissement s'arrete a
-            // la fin du rapetissement s'il tombe avant. On n'ecrase que ce qui
-            // est petit, donc redevenir grand rend sa forme au kart.
+            // Duree prevue de base, et non duree ferme : l'aplatissement
+            // s'arrete a la fin du rapetissement s'il tombe avant. On n'ecrase
+            // que ce qui est petit, donc redevenir grand rend sa forme au kart.
             //
-            // Le marche va dans les deux sens, et c'est ce qui le rend juste :
-            // se faire ecraser au dernier moment ne coute presque rien, et en
-            // echange l'ecrasement ne retarde JAMAIS le retour a la taille
-            // normale. Le rapetissement garde son propre calendrier.
+            // Ce plafond-la n'a pas bouge ; ce qui a change est qu'il ne peut
+            // plus tomber a zero. Cf. `crushHoldMs`.
             flatMs: 3000,
+
+            // ── Le plancher de l'ecrasement ──────────────────────────────
+            //
+            // Se faire rouler dessus se voit et se paie, meme au dernier
+            // moment. C'est un temps FERME : le kart reste ecrase au moins ca,
+            // que le rapetissement soit sur le point de finir ou non.
+            //
+            // Avant, l'aplatissement etait borne par la fin du rapetissement et
+            // par elle seule. Ecrase a deux dixiemes de la fin, le kart etait
+            // aplati deux dixiemes — c'est-a-dire pas du tout : le temps que le
+            // sprite change, il avait repris sa taille. Le contact le plus
+            // spectaculaire du jeu passait inapercu, et la victime n'y perdait
+            // rien.
+            //
+            // Ce que ca renverse, et il faut le dire : le rapetissement ne garde
+            // plus tout a fait son propre calendrier. Quand il devait finir
+            // pendant ces 1.5 s, il attend — et le kart retrouve alors sa taille
+            // PLEINE d'un coup, a la seconde ou il se releve. Quand il devait
+            // durer plus longtemps, rien ne change : l'ecrasement tient le temps
+            // prevu par `flatMs`, et le rapetissement finit a son heure.
+            //
+            // A 0, on retrouve exactement le comportement d'avant.
+            crushHoldMs: 1500,
 
             // Ce que coute d'etre aplati, en facteur de vitesse. Il s'applique
             // par-dessus tout le reste, `speedFactor` compris : un kart a la
@@ -1426,7 +1507,9 @@
 
         // Le pipe : le seul element du monde de masse infinie. Il ne bouge pas,
         // ne se detruit pas, et ne cede jamais — il se contourne. Il se dessine
-        // par un `P` dans tracks/, comme une boite par un `B`.
+        // par un `P` dans tracks/, comme une boite par un `B` ; un `p` en pose
+        // un rouge, qui n'est que la meme chose repeinte — rien ici ne connait
+        // sa couleur, et rien ne doit.
         pipe: {
             // Aucune constante ne convertit ici la profondeur en pixels, et
             // c'est voulu. Le rebond travaille dans un espace normalise — chaque
@@ -1438,13 +1521,11 @@
 
             // ── Ce qui arrete un kart ────────────────────────────────────
             //
-            // L'emprise au sol du tuyau n'est plus reglee ici en entier : sa
-            // LONGUEUR se deduit de son dessin, qui se deduit de son fichier
-            // (cf. `bodies` et `deriveBodies()`). Ce qui reste a regler est la
-            // seule valeur que le dessin ne dit pas, sa PROFONDEUR — et la note
-            // ci-dessous explique pourquoi celle-la.
+            // L'emprise au sol du tuyau n'est plus reglee ici DU TOUT : les deux
+            // demi-axes se deduisent de son dessin, qui se deduit de son fichier
+            // (cf. `bodies` et `deriveBodies()`).
             //
-            //   pipe.hitbox = { x: 20.16, y: 2.8 }
+            //   pipe.hitbox = { x: 21.84, y: 6.07 }   // 21.84 px = 6.07 u
             //
             // Ce sont les DEMI-AXES d'un disque, et non les cotes d'une boite :
             // le tuyau est le seul corps rond du moteur, comme il est le seul a
@@ -1453,15 +1534,23 @@
             // — cf. `bounceItemOffPipe`. `x` est en pixels de monde, `y` en
             // unites de profondeur.
             //
-            // Le disque s'inscrit dans exactement la boite d'avant, il ne fait
-            // qu'en retirer les quatre coins. Rien ne devient plus large, la
-            // diagonale devient seulement franchissable.
+            // ── Et c'est un VRAI disque depuis peu ──────────────────────
             //
-            // `y` est bien plus plat que le sprite n'est large, et c'est
-            // volontaire : la piste ne fait que 30 unites de profondeur pour 108
-            // px a l'ecran. Une emprise aussi profonde que large en boucherait
-            // les trois quarts a elle seule, et deux pipes fermeraient le
-            // circuit.
+            // Le mot etait la bien avant la chose. `y` valait 2.8 quand `x` en
+            // vaut 7 : l'emprise etait une ellipse de 2.5 : 1, aplatie dans le
+            // sens de la marche, pendant que le protocole annoncait `round: true`
+            // a la carte de debug. Le dessin disait disque, le choc disait
+            // ellipse, et c'est le choc qui avait tort — un tuyau paraissait se
+            // laisser mordre par l'avant.
+            //
+            // Ce qui l'empechait d'etre rond n'etait pas un choix de forme mais
+            // un manque de place : `road.maxY` valait 30 quand l'asphalte
+            // dessine en fait 35. La piste ayant repris les cinq unites qui
+            // etaient deja peintes (cf. sa note), le disque tient.
+            //
+            // Il coute cher malgre tout, et il faut le savoir en dessinant un
+            // circuit : 9.2 de degagement avec la carrosserie, soit 53 % de la
+            // profondeur. `tracks/README.md` en tire la table de placement.
             //
             // ── D'ou vient la longueur, maintenant ───────────────────────
             //
@@ -1480,38 +1569,41 @@
             // Le sprite et l'emprise ne peuvent plus diverger : bouger l'un
             // bouge l'autre.
             //
-            // ── Pourquoi la profondeur ne suit PAS ───────────────────────
+            // ── ET LA PROFONDEUR SUIT : LE TUYAU EST ROND ───────────────
             //
-            // Elle avait ete calee sur l'aplatissement du kart — la piste fait
-            // 30 unites de profondeur pour 108 px a l'ecran, d'ou :
+            // Il n'y a plus rien a regler ici. `deriveBodies()` pose les deux
+            // demi-axes, et le second n'est que le premier dans l'autre unite :
             //
-            //   kart   30.0 px de large  x   9.0 px de fond   ->  3.33 : 1
-            //   pipe   33.6 px de large  x  10.1 px de fond   ->  3.33 : 1
+            //   pipe   25.2 px de long  x  25.2 px de fond   ->  1.00 : 1
             //
-            // A 20.16 de demi-longueur pour la meme profondeur, ce rapport tombe
-            // a 2.00 : 1 — le tuyau est plus trapu qu'un kart. C'est ASSUME, et
-            // c'est la seule entorse a la loi des corps : la faire suivre
-            // rendrait 1.68, et l'argument des couloirs ci-dessous, qui ne
-            // depend pas de la longueur, vaut toujours.
+            // Un cylindre vu de dessus est rond. Le protocole l'annonçait deja a
+            // la carte de debug (`round: true`) pendant que la collision, elle,
+            // valait une ellipse de 2.5 : 1 — le dessin et le choc disaient deux
+            // choses differentes, et c'est le choc qui avait tort.
             //
-            // A 5.5 puis 4.4, il etait aplati a 2.12 : 1 seulement — 12 % plus
-            // large qu'un kart mais 76 % plus profond. Rien ne le justifiait, et
-            // ca se payait sur le seul endroit ou la profondeur compte : les
-            // couloirs. Un tuyau a y=20 ne laissait que 3.1 unites vers le fond,
-            // dont le point de confort tombait a moins d'une unite du mur — donc
-            // toujours penalise par `vision.cost.edge`, donc jamais choisi. Le
-            // cote large gagnait quelle que soit la position du kart.
+            // ── L'historique, parce qu'il explique le detour ────────────
             //
-            // A 2.8, ce meme couloir fait 4.7 et son point de confort se pose a
-            // plus de 2 unites du mur : le cout de bord tombe a zero et la
-            // bascule entre les deux cotes redevient purement geometrique — le
-            // kart prend le cote ou il est deja. Aucune regle n'a ete ecrite
-            // pour ca, c'est la geometrie qui cessait d'etre fausse.
+            // La profondeur a ete reglee a la main quatre fois — 5.5, 4.4, puis
+            // 2.8 — et chaque fois contre le meme symptome : un tuyau trop
+            // profond ferme les couloirs. A 4.4, un tuyau a y=20 ne laissait que
+            // 3.1 unites vers le fond, dont le point de confort tombait a moins
+            // d'une unite du mur : toujours penalise par `vision.cost.edge`,
+            // donc jamais choisi, et le cote large gagnait quelle que soit la
+            // position du kart.
             //
-            // Seule valeur reglee, donc, et sous son propre nom : `pipe.hitbox`
-            // est POSE par `deriveBodies()`, qui reprend cette profondeur telle
-            // quelle et lui adjoint la longueur du dessin.
-            hitboxDepth: 2.8,
+            // Le raisonnement etait juste et la reponse etait au mauvais
+            // endroit. Ce qui manquait n'etait pas de la platitude, c'etait de
+            // la PISTE : `road.maxY` valait 30 alors que l'asphalte dessine en
+            // fait 35 (cf. sa note). On rabotait l'obstacle faute d'oser
+            // utiliser la route qui etait deja peinte.
+            //
+            // Les deux changements vont donc ensemble, et l'un ne se defait pas
+            // sans l'autre : rond sur une piste de 30, un tuyau mange 68 % de la
+            // profondeur et le placement a deux tuyaux redevient impraticable.
+            //
+            // Il ne passe pas non plus par `flatten`, et c'est voulu : cf. la
+            // note de `deriveBodies()`. Un kart s'aplatit pour que rouler cote a
+            // cote reste jouable ; un mur immobile n'a rien a negocier.
 
             // Ce qu'un choc frontal coute a un kart. Bien moins qu'un objet
             // (2000 ms de tete-a-queue) : un mur se croise a chaque tour, un
@@ -1932,6 +2024,50 @@
             // le laisserait retourne en permanence, ce que la note de
             // `updateGlance` a deja documente comme une impasse.
             backChanceDanger: { leader: 0.70, pack: 0.65, last: 0.65 },
+
+            // ── Ce qui s'entend ──────────────────────────────────────────
+            //
+            // Une etoile ou un bill qui arrive derriere. La plus haute des
+            // quatre raisons de tourner la tete, et LA SEULE qui ne demande pas
+            // d'avoir deja regarde derriere : les trois autres se nourrissent
+            // d'une observation, or on n'observe l'arriere qu'en s'y etant
+            // tourne. Cf. `ramNoise`.
+            //
+            // ── Pourquoi il en fallait une ───────────────────────────────
+            //
+            // Un kart du peloton se demande toutes les 1150 ms s'il regarde
+            // derriere, et repond oui une fois sur dix : un coup d'oeil toutes
+            // les onze secondes. Une carrosserie lancee ne reste dans la portee
+            // arriere que trois secondes environ — elle rattrape bien plus vite
+            // qu'une carapace. Le plateau entier se faisait donc faucher sans
+            // qu'un seul kart ait regarde une seule fois, et ca se voyait
+            // exactement comme de la betise : tout le monde au milieu, personne
+            // ne bouge.
+            //
+            // La justification est la meme que pour `seeHomingThroughCover` :
+            // dans le jeu d'origine, c'est LE SON qui previent. L'etoile a sa
+            // musique, le bill son klaxon — les deux choses les plus bruyantes
+            // du jeu, et les seules qu'un joueur entend arriver sans les voir.
+            //
+            // Ca ne donne aucune information sur la position, aucune esquive
+            // gratuite, aucun raccourci : ca fait tourner la tete, un point
+            // c'est tout. Ce qu'il verra ensuite passe par le balayage
+            // ordinaire — occlusion, reflexe (`ai.reactionBaseMs`) et tirage
+            // d'inattention (`ai.dodgeMissChance`) compris. Un kart peut donc
+            // parfaitement se retourner, voir l'etoile, et la prendre quand
+            // meme : c'est ce qu'on veut, et c'est ce que le tirage garde.
+            //
+            // Le dernier a la meme valeur que les autres, contrairement aux
+            // trois autres tables : le bruit ne depend pas du rang. Un bill
+            // traverse tout le peloton, et celui qui ferme la marche est le
+            // premier a l'entendre.
+            //
+            // A 0.85, l'attente moyenne tombe a 1350 ms : sur les trois
+            // secondes ou la chose est derriere lui, un kart se retourne au
+            // moins une fois neuf fois sur dix. Le baisser rend l'etoile plus
+            // meurtriere ; le monter ne rend plus rien — au-dela, c'est la
+            // duree du coup d'oeil qui borne, pas sa frequence.
+            backChanceRam: { leader: 0.85, pack: 0.85, last: 0.85 },
 
             // ── Le danger latent ─────────────────────────────────────────
             //
@@ -2834,7 +2970,45 @@
             // suivaient donc deja la meme regle a un cheveu pres, sans que
             // personne ne l'ait ecrite. La monter fait toucher dans le vide,
             // la baisser fait traverser les silhouettes.
+            //
+            // Elle ne vaut plus que pour les KARTS : le tuyau a la sienne
+            // (`pipeFill`), parce que sa collerette deborde de son fut. La
+            // formule reste commune, la part ne l'est plus.
             fill: 0.75,
+
+            // ── Et la meme part, pour le tuyau ───────────────────────────
+            //
+            // Elle etait commune, et la note ci-dessus s'en felicitait : les
+            // deux corps suivaient la meme regle a un cheveu pres. Ils la
+            // suivent toujours — c'est la meme formule, `dessin * part / 2` —
+            // mais plus avec la meme part, et il y a une raison de forme.
+            //
+            // Un tuyau n'est pas un cylindre droit : il porte une COLLERETTE en
+            // haut, plus large que son fut, et c'est elle qui donne au sprite sa
+            // largeur. Le fut, lui — la seule partie posee au sol, donc la seule
+            // qui arrete un kart — est plus etroit. Un kart n'a pas ce probleme,
+            // sa silhouette touche le sol sur toute sa largeur.
+            //
+            // Ca ne se voyait pas tant que la profondeur du tuyau etait reglee a
+            // la main : elle absorbait l'ecart en silence. Depuis qu'elle
+            // descend de la longueur (`pipe.hitbox` est rond), la meme erreur se
+            // paie sur les DEUX axes a la fois, et le tuyau accrochait un peu
+            // trop.
+            //
+            // 0.65 contre 0.75 : 13.3 % d'emprise en moins, retires sur les deux
+            // axes ensemble — le disque reste un disque, il retrecit. Le
+            // degagement avec la carrosserie passe de 10.1 a 9.2, et un tuyau
+            // cesse de manger plus de la moitie de la piste (53 %).
+            //
+            // La table de placement de `tracks/README.md` ne change pas de
+            // structure pour autant : les memes trois paires sur six tiennent,
+            // simplement plus au large. Descendre encore ne rouvrirait rien —
+            // il faudrait passer sous 0.49 pour que la paire 0+2 repasse, et le
+            // tuyau mordrait alors franchement dans son propre sprite.
+            //
+            // La monter fait accrocher dans le vide, la baisser fait traverser
+            // le dessin. C'est le seul reglage qui reste sur l'emprise du tuyau.
+            pipeFill: 0.65,
 
             // L'aplatissement d'un corps vu de dessus : combien de px de
             // longueur pour un px de profondeur. Il ne regle plus qu'UNE chose,
@@ -2854,15 +3028,29 @@
             // que la longueur du tuyau ne soit rognee sans que sa profondeur
             // suive. Le kart de reference la tient toujours exactement.
             //
-            // Le tuyau, lui, garde sa profondeur reglee a la main
-            // (`pipe.hitboxDepth`) : il n'a pas de surface a mesurer contre
-            // celle d'un kart, et l'argument des couloirs vaut toujours.
+            // Le tuyau, lui, n'y passe plus DU TOUT : il est rond
+            // (`pipe.hitbox`). Et c'est ce qui dit ce que `flatten` est
+            // vraiment — non pas une projection, mais un choix de jeu. Une
+            // projection s'appliquerait a tout ce qui se pose sur la piste ;
+            // celle-ci ne vaut que pour les corps qui doivent pouvoir rouler
+            // cote a cote. Un obstacle immobile n'a rien a negocier, il garde sa
+            // forme.
             flatten: 10 / 3,
 
             // Px a l'ecran pour une unite de profondeur de piste : la piste fait
-            // 30 unites pour 108 px sur PC. C'est la seule conversion du
-            // fichier entre les deux unites du monde, et elle ne sert qu'ici —
-            // a comparer une longueur et une profondeur dans la meme mesure.
+            // 35 unites pour 126 px sur PC — la hauteur de `.layer-ground`, qui
+            // vaut 35 % de la scene. C'est la seule conversion du fichier entre
+            // les deux unites du monde.
+            //
+            // Elle valait deja 3.6 quand la piste s'arretait a 30 unites pour
+            // 108 px : ce n'est pas une coincidence, c'est ce qui prouve que
+            // `road.maxY` a change de LONGUEUR et non d'ECHELLE. Une unite vaut
+            // le meme pixel qu'avant, et tout ce qui se compte en unites garde
+            // sa valeur physique.
+            //
+            // Elle sert maintenant a deux choses, et la seconde est neuve :
+            // comparer une longueur et une profondeur pour le kart de reference
+            // (`flatten`), et rendre le tuyau rond (`pipe.hitbox`).
             depthPx: 3.6,
 
             // ── L'emprise propre d'un objet au sol ───────────────────────

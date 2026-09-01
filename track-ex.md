@@ -14,10 +14,13 @@ ressemble exactement à ce qu'elle a toujours été.
 
 ```track
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-                  x                       B                    P                      P         
-                  x            P          B                                                    P
-                  x                       B                                                     
-                  x                       B                      p                     P        
+                  x                       B                     PP                    PP           
+                  x                                             PP                    PP         
+                  x            P          B                                                    
+                  x                                                                        PP   
+                  x                       B                                                PP     
+                  x                                             PP                  PP        
+                  x                       B                     PP                  PP        
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 

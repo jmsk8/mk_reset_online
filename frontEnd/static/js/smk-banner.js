@@ -134,7 +134,7 @@ const OFFLINE_WORLD = {
     finishLineX: 1440,
     sunX: 1920,
     roadMinY: 0,
-    roadMaxY: 30,
+    roadMaxY: 35,
     roadPPS: 250,
     hitDuration: 2000,
     orbit: { count: 3, radiusX: 62, radiusY: 3.2 },
@@ -144,9 +144,16 @@ const OFFLINE_WORLD = {
     laps: 5,
     // Demi-emprises des corps, pour la carte de debug. Repli seulement : le
     // serveur les envoie dans son `hello`, et c'est lui qui fait foi.
+    //
+    // Elles etaient restees a `bodies.fill: 0.6` alors que la config est passee
+    // a 0.75 : le repli dessinait un plateau 25 % trop fin. Recopiees ici a
+    // leur valeur derivee actuelle. Elles se recalculent en une ligne —
+    // demi-longueur = `draw * fill / 2` — et la profondeur du tuyau n'est que sa
+    // demi-longueur divisee par `bodies.depthPx` : il est ROND. Le tuyau prend
+    // `bodies.pipeFill` (0.65) et non `fill` : sa collerette deborde de son fut.
     hitboxes: {
-        kart: { x: 30, y: 2.5 },
-        pipe: { x: 20.16, y: 2.8, round: true },
+        kart: { x: 37.5, y: 3.125 },
+        pipe: { x: 21.84, y: 6.067, round: true },
         item: { x: 10, y: 2.5 },
         heldBehindX: -70,
         itemBox: { x: 10, y: 8 }
@@ -158,7 +165,7 @@ const OFFLINE_WORLD = {
     // Le dessin et la hitbox ont longtemps diverge ici : 67.2 de large pour une
     // emprise de 42, soit 12.6 px de sprite en trop de chaque cote de ce qui
     // arrete reellement un kart. Les deux descendent maintenant de la meme
-    // mesure, et 20.16 est exactement 67.2 * 0.6 / 2.
+    // mesure, et 21.84 est exactement 67.2 * 0.65 / 2.
     //
     // 67.2 et non 84 (l'echelle commune pour un fichier de 95 px) : le tuyau est
     // volontairement dessine 20 % plus petit, il mangeait trop de piste. La
@@ -991,7 +998,9 @@ function buildWorldFromHello(hello) {
 
     worldState.itemBoxes = hello.boxes.map(box => ({ worldX: box.x, y: box.y, active: true }));
     // Un circuit sans obstacle n'envoie pas de liste : elle vaut alors vide.
-    worldState.pipes = (hello.pipes || []).map(pipe => ({ worldX: pipe.x, y: pipe.y }));
+    worldState.pipes = (hello.pipes || []).map(pipe => ({
+        worldX: pipe.x, y: pipe.y, kind: pipe.kind || 'green'
+    }));
     worldState.items = [];
 
     if (worldState.finishLine) worldState.finishLine.worldX = WORLD.finishLineX;
@@ -1459,6 +1468,13 @@ function ensurePipeEl(pipe, index) {
     // l'ecran pendant tout son sursaut.
     const sprite = document.createElement('div');
     sprite.classList.add('pipe-sprite');
+
+    // La couleur, et c'est tout ce qu'elle fait. Elle vit sur le sprite et non
+    // sur l'element place : le parent porte le defilement et l'etat (le
+    // sursaut), l'enfant porte le dessin. Le vert est le defaut de
+    // `.pipe-sprite`, donc un tuyau sans couleur s'affiche quand meme.
+    if (pipe.kind === 'red') sprite.classList.add('pipe-red');
+
     el.appendChild(sprite);
 
     // Le sursaut se joue en ajoutant une classe. Sans ce retrait a la fin, un
@@ -2500,7 +2516,7 @@ const CLOCK_SAMPLE_TTL_MS = 120000;
 // serveur l'annonce dans son `hello` et le client refuse tout ce qui ne
 // correspond pas : mieux vaut le decor seul qu'une scene interpretee de
 // travers. Les deux se modifient donc ensemble, jamais l'un sans l'autre.
-const PROTOCOL_VERSION = 9;
+const PROTOCOL_VERSION = 10;
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
@@ -3048,8 +3064,8 @@ function animate(timestamp) {
 // ── Pourquoi une FENETRE et non le tour entier ───────────────────────────
 //
 // Elle a porte un tour complet, et c'est ce qui la rendait illisible des qu'on y
-// a dessine les corps a leur taille. Un tour fait 3840 px de long pour 108 px de
-// profondeur : 35 : 1. Un cadre de 800 x 140 en fait 6 : 1. Les deux axes ne
+// a dessine les corps a leur taille. Un tour fait 3840 px de long pour 126 px de
+// profondeur : 30 : 1. Un cadre de 800 x 140 en fait 6 : 1. Les deux axes ne
 // partageaient donc pas la meme echelle — un facteur 5.3 — et aucune forme n'y
 // ressemblait a elle-meme : les karts, larges de trois fois leur profondeur,
 // s'y dressaient plus hauts que larges, et les tuyaux devenaient des oeufs
