@@ -18,6 +18,28 @@
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
 
+    <script>
+        /* L'ecran de demarrage ne se joue qu'a la premiere arrivee sur le site.
+           Un rechargement, ou un aller-retour par une autre page, retombent sur
+           le meme onglet : `sessionStorage` est exactement cette memoire-la —
+           il survit aux navigations, pas a la fermeture de l'onglet.
+
+           Decide ici, dans le <head>, parce que le voile est peint par le CSS
+           des la premiere image : le cacher plus tard, ce serait le montrer. */
+        (function () {
+            try {
+                if (sessionStorage.getItem('mkr-boot-seen')) {
+                    document.documentElement.classList.add('boot-seen');
+                } else {
+                    sessionStorage.setItem('mkr-boot-seen', '1');
+                }
+            } catch (e) {
+                /* Navigation privee, stockage refuse : on joue l'ecran. Le
+                   montrer une fois de trop vaut mieux que casser la page. */
+            }
+        })();
+    </script>
+
     <style>
         :root {
             --score-offset-y: -2px; 
@@ -74,6 +96,62 @@
     </style>
 </head>
 <body>
+    {# Écran de démarrage : la page entière est cachée par un voile noir, le
+       badge MkReset s'allume, puis tout se dissipe sur la scène prête. En tête
+       de <body> pour couvrir la navbar comme le reste. #}
+    <div id="boot-splash" class="boot-splash" role="presentation">
+        <div class="boot-logo" role="img" aria-label="MkReset"><span class="boot-logo-word">MkReset</span></div>
+    </div>
+
+    <script>
+        /* La sortie du voile, pilotée ici et non dans smk-banner.js : ce script
+           s'exécute avec le HTML, donc bien avant que la course puisse se dire
+           prête, et il reste debout même si le banner tombe. Cacher toute la
+           page est justement ce qu'on ne veut pas rater. */
+        (function () {
+            const splash = document.getElementById('boot-splash');
+            if (!splash) return;
+
+            // Deja vu dans cet onglet : le CSS ne l'affiche pas, on le retire
+            // et aucune minuterie ne part.
+            if (document.documentElement.classList.contains('boot-seen')) {
+                splash.remove();
+                return;
+            }
+
+            // Le noir (0.5 s), l'apparition du logo (0.5 s), puis le temps de
+            // le lire : en dessous, l'écran d'accueil n'est qu'un clignotement.
+            const SPLASH_MIN_MS = 1800;
+
+            // Filet : serveur muet ou images bloquées, le voile s'en va quand
+            // même. Sous le failsafe du rideau (5 s), pour ne pas laisser la
+            // page noire aussi longtemps qu'il met à abandonner.
+            const SPLASH_MAX_MS = 4000;
+
+            const startedAt = Date.now();
+            let dismissed = false;
+
+            function dismiss() {
+                if (dismissed) return;
+                dismissed = true;
+                splash.classList.add('is-gone');
+                // Retiré du DOM une fois le fondu fini : un voile transparent
+                // qui reste en place n'a plus rien à y faire. À tenir au-dessus
+                // de la transition de `.boot-splash` (1.2 s).
+                setTimeout(() => splash.remove(), 1400);
+            }
+
+            function onReady() {
+                setTimeout(dismiss, Math.max(0, SPLASH_MIN_MS - (Date.now() - startedAt)));
+            }
+
+            // Émis quand le rideau à damier se lève (smk-banner.js) : le voile
+            // et le rideau se croisent, on voit la course démarrer dedans.
+            document.addEventListener('race:ready', onReady, { once: true });
+            setTimeout(onReady, SPLASH_MAX_MS);
+        })();
+    </script>
+
     {% include 'navbar.html' %}
     
     <section class="hero smk-snes-banner" id="bannerSection" data-season="{{ banner_season }}">
@@ -83,6 +161,25 @@
             <div class="layer-scrolling-fg"></div>
             <div class="layer-ground"></div>
             <div class="layer-finish-line"></div>
+
+            {# Le logo, DANS la scene et non a cote : il doit se peindre entre le
+               decor et les corps de course (z-index 200, entre les calques 1-6
+               et les karts 365-500). Hors du wrapper c'etait impossible sur
+               mobile — le `scale(0.6)` y forme un contexte d'empilement, et tout
+               ce qu'il contient se peint d'un bloc, sous le logo. Seul ce qui
+               monte a la hauteur du logo le montrait : la carapace bleue.
+
+               Purement decoratif (`pointer-events: none`), donc rien a perdre a
+               le poser ici. Le CSS annule le retrecissement mobile pour lui. #}
+            <div class="hero-body-content">
+                <div class="container has-text-centered">
+                    <div class="mb-2 fade-in">
+                        <img src="{{ url_for('static', filename='img/MkReset.png') }}" alt="MK Reset Logo" class="mk-logo-responsive">
+                        <img id="green-shell-img" src="{{ url_for('static', filename='img/items/green-shell/green-shell1.png') }}" alt="Green Shell" class="green-shell-anim" style="display: none;">
+                    </div>
+                </div>
+            </div>
+
             <div id="karts-container" class="karts-layer"></div>
         </div>
 
@@ -92,6 +189,28 @@
         <div class="race-curtain-clip" aria-hidden="true">
             <div id="race-curtain" class="race-curtain"></div>
         </div>
+
+        <script>
+            /* Le rideau descend ici, contre l'élément qu'on vient d'écrire et
+               non au `DOMContentLoaded` : à ce moment-là la page est déjà
+               peinte, et on le voyait tomber sur une scène qu'il devait avoir
+               couverte depuis le début.
+
+               Il reste levé dans le HTML, et c'est ce script — donc la présence
+               de JS — qui le baisse : sans JS, personne ne le relèvera, autant
+               qu'il ne masque rien.
+
+               `is-instant` coupe la transition pour ce placement, et part à
+               l'image suivante : si le navigateur avait déjà peint le rideau en
+               haut (HTML reçu en plusieurs morceaux), il se met en place d'un
+               coup au lieu de tomber en 0.7 s. */
+            (function () {
+                const curtain = document.getElementById('race-curtain');
+                if (!curtain) return;
+                curtain.classList.add('is-down', 'is-instant');
+                requestAnimationFrame(() => curtain.classList.remove('is-instant'));
+            })();
+        </script>
 
         <div id="race-status" class="race-status is-connecting" title="État de la connexion au serveur de course">
             <span class="race-status-dot"></span>
@@ -111,15 +230,6 @@
         <div id="race-focus-hud" class="race-focus-hud" aria-hidden="true"></div>
 
         <div id="race-leaderboard"></div>
-
-        <div class="hero-body-content">
-            <div class="container has-text-centered">
-                <div class="mb-2 fade-in">
-                    <img src="{{ url_for('static', filename='img/MkReset.png') }}" alt="MK Reset Logo" class="mk-logo-responsive">
-                    <img id="green-shell-img" src="{{ url_for('static', filename='img/items/green-shell/green-shell1.png') }}" alt="Green Shell" class="green-shell-anim" style="display: none;"> 
-                </div>
-            </div>
-        </div>
     </section>
 
     {# Releve de decision du kart suivi. Sous la banniere et non dedans : il ne

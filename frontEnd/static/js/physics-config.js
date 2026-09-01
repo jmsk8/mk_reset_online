@@ -431,12 +431,13 @@
 
             // ── 35, et non 30 : la route etait deja peinte ───────────────
             //
-            // `yPercent` se lit tel quel par le client : un kart se pose a
-            // `bottom: yPercent%` de la scene (cf. `depthToWorldPx` dans
-            // smk-banner.js). Or l'asphalte, lui, fait 35 % de cette meme
-            // hauteur — `.layer-ground`, avec la bordure rouge et blanche posee
-            // juste au-dessus. Il y avait donc 5 unites de bitume dessine, au
-            // fond, sur lesquelles rien ne roulait jamais.
+            // La piste dessinee EST la bande d'asphalte : `.layer-ground`,
+            // avec la bordure rouge et blanche posee juste au-dessus. Le client
+            // mesure cette bande et en tire ses pixels par unite
+            // (`depthToWorldPx` dans smk-banner.js), `minY` a son bord bas et
+            // `maxY` au bord haut. La piste s'arretait a 30 : il y avait donc
+            // 5 unites de bitume dessine, au fond, sur lesquelles rien ne
+            // roulait jamais.
             //
             // ── Ce que ca N'EST PAS ─────────────────────────────────────
             //
@@ -1328,11 +1329,37 @@
             orbitRadiusY: 4,
             hoverMs: 450,
             crashMs: 130,
-            // Elle se poste devant le kart avant de plonger, puis pique encore
-            // pendant la chute : en 130 ms il parcourt 65 unites, viser sa
-            // position exacte reviendrait a lui tomber derriere.
+            // Ou le souffle se centre, en unites DEVANT le kart vise. Elle se
+            // poste a `hoverLead`, puis pique en avant jusqu'a `crashLead`.
+            //
+            // Ce sont des placements, pas des compensations. La bleue SUIT sa
+            // cible : `updateBlueShell` recalcule sa position depuis
+            // `target.worldX` a chaque pas, elle est donc toujours exactement a
+            // cet ecart-la, quelle que soit l'allure du kart. Le commentaire
+            // d'avant justifiait le 95 par les 65 unites parcourues pendant les
+            // 130 ms de chute — un raisonnement de tir sans poursuite, qui ne
+            // s'applique pas ici. C'est ce qui l'avait laisse trop haut.
+            //
+            // 55, descendu par paliers depuis 95 : le kart de reference a 37.5
+            // unites de demi-longueur (`bodies.ref.x`), le souffle se centre donc
+            // 17.5 unites devant son pare-chocs — sur le nez. A 95 il en restait
+            // une longueur et demie de vide, et l'explosion se lisait comme un
+            // tir manque tombe devant le kart.
+            //
+            // C'est presque le plancher de ce reglage-ci : `hoverLead` vaut 48,
+            // il ne reste que 7 unites de piquer en avant pendant la chute.
+            // Descendre plus bas n'est pas interdit — la bleue se laisserait
+            // rattraper en tombant au lieu de devancer — mais il faudra alors
+            // baisser `hoverLead` avec, sinon le mouvement s'inverse.
+            //
+            // La cible est touchee de toute facon — `spawnBlueBlast` la frappe a
+            // l'instant de l'impact, sans regarder la distance. Ce que ce chiffre
+            // decide vraiment, c'est QUI D'AUTRE le dome emporte : a 55, sa
+            // portee de 180 couvre 235 unites devant la cible et 125 derriere,
+            // contre 275 / 85 a 95. Le poursuivant colle est plus expose, celui
+            // qui s'echappe devant l'est moins.
             hoverLead: 48,
-            crashLead: 95,
+            crashLead: 55,
 
             // Dome qui s'etend depuis le point d'impact : chaque kart est touche
             // a l'instant ou le front l'atteint.
@@ -1498,10 +1525,14 @@
             // a cote, et il revient au milieu aussitot apres.
             pipeClearance: 3,
 
-            // Deux bills ne se font aucun degat, mais ils partagent la voie du
-            // milieu : ils se bousculent, a cette fraction de la poussee normale.
-            // A 0, ils se traverseraient — le seul endroit du jeu ou deux karts
+            // Un bill ne fait aucun degat a un autre intouchable — un bill ou
+            // une etoile — mais il partage la voie du milieu avec lui : ils se
+            // bousculent, a cette fraction de la poussee normale. A 0, ils se
+            // traverseraient — le seul endroit du jeu ou deux karts
             // s'ignoreraient completement.
+            //
+            // C'est le SEUL contact qu'un intouchable ressent : partout ailleurs
+            // il traverse ce qu'il percute sans en etre devie.
             pushFactor: 0.45
         },
 
@@ -3038,9 +3069,26 @@
             flatten: 10 / 3,
 
             // Px a l'ecran pour une unite de profondeur de piste : la piste fait
-            // 35 unites pour 126 px sur PC — la hauteur de `.layer-ground`, qui
-            // vaut 35 % de la scene. C'est la seule conversion du fichier entre
-            // les deux unites du monde.
+            // 35 unites pour 126 px sur PC. C'est la seule conversion du fichier
+            // entre les deux unites du monde.
+            //
+            // Le client ne la recopie pas : il prend la hauteur de la bande
+            // roulable (`--road-band-pct` en CSS) et la divise par
+            // `maxY - minY`, ce qui redonne ce meme 3.6.
+            //
+            // Il a longtemps suppose qu'une unite valait 1 % de la scene, et ca
+            // tombait juste : l'asphalte valait 35 % d'une scene de 360 px et la
+            // piste 35 unites. Deux reglages de cadrage ont defait ce hasard,
+            // sans jamais toucher a la valeur ci-dessous — la piste garde ses
+            // 126 px dans les deux cas :
+            //
+            //   scene 360 -> 408 px   le bord haut de la piste mordait sur le decor
+            //   asphalte 126 -> 144   les karts du fond posaient leurs roues sur
+            //                         la bordure : 18 px de bitume derriere la
+            //                         piste, sur lesquels rien ne roule
+            //
+            // Une unite vaut donc toujours le meme pixel, et tout ce qui se
+            // compte en unites garde sa valeur physique.
             //
             // Elle valait deja 3.6 quand la piste s'arretait a 30 unites pour
             // 108 px : ce n'est pas une coincidence, c'est ce qui prouve que

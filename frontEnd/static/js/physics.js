@@ -5379,20 +5379,43 @@
         const penY = boxY - Math.abs(dy);
         if (penY <= 0) return;
 
+        // ── Qui SENT le contact ─────────────────────────────────────────
+        //
+        // Un intouchable — etoile ou bill — ne sent pas ce qu'il percute. Il
+        // fait toupiller sa victime et poursuit sa route sans etre devie ni
+        // ralenti : c'est tout ce que l'objet promet, et c'est deja la regle
+        // partout ailleurs (tuyau, objets, souffle, orage). Ici seulement, le
+        // couple echangeait encore une impulsion — le porteur d'etoile se
+        // faisait donc bousculer par ce qu'il venait d'envoyer en toupie.
+        //
+        // Sortir avant l'impulsion coupe les trois effets d'un choc d'un coup :
+        // ejection, refus de braquage, separation des carrosseries. Les deux
+        // corps se chevauchent donc le temps que l'intouchable passe, et ca se
+        // resorbe tout seul — soit il s'eloigne, soit son etat expire et la
+        // paire retombe au tick suivant dans le cas ordinaire, qui les decolle.
+        //
         // Deux intouchables ne se blessent pas : c'est ce qui met l'etoile hors
         // d'atteinte du bill, et l'inverse.
-        const bothRam = isRamming(a) && isRamming(b);
-        if (!bothRam) {
-            if (isRamming(a)) spinOnContact(cfg, now, b, events);
-            else if (isRamming(b)) spinOnContact(cfg, now, a, events);
-        }
+        //
+        // ── L'exception : le BILL ───────────────────────────────────────
+        //
+        // Un bill qui rencontre un autre intouchable — bill ou etoile — se
+        // bouscule avec lui, attenue et sans degats. Le bill tient le milieu de
+        // la piste et le traverse en trombe ; s'y croiser sans rien serait le
+        // seul endroit du jeu ou deux karts s'ignorent entierement. Le partage
+        // reste tres inegal, `billMassFactor` s'en charge : une etoile ne
+        // detourne pas un bill, elle se fait ecarter par lui.
+        //
+        // Etoile contre etoile, en revanche, se traversent : aucune des deux
+        // n'a de raison de tenir une ligne plutot qu'une autre.
+        const ramA = isRamming(a);
+        const ramB = isRamming(b);
 
-        // Deux bills font exception au « sans rien » : ils tiennent tous les
-        // deux le milieu de la piste, s'y traverser serait le seul endroit du
-        // jeu ou deux karts s'ignorent. Ils se bousculent donc, attenues et
-        // sans degats. Deux autres intouchables, eux, se traversent.
-        const billOnBill = a.isBill && b.isBill;
-        if (bothRam && !billOnBill) return;
+        // Un seul des deux est intouchable : il blesse, sa victime toupille.
+        if (ramA !== ramB) spinOnContact(cfg, now, ramA ? b : a, events);
+
+        const ramContact = ramA && ramB && (a.isBill || b.isBill);
+        if ((ramA || ramB) && !ramContact) return;
 
         // ── L'ecrasement ────────────────────────────────────────────────────
         //
@@ -5405,7 +5428,11 @@
         //
         // Place APRES le bloc des intouchables, et c'est ce qui donne la regle
         // « une etoile ne l'ecrase pas, elle le blesse » : le tete-a-queue a
-        // deja ete pose au-dessus, et `isRamming` disqualifie ici l'ecraseur.
+        // deja ete pose au-dessus, et le contact est ressorti avant d'arriver
+        // ici. Un rapetisse sous etoile ne s'aplatit donc pas davantage — il ne
+        // sent rien, comme tout intouchable. La garde `isRamming` ci-dessous ne
+        // sert plus qu'au seul couple qui parvient jusqu'ici avec un
+        // intouchable dedans : bill contre bill, et etoile contre bill.
         //
         // Rien a defaire quand le petit regrossit : le tick suivant le trouve a
         // taille normale, la paire retombe dans le cas ordinaire, et le
@@ -5419,7 +5446,9 @@
             return;
         }
 
-        const scale = billOnBill ? cfg.bill.pushFactor : 1;
+        // Une bousculade entre intouchables est attenuee : elle n'est la que
+        // pour qu'ils ne se traversent pas, pas pour les envoyer valser.
+        const scale = ramContact ? cfg.bill.pushFactor : 1;
 
         const iA = contactInertia(cfg, a);
         const iB = contactInertia(cfg, b);

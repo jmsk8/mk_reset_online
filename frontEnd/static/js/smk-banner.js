@@ -19,7 +19,7 @@ const LIGHTNING_SRC = 'data:image/svg+xml,' + encodeURIComponent(LIGHTNING_SVG);
 
 
 const GAME_CONFIG = {
-    debugMode: true,
+    debugMode: false,
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
@@ -46,7 +46,6 @@ const GAME_CONFIG = {
         bufferZone: 200,
         zIndexBase: 400,
         mobileBreakpoint: 769,
-        mobileScale: 0.6,
         // Miroir de .kart-container-moving en CSS. Le sprite est centre sur la
         // position du kart, qui est aussi le centre de sa hitbox : c'est la
         // demi-largeur qui sert, pour reculer l'element de son coin gauche.
@@ -195,6 +194,39 @@ let cachedGround = null;
 let cachedIsSummerBanner = false;
 let cachedContainer = null;
 let cachedIsMobile = false;
+let cachedGameWrapper = null;
+let cachedFinishBand = 0;
+
+// ── Mesures de mise en page ────────────────────────────────────────────────
+//
+// Elles sont lues UNE fois par changement de fenetre, jamais pendant le rendu.
+// Une lecture de `offsetWidth` au milieu d'une frame, apres les ecritures de
+// style, force le navigateur a recalculer toute la mise en page sur-le-champ
+// pour repondre — c'est ce que la boucle faisait deux fois par image, dont une
+// dans le HUD de debug, qui faussait ainsi la mesure qu'il affiche.
+//
+// `wrapperHeight` est la hauteur du CONTAINING BLOCK des corps places.
+// `#karts-container` n'est pas positionne : ce sont donc les dimensions de
+// `.game-content-wrapper` qui resolvent leurs pourcentages. Sur mobile ce
+// wrapper est plus grand qu'a l'ecran — 166,67 % puis `scale(0.6)` — et c'est
+// bien sa hauteur de MISE EN PAGE qu'il faut ici, celle que rend offsetHeight.
+// `hudWidth` est la largeur du cadre de la carte de debug : elle decide de la
+// portion de piste que la fenetre montre, et se lisait elle aussi a chaque
+// image, apres les ecritures de `renderState`.
+// `roadBandHeight` est la hauteur de la PISTE : la bande que les karts peuvent
+// atteindre, `roadMinY` en bas, `roadMaxY` en haut. C'est elle qui convertit une
+// profondeur en pixels. La feuille de style la declare en `--road-band-pct`.
+//
+// `groundHeight` est la hauteur de l'ASPHALTE, qui est plus grande : les
+// derniers pixels du haut sont du bitume derriere la piste, sur lequel rien ne
+// roule — sans eux, la rangee du fond posait ses roues sur la bordure rouge et
+// blanche. Elle ne sert qu'a savoir jusqu'ou la neige peut se poser.
+//
+// Les trois ont longtemps ete confondues : l'asphalte valait 35 % d'une scene de
+// 360 px, la piste 35 unites, et une unite tombait donc a 1 % de la scene. Deux
+// coincidences, defaites l'une apres l'autre — le cadre a grandi, puis
+// l'asphalte a depasse la piste.
+const viewMetrics = { containerWidth: 0, wrapperHeight: 0, hudWidth: 0, groundHeight: 0, roadBandHeight: 0 };
 
 const imageCache = {};
 
@@ -275,6 +307,120 @@ function updateMobileStatus() {
     cachedIsMobile = window.innerWidth < GAME_CONFIG.rendering.mobileBreakpoint;
     return cachedIsMobile;
 }
+
+// Remesure la scene. Le seul endroit du fichier qui a le droit de lire une
+// dimension du DOM : partout ailleurs on lit `viewMetrics`.
+//
+// Une mesure nulle est ignoree plutot que memorisee : le decor peut n'etre pas
+// encore mis en page au premier appel, et retenir un zero figerait la scene sur
+// une hauteur de repli pour toute la session.
+function refreshLayoutMetrics() {
+    updateMobileStatus();
+
+    if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
+    if (!cachedGameWrapper) cachedGameWrapper = document.querySelector('.game-content-wrapper');
+
+    const w = cachedContainer ? cachedContainer.offsetWidth : 0;
+    if (w > 0) viewMetrics.containerWidth = w;
+
+    const h = cachedGameWrapper ? cachedGameWrapper.offsetHeight : 0;
+    if (h > 0) viewMetrics.wrapperHeight = h;
+
+    if (!cachedGround) cachedGround = document.querySelector('.layer-ground');
+    const gh = cachedGround ? cachedGround.offsetHeight : 0;
+    if (gh > 0) viewMetrics.groundHeight = gh;
+
+    // La piste ne se mesure pas : aucun element ne la dessine, elle est plus
+    // courte que l'asphalte qui la porte. La feuille de style la declare, on la
+    // lit. Un seul `getComputedStyle` par changement de fenetre.
+    if (cachedGameWrapper && viewMetrics.wrapperHeight > 0) {
+        const pct = parseFloat(getComputedStyle(cachedGameWrapper)
+            .getPropertyValue('--road-band-pct'));
+        if (pct > 0) viewMetrics.roadBandHeight = (pct / 100) * viewMetrics.wrapperHeight;
+    }
+
+    // La bande d'arrivee se mesure ici plutot qu'a la demande : sa largeur vient
+    // du CSS et change avec l'appareil, et `finishBandWidth()` est appele depuis
+    // le rendu, ou plus rien ne doit toucher le DOM.
+    const bandEl = document.querySelector('.layer-finish-line');
+    const bw = bandEl ? bandEl.offsetWidth : 0;
+    if (bw > 0) cachedFinishBand = bw;
+
+    // Le cadre de la carte de debug, quand il existe : il se construit apres le
+    // decor, d'ou la remesure depuis `initDebugHUD()`.
+    const hudEl = document.getElementById('debug-hud');
+    const hw = hudEl ? hudEl.clientWidth : 0;
+    if (hw > 0) viewMetrics.hudWidth = hw;
+}
+
+// Un seul rafraichissement par image, quoi qu'il arrive : redimensionner une
+// fenetre emet des dizaines d'evenements, et chacun coute une mise en page.
+let layoutRefreshQueued = false;
+
+function onViewportChange() {
+    if (layoutRefreshQueued) return;
+    layoutRefreshQueued = true;
+    requestAnimationFrame(() => {
+        layoutRefreshQueued = false;
+        refreshLayoutMetrics();
+    });
+}
+
+window.addEventListener('resize', onViewportChange);
+window.addEventListener('orientationchange', onViewportChange);
+
+// La profondeur d'un corps, en pixels de translation verticale.
+//
+// Les corps se posaient a `bottom: N%` et cette ligne se reecrivait a chaque
+// image. `bottom` est une propriete de MISE EN PAGE : chaque ecriture
+// invalidait la mise en page du conteneur, qui recalculait tous ses enfants —
+// une quarantaine de fois par image — et annulait au passage les
+// `will-change: transform` deja poses juste a cote. Le meme deplacement, plie
+// dans la `translate3d` qui etait deja la, ne coute plus qu'une composition.
+//
+// Negatif : dans le repere des transformations, monter c'est aller vers les Y
+// negatifs, la ou `bottom` montait en croissant. Les corps gardent donc
+// `bottom: 0` en CSS et toute leur profondeur passe par la transformation.
+function depthToY(yPercent) {
+    return -yPercent * depthToWorldPx();
+}
+
+// Le decor defile par TRANSFORMATION, pas par `background-position`.
+//
+// Ecrire `background-position` a chaque image repeint la texture du calque
+// entier a chaque image — le `will-change` qui l'accompagnait est un indice, pas
+// une promotion : aucun moteur ne sait compositer un fond qui glisse.
+//
+// Le calque est donc elargi d'un PAS et translate. Comme le motif se repete, il
+// suffit de garder la translation dans [-pas, 0] et de rattraper les multiples
+// du pas sur `background-position`, qui ne se reecrit alors qu'une fois tous les
+// `LAYER_STEP` pixels parcourus — deux secondes au rythme de croisiere, au lieu
+// de soixante fois par seconde.
+//
+// LAYER_TILE est la periode du motif de fond, celle que le CSS pose en
+// `background-size` ; LAYER_STEP la divise, pour que les valeurs rattrapees
+// restent alignees sur le motif.
+const LAYER_TILE = 3840;
+const LAYER_STEP = 480;
+
+// `phase` est le decalage de motif voulu au bord gauche du cadre : exactement
+// ce qui s'ecrivait en `background-position`.
+function scrollLayer(el, phase, state) {
+    const m = ((phase % LAYER_TILE) + LAYER_TILE) % LAYER_TILE;
+    const q = Math.floor(m / LAYER_STEP) * LAYER_STEP;
+
+    if (state.bp !== q) {
+        state.bp = q;
+        // Le pas ajoute compense la translation, qui est toujours negative :
+        // c'est ce qui garde le bord gauche du calque hors du cadre.
+        el.style.backgroundPosition = `${q + LAYER_STEP}px 0px`;
+    }
+
+    el.style.transform = `translate3d(${(m - q) - LAYER_STEP}px, 0, 0)`;
+}
+
+const bgScroll = { bp: null };
+const fgScroll = { bp: null };
 
 // `cameraX` designe le **centre** de ce qu'on voit, pas son bord gauche : la
 // fenetre s'etend symetriquement de part et d'autre, sur la largeur dont
@@ -845,8 +991,13 @@ const ROAD_PATTERN_WIDTH = 80;
 // animation-delay negatif : deux navigateurs qui creent le meme element a des
 // instants differents jouent malgre tout la meme phase. Sans ca, le rebond des
 // karts et l'arc-en-ciel de l'etoile differeraient d'un spectateur a l'autre.
-function alignAnimationPhase(el, cycleMs) {
-    el.style.animationDelay = `${-(getGameTime() % cycleMs)}ms`;
+// `prop` sert aux animations portees par un pseudo-element, qui n'accepte aucun
+// style inline : la phase se pose alors en variable CSS sur le parent, que la
+// regle lit dans son `animation-delay`.
+function alignAnimationPhase(el, cycleMs, prop) {
+    const delay = `${-(getGameTime() % cycleMs)}ms`;
+    if (prop) el.style.setProperty(prop, delay);
+    else el.style.animationDelay = delay;
 }
 
 // Les elements crees avant que l'horloge du serveur ne soit connue portent une
@@ -859,7 +1010,7 @@ function realignAnimations() {
         if (img) alignAnimationPhase(img, 400);
     }
     const sunEl = worldState.sun && worldState.sun.element;
-    if (sunEl) alignAnimationPhase(sunEl, 2400);
+    if (sunEl) alignAnimationPhase(sunEl, 2400, '--sun-phase');
 }
 
 const boxEls = [];
@@ -869,7 +1020,7 @@ function initScene() {
     cachedContainer = document.getElementById('karts-container');
     if (!cachedContainer) return;
 
-    updateMobileStatus();
+    refreshLayoutMetrics();
     initLeaderboard();
 
     const finishLineEl = document.querySelector('.layer-finish-line');
@@ -879,8 +1030,8 @@ function initScene() {
 
     const sunEl = document.querySelector('.layer-sun');
     if (sunEl) {
-        // sunGlow, 2,4 s.
-        alignAnimationPhase(sunEl, 2400);
+        // sunGlow, 2,4 s. Portee par `.layer-sun::after`, d'ou la variable.
+        alignAnimationPhase(sunEl, 2400, '--sun-phase');
         // Solidaire du fond (bgCameraX), pas de la route.
         worldState.sun = { element: sunEl, worldX: WORLD.sunX };
     }
@@ -1128,6 +1279,11 @@ function createHeldItemElement(itemType, holdPosition) {
     // seul a le faire ; ce qui valait pour lui vaut pour tout le monde.
     itemDiv.style.marginLeft = `${-visual.size / 2}px`;
 
+    // Ancre au sol une fois pour toutes : la profondeur passe par la
+    // transformation posee a chaque image (cf. depthToY), et non plus par un
+    // `bottom` en pourcentage qui relancait la mise en page a chaque fois.
+    itemDiv.style.bottom = '0px';
+
     // La demi-largeur reste attachee a l'element : elle sert a replacer un
     // objet TENU, qui se cale sur la silhouette du kart et non sur un centre.
     // La relire ici evite de reconstruire une config par objet a chaque frame.
@@ -1217,9 +1373,9 @@ function renderOrbitItems(kart, rx, gameNow) {
                              : Math.max(getZIndex(by), kartZ + 1);
 
         el.style.display = 'block';
-        // Y positif = vers le bas : l'orbite entiere descend de `drop`.
-        el.style.transform = `translate3d(${cx + Math.cos(angle) * orbit.radiusX}px, ${drop}px, 0)`;
-        el.style.bottom = `${by}%`;
+        // Y positif = vers le bas : l'orbite entiere descend de `drop`, et la
+        // profondeur de l'orbe se plie dans la meme transformation.
+        el.style.transform = `translate3d(${cx + Math.cos(angle) * orbit.radiusX}px, ${depthToY(by) + drop}px, 0)`;
         if (el.style.zIndex != bz) el.style.zIndex = bz;
     }
 }
@@ -1297,6 +1453,11 @@ const bannerLink = {
     raiseCurtain() {
         if (this.curtainEl) this.curtainEl.classList.remove('is-down');
         if (this.leaderboardEl) this.leaderboardEl.classList.remove('is-veiled');
+
+        // L'ecran de demarrage (index.html) attend ce signal pour se dissiper :
+        // la page se decouvre quand la scene est prete a etre regardee, pas
+        // avant. Emis a chaque levee, mais il n'est ecoute qu'une fois.
+        document.dispatchEvent(new CustomEvent('race:ready'));
     },
 
     setStatus(state) {
@@ -1364,7 +1525,6 @@ function ensureKartEl(kart) {
 
     const wrapper = document.createElement('div');
     wrapper.classList.add('kart-container-moving');
-    wrapper.style.bottom = `${kart.yPercent}%`;
     wrapper.style.zIndex = getZIndex(kart.yPercent);
 
     // La longueur du dessin, en rapport au kart de reference. Une variable CSS
@@ -1431,7 +1591,6 @@ function ensureBoxEl(box, index) {
     // ramassage (hitboxes.itemBox, +/-10) est centree sur `worldX`, une boite
     // posee par son coin gauche se ramasserait a 21 px de la ou elle est vue.
     el.style.marginLeft = `${-size / 2}px`;
-    el.style.bottom = `${box.y}%`;
     el.style.zIndex = getZIndex(box.y);
 
     cachedContainer.appendChild(el);
@@ -1450,16 +1609,20 @@ function ensurePipeEl(pipe, index) {
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     if (!cachedContainer) return null;
 
-    // Du serveur, et de lui seul : c'est cette largeur qui a servi a calculer
+    // Du serveur, et de lui seul : c'est cette taille qui a servi a calculer
     // l'emprise du tuyau, les deux ne peuvent donc plus diverger. Le repli du
     // GAME_CONFIG ne sert qu'au decor hors ligne.
+    //
+    // Posee en variables et non en pixels : le retrecissement mobile du DESSIN
+    // vit dans la feuille de style, comme celui du kart (cf.
+    // `.kart-container-moving`). En calculant ici des pixels, il faudrait les
+    // refaire a chaque changement d'appareil — et un tuyau, une fois cree, n'est
+    // jamais recree.
     const size = WORLD.pipeDraw || OFFLINE_WORLD.pipeDraw;
     const el = document.createElement('div');
     el.classList.add('pipe');
-    el.style.width = `${size.w}px`;
-    el.style.height = `${size.h}px`;
-    el.style.marginLeft = `${-size.w / 2}px`;
-    el.style.bottom = `${pipe.y}%`;
+    el.style.setProperty('--pipe-w', size.w);
+    el.style.setProperty('--pipe-h', size.h);
     el.style.zIndex = getZIndex(pipe.y);
 
     // Le dessin vit dans un enfant, et non sur l'element place. Le defilement
@@ -1891,7 +2054,7 @@ function ensureLakituEl() {
     wrapper.appendChild(img);
     cachedContainer.appendChild(wrapper);
 
-    lakituEls = { wrapper: wrapper, img: img, key: null };
+    lakituEls = { wrapper: wrapper, img: img, key: null, height: '' };
     return lakituEls;
 }
 
@@ -1928,10 +2091,21 @@ function renderLakitu(gameNow, screenWidth) {
     }
 
     els.wrapper.style.display = 'block';
-    els.wrapper.style.height = `${cachedIsMobile ? LAKITU_HEIGHT.mobile : LAKITU_HEIGHT.pc}px`;
-    els.wrapper.style.bottom = `${LAKITU_BOTTOM}%`;
+
+    // `height` est une propriete de mise en page : on ne la reecrit que lorsque
+    // l'appareil a change de gabarit, pas soixante fois par seconde.
+    const h = `${cachedIsMobile ? LAKITU_HEIGHT.mobile : LAKITU_HEIGHT.pc}px`;
+    if (els.height !== h) {
+        els.height = h;
+        els.wrapper.style.height = h;
+    }
     // Centre sur la ligne : la moitie de largeur gagnee compte sur mobile.
-    els.wrapper.style.transform = `translate3d(${rx}px, 0, 0) translateX(-50%)`;
+    //
+    // Sa profondeur passe par la meme conversion que les corps de la piste : il
+    // survole le bitume, et doit donc rester colle a lui quand le cadre change
+    // de hauteur. En pourcentage de scene il aurait derive vers le haut.
+    els.wrapper.style.transform =
+        `translate3d(${rx}px, ${depthToY(LAKITU_BOTTOM)}px, 0) translateX(-50%)`;
 }
 
 let resultsEl = null;
@@ -2221,7 +2395,7 @@ function renderState(gameNow, screenWidth, frameMs) {
     if (cachedBg) {
         // Été : parallaxe, moitié vitesse.
         const bgX = cachedIsSummerBanner ? renderBgCameraX : renderCameraX;
-        cachedBg.style.backgroundPosition = `${halfView - bgX}px 0px`;
+        scrollLayer(cachedBg, halfView - bgX, bgScroll);
     } else {
         cachedBg = document.querySelector('.layer-scrolling-bg');
     }
@@ -2229,7 +2403,7 @@ function renderState(gameNow, screenWidth, frameMs) {
     if (cachedFg) {
         // Décor de premier plan (été uniquement) : même vitesse que la route.
         const fgX = (renderCameraX - halfView) % WORLD.width;
-        cachedFg.style.backgroundPosition = `${-fgX}px 0px`;
+        scrollLayer(cachedFg, -fgX, fgScroll);
     } else {
         cachedFg = document.querySelector('.layer-scrolling-fg');
     }
@@ -2238,6 +2412,12 @@ function renderState(gameNow, screenWidth, frameMs) {
         // Bordure de route : la bande est un motif de 80px ancre sur le monde,
         // il suffit de la decaler du reste de la division. Modulo positif, un
         // reste negatif donnerait une valeur CSS invalide.
+        //
+        // Pas de rattrapage a la `scrollLayer` ici : le pas EST la periode du
+        // motif, la bande est donc elargie d'exactement un motif et le decalage
+        // tient toujours dans [-80, 0]. La variable alimente une `transform` et
+        // non plus un `background-position` (cf. `.layer-ground::before`) — un
+        // pseudo-element n'accepte pas de style inline, d'ou la variable.
         const roadX = (((renderCameraX - halfView) % ROAD_PATTERN_WIDTH) + ROAD_PATTERN_WIDTH) % ROAD_PATTERN_WIDTH;
         cachedGround.style.setProperty('--road-offset', `${-roadX}px`);
     } else {
@@ -2266,7 +2446,7 @@ function renderState(gameNow, screenWidth, frameMs) {
         const rx = getScreenPosition(box.worldX, renderCameraX, screenWidth);
         if (rx > -renderMargin && rx < screenWidth + renderMargin) {
             el.style.display = 'block';
-            el.style.transform = `translate3d(${rx}px, ${floatY}px, 0)`;
+            el.style.transform = `translate3d(${rx}px, ${depthToY(box.y) + floatY}px, 0)`;
         } else {
             el.style.display = 'none';
         }
@@ -2281,7 +2461,7 @@ function renderState(gameNow, screenWidth, frameMs) {
 
         if (rx > -renderMargin && rx < screenWidth + renderMargin) {
             el.style.display = 'block';
-            el.style.transform = `translate3d(${rx}px, 0, 0)`;
+            el.style.transform = `translate3d(${rx}px, ${depthToY(pipe.y)}px, 0)`;
         } else {
             el.style.display = 'none';
         }
@@ -2325,8 +2505,7 @@ function renderState(gameNow, screenWidth, frameMs) {
 
         if (isVisibleNow) {
             wrapper.style.display = 'block';
-            wrapper.style.transform = `translate3d(${spriteX}px, 0, 0)`;
-            wrapper.style.bottom = `${kart.yPercent}%`;
+            wrapper.style.transform = `translate3d(${spriteX}px, ${depthToY(kart.yPercent)}px, 0)`;
 
             const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
             if (wrapper.style.zIndex != zVal) wrapper.style.zIndex = zVal;
@@ -2420,8 +2599,10 @@ function renderState(gameNow, screenWidth, frameMs) {
                         hx = rx + heldBehindX;
                         hy = 0;
                     }
-                    hel.style.transform = `translate3d(${hx}px, ${-hy}px, 0)`;
-                    hel.style.bottom = `${kart.yPercent}%`;
+                    // `hy` monte l'objet par rapport a son porteur ; la
+                    // profondeur du porteur s'y ajoute, dans la meme
+                    // transformation.
+                    hel.style.transform = `translate3d(${hx}px, ${depthToY(kart.yPercent) - hy}px, 0)`;
                     const itemZ = inHands ? zVal + 1 : zVal;
                     if (hel.style.zIndex != itemZ) hel.style.zIndex = itemZ;
                 }
@@ -2452,8 +2633,8 @@ function renderState(gameNow, screenWidth, frameMs) {
             el.style.display = 'block';
             // `hop` souleve l'objet sans toucher a sa profondeur de piste : une
             // banane en cloche passe au-dessus, elle ne change pas de couloir.
-            el.style.transform = `translate3d(${rx}px, ${-item.hop}px, 0)`;
-            el.style.bottom = `${item.y}%`;
+            // Les deux se somment dans la transformation, le sol reste a zero.
+            el.style.transform = `translate3d(${rx}px, ${depthToY(item.y) - item.hop}px, 0)`;
             // Le souffle passe devant tout le monde : il doit recouvrir les
             // karts qu'il emporte.
             const zVal = item.type === 'blueBlast'
@@ -2989,8 +3170,6 @@ function trackFrame(timestamp, stalled) {
 }
 
 function animate(timestamp) {
-    updateMobileStatus();
-
     // Course figee : plus rien n'est lu du tampon ni repeint, la scene reste sur
     // sa derniere image. La boucle, elle, continue de tourner — c'est par elle
     // qu'on repartira au clic suivant. L'horloge ne se rattrape pas davantage :
@@ -3004,13 +3183,35 @@ function animate(timestamp) {
 
     stepClock();
 
-    if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
+    // Les dimensions viennent du cache, tenu a jour par `resize` : les lire ici
+    // forcerait un recalcul de mise en page a chaque image. Un cache vide ne se
+    // voit qu'au demarrage, quand le decor n'etait pas encore mesurable.
+    if (!viewMetrics.containerWidth) refreshLayoutMetrics();
 
-    if (cachedContainer) {
-        let screenWidth = cachedContainer.offsetWidth;
-        if (cachedIsMobile) {
-            screenWidth = screenWidth / GAME_CONFIG.rendering.mobileScale;
-        }
+    if (viewMetrics.containerWidth) {
+        // ── La largeur de monde visible EST la largeur du conteneur ──────
+        //
+        // `getScreenPosition` rend un ecart en px de MISE EN PAGE dans ce
+        // conteneur, et c'est la que les `translate3d` se posent : un px de
+        // monde y vaut un px de conteneur, sur mobile comme sur PC. La moitie
+        // de cette largeur est donc le centre du cadre, celui ou se pose le
+        // kart suivi.
+        //
+        // Elle etait divisee par `mobileScale` sur mobile, et le compte etait
+        // fait deux fois. Le retrecissement mobile ne se joue pas ici : la
+        // feuille de style donne a `.game-content-wrapper` 166.67 % de largeur
+        // AVANT de le reduire de 0.6 (cf. la media query 768px). Le conteneur
+        // mesure donc deja les 1/0.6 de largeur en question, et `offsetWidth`
+        // les rend — la division les appliquait une seconde fois.
+        //
+        // Ce que ca donnait : le centre du cadre etait calcule a 1.39 fois la
+        // largeur du hero au lieu de 0.83, soit 83 % du conteneur. Invisible
+        // camera libre — la scene defile, un decalage constant ne se lit pas —
+        // mais un kart suivi se posait colle au bord droit au lieu du milieu.
+        // Les traits d'orage, repartis sur cette meme largeur, tombaient pour
+        // la plupart hors du cadre. La carte de debug, elle, lisait deja la
+        // largeur sans la diviser : c'est elle qui avait raison.
+        const screenWidth = viewMetrics.containerWidth;
 
         const gameNow = getGameTime();
 
@@ -3114,8 +3315,6 @@ function depthPct(y) {
 // monde. Recalcules a chaque image — la fenetre suit le kart observe.
 let mapView = { start: 0, span: 1 };
 
-let cachedGameWrapper = null;
-let cachedFinishBand = 0;
 let mapHudHeight = 0;
 
 // Combien de px de monde vaut UNE unite de profondeur, ici et maintenant.
@@ -3129,11 +3328,27 @@ let mapHudHeight = 0;
 // C'est la seule facon d'avoir une carte a l'echelle : sans ce nombre, les deux
 // axes n'ont aucune unite commune et « meme echelle » ne veut rien dire.
 function depthToWorldPx() {
-    if (!cachedGameWrapper) cachedGameWrapper = document.querySelector('.game-content-wrapper');
-    const h = cachedGameWrapper ? cachedGameWrapper.offsetHeight : 0;
-    // Repli : la hauteur PC, celle qui donne l'aplatissement de 3.33 : 1 que la
-    // config decrit pour le kart comme pour le tuyau.
-    return h > 0 ? h / 100 : 3.6;
+    // Mesuree par `refreshLayoutMetrics()`, jamais ici : cette fonction est
+    // appelee depuis le rendu, et `depthToY()` s'en sert pour placer chaque
+    // corps. Une lecture du DOM a cet endroit serait la pire de toutes.
+    //
+    // ── Pourquoi la bande roulable, et non la scene ni l'asphalte ────
+    //
+    // Une unite vaut la hauteur de la PISTE divisee par sa longueur en unites.
+    // Rien d'autre — ni la scene, qui a grandi quand la bordure mordait sur le
+    // decor ; ni l'asphalte, qui deborde derriere la piste depuis que les karts
+    // du fond posaient leurs roues sur cette bordure.
+    //
+    // Les trois ont rendu le meme nombre pendant longtemps, et c'est ce qui
+    // rendait la confusion invisible : 35 % d'une scene de 360 px, une piste de
+    // 35 unites, une unite a 1 % de la scene. Chaque fois que le cadre bouge
+    // sans que la piste change de longueur, la coincidence se defait un peu
+    // plus — et lire la mauvaise hauteur pose les karts a cote du bitume.
+    const band = WORLD.roadMaxY - WORLD.roadMinY;
+    const h = viewMetrics.roadBandHeight;
+    // Repli : la valeur PC, celle que `bodies.depthPx` pose en config moteur et
+    // dont descendent l'aplatissement du kart et la rondeur du tuyau.
+    return (h > 0 && band > 0) ? h / band : 3.6;
 }
 
 // Largeur de la bande d'arrivee, en px de monde.
@@ -3142,18 +3357,14 @@ function depthToWorldPx() {
 // decide (`.layer-finish-line`), et une copie finirait par mentir le jour ou il
 // change. Meme principe que `depthToWorldPx()` — la scene est la reference.
 //
-// `offsetWidth` rend la largeur de mise en page, avant la mise a l'echelle
-// mobile du conteneur : c'est bien une largeur en px de MONDE, la meme unite que
-// `finishLineX`.
+// La mesure se prend dans `refreshLayoutMetrics()`, avec les autres : c'est une
+// largeur de MISE EN PAGE, prise avant la mise a l'echelle mobile du conteneur,
+// donc bien une largeur en px de MONDE — la meme unite que `finishLineX`. Elle
+// se remesure a chaque changement de fenetre, le CSS ne donnant pas la meme
+// bande sur mobile et sur PC.
 function finishBandWidth() {
-    if (cachedFinishBand > 0) return cachedFinishBand;
-
-    const el = document.querySelector('.layer-finish-line');
-    const w = el ? el.offsetWidth : 0;
-    if (w > 0) cachedFinishBand = w;
-
-    // Repli sur la valeur du CSS, le temps que le decor existe.
-    return w > 0 ? w : 60;
+    // Repli sur la valeur du CSS, le temps que le decor soit mesurable.
+    return cachedFinishBand > 0 ? cachedFinishBand : 60;
 }
 
 // Recentre la fenetre et remet le cadre a l'echelle.
@@ -3180,7 +3391,16 @@ function finishBandWidth() {
 // sa taille que tout en miniature.
 function updateMapView(hud) {
     const vis = WORLD.vision;
-    const span = Math.max(1, Math.min(hud.clientWidth, WORLD.width));
+
+    // Largeur prise dans le cache, jamais relue ici : `clientWidth` tombe apres
+    // les ecritures de style de `renderState`, et le navigateur doit alors
+    // recalculer toute la mise en page pour repondre. La carte etait le premier
+    // outil fausse par la mesure qu'elle declenchait.
+    //
+    // Sans mesure, on retombe sur le tour entier — le cadrage d'avant la
+    // fenetre. Ca ne dure que le temps du premier `initDebugHUD()`.
+    const frame = viewMetrics.hudWidth || WORLD.width;
+    const span = Math.max(1, Math.min(frame, WORLD.width));
 
     // Le kart observe fait le centre — c'est sa vue qu'on lit. Sans lui, la
     // camera : c'est le seul point de vue qui reste.
@@ -3698,6 +3918,9 @@ function initDebugHUD() {
     leaderboard.appendChild(list);
 
     document.body.appendChild(leaderboard);
+    // Le cadre vient d'apparaitre : on prend sa largeur maintenant, une fois,
+    // plutot qu'a chaque image depuis updateMapView().
+    refreshLayoutMetrics();
 }
 
 // Les objets, redessines d'un bloc a chaque image.
@@ -3810,8 +4033,11 @@ function updateDebugHUD() {
     const hud = document.getElementById('debug-hud');
     if (!hud) return;
 
-    if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
-    const screenWidth = cachedContainer ? cachedContainer.offsetWidth : window.innerWidth;
+    // Meme cache que la boucle. C'est ici que la lecture faisait le plus de
+    // degats : elle tombait APRES les ecritures de style de `renderState`, donc
+    // le navigateur devait recalculer toute la mise en page pour y repondre —
+    // le HUD faussait ainsi la mesure qu'il affiche.
+    const screenWidth = viewMetrics.containerWidth || window.innerWidth;
 
     // Le cadrage d'abord : tout ce qui suit se place dedans.
     updateMapView(hud);
@@ -3986,7 +4212,15 @@ function createFallingSnowflake(container, containerHeight, containerWidth) {
     const startX = Math.random() * (110 + maxDriftPercent) - 10;
     snowflake.style.left = `${startX}%`;
 
-    const fallEndPercent = 0.65 + Math.random() * 0.30;
+    // Un flocon s'arrete SUR le bitume, jamais au-dessus : la borne haute de sa
+    // chute est le bord haut de la piste, la part de scene occupee par le ciel.
+    // Elle etait recopiee a la main (0.65, l'ancien decoupage 65/35) et pointait
+    // dans le vide des que le cadre a grandi sans que la piste s'allonge. Elle
+    // se mesure maintenant, comme tout le reste de la profondeur.
+    const skyPart = (containerHeight > 0 && viewMetrics.groundHeight > 0)
+        ? 1 - (viewMetrics.groundHeight / containerHeight)
+        : 0.65;
+    const fallEndPercent = skyPart + Math.random() * Math.max(0, 0.95 - skyPart);
     const fallHeight = containerHeight * fallEndPercent;
 
     const fallSpeed = 80 + Math.random() * 70;
@@ -4010,10 +4244,15 @@ function createLandedSnowflake(container, containerWidth) {
     snowflake.style.width = `${size}px`;
     snowflake.style.height = `${size}px`;
 
-    const bottomPercent = Math.random() * 32 + 1;
-    snowflake.style.bottom = `${bottomPercent}%`;
+    // Une PROFONDEUR de piste, comme n'importe quel corps de la scene : le
+    // flocon pose est sur le bitume. Ecrite en pourcentage de scene, elle
+    // remontait dans le ciel des que le cadre grandissait sans que la piste
+    // s'allonge. Elle ne passe pas par `depthToY` parce que l'animation de
+    // derive occupe deja la `transform` de l'element.
+    const depth = Math.random() * 32 + 1;
+    snowflake.style.bottom = `${(depth * depthToWorldPx()).toFixed(1)}px`;
 
-    const zIndex = (GAME_CONFIG.rendering.zIndexBase - bottomPercent) | 0;
+    const zIndex = (GAME_CONFIG.rendering.zIndexBase - depth) | 0;
     snowflake.style.zIndex = zIndex;
 
     snowflake.style.left = `${80 + Math.random() * 40}%`;
