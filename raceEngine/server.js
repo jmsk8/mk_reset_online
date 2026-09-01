@@ -98,8 +98,9 @@ const MAX_CATCHUP_STEPS = 5;
 // Delai de grace avant l'arret de la course quand plus personne ne regarde.
 const IDLE_GRACE_MS = 30000;
 
-// Taille maximale d'un message entrant. Le client n'envoie que `ping` et
-// `vis`, quelques dizaines d'octets : tout ce qui depasse est une tentative.
+// Taille maximale d'un message entrant. Le client n'envoie que `ping`, `vis`,
+// `vote` et `watch`, quelques dizaines d'octets : ce qui depasse est une
+// tentative.
 const MAX_PAYLOAD = 512;
 
 // Sonde applicative : une connexion qui ne repond plus au ping est fermee.
@@ -395,12 +396,47 @@ function broadcast() {
 
     const payload = JSON.stringify(snapshot);
 
+    // Le releve de vision du kart suivi, pour les seules connexions qui l'ont
+    // demande. Il ne peut pas voyager dans le payload commun : il pese cent fois
+    // l'entier de decision et ne concerne qu'un kart, choisi par un spectateur.
+    //
+    // D'ou cette seconde serialisation, et son prix bien delimite — une par
+    // spectateur qui regarde, zero quand personne ne regarde. Le cas courant,
+    // celui de la banniere ouverte dans mille onglets, ne paie rien du tout : la
+    // boucle ci-dessous est exactement celle d'avant tant qu'aucun `watch` n'est
+    // arrive.
+    let watched = null;
+
     for (const [ws, meta] of clients) {
         // Onglet en arriere-plan : le client a demande qu'on lui coupe le flux.
         // La course continue sans lui, il redemandera l'etat en revenant.
         if (meta.hidden) continue;
         if (ws.readyState !== ws.OPEN) continue;
-        ws.send(payload);
+
+        if (meta.watch === null || meta.watch === undefined) {
+            ws.send(payload);
+            continue;
+        }
+
+        // Le kart demande a pu disparaitre entre deux courses : on retombe alors
+        // sur le flux commun plutot que d'inventer une vue vide.
+        const kart = race.state.karts.find(k => k.id === meta.watch);
+        if (!kart) {
+            ws.send(payload);
+            continue;
+        }
+
+        // Un seul spectateur par kart, le plus souvent : la vue se serialise une
+        // fois et se reutilise pour les suivants qui regardent le meme.
+        if (!watched || watched.id !== meta.watch) {
+            watched = {
+                id: meta.watch,
+                text: JSON.stringify(
+                    Object.assign({}, snapshot, { vw: protocol.visionTuple(kart) })
+                )
+            };
+        }
+        ws.send(watched.text);
     }
 }
 
@@ -479,13 +515,13 @@ httpServer.on('upgrade', (req, socket, head) => {
 wss.on('connection', ws => {
     ensureRunning();
 
-    clients.set(ws, { hidden: false, alive: true, voted: false });
+    clients.set(ws, { hidden: false, alive: true, voted: false, watch: null });
     sendHello(ws);
 
     ws.on('message', data => {
-        // Le service ne fait rien d'autre que repondre a `ping` et noter `vis`.
-        // Tout le reste est ignore en silence : c'est un flux de lecture, il
-        // n'existe aucune raison legitime de lui envoyer autre chose.
+        // Le service repond a `ping`, note `vis` et `watch`, compte `vote`. Tout
+        // le reste est ignore en silence : c'est un flux de lecture, il n'existe
+        // aucune raison legitime de lui envoyer autre chose.
         let msg;
         try {
             msg = JSON.parse(data.toString());
@@ -505,6 +541,26 @@ wss.on('connection', ws => {
         if (msg.t === 'vote') {
             meta.voted = !meta.voted;
             checkVotes();
+            return;
+        }
+
+        // Le releve de vision d'UN kart, pour la carte de debug. `id` absent ou
+        // nul rend la connexion au flux commun.
+        //
+        // C'est la seule demande qui fasse travailler le service pour un seul
+        // spectateur, d'ou sa forme : un identifiant, pas un abonnement a
+        // negocier, et rien qui touche a la course. Un client qui ment sur `id`
+        // obtient au pire la vue d'un autre kart — tout ceci est deja public.
+        if (msg.t === 'watch') {
+            // `null` explicite : le client rend la connexion au flux commun.
+            // A ne surtout pas passer par `Number`, qui rend 0 — soit le kart
+            // 0, donc l'inverse exact de ce qui est demande.
+            if (msg.id === null || msg.id === undefined) {
+                meta.watch = null;
+                return;
+            }
+            const id = Number(msg.id);
+            meta.watch = Number.isInteger(id) ? id : null;
             return;
         }
 

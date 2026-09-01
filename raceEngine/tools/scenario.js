@@ -157,8 +157,10 @@ function runCarrier(name, sc, seed) {
     kart.absoluteVelocity = 450;
     kart.heldItem = null;
     kart.plan.threatId = 0;
-    kart.safetyRetryAt = 0;
+    kart.safetyRetryFrontAt = 0;
+    kart.safetyRetryBackAt = 0;
     kart.sight.at = -1e9;
+    kart.sight.frontAt = -Infinity;
 
     carrier.worldX = kart.worldX + sc.aheadPx;
     carrier.yPercent = sc.carrierY;

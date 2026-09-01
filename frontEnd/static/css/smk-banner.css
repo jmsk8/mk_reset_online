@@ -237,16 +237,25 @@
     will-change: transform;
 }
 
+/* La largeur de base est celle du kart de RÉFÉRENCE, et `--kart-length` dit ce
+   que ce kart-ci en fait : chaque personnage est dessiné au prorata de son PNG,
+   et son emprise suit le même rapport (cf. `bodies` en config moteur). La
+   variable est posée en inline par le rendu, qui la tient du serveur ; sans
+   elle, le repli à 1 redonne exactement la largeur d'avant.
+
+   Une variable et non une largeur en px calculée en JS : c'est ici que vit la
+   différence PC / mobile, et la poser en pixels obligerait à la recalculer à
+   chaque changement d'appareil. */
 .kart-container-moving {
     position: absolute;
     left: 0;
     will-change: transform;
-    width: 80px;
+    width: calc(80px * var(--kart-length, 1));
 }
 
 @media screen and (min-width: 769px) {
     .kart-container-moving {
-        width: 100px;
+        width: calc(100px * var(--kart-length, 1));
     }
 }
 
@@ -833,14 +842,29 @@
 }
 
 
+/* La carte de debug : un tour complet a plat. L'abscisse est le monde, et
+   l'ordonnee la PROFONDEUR de la piste — c'est ce qui permet d'y lire une vue,
+   dont tout se joue en profondeur. Elle etait haute de 60 px avec tout le monde
+   sur une seule rangee ; il lui faut de quoi separer trente unites de piste. */
+/* La carte de debug : une fenetre de piste vue de dessus, a l'ECHELLE 1 — un
+   pixel de monde pour un pixel de carte. Cf. la note de section dans
+   smk-banner.js.
+
+   Sa HAUTEUR n'est donc pas une decision de mise en page : c'est la profondeur
+   de la piste, en pixels, et rien d'autre. `updateMapView()` l'ecrit a chaque
+   changement de cadrage ; la valeur ci-dessous n'est qu'un point de depart, le
+   temps de la premiere image.
+
+   Sa LARGEUR est prise aussi grande que la page le permet, et sans plafond :
+   a echelle fixe, chaque pixel de cadre gagne est un pixel de piste vu en plus.
+   C'est le seul reglage qui reste, et il ne joue plus sur la taille des corps. */
 #debug-hud {
     position: fixed;
     bottom: 10px;
     left: 50%;
     transform: translateX(-50%);
-    width: 90%;
-    max-width: 800px;
-    height: 60px;
+    width: 98%;
+    height: 126px;
     background-color: rgba(0, 0, 0, 0.85);
     border: 2px solid #00ff00;
     z-index: 9999;
@@ -848,6 +872,200 @@
     overflow: hidden;
     box-shadow: 0 0 10px #00ff00;
     display: none;
+}
+
+/* La couche de vision. Elle ne recoit aucun clic : c'est un calque de lecture
+   pose sous les entites, et rien de ce qu'elle dessine n'est cliquable. */
+#debug-vision {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+
+#debug-vision > div {
+    position: absolute;
+    pointer-events: none;
+}
+
+/* Le champ du balayage : jusqu'ou porte le regard, du cote ou il regarde. */
+/* Le champ du balayage. Il etait a 7 % d'opacite — invisible sur un fond noir,
+   et plus encore sous les angles morts qui se peignent par-dessus a 62 %. Un
+   calque qu'on ne voit pas ne vaut pas mieux qu'un calque absent. */
+.dv-cone {
+    background: rgba(0, 255, 136, 0.18);
+    border-left: 2px solid rgba(0, 255, 136, 0.85);
+    border-right: 2px solid rgba(0, 255, 136, 0.85);
+    box-sizing: border-box;
+}
+
+/* Ce que la couche n'a pas pu dessiner, et pourquoi. */
+.dv-note {
+    left: 8px;
+    top: 6px;
+    color: #ffcf4d;
+    font-family: monospace;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* L'angle mort : ce qu'un corps solide jette au sol depuis la camera. Il
+   s'elargit en s'eloignant et il S'ARRETE — c'est le trapeze qui le dit, pas la
+   couleur. Assez opaque pour manger le champ vert, sans cacher la scene. */
+.dv-shadow {
+    background: rgba(0, 0, 0, 0.62);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+}
+
+/* La ligne de tir partagee : portee du danger latent, bande d'alignement. */
+.dv-press { background: rgba(255, 207, 77, 0.16); }
+
+/* Les objets, sur la carte. Couche a part : elle se reecrit d'un bloc a chaque
+   image, alors que les corps fixes gardent leur element. Posee AU-DESSUS de la
+   vue et SOUS les karts — un objet se lit sur le champ, un kart se lit sur
+   l'objet qu'il est en train de ramasser ou de prendre. */
+#debug-items {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    /* Au-dessus des tuyaux (5), sous les karts (10) : une carapace qui rebondit
+       doit se lire SUR le tuyau qui la renvoie, et un kart sur l'objet qu'il
+       ramasse. */
+    z-index: 6;
+}
+
+/* Selecteur de CLASSE et non `#debug-items > div` : un selecteur d'ID l'aurait
+   emporte sur `.dv-item-inert` quoi qu'il arrive, et l'etat « sans emprise »
+   n'aurait jamais rien change. */
+.dv-item {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    background-color: rgba(120, 255, 160, 0.45);
+    border: 1px solid #78ffa0;
+}
+
+.dv-item-banana { background-color: rgba(255, 225, 77, 0.45); border-color: #ffe14d; }
+
+/* L'objet TRAINE derriere son porteur. Meme emprise qu'un objet largue, role
+   inverse : il encaisse un tir, il n'en inflige pas. D'ou le trait plein et le
+   fond vide — une boite qui arrete, pas une boite qui frappe. */
+.dv-item-held {
+    background-color: rgba(120, 255, 160, 0.12);
+    border: 2px solid #78ffa0;
+}
+
+/* SANS EMPRISE : la bleue, qui survole tout, et la banane tant qu'elle monte.
+   Reduites a un point, parce qu'elles n'ont a cet instant aucune boite — le
+   losange dit « il est la, il ne touche rien ». */
+.dv-item-inert {
+    width: 7px;
+    height: 7px;
+    background-color: transparent;
+    border: 1px dashed rgba(255, 255, 255, 0.65);
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+/* Le faisceau du regard, trace depuis l'oeil. Il porte les rayons obliques, que
+   les divs du reste de la couche ne savent pas dessiner — d'ou le SVG, qui n'est
+   pas une div et a donc besoin de son propre positionnement. */
+.dv-rays {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.dv-ray {
+    fill: none;
+    vector-effect: non-scaling-stroke;
+}
+
+/* L'ouverture du faisceau : jusqu'aux deux rives, au bout de la portee. Un
+   repere de cadrage, discret par choix — il est toujours la. */
+.dv-ray-edge {
+    stroke: rgba(0, 255, 136, 0.35);
+    stroke-width: 1;
+    stroke-dasharray: 3 4;
+}
+
+/* Les rayons RASANTS : ceux qui passent par les flancs d'un corps solide et
+   bornent son angle mort. Ce sont les seuls traits de la carte qui expliquent
+   une autre forme — d'ou le plein, et la couleur de l'ombre qu'ils delimitent. */
+.dv-ray-graze {
+    stroke: rgba(255, 255, 255, 0.45);
+    stroke-width: 1;
+}
+
+/* Le bras qui relie le kart a sa camera : il dit d'ou part la vue, et pourquoi
+   les ombres ne convergent pas sur le kart. */
+.dv-eyelink {
+    border-top: 1px dotted rgba(0, 255, 136, 0.55);
+    background: none;
+}
+
+/* La voie : la bande ou un objet est sur la route. Volontairement discrete —
+   c'est un repere, pas un evenement. */
+.dv-lane {
+    left: 0;
+    width: 100%;
+    height: 0;
+    border-top: 1px dashed rgba(255, 255, 255, 0.18);
+}
+
+/* Ce qui ferme un passage. Un couloir libre se lit comme un trou entre deux
+   barres ; un mur dur ne se franchit pas, le reste se paie. */
+.dv-span {
+    background: rgba(80, 160, 255, 0.28);
+    border: 1px solid rgba(80, 160, 255, 0.55);
+    box-sizing: border-box;
+}
+
+.dv-span.dv-hard {
+    background: rgba(255, 70, 70, 0.30);
+    border-color: rgba(255, 70, 70, 0.75);
+}
+
+/* Les profondeurs RETENUES : la menace qui commande, le porteur qu'on evite,
+   la consigne du plan. Trois traits, trois roles, jamais la meme couleur. */
+.dv-threat, .dv-carrier, .dv-plan {
+    left: 0;
+    width: 100%;
+    height: 0;
+}
+
+.dv-threat { border-top: 2px solid #ff4d4d; }
+.dv-carrier { border-top: 2px dotted #ffcf4d; }
+.dv-plan { border-top: 2px solid #4dff9e; }
+
+/* Les points d'interet releves par la vue, poses a leur place dans le monde. */
+.dv-pin {
+    width: 9px;
+    height: 9px;
+    margin: -5px 0 0 -5px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    border: 2px solid #fff;
+}
+
+.dv-pin-pipe { border-color: #ff4d4d; }
+.dv-pin-box { border-color: #ffe14d; }
+.dv-pin-red { border-color: #ff7ad9; }
+
+/* L'oeil : le kart suivi, a sa profondeur, tourne du cote qu'il balaie. */
+.dv-eye {
+    width: 0;
+    height: 0;
+    margin: -6px 0 0 -3px;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 9px solid #00ff88;
+}
+
+.dv-eye-back {
+    margin-left: -6px;
+    border-left: 0;
+    border-right: 9px solid #ffcf4d;
 }
 
 .debug-camera-view {
@@ -858,25 +1076,79 @@
     background-color: rgba(255, 0, 0, 0.2);
     box-sizing: border-box;
     pointer-events: none;
+    z-index: 3;
 }
 
+/* Un corps se dessine a SON EMPRISE, pas en pastille de taille fixe : la
+   largeur, la hauteur et la rondeur arrivent en style inline, calculees par
+   `sizeEntity()` a partir des demi-emprises que le serveur envoie. Rien ici ne
+   fixe donc de dimension — une taille en dur reprendrait la main sur la seule
+   chose que la carte a a dire.
+
+   Ce qui reste : le centrage sur le point, la couleur, et l'ordre de lecture. */
 .debug-entity {
     position: absolute;
-    width: 14px;
-    height: 14px;
     top: 50%;
     transform: translate(-50%, -50%);
-    font-size: 12px;
+    box-sizing: border-box;
+    font-size: 11px;
     font-weight: bold;
     color: white;
-    text-align: center;
-    line-height: 14px;
-    border-radius: 50%;
+    /* L'initiale est un repere, pas un contenu : elle se centre sur la marque et
+       deborde plutot que de la deformer. A l'echelle 1 un kart fait 60 x 18 px
+       et la lettre y tient largement — la regle reste pour les corps etroits, et
+       parce que c'est la marque qui doit rester juste, jamais la lettre. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+    white-space: nowrap;
+    /* Au-dessus du calque de vision : c'est la scene qui se lit SUR la vue, pas
+       l'inverse. */
+    z-index: 2;
 }
 
-.debug-kart { background-color: blue; z-index: 10; }
-.debug-itembox { width: 8px; height: 8px; background-color: yellow; border-radius: 0; top: 30%; }
-.debug-finish { width: 2px; height: 100%; background-color: white; top: 0; transform: none; border-radius: 0; }
+.debug-kart {
+    background-color: rgba(64, 96, 255, 0.75);
+    border: 1px solid #7f9bff;
+    z-index: 10;
+}
+
+.debug-itembox {
+    background-color: rgba(255, 221, 51, 0.35);
+    border: 1px solid #ffdd33;
+}
+
+/* Le seul corps rond du moteur, et le seul a se dessiner rond ici. */
+.debug-pipe {
+    background-color: rgba(255, 77, 77, 0.7);
+    border: 1px solid #ff8a8a;
+    z-index: 5;
+}
+
+/* La ligne d'arrivee est une BANDE, et elle occupe toute la profondeur de piste.
+   Sa largeur arrive en style inline comme celle des corps — mesuree sur
+   `.layer-finish-line`, dont elle est le report a l'echelle 1 — mais elle se
+   pose par son bord GAUCHE : c'est la que le tour se compte, et c'est la que le
+   decor la cale. D'ou le `transform: none`, qui annule le centrage commun.
+
+   Translucide, pour qu'un kart qui la franchit reste lisible au travers. */
+.debug-finish {
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.35);
+    border-left: 2px solid #ffffff;
+    top: 0;
+    transform: none;
+}
+
+/* Le kart suivi, et ce qu'il ne voit pas. Un corps masque garde sa place : ce
+   qui change est qu'on sait desormais POURQUOI il n'a rien declenche. */
+.debug-kart.is-watched { box-shadow: 0 0 0 2px #00ff88; }
+
+.debug-kart.is-masked {
+    opacity: 0.3;
+    outline: 1px dashed rgba(255, 255, 255, 0.5);
+}
 
 
 #race-leaderboard {
@@ -936,11 +1208,53 @@
     fill: #ffffff;
 }
 
-/* Vote de redémarrage, à gauche de la caméra. Même gabarit qu'elle : 40 px de
-   large posés à -92 px, soit juste au-delà des -46 px de la caméra. Les deux
-   décalages se tiennent, déplacer l'un demande de reprendre l'autre. */
-.leaderboard-vote {
+/* Pause, juste à gauche de la caméra, et vote à gauche de la pause. Trois
+   boutons de 40 px posés tous les 46 px : -46, -92, -138. Les décalages se
+   tiennent en série, déplacer l'un demande de reprendre les autres. */
+.leaderboard-pause {
     left: -92px;
+    background-color: #111111;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+.leaderboard-pause svg {
+    width: 20px;
+    height: 20px;
+    fill: #ffffff;
+}
+
+/* Les deux icônes sont posées ensemble dans le SVG : on ne montre que celle de
+   l'état courant. Barres tant que la course tourne — c'est ce que le clic va
+   faire — triangle une fois figée. */
+.leaderboard-pause .ico-play,
+.leaderboard-pause.is-paused .ico-pause {
+    display: none;
+}
+
+.leaderboard-pause.is-paused .ico-play {
+    display: inline;
+}
+
+/* Course figée : le bouton s'allume, comme le vote posé. En rouge et non en
+   or : l'or est déjà pris par le repère de la caméra active, deux boutons
+   voisins allumés de la même couleur ne diraient plus rien. */
+.leaderboard-pause.is-paused {
+    background-color: #6f1d1d;
+    border-color: #ff7b72;
+    box-shadow: 0 0 8px rgba(255, 123, 114, 0.8);
+}
+
+.leaderboard-pause.is-paused svg {
+    fill: #ff7b72;
+}
+
+.leaderboard-vote {
+    left: -138px;
     background-color: #111111;
     border-radius: 50%;
     display: flex;
@@ -1006,9 +1320,19 @@
         height: 15px;
     }
 
-    /* Vignettes à 28 px : la caméra tient de -32 à -4, le vote de -64 à -36. */
-    .leaderboard-vote {
+    /* Vignettes à 28 px : la caméra tient de -32 à -4, la pause de -64 à -36,
+       le vote de -96 à -68. */
+    .leaderboard-pause {
         left: -64px;
+    }
+
+    .leaderboard-pause svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    .leaderboard-vote {
+        left: -96px;
     }
 
     .leaderboard-vote svg {
@@ -1075,6 +1399,29 @@
         width: 28px;
         height: 28px;
     }
+}
+
+/* ==========================================================================
+   Course figée
+   ==========================================================================
+   Le bouton pause arrête le rendu JS en cessant de peindre : les positions sont
+   posées à chaque frame par renderState(), il suffit de ne plus l'appeler. Les
+   animations CSS, elles, ne passent pas par nous — la toupie du kart touché, le
+   halo d'étoile, la neige, le sursaut d'un tuyau tourneraient sur une scène
+   arrêtée. Seul le navigateur peut les suspendre.
+
+   Le gel s'arrête à la scène et à son classement : le contenu de la bannière
+   (logo, boutons) n'est pas la course et continue de vivre. Le bouton pause
+   lui-même est dans le classement mais ne porte aucune animation, il reste donc
+   cliquable — c'est par lui qu'on repart. */
+.smk-snes-banner.is-paused .game-content-wrapper,
+.smk-snes-banner.is-paused .game-content-wrapper *,
+.smk-snes-banner.is-paused .game-content-wrapper *::before,
+.smk-snes-banner.is-paused .game-content-wrapper *::after,
+.smk-snes-banner.is-paused #race-leaderboard *,
+.smk-snes-banner.is-paused #race-leaderboard *::before,
+.smk-snes-banner.is-paused #race-leaderboard *::after {
+    animation-play-state: paused !important;
 }
 
 /* ==========================================================================
@@ -1242,7 +1589,11 @@
      Si un jour la taille cesse à nouveau de répondre, c'est ici qu'il faut
      regarder avant de toucher au reste.
    - `margin-left` vaut toujours -(width - 100) / 2. C'est ce qui garde le
-     sprite centré horizontalement sur le kart, donc sur sa hitbox.
+     sprite centré horizontalement sur le kart, donc sur sa hitbox. Les deux
+     pourcentages se comptent sur le CONTENEUR, dont la longueur varie d'un
+     personnage à l'autre : le rendu ramène donc `--kart-length` à 1 le temps
+     du vol, sans quoi huit porteurs donneraient huit tailles de bill pour une
+     seule hitbox.
      La largeur elle-même se tient en face de `bill.hitbox.x` côté physique :
      à `width: N%`, le dessin déborde de N/2 pixels de chaque côté du centre
      du kart, et `hitbox.x` vaut exactement ce N/2. Les faire diverger donne

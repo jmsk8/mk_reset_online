@@ -20,7 +20,163 @@
 })(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
 
-    return {
+    // ── Les corps, mesures sur leurs sprites ────────────────────────────────
+    //
+    // Une emprise n'est plus un nombre pose a la main : c'est la taille du PNG
+    // du corps, ramenee a l'echelle du monde. On ne regle donc plus les valeurs
+    // une par une — on regle la LOI, et chaque corps en recoit sa part.
+    //
+    // Ce que la loi dit, dans l'ordre.
+    //
+    //   LA LONGUEUR vient du fichier. Les sprites de course sont detoures au
+    //   plus juste — la boite opaque touche les quatre bords du PNG — donc la
+    //   largeur du fichier EST la longueur du kart, sans rien a mesurer de plus.
+    //   Elle va de 110 px (toad, koopa) a 119 px (yoshi, dk) : 8 % d'ecart entre
+    //   le plus court et le plus long, que la constante unique d'avant effacait.
+    //
+    //   LE DESSIN suit une seule echelle, la meme pour tout le monde. Un pixel
+    //   de sprite vaut la meme longueur de monde quel que soit le personnage, si
+    //   bien qu'un kart plus long a l'ecran est vraiment plus long au sol.
+    //   C'etait faux jusqu'ici : tous les sprites etaient ramenes a 100 px de
+    //   large, donc dk etait dessine exactement aussi long que koopa alors que
+    //   son fichier fait 9 px de plus.
+    //
+    //   L'EMPRISE est une fraction fixe du DESSIN (`fill`). Un sprite deborde
+    //   toujours de ce qui touche — le casque, l'ombre portee, la roue avant —
+    //   et cette fraction est ce qui separe la silhouette du chassis.
+    //
+    //   LA PROFONDEUR vient de la SURFACE DESSINEE : le nombre de pixels
+    //   reellement peints dans le fichier, transparence exclue. C'est la seule
+    //   mesure qui distingue un corps trapu d'un corps elance — deux sprites de
+    //   meme largeur n'ont pas le meme volume, et bowser en est la preuve : 4e
+    //   du plateau en largeur, 2e en surface, parce qu'il REMPLIT son cadre a
+    //   76 % la ou peach n'en remplit que 61 %.
+    //
+    //   Elle s'est d'abord deduite de la longueur, par l'aplatissement de la
+    //   piste (`flatten`). Ca ne disait qu'une chose, et la moins interessante :
+    //   un kart long etait large. Or la largeur d'un PNG ne s'etale que sur
+    //   8 % du plus court au plus long, quand sa surface s'etale sur 42 % — la
+    //   regle d'avant ecrasait donc presque tout ce qui separe les carrosseries.
+    //   `flatten` sert toujours, mais pour le SEUL kart de reference : il pose
+    //   la profondeur moyenne du plateau, et la surface repartit les autres
+    //   autour d'elle.
+    //
+    // Rien de tout cela ne deplace le plateau EN MOYENNE. Le sprite moyen — 113
+    // px — retombe exactement sur les valeurs reglees a la main jusqu'ici : 100
+    // px dessines, 60 px d'emprise pour une paire, 5 unites de profondeur. Le
+    // changement ECARTE les karts autour de cette moyenne, il ne la bouge pas.
+    //
+    // Les objets n'y sont pas, et c'est volontaire : `hitboxes.itemVsKart` reste
+    // regle a la main. Une carapace n'a pas de longueur au sens ou un kart en a
+    // une — elle roule, rebondit et se lit a la profondeur — et la faire suivre
+    // le meme chemin retoucherait tout l'equilibrage des esquives sans rien
+    // corriger de visible.
+    function deriveBodies(cfg) {
+        const b = cfg.bodies;
+        const names = Object.keys(b.sprite.kart);
+
+        // Un personnage ajoute sans que son sprite soit mesure roulerait a la
+        // taille moyenne du plateau sans que rien ne le dise. Le refus est donc
+        // ici, au chargement, et non a l'ecran trois courses plus tard — meme
+        // regle que le budget de `kartStats`.
+        //
+        // `px` est verifie a part, et il le faut : oublie, la profondeur du kart
+        // vaudrait NaN, et une comparaison contre NaN est toujours fausse — le
+        // kart traverserait tout le monde sans qu'aucune erreur ne soit levee.
+        for (const n of Object.keys(cfg.kartStats.characters)) {
+            const sprite = b.sprite.kart[n];
+            if (!sprite || !(sprite.w > 0) || !(sprite.px > 0)) {
+                throw new Error(`bodies.sprite.kart : ${n} n'a pas de mesure `
+                    + 'complete (w, h, px). Relancer '
+                    + '`python3 scripts/sprite-metrics.py` et recopier le bloc.');
+            }
+        }
+
+        // Le sprite de REFERENCE : la moyenne du plateau, sur les deux mesures.
+        // C'est le seul choix qui laisse les valeurs d'avant intactes au centre
+        // — prendre le plus petit ou le plus grand aurait deplace tout le monde
+        // du meme cote.
+        let sumW = 0;
+        let sumPx = 0;
+        for (const n of names) {
+            sumW += b.sprite.kart[n].w;
+            sumPx += b.sprite.kart[n].px;
+        }
+        const refW = sumW / names.length;
+        const refPx = sumPx / names.length;
+
+        // Combien de px de demi-emprise vaut un px de sprite. Tout passe par la,
+        // karts compris : c'est ce facteur unique qui garantit que deux corps
+        // dessines a la meme echelle touchent a la meme echelle.
+        const perPx = (b.kartDraw * b.fill * 0.5) / refW;
+
+        // La profondeur du kart de REFERENCE, et de lui seul. C'est le dernier
+        // endroit ou `flatten` sert : il dit ce que la piste impose au corps
+        // moyen — 30 px de demi-longueur pour 2.5 unites de fond, soit
+        // l'aplatissement de 3.33 : 1 d'origine. Les sept autres s'en ecartent
+        // au prorata de leur surface, pas de leur longueur.
+        const refHalfY = (refW * perPx) / (b.flatten * b.depthPx);
+
+        const bodyOf = (w, px) => ({
+            // La LONGUEUR : la largeur du fichier, a l'echelle du monde.
+            x: w * perPx,
+            // La LARGEUR : la surface dessinee, rapportee a celle du corps
+            // moyen. Un kart qui peint 17 % de pixels de plus que la moyenne est
+            // 17 % plus profond — c'est le volume qui parle, pas l'encombrement.
+            y: refHalfY * (px / refPx),
+            // Ce que le DESSIN doit faire de plus ou de moins que le kart de
+            // reference. Sans unite, et c'est le point : le client le multiplie
+            // par sa propre largeur de dessin, qui n'est pas la meme sur mobile,
+            // et la meme forme sort des deux cotes.
+            //
+            // Il ne suit QUE la longueur : un sprite se dessine a une largeur et
+            // une hauteur libre, sa surface n'a pas son mot a dire ici. C'est le
+            // seul endroit ou les deux mesures se separent, et c'est normal —
+            // l'une decrit le cadre, l'autre ce qu'il y a dedans.
+            scale: w / refW
+        });
+
+        b.refSpriteW = refW;
+        b.refSpritePx = refPx;
+        b.ref = bodyOf(refW, refPx);
+        b.kart = {};
+        for (const n of names) {
+            b.kart[n] = bodyOf(b.sprite.kart[n].w, b.sprite.kart[n].px);
+        }
+
+        // Le tuyau passe par la meme regle, a une reserve pres : sa longueur
+        // DESSINEE ne suit pas l'echelle commune. Il est volontairement dessine
+        // 20 % plus petit que ce que son fichier vaudrait (67.2 au lieu de 84),
+        // parce qu'a taille reelle il mangeait trop de piste — c'est un choix de
+        // trace, pas une erreur de mesure. Son emprise se prend donc sur son
+        // dessin, comme celle du kart se prend sur le sien.
+        //
+        // Sa PROFONDEUR, elle, reste reglee a la main : cf. la note de
+        // `pipe.hitbox`, ou l'argument des couloirs vaut toujours.
+        const pipeHalfX = b.pipeDraw * b.fill * 0.5;
+        cfg.pipe.hitbox = { x: pipeHalfX, y: cfg.pipe.hitboxDepth };
+        cfg.pipe.draw = {
+            w: b.pipeDraw,
+            // La hauteur suit les proportions du fichier, elle ne se regle pas :
+            // un tuyau etire ou tasse ne ressemblerait plus a son emprise.
+            h: b.pipeDraw * b.sprite.pipe.h / b.sprite.pipe.w
+        };
+
+        // Les ecarts entre CENTRES du kart de reference. Ils gardent exactement
+        // leurs valeurs d'avant — 60 x 5 et 50.2 x 5.3 — et gardent aussi leur
+        // role : ce sont les distances de PERCEPTION et de validation de piste,
+        // la ou une seule mesure vaut pour tout le plateau. Ce qui touche
+        // vraiment, lui, passe par `bodies.kart[nom]` (cf. `kartHalfExtents`).
+        cfg.hitboxes.kartVsKart = { x: b.ref.x * 2, y: b.ref.y * 2 };
+        cfg.hitboxes.kartVsPipe = {
+            x: cfg.pipe.hitbox.x + b.ref.x,
+            y: cfg.pipe.hitbox.y + b.ref.y
+        };
+
+        return cfg;
+    }
+
+    const cfg = {
         kartStats: {
             budget: 15,
             minPoints: 0,
@@ -797,7 +953,28 @@
             // Lu par la physique. Valeurs uniques (PC = mobile) pour des collisions
             // reproductibles quel que soit l'appareil.
             world: {
-                heldItemBehind: -50,
+                // Ou se tient un objet TRAINE, en ecart au centre du porteur.
+                // C'est une position du monde et non un reglage de dessin : le
+                // moteur y teste l'emprise de l'objet, y largue la banane
+                // lachee, et le banner l'y dessine — le client lit cette valeur
+                // dans le `hello` plutot que d'en tenir une a lui.
+                //
+                // A -50, l'objet se posait pile sur le bord arriere du kart, qui
+                // est dessine 100 de long donc de -50 a +50 : une carapace de 48
+                // s'y enfoncait de moitie, et paraissait collee au sprite.
+                //
+                // A -70, le plus large des trainables (carapace, 48 dessine) va
+                // de -94 a -46 : il ne mord plus que de 4 sur le pare-chocs, ce
+                // qui se lit comme « accroche derriere » et non comme « dedans ».
+                // La banane (36) s'arrete a -52, au ras. C'est donc la moitie du
+                // plus gros objet qui fixe ce recul, pas un reglage a l'oeil.
+                //
+                // Consequence de jeu assumee : le bouclier recule d'autant. Sa
+                // fenetre (itemVsKart.x = 40) cessait a -10, soit DANS le corps
+                // du porteur ; elle s'arrete maintenant a -30, au ras de son
+                // emprise. Le trainage protege un peu plus loin derriere, et ne
+                // touche plus personne a hauteur d'epaule.
+                heldItemBehind: -70,
                 shellSpawn: 50
             },
         },
@@ -1231,17 +1408,33 @@
         // par un `P` dans tracks/, comme une boite par un `B`.
         pipe: {
             // Aucune constante ne convertit ici la profondeur en pixels, et
-            // c'est voulu. Le rebond choisit sa face en comparant des durees —
-            // depuis combien de temps chacune a ete franchie — et une duree se
-            // compare a une duree quelle que soit l'unite de l'axe. Un facteur
-            // pixels-par-profondeur aurait ete une convention de plus a tenir
-            // face a la hauteur reelle de la banniere, qui n'est pas la meme sur
-            // mobile (§6.1 du document de migration).
+            // c'est voulu. Le rebond travaille dans un espace normalise — chaque
+            // axe divise par son demi-axe — ou les deux unites disparaissent
+            // d'elles-memes. Un facteur pixels-par-profondeur aurait ete une
+            // convention de plus a tenir face a la hauteur reelle de la
+            // banniere, qui n'est pas la meme sur mobile (§6.1 du document de
+            // migration).
 
-            // Emprise au sol, en unites natives : `x` en pixels de monde, `y` en
-            // profondeur. Le tuyau est rond a l'ecran, sa hitbox est une boite,
-            // comme toutes les autres du moteur. Une carapace rebondit sur ses
-            // faces, et c'est la face touchee qui decide de l'angle.
+            // ── Ce qui arrete un kart ────────────────────────────────────
+            //
+            // L'emprise au sol du tuyau n'est plus reglee ici en entier : sa
+            // LONGUEUR se deduit de son dessin, qui se deduit de son fichier
+            // (cf. `bodies` et `deriveBodies()`). Ce qui reste a regler est la
+            // seule valeur que le dessin ne dit pas, sa PROFONDEUR — et la note
+            // ci-dessous explique pourquoi celle-la.
+            //
+            //   pipe.hitbox = { x: 20.16, y: 2.8 }
+            //
+            // Ce sont les DEMI-AXES d'un disque, et non les cotes d'une boite :
+            // le tuyau est le seul corps rond du moteur, comme il est le seul a
+            // se dessiner rond. Une carapace y rebondit sur la normale du point
+            // touche, donc sous un angle qui varie continument le long de l'arc
+            // — cf. `bounceItemOffPipe`. `x` est en pixels de monde, `y` en
+            // unites de profondeur.
+            //
+            // Le disque s'inscrit dans exactement la boite d'avant, il ne fait
+            // qu'en retirer les quatre coins. Rien ne devient plus large, la
+            // diagonale devient seulement franchissable.
             //
             // `y` est bien plus plat que le sprite n'est large, et c'est
             // volontaire : la piste ne fait que 30 unites de profondeur pour 108
@@ -1249,17 +1442,36 @@
             // les trois quarts a elle seule, et deux pipes fermeraient le
             // circuit.
             //
-            // Reduite de 20 % en `x` depuis la premiere version (42 / 5.5) : le
-            // tuyau etait presque aussi large qu'un kart, et deux d'entre eux ne
-            // laissaient plus de porte praticable. La taille dessinee suit dans
-            // GAME_CONFIG.visuals.pipe, qui vaut exactement 2 * x.
+            // ── D'ou vient la longueur, maintenant ───────────────────────
             //
-            // `y` suit maintenant LE MEME APLATISSEMENT QUE LE KART, et c'est ce
-            // qui lui donne sa valeur. La piste fait 30 unites de profondeur
-            // pour 108 px a l'ecran, d'ou :
+            // Elle a ete reglee a la main deux fois, et le dessin n'a suivi ni
+            // l'une ni l'autre. D'abord 42, reduit de 20 % depuis la premiere
+            // version : le tuyau etait presque aussi large qu'un kart, et deux
+            // d'entre eux ne laissaient plus de porte praticable. Puis 21, pose
+            // comme un rapport a la carrosserie. Pendant ce temps le sprite
+            // restait a 67.2 de large et debordait de 12.6 px de chaque cote de
+            // ce qui arrete reellement un kart : le tuyau paraissait se laisser
+            // mordre.
+            //
+            // Elle se prend desormais sur le dessin, exactement comme celle d'un
+            // kart : `bodies.pipeDraw * bodies.fill / 2`, soit 20.16 — a un
+            // cheveu du 21 regle a l'oeil, mais dans l'accord au lieu d'a cote.
+            // Le sprite et l'emprise ne peuvent plus diverger : bouger l'un
+            // bouge l'autre.
+            //
+            // ── Pourquoi la profondeur ne suit PAS ───────────────────────
+            //
+            // Elle avait ete calee sur l'aplatissement du kart — la piste fait
+            // 30 unites de profondeur pour 108 px a l'ecran, d'ou :
             //
             //   kart   30.0 px de large  x   9.0 px de fond   ->  3.33 : 1
             //   pipe   33.6 px de large  x  10.1 px de fond   ->  3.33 : 1
+            //
+            // A 20.16 de demi-longueur pour la meme profondeur, ce rapport tombe
+            // a 2.00 : 1 — le tuyau est plus trapu qu'un kart. C'est ASSUME, et
+            // c'est la seule entorse a la loi des corps : la faire suivre
+            // rendrait 1.68, et l'argument des couloirs ci-dessous, qui ne
+            // depend pas de la longueur, vaut toujours.
             //
             // A 5.5 puis 4.4, il etait aplati a 2.12 : 1 seulement — 12 % plus
             // large qu'un kart mais 76 % plus profond. Rien ne le justifiait, et
@@ -1274,7 +1486,11 @@
             // bascule entre les deux cotes redevient purement geometrique — le
             // kart prend le cote ou il est deja. Aucune regle n'a ete ecrite
             // pour ca, c'est la geometrie qui cessait d'etre fausse.
-            hitbox: { x: 33.6, y: 2.8 },
+            //
+            // Seule valeur reglee, donc, et sous son propre nom : `pipe.hitbox`
+            // est POSE par `deriveBodies()`, qui reprend cette profondeur telle
+            // quelle et lui adjoint la longueur du dessin.
+            hitboxDepth: 2.8,
 
             // Ce qu'un choc frontal coute a un kart. Bien moins qu'un objet
             // (2000 ms de tete-a-queue) : un mur se croise a chaque tour, un
@@ -1495,17 +1711,97 @@
             // objet au sol est trop petit pour cacher quoi que ce soit — il
             // ferme un passage, il n'aveugle pas.
             //
-            // La vue etant de cote, l'ombre ne s'elargit pas avec la distance :
-            // elle occupe la meme tranche de profondeur quel que soit
-            // l'eloignement. Masquer revient donc a tester une appartenance a un
-            // intervalle, et c'est ce qui rend l'occlusion presque gratuite.
+            // ── D'ou le kart regarde ─────────────────────────────────────
             //
-            // `shadowGain` multiplie la demi-profondeur reelle du corps. A 1
-            // l'ombre est exactement le gabarit — un kart profond de 5 sur une
-            // piste de 30 ne cache presque rien. Monter la valeur rend le
-            // masquage franc sans toucher a aucune hitbox : c'est le seul
-            // reglage de la force de l'occlusion.
-            shadowGain: 2.0,
+            // Pas de son pare-brise : de la CAMERA QUI LE SUIT, un peu en
+            // arriere et un peu en hauteur. C'est le point de vue depuis lequel
+            // ce jeu se joue, et le mettre la repond a deux choses d'un coup.
+            //
+            // L'IA et le joueur voient alors la meme chose. Un angle mort de
+            // l'IA devient un angle mort que le spectateur voit aussi, au lieu
+            // d'une betise inexplicable a l'ecran.
+            //
+            // Et surtout, une ombre cesse d'etre infinie. Depuis le sol, un
+            // corps cache TOUT ce qui le suit : se coller derriere quelqu'un
+            // rendait aveugle sur le reste de la piste. Vu d'en haut, son ombre
+            // a une longueur — au-dela, on revoit la route.
+            //
+            // L'ombre portee au sol par un corps de hauteur `Hk`, vu d'un oeil a
+            // hauteur `H` et a distance `D`, court derriere lui sur
+            // `D * Hk / (H - Hk)`. Les deux hauteurs n'apparaissent que par ce
+            // rapport : un seul nombre suffit, et c'est `run`.
+            eye: {
+                // Recul de la camera derriere le kart, en pixels monde.
+                //
+                // Il fixe l'ECHELLE de toute l'occlusion, parce que tout se
+                // mesure en distance a l'oeil : un corps a `look` px du kart est
+                // a `look + back` de la camera, et c'est cette distance-la qui
+                // donne a la fois la largeur angulaire de son ombre (`1 / de`)
+                // et la portee de cette ombre (`de * run`).
+                //
+                // Ce qu'il deplace vraiment, c'est la LONGUEUR. La forme du cone,
+                // elle, ne depend pas de `back` : une ombre mesure toujours
+                // `2 * shadowHalf * (1 + run/2)` a mi-parcours, soit 20 % de la
+                // piste pour un kart, que l'oeil soit loin ou pres. Rapprocher
+                // la camera ne l'elargit donc qu'a peine — 5 % de plus a trente
+                // pixels derriere le corps — mais raccourcit tout d'un coup.
+                //
+                // Descendu de 250 a 125. Un kart colle au pare-chocs, a 60 px,
+                // passe de 310 px de l'oeil a 185 : son ombre n'aveugle plus que
+                // sur 65 px au lieu de 108. A 200 px c'est 114 au lieu de 158, a
+                // 600 px 254 au lieu de 298 — l'ecart se resserre avec la
+                // distance, puisque `back` compte de moins en moins dans `de`.
+                //
+                // Le bilan est donc MOINS d'occlusion, et surtout de l'occlusion
+                // plus locale : ce qui colle bouche toujours, ce qui suit de loin
+                // cesse plus tot de masquer.
+                //
+                // A 0 l'oeil revient sur le kart et un corps colle redevient un
+                // mur — pente infinie sur une ombre de longueur nulle. C'est
+                // l'interrupteur de cette moitie-la.
+                back: 125,
+
+                // Longueur de l'ombre, en fraction de la distance a l'oeil.
+                // C'est la hauteur de camera, dite par son seul effet visible :
+                // `H / Hk = 1 + 1/run`. La monter BAISSE l'occlusion.
+                //
+                //   0     vue de dessus, plus rien ne masque
+                //   0.35  camera a pres de quatre hauteurs de kart
+                //   0.5   trois hauteurs
+                //   1     deux hauteurs : l'ombre double la distance
+                //   grand on retombe sur une vue au ras du sol, ombre infinie
+                //
+                // Descendue de 0.5 a 0.35 : a trois hauteurs, un kart colle au
+                // pare-chocs aveuglait encore sur 155 px, soit un tiers de
+                // seconde de course a l'aveugle juste la ou le trafic est le
+                // plus dense. La camera montee d'a peine une hauteur ramene ca
+                // a 108 px, et l'ombre d'un corps a mi-portee perd un tiers de
+                // sa longueur.
+                //
+                // Ces trois reperes datent de `back: 250` et se lisent au
+                // prorata depuis qu'il vaut 125 : les 108 px sont devenus 65.
+                // C'est normal, les deux reglages multiplient la meme distance a
+                // l'oeil — `run` dit la forme de l'ombre, `back` son echelle.
+                //
+                // Une seule valeur pour tous les corps. Un tuyau est plus haut
+                // qu'un kart et devrait porter plus loin ; le jour ou ca se voit,
+                // c'est une propriete par corps, pas une constante d'ici.
+                run: 0.35
+            },
+
+            // `shadowGain` multiplie la demi-profondeur reelle du corps, en
+            // largeur seulement.
+            //
+            // Il valait 2.0, et ce n'etait pas une propriete des carrosseries :
+            // c'etait la compensation d'un terme de distance qui manquait. Tant
+            // que l'ombre etait une tranche fixe, il fallait bien la choisir
+            // trop large pour qu'elle serve au loin. La projection depuis l'oeil
+            // produit maintenant cet elargissement pour de vrai — garder 2.0
+            // reviendrait a le compter deux fois.
+            //
+            // A 1, l'ombre part exactement du gabarit. Monter la valeur rend les
+            // corps plus opaques qu'ils ne sont larges.
+            shadowGain: 1.0,
 
             // Une rouge traque : elle arrive dans l'axe et par l'arriere, soit
             // exactement le cas ou un kart la precede et la masque. Soumise a
@@ -1567,11 +1863,28 @@
             // pour tout le reste du fichier (`rankChance`).
             backChance: { leader: 0.30, pack: 0.10, last: 0.04 },
 
-            // Il vient de ramasser quelque chose : il a de quoi se defendre, et
-            // une raison de regarder qui arrive. Vaut pour tout le monde, et
-            // seulement pendant `armedGlanceMs`.
-            backChanceArmed: 0.30,
-            armedGlanceMs: 4000,
+            // Il vient de traverser une zone de boxes. C'est le moment de la
+            // course ou tout le monde autour de lui s'arme : celui qui le suit
+            // vient peut-etre d'y prendre de quoi le toucher. Il regarde donc
+            // qui arrive, qu'il ait lui-meme ramasse quelque chose ou non — et
+            // meme si le cube etait deja pris, car la zone se traverse pareil.
+            //
+            // La fenetre s'ouvre au PASSAGE de la zone, et non a la reception de
+            // l'objet : entre les deux il y a `delays.itemGrant` (3 s) de
+            // roulette. Datee de la reception, la surveillance arrivait avec
+            // trois secondes de retard — le kart traversait la zone, roulait
+            // sans rien regarder, puis se retournait une fois le plus chaud
+            // passe. Et les objets triples ne la declenchaient jamais, leur
+            // attribution ne passant pas par le meme chemin.
+            //
+            // Table par rang comme partout ailleurs (`rankChance`) : la valeur
+            // unique de 0.30 d'avant ne montait rien du tout pour le premier,
+            // dont la chance de base vaut deja 0.30. Elle ne s'ajoute pas a la
+            // chance de base, elle la remplace quand elle est plus haute — cf.
+            // `updateGlance`. Elle reste sous `backChanceDanger` : traverser une
+            // zone de boxes est un soupcon, pas un danger vu.
+            backChanceBox: { leader: 0.50, pack: 0.30, last: 0.10 },
+            boxGlanceMs: 4000,
 
             // Il a VU le danger. La surveillance ne redescend plus tant que le
             // souvenir est frais (`pressureMemoryMs`) : c'est ce qui transforme
@@ -1579,7 +1892,25 @@
             //
             // Ces trois valeurs ne s'ajoutent pas aux precedentes, elles les
             // remplacent quand elles sont plus hautes — cf. `updateGlance`.
-            backChanceDanger: { leader: 0.45, pack: 0.40, last: 0.40 },
+            //
+            // ── La grandeur a comparer n'est pas l'intervalle ────────────
+            //
+            // Elles valaient 0.40-0.45, et le kart oubliait ce qui le suivait.
+            // Le raisonnement d'alors comparait `pressureMemoryMs` au seul
+            // `glanceIntervalMs` : deux tirages tiennent dans la memoire, donc
+            // tout va bien. Mais un tirage n'est pas un regard. L'attente
+            // moyenne avant le prochain coup d'oeil vaut `intervalle / chance`,
+            // soit 2875 ms a 0.40 — PLUS LONG que les 2500 ms de souvenir. Deux
+            // tirages a 40 % laissent 36 % de chances de tout oublier entre
+            // deux regards, et ca se voyait a l'ecran.
+            //
+            // A 0.65, l'attente moyenne tombe a 1770 ms, bien en deca du
+            // souvenir. Le kart passe alors un tiers de son temps tourne vers
+            // l'arriere tant qu'il est menace — c'est cher, et c'est le prix
+            // annonce : plus sur derriere, plus bete devant. Le doubler encore
+            // le laisserait retourne en permanence, ce que la note de
+            // `updateGlance` a deja documente comme une impasse.
+            backChanceDanger: { leader: 0.70, pack: 0.65, last: 0.65 },
 
             // ── Le danger latent ─────────────────────────────────────────
             //
@@ -1610,7 +1941,14 @@
             // qu'on ne voit.
             pressureRange: 700,
 
-            // Duree de vie du souvenir « il y a un danger derriere moi ».
+            // Duree de vie du souvenir d'un danger — des deux cotes.
+            //
+            // Elle vaut aussi pour le porteur qu'on SUIT, et c'est recent : ce
+            // bout-la n'avait aucune memoire, si bien qu'un coup d'oeil arriere
+            // effacait le porteur de devant et rendait la precaution presque
+            // inatteignable. La regle est la meme dans les deux sens — le
+            // balayage tourne vers le danger fait foi, l'autre laisse valoir le
+            // souvenir — parce que c'est le meme probleme vu des deux bouts.
             //
             // Ce n'est pas un confort, c'est ce qui rend tout le reste
             // atteignable. Le tirage du coup d'oeil n'a jamais lieu PENDANT un
@@ -1624,11 +1962,20 @@
             // reste garde en bouclier (`ai.shield`), et donc le moment ou l'un
             // et l'autre retombent.
             //
-            // A tenir au-dessus de `glanceIntervalMs` (1400), sans quoi le
-            // souvenir se perime avant le tirage suivant et rien ne se
-            // declenche jamais. A 2500, une observation couvre deux tirages,
-            // puis il faut regarder de nouveau pour rester inquiet.
-            pressureMemoryMs: 2500,
+            // A tenir au-dessus de l'attente moyenne d'un coup d'oeil sous
+            // alerte, soit `glanceIntervalMs / backChanceDanger` — et NON
+            // au-dessus du seul intervalle, qui etait la comparaison faite ici
+            // et qui a laisse les karts oublier ce qui les suivait.
+            //
+            // A 1150 / 0.65 = 1770 ms d'attente moyenne, 3500 couvre trois
+            // tirages : la chance de tout oublier entre deux regards tombe de
+            // 36 % a 4 %. Sous les 1770, plus rien ne tient jamais assez pour
+            // se declencher.
+            //
+            // Monte de 2500 a 3500, ce qui allonge aussi d'autant la garde en
+            // bouclier — c'est la meme constante, et c'est coherent : tant que
+            // le kart se croit vise, il garde de quoi se couvrir.
+            pressureMemoryMs: 3500,
 
             // Et on se retourne franchement quand c'est SOI qui prepare un tir
             // vers l'arriere : viser dans le peloton demande de le regarder.
@@ -2389,27 +2736,141 @@
             }
         },
         // Distance dont un objet doit s'ecarter de son lanceur avant de pouvoir le
-    // toucher : protege du lancer, sans immuniser pour autant.
-    itemArmDistance: 110,
+        // toucher : protege du lancer, sans immuniser pour autant.
+        itemArmDistance: 110,
 
-    hitboxes: {
-            // Boite de contact d'une PAIRE de karts : un ecart entre centres,
-            // comme toutes les hitboxes du moteur. La physique la lit par
-            // `kartHalfExtents()`, qui en rend la moitie pour chaque kart et
-            // resomme les deux — detour inutile aujourd'hui, ou tous les karts
-            // ont la meme emprise, mais c'est par la que passera une carrosserie
-            // plus large pour les lourds sans rien changer au reste.
-            kartVsKart: { x: 60, y: 5 },
-            itemVsKart: { x: 40, y: 5 },
-            // Kart contre pipe. Comme les autres, c'est un ecart entre centres :
-            // l'emprise du tuyau (pipe.hitbox) plus la demi-carrosserie. Un kart
-            // vaut 60 en x et 5 en profondeur face a un autre kart, d'ou
-            // 33.6 + 30 et 2.8 + 2.5.
+        // Les mesures des sprites, et la loi qui en fait des emprises. Ce qui
+        // en sort — `bodies.kart[nom]`, `bodies.ref`, `pipe.hitbox`,
+        // `pipe.draw`, et les deux ecarts de `hitboxes` ci-dessous — est pose
+        // par `deriveBodies()`, en tete de fichier, ou la loi est expliquee.
+        bodies: {
+            // Les mesures des fichiers. Rien n'est arrondi ni ajuste, et rien ne
+            // se recopie a la main : `scripts/sprite-metrics.py` relit les PNG
+            // et reimprime ce bloc tel quel.
             //
-            // Seule la part du tuyau a ete reduite de 20 % : le kart, lui, n'a
-            // pas maigri. Rogner les deux aurait fait passer les karts dans des
-            // trous ou ils ne tiennent pas.
-            kartVsPipe: { x: 63.6, y: 5.3 },
+            //   python3 scripts/sprite-metrics.py
+            //
+            // `w` et `h` sont le cadre, en pixels. Les sprites etant detoures au
+            // plus juste — la boite opaque touche les quatre bords — la largeur
+            // du fichier EST la longueur du kart.
+            //
+            // `px` est la SURFACE DESSINEE : le nombre de pixels dont l'alpha
+            // n'est pas nul. Ce ne sont pas des RGBA mais des PNG a palette, et
+            // la transparence y vit dans le chunk tRNS — d'ou le script, qu'un
+            // `file` ou un coup d'oeil aux en-tetes ne remplace pas. C'est la
+            // mesure qui porte la PROFONDEUR du kart : le cadre dit ou s'arrete
+            // le dessin, la surface dit ce qu'il y a dedans, et un bowser qui
+            // remplit 76 % de son cadre n'est pas une peach qui en remplit 61 %.
+            //
+            // La pose de course — `side-right` — et elle seule. Les quatre
+            // autres orientations n'ont ni les memes largeurs ni les memes
+            // surfaces (un kart de trois quarts montre plus de flanc), mais
+            // elles ne se voient que pendant le tete-a-queue, ou plus rien ne
+            // touche.
+            //
+            // `h` ne sert a aucun kart — le dessin garde ses proportions tout
+            // seul, l'image etant posee a une largeur et une hauteur libre. Il
+            // reste releve parce qu'une mesure a moitie notee se reverifie mal,
+            // et parce que le tuyau, lui, s'en sert : sa hauteur est imposee.
+            sprite: {
+                kart: {
+                    bowser: { w: 111, h: 124, px: 10451 },
+                    dk:     { w: 119, h: 124, px: 10497 },
+                    mario:  { w: 112, h: 119, px:  8718 },
+                    luigi:  { w: 111, h: 123, px:  8511 },
+                    yoshi:  { w: 119, h: 122, px:  9655 },
+                    peach:  { w: 112, h: 124, px:  8425 },
+                    toad:   { w: 110, h: 120, px:  8278 },
+                    koopa:  { w: 110, h: 114, px:  7395 }
+                },
+                pipe: { w: 95, h: 124 }
+            },
+
+            // Longueur DESSINEE du kart de reference, en px de monde. C'est la
+            // meme valeur que `GAME_CONFIG.rendering.kartWidth.pc` cote client,
+            // et c'est le meme kart : le client ne recopie rien, il recoit le
+            // rapport de chaque personnage a cette reference (`scale`) dans le
+            // `hello` et le multiplie par sa propre largeur, qui vaut moins sur
+            // mobile.
+            kartDraw: 100,
+
+            // Longueur DESSINEE du tuyau, en px de monde. Elle vit ici et non
+            // dans le rendu depuis que l'emprise s'en deduit : une largeur de
+            // dessin qui decide de ce qui touche est une valeur du monde. Le
+            // client la recoit dans le `hello`.
+            //
+            // 67.2 et non 84 (ce que l'echelle commune donnerait pour un fichier
+            // de 95 px) : le tuyau est volontairement dessine 20 % plus petit,
+            // parce qu'a taille reelle il mangeait trop de piste.
+            pipeDraw: 67.2,
+
+            // La part de la longueur dessinee qui touche reellement. Un sprite
+            // deborde toujours de son chassis — casque, ombre portee, roue avant
+            // — et c'est ce que retire cette fraction.
+            //
+            // 0.6 : c'est le rapport deja en place, 60 px d'emprise pour 100 px
+            // dessines. Le tuyau tenait 0.625 (42 pour 67.2) : les deux corps
+            // suivaient donc deja la meme regle a un cheveu pres, sans que
+            // personne ne l'ait ecrite. La monter fait toucher dans le vide,
+            // la baisser fait traverser les silhouettes.
+            fill: 0.6,
+
+            // L'aplatissement d'un corps vu de dessus : combien de px de
+            // longueur pour un px de profondeur. Il ne regle plus qu'UNE chose,
+            // et c'est deja beaucoup — la profondeur du kart de REFERENCE, donc
+            // celle autour de laquelle tout le plateau se distribue. Le monter
+            // affine tout le monde d'un bloc, le baisser epaissit tout le monde.
+            //
+            // Ce qui ecarte les karts les uns des autres n'est plus lui mais
+            // leur surface dessinee (`sprite.kart[].px`). La difference se voit
+            // sur le cas qui a motive le changement : par l'aplatissement seul,
+            // bowser et peach ont la meme largeur a 1 % pres, leurs fichiers
+            // faisant 111 et 112 px. Par la surface, bowser est 24 % plus
+            // profond — ce qui est ce qu'on voit a l'ecran.
+            //
+            // 3.33 : 1 est la valeur d'origine du jeu, celle que le kart (30 px
+            // pour 9 px de fond) et le tuyau (33.6 pour 10.1) partageaient avant
+            // que la longueur du tuyau ne soit rognee sans que sa profondeur
+            // suive. Le kart de reference la tient toujours exactement.
+            //
+            // Le tuyau, lui, garde sa profondeur reglee a la main
+            // (`pipe.hitboxDepth`) : il n'a pas de surface a mesurer contre
+            // celle d'un kart, et l'argument des couloirs vaut toujours.
+            flatten: 10 / 3,
+
+            // Px a l'ecran pour une unite de profondeur de piste : la piste fait
+            // 30 unites pour 108 px sur PC. C'est la seule conversion du
+            // fichier entre les deux unites du monde, et elle ne sert qu'ici —
+            // a comparer une longueur et une profondeur dans la meme mesure.
+            depthPx: 3.6
+        },
+
+        hitboxes: {
+            // Boite de contact d'une PAIRE de karts : un ecart entre centres,
+            // comme toutes les hitboxes du moteur.
+            //
+            // Elle vaut celle du kart de REFERENCE — le sprite moyen du plateau
+            // — et elle est posee par `deriveBodies()`. Ce qu'un kart donne a
+            // toucher, lui, depend de son propre sprite et se lit par
+            // `kartHalfExtents()` : deux karts au contact somment LEURS deux
+            // demi-emprises, pas celles de la reference.
+            //
+            // Ce qui reste ici sert partout ou une seule mesure doit valoir pour
+            // tout le plateau : les distances de perception, la validation des
+            // circuits au chargement. Une largeur de couloir ne se decide pas
+            // huit fois.
+            //
+            //   kartVsKart : { x: 60, y: 5 }
+            itemVsKart: { x: 40, y: 5 },
+            // Kart contre pipe, meme regle : l'emprise du tuyau plus la
+            // demi-carrosserie de reference, posee par `deriveBodies()`. Elle ne
+            // se regle donc plus du tout — elle suit `pipe.hitbox`, qui suit le
+            // dessin, qui suit le fichier.
+            //
+            //   kartVsPipe : { x: 50.16, y: 5.3 }
+            //
+            // Seule la part du tuyau a maigri, jamais celle du kart. Rogner les
+            // deux ferait passer les karts dans des trous ou ils ne tiennent pas.
             // itemVsKart.y elargi de radiusY : l'objet oscille en profondeur avec
             // son orbite, ce supplement lui rend la meme tolerance effective qu'un
             // objet pose (5) pour une victime qui roule sur la meme voie.
@@ -2525,4 +2986,6 @@
             bill: { animSpeed: 70 }
         }
     };
+
+    return deriveBodies(cfg);
 });

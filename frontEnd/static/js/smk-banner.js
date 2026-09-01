@@ -47,9 +47,20 @@ const GAME_CONFIG = {
         zIndexBase: 400,
         mobileBreakpoint: 769,
         mobileScale: 0.6,
-        // Miroir de .kart-container-moving en CSS. Sert a centrer une orbite
-        // sur le kart : les elements sont ancres par leur coin gauche, il faut
-        // donc connaitre la largeur du sprite pour trouver son milieu.
+        // Miroir de .kart-container-moving en CSS. Le sprite est centre sur la
+        // position du kart, qui est aussi le centre de sa hitbox : c'est la
+        // demi-largeur qui sert, pour reculer l'element de son coin gauche.
+        //
+        // C'est la largeur du kart de REFERENCE, et elle ne suffit plus a elle
+        // seule : chaque kart la multiplie par le `scale` que le serveur envoie
+        // dans son `hello`, tire de la taille de son PNG. Un sprite de 119 px
+        // se dessine 5 % plus long qu'un de 110, et son emprise l'est d'autant —
+        // c'est le meme rapport des deux cotes, pose une seule fois en config
+        // moteur (`bodies`). Tout ramener a 100 px, comme avant, dessinait dk
+        // exactement aussi long que koopa.
+        //
+        // Ce qui reste ici est le DESSIN seul, d'ou les deux valeurs : la
+        // hitbox, elle, ne depend pas de l'appareil.
         kartWidth: { pc: 100, mobile: 80 },
 
         // Levitation decorative des item-boxes : amplitude en px, vitesse en
@@ -59,7 +70,12 @@ const GAME_CONFIG = {
     offsets: {
         // Rendu uniquement, jamais lu par la physique.
         render: {
-            heldItemBehind: { pc: -50, mobile: -35 },
+            // Il y avait ici un `heldItemBehind`, decalage de DESSIN de l'objet
+            // traine. Il n'y en a plus : un objet traine a une emprise, testee
+            // par le moteur a `worldX + heldBehindX`, et cette valeur-la vient
+            // du serveur (WORLD.hitboxes.heldBehindX). Un reglage de rendu en
+            // face n'aurait fait qu'une chose : dessiner l'objet a cote de ce
+            // qui touche.
             heldItemHands: { x: { pc: 28, mobile: 18 }, yShift: { pc: 30, mobile: 25 } },
             // Abaissement de l'orbite, en pixels vers le bas. Au point le plus
             // recule l'objet monte de radiusY au-dessus des roues et donne
@@ -79,18 +95,11 @@ const GAME_CONFIG = {
         lightning: { width: 30, widthMobile: 22 },
         bill: { width: 69, widthMobile: 51 },
         box: { sizePC: 42, sizeMobile: 42 },
-        // Le pipe est dessine a exactement deux fois pipe.hitbox.x du serveur
-        // (33.6), pour que le kart s'arrete pile au bord du tuyau et non dans le
-        // vide a cote. Toucher a l'un sans reporter l'autre casse cet accord.
-        // La hauteur suit les proportions de l'image (95 x 124).
-        //
-        // Reduit de 20 % depuis la premiere version (84 x 110) : a 84 px de
-        // large pour un kart de 100, le tuyau mangeait trop de piste.
-        //
-        // Une seule taille, PC comme mobile : la hitbox, elle, ne depend pas de
-        // l'appareil, et deux tailles dessinees donneraient deux tuyaux
-        // differents pour un meme obstacle.
-        pipe: { width: 67.2, height: 88 },
+        // La taille du tuyau N'EST PLUS ICI : elle vient du serveur
+        // (WORLD.pipeDraw), parce que c'est elle qui decide de son emprise —
+        // `pipe.hitbox` en est une fraction fixe. Une largeur de dessin qui
+        // arrete un kart est une valeur du monde, pas d'apparence. Le repli hors
+        // ligne se lit dans OFFLINE_WORLD, avec les autres.
         // Taille du souffle : voir WORLD.blastRadius, transmis par le serveur.
     },
     // Tête-à-queue joué pendant l'état 'hit'. La durée du malus n'est pas
@@ -132,7 +141,32 @@ const OFFLINE_WORLD = {
     shellAnimSpeed: 100,
     billAnimSpeed: 70,
     shrinkScale: 0.5,
-    laps: 5
+    laps: 5,
+    // Demi-emprises des corps, pour la carte de debug. Repli seulement : le
+    // serveur les envoie dans son `hello`, et c'est lui qui fait foi.
+    hitboxes: {
+        kart: { x: 30, y: 2.5 },
+        pipe: { x: 20.16, y: 2.8, round: true },
+        item: { x: 10, y: 2.5 },
+        heldBehindX: -70,
+        itemBox: { x: 10, y: 8 }
+    },
+    // Taille DESSINEE du tuyau, en px de monde. Meme repli, meme raison que les
+    // emprises ci-dessus : le serveur l'envoie, parce que c'est elle qui decide
+    // de l'emprise — `pipe.hitbox` en est une fraction fixe (bodies.fill).
+    //
+    // Le dessin et la hitbox ont longtemps diverge ici : 67.2 de large pour une
+    // emprise de 42, soit 12.6 px de sprite en trop de chaque cote de ce qui
+    // arrete reellement un kart. Les deux descendent maintenant de la meme
+    // mesure, et 20.16 est exactement 67.2 * 0.6 / 2.
+    //
+    // 67.2 et non 84 (l'echelle commune pour un fichier de 95 px) : le tuyau est
+    // volontairement dessine 20 % plus petit, il mangeait trop de piste. La
+    // hauteur suit les proportions du fichier (95 x 124), elle ne se regle pas.
+    //
+    // Une seule taille, PC comme mobile : la hitbox ne depend pas de l'appareil,
+    // et deux tailles dessinees donneraient deux tuyaux pour un meme obstacle.
+    pipeDraw: { w: 67.2, h: 87.71 }
 };
 
 let WORLD = OFFLINE_WORLD;
@@ -191,7 +225,12 @@ let worldState = {
     // [voix posees, spectateurs connectes]. Le snapshot etant commun a tous, il
     // ne porte que le total : savoir si c'est nous qui avons vote est une
     // affaire locale, tenue par `myVote`.
-    vote: [0, 0]
+    vote: [0, 0],
+
+    // Le releve de vision du kart suivi, ou null. Il n'arrive que sur demande
+    // (`requestVision`), donc jamais hors mode debug, et il ne sert qu'a la
+    // carte : un client qui l'ignore affiche exactement la meme course.
+    vision: null
 };
 
 // Notre propre voix. Effacee a chaque course neuve, le serveur remettant alors
@@ -213,6 +252,7 @@ let leaderboardState = {
     container: null,
     slots: [],
     cameraEl: null,
+    pauseEl: null,
     voteEl: null,
     bound: false
 };
@@ -310,6 +350,14 @@ function getKartFrameSrc(charName, dir) {
 // deux spectateurs peuvent regarder des karts differents, ils voient la meme
 // course sous un autre angle. Cet etat ne part jamais au serveur.
 let focusedKartId = null;
+
+// Course figee. Aussi local que la camera : le serveur continue de courir et
+// de diffuser, c'est notre rendu seul qui s'arrete sur l'image. Rien ne part
+// donc au serveur — un spectateur qui met en pause ne fige la course de
+// personne d'autre, et la reprise le remet sur le direct, pas la ou il l'avait
+// laissee. C'est le meme parti que l'onglet endormi : « la course continue sans
+// nous, il n'y a rien a reprendre ».
+let racePaused = false;
 
 // Camera effectivement utilisee pour le rendu. Elle vaut celle du serveur en
 // mode par defaut, et la position du kart suivi sinon.
@@ -485,6 +533,7 @@ function updateAiHud() {
     const twoReds = (v >> 9) & 1;
     const itemAhead = (v >> 10) & 1;
     const pipeAhead = (v >> 11) & 1;
+    const carrierAhead = (v >> 12) & 1;
 
     // Le regard d'abord, parce qu'il conditionne tout le reste : ce qui n'est
     // pas regarde n'est pas vu, et donc pas traite.
@@ -494,9 +543,13 @@ function updateAiHud() {
         ? danger + (twoReds ? '  \u00B7  deux rouges' : '')
         : '\u2014';
 
+    // « porteur » n'est pas un objet en vol : c'est un kart devant, dans l'axe,
+    // qui tient de quoi finir derriere lui. C'est le seul danger que le releve
+    // taisait, et donc le seul qu'on ne pouvait pas voir manquer.
     const front = [];
     if (pipeAhead) front.push('tuyau');
     if (itemAhead) front.push('objet');
+    if (carrierAhead) front.push('porteur');
 
     const doing = [state];
     if (brake) doing.push('frein');
@@ -518,6 +571,20 @@ function setFocus(kartId) {
     aiHudValue = -1;
     resetFocusHud();
     updateFocusMarks();
+    requestVision();
+}
+
+// Le releve de vision du kart suivi. Il ne se demande qu'en mode debug, et il
+// coute au service une seconde serialisation par snapshot : hors debug, ce
+// message ne part jamais et le spectateur reste sur le flux commun.
+//
+// A renvoyer apres chaque `hello` : le service ne garde rien d'une connexion a
+// l'autre, et une course neuve renumerote... non, les identifiants tiennent —
+// mais une reconnexion, elle, repart d'une fiche vierge.
+function requestVision() {
+    if (!GAME_CONFIG.debugMode) return;
+    bannerNet.send({ t: 'watch', id: focusedKartId });
+    if (focusedKartId === null) worldState.vision = null;
 }
 
 function updateFocusMarks() {
@@ -530,7 +597,7 @@ function updateFocusMarks() {
 }
 
 function onLeaderboardClick(event) {
-    const target = event.target.closest('.leaderboard-vote, .leaderboard-camera, [data-kart-id]');
+    const target = event.target.closest('.leaderboard-vote, .leaderboard-pause, .leaderboard-camera, [data-kart-id]');
     if (!target) return;
 
     if (target.classList.contains('leaderboard-vote')) {
@@ -538,7 +605,48 @@ function onLeaderboardClick(event) {
         return;
     }
 
+    if (target.classList.contains('leaderboard-pause')) {
+        togglePause();
+        return;
+    }
+
     setFocus(target.classList.contains('leaderboard-camera') ? null : Number(target.dataset.kartId));
+}
+
+// Gel de la scene. On ne coupe pas la boucle d'animation — elle continue de
+// tourner pour pouvoir repartir au clic suivant — on cesse simplement de lire
+// le tampon et de peindre : le dernier etat affiche reste a l'ecran. Les
+// animations CSS, elles, ne dependent pas de nous : c'est la classe `is-paused`
+// qui les arrete (cf. smk-banner.css).
+//
+// Le tampon reseau, lui, ne demande rien : il se purge tout seul a la reception
+// puisque son seuil suit l'horloge, qui ne s'arrete pas. A la reprise, l'instant
+// a afficher retombe donc dans un tampon deja rempli d'etats frais.
+function togglePause() {
+    racePaused = !racePaused;
+
+    // A la reprise, la scene saute de toute la duree du gel : c'est un
+    // changement de structure comme un autre, et il faut reconcilier avant de
+    // repeindre. Sans ca, les karts arrives ou repartis pendant la pause ne
+    // seraient pris en compte qu'au prochain snapshot.
+    if (!racePaused) domDirty = true;
+
+    renderPause();
+}
+
+function renderPause() {
+    const el = leaderboardState.pauseEl;
+    if (!el) return;
+
+    el.classList.toggle('is-paused', racePaused);
+    el.title = racePaused ? 'Reprendre la course' : 'Figer la course';
+
+    // Le rendu JS s'arrete en ne peignant plus, mais les animations CSS — la
+    // toupie, le halo d'etoile, la neige — tournent toutes seules et
+    // continueraient sur une scene arretee. Seul le navigateur peut les
+    // suspendre, et c'est cette classe qui le lui demande.
+    const banner = document.getElementById('bannerSection');
+    if (banner) banner.classList.toggle('is-paused', racePaused);
 }
 
 // Le serveur tient le decompte : on ne fait qu'annoncer un changement d'avis et
@@ -592,7 +700,18 @@ function initLeaderboard() {
     leaderboardState.container.appendChild(camera);
     leaderboardState.cameraEl = camera;
 
-    // Vote de redemarrage, a gauche de la camera. Le compteur est pose par
+    // Pause, entre la camera et le vote. Elle porte ses deux icones d'un coup,
+    // barres et triangle : c'est le CSS qui montre celle de l'etat courant, ce
+    // qui evite de reconstruire du balisage a chaque clic.
+    const pause = document.createElement('div');
+    pause.className = 'leaderboard-pp leaderboard-pause visible';
+    pause.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+        '<g class="ico-pause"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></g>' +
+        '<g class="ico-play"><path d="M9 5l10 7-10 7z"/></g></svg>';
+    leaderboardState.container.appendChild(pause);
+    leaderboardState.pauseEl = pause;
+
+    // Vote de redemarrage, tout a gauche. Le compteur est pose par
     // renderVote() : ici on ne construit que la coquille.
     const vote = document.createElement('div');
     vote.className = 'leaderboard-pp leaderboard-vote visible';
@@ -603,6 +722,7 @@ function initLeaderboard() {
     leaderboardState.voteEl = vote;
 
     updateFocusMarks();
+    renderPause();
     renderVote();
 
     const totalKarts = GAME_CONFIG.resources.characters.length;
@@ -771,6 +891,14 @@ function initScene() {
 // est injoignable. Pas de course locale, pas de karts fantomes fige a l'ecran —
 // le bandeau continue simplement de defiler.
 function clearScene() {
+    // On efface la scene que le gel tenait a l'ecran : la garder figee sur une
+    // piste vide n'aurait plus rien a montrer, et le clic de reprise arriverait
+    // sur une image morte. Le lien coupe leve donc la pause de lui-meme.
+    if (racePaused) {
+        racePaused = false;
+        renderPause();
+    }
+
     worldState.karts = [];
     worldState.kartsById = {};
     worldState.items = [];
@@ -778,6 +906,7 @@ function clearScene() {
     worldState.finishOrder = [];
     worldState.gp = null;
     worldState.sign = null;
+    worldState.vision = null;
     domDirty = true;
     reconcileDom();
     renderResults();
@@ -839,6 +968,12 @@ function buildWorldFromHello(hello) {
     worldState.karts = hello.karts.map(entry => ({
         id: entry.id,
         charName: entry.char,
+        // Son gabarit, tire de son sprite par le serveur : `body.x`/`body.y`
+        // sont sa demi-emprise reelle — ce que la carte de debug dessine — et
+        // `body.scale` le rapport de son dessin a celui du kart de reference.
+        // Un serveur qui ne l'enverrait pas laisse le repli commun prendre le
+        // relais, et tous les karts retrouvent la meme longueur.
+        body: entry.body || null,
         worldX: 0,
         yPercent: WORLD.roadMinY,
         totalDistance: 0,
@@ -865,6 +1000,19 @@ function buildWorldFromHello(hello) {
     applyState(hello.snapshot, null, 0);
     domDirty = true;
     reconcileDom();
+
+    // La carte de debug se rebatit ICI, et pas seulement au demarrage.
+    //
+    // `initScene` tourne avant que la connexion ne parte : au moment ou elle
+    // appelait `initDebugHUD`, il n'y avait ni kart, ni boite, ni tuyau, et le
+    // monde valait encore `OFFLINE_WORLD`. La carte se construisait donc vide et
+    // le restait — `updateDebugHUD` cherchait des elements qui n'avaient jamais
+    // ete crees, en silence. C'est pour ca qu'elle ne montrait qu'un cadre et la
+    // fenetre de camera.
+    //
+    // Une course neuve change les tuyaux et les boites : la reconstruire a
+    // chaque `hello` est aussi ce qui la garde juste d'un circuit a l'autre.
+    if (GAME_CONFIG.debugMode) initDebugHUD();
 }
 
 function getItemVisualConfig(itemType) {
@@ -935,20 +1083,22 @@ function getItemVisualConfig(itemType) {
     }
 }
 
+// Ou se pose l'objet TENU EN MAIN, en ecart au bord gauche du sprite. Du dessin
+// et rien d'autre : en main, un objet n'a aucune emprise — il ne protege de rien
+// et ne blesse personne tant qu'il n'est pas passe au trainage. Il peut donc se
+// caler a l'oeil, et plus serre sur mobile ou le kart est plus petit.
+//
+// L'objet TRAINE n'a volontairement pas son pendant ici : sa place est une
+// position du monde, pas un reglage de rendu. Voir `heldBehindX`.
+//
 // Recalculé à chaque frame (pas figé à l'attribution) pour suivre un
 // changement de breakpoint pendant que l'objet est tenu.
-function getHeldItemRenderOffset(holdPosition) {
-    const r = GAME_CONFIG.offsets.render;
+function getHandsItemRenderOffset() {
+    const r = GAME_CONFIG.offsets.render.heldItemHands;
 
-    if (holdPosition === 'hands') {
-        return {
-            offset: cachedIsMobile ? r.heldItemHands.x.mobile : r.heldItemHands.x.pc,
-            yShift: cachedIsMobile ? r.heldItemHands.yShift.mobile : r.heldItemHands.yShift.pc
-        };
-    }
     return {
-        offset: cachedIsMobile ? r.heldItemBehind.mobile : r.heldItemBehind.pc,
-        yShift: 0
+        offset: cachedIsMobile ? r.x.mobile : r.x.pc,
+        yShift: cachedIsMobile ? r.yShift.mobile : r.yShift.pc
     };
 }
 
@@ -962,13 +1112,21 @@ function createHeldItemElement(itemType, holdPosition) {
     const visual = getItemVisualConfig(itemType);
     itemDiv.style.width = `${visual.size}px`;
 
-    // Le souffle de la bleue est un element sans image, anime en CSS. Les
-    // objets sont ancres par leur coin bas-gauche : il faut le recentrer sur le
-    // point d'impact, sinon il s'ouvrirait a cote.
+    // Pose par son MILIEU, comme tous les corps de la scene : `worldX` est un
+    // centre pour le moteur — ses hitboxes sont des ecarts entre centres — et
+    // un element pose par son coin gauche se retrouve une demi-largeur trop a
+    // droite de l'emprise qui le fait toucher. Le souffle de la bleue etait
+    // seul a le faire ; ce qui valait pour lui vaut pour tout le monde.
+    itemDiv.style.marginLeft = `${-visual.size / 2}px`;
+
+    // La demi-largeur reste attachee a l'element : elle sert a replacer un
+    // objet TENU, qui se cale sur la silhouette du kart et non sur un centre.
+    // La relire ici evite de reconstruire une config par objet a chaque frame.
+    itemDiv._halfW = visual.size / 2;
+
+    // Le souffle de la bleue est un element sans image, anime en CSS.
     if (!visual.src) {
         itemDiv.classList.add('blue-blast');
-        // Centre sur le point d'impact, base posee sur la piste.
-        itemDiv.style.marginLeft = `${-visual.size / 2}px`;
 
         const wave = document.createElement('div');
         wave.className = 'blue-blast-wave';
@@ -1015,13 +1173,12 @@ function getOrbitFrameSrc(childType, gameNow) {
 function renderOrbitItems(kart, rx, gameNow) {
     const held = kart.heldItem;
     const orbit = WORLD.orbit;
-    const visual = getItemVisualConfig(held.childType);
 
-    // Recentrage sur le milieu du sprite : les elements sont ancres par leur
-    // coin gauche, et la largeur depend de l'objet (une carapace est plus large
-    // qu'une banane), d'ou le calcul plutot qu'une constante.
-    const kartW = cachedIsMobile ? GAME_CONFIG.rendering.kartWidth.mobile : GAME_CONFIG.rendering.kartWidth.pc;
-    const cx = rx + (kartW - visual.size) / 2;
+    // L'orbite tourne autour du kart, donc autour de `rx` : les objets se
+    // posent par leur milieu et le kart est centre sur sa position. Il n'y a
+    // plus rien a recentrer — ce calcul valait du temps ou les deux etaient
+    // ancres par leur coin gauche, avec deux largeurs differentes a rattraper.
+    const cx = rx;
 
     const d = GAME_CONFIG.offsets.render.orbitDrop;
     const drop = cachedIsMobile ? d.mobile : d.pc;
@@ -1159,6 +1316,36 @@ const bannerLink = {
 // apres une micro-coupure, ou un evenement peut simplement s'etre perdu.
 // ---------------------------------------------------------------------------
 
+// ── La longueur d'un kart, a l'ecran ────────────────────────────────────────
+//
+// Elle n'est plus la meme pour tous : chaque personnage est dessine au prorata
+// de son PNG, et son emprise l'est du meme rapport. Le serveur envoie ce
+// rapport dans son `hello` (`kart.body.scale`), calcule une seule fois a partir
+// des mesures des fichiers — le client ne le deduit pas, il l'applique, comme
+// pour toute autre constante du monde.
+//
+// 1 pendant un vol de bill : le sprite affiche n'est plus celui du personnage,
+// et le bill a une emprise a lui, la meme quel que soit son porteur. Le laisser
+// varier donnerait huit bills de tailles differentes pour une seule hitbox.
+function kartDrawScale(kart) {
+    if (kart.isBill) return 1;
+    return (kart.body && kart.body.scale) || 1;
+}
+
+// Demi-longueur DESSINEE, en px. `worldX` est le CENTRE du kart — c'est ce que
+// dit le moteur, dont toutes les hitboxes sont des ecarts entre centres — et
+// l'element se pose par son coin gauche : il faut reculer d'autant pour que le
+// dessin tombe sur l'emprise qui le fait toucher.
+//
+// Tout ce qui se cale sur la SILHOUETTE et non sur la position — l'objet en
+// main, l'orbite, les eclairs de l'orage — part de ce meme bord gauche et suit
+// donc le kart quelle que soit sa longueur.
+function kartDrawHalfWidth(kart) {
+    const base = cachedIsMobile ? GAME_CONFIG.rendering.kartWidth.mobile
+                                : GAME_CONFIG.rendering.kartWidth.pc;
+    return base * kartDrawScale(kart) / 2;
+}
+
 function ensureKartEl(kart) {
     let els = kartEls[kart.id];
     if (els) return els;
@@ -1170,6 +1357,16 @@ function ensureKartEl(kart) {
     wrapper.classList.add('kart-container-moving');
     wrapper.style.bottom = `${kart.yPercent}%`;
     wrapper.style.zIndex = getZIndex(kart.yPercent);
+
+    // La longueur du dessin, en rapport au kart de reference. Une variable CSS
+    // et non une largeur en px : c'est la feuille de style qui connait la
+    // largeur de base, et elle n'est pas la meme sur mobile — la poser ici en
+    // pixels obligerait a la recalculer a chaque changement d'appareil.
+    //
+    // Elle repasse a 1 pendant un vol de bill, ou le sprite n'est plus celui du
+    // personnage : le bill a une emprise a lui, la meme pour tous les porteurs,
+    // et son dessin se cale dessus (cf. `.kart-bill` en CSS).
+    wrapper.style.setProperty('--kart-length', kartDrawScale(kart));
 
     // Intercalaire dédié au rapetissement de l'éclair : il porte une transition,
     // que le miroir du tête-à-queue ne doit surtout pas subir.
@@ -1221,6 +1418,10 @@ function ensureBoxEl(box, index) {
     el.classList.add('item-box');
     el.style.width = `${size}px`;
     el.style.height = `${size}px`;
+    // Centree sur sa position, comme le tuyau et comme les karts : la zone de
+    // ramassage (hitboxes.itemBox, +/-10) est centree sur `worldX`, une boite
+    // posee par son coin gauche se ramasserait a 21 px de la ou elle est vue.
+    el.style.marginLeft = `${-size / 2}px`;
     el.style.bottom = `${box.y}%`;
     el.style.zIndex = getZIndex(box.y);
 
@@ -1231,18 +1432,24 @@ function ensureBoxEl(box, index) {
 
 // Le tuyau est ancre par sa base a sa profondeur, comme un kart, et centre sur
 // sa position : la hitbox du serveur l'est aussi, et un element pose par son
-// bord gauche s'arreterait une demi-largeur trop loin.
+// bord gauche s'arreterait une demi-largeur trop loin. Le recentrage se pose
+// une fois ici, comme pour les karts, les boites et les objets — aucun corps ne
+// le refait a chaque frame.
 function ensurePipeEl(pipe, index) {
     if (pipeEls[index]) return pipeEls[index];
 
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     if (!cachedContainer) return null;
 
-    const size = GAME_CONFIG.visuals.pipe;
+    // Du serveur, et de lui seul : c'est cette largeur qui a servi a calculer
+    // l'emprise du tuyau, les deux ne peuvent donc plus diverger. Le repli du
+    // GAME_CONFIG ne sert qu'au decor hors ligne.
+    const size = WORLD.pipeDraw || OFFLINE_WORLD.pipeDraw;
     const el = document.createElement('div');
     el.classList.add('pipe');
-    el.style.width = `${size.width}px`;
-    el.style.height = `${size.height}px`;
+    el.style.width = `${size.w}px`;
+    el.style.height = `${size.h}px`;
+    el.style.marginLeft = `${-size.w / 2}px`;
     el.style.bottom = `${pipe.y}%`;
     el.style.zIndex = getZIndex(pipe.y);
 
@@ -1362,6 +1569,21 @@ function reconcileShrink(kart) {
     // qui passe sous qui — alors qu'un kart aplati a exactement la meme emprise
     // qu'avant. Ce n'est plus que du dessin.
     els.scaler.classList.toggle('is-flat', !!kart.isFlat);
+
+    // La carte de debug suit le rapetissement. L'emprise a vraiment maigri, pas
+    // seulement le dessin (cf. `kartHalfExtents` cote moteur) : une carte qui
+    // continuerait de montrer la boite pleine mentirait sur le seul point
+    // qu'elle sert a verifier — ou un kart touche, et ou il passe.
+    //
+    // Ecrit au CHANGEMENT seulement : cette fonction passe a chaque image et
+    // pour chaque kart, et une mesure du DOM par kart et par image pour un
+    // etat qui bouge deux fois en dix secondes serait payee cher.
+    if (!GAME_CONFIG.debugMode || !kart.body) return;
+    const shrink = kart.isShrunk ? WORLD.shrinkScale : 1;
+    if (els.debugShrink === shrink) return;
+    els.debugShrink = shrink;
+    const mark = document.getElementById(`debug-kart-${kart.id}`);
+    if (mark) sizeEntity(mark, { x: kart.body.x * shrink, y: kart.body.y * shrink });
 }
 
 function reconcileDom() {
@@ -1538,15 +1760,14 @@ function ensureStormEls() {
 function placeStormBolts(els, shooterId, screenWidth) {
     const svgs = els.bolts.children;
     const boltW = cachedIsMobile ? STORM_BOLT_W.mobile : STORM_BOLT_W.pc;
-    const kartW = cachedIsMobile ? GAME_CONFIG.rendering.kartWidth.mobile
-                                 : GAME_CONFIG.rendering.kartWidth.pc;
-
-    // Les karts sont ancres par leur coin gauche : le milieu du sprite est a
-    // une demi-largeur de la.
+    // Le milieu du kart EST sa position : le sprite y est centre, comme sa
+    // hitbox. `keepOut` ci-dessous s'en deduit — la demi-largeur DE CE KART,
+    // qui n'est pas la meme pour tous depuis que le dessin suit le sprite, plus
+    // la marge de confort.
     const shooter = (shooterId === null || shooterId === undefined)
         ? null : worldState.kartsById[shooterId];
     const shooterCx = shooter
-        ? getScreenPosition(shooter.worldX, renderCameraX, screenWidth) + kartW / 2
+        ? getScreenPosition(shooter.worldX, renderCameraX, screenWidth)
         : null;
 
     for (let i = 0; i < STORM_BOLTS.length && i < svgs.length; i++) {
@@ -1558,7 +1779,7 @@ function placeStormBolts(els, shooterId, screenWidth) {
 
         if (shooterCx !== null) {
             const tipOffset = (spec.tip / STORM_VIEWBOX_W) * boltW - boltW / 2;
-            const keepOut = kartW / 2 + STORM_BOLT_CLEARANCE;
+            const keepOut = kartDrawHalfWidth(shooter) + STORM_BOLT_CLEARANCE;
 
             if (Math.abs(anchor + tipOffset - shooterCx) < keepOut) {
                 const half = boltW / 2;
@@ -2040,9 +2261,7 @@ function renderState(gameNow, screenWidth, frameMs) {
         const el = pipeEls[i];
         if (!el) continue;
 
-        // Centre sur sa position, comme la hitbox du serveur.
-        const rx = getScreenPosition(pipe.worldX, renderCameraX, screenWidth)
-            - GAME_CONFIG.visuals.pipe.width / 2;
+        const rx = getScreenPosition(pipe.worldX, renderCameraX, screenWidth);
 
         if (rx > -renderMargin && rx < screenWidth + renderMargin) {
             el.style.display = 'block';
@@ -2051,6 +2270,18 @@ function renderState(gameNow, screenWidth, frameMs) {
             el.style.display = 'none';
         }
     }
+
+    // La demi-largeur du sprite se lit maintenant par kart (`kartDrawHalfWidth`)
+    // et non plus une fois pour toutes : deux personnages n'ont pas la meme
+    // longueur, et c'est bien ce que leurs emprises disent.
+    //
+    // Ou se tient un objet TRAINE, en ecart au centre de son porteur. C'est une
+    // position du monde, publiee par le serveur : le moteur teste l'emprise de
+    // l'objet a `worldX + heldBehindX`, et la carte de debug la dessine la.
+    // Meme valeur sur toutes les machines, contrairement aux ecarts de dessin.
+    const wBoxes = WORLD.hitboxes || OFFLINE_WORLD.hitboxes;
+    const heldBehindX = (wBoxes.heldBehindX !== undefined)
+        ? wBoxes.heldBehindX : OFFLINE_WORLD.hitboxes.heldBehindX;
 
     const kartsLen = worldState.karts.length;
     for (let i = 0; i < kartsLen; i++) {
@@ -2073,11 +2304,12 @@ function renderState(gameNow, screenWidth, frameMs) {
         }
 
         const rx = getScreenPosition(kart.worldX, renderCameraX, screenWidth);
+        const spriteX = rx - kartDrawHalfWidth(kart);
         const isVisibleNow = (rx > -renderMargin && rx < screenWidth + renderMargin);
 
         if (isVisibleNow) {
             wrapper.style.display = 'block';
-            wrapper.style.transform = `translate3d(${rx}px, 0, 0)`;
+            wrapper.style.transform = `translate3d(${spriteX}px, 0, 0)`;
             wrapper.style.bottom = `${kart.yPercent}%`;
 
             const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
@@ -2093,6 +2325,10 @@ function renderState(gameNow, screenWidth, frameMs) {
                     els.sprite.classList.remove('kart-mirrored');
                     els.wrapper.classList.add('kart-bill');
                     els.spinFrame = -1;
+                    // Le bill se dessine sur l'emprise du bill, pas sur celle du
+                    // personnage : sa largeur CSS se compte en pourcentage du
+                    // conteneur, qu'on ramene donc a la reference le temps du vol.
+                    els.wrapper.style.setProperty('--kart-length', 1);
                 }
 
                 // Trois images, cadencees par le temps de jeu comme les carapaces :
@@ -2108,6 +2344,7 @@ function renderState(gameNow, screenWidth, frameMs) {
                     els.billOn = false;
                     els.billFrame = 0;
                     els.wrapper.classList.remove('kart-bill');
+                    els.wrapper.style.setProperty('--kart-length', kartDrawScale(kart));
                 }
 
                 // Le choc contre un pipe ne touche PAS au sprite. Le kart garde
@@ -2143,9 +2380,30 @@ function renderState(gameNow, screenWidth, frameMs) {
                     const inHands = kart.heldItem.holdPosition === 'hands';
                     hel.classList.toggle('held-item-bouncing', inHands);
 
-                    const hOffset = getHeldItemRenderOffset(kart.heldItem.holdPosition);
-                    const hx = rx + hOffset.offset;
-                    const hy = hOffset.yShift;
+                    // Deux objets tenus, deux natures, deux placements.
+                    //
+                    // EN MAIN, l'objet n'a pas d'emprise : rien ne le teste, il
+                    // ne protege de rien. Sa place est du dessin pur, calee sur
+                    // la silhouette — d'ou le depart au bord gauche du sprite,
+                    // ou ces ecarts ont ete regles, plus la demi-largeur de
+                    // l'objet puisqu'il se pose par son milieu.
+                    //
+                    // TRAINE, il a une emprise, et c'est tout l'interet : elle
+                    // encaisse la carapace qui arrive, et elle blesse le
+                    // poursuivant qui la touche. Le moteur la teste a
+                    // `worldX + heldBehindX` — une position du monde. La
+                    // dessiner ailleurs, c'est montrer une banane a cote de
+                    // celle qui touche : un kart lui roule dessus sans rien
+                    // prendre, et se fait cueillir par du vide un peu plus loin.
+                    let hx, hy;
+                    if (inHands) {
+                        const hOffset = getHandsItemRenderOffset();
+                        hx = spriteX + hOffset.offset + (hel._halfW || 0);
+                        hy = hOffset.yShift;
+                    } else {
+                        hx = rx + heldBehindX;
+                        hy = 0;
+                    }
                     hel.style.transform = `translate3d(${hx}px, ${-hy}px, 0)`;
                     hel.style.bottom = `${kart.yPercent}%`;
                     const itemZ = inHands ? zVal + 1 : zVal;
@@ -2242,7 +2500,7 @@ const CLOCK_SAMPLE_TTL_MS = 120000;
 // serveur l'annonce dans son `hello` et le client refuse tout ce qui ne
 // correspond pas : mieux vaut le decor seul qu'une scene interpretee de
 // travers. Les deux se modifient donc ensemble, jamais l'un sans l'autre.
-const PROTOCOL_VERSION = 8;
+const PROTOCOL_VERSION = 9;
 
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
@@ -2372,6 +2630,16 @@ function applyState(a, b, t) {
         }
     }
 
+    // La VUE du kart suivi, quand elle a ete demandee. Elle ne s'interpole pas
+    // plus que le releve de decision, et pour une raison plus forte : c'est un
+    // BALAYAGE, pris a un instant, valable jusqu'au suivant. Interpoler entre
+    // deux balayages inventerait une vue intermediaire que le kart n'a jamais
+    // eue — exactement le genre de reconstitution que ce fichier s'interdit.
+    //
+    // Elle est lue sur le snapshot AFFICHE et non sur le dernier recu : la carte
+    // doit dire ce que le kart voyait a l'image qu'on regarde.
+    if (fresh) worldState.vision = a.vw || null;
+
     nextItemTuples.clear();
     if (b) for (const tuple of b.i) nextItemTuples.set(tuple[0], tuple);
 
@@ -2379,7 +2647,7 @@ function applyState(a, b, t) {
     for (const tuple of a.i) {
         let item = itemMirrors.get(tuple[0]);
         if (!item) {
-            item = { id: tuple[0], type: tuple[1], worldX: 0, y: 0, currentFrame: 1, hop: 0 };
+            item = { id: tuple[0], type: tuple[1], worldX: 0, y: 0, currentFrame: 1, hop: 0, rising: false };
             itemMirrors.set(tuple[0], item);
         }
 
@@ -2389,6 +2657,9 @@ function applyState(a, b, t) {
         item.y = to ? lerp(tuple[3], to[3], t) : tuple[3];
         item.currentFrame = tuple[4];
         item.hop = to ? lerp(tuple[5] || 0, to[5] || 0, t) : (tuple[5] || 0);
+        // Pas d'interpolation : c'est un etat, pas une position. Entre deux
+        // instantanes il vaut celui de gauche, comme tout ce qui bascule.
+        item.rising = !!tuple[6];
 
         worldState.items.push(item);
     }
@@ -2519,7 +2790,11 @@ const bannerNet = {
 
         if (msg.t === 's' && this.gotHello) {
             this.buffer.push(msg);
-            if (msg.ev) for (const ev of msg.ev) applyEvent(ev);
+            // Les evenements ne sont que des animations ponctuelles : les jouer
+            // sur une scene figee ferait bouger le classement d'une course
+            // arretee. Les rater est sans consequence — reconcileDom() rebatit
+            // tout depuis l'etat a la reprise.
+            if (msg.ev && !racePaused) for (const ev of msg.ev) applyEvent(ev);
 
             const cutoff = getGameTime() - BUFFER_KEEP_MS;
             while (this.buffer.length > 2 && this.buffer[0].ts < cutoff) this.buffer.shift();
@@ -2541,6 +2816,10 @@ const bannerNet = {
         this.gotHello = true;
         buildWorldFromHello(msg);
         this.buffer.push(msg.snapshot);
+        // Le service ne garde pas trace du kart suivi d'une connexion a l'autre.
+        // Sans ce rappel, la carte de debug se vidait apres chaque reconnexion
+        // et apres chaque course neuve, sans que rien ne le dise.
+        requestVision();
     },
 
     // Renvoie false si le lien est coupe : l'appelant garde alors son etat
@@ -2695,6 +2974,18 @@ function trackFrame(timestamp, stalled) {
 
 function animate(timestamp) {
     updateMobileStatus();
+
+    // Course figee : plus rien n'est lu du tampon ni repeint, la scene reste sur
+    // sa derniere image. La boucle, elle, continue de tourner — c'est par elle
+    // qu'on repartira au clic suivant. L'horloge ne se rattrape pas davantage :
+    // corriger une derive sur une scene arretee ne se verrait pas, et le premier
+    // stepClock() de la reprise s'en chargera, d'un saut s'il le faut.
+    if (racePaused) {
+        lastFrameTime = timestamp;
+        animationId = requestAnimationFrame(animate);
+        return;
+    }
+
     stepClock();
 
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
@@ -2743,6 +3034,546 @@ function animate(timestamp) {
     animationId = requestAnimationFrame(animate);
 }
 
+// ── La carte de debug ───────────────────────────────────────────────────
+//
+// Une portion de piste vue de dessus : l'abscisse est la longueur, l'ordonnee la
+// PROFONDEUR. Elle ne portait que l'abscisse jusqu'ici, tous les karts alignes
+// sur une meme rangee — ce qui suffisait a suivre un classement et ne pouvait
+// rien dire de la vue, dont tout se joue en profondeur : l'ombre portee,
+// l'alignement d'une ligne de tir, la largeur d'un passage.
+//
+// Ce qui s'y dessine vient du serveur et de lui seul (cf. `visionTuple`). Le
+// client ne refait aucun calcul de perception : il place ce qu'on lui donne.
+//
+// ── Pourquoi une FENETRE et non le tour entier ───────────────────────────
+//
+// Elle a porte un tour complet, et c'est ce qui la rendait illisible des qu'on y
+// a dessine les corps a leur taille. Un tour fait 3840 px de long pour 108 px de
+// profondeur : 35 : 1. Un cadre de 800 x 140 en fait 6 : 1. Les deux axes ne
+// partageaient donc pas la meme echelle — un facteur 5.3 — et aucune forme n'y
+// ressemblait a elle-meme : les karts, larges de trois fois leur profondeur,
+// s'y dressaient plus hauts que larges, et les tuyaux devenaient des oeufs
+// verticaux.
+//
+// Mettre les deux axes a la meme echelle SANS rien changer d'autre n'etait pas
+// une sortie : un tour entier sur 800 px ne laisse que 22 px de bande de
+// profondeur, ou un kart mesure un pixel de haut. On ne peut pas avoir le tour
+// entier et des formes justes.
+//
+// La carte montre donc une FENETRE, centree sur le kart observe, et elle la
+// dessine a l'ECHELLE 1 : un pixel de monde pour un pixel de carte. Un kart y
+// occupe les 60 x 18 px qu'il occupe au sol dans le jeu, un tuyau ses 67 x 20.
+// Rien n'est reduit, donc rien n'est a corriger de tete en lisant.
+//
+// Ca coute deux choses, et les deux sont assumees. La carte prend toute la
+// hauteur de la piste — une bonne centaine de pixels de page. Et la fenetre ne
+// vaut plus que la largeur du cadre, soit moins que ce que le kart percoit :
+// une partie de son champ sort du dessin. Ce qu'on perd — la position sur le
+// tour, le bout du cone — se lit ailleurs ; ce qu'on gagne est qu'une distance
+// mesuree a l'ecran est la vraie distance.
+
+// La profondeur, dans le SENS DE LA SCENE : le fond de piste en haut, le bord
+// proche en bas, comme la banniere le montre (`bottom: yPercent%`). L'inverser
+// ferait lire la carte a l'envers de ce qu'on voit juste au-dessus, et une carte
+// qui contredit la scene coute plus qu'elle ne rapporte.
+//
+// Les extremites sont rentrees de quelques pour cent : les marques sont centrees
+// sur leur point, et pile au bord elles seraient coupees en deux par le cadre.
+const DEPTH_PAD = 7;
+
+function depthPct(y) {
+    const lo = WORLD.roadMinY;
+    const hi = WORLD.roadMaxY;
+    if (!(hi > lo)) return 50;
+    const t = (y - lo) / (hi - lo);
+    const inner = 100 - DEPTH_PAD * 2;
+    return Math.max(0, Math.min(100, DEPTH_PAD + (1 - t) * inner));
+}
+
+// ── La taille des marques ───────────────────────────────────────────────
+//
+// ── La fenetre ──────────────────────────────────────────────────────────
+//
+// Ce que la carte montre du monde : le bord gauche et la largeur, en px de
+// monde. Recalcules a chaque image — la fenetre suit le kart observe.
+let mapView = { start: 0, span: 1 };
+
+let cachedGameWrapper = null;
+let cachedFinishBand = 0;
+let mapHudHeight = 0;
+
+// Combien de px de monde vaut UNE unite de profondeur, ici et maintenant.
+//
+// Le moteur n'a pas cette constante et n'en veut pas : la banniere n'a pas la
+// meme hauteur sur mobile et sur PC, et une valeur en dur serait fausse d'un
+// cote (§6.1 du document de migration). Elle se mesure donc la ou la scene la
+// definit — un kart se pose a `bottom: yPercent%` de son conteneur, donc une
+// unite de profondeur vaut un centieme de la hauteur de ce conteneur.
+//
+// C'est la seule facon d'avoir une carte a l'echelle : sans ce nombre, les deux
+// axes n'ont aucune unite commune et « meme echelle » ne veut rien dire.
+function depthToWorldPx() {
+    if (!cachedGameWrapper) cachedGameWrapper = document.querySelector('.game-content-wrapper');
+    const h = cachedGameWrapper ? cachedGameWrapper.offsetHeight : 0;
+    // Repli : la hauteur PC, celle qui donne l'aplatissement de 3.33 : 1 que la
+    // config decrit pour le kart comme pour le tuyau.
+    return h > 0 ? h / 100 : 3.6;
+}
+
+// Largeur de la bande d'arrivee, en px de monde.
+//
+// Mesuree sur l'element du decor plutot que recopiee ici : c'est le CSS qui la
+// decide (`.layer-finish-line`), et une copie finirait par mentir le jour ou il
+// change. Meme principe que `depthToWorldPx()` — la scene est la reference.
+//
+// `offsetWidth` rend la largeur de mise en page, avant la mise a l'echelle
+// mobile du conteneur : c'est bien une largeur en px de MONDE, la meme unite que
+// `finishLineX`.
+function finishBandWidth() {
+    if (cachedFinishBand > 0) return cachedFinishBand;
+
+    const el = document.querySelector('.layer-finish-line');
+    const w = el ? el.offsetWidth : 0;
+    if (w > 0) cachedFinishBand = w;
+
+    // Repli sur la valeur du CSS, le temps que le decor existe.
+    return w > 0 ? w : 60;
+}
+
+// Recentre la fenetre et remet le cadre a l'echelle.
+//
+// ── L'echelle est UN, et c'est elle la donnee ────────────────────────────
+//
+// Un pixel de monde vaut un pixel de carte. Rien n'est reduit, rien n'est
+// etire : un kart mesure sur la carte exactement les 60 x 18 px qu'il occupe au
+// sol dans le jeu, et un tuyau ses 67 x 20. C'est cher en place — la bande de
+// profondeur prend a elle seule toute la hauteur de la piste — et c'est le prix
+// pour que ce qu'on lit soit ce qui est.
+//
+// Tout le reste en decoule, dans cet ordre :
+//
+//   la LARGEUR du cadre  se choisit en CSS, aussi large que la page le permet ;
+//   la FENETRE           vaut exactement cette largeur, puisque l'echelle est 1 ;
+//   la HAUTEUR du cadre  vaut la profondeur de piste, pour la meme raison.
+//
+// C'est l'inverse de ce que faisait la version precedente, qui fixait la
+// fenetre sur la portee de vue et en deduisait une echelle. Elle tenait tout le
+// champ du kart dans le cadre, mais a 0.58 : les corps y faisaient la moitie de
+// leur taille. Ici le champ deborde — 2400 px de portee pour une fenetre qui
+// vaut la largeur de l'ecran — et c'est assume : mieux vaut voir une partie a
+// sa taille que tout en miniature.
+function updateMapView(hud) {
+    const vis = WORLD.vision;
+    const span = Math.max(1, Math.min(hud.clientWidth, WORLD.width));
+
+    // Le kart observe fait le centre — c'est sa vue qu'on lit. Sans lui, la
+    // camera : c'est le seul point de vue qui reste.
+    let centre = renderCameraX;
+    if (focusedKartId !== null) {
+        const watched = worldState.kartsById[focusedKartId];
+        if (watched) centre = watched.worldX;
+    }
+
+    // Le cadre penche du cote ou le kart REGARDE : il voit 1400 px devant lui
+    // pour 1000 derriere. A echelle 1 la fenetre ne tient plus tout le champ, et
+    // ce qu'on sacrifie alors doit etre l'arriere — c'est devant que le kart va.
+    // Le decalage reste le demi-ecart des deux portees, borne au quart de la
+    // fenetre pour que le kart lui-meme ne se retrouve jamais sur un bord.
+    const quarter = span / 4;
+    let bias = vis ? (vis.rangeFront - vis.rangeBack) / 2 : 0;
+    if (bias > quarter) bias = quarter;
+    if (bias < -quarter) bias = -quarter;
+
+    mapView.span = span;
+    mapView.start = centre - span / 2 + bias;
+
+    // Echelle 1 : la bande vaut la profondeur de piste, en pixels de monde.
+    //
+    // Pas d'arrondi. Le cadre porte `DEPTH_PAD` % de marge en haut et en bas, et
+    // arrondir sa hauteur au pixel decale la bande utile d'autant — les corps
+    // ressortaient 0.3 % trop hauts, ce qui n'est rien a l'oeil mais suffit a ne
+    // plus etre l'echelle 1 qu'on annonce.
+    const band = (WORLD.roadMaxY - WORLD.roadMinY) * depthToWorldPx();
+    const height = band / ((100 - DEPTH_PAD * 2) / 100);
+
+    // Ecrite seulement quand elle change : la poser a chaque image forcerait un
+    // recalcul de mise en page soixante fois par seconde pour rien.
+    if (height > 0 && height !== mapHudHeight) {
+        mapHudHeight = height;
+        hud.style.height = `${height.toFixed(2)}px`;
+    }
+}
+
+// Ou tombe un point du monde dans la fenetre, en px de monde depuis son bord
+// gauche. Le tour boucle : ce qui PRECEDE la fenetre doit donc se lire en
+// negatif, et non a l'autre bout du monde, sans quoi un corps qui entre par la
+// gauche serait confondu avec un corps qui sort par la droite. La ligne
+// d'arrivee cesse alors d'etre une couture — elle defile comme le reste.
+function mapOffset(worldX) {
+    const w = WORLD.width;
+    let d = worldX - mapView.start;
+    if (w > 0) {
+        d = ((d % w) + w) % w;
+        // Le partage se fait au milieu de ce qui RESTE hors du cadre, et non au
+        // demi-tour : la fenetre peut couvrir plus de la moitie d'un tour, et
+        // basculer a w/2 renverrait alors sa propre moitie droite du cote des
+        // negatifs — les corps y disparaitraient en plein cadre.
+        if (d > (w + mapView.span) / 2) d -= w;
+    }
+    return d;
+}
+
+// Vrai quand un point tombe dans le cadre. Ce qui n'y est pas ne se dessine
+// pas : une marque repliee sur un bord mentirait sur une position.
+function inMapView(pct) {
+    return pct >= 0 && pct <= 100;
+}
+
+// Un corps se dessine a son emprise reelle, et non en pastille de taille fixe.
+// Les deux axes portant la meme echelle, une largeur et une profondeur s'y
+// comparent enfin : un tuyau est visiblement plus large qu'un kart, et la zone
+// de ramassage d'une boite visiblement etroite le long de la piste pour la
+// profondeur qu'elle couvre.
+
+function spanXPct(halfX) {
+    return (halfX * 2 / mapView.span) * 100;
+}
+
+// La profondeur ne dispose que de la bande interieure, celle que `depthPct`
+// remplit : les marges du cadre n'en font pas partie.
+function spanYPct(halfY) {
+    const lo = WORLD.roadMinY;
+    const hi = WORLD.roadMaxY;
+    if (!(hi > lo)) return 0;
+    return (halfY * 2 / (hi - lo)) * (100 - DEPTH_PAD * 2);
+}
+
+// Pose une marque a sa taille reelle. `round` pour le seul corps qui l'est.
+function sizeEntity(el, half) {
+    el.style.width = `${spanXPct(half.x)}%`;
+    el.style.height = `${spanYPct(half.y)}%`;
+    el.style.borderRadius = half.round ? '50%' : '0';
+}
+
+// Un segment du monde ramene a la fenetre et coupe a ses bords. `len` signe —
+// negatif pour un regard vers l'arriere. Rend [] quand il tombe entierement
+// dehors.
+//
+// Il rendait jusqu'a DEUX morceaux, du temps ou la carte portait un tour
+// complet : un cone qui franchissait la ligne d'arrivee repartait par la
+// gauche. La fenetre supprime cette couture — elle ne fait jamais le tour, donc
+// un segment y est d'un seul tenant.
+function worldSegments(from, len) {
+    const span = mapView.span;
+
+    let a = mapOffset(len < 0 ? from + len : from);
+    let b = a + Math.abs(len);
+
+    if (b <= 0 || a >= span) return [];
+    if (a < 0) a = 0;
+    if (b > span) b = span;
+
+    return [[(a / span) * 100, ((b - a) / span) * 100]];
+}
+
+function xPct(worldX) {
+    return (mapOffset(worldX) / mapView.span) * 100;
+}
+
+// Une bande horizontale : un morceau de monde sur une tranche de profondeur.
+function bandHtml(cls, from, len, loY, hiY, title) {
+    const top = depthPct(loY);
+    const bottom = depthPct(hiY);
+    const y = Math.min(top, bottom);
+    const h = Math.max(Math.abs(bottom - top), 1.5);
+
+    return worldSegments(from, len).map(seg =>
+        `<div class="${cls}" style="left:${seg[0].toFixed(3)}%;width:${seg[1].toFixed(3)}%;` +
+        `top:${y.toFixed(2)}%;height:${h.toFixed(2)}%;"${title ? ` title="${title}"` : ''}></div>`
+    ).join('');
+}
+
+// Un trait de profondeur, sur toute la largeur de la carte.
+function ruleHtml(cls, y, title) {
+    return `<div class="${cls}" style="top:${depthPct(y).toFixed(2)}%;"${title ? ` title="${title}"` : ''}></div>`;
+}
+
+// Une OMBRE : un trapeze au sol, entre deux ecarts au kart, avec sa propre
+// profondeur a chaque bout. Elle s'elargit en s'eloignant de l'oeil et s'arrete
+// net — c'est tout le modele de la vue a la troisieme personne, et c'est ce
+// qu'on vient regarder sur la carte.
+//
+// Le rectangle qui la porte couvre son enveloppe ; `clip-path` y taille le
+// trapeze. Coupee au bord du cadre, elle voit ses profondeurs se reinterpoler a
+// la coupe — sans quoi le morceau visible porterait la largeur du bout reste
+// dehors.
+function shadowHtml(from, to, loA, hiA, loB, hiB) {
+    // Un coup d'oeil arriere projette l'ombre dans le sens des x decroissants :
+    // les deux bouts arrivent alors dans l'ordre inverse. On remet le proche a
+    // gauche AVEC ses profondeurs, sans quoi le trapeze se dessine a l'envers —
+    // large pres de l'oeil, etroit au loin.
+    if (to < from) {
+        const x = from; from = to; to = x;
+        const l = loA; loA = loB; loB = l;
+        const h = hiA; hiA = hiB; hiB = h;
+    }
+
+    const span = to - from;
+
+    // Bornee a la piste : au-dela elle ne cache plus rien de reel, et un
+    // trapeze qui deborde de dix fois la hauteur ecrase le dessin.
+    const clampY = y => Math.max(WORLD.roadMinY - 1, Math.min(WORLD.roadMaxY + 1, y));
+
+    const at = x => {
+        const t = (span === 0) ? 0 : (x - from) / span;
+        return [clampY(loA + (loB - loA) * t), clampY(hiA + (hiB - hiA) * t)];
+    };
+
+    // Coupee aux bords de la fenetre, et les profondeurs se reinterpolent a la
+    // coupe : sans ca, le morceau visible porterait la largeur du bout reste
+    // dehors. C'est le meme travail qu'avant, mais sur les bords du cadre et non
+    // plus sur la ligne d'arrivee — la fenetre ne fait jamais le tour, donc une
+    // ombre n'y est plus qu'en un seul morceau.
+    const view = mapView.span;
+    const head = mapOffset(from);
+
+    let x0 = from;
+    let x1 = to;
+    if (head < 0) x0 = from - head;
+    if (head + span > view) x1 = from + (view - head);
+
+    if (x1 <= x0) return '';
+
+    const a = at(x0);
+    const b = at(x1);
+
+    const left = ((head + (x0 - from)) / view) * 100;
+    const width = ((x1 - x0) / view) * 100;
+
+    // Les quatre coins, en pourcentage de la boite : haut-gauche, haut-droit,
+    // bas-droit, bas-gauche.
+    const yTopA = depthPct(a[1]);
+    const yBotA = depthPct(a[0]);
+    const yTopB = depthPct(b[1]);
+    const yBotB = depthPct(b[0]);
+
+    const top = Math.min(yTopA, yTopB);
+    const bot = Math.max(yBotA, yBotB);
+    const h = Math.max(bot - top, 0.5);
+    const pc = y => (((y - top) / h) * 100).toFixed(2);
+
+    return `<div class="dv-shadow" style="left:${left.toFixed(3)}%;width:${width.toFixed(3)}%;` +
+           `top:${top.toFixed(2)}%;height:${h.toFixed(2)}%;` +
+           `clip-path:polygon(0% ${pc(yTopA)}%,100% ${pc(yTopB)}%,` +
+           `100% ${pc(yBotB)}%,0% ${pc(yBotA)}%);"></div>`;
+}
+
+// COUPE POUR L'INSTANT. Passer a true rend le faisceau, rien d'autre a
+// toucher : le dessin ne depend que du releve de vue, deja transmis, et son CSS
+// (`.dv-rays`) est reste en place.
+const SHOW_RAY_FAN = false;
+
+// Le FAISCEAU, trace depuis l'oeil — le point de vue a la troisieme personne,
+// en arriere du kart (`vision.eye.back`).
+//
+// C'est de la que tout le modele d'occlusion se mesure : `shadowHides` ne
+// compare pas des profondeurs mais des PENTES rapportees a l'oeil, et un angle
+// mort n'est rien d'autre que la projection d'un corps depuis ce point. Les
+// trapezes poses au sol le montraient deja, mais amputes de leur sommet : rien
+// ne disait POURQUOI ils ont cette forme, ni qu'ils appartiennent tous au meme
+// faisceau. Les rayons rendent le sommet.
+//
+// Deux familles de traits, et elles ne disent pas la meme chose :
+//
+//   rayons de BORD    jusqu'aux deux rives, au bout de la portee. Ils donnent
+//                     l'ouverture du faisceau meme quand rien ne masque.
+//   rayons d'ARETE    deux par corps solide, passant par ses flancs. Ce sont
+//                     eux qui bornent son ombre — les prolonger jusqu'a l'oeil
+//                     montre que le trapeze EST une projection, et pas une
+//                     bande posee a la main.
+//
+// En SVG et non en div : un trait oblique se decrit par deux points, la ou une
+// boite aurait demande une rotation et un `clip-path` par rayon.
+function rayFanHtml(v, dir, lo, hi) {
+    const span = mapView.span;
+
+    // Tous les points se reperent PAR RAPPORT A L'OEIL, jamais chacun pour soi.
+    // Le tour boucle, et deux `mapOffset` independants peuvent tomber de part et
+    // d'autre de la couture : le rayon traverserait alors la carte entiere.
+    const eyeOff = mapOffset(v.x - v.eyeBack * dir);
+    const px = dw => (((eyeOff + dw) / span) * 100).toFixed(3);
+    const py = y => depthPct(y).toFixed(2);
+
+    // Un point a `look` du kart est a `look + eyeBack` de l'oeil, du cote
+    // balaye. C'est la seule conversion du dessin, et elle vaut pour tout.
+    const reach = look => (look + v.eyeBack) * dir;
+
+    const x0 = px(0);
+    const y0 = py(v.y);
+    const ray = (cls, look, y) =>
+        `<line class="${cls}" x1="${x0}%" y1="${y0}%" ` +
+        `x2="${px(reach(look))}%" y2="${py(y)}%" />`;
+
+    const lines = [ray('dv-ray dv-ray-edge', v.range, lo),
+                   ray('dv-ray dv-ray-edge', v.range, hi)];
+
+    // `sh[1]` est le bout de l'ombre, `sh[4]`/`sh[5]` ses deux profondeurs la —
+    // donc exactement les deux points ou aboutissent les rayons rasants.
+    for (let i = 0; i < v.shadows.length; i++) {
+        const sh = v.shadows[i];
+        lines.push(ray('dv-ray dv-ray-graze', sh[1], sh[4]));
+        lines.push(ray('dv-ray dv-ray-graze', sh[1], sh[5]));
+    }
+
+    return `<svg class="dv-rays" width="100%" height="100%">${lines.join('')}</svg>`;
+}
+
+// Un point pose a un endroit precis du monde. Hors fenetre, il ne se dessine
+// pas : replie sur un bord, il mentirait sur une position.
+function pinHtml(cls, worldX, y, label) {
+    const left = xPct(worldX);
+    if (!inMapView(left)) return '';
+    return `<div class="${cls}" style="left:${left.toFixed(3)}%;top:${depthPct(y).toFixed(2)}%;"` +
+           `${label ? ` title="${label}"` : ''}></div>`;
+}
+
+// Le dessin de la vue, refait a chaque releve neuf — un balayage tourne douze
+// fois par seconde, l'affichage soixante, et redessiner entre deux ne montrerait
+// rien de plus.
+//
+// La fenetre, elle, DEFILE : le meme releve ne tombe pas au meme endroit d'une
+// image a l'autre. Le cadrage entre donc dans ce qui declenche un redessin, au
+// meme titre que le releve. L'oublier fige la couche de vision en place pendant
+// que la piste glisse dessous.
+let visionDrawn = null;
+let visionDrawnAt = null;
+let visionNote = '';
+
+function renderVisionLayer() {
+    const layer = document.getElementById('debug-vision');
+    if (!layer) return;
+
+    const v = worldState.vision;
+
+    // ── Pourquoi il n'y a rien a dessiner, quand il n'y a rien a dessiner ──
+    //
+    // Un `return` muet est precisement ce qui a laisse cette carte vide sans
+    // que personne ne s'en apercoive : elle se construisait avant la connexion,
+    // ne trouvait aucun kart, et n'en disait rien. On ne refait pas la meme
+    // faute pour la couche de vision — chaque cause a sa phrase, et elle
+    // s'affiche a la place du dessin.
+    let note = '';
+    if (!WORLD.vision) {
+        // Le `hello` ne porte pas les distances de vue : le service tourne sur
+        // une version anterieure du protocole. Recharger la page n'y changera
+        // rien, c'est le moteur qu'il faut relancer.
+        note = 'service de course a redemarrer (hello sans bloc vision)';
+    } else if (focusedKartId === null) {
+        note = 'aucun kart suivi — clique un kart dans le classement';
+    } else if (!v) {
+        note = `vue demandee pour le kart ${focusedKartId}, rien recu`;
+    }
+
+    if (note) {
+        if (note !== visionNote) {
+            visionNote = note;
+            visionDrawn = null;
+            layer.innerHTML = `<div class="dv-note">${note}</div>`;
+        }
+        return;
+    }
+
+    visionNote = '';
+    if (v === visionDrawn && mapView.start === visionDrawnAt) return;
+    visionDrawn = v;
+    visionDrawnAt = mapView.start;
+
+    const cfg = WORLD.vision;
+    const dir = v.scanBack ? -1 : 1;
+    const lo = WORLD.roadMinY;
+    const hi = WORLD.roadMaxY;
+    const html = [];
+
+    // 1. LE CHAMP. Jusqu'ou porte CE balayage-la, dans le sens ou il a eu lieu.
+    //    La portee vient du serveur : elle n'est pas la meme devant et derriere,
+    //    et la choisir ici serait deja une deduction.
+    html.push(bandHtml('dv-cone', v.x, v.range * dir, lo, hi,
+        `${v.scanBack ? 'arriere' : 'avant'} ${v.range}px`));
+
+    // 1 bis. LES ANGLES MORTS. Ce que les corps solides jettent au sol depuis
+    //    la camera de poursuite. Chacun s'elargit en s'eloignant et S'ARRETE :
+    //    la ou il s'arrete, le kart revoit la piste. C'est la lecture qui
+    //    manquait — un trou noir dans le champ vert, avec un bord.
+    for (let i = 0; i < v.shadows.length; i++) {
+        const sh = v.shadows[i];
+        html.push(shadowHtml(v.x + sh[0] * dir, v.x + sh[1] * dir,
+                             sh[2], sh[3], sh[4], sh[5]));
+    }
+
+    // 1 ter. LE FAISCEAU. D'ou partent ces ombres, et pourquoi elles ont cette
+    //    forme. Pose apres elles pour que les rayons se lisent PAR-DESSUS le
+    //    noir : c'est le trait qui explique la tache, pas l'inverse.
+    //
+    //    Coupe pour l'instant — cf. `SHOW_RAY_FAN`.
+    if (SHOW_RAY_FAN) html.push(rayFanHtml(v, dir, lo, hi));
+
+    // 2. LA LIGNE DE TIR qu'on partage : la portee du danger latent, sur la
+    //    seule bande ou l'alignement compte. Hors de cette bande, un porteur ne
+    //    peut rien contre le kart et se decaler ne veut rien dire.
+    html.push(bandHtml('dv-press', v.x, cfg.pressureRange * dir,
+        v.y - cfg.clear, v.y + cfg.clear, `alignement ±${cfg.clear}`));
+
+    // 3. LA VOIE : plus large que le degagement, et elle doit l'etre — les deux
+    //    corps bougent en profondeur pendant le temps avant impact.
+    html.push(ruleHtml('dv-lane', v.y - cfg.threatLane, 'voie'));
+    html.push(ruleHtml('dv-lane', v.y + cfg.threatLane, 'voie'));
+
+    // 4. CE QUI FERME UN PASSAGE. C'est la lecture la plus utile de la carte :
+    //    un couloir libre est un trou entre deux barres. Un mur dur — un tuyau —
+    //    ne se franchit pas, le reste se paie.
+    for (let i = 0; i < v.spans.length; i++) {
+        const s = v.spans[i];
+        html.push(bandHtml(s[4] ? 'dv-span dv-hard' : 'dv-span', v.x, s[2],
+            s[0], s[1], `${s[4] ? 'mur' : 'corps'} a ${Math.round(s[2])}px`));
+    }
+
+    // 5. CE QUE LE MOTEUR A RETENU. Chaque marque est une decision de la vue,
+    //    pas une entite de la scene : c'est l'ecart entre les deux qu'on cherche.
+    if (v.threat) {
+        html.push(ruleHtml('dv-threat', v.threat[2],
+            `menace ${v.threat[1]} · ${v.threat[3] < 0 ? 'jamais' : v.threat[3] + 'ms'}`));
+    }
+    if (v.pressure) {
+        html.push(ruleHtml('dv-carrier', v.pressure[0],
+            v.pressure[2] ? 'porteur derriere' : 'porteur devant'));
+    }
+    if (v.pipe) {
+        const pipe = worldState.pipes[v.pipe[0]];
+        if (pipe) html.push(pinHtml('dv-pin dv-pin-pipe', pipe.worldX, pipe.y, 'tuyau qui barre'));
+    }
+    if (v.box) html.push(pinHtml('dv-pin dv-pin-box', v.x + v.box[1], v.box[0], 'boite visee'));
+    if (v.red) html.push(pinHtml('dv-pin dv-pin-red', v.x - v.red[0], v.red[1],
+        `rouge derriere ×${v.red[3]}`));
+
+    // 6. LA CONSIGNE. La profondeur que le kart REJOINT, s'il a un plan. Une vue
+    //    sans le geste qu'elle a produit ne se juge pas.
+    if (v.plan) html.push(ruleHtml('dv-plan', v.plan[3], `${v.plan[0]}${v.plan[4] ? ' (approx.)' : ''}`));
+
+    // 7. L'OEIL. Il n'est PAS sur le kart : la camera le suit de `eyeBack`
+    //    pixels, du cote oppose au regard, et c'est de la que partent toutes
+    //    les ombres ci-dessus. La voir a sa place est la moitie de ce qui rend
+    //    le dessin comprehensible.
+    const eyePct = xPct(v.x - v.eyeBack * dir);
+    if (inMapView(eyePct)) {
+        html.push(`<div class="dv-eye${v.scanBack ? ' dv-eye-back' : ''}" ` +
+                  `style="left:${eyePct.toFixed(3)}%;` +
+                  `top:${depthPct(v.y).toFixed(2)}%;"></div>`);
+    }
+    html.push(bandHtml('dv-eyelink', v.x, -v.eyeBack * dir, v.y, v.y, 'recul de camera'));
+
+    layer.innerHTML = html.join('');
+}
+
 function initDebugHUD() {
     let hud = document.getElementById('debug-hud');
     if (!hud) {
@@ -2752,19 +3583,50 @@ function initDebugHUD() {
     }
     hud.innerHTML = '';
     hud.style.display = 'block';
+    // La hauteur se recalcule : `updateMapView` ne la reecrit que lorsqu'elle
+    // change, et le cadre vient d'etre vide.
+    mapHudHeight = 0;
+    visionDrawnAt = null;
 
+    // La couche de vision passe en premier : elle est le fond sur lequel les
+    // entites se lisent, jamais l'inverse.
+    const vision = document.createElement('div');
+    vision.id = 'debug-vision';
+    hud.appendChild(vision);
+    visionDrawn = null;
+
+    // La ligne d'arrivee defile comme le reste : la fenetre bouge, elle ne
+    // reste pas a une fraction fixe du cadre. Sa position se pose donc a chaque
+    // image, avec celle des corps.
     const finishLine = document.createElement('div');
     finishLine.className = 'debug-entity debug-finish';
-    const finishPct = (WORLD.finishLineX / WORLD.width) * 100;
-    finishLine.style.left = `${finishPct}%`;
+    finishLine.id = 'debug-finish';
     hud.appendChild(finishLine);
+
+    // Chaque corps se dessine a son emprise, et le serveur seul la connait. Un
+    // vieux serveur qui ne l'enverrait pas laisse le repli hors ligne prendre le
+    // relais : la carte reste juste plutot que de disparaitre.
+    const hitboxes = WORLD.hitboxes || OFFLINE_WORLD.hitboxes;
+
+    // Les tuyaux : ils ne bougent pas dans le MONDE, mais la fenetre si. Leur
+    // emprise se pose une fois — elle ne change jamais — et leur position a
+    // chaque image, comme celle des karts. C'est le corps le plus structurant de
+    // la piste, le seul qu'on ne traverse pas.
+    worldState.pipes.forEach((pipe, i) => {
+        const dPipe = document.createElement('div');
+        dPipe.className = 'debug-entity debug-pipe';
+        dPipe.id = `debug-pipe-${i}`;
+        dPipe.style.top = `${depthPct(pipe.y)}%`;
+        sizeEntity(dPipe, hitboxes.pipe);
+        hud.appendChild(dPipe);
+    });
 
     worldState.itemBoxes.forEach((box, i) => {
         const dBox = document.createElement('div');
         dBox.className = 'debug-entity debug-itembox';
         dBox.id = `debug-box-${i}`;
-        const bPct = (box.worldX / WORLD.width) * 100;
-        dBox.style.left = `${bPct}%`;
+        dBox.style.top = `${depthPct(box.y)}%`;
+        sizeEntity(dBox, hitboxes.itemBox);
         hud.appendChild(dBox);
     });
 
@@ -2773,18 +3635,26 @@ function initDebugHUD() {
         dKart.className = 'debug-entity debug-kart';
         dKart.id = `debug-kart-${kart.id}`;
         dKart.innerText = GAME_CONFIG.resources.initials[kart.charName] || '?';
+        // Son emprise a lui, pas celle du kart de reference : c'est tout
+        // l'interet de la carte que d'y voir un long et un court n'occuper ni
+        // la meme longueur ni la meme profondeur.
+        sizeEntity(dKart, kart.body || hitboxes.kart);
         hud.appendChild(dKart);
     });
 
+    // Les objets vont et viennent : leur couche se reecrit a chaque image, elle
+    // ne se peuple pas ici.
+    const items = document.createElement('div');
+    items.id = 'debug-items';
+    hud.appendChild(items);
+
+    // Ce que la banniere montre, dans la fenetre. Un seul element : la carte ne
+    // fait plus le tour du monde, donc ce rectangle ne peut plus se couper en
+    // deux morceaux comme il le fallait du temps du tour complet.
     const camView = document.createElement('div');
     camView.className = 'debug-camera-view';
+    camView.id = 'debug-camera-view';
     hud.appendChild(camView);
-
-    const camViewLoop = document.createElement('div');
-    camViewLoop.className = 'debug-camera-view';
-    camViewLoop.id = 'debug-camera-view-loop';
-    camViewLoop.style.display = 'none';
-    hud.appendChild(camViewLoop);
 
     const leaderboard = document.createElement('div');
     leaderboard.id = 'debug-leaderboard';
@@ -2814,6 +3684,112 @@ function initDebugHUD() {
     document.body.appendChild(leaderboard);
 }
 
+// Les objets, redessines d'un bloc a chaque image.
+//
+// Ils ne peuvent pas etre poses une fois comme les tuyaux : ils naissent, se
+// consomment et disparaissent en pleine course. Plutot qu'un pool d'elements a
+// tenir a jour, la couche se reecrit — c'est le meme parti que `renderVisionLayer`,
+// et pour la meme raison : moins d'etat, donc moins de facons d'etre faux.
+//
+// ── Qui a une hitbox, et laquelle ────────────────────────────────────────
+//
+// Une carapace et une banane partagent la meme emprise, et c'est celle que le
+// serveur envoie. Deux exceptions, et elles se DESSINENT au lieu d'etre
+// passees sous silence, parce qu'un objet inoffensif au milieu de la piste est
+// precisement ce qu'on vient verifier :
+//
+//   la bleue      survole tout. Elle n'entre dans aucune passe de collision, ni
+//                 contre les karts, ni contre les objets. Son souffle, lui, a
+//                 un rayon qui CROIT pendant 300 ms — une emprise fixe ne sait
+//                 pas le dire, et l'avancement n'est pas transmis. Les deux se
+//                 marquent donc « sans emprise » plutot que d'etre inventes.
+//   la cloche     une banane lobee n'a pas de hitbox tant qu'elle MONTE
+//                 (`item.rising`). Elle la retrouve au sommet, pas a
+//                 l'atterrissage.
+//
+// ── Les objets TRAINES ───────────────────────────────────────────────────
+//
+// Un objet tenu derriere son porteur n'est pas dans `worldState.items` : il vit
+// dans `kart.heldItem`, et pourtant il a bel et bien une emprise — la passe de
+// collision la teste a `kart.worldX + heldBehindX`, a la profondeur du kart.
+// C'est elle qui fait du trainage un BOUCLIER : la carapace qui arrive s'y
+// consume au lieu d'atteindre le kart.
+//
+// Sans lui la carte mentait par omission, et sur le cas le plus utile a
+// verifier : un kart qui traine parait nu, alors qu'il porte devant lui — pardon,
+// derriere lui — de quoi encaisser un tir.
+//
+// Il menace aussi : la meme passe le teste contre chaque kart en course, et
+// celui qui le touche part en tete-a-queue — l'objet est consomme au passage.
+// Un poursuivant colle a un kart qui traine prend donc reellement quelque
+// chose, et c'est bien ce que la carte doit montrer.
+function renderItemLayer() {
+    const layer = document.getElementById('debug-items');
+    if (!layer) return;
+
+    const boxes = WORLD.hitboxes || OFFLINE_WORLD.hitboxes;
+    const half = boxes.item || OFFLINE_WORLD.hitboxes.item;
+    const behindX = (boxes.heldBehindX !== undefined)
+        ? boxes.heldBehindX : OFFLINE_WORLD.hitboxes.heldBehindX;
+
+    const w = spanXPct(half.x).toFixed(3);
+    const h = spanYPct(half.y).toFixed(3);
+    const html = [];
+
+    const mark = (cls, worldX, y, title, sized) => {
+        const left = xPct(worldX);
+        if (!inMapView(left)) return;
+        html.push(`<div class="${cls}" style="left:${left.toFixed(3)}%;` +
+                  `top:${depthPct(y).toFixed(2)}%;${sized ? `width:${w}%;height:${h}%;` : ''}" ` +
+                  `title="${title}"></div>`);
+    };
+
+    for (let i = 0; i < worldState.items.length; i++) {
+        const item = worldState.items[i];
+
+        const blue = item.type === 'blueShell' || item.type === 'blueBlast';
+        const inert = blue || item.rising;
+
+        // Sans emprise, il reste un point : on marque OU il est, sans lui
+        // preter une boite qu'il n'a pas.
+        const cls = 'dv-item' + (inert ? ' dv-item-inert' : '')
+            + (item.type === 'banana' ? ' dv-item-banana' : '');
+
+        mark(cls, item.worldX, item.y,
+             `${item.type}${inert ? ' — sans emprise' : ''}`, !inert);
+    }
+
+    // Les objets traines, pris sur leur porteur. Meme emprise qu'un objet
+    // largue — c'est la meme constante qui les teste — mais une autre couleur :
+    // celui-ci encaisse, il ne blesse pas.
+    for (let k = 0; k < worldState.karts.length; k++) {
+        const kart = worldState.karts[k];
+        const held = kart.heldItem;
+        if (!held || held.holdPosition !== 'behind') continue;
+
+        mark('dv-item dv-item-held', kart.worldX + behindX, kart.yPercent,
+             `${held.type} traine — bouclier`, true);
+    }
+
+    layer.innerHTML = html.join('');
+}
+
+// Pose une marque a son abscisse dans la fenetre, ou l'efface si elle en sort.
+// Rend true quand elle est visible, pour que l'appelant s'epargne le reste.
+function placeInView(el, worldX) {
+    if (!el) return false;
+
+    const left = xPct(worldX);
+    if (!inMapView(left)) {
+        el.style.display = 'none';
+        return false;
+    }
+
+    el.style.display = '';
+    el.style.left = `${left.toFixed(3)}%`;
+    return true;
+}
+
 function updateDebugHUD() {
     const hud = document.getElementById('debug-hud');
     if (!hud) return;
@@ -2821,42 +3797,94 @@ function updateDebugHUD() {
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     const screenWidth = cachedContainer ? cachedContainer.offsetWidth : window.innerWidth;
 
-    const camViews = hud.getElementsByClassName('debug-camera-view');
-    if (camViews.length < 2) return;
+    // Le cadrage d'abord : tout ce qui suit se place dedans.
+    updateMapView(hud);
 
-    const camMain = camViews[0];
-    const camLoop = camViews[1];
+    const camMain = document.getElementById('debug-camera-view');
 
-    const worldW = WORLD.width;
-    // camera = centre de la vue : le bord gauche est a mi-largeur en arriere.
-    const camX = (((renderCameraX - screenWidth / 2) % worldW) + worldW) % worldW;
+    // La fenetre de camera ne se dessine que lorsqu'elle est LIBRE, c'est-a-dire
+    // quand on ne suit personne.
+    //
+    // Collee a un kart, elle ne dit plus rien : elle est centree sur lui par
+    // construction, elle suit son point sans jamais s'en ecarter, et elle
+    // recouvre d'un aplat rouge exactement la zone qu'on vient regarder — le
+    // champ de vision et ses angles morts. Le seul moment ou sa position
+    // s'apprend est celui ou elle avance toute seule.
+    if (camMain) {
+        // camera = centre de la vue : le bord gauche est a mi-largeur en arriere.
+        const seg = (focusedKartId === null)
+            ? worldSegments(renderCameraX - screenWidth / 2, screenWidth)
+            : [];
 
-    const camPct = (camX / worldW) * 100;
-    const viewPct = (screenWidth / worldW) * 100;
-
-    camMain.style.left = `${camPct}%`;
-    camMain.style.width = `${viewPct}%`;
-
-    const overflow = (camX + screenWidth) - worldW;
-
-    if (overflow > 0) {
-        camLoop.style.display = 'block';
-        camLoop.style.left = '0%';
-        camLoop.style.width = `${(overflow / worldW) * 100}%`;
-    } else {
-        camLoop.style.display = 'none';
+        if (seg.length) {
+            camMain.style.display = 'block';
+            camMain.style.left = `${seg[0][0].toFixed(3)}%`;
+            camMain.style.width = `${seg[0][1].toFixed(3)}%`;
+        } else {
+            camMain.style.display = 'none';
+        }
     }
+
+    // Les corps fixes du monde defilent maintenant sous la fenetre : leur
+    // abscisse se repose a chaque image, et ce qui sort du cadre disparait
+    // plutot que de s'ecraser sur un bord.
+    // La ligne d'arrivee est une BANDE, pas un trait : elle occupe toute la
+    // profondeur de piste sur `finishBandWidth()` px de long. Elle se pose par
+    // son bord GAUCHE et non par son centre, parce que c'est ainsi que le decor
+    // la place — et surtout parce que le tour se compte exactement la
+    // (`finishLineX` dans la boucle de course), pas au milieu de la bande.
+    //
+    // Elle passe par `worldSegments` et non par `placeInView` : large de 60 px,
+    // elle peut n'etre qu'a moitie dans le cadre, et il faut la couper plutot
+    // que la faire disparaitre.
+    const finishEl = document.getElementById('debug-finish');
+    if (finishEl) {
+        const seg = worldSegments(WORLD.finishLineX, finishBandWidth());
+        if (seg.length) {
+            finishEl.style.display = '';
+            finishEl.style.left = `${seg[0][0].toFixed(3)}%`;
+            finishEl.style.width = `${seg[0][1].toFixed(3)}%`;
+        } else {
+            finishEl.style.display = 'none';
+        }
+    }
+    for (let i = 0; i < worldState.pipes.length; i++) {
+        placeInView(document.getElementById(`debug-pipe-${i}`), worldState.pipes[i].worldX);
+    }
+    for (let i = 0; i < worldState.itemBoxes.length; i++) {
+        placeInView(document.getElementById(`debug-box-${i}`), worldState.itemBoxes[i].worldX);
+    }
+
+    // Ce que le kart suivi n'a PAS vu au dernier balayage. C'est la moitie
+    // manquante de la carte : sans elle, un kart qui ignore une banane et un
+    // kart qui ne la voit pas se dessinent pareil.
+    const v = worldState.vision;
+    const hidden = v ? v.hidden : null;
 
     worldState.karts.forEach(kart => {
         const el = document.getElementById(`debug-kart-${kart.id}`);
         if (el) {
-            const kPct = (kart.worldX / WORLD.width) * 100;
-            el.style.left = `${kPct}%`;
-            el.style.backgroundColor = (kart.state === 'hit') ? 'red' : 'blue';
-            if (kart.state === 'grid') el.style.backgroundColor = 'gray';
+            if (!placeInView(el, kart.worldX)) return;
+            el.style.top = `${depthPct(kart.yPercent)}%`;
+            // Translucides comme le reste des marques : a taille reelle les
+            // corps se recouvrent, et un aplat opaque effacerait le tuyau
+            // contre lequel un kart est justement en train de se cogner.
+            el.style.backgroundColor = (kart.state === 'hit')
+                ? 'rgba(255, 64, 64, 0.75)'
+                : 'rgba(64, 96, 255, 0.75)';
+            if (kart.state === 'grid') el.style.backgroundColor = 'rgba(150, 150, 150, 0.7)';
             el.innerText = GAME_CONFIG.resources.initials[kart.charName] || '?';
+
+            // Meme convention de signe que le moteur : un kart s'identifie en
+            // negatif dans les releves de vue.
+            const masked = !!hidden && hidden.indexOf(-1 - kart.id) !== -1;
+            el.classList.toggle('is-masked', masked);
+            el.classList.toggle('is-watched', v ? v.id === kart.id : false);
         }
     });
+
+    renderItemLayer();
+    renderVisionLayer();
 
     const leaderboardList = document.getElementById('debug-leaderboard-list');
     if (leaderboardList) {
