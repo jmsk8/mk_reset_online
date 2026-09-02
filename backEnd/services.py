@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import statistics
 import logging
@@ -19,6 +20,8 @@ from constants import (
     GM_MAX_RATIO_CAP, GM_MAX_IP, GM_BASE_WEIGHT_V1, GM_BASE_WEIGHT_V2, GM_EXTRA_MATCH_BONUS, REFERENCE_PLAYER_COUNT,
     IP_V2_FORCE_LOBBY_PER_MU, IP_V2_FORCE_LOBBY_MIN, IP_V2_FORCE_LOBBY_MAX, IP_VERSION_DEFAULT,
     IP_V2_REF_REQUIRE_TIER, IP_V2_REF_REQUIRE_RANKED,
+    MAX_PAR_LOBBY,
+    PURGE_INVITATIONS_JOURS, PURGE_COMPTES_PENDING_JOURS, PURGE_LIAISONS_REFUSEES_JOURS,
 )
 from db import get_db_connection
 
@@ -1143,3 +1146,202 @@ def _apply_inter_league_moves(conn: Any, moves_count: int, ranking_data: dict, r
                 })
 
     return movements
+
+
+# ---------------------------------------------------------------------------
+# Matchmaking
+# ---------------------------------------------------------------------------
+# Portage fidele de buildLobbies(), qui vivait dans matchmaking.html. Deplace
+# ici pour que la page d'administration et le bot Discord appellent le MEME
+# code : deux implementations du meme algorithme finissent toujours par
+# diverger, et personne ne s'en apercoit avant qu'un lobby soit mal compose.
+#
+# Principe : les joueurs sont tries par score decroissant, puis coupes en k
+# tranches contigues de tailles aussi egales que possible. Quand n n'est pas
+# divisible par k, les joueurs en trop sont attribues un par un, et le point de
+# coupure est choisi la ou l'ecart de score est le plus faible -- on preferera
+# toujours separer deux joueurs eloignes plutot que deux joueurs proches.
+
+def construire_lobbies(joueurs, max_par_lobby=None):
+    """Repartit des joueurs en lobbies equilibres.
+
+    `joueurs` : liste de dictionnaires comportant au moins la cle 'ts'.
+    Le tri decroissant est fait ici, et non par l'appelant, pour que tous les
+    appelants se comportent identiquement.
+
+    Renvoie une liste de listes, dans l'ordre : lobby 1 = les meilleurs.
+    """
+    if max_par_lobby is None:
+        max_par_lobby = MAX_PAR_LOBBY
+
+    # Tri stable, comme le tri JS d'origine : a scores egaux, l'ordre d'entree
+    # est conserve.
+    joueurs = sorted(joueurs, key=lambda p: p['ts'], reverse=True)
+
+    n = len(joueurs)
+    if n == 0:
+        return []
+
+    k = -(-n // max_par_lobby)          # ceil(n / max_par_lobby)
+    if k == 1:
+        return [list(joueurs)]
+
+    base = n // k
+    pivots = n % k                      # joueurs a repartir en plus du socle
+
+    tailles = [base] * k
+    curseur = 0
+    places = 0
+
+    for i in range(k):
+        taille = tailles[i]
+        if i < k - 1 and pivots - places > 0:
+            # Le joueur a la frontiere : le laisse-t-on dans ce lobby, ou
+            # bascule-t-il dans le suivant ? On le rattache au voisin dont il
+            # est le plus proche au score.
+            idx_pivot = curseur + taille
+            dessus = joueurs[idx_pivot - 1]
+            pivot = joueurs[idx_pivot]
+            dessous = joueurs[idx_pivot + 1] if idx_pivot + 1 < n else None
+
+            ecart_dessus = abs(pivot['ts'] - dessus['ts'])
+            ecart_dessous = abs(pivot['ts'] - dessous['ts']) if dessous else float('inf')
+
+            # CORRECTIF par rapport au JS d'origine. Un lobby ne peut recevoir
+            # qu'UN seul joueur en plus du socle. Sans cette condition, un lobby
+            # deja agrandi par la branche « bascule » de l'iteration precedente
+            # pouvait en recevoir un second et atteindre base+2 -- soit 11
+            # joueurs pour une limite de 10, dans environ 3 % des compositions
+            # de 11 a 40 joueurs. Un lobby injouable, que l'admin devait
+            # rattraper a la main.
+            #
+            # La repartition correcte est connue d'avance : exactement `pivots`
+            # lobbies de taille base+1, et k - pivots de taille base. Le choix
+            # ne porte donc que sur LESQUELS, jamais sur combien.
+            deja_servi = taille > base
+            if deja_servi or ecart_dessus > ecart_dessous:
+                tailles[i + 1] += 1     # il rejoint le suivant
+            else:
+                taille += 1             # il reste dans le lobby courant
+            places += 1
+
+        curseur += taille
+        tailles[i] = taille
+
+    lobbies = []
+    idx = 0
+    for taille in tailles:
+        lobbies.append(joueurs[idx:idx + taille])
+        idx += taille
+    return lobbies
+
+
+def resoudre_joueurs_matchmaking(cur, noms=None, joueur_ids=None, discord_ids=None):
+    """Resout des identifiants de joueurs en {id, nom, ts}.
+
+    Le score vient TOUJOURS de la base, jamais de l'appelant : un client qui
+    fournirait ses propres scores pourrait composer les lobbies a sa guise.
+
+    Renvoie (joueurs trouves, identifiants introuvables).
+    """
+    # `demandes` porte les valeurs NORMALISEES, celles-la memes qui partent dans
+    # la requete. Comparer les valeurs brutes au retour de la base ferait
+    # declarer introuvable un joueur pourtant trouve : un bot qui envoie ses
+    # snowflakes en nombres JSON obtenait les bons lobbies, et la liste complete
+    # de ses joueurs en « introuvables ».
+    if joueur_ids:
+        cle, condition = 'id', "j.id = ANY(%s)"
+        demandes = [int(x) for x in joueur_ids]
+    elif discord_ids:
+        cle, condition = 'discord_id', "c.discord_id = ANY(%s)"
+        demandes = [str(d) for d in discord_ids]
+    elif noms:
+        cle, condition = 'nom', "j.nom = ANY(%s)"
+        demandes = [str(n) for n in noms]
+    else:
+        return [], []
+    valeurs = [demandes]
+
+    cur.execute(
+        """SELECT j.id, j.nom, j.score_trueskill, c.discord_id
+           FROM Joueurs j
+           LEFT JOIN comptes c ON c.joueur_id = j.id AND c.statut = 'linked'
+           WHERE """ + condition,
+        valeurs,
+    )
+    trouves = [
+        {
+            "id": r[0],
+            "nom": r[1],
+            "ts": round(float(r[2]), 3) if r[2] is not None else 0.0,
+            "discord_id": r[3],
+        }
+        for r in cur.fetchall()
+    ]
+
+    vus = {t[cle] for t in trouves}
+    introuvables = [d for d in demandes if d not in vus]
+    return trouves, introuvables
+
+
+# ---------------------------------------------------------------------------
+# Purges RGPD
+# ---------------------------------------------------------------------------
+# « Limitation de la conservation » (art. 5.1.e) : garder une donnee sans raison
+# est un manquement au meme titre que supprimer ce qu'on doit conserver. Chaque
+# duree ci-dessous doit pouvoir se justifier a l'oral.
+
+def purger_donnees_expirees(cur):
+    """Supprime ce qui n'a plus de raison d'etre conserve. Renvoie le detail.
+
+    Prend un curseur : l'appelant maitrise la transaction, et la purge peut
+    donc se greffer sur une operation existante sans ouvrir une connexion de
+    plus.
+    """
+    bilan = {}
+
+    # Une session expiree ne sert plus a rien, meme pas a l'ecran « vos
+    # sessions actives ».
+    cur.execute("DELETE FROM sessions_joueurs WHERE expires_at < now()")
+    bilan['sessions'] = cur.rowcount
+
+    # Une invitation expiree depuis un mois : le lien est mort, et son
+    # empreinte n'a plus d'usage.
+    cur.execute(
+        "DELETE FROM invitations WHERE expires_at < now() - make_interval(days => %s)",
+        (PURGE_INVITATIONS_JOURS,),
+    )
+    bilan['invitations'] = cur.rowcount
+
+    # Compte cree puis jamais rattache a une fiche joueur, et inactif depuis
+    # trois mois : c'est une inscription abandonnee. On ne touche PAS aux
+    # comptes lies, ni a ceux qui portent un role.
+    cur.execute(
+        """DELETE FROM comptes
+           WHERE statut = 'pending'
+             AND joueur_id IS NULL
+             AND role = 'player'
+             AND COALESCE(last_login_at, created_at) < now() - make_interval(days => %s)""",
+        (PURGE_COMPTES_PENDING_JOURS,),
+    )
+    bilan['comptes_abandonnes'] = cur.rowcount
+
+    # Trace d'un refus de liaison : utile quelque temps pour expliquer une
+    # decision, plus au-dela.
+    cur.execute(
+        """DELETE FROM liaisons_demandes
+           WHERE statut = 'rejected' AND decided_at < now() - make_interval(days => %s)""",
+        (PURGE_LIAISONS_REFUSEES_JOURS,),
+    )
+    bilan['liaisons_refusees'] = cur.rowcount
+
+    total = sum(bilan.values())
+    if total:
+        # L'audit garde la trace de la purge, sans conserver ce qui a ete purge.
+        cur.execute(
+            """INSERT INTO audit_admin (action, cible_type, details)
+               VALUES ('purge_rgpd', 'systeme', %s::jsonb)""",
+            (json.dumps(bilan),),
+        )
+        logger.info("Purge RGPD : %s", bilan)
+    return bilan

@@ -164,9 +164,7 @@
             const selectLigue = document.getElementById('selectLigue');
 
             try {
-                const confRes = await fetch('/admin/config', { 
-                    headers: {'X-Admin-Token': "{{ session.get('admin_token') }}"} 
-                });
+                const confRes = await fetch('/admin/config');
                 const conf = await confRes.json();
                 
                 if (conf.league_mode_enabled) {

@@ -63,3 +63,46 @@ TOKEN_LIFETIME_MINUTES = 60
 CACHE_TTL_SECONDS = 300
 
 DEFAULT_PAGE_SIZE = 50
+
+# --- Authentification Discord / comptes joueurs ---------------------------
+# Duree de vie ABSOLUE d'une session joueur : aucune route ne la prolonge.
+# C'est ce qui distingue sessions_joueurs de l'ancienne api_tokens, dont le
+# renouvellement sans borne rendait un token vole valable indefiniment.
+SESSION_JOUEUR_LIFETIME_DAYS = 30
+# Les comptes privilegies ont une session bien plus courte : ils ouvrent
+# beaucoup plus de portes qu'un compte joueur.
+SESSION_ADMIN_LIFETIME_HOURS = 12
+
+INVITATION_LIFETIME_HOURS = 72
+
+DISCORD_API_BASE = "https://discord.com/api/v10"
+DISCORD_CDN_BASE = "https://cdn.discordapp.com"
+# scope "identify" seul : ni email, ni guilds. L'appartenance au serveur, si on
+# la verifie un jour, sera contrôlee par le bot avec son propre token.
+DISCORD_OAUTH_SCOPE = "identify"
+# Deux appels reseau vers Discord se cachent derriere l'echange du code.
+DISCORD_HTTP_TIMEOUT = 10
+
+ROLE_PLAYER = "player"
+ROLE_ADMIN = "admin"
+ROLE_SUPERADMIN = "superadmin"
+# Ordre de privilege : un superadmin satisfait une exigence d'admin.
+ROLE_HIERARCHY = {ROLE_PLAYER: 0, ROLE_ADMIN: 1, ROLE_SUPERADMIN: 2}
+
+# --- Matchmaking ----------------------------------------------------------
+# Taille maximale d'un lobby. Etait une constante JS dans matchmaking.html ;
+# elle vit ici depuis que l'algorithme est cote serveur, pour que la page admin
+# et le bot Discord partagent la meme valeur.
+MAX_PAR_LOBBY = 10
+
+# --- RGPD -----------------------------------------------------------------
+# Version des conditions acceptees. La changer force une nouvelle acceptation :
+# comptes.cgu_version garde celle qui a ete reellement acceptee, ce qui permet
+# de demontrer QUOI a ete accepte, et pas seulement QUAND.
+CGU_VERSION = "1.0"
+
+# Durees de conservation. Chacune doit pouvoir se justifier : conserver sans
+# raison est un manquement au meme titre que supprimer ce qu'on doit garder.
+PURGE_INVITATIONS_JOURS = 30      # une invitation expiree n'a plus d'usage
+PURGE_COMPTES_PENDING_JOURS = 90  # inscrit qui ne s'est jamais fait rattacher
+PURGE_LIAISONS_REFUSEES_JOURS = 365

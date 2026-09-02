@@ -11,9 +11,15 @@ app = Flask(__name__)
 
 from routes_public import public_bp  # noqa: E402
 from routes_admin import admin_bp  # noqa: E402
+from routes_auth import auth_bp  # noqa: E402
+from routes_comptes import comptes_bp  # noqa: E402
+from routes_bot import bot_bp  # noqa: E402
 
 app.register_blueprint(public_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(comptes_bp)
+app.register_blueprint(bot_bp)
 
 from services import sync_sequences, recalculate_tiers  # noqa: E402, F401
 

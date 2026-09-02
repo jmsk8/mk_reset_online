@@ -40,15 +40,6 @@
                             </p>
                         </div>
                         <div class="card-content">
-                            {% with messages = get_flashed_messages(with_categories=true) %}
-                                {% if messages %}
-                                    {% for category, message in messages %}
-                                        <div class="notification is-{{ category }} is-light">
-                                            <i class="fas fa-exclamation-triangle mr-2"></i>{{ message }}
-                                        </div>
-                                    {% endfor %}
-                                {% endif %}
-                            {% endwith %}
                             <form method="POST" action="/admin">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                 <div class="field">

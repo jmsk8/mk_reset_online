@@ -96,6 +96,29 @@
             }
         }
     </style>
+    <style>
+        /* Avatar : l'image doit remplir le carré de 48px de Bulma sans se
+           déformer — une pp Discord n'est pas toujours carrée. */
+        .avatar-joueur {
+            width: 48px; height: 48px;
+            object-fit: cover;
+            border: 2px solid rgba(255, 255, 255, 0.15);
+        }
+
+        /* Repli quand aucun compte Discord n'est rattaché, ou quand le CDN ne
+           répond pas. Un cercle neutre plutôt qu'un trou dans la mise en page. */
+        .avatar-defaut {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px; height: 48px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            color: rgba(255, 255, 255, 0.45);
+            font-size: 1.25rem;
+        }
+    </style>
 </head>
 <body>
     {% include 'navbar.html' %}
@@ -174,21 +197,31 @@
                                     <div class="media">
                                         <div class="media-left">
                                             <figure class="image is-48x48">
-                                                {% if joueur.tier == 'S' %}
-                                                    <span class="tag is-large tier-s">S</span>
-                                                {% elif joueur.tier == 'A' %}
-                                                    <span class="tag is-large tier-a">A</span>
-                                                {% elif joueur.tier == 'B' %}
-                                                    <span class="tag is-large tier-b">B</span>
-                                                {% elif joueur.tier == 'C' %}
-                                                    <span class="tag is-large tier-c">C</span>
+                                                {% if joueur.avatar_url %}
+                                                    {# referrerpolicy : sans ça, un <img> vers le CDN
+                                                       Discord transmettrait l'URL de la page visitée.
+                                                       onerror : si le CDN ne répond pas, on retombe sur
+                                                       la pastille neutre au lieu d'une image cassée. #}
+                                                    <img class="is-rounded avatar-joueur" loading="lazy"
+                                                         src="{{ joueur.avatar_url }}" alt=""
+                                                         referrerpolicy="no-referrer"
+                                                         onerror="this.classList.add('is-hidden');
+                                                                  this.nextElementSibling.classList.remove('is-hidden');">
+                                                    <span class="avatar-defaut is-hidden"><i class="fas fa-user"></i></span>
                                                 {% else %}
-                                                    <span class="tag is-large is-light">U</span>
+                                                    <span class="avatar-defaut"><i class="fas fa-user"></i></span>
                                                 {% endif %}
                                             </figure>
                                         </div>
                                         <div class="media-content">
-                                            <p class="title is-4 has-text-light mb-1">{{ joueur.nom }}</p>
+                                            <p class="title is-4 has-text-light mb-1 is-flex is-align-items-center">
+                                                <span class="mr-2">{{ joueur.nom }}</span>
+                                                {% if joueur.tier in ['S', 'A', 'B', 'C'] %}
+                                                    <span class="tag tier-{{ joueur.tier|lower }}">{{ joueur.tier }}</span>
+                                                {% else %}
+                                                    <span class="tag is-light">U</span>
+                                                {% endif %}
+                                            </p>
                                             <div class="tags">
                                                 <span class="tag is-dark" style="border: 1px solid rgba(255,255,255,0.2);">
                                                     TS : <strong class="has-text-warning ml-1">{{ joueur.score_trueskill }}</strong>

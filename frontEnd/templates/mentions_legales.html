@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mentions légales - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-8">
+                    <h1 class="title is-2">Mentions légales</h1>
+
+                    <div class="content">
+                        <h2 class="title is-4">Éditeur</h2>
+                        <p>
+                            {{ editeur }} — site personnel et non commercial, édité à titre non
+                            professionnel.<br>
+                            Contact : <strong>{{ contact }}</strong>
+                        </p>
+
+                        <h2 class="title is-4">Hébergement</h2>
+                        <p>{{ hebergeur }}</p>
+
+                        <h2 class="title is-4">Objet du site</h2>
+                        <p>
+                            MK Reset publie le classement d'une communauté de joueurs de
+                            Mario Kart. Les résultats et statistiques présentés sont produits par
+                            cette communauté et n'ont aucun caractère officiel.
+                        </p>
+
+                        <h2 class="title is-4">Propriété intellectuelle</h2>
+                        <p>
+                            <em>Mario Kart</em>, <em>Mario</em> et les personnages associés sont des
+                            marques déposées de Nintendo. Ce site n'est ni affilié à Nintendo, ni
+                            approuvé par Nintendo. Les visuels employés le sont dans un cadre
+                            communautaire et non commercial.
+                        </p>
+                        <p>
+                            <em>Discord</em> est une marque déposée de Discord Inc. Ce site n'est ni
+                            affilié à Discord, ni approuvé par Discord.
+                        </p>
+
+                        <h2 class="title is-4">Données personnelles</h2>
+                        <p>
+                            Le traitement des données est décrit dans la
+                            <a href="/confidentialite">politique de confidentialité</a>.
+                        </p>
+
+                        <h2 class="title is-4">Responsabilité</h2>
+                        <p>
+                            Le site est fourni en l'état, sans garantie de disponibilité ni
+                            d'exactitude des classements. Toute erreur constatée peut être signalée
+                            à l'adresse ci-dessus.
+                        </p>
+                    </div>
+
+                    <a class="button is-light" href="/">Retour à l'accueil</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+</body>
+</html>

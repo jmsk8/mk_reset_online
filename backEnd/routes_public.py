@@ -9,6 +9,8 @@ from flask import Blueprint, jsonify, request, abort, render_template
 from constants import DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAULT_PAGE_SIZE, IP_VERSION_DEFAULT
 from db import get_db_connection
 from cache import get_cached, set_cached
+from routes_comptes import profil_public
+from auth_discord import avatar_url
 from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
@@ -559,10 +561,21 @@ def dernier_tournoi():
 @public_bp.route('/classement')
 def classement():
     try:
-        tier_filtre = request.args.get('tier', None)
-        ligue_filtre = request.args.get('ligue', None)
+        tier_raw = request.args.get('tier', None)
+        ligue_raw = request.args.get('ligue', None)
         page = request.args.get('page', type=int)
         limit = request.args.get('limit', DEFAULT_PAGE_SIZE, type=int)
+
+        # Normalisation AVANT la clé de cache. La requête SQL ignore déjà un tier
+        # invalide, mais une clé construite sur la saisie brute laisserait
+        # n'importe qui faire grossir _cache_store depuis internet (?tier=<aléa>
+        # en boucle), chaque entrée étant une copie du classement complet — sur
+        # un conteneur backend plafonné à 512 Mo.
+        tier_filtre = tier_raw.upper() if tier_raw and tier_raw.upper() in ('S', 'A', 'B', 'C') else None
+        try:
+            ligue_filtre = int(ligue_raw) if ligue_raw else None
+        except (TypeError, ValueError):
+            ligue_filtre = None
 
         cache_key = f"classement:{tier_filtre}:{ligue_filtre}"
         cached = get_cached(cache_key)
@@ -581,17 +594,13 @@ def classement():
         params: list[Any] = []
         conditions = []
 
-        if tier_filtre and tier_filtre.upper() in ['S', 'A', 'B', 'C']:
+        if tier_filtre is not None:
             conditions.append("j.tier = %s")
-            params.append(tier_filtre.upper())
+            params.append(tier_filtre)
 
-        if ligue_filtre:
-            try:
-                ligue_id_int = int(ligue_filtre)
-                conditions.append("j.ligue_id = %s")
-                params.append(ligue_id_int)
-            except ValueError:
-                pass
+        if ligue_filtre is not None:
+            conditions.append("j.ligue_id = %s")
+            params.append(ligue_filtre)
 
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
@@ -983,7 +992,11 @@ def get_joueur_stats(nom):
                 awards_list = []
                 award_groups = {}
                 for r in cur.fetchall():
-                    emoji, nom, description, code, saison_nom, is_yearly = r[:6]
+                    # award_nom, et surtout pas nom : `nom` est le parametre de
+                    # la route, celui qui repart dans la charge utile pour
+                    # titrer la fiche. L'ecraser ici renommait le joueur avec
+                    # son dernier trophee sur /joueur/<id>.
+                    emoji, award_nom, description, code, saison_nom, is_yearly = r[:6]
                     is_league_award, a_ligue_nom, a_ligue_couleur, a_ligue_id, cur_couleur, cur_nom = r[6:]
 
                     ligue_supprimee = is_league_award and a_ligue_id is None
@@ -1001,7 +1014,7 @@ def get_joueur_stats(nom):
                             trophy_desc += "\nObtenu en " + ligue_nom_final
                             if ligue_supprimee:
                                 trophy_desc += " (cette ligue n'existe plus)"
-                        entry = {"emoji": emoji, "nom": nom, "description": trophy_desc, "count": 1}
+                        entry = {"emoji": emoji, "nom": award_nom, "description": trophy_desc, "count": 1}
                         if is_league_award:
                             entry["is_league_award"] = True
                             entry["ligue_nom"] = ligue_nom_final
@@ -1009,7 +1022,7 @@ def get_joueur_stats(nom):
                             entry["ligue_supprimee"] = ligue_supprimee
                         awards_list.append(entry)
                     else:
-                        group_key = (emoji, nom, description, bool(is_league_award),
+                        group_key = (emoji, award_nom, description, bool(is_league_award),
                                      ligue_nom_final if is_league_award else None,
                                      ligue_couleur_final if is_league_award else None,
                                      ligue_supprimee if is_league_award else None)
@@ -1019,7 +1032,7 @@ def get_joueur_stats(nom):
                                 desc += "\nObtenu en " + ligue_nom_final
                                 if ligue_supprimee:
                                     desc += " (cette ligue n'existe plus)"
-                            entry = {"emoji": emoji, "nom": nom, "description": desc, "count": 0}
+                            entry = {"emoji": emoji, "nom": award_nom, "description": desc, "count": 0}
                             if is_league_award:
                                 entry["is_league_award"] = True
                                 entry["ligue_nom"] = ligue_nom_final
@@ -1163,6 +1176,8 @@ def get_joueur_stats(nom):
                     })
                 details_list.sort(key=lambda x: x["ligue_niveau"])
 
+                profil = profil_public(cur, jid)
+
         return jsonify({
             "stats": {
                 "mu": round(float(mu), 3) if mu else DEFAULT_MU,
@@ -1185,6 +1200,17 @@ def get_joueur_stats(nom):
                 "color": color if color else "#FFFFFF",
                 "ligue": {"nom": ligue_nom, "couleur": ligue_color} if ligue_nom else None
             },
+            # Le nom fait partie de la charge utile, pas seulement de l'URL :
+            # /joueur/<id> delegue a cette route et n'a aucune autre source pour
+            # le titre de la fiche. Sans lui, la page canonique affiche « None ».
+            "nom": nom,
+            # Cette route n'est pas cachee (c'est /classement qui l'est) :
+            # une edition de profil est donc visible immediatement.
+            "profil": profil,
+            # URL canonique. joueurs.nom bouge -- synchronisation d'un pseudo
+            # Discord, anonymisation, simple correction de faute de frappe -- et
+            # tout lien construit sur le nom meurt avec lui.
+            "url_canonique": "/joueur/%d" % jid,
             "historique": historique_data,
             "awards": awards_list,
             "palmares": palmares_list,
@@ -1194,6 +1220,43 @@ def get_joueur_stats(nom):
     except Exception as e:
         logger.error(f"Erreur serveur: {e}")
         return jsonify({"error": "Erreur interne du serveur"}), 500
+
+
+@public_bp.route('/joueur/<int:joueur_id>')
+def get_joueur_stats_par_id(joueur_id):
+    """Fiche joueur par identifiant : l'URL qui survit a un renommage.
+
+    Delegue a la route par nom plutot que de dupliquer trois cents lignes de
+    calcul. Le detour par le nom est le prix a payer pour ne pas entretenir deux
+    implementations qui finiraient par diverger.
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT nom FROM Joueurs WHERE id = %s", (joueur_id,))
+                row = cur.fetchone()
+    except Exception as e:
+        logger.error(f"Resolution du joueur {joueur_id}: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+    if row is None:
+        return jsonify({"error": "Joueur non trouvé"}), 404
+    return get_joueur_stats(row[0])
+
+
+@public_bp.route('/joueurs/resolve/<nom>')
+def resolve_joueur(nom):
+    """Nom -> identifiant. Sert la redirection 301 des anciennes URL."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, nom FROM Joueurs WHERE nom = %s", (nom,))
+                row = cur.fetchone()
+    except Exception:
+        return jsonify({"error": "Erreur serveur"}), 500
+    if row is None:
+        return jsonify({"error": "Joueur non trouvé"}), 404
+    return jsonify({"id": row[0], "nom": row[1]})
 
 
 @public_bp.route('/joueurs/noms')
@@ -1231,16 +1294,22 @@ def stats_joueurs():
                     if t in dist: dist[t] += 1
                     else: dist['U'] += 1
 
+                # Avatar : meme condition que profil_public -- compte
+                # `linked` uniquement. Un compte en attente n'a pas encore
+                # prouve qu'il est bien cette personne, son avatar n'a rien a
+                # faire en face de la fiche.
                 cur.execute("""
                     SELECT
                         j.nom, j.mu, j.sigma, j.tier,
                         COUNT(p.tournoi_id) as nb_tournois,
                         COALESCE(SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END), 0) as victoires,
                         AVG(p.score) as score_moyen,
-                        j.color
+                        j.color,
+                        c.discord_id, c.discord_avatar_hash
                     FROM joueurs j
                     LEFT JOIN participations p ON j.id = p.joueur_id
-                    GROUP BY j.id, j.nom, j.mu, j.sigma, j.tier
+                    LEFT JOIN comptes c ON c.joueur_id = j.id AND c.statut = 'linked'
+                    GROUP BY j.id, j.nom, j.mu, j.sigma, j.tier, c.discord_id, c.discord_avatar_hash
                     ORDER BY (j.mu - 3 * j.sigma) DESC;
                 """)
                 rows = cur.fetchall()
@@ -1256,7 +1325,11 @@ def stats_joueurs():
                 "nombre_tournois": row[4],
                 "victoires": row[5],
                 "score_moyen": round(float(row[6]), 1) if row[6] else 0.0,
-                "color": row[7] if row[7] else "#FFFFFF"
+                "color": row[7] if row[7] else "#FFFFFF",
+                # None quand personne n'est rattache : le gabarit affiche alors
+                # une pastille neutre. On ne fabrique pas d'avatar Discord par
+                # defaut ici -- il exigerait un snowflake qu'on n'a pas.
+                "avatar_url": avatar_url(row[8], row[9]) if row[8] else None
             })
 
         result = {"joueurs": joueurs, "distribution_tiers": dist}

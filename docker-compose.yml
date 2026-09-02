@@ -43,6 +43,13 @@ services:
       - ./backEnd/services.py:/app/services.py
       - ./backEnd/routes_public.py:/app/routes_public.py
       - ./backEnd/routes_admin.py:/app/routes_admin.py
+      # Le Dockerfile fait COPY *.py : un module absent de cette liste marche
+      # apres un build, puis reste FIGE — les editions sur l'hote ne sont plus
+      # prises en compte au restart, contrairement a tous les autres fichiers.
+      - ./backEnd/auth_discord.py:/app/auth_discord.py
+      - ./backEnd/routes_auth.py:/app/routes_auth.py
+      - ./backEnd/routes_comptes.py:/app/routes_comptes.py
+      - ./backEnd/routes_bot.py:/app/routes_bot.py
 
     environment:
       - PYTHONUNBUFFERED=1
@@ -51,6 +58,14 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
       - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
+      # OAuth Discord. DISCORD_REDIRECT_URI est fixe ici et jamais construit par
+      # url_for(_external=True) : Flask est derriere deux proxys sans ProxyFix
+      # et produirait du http://, que Discord refuse sans message utile.
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET:-}
+      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI:-}
+      # Amorcage du premier superadmin, sans effet des qu'il en existe un.
+      - DISCORD_SUPERADMIN_ID=${DISCORD_SUPERADMIN_ID:-}
     restart: unless-stopped
     deploy:
       resources:
@@ -72,6 +87,21 @@ services:
       - BACKEND_URL=http://backend:8080
       - SECRET_KEY=${SECRET_KEY}
       - TLS_MODE=${TLS_MODE:-http}
+      # Le frontend construit lui-meme l'URL d'autorisation Discord et affiche
+      # le bouton de connexion : sans ces deux variables, discord_configure est
+      # faux, la navbar n'offre aucune connexion et /auth/discord/login refuse.
+      # Le SECRET Discord, lui, reste au seul backend : le frontend n'echange
+      # aucun code, il delegue a /auth/discord/exchange.
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
+      - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI:-}
+      # Identite de l'editeur, affichee par /mentions-legales et
+      # /confidentialite. Le repli n'est PAS vide : une variable absente
+      # arriverait sinon comme une chaine vide, et la page legale afficherait
+      # un editeur blanc au lieu d'avouer qu'il manque.
+      - SITE_EDITEUR=${SITE_EDITEUR:-à renseigner}
+      - SITE_CONTACT=${SITE_CONTACT:-à renseigner}
+      - SITE_HEBERGEUR=${SITE_HEBERGEUR:-à renseigner}
+      - SITE_RETENTION_LOGS=${SITE_RETENTION_LOGS:-12 mois au maximum}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]

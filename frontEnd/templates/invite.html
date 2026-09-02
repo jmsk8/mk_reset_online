@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {# Un lien d'invitation n'a rien à faire dans un index de moteur de recherche. #}
+    <meta name="robots" content="noindex, nofollow">
+    {# Aperçu neutre : le chemin contient le token, on ne le met pas en vitrine. #}
+    <meta property="og:title" content="MK Reset — invitation">
+    <meta property="og:description" content="Rejoignez le classement MK Reset.">
+    <title>Invitation - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <section class="hero is-primary is-small animated-gradient">
+        <div class="hero-body">
+            <div class="container">
+                <h1 class="title is-2 has-text-centered glow-text">
+                    <i class="fas fa-envelope-open-text"></i> Invitation
+                </h1>
+                <h2 class="subtitle has-text-centered">
+                    Reliez votre compte Discord à votre fiche joueur
+                </h2>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-5">
+                    <div class="card glass-card fade-in">
+                        <div class="card-content">
+                            {% if invitation %}
+                                {% if invitation.joueur_nom %}
+                                    <p class="mb-4">
+                                        Cette invitation vous rattache au joueur
+                                        <strong>{{ invitation.joueur_nom }}</strong>.
+                                    </p>
+                                {% else %}
+                                    <p class="mb-4">
+                                        Connectez-vous avec Discord, puis indiquez quel joueur du
+                                        classement vous êtes. Un administrateur validera le
+                                        rattachement.
+                                    </p>
+                                {% endif %}
+
+                                <div class="content is-small has-text-grey">
+                                    <p>
+                                        <i class="fas fa-shield-halved"></i>
+                                        Seuls votre identifiant, votre pseudo et votre avatar Discord
+                                        sont récupérés. Ni adresse e-mail, ni liste de serveurs.
+                                    </p>
+                                </div>
+
+                                <label class="checkbox is-size-7 mb-3">
+                                    <input type="checkbox" id="cgu">
+                                    J'ai lu et j'accepte la
+                                    <a href="/confidentialite" target="_blank"
+                                       rel="noopener">politique de confidentialité</a>.
+                                </label>
+
+                                <a class="button is-primary is-fullwidth" id="btn-discord"
+                                   href="{{ url_for('discord_login', invite=invite_token, cgu=1) }}"
+                                   aria-disabled="true"
+                                   style="pointer-events:none;opacity:.5">
+                                    <span class="icon"><i class="fab fa-discord"></i></span>
+                                    <span>Se connecter avec Discord</span>
+                                </a>
+                            {% else %}
+                                <div class="notification is-warning is-light">
+                                    {% if motif == 'invitation_expiree' %}
+                                        Cette invitation a expiré.
+                                    {% elif motif == 'invitation_epuisee' %}
+                                        Cette invitation a déjà été utilisée.
+                                    {% elif motif == 'invitation_revoquee' %}
+                                        Cette invitation a été annulée.
+                                    {% elif motif == 'indisponible' %}
+                                        Service momentanément indisponible. Réessayez dans un instant.
+                                    {% else %}
+                                        Cette invitation est introuvable.
+                                    {% endif %}
+                                </div>
+                                <p class="has-text-grey is-size-7">
+                                    Demandez un nouveau lien à un administrateur.
+                                </p>
+                            {% endif %}
+                        </div>
+                        <div class="card-footer">
+                            <a href="/" class="card-footer-item">
+                                <span class="icon"><i class="fas fa-home"></i></span>
+                                <span>Retour à l'accueil</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.fade-in').forEach(e => e.classList.add('visible'));
+
+            // Le bouton reste inerte tant que la case n'est pas cochée. Le
+            // consentement est ensuite porté par le paramètre `cgu`, que la
+            // route de connexion mémorise en session.
+            const cgu = document.getElementById('cgu');
+            const btn = document.getElementById('btn-discord');
+            if (cgu && btn) {
+                cgu.addEventListener('change', () => {
+                    btn.style.pointerEvents = cgu.checked ? 'auto' : 'none';
+                    btn.style.opacity = cgu.checked ? '1' : '.5';
+                    btn.setAttribute('aria-disabled', cgu.checked ? 'false' : 'true');
+                });
+            }
+        });
+    </script>
+</body>
+</html>

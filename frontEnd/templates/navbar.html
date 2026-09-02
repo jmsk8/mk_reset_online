@@ -26,6 +26,60 @@
         }
     }
 
+    /* Messages flash en surimpression. Position fixe : le message ne doit pas
+       pousser la page vers le bas au chargement, sinon il deplace ce que la
+       personne est en train de lire. z-index au-dessus de la navbar (1000). */
+    #messages-flash {
+        position: fixed;
+        top: 4.25rem;
+        right: 1rem;
+        z-index: 1100;
+        width: 22rem;
+        max-width: calc(100vw - 2rem);
+        pointer-events: none;   /* la zone vide laisse passer les clics */
+    }
+
+    #messages-flash .notification {
+        pointer-events: auto;
+        margin-bottom: .75rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+        animation: flash-entree .25s ease-out;
+    }
+
+    #messages-flash .notification.sortant {
+        animation: flash-sortie .3s ease-in forwards;
+    }
+
+    @keyframes flash-entree {
+        from { opacity: 0; transform: translateX(1.5rem); }
+        to   { opacity: 1; transform: none; }
+    }
+
+    @keyframes flash-sortie {
+        from { opacity: 1; transform: none; }
+        to   { opacity: 0; transform: translateX(1.5rem); }
+    }
+
+    /* Sur telephone, la zone occupe toute la largeur sous la navbar. */
+    @media screen and (max-width: 768px) {
+        #messages-flash {
+            top: 4.75rem;
+            left: 1rem;
+            right: 1rem;
+            width: auto;
+        }
+    }
+
+    /* Une animation qui glisse peut declencher un malaise chez certaines
+       personnes ; le systeme le signale, on l'ecoute. La disparition
+       automatique, elle, reste. */
+    @media (prefers-reduced-motion: reduce) {
+        #messages-flash .notification,
+        #messages-flash .notification.sortant {
+            animation: none;
+        }
+    }
+
     @media screen and (max-width: 768px) {
         .navbar-brand {
             min-height: 4rem;
@@ -106,11 +160,65 @@
       </div>
 
       <div class="navbar-end">
-        {% if session.get('admin_token') %}
+        {# Compte joueur Discord. Indépendant de la session admin : les deux
+           cohabitent dans le même cookie pendant la bascule. #}
+        {% if compte_joueur %}
+          {# Cloche des notifications. Le contenu arrive par fetch APRES le
+             rendu : le faire cote serveur imposerait un appel au backend a
+             chaque page, pour une pastille. #}
+          <div class="navbar-item has-dropdown is-hoverable" id="zone-cloche">
+            <a class="navbar-link is-arrowless" title="Notifications">
+              <span class="icon"><i class="fas fa-bell"></i></span>
+              <span class="tag is-danger is-rounded ml-1 is-hidden" id="badge-notifs">0</span>
+            </a>
+            <div class="navbar-dropdown is-right" id="liste-notifs" style="min-width:22rem;max-width:90vw">
+              <div class="navbar-item has-text-grey">Chargement…</div>
+            </div>
+          </div>
+
+          <div class="navbar-item has-dropdown is-hoverable">
+            <a class="navbar-link">
+              {% if compte_joueur.avatar_url %}
+                <figure class="image is-24x24 mr-2">
+                  <img class="is-rounded" src="{{ compte_joueur.avatar_url }}"
+                       alt="" referrerpolicy="no-referrer"
+                       onerror="this.style.display='none'">
+                </figure>
+              {% endif %}
+              <span>{{ compte_joueur.pseudo }}</span>
+            </a>
+            <div class="navbar-dropdown is-right">
+              <a class="navbar-item" href="/mon-compte">
+                <i class="fas fa-id-card mr-2"></i> Mon compte
+              </a>
+              {# « Mon profil » mene a la fiche publique, pas a un ecran de
+                 reglages : sans fiche rattachee, il n'y a rien a montrer, donc
+                 l'entree cede la place au rattachement. #}
+              {% if compte_joueur.joueur_id %}
+                <a class="navbar-item" href="/joueur/{{ compte_joueur.joueur_id }}">
+                  <i class="fas fa-id-badge mr-2"></i> Mon profil
+                </a>
+              {% else %}
+                <a class="navbar-item has-text-info" href="/mon-compte/liaison">
+                  <i class="fas fa-link mr-2"></i> Me rattacher à un joueur
+                </a>
+              {% endif %}
+              {# La gestion des comptes vit dans le seul menu Admin : elle y est
+                 deja, et `est_admin` couvre aussi bien la session Discord que
+                 le mot de passe partage. #}
+              <hr class="navbar-divider">
+              <a class="navbar-item" href="/logout">
+                <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
+              </a>
+            </div>
+          </div>
+        {% endif %}
+        {% if est_admin %}
           <div class="navbar-item has-dropdown is-hoverable">
             <a class="navbar-link has-text-warning">
               <span class="icon"><i class="fas fa-user-shield"></i></span>
               <span>Admin</span>
+              <span class="tag is-danger is-rounded ml-2 is-hidden" id="badge-admin">0</span>
             </a>
             
             <div class="navbar-dropdown is-right">
@@ -128,6 +236,11 @@
               <a class="navbar-item" href="/admin/saisons-gestion">
                 <i class="fas fa-calendar-alt mr-2"></i> Gestion Saisons
               </a>
+
+              <a class="navbar-item" href="/admin/comptes">
+                <i class="fas fa-users-gear mr-2"></i> Gestion Comptes
+                <span class="tag is-danger is-rounded ml-2 is-hidden" id="badge-admin-comptes">0</span>
+              </a>
               
               <hr class="navbar-divider">
               
@@ -137,12 +250,14 @@
               
               <hr class="navbar-divider">
               
-              <a class="navbar-item" href="/admin/logout">
-                <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
-              </a>
+              {% if session.get('admin_token') %}
+                <a class="navbar-item" href="/admin/logout">
+                  <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
+                </a>
+              {% endif %}
             </div>
           </div>
-        {% else %}
+        {% elif not compte_joueur %}
           <div class="navbar-item">
             <a class="button is-primary" href="/admin">
               <span class="icon"><i class="fas fa-lock"></i></span>
@@ -150,10 +265,52 @@
             </a>
           </div>
         {% endif %}
+
+        {# Retour d'un joueur déjà inscrit. Sans ce bouton, le seul chemin vers
+           la connexion Discord était la page d'invitation — or l'invitation est
+           consommée : après une déconnexion ou l'expiration de la session, plus
+           personne ne pouvait revenir. Le bouton n'ouvre AUCUNE inscription :
+           créer un compte exige toujours une invitation valide, refusée côté
+           backend. #}
+        {% if not compte_joueur and discord_configure %}
+          <div class="navbar-item">
+            <a class="button is-link is-light" href="/auth/discord/login">
+              <span class="icon"><i class="fab fa-discord"></i></span>
+              <span>Se connecter</span>
+            </a>
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>
 </nav>
+
+{# Messages flash, affiches ICI et nulle part ailleurs.
+
+   Un flash reste en session tant qu'aucun rendu ne le consomme. Tant que
+   seules trois pages appelaient get_flashed_messages(), « Vous avez ete
+   deconnecte » attendait sagement dans le cookie et ressortait plus tard,
+   empile avec « Connecte en tant que ... », sur la premiere page qui daignait
+   les lire. La navbar est incluse par toutes les pages : le message est donc
+   consomme sur le rendu suivant, quel qu'il soit. #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {# Un echec doit rester lisible plus longtemps qu'une confirmation : on ne
+       relit pas « Enregistre » deux fois, on relit un message d'erreur. #}
+    {% set delais = {'success': 4000, 'info': 4000, 'warning': 6000, 'danger': 8000} %}
+    {# aria-live=polite : le lecteur d'ecran annonce le message sans couper la
+       parole, et role=status evite qu'il le prenne pour une alerte urgente. #}
+    <div id="messages-flash" role="status" aria-live="polite">
+      {% for category, message in messages %}
+        <div class="notification is-{{ category }} is-light"
+             data-delai="{{ delais.get(category, 5000) }}">
+          <button class="delete" aria-label="Fermer"></button>
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
 
 {% if session.get('admin_token') %}
 <div id="session-warning-modal" class="modal">
@@ -187,6 +344,140 @@
         });
       });
     }
+
+    // Disparition automatique des messages flash. Le compte a rebours se
+    // suspend au survol : un message de huit secondes qui s'evapore pendant
+    // qu'on le lit est pire que pas de message du tout.
+    document.querySelectorAll('#messages-flash .notification').forEach(bulle => {
+      const delai = parseInt(bulle.dataset.delai, 10) || 5000;
+      let minuteur;
+
+      const fermer = () => {
+        clearTimeout(minuteur);
+        bulle.classList.add('sortant');
+        // Repli si l'animation ne joue pas (mouvement reduit, onglet en
+        // arriere-plan) : sans lui, animationend ne vient jamais et la bulle
+        // resterait a l'ecran pour toujours.
+        const retrait = setTimeout(() => bulle.remove(), 400);
+        bulle.addEventListener('animationend', () => {
+          clearTimeout(retrait);
+          bulle.remove();
+        });
+      };
+
+      const armer = () => { minuteur = setTimeout(fermer, delai); };
+
+      bulle.querySelector('.delete').addEventListener('click', fermer);
+      bulle.addEventListener('mouseenter', () => clearTimeout(minuteur));
+      bulle.addEventListener('mouseleave', armer);
+      armer();
+    });
+
+    // ---- Notifications -----------------------------------------------
+    // Tout passe par textContent : ces textes sont figés en base, mais ils
+    // citent des noms de fiche et des motifs de refus saisis par des humains.
+    {% if compte_joueur %}
+    (async function () {
+      const badge = document.getElementById('badge-notifs');
+      const liste = document.getElementById('liste-notifs');
+      if (!badge || !liste) return;
+
+      const ICONES = {
+        liaison_approuvee: 'fa-circle-check has-text-success',
+        liaison_refusee:   'fa-circle-xmark has-text-danger',
+        liaison_annulee:   'fa-link-slash has-text-warning',
+        fiche_supprimee:   'fa-trash has-text-danger',
+        tournoi_ajoute:    'fa-flag-checkered has-text-info',
+        recap_publie:      'fa-scroll has-text-warning'
+      };
+
+      function ligne(n) {
+        const item = document.createElement('div');
+        item.className = 'navbar-item is-flex' + (n.lue ? ' has-text-grey' : '');
+        item.style.whiteSpace = 'normal';
+        item.style.alignItems = 'flex-start';
+
+        const ico = document.createElement('span');
+        ico.className = 'icon mr-2 mt-1';
+        ico.innerHTML = '<i class="fas ' + (ICONES[n.type] || 'fa-circle-info') + '"></i>';
+        item.appendChild(ico);
+
+        const bloc = document.createElement('div');
+        const t = document.createElement('strong');
+        t.textContent = n.titre;
+        bloc.appendChild(t);
+        if (n.corps) {
+          const c = document.createElement('p');
+          c.className = 'is-size-7';
+          c.textContent = n.corps;
+          bloc.appendChild(c);
+        }
+        const d = document.createElement('p');
+        d.className = 'is-size-7 has-text-grey';
+        d.textContent = new Date(n.created_at).toLocaleString('fr-FR');
+        bloc.appendChild(d);
+        item.appendChild(bloc);
+        return item;
+      }
+
+      let res;
+      try {
+        res = await (await fetch('/me/notifications')).json();
+      } catch (e) { return; }   // navbar muette plutôt que cassée
+
+      if (res.non_lues > 0) {
+        badge.textContent = res.non_lues;
+        badge.classList.remove('is-hidden');
+      }
+
+      liste.innerHTML = '';
+      if (!res.notifications || res.notifications.length === 0) {
+        const vide = document.createElement('div');
+        vide.className = 'navbar-item has-text-grey';
+        vide.textContent = 'Aucune notification.';
+        liste.appendChild(vide);
+        return;
+      }
+      res.notifications.forEach(n => liste.appendChild(ligne(n)));
+
+      if (res.non_lues > 0) {
+        liste.appendChild(document.createElement('hr')).className = 'navbar-divider';
+        const b = document.createElement('a');
+        b.className = 'navbar-item has-text-link';
+        b.textContent = 'Tout marquer comme lu';
+        b.addEventListener('click', async () => {
+          const csrf = document.querySelector('meta[name="csrf-token"]');
+          await fetch('/me/notifications/lues', {
+            method: 'POST',
+            headers: csrf ? {'X-CSRFToken': csrf.content} : {}
+          });
+          badge.classList.add('is-hidden');
+          b.remove();
+          liste.querySelectorAll('.navbar-item').forEach(i => i.classList.add('has-text-grey'));
+        });
+        liste.appendChild(b);
+      }
+    })();
+    {% endif %}
+
+    {% if est_admin %}
+    (async function () {
+      // Deux pastilles, une seule requête : l'onglet Admin porte le total,
+      // l'entrée Gestion Comptes le détail qui la concerne.
+      let res;
+      try {
+        res = await (await fetch('/admin/notifications')).json();
+      } catch (e) { return; }
+      const poser = (id, n) => {
+        const el = document.getElementById(id);
+        if (!el || !n) return;
+        el.textContent = n;
+        el.classList.remove('is-hidden');
+      };
+      poser('badge-admin', res.total);
+      poser('badge-admin-comptes', res.liaisons_en_attente);
+    })();
+    {% endif %}
 
     const remainingSeconds = {{ session_lifetime|default(1800)|round|int }};
     const warningBuffer = 60;

@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if url_canonique %}<link rel="canonical" href="{{ url_canonique }}">{% endif %}
     <title>Statistiques de {{ nom }}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -87,10 +88,48 @@
 <body>
     {% include 'navbar.html' %}
     
+    {% if profil and (profil.bio or profil.reseaux) %}
+        {# Contenu rédigé par le joueur : jamais |safe, jamais dans un attribut
+           d'événement. Les liens sont construits côté serveur à partir d'un
+           identifiant validé, ce qui rend impossible un href « javascript: ». #}
+        <section class="section pb-0">
+            <div class="container">
+                <div class="notification"
+                     {% if profil.couleur_accent %}style="border-left:4px solid {{ profil.couleur_accent }}"{% endif %}>
+                    {% if profil.bio %}
+                        <p style="white-space:pre-wrap">{{ profil.bio }}</p>
+                    {% endif %}
+                    {% if profil.reseaux %}
+                        <p class="mt-2">
+                            {% for cle, r in profil.reseaux.items() %}
+                                <a class="tag is-link is-light mr-1" href="{{ r.url }}"
+                                   target="_blank" rel="noopener noreferrer nofollow">
+                                    {{ cle }} · {{ r.handle }}
+                                </a>
+                            {% endfor %}
+                        </p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    {% endif %}
+
     <section class="hero is-primary is-small animated-gradient">
         <div class="hero-body">
             <div class="container">
-                <h1 class="title is-2 has-text-centered glow-text"><i class="fas fa-user"></i> {{ nom }}</h1>
+                <h1 class="title is-2 has-text-centered glow-text">
+                    {% if profil and profil.avatar_url %}
+                        {# referrerpolicy : sans ça, un <img> vers le CDN Discord
+                           transmettrait l'URL de la page visitée. #}
+                        <img src="{{ profil.avatar_url }}" alt=""
+                             referrerpolicy="no-referrer"
+                             style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:.5rem"
+                             onerror="this.style.display='none'">
+                    {% else %}
+                        <i class="fas fa-user"></i>
+                    {% endif %}
+                    {{ nom }}
+                </h1>
                 <h2 class="subtitle has-text-centered">
                     {% if stats.tier == 'S' %}<span class="tag tier-s">Tier S</span>
                     {% elif stats.tier == 'A' %}<span class="tag tier-a">Tier A</span>

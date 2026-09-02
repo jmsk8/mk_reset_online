@@ -176,6 +176,39 @@ body, html {
     background-color: rgba(59, 130, 246, 0.15) !important;
 }
 
+/* Bulma habille ses composants pour un fond CLAIR, avec des couleurs en dur.
+   Trois de ses regles passent devant le theme sombre et rendaient les pages
+   legales illisibles :
+
+   1. `.table.is-striped tbody tr:not(.is-selected):nth-child(2n)` pose un fond
+      #fafafa presque blanc — une ligne sur deux devenait du texte clair sur du
+      blanc. C'est le bug visible sur le tableau « Donnee / Origine / Pourquoi ».
+   2. `.content h1..h6` force #363636. Sa specificite (classe + element) bat
+      notre `.title`, donc les titres de section viraient au gris fonce.
+   3. `strong` force #363636 : tout le texte en gras s'effacait sur le fond.
+
+   Les surcharges ci-dessous sont ecrites a specificite egale ou superieure et
+   placees apres, plutot qu'a coups de !important. */
+.table.is-striped tbody tr:not(.is-selected):nth-child(2n) {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.table.is-striped.is-hoverable tbody tr:not(.is-selected):hover,
+.table.is-striped.is-hoverable tbody tr:not(.is-selected):hover:nth-child(2n) {
+    background-color: rgba(59, 130, 246, 0.15);
+}
+
+.content h1, .content h2, .content h3,
+.content h4, .content h5, .content h6 {
+    color: var(--header-text-color);
+}
+
+strong,
+.content strong,
+.content table th {
+    color: var(--text-color);
+}
+
 .title, .subtitle, .card-header-title {
     color: var(--header-text-color);
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);

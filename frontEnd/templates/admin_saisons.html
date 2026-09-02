@@ -136,7 +136,6 @@
 </head>
 <body>
     {% include 'navbar.html' %}
-    <script>const ADMIN_TOKEN = "{{ session.get('admin_token') }}";</script>
 
     <section class="section">
         <div class="container">
@@ -370,9 +369,11 @@
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
     async function api(url, method, body=null) {
+        // Pas d'en-tête d'auth ici : ces URL sont les routes proxy du frontend,
+        // qui ajoutent X-Admin-Token depuis la session serveur.
         const opts = {
             method: method,
-            headers: {'X-Admin-Token': ADMIN_TOKEN}
+            headers: {}
         };
         if (csrfToken) opts.headers['X-CSRFToken'] = csrfToken;
         if(body !== null) {

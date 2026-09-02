@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Me rattacher à un joueur - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-6">
+                    <div class="card glass-card fade-in">
+                        <div class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-link mr-2"></i> Quelle fiche joueur êtes-vous ?
+                            </p>
+                        </div>
+                        <div class="card-content">
+                            <div id="alerte"></div>
+
+                            {% if demande and demande.statut == 'pending' %}
+                                <div class="notification is-info is-light">
+                                    {% if demande.type == 'creation' %}
+                                        Vous avez demandé la création de la fiche
+                                        <strong>{{ demande.nom_demande }}</strong>.
+                                        Un administrateur doit la valider.
+                                    {% else %}
+                                        Vous avez déjà revendiqué <strong>{{ demande.joueur_nom }}</strong>.
+                                        Un administrateur doit la valider.
+                                    {% endif %}
+                                </div>
+                                <button class="button is-light" id="btn-annuler">
+                                    Annuler ma demande
+                                </button>
+                            {% elif joueurs %}
+                                <p class="mb-4 has-text-grey">
+                                    Seules les fiches non encore rattachées sont proposées.
+                                    Un administrateur validera votre demande.
+                                </p>
+
+                                <div class="field">
+                                    <label class="label" for="joueur">Fiche joueur</label>
+                                    <div class="control">
+                                        <div class="select is-fullwidth">
+                                            <select id="joueur">
+                                                <option value="">— choisir —</option>
+                                                {% for j in joueurs %}
+                                                    <option value="{{ j.id }}">{{ j.nom }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <label class="label" for="message">Message (facultatif)</label>
+                                    <div class="control">
+                                        <textarea class="textarea" id="message" rows="2" maxlength="500"
+                                                  placeholder="Un détail qui aide l'admin à vous reconnaître"></textarea>
+                                    </div>
+                                </div>
+
+                                <button class="button is-primary is-fullwidth" id="btn-envoyer">
+                                    <span class="icon"><i class="fas fa-paper-plane"></i></span>
+                                    <span>Envoyer ma demande</span>
+                                </button>
+                                <hr>
+                                {% include 'partiels/nouveau_joueur.html' %}
+                            {% else %}
+                                <div class="notification is-warning is-light">
+                                    Aucune fiche joueur n'est disponible à la revendication.
+                                </div>
+                                {% include 'partiels/nouveau_joueur.html' %}
+                            {% endif %}
+                        </div>
+                        <div class="card-footer">
+                            <a href="/mon-compte" class="card-footer-item">Retour à mon compte</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.fade-in').forEach(e => e.classList.add('visible'));
+
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+        const alerte = document.getElementById('alerte');
+
+        // textContent et non innerHTML : les messages d'erreur peuvent contenir
+        // un nom de joueur, donc du texte que l'on ne contrôle pas.
+        function afficher(type, texte) {
+            alerte.innerHTML = '';
+            const div = document.createElement('div');
+            div.className = 'notification is-' + type + ' is-light';
+            div.textContent = texte;
+            alerte.appendChild(div);
+        }
+
+        const btnEnvoyer = document.getElementById('btn-envoyer');
+        if (btnEnvoyer) {
+            btnEnvoyer.addEventListener('click', async () => {
+                const joueurId = document.getElementById('joueur').value;
+                if (!joueurId) { afficher('warning', 'Choisissez une fiche joueur.'); return; }
+                btnEnvoyer.classList.add('is-loading');
+                try {
+                    const res = await fetch('/auth/demande-liaison', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+                        body: JSON.stringify({
+                            joueur_id: parseInt(joueurId, 10),
+                            message: document.getElementById('message').value
+                        })
+                    });
+                    const data = await res.json();
+                    if (res.ok) { window.location.href = '/mon-compte'; }
+                    else { afficher('danger', data.error || 'La demande a échoué.'); }
+                } catch (e) {
+                    afficher('danger', 'Serveur injoignable.');
+                } finally {
+                    btnEnvoyer.classList.remove('is-loading');
+                }
+            });
+        }
+
+        const btnNouveau = document.getElementById('btn-nouveau');
+        if (btnNouveau) {
+            btnNouveau.addEventListener('click', async () => {
+                const question = 'Demander la création d\'une nouvelle fiche joueur ?\n\n'
+                    + '  nom proposé : {{ moi.pseudo }}\n\n'
+                    + 'Un administrateur doit valider : rien n\'est créé avant.\n'
+                    + 'Si votre fiche existe déjà, revendiquez-la plutôt — deux fiches '
+                    + 'pour une même personne fausseraient le classement.';
+                if (!confirm(question)) return;
+
+                btnNouveau.classList.add('is-loading');
+                try {
+                    const champMessage = document.getElementById('message');
+                    const res = await fetch('/auth/demande-creation', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+                        body: JSON.stringify({message: champMessage ? champMessage.value : ''})
+                    });
+                    const data = await res.json();
+                    if (res.ok) { window.location.href = '/mon-compte'; }
+                    else { afficher('danger', data.error || 'La demande a échoué.'); }
+                } catch (e) {
+                    afficher('danger', 'Serveur injoignable.');
+                } finally {
+                    btnNouveau.classList.remove('is-loading');
+                }
+            });
+        }
+
+        const btnAnnuler = document.getElementById('btn-annuler');
+        if (btnAnnuler) {
+            btnAnnuler.addEventListener('click', async () => {
+                btnAnnuler.classList.add('is-loading');
+                try {
+                    const res = await fetch('/auth/demande-liaison', {
+                        method: 'DELETE', headers: {'X-CSRFToken': csrf}
+                    });
+                    if (res.ok) { window.location.reload(); }
+                    else { afficher('danger', 'Annulation impossible.'); }
+                } finally {
+                    btnAnnuler.classList.remove('is-loading');
+                }
+            });
+        }
+    });
+    </script>
+</body>
+</html>
