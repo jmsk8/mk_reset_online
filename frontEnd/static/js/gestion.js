@@ -4,11 +4,9 @@ function escapeHtml(str) {
 }
 
 async function apiCall(endpoint, method = 'GET', body = null) {
+    // Pas d'en-tête d'auth : les endpoints visés sont les routes proxy du
+    // frontend, qui injectent X-Admin-Token depuis la session serveur.
     const headers = { 'Content-Type': 'application/json' };
-
-    if (typeof ADMIN_TOKEN !== 'undefined' && ADMIN_TOKEN) {
-        headers['X-Admin-Token'] = ADMIN_TOKEN;
-    }
 
     const csrfMeta = document.querySelector('meta[name="csrf-token"]');
     if (csrfMeta) {
@@ -148,6 +146,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
+// Dernier chargement de /admin/joueurs, indexe par id. deletePlayer() ne
+// recoit qu'un id par son onclick : sans ce cache, il faudrait un aller-retour
+// reseau juste pour savoir si la fiche porte l'identite de quelqu'un.
+const joueursCharges = {};
+
 async function loadPlayers() {
     const tbody = document.getElementById('playersTableBody');
     if (!tbody) return;
@@ -168,8 +171,16 @@ async function loadPlayers() {
     }
 
     res.forEach(player => {
+        joueursCharges[player.id] = player;
         const tr = document.createElement('tr');
         const tierClass = getTierColor(player.tier);
+
+        // Fiche rattachee a un compte Discord : ce n'est plus un simple nom
+        // dans un classement, c'est l'identite de quelqu'un qui se connecte.
+        const badgeCompte = player.compte_lie
+            ? `<span class="icon has-text-link ml-1" title="Compte Discord rattaché : `
+              + `${escapeHtml(player.compte_lie.pseudo)}"><i class="fab fa-discord"></i></span>`
+            : '';
         
         const rowOpacity = (player.is_ranked === false) ? 'style="opacity: 0.6;"' : '';
 
@@ -180,7 +191,7 @@ async function loadPlayers() {
             </td>
             <td class="has-text-white font-weight-bold" ${rowOpacity}>
                 <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background-color:${escapeHtml(player.color || '#fff')}; margin-right:8px; border:1px solid #555;"></span>
-                ${escapeHtml(player.nom || 'Inconnu')}
+                ${escapeHtml(player.nom || 'Inconnu')}${badgeCompte}
             </td>
             <td class="has-text-grey-light" ${rowOpacity}>
                 ${player.mu ? parseFloat(player.mu).toFixed(3) : '0.000'}
@@ -230,14 +241,59 @@ async function loadConfig() {
 }
 
 async function deletePlayer(id) {
+    const joueur = joueursCharges[id];
+
+    // Fiche rattachee : la personne perd sa fiche sans avoir rien demande, et
+    // son compte Discord retombe « sans fiche ». Ca merite mieux qu'un
+    // « Êtes-vous sûr ? » generique.
+    if (joueur && joueur.compte_lie) {
+        if (!confirm(
+            "⚠️ ATTENTION — cette fiche est rattachée à un compte Discord.\n\n"
+            + "  fiche  : " + (joueur.nom || '') + "\n"
+            + "  compte : " + joueur.compte_lie.pseudo + "\n\n"
+            + "La supprimer détachera ce compte : la personne se retrouvera "
+            + "sans fiche joueur et devra en revendiquer une nouvelle.\n"
+            + "Son compte Discord, lui, n'est pas supprimé.\n\n"
+            + "Continuer ?"
+        )) return;
+    }
+
     if(!confirm("Êtes-vous sûr de vouloir supprimer ce joueur définitivement ? (Irréversible)")) return;
-    
+
     const res = await apiCall(`/admin/joueurs/${id}`, 'DELETE');
     if(res.status === 'success') {
+        if (res.compte_delie) {
+            alert("Fiche supprimée. Le compte Discord « " + res.compte_delie.pseudo
+                  + " » a été détaché et repasse en « " + res.compte_delie.statut + " ».");
+        }
         loadPlayers();
-    } else {
-        alert("Erreur lors de la suppression: " + (res.error || ""));
+        return;
     }
+
+    // Le backend refuse de supprimer un joueur qui a un historique : retirer
+    // ses participations fausserait le classement de tous les autres, sans
+    // moyen de le recalculer. Il propose l'anonymisation à la place — encore
+    // faut-il pouvoir la déclencher d'ici.
+    if (res.code === 'historique_non_vide') {
+        if (!confirm(
+            (res.error || "") + "\n\n"
+            + "Anonymiser ce joueur à la place ?\n\n"
+            + "Son nom sera remplacé par un identifiant neutre. Ses statistiques, "
+            + "son classement et ses trophées restent strictement identiques.\n"
+            + "L'ancien nom ne pourra plus être ressaisi."
+        )) return;
+
+        const anon = await apiCall(`/admin/joueurs/${id}/anonymiser`, 'POST');
+        if (anon.status === 'success') {
+            alert(`✅ « ${anon.ancien_nom} » est désormais « ${anon.nouveau_nom} ».`);
+            loadPlayers();
+        } else {
+            alert("Erreur lors de l'anonymisation : " + (anon.error || ""));
+        }
+        return;
+    }
+
+    alert("Erreur lors de la suppression: " + (res.error || ""));
 }
 
 function openEditModal(id, nom, mu, sigma, isRanked, missed, color) {
@@ -325,7 +381,7 @@ async function applyGlobalReset() {
         const csrfHeaders = csrfMeta ? {'X-CSRFToken': csrfMeta.content} : {};
         const res = await fetch('/admin/global-reset', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN, ...csrfHeaders},
+            headers: {'Content-Type': 'application/json', ...csrfHeaders},
             body: JSON.stringify({
                 value: val,
                 date: dateStr
@@ -350,7 +406,7 @@ async function revertGlobalReset() {
     try {
         const csrfMeta2 = document.querySelector('meta[name="csrf-token"]');
         const csrfHeaders2 = csrfMeta2 ? {'X-CSRFToken': csrfMeta2.content} : {};
-        const res = await fetch('/admin/revert-global-reset', { method: 'POST', headers: {'X-Admin-Token': ADMIN_TOKEN, ...csrfHeaders2} });
+        const res = await fetch('/admin/revert-global-reset', { method: 'POST', headers: {...csrfHeaders2} });
         const data = await res.json();
         
         if (res.ok) {

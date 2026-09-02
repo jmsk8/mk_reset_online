@@ -3,4 +3,5 @@ psycopg2-binary==2.9.11
 trueskill==0.4.5
 numpy==2.0.2
 bcrypt==5.0.0
+requests==2.32.5
 gunicorn==23.0.0

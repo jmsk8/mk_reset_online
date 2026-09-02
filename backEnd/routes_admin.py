@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 import json
 import uuid
+import secrets
+import hashlib
 import logging
 from typing import Any
 from datetime import datetime, timedelta
@@ -19,7 +21,7 @@ from constants import (
     GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES, IP_VERSION_DEFAULT,
 )
 from db import get_db_connection, ADMIN_PASSWORD_HASH
-from auth import admin_required
+from auth import admin_required, admin_or_role_required
 from cache import invalidate_cache
 from utils import generate_unique_slug, extract_league_number
 from services import (
@@ -32,6 +34,30 @@ logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
 
+
+
+# Import depuis routes_comptes, comme routes_public le fait deja pour
+# profil_public : aucune boucle, routes_comptes n'importe rien d'ici.
+from routes_comptes import notifier_tous
+
+
+def _notifier_recap_publie(cur, saison_id):
+    """Annonce un recapitulatif, au moment ou il DEVIENT visible.
+
+    Pas a sa creation : POST /admin/saisons cree un brouillon (is_active =
+    false) que /recap ne liste pas. Annoncer la creation enverrait tout le
+    monde vers une page ou le recap n'apparait pas encore.
+    """
+    cur.execute("SELECT nom FROM saisons WHERE id = %s", (saison_id,))
+    row = cur.fetchone()
+    if row is None:
+        return
+    notifier_tous(
+        cur, 'recap_publie',
+        "Nouveau récapitulatif : %s" % row[0],
+        "Le récap est en ligne, avec son classement et ses trophées. "
+        "À lire dans « Récapitulatifs ».",
+    )
 
 
 @admin_bp.route('/admin-auth', methods=['POST'])
@@ -87,14 +113,14 @@ def admin_logout():
 
 
 @admin_bp.route('/admin/check-token', methods=['GET'])
-@admin_required
+@admin_or_role_required
 def check_token():
     return jsonify({"status": "valid"}), 200
 
 
 
 @admin_bp.route('/api/admin/fix-db-structure', methods=['GET'])
-@admin_required
+@admin_or_role_required
 def fix_db_structure():
     try:
         with get_db_connection() as conn:
@@ -123,7 +149,7 @@ def fix_db_structure():
 
 
 @admin_bp.route('/api/admin/global-reset', methods=['POST'])
-@admin_required
+@admin_or_role_required
 def apply_global_reset():
     data = request.get_json()
     try:
@@ -166,7 +192,7 @@ def apply_global_reset():
 
 
 @admin_bp.route('/api/admin/revert-global-reset', methods=['POST'])
-@admin_required
+@admin_or_role_required
 def revert_global_reset():
     try:
         with get_db_connection() as conn:
@@ -200,7 +226,7 @@ def revert_global_reset():
 
 
 @admin_bp.route('/admin/config', methods=['GET'])
-@admin_required
+@admin_or_role_required
 def get_config():
     try:
         with get_db_connection() as conn:
@@ -224,7 +250,7 @@ def get_config():
 
 
 @admin_bp.route('/admin/config', methods=['POST'])
-@admin_required
+@admin_or_role_required
 def update_config():
     data = request.get_json()
     try:
@@ -287,16 +313,21 @@ def update_config():
 
 
 @admin_bp.route('/admin/joueurs', methods=['GET'])
-@admin_required
+@admin_or_role_required
 def api_get_joueurs():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT j.id, j.nom, j.mu, j.sigma, j.tier, j.is_ranked, j.consecutive_missed, j.color,
-                           l.id, l.nom, l.couleur
+                           l.id, l.nom, l.couleur,
+                           -- Compte Discord rattache, s'il y en a un : la fiche
+                           -- n'est alors plus un simple nom dans un classement,
+                           -- c'est l'identite de quelqu'un qui se connecte.
+                           COALESCE(c.discord_global_name, c.discord_username), c.statut
                     FROM Joueurs j
                     LEFT JOIN Ligues l ON j.ligue_id = l.id
+                    LEFT JOIN comptes c ON c.joueur_id = j.id
                     ORDER BY j.nom ASC
                 """)
                 joueurs = [{
@@ -308,7 +339,8 @@ def api_get_joueurs():
                     "is_ranked": r[5],
                     "consecutive_missed": r[6] if r[6] is not None else 0,
                     "color": r[7] if r[7] else "#FFFFFF",
-                    "ligue": { "id": r[8], "nom": r[9], "couleur": r[10] } if r[8] else None
+                    "ligue": { "id": r[8], "nom": r[9], "couleur": r[10] } if r[8] else None,
+                    "compte_lie": { "pseudo": r[11], "statut": r[12] } if r[12] else None
                 } for r in cur.fetchall()]
         return jsonify(joueurs)
     except Exception as e:
@@ -317,7 +349,7 @@ def api_get_joueurs():
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['PUT'])
-@admin_required
+@admin_or_role_required
 def api_update_joueur(id):
     data = request.get_json()
     try:
@@ -339,22 +371,163 @@ def api_update_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['DELETE'])
-@admin_required
+@admin_or_role_required
 def api_delete_joueur(id):
+    """Supprime un joueur, sauf s'il a un historique de matchs.
+
+    Toutes les FK vers Joueurs sont en ON DELETE CASCADE : la suppression
+    emporte participations, awards, ghost_log et league_movements. Or le moteur
+    TrueSkill est incrémental — chaque tournoi part du mu/sigma courant et
+    l'écrase — et il n'existe aucune fonction de recalcul depuis zéro. Retirer
+    les participations d'un joueur rend donc le classement de TOUS les autres
+    définitivement faux, sans moyen de le reconstruire.
+    D'où le refus, et l'anonymisation offerte en alternative.
+    """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT nom FROM Joueurs WHERE id = %s", (id,))
+                row = cur.fetchone()
+                if row is None:
+                    conn.rollback()
+                    return jsonify({"error": "Joueur introuvable"}), 404
+
+                cur.execute("SELECT COUNT(*) FROM Participations WHERE joueur_id = %s", (id,))
+                nb_participations = cur.fetchone()[0]
+                if nb_participations > 0:
+                    conn.rollback()
+                    return jsonify({
+                        "error": (
+                            f"Ce joueur a participé à {nb_participations} tournoi(s). "
+                            "Le supprimer fausserait définitivement le classement de tous "
+                            "les autres joueurs, sans possibilité de le recalculer. "
+                            "Utilisez l'anonymisation à la place."
+                        ),
+                        "code": "historique_non_vide",
+                        "nb_participations": nb_participations,
+                        "alternative": f"/admin/joueurs/{id}/anonymiser",
+                    }), 409
+
+                # Compte Discord rattache : la FK est en ON DELETE SET NULL,
+                # donc la suppression seule laisserait un compte `statut =
+                # 'linked'` SANS fiche -- un etat que rien d'autre ne produit et
+                # qu'aucun ecran ne sait rattraper. On delie proprement, comme
+                # le fait /admin/comptes/<id>/delier, avant de supprimer.
+                cur.execute(
+                    """SELECT id, statut,
+                              COALESCE(discord_global_name, discord_username)
+                       FROM comptes WHERE joueur_id = %s FOR UPDATE""",
+                    (id,),
+                )
+                compte = cur.fetchone()
+                compte_delie = None
+                if compte is not None:
+                    compte_id, statut_compte, pseudo = compte
+                    # Une suspension est une decision independante : la relever
+                    # ici rouvrirait un acces que personne n'a demande a rouvrir.
+                    nouveau_statut = 'pending' if statut_compte == 'linked' else statut_compte
+                    cur.execute(
+                        """UPDATE comptes
+                           SET joueur_id = NULL, statut = %s,
+                               profil_synced_at = NULL, updated_at = now()
+                           WHERE id = %s""",
+                        (nouveau_statut, compte_id),
+                    )
+                    cur.execute(
+                        """INSERT INTO audit_admin (action, cible_type, cible_id, details)
+                           VALUES (%s, %s, %s, %s::jsonb)""",
+                        ('liaison_annulee', 'compte', compte_id,
+                         json.dumps({"joueur_id": id, "joueur_nom": row[0],
+                                     "statut": nouveau_statut,
+                                     "origine": "suppression_fiche"})),
+                    )
+                    cur.execute(
+                        """INSERT INTO notifications (compte_id, type, titre, corps)
+                           VALUES (%s, %s, %s, %s)""",
+                        (compte_id, 'fiche_supprimee',
+                         "Votre fiche joueur a été supprimée",
+                         "La fiche « %s » n'existe plus, et votre compte n'y est donc "
+                         "plus rattaché. Votre compte Discord, lui, est conservé : vous "
+                         "pouvez demander une nouvelle fiche depuis « Mon compte »."
+                         % row[0]),
+                    )
+                    compte_delie = {"id": compte_id, "pseudo": pseudo,
+                                    "statut": nouveau_statut}
+
                 cur.execute("DELETE FROM Joueurs WHERE id=%s", (id,))
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
-        return jsonify({"status": "success"})
-    except Exception:
+        return jsonify({"status": "success", "compte_delie": compte_delie})
+    except Exception as e:
+        logger.error(f"Erreur suppression joueur {id}: {e}")
         return jsonify({"error": "Erreur serveur"}), 400
 
 
+@admin_bp.route('/admin/joueurs/<int:id>/anonymiser', methods=['POST'])
+@admin_or_role_required
+def api_anonymiser_joueur(id):
+    """Détache l'identité d'un joueur sans toucher à son dossier sportif.
+
+    Alternative à la suppression : aucun nom de joueur n'étant dénormalisé
+    (participations, awards, ghost_log et league_movements référencent tous
+    joueur_id), un simple UPDATE du nom se propage partout et laisse les stats,
+    le TrueSkill et les awards strictement identiques.
+
+    Le suffixe aléatoire évite la collision avec un joueur qui porterait
+    littéralement « Joueur #12 » — joueurs.nom est UNIQUE.
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT nom FROM Joueurs WHERE id = %s", (id,))
+                row = cur.fetchone()
+                if row is None:
+                    conn.rollback()
+                    return jsonify({"error": "Joueur introuvable"}), 404
+                ancien_nom = row[0]
+
+                for _ in range(5):
+                    nouveau_nom = f"Joueur #{id}-{secrets.token_hex(2)}"
+                    cur.execute("SELECT 1 FROM Joueurs WHERE lower(nom) = lower(%s)", (nouveau_nom,))
+                    if cur.fetchone() is None:
+                        break
+                else:
+                    conn.rollback()
+                    return jsonify({"error": "Impossible de générer un nom libre"}), 500
+
+                cur.execute(
+                    "UPDATE Joueurs SET nom = %s, color = %s, anonymise_at = now() WHERE id = %s",
+                    (nouveau_nom, '#FFFFFF', id),
+                )
+                # On verrouille l'ancien nom par son empreinte, jamais en clair :
+                # sans ca, le ressaisir dans le formulaire de tournoi recreerait
+                # a la volee une fiche portant l'identite qu'on vient d'effacer.
+                cur.execute(
+                    "INSERT INTO noms_interdits (nom_hash) VALUES (%s) ON CONFLICT DO NOTHING",
+                    (hashlib.sha256(ancien_nom.strip().lower().encode('utf-8')).hexdigest(),),
+                )
+                cur.execute(
+                    """INSERT INTO audit_admin (action, cible_type, cible_id, details)
+                       VALUES (%s, %s, %s, %s::jsonb)""",
+                    ('joueur_anonymise', 'joueur', id, json.dumps({"nouveau_nom": nouveau_nom})),
+                )
+            conn.commit()
+            invalidate_cache()
+
+        logger.info(f"Joueur {id} anonymisé")
+        return jsonify({
+            "status": "success",
+            "ancien_nom": ancien_nom,
+            "nouveau_nom": nouveau_nom,
+        })
+    except Exception as e:
+        logger.error(f"Erreur anonymisation joueur {id}: {e}")
+        return jsonify({"error": "Erreur serveur"}), 500
+
+
 @admin_bp.route('/admin/joueurs', methods=['POST'])
-@admin_required
+@admin_or_role_required
 def api_add_joueur():
     data = request.get_json()
     try:
@@ -392,7 +565,7 @@ def api_add_joueur():
 
 
 @admin_bp.route('/admin/types-awards', methods=['GET'])
-@admin_required
+@admin_or_role_required
 def get_admin_award_types():
     try:
         with get_db_connection() as conn:
@@ -407,7 +580,7 @@ def get_admin_award_types():
 
 
 @admin_bp.route('/admin/saisons', methods=['GET', 'POST'])
-@admin_required
+@admin_or_role_required
 def admin_saisons():
     if request.method == 'GET':
         with get_db_connection() as conn:
@@ -503,7 +676,7 @@ def admin_saisons():
 
 
 @admin_bp.route('/admin/saisons/<int:saison_id>', methods=['DELETE'])
-@admin_required
+@admin_or_role_required
 def delete_saison(saison_id):
     try:
         with get_db_connection() as conn:
@@ -562,7 +735,7 @@ def delete_saison(saison_id):
 
 
 @admin_bp.route('/admin/count-tournois-range', methods=['GET'])
-@admin_required
+@admin_or_role_required
 def count_tournois_by_range():
     d_debut = request.args.get('date_debut')
     d_fin = request.args.get('date_fin')
@@ -590,7 +763,7 @@ def count_tournois_by_range():
 
 
 @admin_bp.route('/admin/saisons/<int:id>/count-tournois', methods=['GET'])
-@admin_required
+@admin_or_role_required
 def count_tournois_by_mode(id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -620,7 +793,7 @@ def count_tournois_by_mode(id):
 
 
 @admin_bp.route('/admin/saisons/<int:id>/save-awards', methods=['POST'])
-@admin_required
+@admin_or_role_required
 def save_season_awards(id):
     data = request.get_json() or {}
     move_criterion = data.get('move_criterion')
@@ -704,6 +877,7 @@ def save_season_awards(id):
                             """, (id, m['joueur_id'], from_ligue_id, to_ligue_id, m['from'], m['to'], m['direction']))
 
                 cur.execute("UPDATE saisons SET is_active = true WHERE id = %s", (id,))
+                _notifier_recap_publie(cur, id)
 
             elif saison_ligue_id:
                 cur.execute("""
@@ -805,6 +979,7 @@ def save_season_awards(id):
                                     """, (id, m['joueur_id'], from_ligue_id, to_ligue_id, m['from'], m['to'], m['direction']))
 
                 cur.execute("UPDATE saisons SET is_active = true WHERE id = %s", (id,))
+                _notifier_recap_publie(cur, id)
 
         conn.commit()
         invalidate_cache()
@@ -819,7 +994,7 @@ def save_season_awards(id):
 
 
 @admin_bp.route('/add-tournament', methods=['POST'])
-@admin_required
+@admin_or_role_required
 def add_tournament():
     data = request.get_json()
     date_tournoi_str = data.get('date')
@@ -888,6 +1063,21 @@ def add_tournament():
                     if res:
                         jid, mu, sigma = res
                     else:
+                        # Nom inconnu : creation a la volee, sauf s'il s'agit
+                        # d'une identite anonymisee. La recreer ferait
+                        # reapparaitre ce qu'on venait d'effacer, et repartirait
+                        # sur un doublon avec un mu/sigma par defaut.
+                        cur.execute(
+                            "SELECT 1 FROM noms_interdits WHERE nom_hash = %s",
+                            (hashlib.sha256(nom.strip().lower().encode('utf-8')).hexdigest(),),
+                        )
+                        if cur.fetchone() is not None:
+                            conn.rollback()
+                            return jsonify({
+                                "error": "Le nom « %s » correspond a un joueur anonymise et ne "
+                                         "peut pas etre recree. Choisissez un autre nom." % nom,
+                                "code": "nom_interdit",
+                            }), 409
                         cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked) VALUES (%s, %s, %s, 'U', true) RETURNING id", (nom, DEFAULT_MU, DEFAULT_SIGMA))
                         jid, mu, sigma = cur.fetchone()[0], DEFAULT_MU, DEFAULT_SIGMA
                     joueurs_ratings[nom] = trueskill.Rating(mu=float(mu), sigma=float(sigma))
@@ -1058,6 +1248,16 @@ def add_tournament():
                         WHERE j.id = data.id
                     """, absent_updates)
 
+                # Dans la transaction, comme toutes les autres notifications :
+                # un rollback ne doit pas laisser l'annonce d'un tournoi qui
+                # n'a finalement pas ete enregistre.
+                notifier_tous(
+                    cur, 'tournoi_ajoute',
+                    "Nouveau tournoi du %s" % date_tournoi.strftime('%d/%m/%Y'),
+                    "%d joueurs y ont participé. Classement et TrueSkill sont à jour."
+                    % len(joueurs_data),
+                )
+
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -1069,7 +1269,7 @@ def add_tournament():
 
 
 @admin_bp.route('/api/admin/revert-last-tournament', methods=['POST'])
-@admin_required
+@admin_or_role_required
 def revert_last_tournament():
     try:
         with get_db_connection() as conn:
@@ -1115,7 +1315,7 @@ def revert_last_tournament():
 
 
 @admin_bp.route('/delete-tournament/<int:id>', methods=['DELETE'])
-@admin_required
+@admin_or_role_required
 def delete_tournament(id):
     try:
         with get_db_connection() as conn:
@@ -1169,7 +1369,7 @@ def delete_tournament(id):
 
 
 @admin_bp.route('/admin/ligues/setup', methods=['POST'])
-@admin_required
+@admin_or_role_required
 def setup_ligues():
     data = request.get_json()
     ligues_data = data.get('ligues', [])
@@ -1237,7 +1437,7 @@ def setup_ligues():
 
 
 @admin_bp.route('/admin/ligues/draft-simulation', methods=['GET'])
-@admin_required
+@admin_or_role_required
 def draft_simulation():
     force_reset = request.args.get('force_reset') == 'true'
 

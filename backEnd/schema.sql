@@ -4,6 +4,15 @@ SET standard_conforming_strings = on;
 SET client_min_messages = warning;
 SET row_security = off;
 
+DROP TABLE IF EXISTS public.noms_interdits CASCADE;
+DROP TABLE IF EXISTS public.service_tokens CASCADE;
+DROP TABLE IF EXISTS public.audit_admin CASCADE;
+DROP TABLE IF EXISTS public.sessions_joueurs CASCADE;
+DROP TABLE IF EXISTS public.profils CASCADE;
+DROP TABLE IF EXISTS public.notifications CASCADE;
+DROP TABLE IF EXISTS public.liaisons_demandes CASCADE;
+DROP TABLE IF EXISTS public.comptes CASCADE;
+DROP TABLE IF EXISTS public.invitations CASCADE;
 DROP TABLE IF EXISTS public.ghost_log CASCADE;
 DROP TABLE IF EXISTS public.awards_obtenus CASCADE;
 DROP TABLE IF EXISTS public.participations CASCADE;
@@ -54,7 +63,10 @@ CREATE TABLE public.joueurs (
     consecutive_missed integer DEFAULT 0,
     is_ranked boolean DEFAULT true,
     color character varying(7) DEFAULT '#FFFFFF',
-    ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL
+    ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
+    -- Marqueur d'identite retiree : empeche add_tournament de recreer a la
+    -- volee une fiche portant un nom qu'on vient d'anonymiser.
+    anonymise_at timestamp with time zone
 );
 ALTER TABLE public.joueurs OWNER TO CURRENT_USER;
 
@@ -207,6 +219,160 @@ CREATE TABLE public.awards_obtenus (
 );
 ALTER TABLE public.awards_obtenus OWNER TO CURRENT_USER;
 CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus (joueur_id, saison_id, award_id) WHERE ligue_id IS NULL;
+
+-- ===========================================================================
+-- AUTHENTIFICATION DISCORD ET COMPTES JOUEURS
+-- ---------------------------------------------------------------------------
+-- Separation IDENTITE / DOSSIER SPORTIF : comptes + profils + sessions_joueurs
+-- decrivent la personne ; joueurs reste un competiteur pseudonyme. Supprimer un
+-- compte n'altere donc jamais l'historique des matchs ni le classement.
+--
+-- Ces tables sont en TIMESTAMPTZ alors que le reste du schema est en TIMESTAMP
+-- naif : cote Python, utiliser exclusivement datetime.now(timezone.utc) pour
+-- elles, et ne jamais melanger les deux conventions dans une comparaison.
+-- Voir aussi migrations/2026-09-02_auth_discord.sql (meme contenu, applique a
+-- la main sur une base existante).
+-- ===========================================================================
+
+-- INVITATIONS -- le seul moyen d'entrer. Le token brut n'est JAMAIS stocke.
+CREATE TABLE public.invitations (
+    id          SERIAL PRIMARY KEY,
+    token_hash  CHAR(64) NOT NULL UNIQUE,
+    label       character varying(100),
+    joueur_id   integer REFERENCES public.joueurs(id) ON DELETE SET NULL,
+    max_uses    integer NOT NULL DEFAULT 1,
+    uses        integer NOT NULL DEFAULT 0,
+    expires_at  timestamp with time zone NOT NULL,
+    revoked_at  timestamp with time zone,
+    created_at  timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT invitations_uses_positifs CHECK (uses >= 0 AND max_uses >= 1)
+);
+
+CREATE INDEX idx_invitations_expires ON public.invitations(expires_at);
+
+-- COMPTES -- la personne : miroir Discord, role, rattachement au joueur.
+CREATE TABLE public.comptes (
+    id                   SERIAL PRIMARY KEY,
+    -- Snowflake Discord : TEXTE obligatoire, depasse 2^53 et se corrompt en JS.
+    discord_id           character varying(32) NOT NULL UNIQUE,
+    discord_username     character varying(64),
+    discord_global_name  character varying(64),
+    discord_avatar_hash  character varying(64),
+    joueur_id            integer UNIQUE REFERENCES public.joueurs(id) ON DELETE SET NULL,
+    statut               character varying(20) NOT NULL DEFAULT 'pending',
+    -- Seule frontiere de privilege de l'application.
+    role                 character varying(20) NOT NULL DEFAULT 'player',
+    invitation_id        integer REFERENCES public.invitations(id) ON DELETE SET NULL,
+    cgu_accepted_at      timestamp with time zone,
+    cgu_version          character varying(20),
+    -- Rafraichi a chaque connexion, sans effet sur le site.
+    discord_synced_at    timestamp with time zone,
+    -- Derniere propagation ADMIN du pseudo vers joueurs.nom (jamais automatique).
+    profil_synced_at     timestamp with time zone,
+    created_at           timestamp with time zone NOT NULL DEFAULT now(),
+    updated_at           timestamp with time zone NOT NULL DEFAULT now(),
+    last_login_at        timestamp with time zone,
+    CONSTRAINT comptes_role_valide   CHECK (role   IN ('player', 'admin', 'superadmin')),
+    CONSTRAINT comptes_statut_valide CHECK (statut IN ('pending', 'linked', 'rejected', 'suspended'))
+);
+
+CREATE INDEX idx_comptes_role ON public.comptes(role) WHERE role <> 'player';
+
+-- LIAISONS_DEMANDES -- file d'attente du rattachement compte <-> joueur.
+CREATE TABLE public.liaisons_demandes (
+    id          SERIAL PRIMARY KEY,
+    compte_id   integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
+    -- NULL = demande de CREATION : la fiche n'existe pas encore, son nom est
+    -- dans nom_demande. La contrainte plus bas impose l'un ou l'autre.
+    joueur_id   integer REFERENCES public.joueurs(id) ON DELETE CASCADE,
+    nom_demande character varying(255),
+    statut      character varying(20) NOT NULL DEFAULT 'pending',
+    message     text,
+    created_at  timestamp with time zone NOT NULL DEFAULT now(),
+    decided_at  timestamp with time zone,
+    decided_by  integer REFERENCES public.comptes(id) ON DELETE SET NULL,
+    CONSTRAINT liaisons_statut_valide CHECK (statut IN ('pending', 'approved', 'rejected')),
+    CONSTRAINT liaisons_cible_exclusive CHECK ((joueur_id IS NULL) <> (nom_demande IS NULL))
+);
+
+CREATE UNIQUE INDEX idx_liaison_pending_compte ON public.liaisons_demandes(compte_id) WHERE statut = 'pending';
+CREATE UNIQUE INDEX idx_liaison_pending_joueur ON public.liaisons_demandes(joueur_id) WHERE statut = 'pending';
+
+-- NOTIFICATIONS -- ce qu'un admin a decide sur le dos de quelqu'un.
+-- Texte fige a l'emission : une notification parle souvent d'une chose qui
+-- n'existe plus (la fiche supprimee, la demande refusee), et la reconstruire
+-- par jointure afficherait « votre demande pour (null) ».
+CREATE TABLE public.notifications (
+    id          SERIAL PRIMARY KEY,
+    compte_id   integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
+    type        character varying(40) NOT NULL,
+    titre       character varying(160) NOT NULL,
+    corps       text,
+    created_at  timestamp with time zone NOT NULL DEFAULT now(),
+    lu_at       timestamp with time zone
+);
+CREATE INDEX idx_notifications_non_lues ON public.notifications(compte_id) WHERE lu_at IS NULL;
+CREATE INDEX idx_notifications_compte_date ON public.notifications(compte_id, created_at DESC);
+
+-- PROFILS -- tout le contenu genere par l'utilisateur, purgeable d'un DELETE.
+-- Pas d'avatar : il vient du CDN Discord via comptes.discord_avatar_hash.
+CREATE TABLE public.profils (
+    compte_id       integer PRIMARY KEY REFERENCES public.comptes(id) ON DELETE CASCADE,
+    bio             character varying(500),
+    banniere_path   character varying(255),
+    couleur_accent  CHAR(7),
+    reseaux         jsonb NOT NULL DEFAULT '{}'::jsonb,
+    updated_at      timestamp with time zone NOT NULL DEFAULT now()
+);
+
+-- SESSIONS_JOUEURS -- remplacante d'api_tokens : token stocke en sha256 seul,
+-- et expiration ABSOLUE (aucune route de renouvellement).
+CREATE TABLE public.sessions_joueurs (
+    token_hash    CHAR(64) PRIMARY KEY,
+    compte_id     integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
+    created_at    timestamp with time zone NOT NULL DEFAULT now(),
+    expires_at    timestamp with time zone NOT NULL,
+    last_seen_at  timestamp with time zone,
+    -- Pas d'IP : user_agent suffit a un ecran "vos sessions actives".
+    user_agent    character varying(255)
+);
+
+CREATE INDEX idx_sessions_joueurs_compte  ON public.sessions_joueurs(compte_id);
+CREATE INDEX idx_sessions_joueurs_expires ON public.sessions_joueurs(expires_at);
+
+-- AUDIT_ADMIN -- accountability RGPD (art. 5.2), changements de role et
+-- synchronisations de profil.
+CREATE TABLE public.audit_admin (
+    id               SERIAL PRIMARY KEY,
+    action           character varying(50) NOT NULL,
+    acteur_compte_id integer REFERENCES public.comptes(id) ON DELETE SET NULL,
+    cible_type       character varying(30),
+    cible_id         integer,
+    details          jsonb,
+    created_at       timestamp with time zone NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_audit_admin_created ON public.audit_admin(created_at DESC);
+
+-- NOMS_INTERDITS -- sha256(lower(nom)) des identites anonymisees, jamais le nom
+-- en clair : empeche add_tournament de recreer a la volee une fiche portant un
+-- nom qu'on vient tout juste d'effacer.
+CREATE TABLE public.noms_interdits (
+    nom_hash    CHAR(64) PRIMARY KEY,
+    created_at  timestamp with time zone NOT NULL DEFAULT now()
+);
+
+-- SERVICE_TOKENS -- authentification machine des bots Discord.
+CREATE TABLE public.service_tokens (
+    id           SERIAL PRIMARY KEY,
+    token_hash   CHAR(64) NOT NULL UNIQUE,
+    nom          character varying(64) NOT NULL,
+    scopes       text[] NOT NULL DEFAULT '{}',
+    expires_at   timestamp with time zone,
+    revoked_at   timestamp with time zone,
+    last_used_at timestamp with time zone,
+    created_at   timestamp with time zone NOT NULL DEFAULT now()
+);
 
 -- INDEXES PERFORMANCE
 CREATE INDEX idx_participations_joueur_id ON public.participations(joueur_id);

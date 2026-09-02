@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Mon compte - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-6">
+                    <div class="card glass-card fade-in">
+                        <div class="card-content">
+                            <div class="media">
+                                <div class="media-left">
+                                    <figure class="image is-64x64">
+                                        {# referrerpolicy : un <img> vers le CDN Discord
+                                           transmettrait sinon l'URL de la page visitée. #}
+                                        <img class="is-rounded" src="{{ moi.avatar_url }}"
+                                             alt="" referrerpolicy="no-referrer">
+                                    </figure>
+                                </div>
+                                <div class="media-content">
+                                    {# Jamais |safe : le pseudo vient de Discord,
+                                       il est librement modifiable par son porteur. #}
+                                    <p class="title is-4">{{ moi.pseudo }}</p>
+                                    <p class="subtitle is-6 has-text-grey">
+                                        {% if moi.role == 'superadmin' %}
+                                            <span class="tag is-danger">Super-administrateur</span>
+                                        {% elif moi.role == 'admin' %}
+                                            <span class="tag is-warning">Administrateur</span>
+                                        {% endif %}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <hr>
+
+                            <div class="content">
+                                <p><strong>Fiche joueur</strong></p>
+                                {% if moi.joueur_nom %}
+                                    {# Le nom de la fiche n'est pas repete ici : « Mon profil »
+                                       dans la navbar y mene deja. #}
+                                    <p>
+                                        <span class="icon has-text-success">
+                                            <i class="fas fa-circle-check"></i></span>
+                                        Votre compte est synchronisé.
+                                    </p>
+                                {% elif demande and demande.statut == 'pending' %}
+                                    <div class="notification is-info is-light">
+                                        Votre compte n'est pas encore synchronisé :
+                                        {% if demande.type == 'creation' %}
+                                            vous avez demandé la création de la fiche
+                                            <strong>{{ demande.nom_demande }}</strong>,
+                                        {% else %}
+                                            vous avez revendiqué la fiche
+                                            <strong>{{ demande.joueur_nom }}</strong>,
+                                        {% endif %}
+                                        un administrateur doit encore la valider.
+                                    </div>
+                                {% elif demande and demande.statut == 'rejected' %}
+                                    <div class="notification is-warning is-light">
+                                        Votre compte n'est pas synchronisé : votre demande pour
+                                        <strong>{{ demande.nom_demande or demande.joueur_nom }}</strong>
+                                        a été refusée.
+                                    </div>
+                                    <a class="button is-primary" href="/mon-compte/liaison">
+                                        Faire une nouvelle demande
+                                    </a>
+                                {% else %}
+                                    <p class="has-text-grey">
+                                        <span class="icon"><i class="fas fa-circle-xmark"></i></span>
+                                        Votre compte n'est pas synchronisé avec une fiche joueur.
+                                    </p>
+                                    <a class="button is-primary" href="/mon-compte/liaison">
+                                        <span class="icon"><i class="fas fa-link"></i></span>
+                                        <span>Me rattacher à un joueur</span>
+                                    </a>
+                                {% endif %}
+                            </div>
+
+                            <hr>
+
+                            <div id="banniere-cgu"></div>
+
+                            <p class="has-text-weight-semibold">Vos données</p>
+                            <div class="buttons mt-2">
+                                <a class="button is-light is-small" href="/mon-compte/export">
+                                    <span class="icon"><i class="fas fa-download"></i></span>
+                                    <span>Télécharger mes données</span>
+                                </a>
+                                <button class="button is-danger is-light is-small" id="btn-supprimer">
+                                    <span class="icon"><i class="fas fa-user-slash"></i></span>
+                                    <span>Supprimer mon compte</span>
+                                </button>
+                            </div>
+                            <div id="alerte-rgpd"></div>
+
+                            <div class="content is-small has-text-grey mt-4">
+                                <p>
+                                    <i class="fas fa-shield-halved"></i>
+                                    Les seules données récupérées auprès de Discord sont votre
+                                    identifiant, votre pseudo et votre avatar. Ni adresse e-mail,
+                                    ni liste de serveurs. Votre pseudo affiché sur le classement
+                                    n'est modifié que par un administrateur.
+                                </p>
+                                <p>
+                                    Supprimer votre compte efface votre identité Discord et votre
+                                    profil, mais <strong>conserve votre pseudo de jeu et votre
+                                    historique de tournois</strong> — les retirer fausserait le
+                                    classement de tous les autres joueurs.
+                                    <a href="/confidentialite">Pourquoi, en détail</a>.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <a href="/logout" class="card-footer-item has-text-danger">
+                                <span class="icon"><i class="fas fa-sign-out-alt"></i></span>
+                                <span>Se déconnecter</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.fade-in').forEach(e => e.classList.add('visible'));
+
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+        const alerte = document.getElementById('alerte-rgpd');
+
+        function afficher(type, texte) {
+            alerte.innerHTML = '';
+            const d = document.createElement('div');
+            d.className = 'notification is-' + type + ' is-light mt-2';
+            d.textContent = texte;
+            alerte.appendChild(d);
+        }
+
+        // Consentement à redemander : compte antérieur à la politique, ou
+        // nouvelle version publiée depuis.
+        {% if moi.cgu_a_accepter %}
+        (function () {
+            const zone = document.getElementById('banniere-cgu');
+            const n = document.createElement('div');
+            n.className = 'notification is-info is-light';
+            const p = document.createElement('p');
+            p.className = 'is-size-7';
+            p.textContent = 'Merci de prendre connaissance de la politique de confidentialité.';
+            const lien = document.createElement('a');
+            lien.href = '/confidentialite'; lien.textContent = ' La lire.';
+            p.appendChild(lien);
+            const b = document.createElement('button');
+            b.className = 'button is-info is-small mt-2';
+            b.textContent = 'J’accepte';
+            b.addEventListener('click', async () => {
+                b.classList.add('is-loading');
+                const res = await fetch('/me/cgu', {method: 'POST', headers: {'X-CSRFToken': csrf}});
+                if (res.ok) { zone.innerHTML = ''; }
+                else { b.classList.remove('is-loading'); afficher('danger', 'Enregistrement impossible.'); }
+            });
+            n.appendChild(p); n.appendChild(b);
+            zone.appendChild(n);
+        })();
+        {% endif %}
+
+        document.getElementById('btn-supprimer').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            if (!confirm(
+                "Supprimer définitivement votre compte ?\n\n"
+                + "Seront effacés : votre identité Discord, votre profil et vos sessions.\n"
+                + "Seront conservés : votre pseudo de jeu et votre historique de tournois.\n\n"
+                + "Cette action est irréversible."
+            )) return;
+            if (!confirm("Dernière confirmation : supprimer le compte ?")) return;
+
+            btn.classList.add('is-loading');
+            try {
+                const res = await fetch('/mon-compte/supprimer', {
+                    method: 'POST', headers: {'X-CSRFToken': csrf}
+                });
+                if (res.ok) { window.location.href = '/'; }
+                else {
+                    const d = await res.json();
+                    afficher('danger', d.error || 'La suppression a échoué.');
+                }
+            } catch (err) {
+                afficher('danger', 'Serveur injoignable.');
+            } finally {
+                btn.classList.remove('is-loading');
+            }
+        });
+    });
+    </script>
+</body>
+</html>

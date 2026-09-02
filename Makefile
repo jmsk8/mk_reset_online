@@ -169,8 +169,11 @@ ps:                  ## Show running containers
 
 # ── Database ─────────────────────────────────
 
+# L'expansion doit avoir lieu DANS le conteneur, comme pour DB_STATUS : sur
+# l'hôte, make ne lit pas le .env, les deux variables y sont vides et psql
+# reçoit « -U -d », d'où un « role "-d" does not exist » incompréhensible.
 db-shell:            ## Open psql shell
-	$(COMPOSE) exec db psql -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+	$(COMPOSE) exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
 db-dump:             ## Dump the running database into dumps/ (NAME=... to pick the file name)
 	@bash scripts/db-dump.sh $(NAME)
@@ -180,7 +183,7 @@ db-example:          ## Rebuild the fictional example dump (backEnd/dump.sql)
 
 db-migrate:          ## Applique une migration SQL (FILE=backEnd/migrations/xxx.sql)
 	@test -n "$(FILE)" || { echo "Usage : make db-migrate FILE=backEnd/migrations/xxx.sql"; exit 1; }
-	$(COMPOSE) exec -T db psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} < $(FILE)
+	$(COMPOSE) exec -T db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < $(FILE)
 	@$(RESTART_APP)
 
 ip-backfill:         ## Reconstitue les grilles figées IP v2 des tournois déjà joués (DRY=1 pour simuler, SINCE=AAAA-MM-JJ)

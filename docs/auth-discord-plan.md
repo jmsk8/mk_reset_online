@@ -7,6 +7,21 @@
 >
 > Conventions : **[DÉCIDÉ]** = tranché · **[À TRANCHER]** = arbitrage attendu de Jérémy ·
 > gravité 🔴 critique · 🟠 élevé · 🟡 moyen · 🔵 faible.
+>
+> ---
+>
+> **Révision 2 — 2026-09-02.** Nouvelle directive produit, qui **retourne la décision §3.3** :
+> l'auth admin par mot de passe partagé **disparaît**. L'admin devient un **rôle** porté par un
+> compte Discord, attribué par le **super-admin** (Jérémy). Les joueurs se connectent à Discord
+> pour être **rattachés à leur fiche joueur**, avec **synchronisation du pseudo et de la photo de
+> profil** ; ce rattachement et cette synchronisation sont **opérés par les admins**, pas en
+> self-service. L'**API bot** passe de « plus tard » à objectif de premier rang.
+> **Avancement : suivi dans [auth-discord-avancement.md](auth-discord-avancement.md)**, mis à jour
+> à chaque livraison. Ce document-ci reste la conception et le registre des risques ; il ne bouge
+> que si une décision change. §1 (état des lieux) reste exact sauf mention contraire.
+> ⚠️ **R-20 est requalifié 🔴 : le dépôt `jmsk8/mk_reset_online` est PUBLIC** (vérifié par appel à
+> l'API GitHub sans authentification, HTTP 200) — la question 1 du §10.2 est donc tranchée, et dans
+> le mauvais sens. Les vrais pseudos et l'historique complet des matchs sont en accès libre.
 
 ---
 
@@ -31,6 +46,9 @@ aussi de **proxy JSON** pour le JS des pages admin (il rajoute l'en-tête `X-Adm
 session).
 
 ### 1.2 Auth actuelle
+
+> **Rév. 2 : tout ce tableau est voué à disparaître** (§3.3, phase 4). Il reste ici comme état de
+> départ et comme inventaire de ce qu'il faudra retirer, ligne par ligne.
 
 | Élément | Détail | Fichier |
 |---|---|---|
@@ -90,14 +108,28 @@ stratégie RGPD.
 
 ## 2. Objectif fonctionnel
 
-1. L'admin génère un **lien d'invitation à expiration**.
-2. Le joueur l'ouvre → **« Se connecter avec Discord »** → OAuth2.
-3. Le joueur **déclare quel joueur du site il est**.
-4. L'admin **confirme la liaison** sur une page dédiée (file d'attente).
-5. Le joueur lié édite son **profil** : bio, photo, bannière.
-6. L'admin dispose d'une **page de gestion des comptes**.
-7. Plus tard : un **bot Discord** interroge l'API (joueurs + scores) pour du matchmaking.
-8. **RGPD** : consentement, accès, export, suppression — **sans altérer l'historique des matchs**.
+**Rév. 2 — les trois buts qui commandent tout le reste :**
+
+- **A. Supprimer l'auth admin par mot de passe.** Plus de secret partagé : `ADMIN_PASSWORD_HASH`,
+  `POST /admin-auth`, `api_tokens` et l'en-tête `X-Admin-Token` disparaissent. Un admin est un
+  **compte Discord portant `comptes.role='admin'`**, attribué **manuellement par le super-admin**.
+- **B. Rattacher chaque joueur à son identité Discord**, pour **synchroniser le pseudo et la photo
+  de profil**. La liaison *et* la synchronisation sont **déclenchées par un admin** — le joueur
+  déclare, l'admin valide et applique.
+- **C. Exposer une API pour les bots Discord** (lecture joueurs/classement, matchmaking).
+
+Le parcours qui en découle :
+
+1. L'admin génère un **lien d'invitation à expiration** (de préférence **nominatif**, cf. R-33).
+2. Le joueur l'ouvre → **« Se connecter avec Discord »** → OAuth2 (scope `identify` seul).
+3. Le joueur **déclare quelle fiche joueur du site il est**.
+4. L'admin **confirme la liaison** sur une page dédiée (file d'attente) — et c'est ce geste qui
+   **applique la synchronisation** pseudo + avatar (cf. §3.5).
+5. Le joueur lié édite son **profil** : bio, bannière, couleur (l'avatar, lui, vient de Discord).
+6. L'admin dispose d'une **page de gestion des comptes** : rôles, liaisons, resynchronisation.
+7. Le **super-admin** (et lui seul) attribue et retire le rôle `admin`.
+8. Un **bot Discord** interroge l'API (joueurs + scores) pour du matchmaking.
+9. **RGPD** : consentement, accès, export, suppression — **sans altérer l'historique des matchs**.
 
 ---
 
@@ -128,18 +160,86 @@ base garde un seul propriétaire, le frontend ne manipule aucun secret Discord.
 Avec correction obligatoire de trois choses côté frontend : `admin_logout` (R-13),
 `inject_lifetime` (R-14), `WTF_CSRF_TIME_LIMIT` (R-15).
 
-### 3.3 On ne touche **pas** à l'auth admin en phase 1 **[DÉCIDÉ]**
+### 3.3 L'auth admin **devient** l'auth Discord **[DÉCIDÉ — rév. 2, remplace l'ancienne 3.3]**
 
-La cible est `comptes.role='admin'` + login Discord, mais ça mélange deux chantiers. Le champ
-`role` est prévu dès le schéma pour ne pas migrer deux fois. Le mot de passe reste de toute façon
-en accès de secours si Discord tombe.
+*Décision précédente (rév. 1), désormais caduque : « on ne touche pas à l'auth admin en phase 1,
+le mot de passe reste en accès de secours ».*
 
-### 3.4 `joueurs.nom` reste **admin-only** **[DÉCIDÉ]**
+Cible : **un seul mécanisme d'authentification**, Discord, et une **autorisation par rôle**.
+
+| Aujourd'hui | Cible |
+|---|---|
+| `ADMIN_PASSWORD_HASH` (bcrypt, env backend) | *supprimé* |
+| `POST /admin-auth`, `POST /admin/refresh-token` | *supprimés* |
+| `api_tokens` (UUID en clair, 30 min renouvelables) | *supprimée* → `sessions_joueurs` |
+| en-tête `X-Admin-Token` + `@admin_required` | en-tête `X-Session-Token` + `@role_required('admin')` |
+| `session['admin_token']` côté front | `session['player_token']` (unique) |
+
+Conséquences directes, à traiter comme des exigences et non comme des détails :
+
+- **Le rôle est la seule frontière de privilège.** `comptes.role` n'est modifiable que par le
+  super-admin, jamais par une route que touche un joueur (R-40).
+- **Amorçage.** Le tout premier compte admin ne peut pas être créé par une IHM admin — il faut un
+  chemin d'amorçage explicite (R-39).
+- **Risque de verrouillage total.** Plus de mot de passe = plus de porte de secours si Discord,
+  l'application OAuth ou le compte Discord du super-admin tombent. Une procédure *break-glass*
+  documentée devient **obligatoire** (R-38).
+- **Ordre imposé.** L'admin Discord doit fonctionner **avant** de retirer le mot de passe. Les deux
+  cohabitent le temps d'une phase, puis le mot de passe est supprimé — jamais l'inverse.
+- **R-10 s'éteint de lui-même** (plus de `refresh-token` sans borne), à condition que
+  `sessions_joueurs` ne reproduise pas le motif : expiration **absolue**, hash en base.
+
+### 3.3bis Trois niveaux d'autorisation **[DÉCIDÉ]**
+
+`comptes.role ∈ {'player', 'admin', 'superadmin'}`, strictement ordonnés.
+
+| Rôle | Peut |
+|---|---|
+| `player` | voir/éditer **son** profil, demander une liaison, exporter/supprimer **son** compte |
+| `admin` | tout l'admin actuel + invitations, liaisons, **synchronisation** des profils, anonymisation |
+| `superadmin` | tout ce qui précède + **attribuer/retirer `admin`**, gérer les tokens de service (bot) |
+
+`superadmin` n'est **pas** attribuable par l'IHM : uniquement par migration SQL / variable d'env
+(R-39). Il ne doit **jamais** pouvoir être retiré au dernier compte qui le porte (R-38).
+
+### 3.4 `joueurs.nom` reste **admin-only** **[DÉCIDÉ, confirmé en rév. 2]**
 
 Cf. R-04 : le rendre éditable par le joueur transformerait ~72 points d'injection `innerHTML` en
 surface XSS stockée à réauditer un par un.
 
+La synchronisation du pseudo Discord (§3.5) **ne contredit pas** cette décision : la valeur est
+proposée par Discord, mais **écrite par un admin**, après aperçu. Le joueur n'a toujours aucune
+écriture directe sur `joueurs.nom`.
+
 ---
+
+### 3.5 La synchronisation pseudo/avatar est un geste **admin** **[DÉCIDÉ — rév. 2]**
+
+Discord fournit trois champs via `GET /users/@me` : `username`, `global_name`, `avatar` (un hash).
+On les stocke **tels quels** dans `comptes` à chaque connexion — c'est un simple miroir, sans effet
+de bord.
+
+**Ce qui n'est pas automatique, c'est la propagation vers la fiche joueur.** Un admin doit
+l'appliquer explicitement (`POST /admin/comptes/<id>/sync`), avec un **aperçu avant/après**.
+
+*Pourquoi ne pas synchroniser automatiquement* — quatre raisons cumulées :
+
+1. `joueurs.nom` est **`UNIQUE` et sensible à la casse** : un pseudo Discord déjà porté par un
+   autre joueur ferait échouer l'`UPDATE` (R-41).
+2. Le nom du joueur circule dans ~72 `innerHTML` (R-04) : le laisser piloter par une valeur
+   librement modifiable côté Discord ouvrirait la XSS stockée que §3.4 refuse. Le passage par une
+   validation humaine ne *supprime* pas le risque, mais l'admin voit la chaîne avant qu'elle
+   n'entre en base.
+3. `/stats/joueur/<nom>` est l'URL publique : un changement de pseudo casse les liens partagés
+   (R-23 — d'où l'URL canonique `/joueur/<id>`).
+4. Un joueur qui change de pseudo Discord tous les deux jours ferait bouger le classement affiché
+   sans qu'aucun admin ne l'ait voulu.
+
+**Avatar** : aucune copie, aucun upload. On stocke le `discord_avatar_hash` et on construit l'URL
+CDN à l'affichage — `https://cdn.discordapp.com/avatars/<discord_id>/<hash>.png?size=128`, avec
+repli sur l'avatar par défaut Discord si le hash est `NULL` (R-42). Cela **résout la question 2 du
+§10** et **annule R-25/R-26 pour la v1** : pas de volume média, pas de sauvegarde à étendre, pas de
+pipeline d'upload à sécuriser. La bannière, si elle arrive, rouvrira ce dossier.
 
 ## 4. Modèle de données cible
 
@@ -181,18 +281,36 @@ CREATE TABLE public.comptes (
     discord_avatar_hash  VARCHAR(64),
     joueur_id            INTEGER UNIQUE REFERENCES public.joueurs(id) ON DELETE SET NULL,
     statut               VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending|linked|rejected|suspended
-    role                 VARCHAR(20) NOT NULL DEFAULT 'player',   -- player|admin
+    role                 VARCHAR(20) NOT NULL DEFAULT 'player',   -- player|admin|superadmin
     invitation_id        INTEGER REFERENCES public.invitations(id) ON DELETE SET NULL,
     cgu_accepted_at      TIMESTAMPTZ,
     cgu_version          VARCHAR(20),
+    discord_synced_at    TIMESTAMPTZ,   -- dernier rafraîchissement du miroir Discord (login)
+    profil_synced_at     TIMESTAMPTZ,   -- dernière propagation admin vers joueurs.nom (§3.5)
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_login_at        TIMESTAMPTZ
+    last_login_at        TIMESTAMPTZ,
+    CONSTRAINT comptes_role_valide CHECK (role IN ('player','admin','superadmin'))
 );
+CREATE INDEX idx_comptes_role ON public.comptes(role) WHERE role <> 'player';
 ```
 
 Pas de colonne `email` : on ne demande pas le scope (minimisation, §6.2).
 `joueur_id UNIQUE` : Postgres autorise plusieurs `NULL`, donc les comptes non liés cohabitent.
+
+**Rév. 2 — les colonnes qui portent les nouveaux objectifs :**
+
+- `role` est **la seule frontière de privilège** de l'application (§3.3bis). Le `CHECK` évite
+  qu'une faute de frappe dans un `UPDATE` manuel crée un rôle fantôme sans privilège… ou
+  l'inverse. Toute écriture sur cette colonne passe par une route `superadmin` **et** une ligne
+  `audit_admin` (R-40).
+- `discord_username` / `discord_global_name` / `discord_avatar_hash` sont un **miroir**
+  rafraîchi à chaque connexion (`discord_synced_at`). Les écrire ne change **rien** au site.
+- `profil_synced_at` date la dernière **propagation admin** vers `joueurs.nom` (§3.5) : c'est ce
+  qui permet à la page admin d'afficher « pseudo Discord ≠ nom du joueur depuis 12 j » et de
+  proposer la resynchronisation.
+- Le `discord_id` est un **snowflake** : `VARCHAR`, jamais un entier — il dépasse 2^53 et se
+  corrompt silencieusement en JS comme en JSON JavaScript.
 
 ### 4.3 `liaisons_demandes`
 
@@ -264,31 +382,72 @@ CREATE TABLE public.audit_admin (
 L'art. 5.2 RGPD (*accountability*) demande de pouvoir **démontrer** le traitement. 15 lignes de
 code pour prouver « telle suppression a bien été exécutée le … ».
 
+**Rév. 2** : cette table devient aussi le journal des **changements de rôle** et des
+**synchronisations de profil** — les deux gestes que le nouveau modèle rend sensibles. Actions à
+prévoir : `role_attribue`, `role_retire`, `liaison_approuvee`, `liaison_refusee`, `profil_synchro`,
+`compte_supprime`, `joueur_anonymise`, `invitation_creee`, `invitation_revoquee`,
+`service_token_cree`, `service_token_revoque`.
+
+`details` (JSONB) doit contenir l'**avant/après** pour les gestes réversibles — indispensable pour
+répondre à « qui a renommé ce joueur, et en quoi ? ». Ajouter `acteur_compte_id INTEGER REFERENCES
+public.comptes(id) ON DELETE SET NULL` : avec un admin unique et anonyme, la question ne se posait
+pas ; avec plusieurs admins, c'est la première chose qu'on cherchera.
+
+### 4.7 `service_tokens` (API bot) **[rév. 2]**
+
+```sql
+CREATE TABLE public.service_tokens (
+    id          SERIAL PRIMARY KEY,
+    token_hash  CHAR(64) NOT NULL UNIQUE,   -- sha256 ; le token brut n'est montré qu'une fois
+    nom         VARCHAR(64) NOT NULL,       -- « bot-matchmaking », « bot-annonces »
+    scopes      TEXT[] NOT NULL DEFAULT '{}',
+    expires_at  TIMESTAMPTZ,
+    revoked_at  TIMESTAMPTZ,
+    last_used_at TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Préféré à un `BOT_API_KEY` en variable d'environnement : plusieurs bots, révocation unitaire sans
+redéploiement, traçabilité (`last_used_at`), et **rotation sans toucher au `.env`** — donc sans
+risquer R-19. Création/révocation réservées au `superadmin`.
+
+Comparaison des tokens en **temps constant** (`hmac.compare_digest`), jamais avec `==`.
+
 ---
 
 ## 5. Découpage en phases
+
+> **Rév. 2** — le découpage change : l'admin par rôle Discord (ex-phase 4) remonte, parce que
+> c'est le but A ; la suppression du mot de passe devient une phase à part entière, **après** que
+> l'admin Discord ait tourné en vrai ; l'API bot (ex-phase 5) devient la phase 5 mais n'est plus
+> conditionnée aux phases 3-4.
 
 ### Phase 0 — Correctifs préalables (à faire **avant** d'ouvrir les comptes)
 
 Ce sont des risques déjà présents que l'arrivée des comptes rend exploitables. Détail au §8.
 
-- **R-01** garde-fou sur `DELETE /admin/joueurs/<id>`
-- **R-02** sortir `ADMIN_TOKEN` du DOM des pages admin
-- **R-05** borner le cache backend
-- **R-19** corriger `check_env.sh` (fusion au lieu de réécriture du `.env`)
-- **R-20** décider du sort de `seed.sql` (données réelles dans git)
+- ✅ **R-19** `check_env.sh` fusionne au lieu de réécrire — *bloquant : ajouter la moindre
+  `DISCORD_*` aux `REQUIRED_VARS` aurait déclenché la réécriture au premier `make up`*
+- ✅ **R-01** garde-fou sur `DELETE /admin/joueurs/<id>` + route d'anonymisation
+- ✅ **R-02** `ADMIN_TOKEN` sorti du DOM des pages admin (4 fichiers)
+- ✅ **R-05** clé de cache normalisée + `_cache_store` borné
+- 🟡 **R-20** `seed.sql` remplacé par la fixture fictive. **Le dépôt reste public et
+  l'historique git conserve les données réelles** — arbitrage assumé, cf. le fichier de suivi
 
-### Phase 1 — Socle auth
+### Phase 1 — Socle auth (connexion Discord, sans encore toucher à l'admin)
 
 **Backend**
 - `requirements.txt` : `+ requests==2.32.5`
 - `auth_discord.py` (nouveau) : échange OAuth, `/users/@me`, upsert compte
 - `routes_auth.py` (nouveau, blueprint `auth_bp`) : `POST /auth/discord/exchange`,
   `POST /auth/logout`, `GET /auth/me`
-- `auth.py` : `@player_required` (injecte `g.compte`), `@role_required('admin')`
+- `auth.py` : `@player_required` (injecte `g.compte`), `@role_required('admin')` **écrit dès
+  maintenant** — même s'il n'est branché qu'en phase 4
 - `backend.py` : `register_blueprint(auth_bp)`
 - ⚠️ `docker-compose.yml` : ajouter les nouveaux fichiers aux volumes (R-21)
-- `.env` : `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `INTERNAL_API_SECRET`
+- `.env` : `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`,
+  `DISCORD_SUPERADMIN_ID` (amorçage, R-39)
 
 **Frontend**
 - `GET /auth/discord/login` (génère `state`, mémorise `invite_token`)
@@ -301,27 +460,71 @@ Ce sont des risques déjà présents que l'arrivée des comptes rend exploitable
 
 **Templates** : `invite.html`, `login_discord.html`, navbar (bloc compte)
 
-### Phase 2 — Liaison compte ↔ joueur
+**Critère de sortie** : le super-admin se connecte via Discord, `GET /auth/me` renvoie
+`role='superadmin'`, et l'auth admin par mot de passe **fonctionne toujours** en parallèle.
+
+### Phase 2 — Liaison compte ↔ joueur + synchronisation
 
 - Backend : `GET /auth/joueurs-disponibles` (**uniquement les joueurs non liés** — R-08),
-  `POST /auth/demande-liaison`, `GET /admin/liaisons`, `POST /admin/liaisons/<id>/approve|reject`
-- Frontend : `/mon-compte/liaison` + page admin `/admin/comptes`
+  `POST /auth/demande-liaison`, `GET /admin/liaisons`,
+  `POST /admin/liaisons/<id>/approve|reject`,
+  `POST /admin/comptes/<id>/sync` (propagation pseudo → `joueurs.nom`, §3.5),
+  `GET /admin/comptes/<id>/sync-preview` (avant/après, sans écrire)
+- Frontend : `/mon-compte/liaison` + page admin `/admin/comptes` (file d'attente, écarts de
+  pseudo, bouton de resynchronisation)
 - ⚠️ Approbation **dans une transaction avec `SELECT … FOR UPDATE`** (R-07)
+- ⚠️ La synchro doit gérer la **collision `UNIQUE` sur `joueurs.nom`** en 409 lisible (R-41),
+  appeler `invalidate_cache()`, écrire `audit_admin`, et **refuser** de recréer un nom anonymisé
+  (R-03)
+- Affichage de l'avatar Discord depuis le CDN (§3.5), avec repli (R-42)
 
-### Phase 3 — Profils
+### Phase 3 — Profils joueur
 
-- Backend : `GET/PUT /me/profil`, `POST /me/avatar`, `POST /me/banniere`, `DELETE /me/avatar`
+- Backend : `GET/PUT /me/profil` (bio, couleur, réseaux — **pas** l'avatar, il vient de Discord)
 - Affichage : enrichir `GET /stats/joueur/<nom>` (cette route **n'est pas cachée**, l'affichage est
   donc immédiat — c'est `/classement` qui est caché 5 min)
-- **Stockage images [À TRANCHER]** — cf. R-25 à R-27
+- URL canonique `/joueur/<id>` + 301 depuis `/stats/joueur/<nom>` (R-23) — à faire ici, tant qu'on
+  touche à la page profil et avant que les pseudos ne se mettent à bouger
+- **Plus d'upload en v1** (§3.5) : R-25 et R-26 sont hors périmètre tant qu'il n'y a pas de bannière
 
-### Phase 4 — Admin via Discord
+### Phase 4 — Bascule de l'admin sur Discord **[cœur du but A]**
 
-`comptes.role='admin'` + `@role_required('admin')` en remplacement progressif de `@admin_required`.
+Ordre **impératif**, chaque étape validée avant la suivante :
 
-### Phase 5 — API bot
+1. **Amorçage** : migration `UPDATE comptes SET role='superadmin' WHERE discord_id = :id`, ou
+   promotion automatique au premier login si `discord_id = DISCORD_SUPERADMIN_ID` (R-39).
+2. `@role_required('admin')` **en plus** de `@admin_required` sur les routes admin — les deux
+   chemins acceptés, l'ancien conservé.
+3. Frontend : les routes proxy injectent `X-Session-Token` si le compte en session est admin,
+   sinon `X-Admin-Token`. Les pages admin deviennent accessibles par les deux voies.
+4. Routes super-admin : `GET /admin/comptes`, `POST /admin/comptes/<id>/role` (refuse de retirer
+   le **dernier** `superadmin` — R-38), avec `audit_admin` systématique.
+5. **Période de recouvrement** : administrer réellement via Discord pendant quelques jours.
+6. **Découplage** : `POST /admin-auth`, `POST /admin/refresh-token`, `@admin_required`, la table
+   `api_tokens`, `ADMIN_PASSWORD_HASH` dans le `.env` et dans `check_env.sh`, `session['admin_token']`,
+   la page de login admin et son minuteur de navbar (R-14) — **tout part dans le même commit**,
+   avec une migration `DROP TABLE api_tokens`.
+7. Runbook **break-glass** écrit et *testé* avant l'étape 6 (R-38).
 
-Cf. §7 et R-24 (le bot **ne peut pas joindre le backend** dans la topologie actuelle).
+**Critère de sortie** : `grep -rn "ADMIN_PASSWORD_HASH\|X-Admin-Token\|admin-auth"` ne renvoie
+plus rien hors CHANGELOG et migrations.
+
+### Phase 5 — API bot **[but C]**
+
+- Table `service_tokens` (§4.7) + `@service_required(scope=…)`
+- `GET /api/bot/joueurs`, `GET /api/bot/joueur/by-discord/<id>`, `POST /api/bot/matchmaking`
+- ⚠️ **R-24 : nginx ne peut pas joindre le backend** — trancher l'exposition (préférence : proxy
+  via le frontend)
+- ⚠️ **R-06 : le matchmaking est du JS client**, à remonter dans `services.py` d'abord
+- IHM super-admin de création/révocation de tokens (le token brut n'est affiché **qu'une fois**)
+
+*Indépendante des phases 2-3 :* dès que la phase 1 fournit `comptes.discord_id`, un bot peut déjà
+résoudre « ce Discord ID = ce joueur ». À planifier selon l'urgence côté bot, pas selon ce numéro.
+
+### Phase 6 — RGPD
+
+Export, suppression, anonymisation, pages légales, purges (§6). Peut avancer en parallèle des
+phases 3-5, mais **doit être livré avant toute ouverture large des invitations**.
 
 ---
 
@@ -355,6 +558,18 @@ n'étant dénormalisé (§1.3a), l'historique reste intact **et** cohérent.
 | Rectification | déjà couvert par l'édition de profil | — |
 | Effacement | `DELETE /me` (§6.4) | moyen |
 | Opposition / retrait | = suppression du compte | — |
+
+**Rév. 2 — deux ajouts** :
+
+- **Le miroir Discord** (`discord_username`, `discord_global_name`, `discord_avatar_hash`) est une
+  donnée personnelle traitée sur la base du **consentement** (l'utilisateur clique « se connecter
+  avec Discord »). À citer explicitement dans la politique de confidentialité, avec **Discord Inc.
+  comme sous-traitant hors UE** et le **CDN appelé par le navigateur du visiteur** (R-42).
+- **La synchronisation du pseudo vers `joueurs.nom` est un traitement distinct**, opéré par un
+  admin (§3.5). Elle rend le pseudo de jeu *dérivé* d'une donnée personnelle : après suppression du
+  compte, le nom synchronisé **reste** dans `joueurs`. C'est cohérent avec §6.4 (le pseudo seul
+  n'identifie plus raisonnablement), mais il faut le **dire** dans la politique, et offrir
+  l'anonymisation de niveau 2 à qui le demande.
 
 ### 6.4 Suppression — deux niveaux **[DÉCIDÉ]**
 
@@ -404,14 +619,33 @@ traitements · mentions légales.
 
 ## 7. API pour le bot Discord
 
-- **Auth machine** : `BOT_API_KEY` en env, ou table `service_tokens(token_hash, nom, scopes, expires_at)`.
-  Décorateur `@service_required(scope=…)`.
-- **Endpoints** : `GET /api/bot/joueurs` (comptes `linked` uniquement), 
-  `GET /api/bot/joueur/by-discord/<id>`, `POST /api/bot/matchmaking`.
-- Ne renvoyer que `discord_id` + données de classement. **Jamais** les bios/profils.
-- ⚠️ **R-24 : nginx ne peut pas joindre le backend.** Il faut choisir : proxifier `/api/bot/` via
-  le frontend, ou brancher nginx sur le réseau `backend`.
-- ⚠️ **R-06 : le matchmaking est du JS client**, à remonter dans `services.py` d'abord.
+**Auth machine** : table `service_tokens` (§4.7) plutôt qu'une clé en `.env` — révocation unitaire,
+plusieurs bots, traçabilité, rotation sans toucher au `.env` (donc sans réveiller R-19).
+En-tête `Authorization: Bearer <token>`, décorateur `@service_required(scope=…)`, comparaison
+`hmac.compare_digest` sur le sha256.
+
+**Scopes** (démarrer étroit, on élargit toujours plus facilement qu'on ne restreint) :
+
+| Scope | Donne accès à |
+|---|---|
+| `read:joueurs` | `GET /api/bot/joueurs`, `GET /api/bot/joueur/by-discord/<id>` |
+| `read:classement` | `GET /api/bot/classement` |
+| `matchmaking` | `POST /api/bot/matchmaking` |
+
+**Règles de données** — un bot est un tiers, pas un admin :
+
+- Ne renvoyer que `discord_id`, `joueur_id`, `nom`, `mu/sigma` (ou le score dérivé), tier, ligue.
+- **Jamais** les bios, les URLs d'avatar personnalisées, les invitations, les rôles, l'audit.
+- Ne renvoyer que les comptes `statut='linked'` — un compte `pending` est une identité **non
+  vérifiée** (R-33), la publier reviendrait à valider la revendication.
+- Ne **jamais** accepter d'écriture sur `joueurs`, `participations` ou `comptes.role` par cette
+  voie. L'API bot est **en lecture seule**, sauf `matchmaking` qui ne fait que calculer.
+
+⚠️ **R-24 : nginx ne peut pas joindre le backend.** Il faut choisir : proxifier `/api/bot/` via le
+frontend, ou brancher nginx sur le réseau `backend`. Préférence : **via le frontend**.
+⚠️ **R-06 : le matchmaking est du JS client**, à remonter dans `services.py` d'abord.
+⚠️ **Limitation de débit dédiée** : un bot en boucle d'erreur tape bien plus vite qu'un humain.
+Zone nginx séparée de `auth`, et `last_used_at` pour repérer un token qui s'emballe.
 
 ---
 
@@ -544,8 +778,11 @@ d'âge absolu. Un token exfiltré (cf. R-02) donne donc un accès **permanent**,
 De plus `api_tokens.token` est **stocké en clair** → un dump SQL (ou `seed.sql`, qui en contient
 déjà un, l. 531) expose des sessions valides.
 
-*Mitigation* : `api_tokens` + colonne `absolute_expiry` (ex. 12 h max, non extensible) ; stocker
-`sha256(token)` plutôt que le token ; à faire tant qu'à toucher à l'auth.
+*Mitigation* : **rév. 2 — ce risque s'éteint avec la phase 4** : `api_tokens` et
+`/admin/refresh-token` sont supprimés. Il reste une **contrainte de conception** sur
+`sessions_joueurs`, qui ne doit surtout pas reproduire le motif : hash en base ✓ (§4.5), pas de
+route de renouvellement sans borne, et une **expiration absolue** non extensible. D'ici la phase 4,
+la mitigation d'origine tient toujours : `absolute_expiry` sur `api_tokens`, et stocker le hash.
 
 ---
 **R-11 🟠 Le timeout frontend (5 s) est plus court que l'échange OAuth Discord**
@@ -844,21 +1081,163 @@ redevenait joignable, il corromprait les notes. Même famille de risque que R-01
 
 ---
 
-### 8.5 Synthèse — ordre de traitement
+### 8.5 Risques propres à la rév. 2 (suppression du mot de passe, rôles, synchro)
+
+---
+**R-38 🔴 Sans mot de passe, plus aucune porte de secours — verrouillage total possible**
+
+Une fois la phase 4 terminée, **le seul chemin d'administration passe par Discord**. Cinq
+événements, tous hors de notre contrôle, coupent alors l'accès à l'admin :
+
+- Discord est en panne, ou son OAuth l'est ;
+- l'application OAuth est suspendue / le `CLIENT_SECRET` est révoqué ou expire ;
+- le compte Discord du super-admin est banni, piraté ou supprimé ;
+- une erreur de manipulation retire `superadmin` au dernier compte qui le porte ;
+- `SECRET_KEY` tourne (R-19, R-29) au mauvais moment et déconnecte tout le monde.
+
+Le scénario le plus probable n'est pas la panne de Discord, c'est le quatrième : un
+`UPDATE comptes SET role='player'` de trop, et **plus personne** ne peut attribuer de rôle.
+
+*Mitigations, cumulatives et toutes obligatoires avant l'étape 6 de la phase 4 :*
+
+1. **Garde-fou en base et en code** : refuser tout retrait de `superadmin` s'il n'en reste qu'un.
+   ```sql
+   -- au minimum, un contrôle applicatif dans la même transaction :
+   SELECT COUNT(*) FROM comptes WHERE role = 'superadmin' AND id <> :cible FOR UPDATE;
+   ```
+2. **Au moins deux comptes `superadmin`** (deux comptes Discord distincts, idéalement avec 2FA).
+3. **Break-glass documenté et testé** : `docs/runbook-admin.md` avec la commande exacte —
+   `docker compose exec -T db psql -U … -c "UPDATE comptes SET role='superadmin' WHERE discord_id='…'"`.
+   Une procédure jamais exécutée n'est pas une procédure : la **tester une fois** avant de couper
+   le mot de passe.
+4. **Ne pas couper le mot de passe le jour où on branche Discord.** L'étape 5 (période de
+   recouvrement) existe pour ça.
+
+---
+**R-39 🟠 Le premier `superadmin` ne peut être créé par aucune IHM (amorçage)**
+
+Toutes les routes d'attribution de rôle exigent d'être `superadmin`. Sur une base neuve — ou sur la
+prod le jour de la bascule — **personne ne l'est**.
+
+*Mitigation* : `DISCORD_SUPERADMIN_ID` dans le `.env`. Au login, si `discord_id` correspond **et**
+qu'aucun `superadmin` n'existe encore, le compte est promu, avec une ligne `audit_admin`. La
+promotion est **conditionnée à l'absence** de super-admin : sinon la variable devient une porte
+dérobée permanente, activable par quiconque met la main sur le `.env`.
+⚠️ Ajouter cette variable **après** avoir corrigé `check_env.sh` (R-19), et ne pas la mettre dans
+`REQUIRED_VARS` — elle n'est utile qu'une fois.
+Alternative sans variable : migration SQL nominative, jouée à la main. Plus explicite, mais à
+rejouer sur chaque environnement neuf.
+
+---
+**R-40 🔴 `comptes.role` devient la seule frontière de privilège de l'application**
+
+Aujourd'hui, connaître le mot de passe *est* l'autorisation. Demain, un `UPDATE` sur une colonne
+`VARCHAR` l'est. Toute route qui écrit `comptes` **sans liste blanche de colonnes** devient une
+escalade de privilège. Le motif dangereux :
+
+```python
+# JAMAIS : un PUT /me/profil qui relaie le corps JSON tel quel
+for k, v in request.json.items():
+    cur.execute(f"UPDATE comptes SET {k} = %s WHERE id = %s", (v, compte_id))   # ← role inclus
+```
+
+*Mitigations* :
+- **Liste blanche explicite** des colonnes modifiables dans chaque route, jamais de construction
+  dynamique depuis les clés du JSON. Idem pour `statut` et `joueur_id`.
+- `role` n'est écrit que par **une seule** route, protégée par `@role_required('superadmin')`.
+- Un `admin` ne peut **pas** se promouvoir ni promouvoir un autre compte.
+- `audit_admin` sur chaque changement, avec l'ancien et le nouveau rôle, et l'acteur.
+- Vérification en base côté `@role_required`, jamais depuis le cookie ou la session : le rôle doit
+  pouvoir être **retiré immédiatement**, pas au bout de 30 jours de session.
+
+---
+**R-41 🟠 La synchro du pseudo se heurte à `joueurs.nom UNIQUE` et sensible à la casse**
+
+`joueurs.nom` est `UNIQUE`. Un pseudo Discord identique (ou identique à la casse près) à celui d'un
+autre joueur fait échouer l'`UPDATE` en `IntegrityError` → 500 côté admin, sans explication.
+Cas voisins, tous réels : pseudo Discord de 32 caractères contre `joueurs.nom` plus court, pseudo
+contenant un `/` (casse `/stats/joueur/<nom>` — R-23), pseudo vide ou uniquement des emojis,
+`global_name` `NULL` sur les vieux comptes Discord (il faut retomber sur `username`).
+
+*Mitigation* : la route de synchro **vérifie avant d'écrire** (`SELECT id FROM joueurs WHERE
+lower(nom) = lower(:nouveau) AND id <> :joueur_id`) et renvoie un **409 lisible** proposant à
+l'admin de saisir un nom manuel. Normaliser : `strip()`, longueur bornée à celle de la colonne,
+refus des chaînes vides. Et **toujours** `invalidate_cache()` après écriture — sinon le classement
+affiche l'ancien nom pendant 5 minutes et l'admin croit que le bouton n'a rien fait.
+
+---
+**R-42 🟡 L'avatar Discord dépend du CDN : hash volatil, hotlink, et fuite de referrer**
+
+`discord_avatar_hash` change **à chaque fois** que la personne change d'avatar — l'ancienne URL
+renvoie alors un 404, et les pages affichent une image cassée jusqu'à la prochaine connexion.
+Trois points connexes : le CDN Discord est un **tiers hors UE** appelé par le navigateur du
+visiteur (à mentionner dans la politique de confidentialité, §6.6) ; un `<img>` vers Discord
+transmet l'URL de la page en `Referer` (mettre `referrerpolicy="no-referrer"`) ; et une éventuelle
+CSP devra autoriser `img-src https://cdn.discordapp.com`.
+
+*Mitigation* : rafraîchir le hash à chaque connexion (`discord_synced_at`), `onerror` en JS vers
+l'avatar par défaut Discord
+(`https://cdn.discordapp.com/embed/avatars/<(discord_id >> 22) % 6>.png`, calculé côté serveur —
+le décalage sur un snowflake **doit** se faire en Python, pas en JS, R-42/R-04), et **ne pas**
+construire l'URL si `discord_avatar_hash` est `NULL`.
+
+---
+**R-43 🟠 Pendant la phase 4, deux systèmes d'auth cohabitent — la double lecture est le piège**
+
+La période de recouvrement (phase 4, étape 5) est nécessaire (R-38) mais crée une fenêtre où une
+route peut être protégée par `@admin_required` **ou** `@role_required('admin')`. Deux erreurs
+classiques : une route où l'on a retiré l'ancien décorateur sans brancher le nouveau (**route
+ouverte**), et un décorateur cumulé en `AND` au lieu de `OR` (**route morte** — l'admin Discord n'a
+pas de `X-Admin-Token`).
+
+*Mitigation* : un **seul** décorateur de transition, `@admin_or_role_required`, qui accepte
+explicitement les deux et **loggue laquelle des deux voies a servi**. À la fin de l'étape 6, ce
+décorateur est supprimé — et les logs disent s'il restait des appels par mot de passe. Compléter
+par un inventaire écrit des routes protégées **avant** de commencer, et le recocher à la fin.
+
+---
+**R-44 🟡 Le rôle change, la session ne le sait pas**
+
+Avec 30 jours de session, un admin dégradé en `player` (ou un compte `suspendu`) garde ses
+privilèges tant que son cookie vit, si le rôle est lu depuis la session. À l'inverse, R-28 demande
+de **ne pas** revalider à chaque requête, pour ne pas doubler le coût réseau.
+
+*Mitigation* : le rôle est **toujours** relu en base dans `@role_required` (une requête indexée,
+uniquement sur les routes admin, qui sont rares et non publiques) ; seule la validité *de session*
+peut être mise en cache ~60 s. Et fournir au super-admin un bouton **« déconnecter toutes les
+sessions de ce compte »** (`DELETE FROM sessions_joueurs WHERE compte_id = …`) — c'est aussi la
+réponse à un compte Discord compromis.
+
+---
+**R-45 🔵 `discord_id` est un snowflake : il ne tient pas dans un entier JS**
+
+Un snowflake dépasse 2^53. `VARCHAR(32)` en base (déjà prévu §4.2), **chaîne** dans tout le JSON de
+l'API bot, et jamais de `parseInt()` côté JS : `JSON.parse` d'un `discord_id` numérique corrompt
+silencieusement les derniers chiffres — l'identité pointée devient une autre. Même vigilance dans
+le bot lui-même.
+
+---
+
+### 8.6 Synthèse — ordre de traitement
 
 | Ordre | Risque | Quand |
 |---|---|---|
-| 1 | **R-19** `.env` écrasé par `check_env.sh` | Phase 0 — bloque tout déploiement |
+| 1 | **R-19** `.env` écrasé par `check_env.sh` | Phase 0 — bloque tout déploiement, et R-39 en dépend |
 | 2 | **R-01** suppression joueur en cascade | Phase 0 |
 | 3 | **R-02** `ADMIN_TOKEN` dans le DOM | Phase 0 |
 | 4 | **R-20** données réelles dans git | Phase 0 (vérifier public/privé d'abord) |
 | 5 | **R-05** cache non borné | Phase 0 |
 | 6 | R-09, R-11, R-12, R-13, R-16 | Phase 1 — pièges d'implémentation OAuth |
-| 7 | R-14, R-15, R-28, R-36 | Phase 1 — sessions |
-| 8 | R-07, R-08 | Phase 2 |
-| 9 | R-25, R-26 | Phase 3 |
-| 10 | R-06, R-24 | Phase 5 |
+| 7 | R-14, R-15, R-28, R-36, R-45 | Phase 1 — sessions & identifiants |
+| 8 | R-07, R-08, **R-41**, R-42, R-03 | Phase 2 — liaison & synchro |
+| 9 | R-23 | Phase 3 — URL canonique, avant que les pseudos ne bougent |
+| 10 | **R-38**, **R-39**, **R-40**, R-43, R-44 | **Phase 4 — bascule admin. R-38 conditionne l'étape 6.** |
+| 11 | R-06, R-24 | Phase 5 — API bot |
+| 12 | R-25, R-26 | *reporté* — sans upload en v1 (§3.5), hors périmètre |
 | — | R-32, R-33 | procédure / runbook, en continu |
+
+**Les trois verrous à ne pas forcer** : R-19 avant toute variable d'env ajoutée · R-38 avant de
+supprimer le mot de passe · R-40 avant d'ouvrir la moindre route qui écrit dans `comptes`.
 
 ---
 
@@ -866,58 +1245,103 @@ redevenait joignable, il corromprait les notes. Même famille de risque que R-01
 
 **Nouveaux**
 ```
-backEnd/auth_discord.py                        échange OAuth + upsert compte
+backEnd/auth_discord.py                        échange OAuth + upsert compte + miroir Discord
 backEnd/routes_auth.py                         blueprint auth_bp
-backEnd/routes_comptes.py                      profil joueur + admin comptes/liaisons
-backEnd/migrations/AAAA-MM-JJ_auth_discord.sql
+backEnd/routes_comptes.py                      profil joueur + admin comptes/liaisons/sync/rôles
+backEnd/routes_bot.py                          blueprint API bot (@service_required)     [rév. 2]
+backEnd/migrations/AAAA-MM-JJ_auth_discord.sql 6 tables + service_tokens
+backEnd/migrations/AAAA-MM-JJ_drop_api_tokens.sql   phase 4 étape 6                      [rév. 2]
 frontEnd/templates/invite.html
 frontEnd/templates/mon_compte.html
 frontEnd/templates/mon_profil.html
-frontEnd/templates/admin_comptes.html
+frontEnd/templates/admin_comptes.html          liaisons + écarts de pseudo + rôles       [rév. 2]
 frontEnd/templates/confidentialite.html
 frontEnd/templates/mentions_legales.html
 docs/rgpd-registre.md
 docs/runbook-rgpd.md                           procédure restauration + rejeu des suppressions (R-32)
+docs/runbook-admin.md                          break-glass super-admin, à TESTER (R-38)  [rév. 2]
 ```
 
 **Modifiés**
 ```
-backEnd/schema.sql              + 6 tables                              (R-22)
-backEnd/auth.py                 + @player_required, @role_required      (R-28 : 503 ≠ 403)
-backEnd/backend.py              + register_blueprint
-backEnd/requirements.txt        + requests (+ Pillow si uploads)
-backEnd/routes_admin.py         garde-fou DELETE joueur (R-01), anonymisation, invitations, liaisons
-backEnd/routes_public.py        profil dans /stats/joueur, clé de cache normalisée (R-05)
-frontEnd/frontend.py            routes auth, R-11, R-13, R-14, R-15, lifetime 30 j
-frontEnd/templates/navbar.html  bloc compte joueur (R-14 : minuteur)
-frontEnd/templates/stats_joueur.html          avatar / bannière / bio (jamais |safe — R-04)
-frontEnd/templates/gestion_joueurs.html       retirer ADMIN_TOKEN (R-02)
-frontEnd/templates/admin_ligues.html          idem
-frontEnd/templates/admin_saisons.html         idem
-frontEnd/templates/add_tournament.html        idem
+backEnd/schema.sql              + 7 tables (dont service_tokens)        (R-22)
+backEnd/auth.py                 + @player_required, @role_required, @service_required
+                                + @admin_or_role_required (transitoire, R-43)
+                                — @admin_required supprimé en phase 4   (R-28 : 503 ≠ 403)
+backEnd/backend.py              + register_blueprint(auth_bp, bot_bp)
+backEnd/requirements.txt        + requests==2.32.5
+backEnd/routes_admin.py         garde-fou DELETE joueur (R-01), anonymisation, invitations,
+                                liaisons, sync profil (R-41), rôles (R-40)
+                                — /admin-auth et /admin/refresh-token supprimés en phase 4
+backEnd/routes_public.py        profil dans /stats/joueur, /joueur/<id> (R-23), clé de cache (R-05)
+backEnd/services.py             matchmaking remonté du JS client        (R-06)
+frontEnd/frontend.py            routes auth, R-11, R-13, R-14, R-15, lifetime 30 j,
+                                proxy /api/bot (R-24), retrait du login admin en phase 4
+frontEnd/templates/navbar.html  bloc compte joueur ; minuteur admin supprimé en phase 4 (R-14)
+frontEnd/templates/stats_joueur.html          avatar Discord + bio (jamais |safe — R-04, R-42)
+frontEnd/templates/gestion_joueurs.html       retirer ADMIN_TOKEN (R-02) — l. 20
+frontEnd/templates/admin_ligues.html          idem — l. 98
+frontEnd/templates/admin_saisons.html         idem — l. 139 (et l. 375 qui le consomme)
+frontEnd/templates/add_tournament.html        idem — l. 168 (inline, pas de const)
 frontEnd/templates/footer.html                liens légaux
-docker-compose.yml              ⚠️ volumes des nouveaux .py (R-21) (+ media si uploads)
-nginx/nginx.conf                zone limit_req auth
-nginx/snippets/app.conf         location /auth, /invite (+ /media)
+docker-compose.yml              ⚠️ volumes des nouveaux .py (R-21)
+nginx/nginx.conf                zones limit_req : auth + bot (distinctes)
+nginx/snippets/app.conf         location /auth, /invite, /api/bot
 scripts/check_env.sh            ⚠️ fusion au lieu de réécriture (R-19) PUIS ajout des DISCORD_*
-scripts/db-dump.sh              anonymisation comptes/profils, média (R-25)
-backEnd/seed.sql                remplacer par une fixture fictive (R-20)
-.env                            DISCORD_CLIENT_ID/_SECRET/_REDIRECT_URI, INTERNAL_API_SECRET, BOT_API_KEY
-README.md / CHANGELOG.md        version 1.5.0
+                                — ADMIN_PASSWORD_HASH retiré de REQUIRED_VARS en phase 4
+scripts/db-dump.sh              anonymisation comptes/profils          (R-25 sans objet en v1)
+backEnd/seed.sql                remplacer par une fixture fictive       (R-20)
+.env                            DISCORD_CLIENT_ID/_SECRET/_REDIRECT_URI, DISCORD_SUPERADMIN_ID
+                                — ADMIN_PASSWORD_HASH supprimé en phase 4
+README.md / CHANGELOG.md        1.5.0 (auth Discord) puis 2.0.0 (rupture : plus de mot de passe)
+```
+
+**Supprimés (phase 4, étape 6)**
+```
+table api_tokens · ADMIN_PASSWORD_HASH · POST /admin-auth · POST /admin/refresh-token
+GET /admin/check-token · @admin_required · en-tête X-Admin-Token · session['admin_token']
+page de login admin + son minuteur de navbar
 ```
 
 ---
 
 ## 10. Questions ouvertes
 
-1. **Le dépôt GitHub `jmsk8/mk_reset_online` est-il public ou privé ?** (conditionne la gravité de R-20)
-2. **Avatars** : avatar Discord seul en v1 (zéro stockage), ou upload dès le départ ? Si upload :
-   volume Docker ou `bytea` (R-25) ?
+### 10.1 Tranchées par la rév. 2
+
+| # | Question | Réponse |
+|---|---|---|
+| 2 | Avatars : upload ou Discord ? | **Avatar Discord via CDN, zéro stockage** (§3.5). Annule R-25/R-26 en v1. |
+| 4 | Invitations nominatives auto-approuvées ? | **Non** — l'admin confirme toujours : c'est ce geste qui déclenche la synchro (but B). |
+| 6 | Compte sans joueur lié ? | **Oui**, `statut='pending'` existe déjà. Un compte non lié voit le site, rien de plus. |
+| 9 | Exposition de l'API bot (R-24) | **Via le frontend** — cohérent avec l'existant, aucun changement réseau. |
+| — | L'admin garde-t-il un mot de passe de secours ? | **Non** (but A). D'où R-38, et sa procédure break-glass obligatoire. |
+
+### 10.2 Encore ouvertes
+
+1. **Le dépôt GitHub `jmsk8/mk_reset_online` est-il public ou privé ?** (conditionne la gravité de
+   R-20 — `gh` n'est pas installé ici, à vérifier à la main).
 3. **Couleur** : `joueurs.color` (admin, graphes) vs `profils.couleur_accent` (joueur) — qui gagne où ?
-4. **Invitations nominatives** : liaison auto-approuvée, ou l'admin reconfirme quand même ?
-5. **Durée de session joueur** : 30 jours ? Case « se souvenir de moi » ?
-6. **Compte sans joueur** : un utilisateur Discord peut-il rester inscrit sans être lié (spectateur),
-   ou inscription = liaison obligatoire ?
-7. **Bannière** : image libre, ou bibliothèque fournie (moins de risques, plus cohérent visuellement) ?
+5. **Durée de session joueur** : 30 jours ? Et **pour un admin** ? Une session admin de 30 jours
+   est une cible bien plus intéressante qu'une session joueur — un TTL plus court sur les comptes
+   `admin`/`superadmin` serait cohérent avec les 30 min d'aujourd'hui (R-44).
+7. **Bannière** : sujet reporté avec l'upload. Si elle revient, R-25/R-26 se rouvrent.
 8. **Multi-comptes** (R-34) : sujet à traiter ou non-sujet ?
-9. **Exposition de l'API bot** (R-24) : via le frontend, ou nginx branché sur le réseau backend ?
+10. **Qui sont les admins ?** Le nombre change la conception : à deux ou trois, `audit_admin` suffit ;
+    au-delà, il faudra une notion de « qui a le droit de valider les liaisons de qui ».
+11. **La synchro est-elle rétroactive ?** Au moment de la bascule, les fiches `joueurs` existantes
+    portent des noms saisis à la main. Faut-il proposer un écran de **rapprochement en masse**
+    (pseudo Discord ↔ joueur existant), ou traiter au fil de l'eau, une liaison à la fois ?
+12. **Deuxième super-admin** (R-38, mitigation 2) : quel compte Discord ? C'est la seule mitigation
+    qui demande une décision humaine et pas du code.
+
+---
+
+## 11. Prochain pas concret
+
+L'ordre n'est pas négociable : **R-19 d'abord**. Tant que `check_env.sh` réécrit le `.env`, ajouter
+`DISCORD_CLIENT_ID` au premier `make up` de prod fait perdre `DOMAIN`, `TLS_MODE`, les ports, et
+**régénère `SECRET_KEY`**. C'est vingt lignes de shell, et ça débloque tout le reste.
+
+Puis le reste de la phase 0 (R-01, R-02, R-05, R-20), qui ne dépend d'aucune décision produit et
+peut être livré dès maintenant.

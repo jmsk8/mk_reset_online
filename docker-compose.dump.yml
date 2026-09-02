@@ -5,6 +5,13 @@ services:
       - /dev/null:/docker-entrypoint-initdb.d/01_schema.sql
       - /dev/null:/docker-entrypoint-initdb.d/02_seed.sql
       - ${DUMP_FILE:-./backEnd/dump.sql}:/docker-entrypoint-initdb.d/03_dump.sql
+      # Sur ce chemin, 01_schema.sql est neutralise : la structure vient
+      # ENTIEREMENT du dump. Un dump anterieur a l'auth Discord produirait donc
+      # une base sans les tables de comptes, et toutes les routes /auth
+      # tomberaient en 500. La migration etant ecrite en CREATE TABLE IF NOT
+      # EXISTS, elle cree ce qui manque et ne fait rien sur un dump recent.
+      - ./backEnd/migrations/2026-09-02_auth_discord.sql:/docker-entrypoint-initdb.d/04_auth_discord.sql
+      - ./backEnd/migrations/2026-09-02_noms_interdits.sql:/docker-entrypoint-initdb.d/05_noms_interdits.sql
 
 volumes:
   pg_data:

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Politique de confidentialité - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-8">
+                    <h1 class="title is-2">Politique de confidentialité</h1>
+                    <p class="subtitle is-6 has-text-grey">Version {{ cgu_version }} — dernière mise à jour : {{ cgu_date }}</p>
+
+                    <div class="content">
+                        <h2 class="title is-4">1. Qui traite vos données</h2>
+                        <p>
+                            MK Reset est un site communautaire de classement Mario Kart, édité à
+                            titre non professionnel. Le responsable du traitement est
+                            <strong>{{ editeur }}</strong>, joignable à l'adresse
+                            <strong>{{ contact }}</strong>.
+                        </p>
+
+                        <h2 class="title is-4">2. Ce que nous collectons, et pourquoi</h2>
+
+                        <h3 class="title is-5">2.1 Si vous ne vous connectez pas</h3>
+                        <p>
+                            Rien, hormis les journaux techniques du serveur web (adresse IP, page
+                            demandée, date). Ils servent uniquement à la sécurité et au diagnostic
+                            de panne, et sont conservés {{ retention_logs }}.
+                        </p>
+
+                        <h3 class="title is-5">2.2 Si vous connectez un compte Discord</h3>
+                        <table class="table is-fullwidth is-striped">
+                            <thead>
+                                <tr><th>Donnée</th><th>Origine</th><th>Pourquoi</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Identifiant Discord</td><td>Discord</td><td>vous reconnaître d'une visite à l'autre</td></tr>
+                                <tr><td>Pseudo et pseudo d'affichage</td><td>Discord</td><td>vous identifier auprès des administrateurs</td></tr>
+                                <tr><td>Référence de votre avatar</td><td>Discord</td><td>affichage</td></tr>
+                                <tr><td>Bio, couleur, liens de réseaux</td><td>vous</td><td>facultatif, affiché sur votre fiche</td></tr>
+                                <tr><td>Navigateur utilisé</td><td>votre navigateur</td><td>écran « vos sessions actives »</td></tr>
+                            </tbody>
+                        </table>
+                        <p>
+                            <strong>Nous ne demandons pas votre adresse e-mail</strong>, ni la liste
+                            de vos serveurs Discord : l'autorisation demandée à Discord se limite au
+                            strict nécessaire. <strong>Nous n'enregistrons pas votre adresse IP</strong>
+                            dans l'application.
+                        </p>
+                        <p>
+                            <strong>Base légale :</strong> votre consentement, donné en cliquant
+                            « Se connecter avec Discord » après avoir accepté le présent document.
+                            Vous pouvez le retirer à tout moment en supprimant votre compte.
+                        </p>
+
+                        <h3 class="title is-5">2.3 Votre dossier sportif</h3>
+                        <p>
+                            Indépendamment de tout compte, le site conserve un pseudo de jeu et
+                            l'historique des tournois qui s'y rattache : scores, positions,
+                            classement, trophées. Ces données sont
+                            <strong>publiques par nature</strong> — c'est l'objet même d'un
+                            classement — et reposent sur l'intérêt légitime de la communauté à
+                            disposer d'un classement exact.
+                        </p>
+
+                        <h2 class="title is-4">3. Qui d'autre voit ces données</h2>
+                        <ul>
+                            <li>
+                                <strong>Discord Inc. (États-Unis)</strong> — c'est de là que
+                                viennent votre identifiant, votre pseudo et votre avatar. Discord
+                                sait donc que vous vous êtes connecté à ce site. Ce transfert hors
+                                de l'Union européenne est encadré par les clauses contractuelles
+                                types de Discord.
+                            </li>
+                            <li>
+                                <strong>Le réseau de diffusion d'images de Discord</strong> — votre
+                                avatar n'est pas copié sur nos serveurs : c'est votre navigateur
+                                qui va le chercher directement chez Discord.
+                            </li>
+                            <li>
+                                <strong>{{ hebergeur }}</strong> — hébergement du site.
+                            </li>
+                        </ul>
+                        <p>Aucune donnée n'est vendue, louée, ni utilisée à des fins publicitaires.
+                           Il n'y a ni cookie publicitaire, ni outil de mesure d'audience tiers.</p>
+
+                        <div class="notification is-warning is-light">
+                            <p class="has-text-weight-semibold">
+                                <i class="fas fa-triangle-exclamation mr-2"></i>
+                                Deux points que nous préférons dire clairement
+                            </p>
+                            <p class="mt-2">
+                                <strong>Votre avatar révèle votre identifiant Discord.</strong>
+                                L'adresse de l'image affichée sur votre fiche contient cet
+                                identifiant, et cette fiche est publique. Quiconque la consulte peut
+                                donc le lire. C'est la contrepartie de ne stocker aucune copie de
+                                votre image chez nous. Si cela vous gêne, ne rattachez pas de compte
+                                Discord, ou demandez-nous la suppression du vôtre.
+                            </p>
+                            <p class="mt-2">
+                                <strong>Le code du site est public, et son historique aussi.</strong>
+                                Un fichier de démonstration versionné a contenu de vrais pseudos de
+                                joueurs et leur historique de matchs. Le fichier actuel ne contient
+                                plus que des données fictives, mais les versions antérieures restent
+                                accessibles dans l'historique du dépôt, que nous avons choisi de ne
+                                pas réécrire. Aucun identifiant Discord, aucune adresse e-mail et
+                                aucun mot de passe n'y figure — uniquement des pseudos de jeu et des
+                                résultats de tournois, déjà publics sur le site.
+                            </p>
+                        </div>
+
+                        <h2 class="title is-4">4. Combien de temps</h2>
+                        <table class="table is-fullwidth is-striped">
+                            <tbody>
+                                <tr><td>Compte et profil</td><td>tant que vous le gardez</td></tr>
+                                <tr><td>Session de connexion</td><td>30 jours, puis supprimée</td></tr>
+                                <tr><td>Compte jamais rattaché à un joueur et inactif</td><td>90 jours</td></tr>
+                                <tr><td>Lien d'invitation expiré</td><td>30 jours</td></tr>
+                                <tr><td>Demande de rattachement refusée</td><td>1 an</td></tr>
+                                <tr><td>Journal des actions d'administration</td><td>conservé, sans donnée personnelle</td></tr>
+                                <tr><td>Dossier sportif</td><td>conservé (voir §6)</td></tr>
+                            </tbody>
+                        </table>
+
+                        <h2 class="title is-4">5. Vos droits</h2>
+                        <p>Vous pouvez :</p>
+                        <ul>
+                            <li><strong>consulter et emporter</strong> toutes vos données, en un fichier
+                                JSON, depuis la page <a href="/mon-compte">Mon compte</a> ;</li>
+                            <li><strong>corriger</strong> vos informations de profil — bio, couleur
+                                et liens — en écrivant à <strong>{{ contact }}</strong> ;</li>
+                            <li><strong>supprimer</strong> votre compte depuis la page
+                                <a href="/mon-compte">Mon compte</a>, immédiatement et sans
+                                confirmation de notre part.</li>
+                        </ul>
+                        <p>
+                            Pour toute autre demande — notamment l'anonymisation de votre pseudo de
+                            jeu — écrivez à <strong>{{ contact }}</strong>. Vous pouvez également
+                            saisir la CNIL (<a href="https://www.cnil.fr" rel="noopener noreferrer"
+                            target="_blank">cnil.fr</a>).
+                        </p>
+
+                        <h2 class="title is-4">6. Ce que la suppression de votre compte efface, et ce qu'elle laisse</h2>
+                        <p><strong>Elle efface</strong> votre identifiant Discord, votre pseudo
+                           Discord, la référence de votre avatar, votre bio, vos liens, vos sessions
+                           et vos demandes de rattachement. Immédiatement et définitivement.</p>
+                        <p><strong>Elle laisse</strong> votre pseudo de jeu et votre historique de
+                           tournois.</p>
+                        <p>
+                            La raison est technique et nous tenons à l'exposer. Le classement repose
+                            sur un calcul <em>incrémental</em> : chaque tournoi part du niveau
+                            estimé de chaque participant et le met à jour. Il n'existe aucun moyen
+                            de le recalculer depuis le début. Retirer les matchs d'une personne
+                            rendrait donc <strong>faux le classement de tous les autres joueurs</strong>,
+                            définitivement et sans possibilité de reconstruction.
+                        </p>
+                        <p>
+                            Une fois détaché de tout identifiant Discord, de tout avatar et de toute
+                            adresse e-mail, un pseudo de jeu ne permet plus d'identifier
+                            raisonnablement une personne. Sa conservation relève de l'intérêt
+                            légitime de la communauté à disposer d'un classement exact.
+                        </p>
+                        <p>
+                            Si votre pseudo de jeu vous identifie malgré tout — parce que vous
+                            l'utilisez ailleurs, par exemple — <strong>demandez-nous son
+                            anonymisation</strong> : il sera remplacé par un identifiant neutre, et
+                            vos résultats resteront comptabilisés sans vous être rattachés.
+                        </p>
+
+                        <h2 class="title is-4">7. Modifications</h2>
+                        <p>
+                            Toute évolution de ce document donnera lieu à une nouvelle version, et
+                            votre accord vous sera redemandé à votre prochaine connexion.
+                        </p>
+                    </div>
+
+                    <a class="button is-light" href="/">Retour à l'accueil</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+</body>
+</html>

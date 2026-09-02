@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Gestion des comptes - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <style>
+        /* Tout ce qui s'affiche dans ces quatre vues vient d'un utilisateur :
+           pseudo Discord, nom de fiche, message de revendication, libellé
+           d'invitation. Un « mot » de 500 caractères sans une seule espace ne
+           possède aucun point de coupure, s'affiche sur une ligne unique et
+           pousse la carte hors de l'écran.
+
+           `anywhere` plutôt que `break-word` : les deux coupent au milieu d'un
+           mot en dernier recours, mais `anywhere` est aussi pris en compte pour
+           calculer la largeur minimale de la boîte — c'est ce qui empêche une
+           cellule de tableau de rester large à cause d'un mot qu'elle contient.
+           La propriété est héritée : la poser sur le conteneur suffit. */
+        #vue-liaisons, #vue-comptes, #vue-invitations, #vue-bots {
+            overflow-wrap: anywhere;
+        }
+
+        /* Un message reste un message, pas un mur : au-delà, il défile. */
+        #vue-liaisons blockquote {
+            max-height: 9rem;
+            overflow-y: auto;
+            border-left: 3px solid var(--border-color, rgba(59, 130, 246, .3));
+            padding-left: .75rem;
+            white-space: pre-wrap;   /* les retours à la ligne saisis comptent */
+        }
+    </style>
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <section class="section">
+        <div class="container">
+            <h1 class="title"><i class="fas fa-users-gear mr-2"></i> Gestion des comptes</h1>
+            <div id="alerte"></div>
+
+            <div class="tabs is-boxed">
+                <ul>
+                    <li class="is-active" data-onglet="liaisons"><a>Demandes de liaison <span class="tag is-danger ml-2 is-hidden" id="badge-liaisons">0</span></a></li>
+                    <li data-onglet="comptes"><a>Comptes</a></li>
+                    <li data-onglet="invitations"><a>Invitations</a></li>
+                    {% if est_superadmin %}
+                        <li data-onglet="bots"><a>Jetons de bot</a></li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <div id="vue-liaisons"><div class="has-text-grey">Chargement…</div></div>
+            <div id="vue-comptes" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+            <div id="vue-invitations" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+            <div id="vue-bots" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+    <script>
+    const EST_SUPERADMIN = {{ 'true' if est_superadmin else 'false' }};
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const csrf = document.querySelector('meta[name="csrf-token"]').content;
+        const alerte = document.getElementById('alerte');
+
+        // Toutes les valeurs affichées ici viennent de Discord (pseudo, avatar)
+        // ou d'un message libre saisi par un joueur. C'est la première surface
+        // de contenu non maîtrisé du site, et elle s'affiche chez un admin :
+        // on ne construit donc JAMAIS de HTML par concaténation. Chaque valeur
+        // passe par textContent, et les seules URL d'image acceptées sont
+        // celles du CDN Discord.
+        function txt(balise, contenu, classe) {
+            const el = document.createElement(balise);
+            el.textContent = contenu == null ? '' : String(contenu);
+            if (classe) el.className = classe;
+            return el;
+        }
+
+        function avatar(url) {
+            const fig = document.createElement('figure');
+            fig.className = 'image is-32x32 mr-2';
+            if (typeof url === 'string' && url.startsWith('https://cdn.discordapp.com/')) {
+                const img = document.createElement('img');
+                img.className = 'is-rounded';
+                img.src = url;
+                img.alt = '';
+                img.referrerPolicy = 'no-referrer';
+                img.onerror = () => { img.style.display = 'none'; };
+                fig.appendChild(img);
+            }
+            return fig;
+        }
+
+        function afficher(type, texte) {
+            alerte.innerHTML = '';
+            const d = document.createElement('div');
+            d.className = 'notification is-' + type + ' is-light';
+            d.textContent = texte;
+            alerte.appendChild(d);
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        async function api(url, method = 'GET', body = null) {
+            const opts = {method, headers: {'X-CSRFToken': csrf}};
+            if (body !== null) {
+                opts.headers['Content-Type'] = 'application/json';
+                opts.body = JSON.stringify(body);
+            }
+            const res = await fetch(url, opts);
+            let data = null;
+            try { data = await res.json(); } catch (e) { /* réponse vide */ }
+            return {ok: res.ok, status: res.status, data: data || {}};
+        }
+
+        // ---- Onglets ----
+        document.querySelectorAll('.tabs li').forEach(li => {
+            li.addEventListener('click', () => {
+                document.querySelectorAll('.tabs li').forEach(x => x.classList.remove('is-active'));
+                li.classList.add('is-active');
+                ['liaisons', 'comptes', 'invitations', 'bots'].forEach(n => {
+                    document.getElementById('vue-' + n).classList.toggle('is-hidden', n !== li.dataset.onglet);
+                });
+                charger(li.dataset.onglet);
+            });
+        });
+
+        function charger(onglet) {
+            if (onglet === 'liaisons') chargerLiaisons();
+            else if (onglet === 'comptes') chargerComptes();
+            else if (onglet === 'bots') chargerBots();
+            else chargerInvitations();
+        }
+
+        // ---- Demandes de liaison ----
+        async function chargerLiaisons() {
+            const vue = document.getElementById('vue-liaisons');
+            const {ok, data} = await api('/admin/liaisons?statut=pending');
+            vue.innerHTML = '';
+            if (!ok) { vue.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
+
+            const badge = document.getElementById('badge-liaisons');
+            badge.textContent = data.length;
+            badge.classList.toggle('is-hidden', data.length === 0);
+
+            if (data.length === 0) {
+                vue.appendChild(txt('p', 'Aucune demande en attente.', 'has-text-grey'));
+                return;
+            }
+
+            data.forEach(d => {
+                const carte = document.createElement('div');
+                carte.className = 'box';
+
+                const entete = document.createElement('div');
+                entete.className = 'is-flex is-align-items-center mb-3';
+                entete.appendChild(avatar(d.compte.avatar_url));
+                const bloc = document.createElement('div');
+                bloc.appendChild(txt('strong', d.compte.pseudo));
+                bloc.appendChild(txt('p', 'Discord ID : ' + d.compte.discord_id, 'is-size-7 has-text-grey'));
+                entete.appendChild(bloc);
+                carte.appendChild(entete);
+
+                const revend = document.createElement('p');
+                if (d.type === 'creation') {
+                    // Une demande de creation n'a pas de fiche a montrer : c'est
+                    // le nom propose, fige au moment de la demande, qui compte.
+                    revend.appendChild(txt('span', 'demande la '));
+                    revend.appendChild(txt('strong', 'création'));
+                    revend.appendChild(txt('span', ' de la fiche '));
+                    revend.appendChild(txt('strong', d.nom_demande));
+                    carte.appendChild(revend);
+                    carte.appendChild(txt('p',
+                        "Approuver crée le joueur en base, au score de départ, "
+                        + "et le rattache à ce compte.",
+                        'is-size-7 has-text-grey'));
+                } else {
+                    revend.appendChild(txt('span', 'revendique la fiche '));
+                    revend.appendChild(txt('strong', d.joueur.nom));
+                    carte.appendChild(revend);
+                }
+
+                if (d.joueur_vise_par_invitation !== null) {
+                    const t = txt('span',
+                        d.concordance_invitation
+                            ? '✓ correspond au joueur visé par l’invitation nominative'
+                            : '⚠ NE correspond PAS au joueur visé par l’invitation',
+                        'tag ' + (d.concordance_invitation ? 'is-success' : 'is-warning') + ' mt-2');
+                    carte.appendChild(t);
+                }
+
+                if (d.message) {
+                    const m = document.createElement('blockquote');
+                    m.className = 'is-size-7 has-text-grey mt-2';
+                    m.textContent = d.message;
+                    carte.appendChild(m);
+                }
+
+                const actions = document.createElement('div');
+                actions.className = 'buttons mt-3';
+                const oui = txt('button', 'Approuver', 'button is-success is-small');
+                oui.addEventListener('click', async () => {
+                    oui.classList.add('is-loading');
+                    const r = await api('/admin/liaisons/' + d.id + '/approve', 'POST', {});
+                    if (r.ok) {
+                        afficher('success', r.data.fiche_creee
+                            ? 'Fiche créée et rattachée.' : 'Liaison approuvée.');
+                        chargerLiaisons(); chargerComptes();
+                    }
+                    else { afficher('danger', r.data.error || 'Échec.'); oui.classList.remove('is-loading'); }
+                });
+                const non = txt('button', 'Refuser', 'button is-danger is-light is-small');
+                non.addEventListener('click', async () => {
+                    // prompt() renvoie null quand on clique « Annuler », et une
+                    // chaîne vide quand on valide sans rien écrire. Le `|| ''`
+                    // d'origine confondait les deux : renoncer au motif refusait
+                    // quand même la demande, qui disparaissait de la file.
+                    const motif = prompt('Motif du refus (facultatif) :');
+                    if (motif === null) return;
+                    const r = await api('/admin/liaisons/' + d.id + '/reject', 'POST', {motif});
+                    if (r.ok) { afficher('info', 'Demande refusée.'); chargerLiaisons(); }
+                    else { afficher('danger', r.data.error || 'Échec.'); }
+                });
+                actions.appendChild(oui);
+                actions.appendChild(non);
+                carte.appendChild(actions);
+                vue.appendChild(carte);
+            });
+        }
+
+        // ---- Comptes ----
+        async function chargerComptes() {
+            const vue = document.getElementById('vue-comptes');
+            const {ok, data} = await api('/admin/api/comptes');
+            vue.innerHTML = '';
+            if (!ok) { vue.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
+            if (data.length === 0) { vue.appendChild(txt('p', 'Aucun compte.', 'has-text-grey')); return; }
+
+            const table = document.createElement('table');
+            table.className = 'table is-fullwidth is-striped';
+            const thead = document.createElement('thead');
+            const trh = document.createElement('tr');
+            ['', 'Discord', 'Fiche joueur', 'Statut', 'Rôle', 'Actions'].forEach(h => trh.appendChild(txt('th', h)));
+            thead.appendChild(trh);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            data.forEach(c => {
+                const tr = document.createElement('tr');
+
+                const tdAv = document.createElement('td');
+                tdAv.appendChild(avatar(c.avatar_url));
+                tr.appendChild(tdAv);
+
+                tr.appendChild(txt('td', c.pseudo));
+
+                const tdJ = document.createElement('td');
+                if (c.joueur_nom) {
+                    tdJ.appendChild(txt('span', c.joueur_nom));
+                    if (c.desynchronise) {
+                        const tag = txt('span', 'pseudo Discord différent', 'tag is-warning is-light ml-2');
+                        tdJ.appendChild(tag);
+                    }
+                } else {
+                    tdJ.appendChild(txt('span', '—', 'has-text-grey'));
+                }
+                tr.appendChild(tdJ);
+
+                tr.appendChild(txt('td', c.statut));
+
+                const tdR = document.createElement('td');
+                if (EST_SUPERADMIN) {
+                    const sel = document.createElement('select');
+                    ['player', 'admin', 'superadmin'].forEach(r => {
+                        const o = document.createElement('option');
+                        o.value = r; o.textContent = r;
+                        if (r === c.role) o.selected = true;
+                        sel.appendChild(o);
+                    });
+                    sel.addEventListener('change', async () => {
+                        const r = await api('/admin/comptes/' + c.id + '/role', 'POST', {role: sel.value});
+                        if (r.ok) { afficher('success', 'Rôle mis à jour.'); }
+                        else { afficher('danger', r.data.error || 'Échec.'); chargerComptes(); }
+                    });
+                    const wrap = document.createElement('div');
+                    wrap.className = 'select is-small';
+                    wrap.appendChild(sel);
+                    tdR.appendChild(wrap);
+                } else {
+                    tdR.appendChild(txt('span', c.role));
+                }
+                tr.appendChild(tdR);
+
+                const tdA = document.createElement('td');
+                const actions = document.createElement('div');
+                actions.className = 'buttons are-small';
+
+                if (c.desynchronise) {
+                    const b = txt('button', 'Synchroniser le pseudo', 'button is-info is-small');
+                    b.addEventListener('click', async () => {
+                        const ap = await api('/admin/comptes/' + c.id + '/sync-preview');
+                        if (!ap.ok) { afficher('warning', ap.data.error || 'Aperçu impossible.'); return; }
+                        const question = 'Renommer la fiche joueur ?\n\n'
+                            + '  avant : ' + ap.data.ancien_nom + '\n'
+                            + '  après : ' + ap.data.nouveau_nom + '\n\n'
+                            + 'Les anciens liens /stats/joueur/<nom> cesseront de fonctionner.';
+                        if (!confirm(question)) return;
+                        const r = await api('/admin/comptes/' + c.id + '/sync', 'POST', {});
+                        if (r.ok) { afficher('success', 'Fiche renommée.'); chargerComptes(); }
+                        else { afficher('danger', r.data.error || 'Échec.'); }
+                    });
+                    actions.appendChild(b);
+                }
+
+                // Désynchroniser : n'a de sens que sur un compte rattaché.
+                if (c.joueur_nom) {
+                    const bDel = txt('button', 'Désynchroniser', 'button is-warning is-light is-small');
+                    bDel.addEventListener('click', async () => {
+                        const question = 'Détacher ce compte Discord de la fiche « '
+                            + c.joueur_nom + ' » ?\n\n'
+                            + 'La fiche, son pseudo de jeu et son historique de tournois '
+                            + 'restent intacts, et redeviennent revendicables.\n'
+                            + 'Le compte Discord est conservé : il pourra se rattacher '
+                            + 'de nouveau.';
+                        if (!confirm(question)) return;
+                        const r = await api('/admin/comptes/' + c.id + '/delier', 'POST', {});
+                        if (r.ok) { afficher('success', 'Compte désynchronisé.'); chargerComptes(); }
+                        else { afficher('danger', r.data.error || 'Échec.'); }
+                    });
+                    actions.appendChild(bDel);
+                }
+
+                const bSess = txt('button', 'Fermer les sessions', 'button is-light is-small');
+                bSess.addEventListener('click', async () => {
+                    if (!confirm('Fermer toutes les sessions de ce compte ?')) return;
+                    const r = await api('/admin/comptes/' + c.id + '/sessions', 'DELETE');
+                    afficher(r.ok ? 'success' : 'danger',
+                             r.ok ? (r.data.sessions_fermees + ' session(s) fermée(s).')
+                                  : (r.data.error || 'Échec.'));
+                });
+                actions.appendChild(bSess);
+
+                const suspendu = c.statut === 'suspended';
+                const bSusp = txt('button', suspendu ? 'Réactiver' : 'Suspendre',
+                                  'button is-small ' + (suspendu ? 'is-success is-light' : 'is-danger is-light'));
+                bSusp.addEventListener('click', async () => {
+                    const cible = suspendu ? (c.joueur_id ? 'linked' : 'pending') : 'suspended';
+                    const r = await api('/admin/comptes/' + c.id + '/statut', 'POST', {statut: cible});
+                    if (r.ok) { afficher('success', 'Statut mis à jour.'); chargerComptes(); }
+                    else { afficher('danger', r.data.error || 'Échec.'); }
+                });
+                actions.appendChild(bSusp);
+
+                tdA.appendChild(actions);
+                tr.appendChild(tdA);
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            vue.appendChild(table);
+        }
+
+        // ---- Invitations ----
+        async function chargerInvitations() {
+            const vue = document.getElementById('vue-invitations');
+            vue.innerHTML = '';
+
+            const form = document.createElement('div');
+            form.className = 'box';
+            form.appendChild(txt('p', 'Créer une invitation', 'title is-6'));
+
+            const champLabel = document.createElement('input');
+            champLabel.className = 'input mb-2';
+            champLabel.placeholder = 'Libellé (ex : « salon général »)';
+
+            const champUses = document.createElement('input');
+            champUses.className = 'input mb-2';
+            champUses.type = 'number'; champUses.min = '1'; champUses.value = '1';
+
+            const champHeures = document.createElement('input');
+            champHeures.className = 'input mb-2';
+            champHeures.type = 'number'; champHeures.min = '1'; champHeures.value = '72';
+
+            const btn = txt('button', 'Créer le lien', 'button is-primary');
+            const zoneLien = document.createElement('div');
+            zoneLien.className = 'mt-3';
+
+            btn.addEventListener('click', async () => {
+                btn.classList.add('is-loading');
+                const r = await api('/admin/invitations', 'POST', {
+                    label: champLabel.value,
+                    max_uses: parseInt(champUses.value, 10) || 1,
+                    heures: parseInt(champHeures.value, 10) || 72
+                });
+                btn.classList.remove('is-loading');
+                zoneLien.innerHTML = '';
+                if (!r.ok) { afficher('danger', r.data.error || 'Échec.'); return; }
+                const lien = window.location.origin + '/invite/' + r.data.token;
+                const n = document.createElement('div');
+                n.className = 'notification is-success is-light';
+                n.appendChild(txt('p', 'Lien créé. Il ne sera plus jamais affiché : copiez-le maintenant.', 'is-size-7'));
+                const inp = document.createElement('input');
+                inp.className = 'input is-small mt-2';
+                inp.readOnly = true; inp.value = lien;
+                inp.addEventListener('focus', () => inp.select());
+                n.appendChild(inp);
+                zoneLien.appendChild(n);
+                chargerListeInvitations();
+            });
+
+            [txt('label', 'Libellé', 'label is-small'), champLabel,
+             txt('label', 'Nombre d’utilisations', 'label is-small'), champUses,
+             txt('label', 'Validité (heures)', 'label is-small'), champHeures,
+             btn, zoneLien].forEach(e => form.appendChild(e));
+            vue.appendChild(form);
+
+            const liste = document.createElement('div');
+            liste.id = 'liste-invitations';
+            vue.appendChild(liste);
+            chargerListeInvitations();
+        }
+
+        async function chargerListeInvitations() {
+            const liste = document.getElementById('liste-invitations');
+            if (!liste) return;
+            const {ok, data} = await api('/admin/invitations');
+            liste.innerHTML = '';
+            if (!ok) { liste.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
+            if (data.length === 0) { liste.appendChild(txt('p', 'Aucune invitation.', 'has-text-grey')); return; }
+
+            const table = document.createElement('table');
+            table.className = 'table is-fullwidth is-striped';
+            const trh = document.createElement('tr');
+            ['Libellé', 'Joueur visé', 'Usages', 'État', ''].forEach(h => trh.appendChild(txt('th', h)));
+            const thead = document.createElement('thead'); thead.appendChild(trh); table.appendChild(thead);
+            const tbody = document.createElement('tbody');
+            data.forEach(i => {
+                const tr = document.createElement('tr');
+                tr.appendChild(txt('td', i.label || '—'));
+                tr.appendChild(txt('td', i.joueur_nom || '—'));
+                tr.appendChild(txt('td', i.uses + ' / ' + i.max_uses));
+                const etat = i.revoquee ? 'révoquée' : i.expiree ? 'expirée' : i.epuisee ? 'épuisée' : 'active';
+                const tdE = document.createElement('td');
+                tdE.appendChild(txt('span', etat, 'tag ' + (etat === 'active' ? 'is-success' : 'is-light')));
+                tr.appendChild(tdE);
+                const tdA = document.createElement('td');
+                if (etat === 'active') {
+                    const b = txt('button', 'Révoquer', 'button is-danger is-light is-small');
+                    b.addEventListener('click', async () => {
+                        const r = await api('/admin/invitations/' + i.id + '/revoquer', 'POST', {});
+                        if (r.ok) chargerListeInvitations();
+                        else afficher('danger', r.data.error || 'Échec.');
+                    });
+                    tdA.appendChild(b);
+                }
+                tr.appendChild(tdA);
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            liste.appendChild(table);
+        }
+
+        // ---- Jetons de bot ----
+        const SCOPES = ['read:joueurs', 'read:classement', 'matchmaking'];
+
+        async function chargerBots() {
+            const vue = document.getElementById('vue-bots');
+            vue.innerHTML = '';
+
+            const form = document.createElement('div');
+            form.className = 'box';
+            form.appendChild(txt('p', 'Créer un jeton de bot', 'title is-6'));
+            form.appendChild(txt('p',
+                'Le jeton ne sera affiché qu’une seule fois : seule son empreinte part en base.',
+                'help mb-3'));
+
+            const champNom = document.createElement('input');
+            champNom.className = 'input mb-2';
+            champNom.placeholder = 'Nom (ex : « bot-matchmaking »)';
+
+            const cases = {};
+            const blocScopes = document.createElement('div');
+            blocScopes.className = 'mb-2';
+            SCOPES.forEach(sc => {
+                const label = document.createElement('label');
+                label.className = 'checkbox mr-3';
+                const c = document.createElement('input');
+                c.type = 'checkbox';
+                cases[sc] = c;
+                label.appendChild(c);
+                label.appendChild(document.createTextNode(' ' + sc));
+                blocScopes.appendChild(label);
+            });
+
+            const champJours = document.createElement('input');
+            champJours.className = 'input mb-2';
+            champJours.type = 'number'; champJours.min = '1';
+            champJours.placeholder = 'Expiration en jours (vide = sans limite)';
+
+            const btn = txt('button', 'Créer le jeton', 'button is-primary');
+            const zone = document.createElement('div');
+            zone.className = 'mt-3';
+
+            btn.addEventListener('click', async () => {
+                const scopes = SCOPES.filter(sc => cases[sc].checked);
+                if (!scopes.length) { afficher('warning', 'Cochez au moins une portée.'); return; }
+                btn.classList.add('is-loading');
+                const r = await api('/admin/service-tokens', 'POST', {
+                    nom: champNom.value,
+                    scopes: scopes,
+                    jours: champJours.value ? parseInt(champJours.value, 10) : null
+                });
+                btn.classList.remove('is-loading');
+                zone.innerHTML = '';
+                if (!r.ok) { afficher('danger', r.data.error || 'Échec.'); return; }
+                const n = document.createElement('div');
+                n.className = 'notification is-success is-light';
+                n.appendChild(txt('p', 'Jeton créé. Copiez-le maintenant, il ne réapparaîtra pas.', 'is-size-7'));
+                const inp = document.createElement('input');
+                inp.className = 'input is-small mt-2';
+                inp.readOnly = true; inp.value = r.data.token;
+                inp.addEventListener('focus', () => inp.select());
+                n.appendChild(inp);
+                n.appendChild(txt('p', 'À présenter en en-tête : Authorization: Bearer <jeton>',
+                                  'is-size-7 mt-2 has-text-grey'));
+                zone.appendChild(n);
+                chargerListeBots();
+            });
+
+            [txt('label', 'Nom', 'label is-small'), champNom,
+             txt('label', 'Portées', 'label is-small'), blocScopes,
+             txt('label', 'Expiration', 'label is-small'), champJours,
+             btn, zone].forEach(e => form.appendChild(e));
+            vue.appendChild(form);
+
+            const liste = document.createElement('div');
+            liste.id = 'liste-bots';
+            vue.appendChild(liste);
+            chargerListeBots();
+        }
+
+        async function chargerListeBots() {
+            const liste = document.getElementById('liste-bots');
+            if (!liste) return;
+            const {ok, data} = await api('/admin/service-tokens');
+            liste.innerHTML = '';
+            if (!ok) { liste.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
+            if (!data.length) { liste.appendChild(txt('p', 'Aucun jeton.', 'has-text-grey')); return; }
+
+            const table = document.createElement('table');
+            table.className = 'table is-fullwidth is-striped';
+            const trh = document.createElement('tr');
+            ['Nom', 'Portées', 'Dernier appel', 'État', ''].forEach(h => trh.appendChild(txt('th', h)));
+            const thead = document.createElement('thead'); thead.appendChild(trh); table.appendChild(thead);
+            const tbody = document.createElement('tbody');
+            data.forEach(t => {
+                const tr = document.createElement('tr');
+                tr.appendChild(txt('td', t.nom));
+                tr.appendChild(txt('td', (t.scopes || []).join(', ')));
+                tr.appendChild(txt('td', t.last_used_at ? t.last_used_at.slice(0, 16).replace('T', ' ') : 'jamais'));
+                const etat = t.revoquee ? 'révoqué' : 'actif';
+                const tdE = document.createElement('td');
+                tdE.appendChild(txt('span', etat, 'tag ' + (etat === 'actif' ? 'is-success' : 'is-light')));
+                tr.appendChild(tdE);
+                const tdA = document.createElement('td');
+                if (etat === 'actif') {
+                    const b = txt('button', 'Révoquer', 'button is-danger is-light is-small');
+                    b.addEventListener('click', async () => {
+                        if (!confirm('Révoquer « ' + t.nom + ' » ? Le bot cessera immédiatement de fonctionner.')) return;
+                        const r = await api('/admin/service-tokens/' + t.id, 'DELETE');
+                        if (r.ok) chargerListeBots();
+                        else afficher('danger', r.data.error || 'Échec.');
+                    });
+                    tdA.appendChild(b);
+                }
+                tr.appendChild(tdA);
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            liste.appendChild(table);
+        }
+
+        chargerLiaisons();
+    });
+    </script>
+</body>
+</html>

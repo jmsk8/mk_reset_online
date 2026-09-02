@@ -122,59 +122,14 @@
     </section>
 
 <script>
-        const MAX_PER_LOBBY = 10;
-
+        // L'algorithme de composition vit désormais dans services.py, côté
+        // serveur : la page d'administration et le bot Discord appellent le
+        // même code. Deux implémentations du même algorithme divergent
+        // toujours, et l'écart ne se voit qu'au moment où un lobby est mal
+        // composé.
         function escapeHtml(str) {
             if (str == null) return '';
             return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
-        }
-
-        function buildLobbies(players) {
-            const n = players.length;
-            if (n === 0) return [];
-
-            const k = Math.ceil(n / MAX_PER_LOBBY);
-            if (k === 1) return [players.slice()];
-
-            const base = Math.floor(n / k);
-            const pivots = n % k;
-
-            const sizes = new Array(k).fill(base);
-            let cursor = 0;
-            let placed = 0;
-
-            for (let i = 0; i < k; i++) {
-                let size = sizes[i];
-                const remainingPivots = pivots - placed;
-                if (i < k - 1 && remainingPivots > 0) {
-                    const pivotIdx = cursor + size;
-                    const above = players[pivotIdx - 1];
-                    const pivot = players[pivotIdx];
-                    const below = players[pivotIdx + 1] !== undefined ? players[pivotIdx + 1] : null;
-
-                    const gapUp = Math.abs(pivot.ts - above.ts);
-                    const gapDown = below ? Math.abs(pivot.ts - below.ts) : Infinity;
-
-                    if (gapUp <= gapDown) {
-                        size += 1;
-                        placed += 1;
-                    }
-                    else {
-                        sizes[i + 1] += 1;
-                        placed += 1;
-                    }
-                }
-                cursor += size;
-                sizes[i] = size;
-            }
-
-            const lobbies = [];
-            let idx = 0;
-            for (let i = 0; i < k; i++) {
-                lobbies.push(players.slice(idx, idx + sizes[i]));
-                idx += sizes[i];
-            }
-            return lobbies;
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -260,31 +215,59 @@
 
             searchInput.addEventListener('input', renderPool);
 
-            btnGenerate.addEventListener('click', () => {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+            btnGenerate.addEventListener('click', async () => {
                 if (selected.length < 2) {
                     alert("⚠️ Sélectionnez au moins 2 joueurs.");
                     return;
                 }
 
-                const sorted = selected.slice().sort((a, b) => b.ts - a.ts);
-                const lobbies = buildLobbies(sorted);
+                btnGenerate.classList.add('is-loading');
+                let data;
+                try {
+                    // On n'envoie que les noms : les scores sont relus en base.
+                    // Un client qui fournirait les siens pourrait composer les
+                    // lobbies à sa guise.
+                    const res = await fetch('/admin/matchmaking/generer', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(csrfToken ? {'X-CSRFToken': csrfToken} : {})
+                        },
+                        body: JSON.stringify({ noms: selected.map(p => p.nom) })
+                    });
+                    data = await res.json();
+                    if (!res.ok) {
+                        alert("⛔ " + (data.error || "La composition a échoué."));
+                        return;
+                    }
+                } catch (e) {
+                    alert("Serveur injoignable.");
+                    return;
+                } finally {
+                    btnGenerate.classList.remove('is-loading');
+                }
+
+                if (data.introuvables && data.introuvables.length) {
+                    alert("⚠️ Joueurs introuvables, ignorés : " + data.introuvables.join(', '));
+                }
 
                 resultBox.innerHTML = '';
-                lobbies.forEach((lobby, i) => {
-                    const avg = lobby.reduce((s, p) => s + p.ts, 0) / lobby.length;
+                data.lobbies.forEach(lobby => {
                     const card = document.createElement('div');
                     card.className = 'card glass-card lobby-card';
-                    const rows = lobby.map(p =>
+                    const rows = lobby.joueurs.map(p =>
                         `<div class="lobby-player has-text-light">
                             <span><i class="fas fa-user mr-2"></i>${escapeHtml(p.nom)}</span>
-                            <span class="ts-badge">${p.ts.toFixed(2)}</span>
+                            <span class="ts-badge">${Number(p.ts).toFixed(2)}</span>
                         </div>`).join('');
                     card.innerHTML = `
                         <div class="card-content">
                             <h4 class="title is-5 has-text-light mb-3">
-                                <i class="fas fa-users mr-2"></i>Lobby ${i + 1}
-                                <span class="tag is-info is-light ml-2">${lobby.length} joueurs</span>
-                                <span class="tag is-dark ml-1">moy. ${avg.toFixed(2)}</span>
+                                <i class="fas fa-users mr-2"></i>Lobby ${lobby.numero}
+                                <span class="tag is-info is-light ml-2">${lobby.joueurs.length} joueurs</span>
+                                <span class="tag is-dark ml-1">moy. ${Number(lobby.moyenne).toFixed(2)}</span>
                             </h4>
                             ${rows}
                         </div>`;
