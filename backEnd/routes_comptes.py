@@ -18,13 +18,17 @@ import hashlib
 import json
 import logging
 import re
+import time
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify, request, g
+import requests
+
+from flask import Blueprint, jsonify, request, g, make_response
 
 from constants import (ROLE_ADMIN, ROLE_SUPERADMIN, ROLE_HIERARCHY, CGU_VERSION,
-                       DEFAULT_MU, DEFAULT_SIGMA)
+                       DEFAULT_MU, DEFAULT_SIGMA, DISCORD_HTTP_TIMEOUT,
+                       AVATAR_CACHE_TTL, AVATAR_MAX_BYTES)
 from auth import player_required, role_required, admin_or_role_required
 from auth_discord import avatar_url, hash_token
 from cache import invalidate_cache
@@ -52,20 +56,11 @@ def _acteur_id():
 
 
 def notifier(cur, compte_id, type_notif, titre, corps=None):
-    """Depose une notification pour un compte. A appeler DANS la transaction.
+    """Depose une notification. A appeler DANS la transaction de la decision.
 
-    Dans la transaction et pas apres : si la decision est annulee par un
-    rollback, la personne ne doit pas recevoir l'annonce d'une chose qui n'a
-    pas eu lieu.
-
-    Le texte est fige ici, jamais reconstruit a l'affichage : une notification
-    parle le plus souvent d'une chose qui vient de disparaitre -- la fiche
-    supprimee, la demande refusee -- et une jointure a l'affichage donnerait
-    « votre demande pour (null) a ete refusee ».
-
-    compte_id peut etre None (fiche sans compte rattache) : on ne notifie
-    alors personne, silencieusement, plutot que d'obliger chaque appelant a
-    tester.
+    Le texte est fige ici : une notification parle souvent d'une chose qui
+    vient de disparaitre, et une jointure a l'affichage donnerait « votre
+    demande pour (null) a ete refusee ».
     """
     if compte_id is None:
         return
@@ -84,19 +79,15 @@ def _pseudo(username, global_name):
 def _nom_creable(cur, nom):
     """Un nom de fiche est-il utilisable ? Renvoie (nom_propre, reponse d'erreur).
 
-    Appele DEUX fois : a la demande, pour ne pas mettre un admin devant une
-    demande condamnee d'avance, et a l'approbation, parce que la fiche a pu
-    etre creee entre-temps par add_tournament ou par une autre approbation.
-    Les memes regles que la synchronisation de pseudo, plus l'interdiction des
-    identites anonymisees.
+    Appele a la demande et de nouveau a l'approbation : add_tournament cree des
+    fiches a la volee, le nom a pu etre pris entre-temps.
     """
     nom = (nom or '').strip()[:255]
     if not nom:
         return None, (jsonify({"error": "Le nom est vide", "code": "nom_vide"}), 409)
 
     if '/' in nom:
-        # L'URL publique historique est /stats/joueur/<nom> : Flask ne route pas
-        # un nom contenant un slash.
+        # /stats/joueur/<nom> : Flask ne route pas un nom contenant un slash.
         return None, (jsonify({
             "error": "Le nom contient un « / », incompatible avec l'URL publique",
             "code": "nom_invalide",
@@ -107,16 +98,13 @@ def _nom_creable(cur, nom):
         (hashlib.sha256(nom.lower().encode('utf-8')).hexdigest(),),
     )
     if cur.fetchone() is not None:
-        # Meme garde-fou que add_tournament : recreer une identite anonymisee
-        # ferait reapparaitre ce qu'on venait tout juste d'effacer.
         return None, (jsonify({
             "error": "Ce nom correspond a une identite retiree et ne peut pas etre recree",
             "code": "nom_interdit",
         }), 409)
 
-    # Comparaison insensible a la casse : joueurs.nom est UNIQUE et sensible a
-    # la casse, donc « Mario » et « mario » coexisteraient en base tout en
-    # etant indiscernables a l'oeil.
+    # joueurs.nom est UNIQUE mais sensible a la casse : « Mario » et « mario »
+    # coexisteraient en base tout en etant indiscernables a l'oeil.
     cur.execute("SELECT id, nom FROM joueurs WHERE lower(nom) = lower(%s)", (nom,))
     collision = cur.fetchone()
     if collision is not None:
@@ -135,14 +123,10 @@ def _nom_creable(cur, nom):
 # ---------------------------------------------------------------------------
 
 def notifier_tous(cur, type_notif, titre, corps=None):
-    """Notifie TOUS les comptes actifs, en une seule requete.
+    """Notifie tous les comptes non suspendus. Renvoie leur nombre.
 
-    Un INSERT ... SELECT plutot qu'une boucle : la liste des destinataires est
-    exactement « les comptes non suspendus », et le serveur sait la parcourir
-    mieux que Python. Renvoie le nombre de personnes prevenues.
-
-    Les comptes suspendus sont exclus : ils ne peuvent meme plus ouvrir de
-    session, leur deposer du courrier n'aurait aucun sens.
+    Un compte suspendu ne peut plus ouvrir de session : lui deposer du
+    courrier n'aurait aucun sens.
     """
     cur.execute(
         """INSERT INTO notifications (compte_id, type, titre, corps)
@@ -263,17 +247,11 @@ def demander_liaison():
 @comptes_bp.route('/auth/demande-creation', methods=['POST'])
 @player_required
 def demander_creation():
-    """Demande la creation d'une fiche joueur au nom du compte connecte.
+    """Demande la creation d'une fiche au nom du compte connecte.
 
-    Pour le nouvel arrivant qui ne trouve pas sa fiche : sans cette route, la
-    seule issue etait « contactez un administrateur », hors du site et sans
-    trace. La demande rejoint la file d'attente des revendications -- meme
-    ecran, meme approbation, meme journal -- avec joueur_id NULL et le nom
-    voulu dans nom_demande.
-
-    Le nom propose est le pseudo Discord du moment, fige ici : l'admin approuve
-    ce qu'il a sous les yeux, pas ce que le pseudo sera devenu entre-temps.
-    Rien n'est cree tant qu'un admin n'a pas approuve.
+    Rejoint la file d'attente des revendications, avec joueur_id NULL et le nom
+    voulu dans nom_demande. Le nom est fige ici : l'admin approuve ce qu'il a
+    sous les yeux. Rien n'est cree avant son accord.
     """
     compte = g.compte
     if compte['joueur_id'] is not None:
@@ -291,9 +269,7 @@ def demander_creation():
                         conn.rollback()
                         return erreur
 
-                    # L'index unique partiel (une seule demande 'pending' par
-                    # compte) transformerait un doublon en 500 : on repond
-                    # proprement avant d'y arriver.
+                    # L'index unique partiel transformerait un doublon en 500.
                     cur.execute(
                         "SELECT id FROM liaisons_demandes WHERE compte_id = %s AND statut = 'pending'",
                         (compte['id'],),
@@ -423,7 +399,7 @@ def lister_liaisons():
         "compte": {
             "id": r[5], "discord_id": r[6],
             "pseudo": _pseudo(r[7], r[8]),
-            "avatar_url": avatar_url(r[6], r[9]),
+            "avatar_url": "/avatar/compte/%d" % r[5],
             "statut": r[10],
         },
         "type": 'creation' if r[11] is None else 'rattachement',
@@ -635,7 +611,7 @@ def lister_comptes():
         nom_joueur = r[11]
         comptes.append({
             "id": r[0], "discord_id": r[1], "pseudo": pseudo,
-            "avatar_url": avatar_url(r[1], r[4]),
+            "avatar_url": "/avatar/compte/%d" % r[0],
             "joueur_id": r[5], "joueur_nom": nom_joueur,
             "statut": r[6], "role": r[7],
             "created_at": r[8].isoformat(),
@@ -884,24 +860,13 @@ def revoquer_sessions(compte_id):
 @comptes_bp.route('/admin/comptes/<int:compte_id>/delier', methods=['POST'])
 @admin_or_role_required
 def delier_compte(compte_id):
-    """Detache un compte Discord de sa fiche joueur. L'exact inverse de /approve.
+    """Detache un compte de sa fiche joueur. L'inverse de /approve.
 
-    Sert quand un rattachement s'avere faux -- deux joueurs au surnom voisin,
-    une fiche revendiquee par erreur -- ou quand quelqu'un rend sa fiche.
+    Rien n'est detruit : seul le lien saute, la fiche redevient revendicable
+    et la personne peut se rattacher de nouveau.
 
-    Rien n'est detruit : le compte Discord, la fiche joueur, son pseudo de jeu
-    et tout son historique de tournois restent en place. Seul le lien saute.
-    C'est deliberement plus faible que /me DELETE, qui efface l'identite
-    Discord : ici la personne peut se rattacher de nouveau demain.
-
-    La fiche redevient revendicable immediatement, sans menage a faire dans
-    liaisons_demandes : demander_liaison() ne consulte que les demandes
-    'pending' et l'occupant courant de la fiche. La demande approuvee d'hier
-    reste en base comme trace de ce qui a eu lieu.
-
-    Le nom de la route dit `delier` la ou l'interface dit « Desynchroniser » :
-    /sync est deja pris, et designe une TOUTE AUTRE operation -- propager le
-    pseudo Discord vers joueurs.nom. Deux verbes pour deux gestes.
+    Nomme `delier` et non `sync` : /sync existe deja pour une tout autre
+    operation, la propagation du pseudo Discord vers joueurs.nom.
     """
     try:
         with get_db_connection() as conn:
@@ -961,6 +926,8 @@ def delier_compte(compte_id):
         logger.error("Deliement du compte %s impossible: %s", compte_id, e)
         return jsonify({"error": "Erreur serveur"}), 500
 
+    # Meme raison : l'avatar disparait de /stats/joueurs des le deliement.
+    invalidate_cache()
     logger.info("Compte %s delie du joueur %s (par %s)", compte_id, joueur_id, _acteur_id())
     return jsonify({"status": "success", "joueur_id": joueur_id, "statut": nouveau_statut})
 
@@ -1142,21 +1109,127 @@ def profil_public(cur, joueur_id):
     qui clique « se connecter avec Discord ».
     """
     cur.execute(
+        # `j.anonymise_at IS NULL` : sans cette condition, une fiche
+        # anonymisee continuait d'afficher l'avatar Discord, la bio et les
+        # liens sociaux de son proprietaire. L'anonymisation ne remplacait
+        # que le pseudo -- or l'URL de l'avatar contient l'identifiant
+        # Discord, et un handle Twitch identifie mieux qu'un pseudo de jeu.
+        # La promesse « votre fiche ne vous identifie plus » etait fausse.
         """SELECT c.discord_id, c.discord_avatar_hash, p.bio, p.couleur_accent, p.reseaux
            FROM comptes c
+           JOIN joueurs j ON j.id = c.joueur_id
            LEFT JOIN profils p ON p.compte_id = c.id
-           WHERE c.joueur_id = %s AND c.statut = 'linked'""",
+           WHERE c.joueur_id = %s AND c.statut = 'linked'
+             AND j.anonymise_at IS NULL""",
         (joueur_id,),
     )
     row = cur.fetchone()
     if row is None:
         return None
     return {
-        "avatar_url": avatar_url(row[0], row[1]),
+        "avatar_url": "/avatar/joueur/%d" % joueur_id,
         "bio": row[2],
         "couleur_accent": row[3],
         "reseaux": _reseaux_avec_urls(row[4]),
     }
+
+
+# ---------------------------------------------------------------------------
+# Avatars, relayes et jamais lies en direct : une <img> vers cdn.discordapp.com
+# donnerait a Discord l'IP de chaque visiteur et publierait le snowflake du
+# joueur dans la source de la page.
+# ---------------------------------------------------------------------------
+
+_avatars = {}
+
+
+def _avatar_distant(url):
+    """Telecharge un avatar, avec un cache memoire. Renvoie (type_mime, octets)."""
+    entree = _avatars.get(url)
+    if entree is not None and time.time() - entree[0] < AVATAR_CACHE_TTL:
+        return entree[1], entree[2]
+
+    try:
+        reponse = requests.get(url, timeout=DISCORD_HTTP_TIMEOUT, stream=True)
+    except requests.exceptions.RequestException:
+        return None, None
+
+    type_mime = reponse.headers.get('Content-Type', '')
+    if reponse.status_code != 200 or not type_mime.startswith('image/'):
+        reponse.close()
+        return None, None
+
+    octets = b''
+    for morceau in reponse.iter_content(8192):
+        octets += morceau
+        if len(octets) > AVATAR_MAX_BYTES:
+            reponse.close()
+            return None, None
+    reponse.close()
+
+    if len(_avatars) > 500:
+        _avatars.clear()
+    _avatars[url] = (time.time(), type_mime, octets)
+    return type_mime, octets
+
+
+def _servir_avatar(discord_id, avatar_hash):
+    type_mime, octets = _avatar_distant(avatar_url(discord_id, avatar_hash))
+    if octets is None:
+        return jsonify({"error": "Avatar indisponible"}), 404
+    reponse = make_response(octets)
+    reponse.headers['Content-Type'] = type_mime
+    reponse.headers['Cache-Control'] = 'public, max-age=%d' % AVATAR_CACHE_TTL
+    return reponse
+
+
+@comptes_bp.route('/avatar/joueur/<int:joueur_id>', methods=['GET'])
+def avatar_joueur(joueur_id):
+    """Avatar public d'une fiche. Memes conditions que profil_public."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT c.discord_id, c.discord_avatar_hash
+                       FROM comptes c JOIN joueurs j ON j.id = c.joueur_id
+                       WHERE c.joueur_id = %s AND c.statut = 'linked'
+                         AND j.anonymise_at IS NULL""",
+                    (joueur_id,),
+                )
+                row = cur.fetchone()
+    except Exception as e:
+        logger.error("Lecture de l'avatar du joueur %s impossible: %s", joueur_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+    if row is None:
+        return jsonify({"error": "Aucun avatar"}), 404
+    return _servir_avatar(row[0], row[1])
+
+
+@comptes_bp.route('/avatar/moi', methods=['GET'])
+@player_required
+def avatar_moi():
+    return _servir_avatar(g.compte['discord_id'], g.compte['discord_avatar_hash'])
+
+
+@comptes_bp.route('/avatar/compte/<int:compte_id>', methods=['GET'])
+@admin_or_role_required
+def avatar_compte(compte_id):
+    """Avatar d'un compte, quel que soit son statut : l'administration montre
+    aussi les comptes en attente et suspendus."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT discord_id, discord_avatar_hash FROM comptes WHERE id = %s",
+                    (compte_id,),
+                )
+                row = cur.fetchone()
+    except Exception as e:
+        logger.error("Lecture de l'avatar du compte %s impossible: %s", compte_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+    if row is None:
+        return jsonify({"error": "Compte introuvable"}), 404
+    return _servir_avatar(row[0], row[1])
 
 
 # ---------------------------------------------------------------------------
@@ -1355,9 +1428,7 @@ def accepter_cgu():
 def mes_notifications():
     """Les 30 dernieres notifications du compte, et le nombre de non-lues.
 
-    Une seule requete plutot qu'un compteur separe : la navbar interroge cette
-    route a chaque chargement de page, et deux allers-retours pour afficher une
-    pastille seraient un de trop.
+    Tout en une requete : la navbar l'appelle a chaque chargement de page.
     """
     try:
         with get_db_connection() as conn:
@@ -1385,8 +1456,7 @@ def mes_notifications():
 @comptes_bp.route('/me/notifications/lues', methods=['POST'])
 @player_required
 def marquer_notifications_lues():
-    """Marque tout comme lu. Ne supprime rien : la personne doit pouvoir
-    relire ce qu'on lui a annonce."""
+    """Marque tout comme lu. Ne supprime rien."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -1406,11 +1476,8 @@ def marquer_notifications_lues():
 @comptes_bp.route('/admin/notifications', methods=['GET'])
 @admin_or_role_required
 def compteur_admin():
-    """Ce qui attend une decision d'administrateur. Un seul COUNT, indexe.
-
-    Sert les pastilles de la navbar : la route est appelee a chaque chargement
-    de page pour un admin, elle doit rester triviale.
-    """
+    """Ce qui attend une decision d'administrateur, pour les pastilles de la
+    navbar. Appelee a chaque chargement de page : elle reste un COUNT."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -1622,6 +1689,9 @@ def supprimer_mon_compte():
         logger.error("Suppression du compte %s impossible: %s", compte_id, e)
         return jsonify({"error": "Erreur serveur"}), 500
 
+    # /stats/joueurs est en cache 5 minutes et publie les avatars : sans
+    # invalidation, celui d'un compte supprime lui survivrait a l'ecran.
+    invalidate_cache()
     logger.info("Compte %s supprime a la demande de son titulaire", compte_id)
     return jsonify({
         "status": "success",

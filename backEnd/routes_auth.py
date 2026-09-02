@@ -16,7 +16,7 @@ from flask import Blueprint, jsonify, request, g
 from constants import INVITATION_LIFETIME_HOURS, CGU_VERSION
 from auth import player_required, admin_or_role_required, SESSION_HEADER
 from auth_discord import (
-    DiscordAuthError, login, hash_token, avatar_url, discord_configured,
+    DiscordAuthError, login, hash_token, discord_configured,
 )
 from db import get_db_connection
 
@@ -97,7 +97,7 @@ def me():
         "id": compte['id'],
         "discord_id": compte['discord_id'],
         "pseudo": compte['discord_global_name'] or compte['discord_username'],
-        "avatar_url": avatar_url(compte['discord_id'], compte['discord_avatar_hash']),
+        "avatar_url": "/avatar/moi",
         "joueur_id": compte['joueur_id'],
         "joueur_nom": nom_joueur,
         "statut": compte['statut'],

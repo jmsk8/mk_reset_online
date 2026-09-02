@@ -52,20 +52,28 @@ l'identité sans toucher aux calculs.
 | **Non collecté** | **Adresse e-mail** (portée OAuth non demandée), **liste des serveurs Discord**, **adresse IP applicative** |
 | **Source** | Discord (`GET /users/@me`) et la personne elle-même |
 | **Destinataires** | Discord Inc. (États-Unis) · l'hébergeur · le public pour la partie profil |
+| **Sous-traitance d'image** | Aucune : l'avatar est relayé par le backend, le navigateur du visiteur ne contacte jamais le CDN Discord |
 | **Transfert hors UE** | **Oui** — Discord Inc., encadré par ses clauses contractuelles types |
 | **Conservation** | Tant que le compte existe · session 30 j · compte jamais rattaché et inactif 90 j |
-| **Tables** | `comptes`, `profils`, `sessions_joueurs`, `liaisons_demandes`, `invitations` |
+| **Tables** | `comptes`, `profils`, `sessions_joueurs`, `liaisons_demandes`, `invitations`, `notifications` |
 
 **Preuve du consentement** : `comptes.cgu_accepted_at` et `comptes.cgu_version`.
 Garder la version et pas seulement la date est ce qui permet de démontrer *quoi*
 a été accepté. Ces colonnes ne sont **jamais écrasées** à la reconnexion.
 
-⚠️ **Point de vigilance — l'avatar publie l'identifiant Discord.** L'URL affichée
-sur la fiche publique est `cdn.discordapp.com/avatars/<snowflake>/<hash>.png` :
-elle contient l'identifiant Discord en clair, sur une page publique. C'est la
-contrepartie assumée du choix « aucune copie d'image stockée ». **Mentionné
-explicitement dans la politique publiée.** Si cela devait poser problème, la
-parade est un interrupteur par joueur dans `profils`.
+**Avatars — relayés, jamais liés en direct.** Les pages servent `/avatar/joueur/<id>`,
+et le backend va chercher l'image chez Discord pour la réémettre. Deux fuites sont
+ainsi fermées : l'URL publique ne contient plus le *snowflake* Discord, et le
+navigateur d'un visiteur ne contacte plus `cdn.discordapp.com` — Discord ne reçoit
+donc plus l'adresse IP des personnes qui consultent le classement.
+
+La contrepartie est une **copie en mémoire vive, une heure au maximum, plafonnée
+à 512 Ko par image**, jamais écrite sur disque. Elle disparaît au redémarrage du
+service. C'est écrit dans la politique publiée.
+
+L'avatar, la bio et les liens de réseaux ne sont plus servis pour une fiche
+`anonymise_at IS NOT NULL` : sans cette condition, l'anonymisation ne remplaçait
+que le pseudo et laissait en place ce qui identifie le mieux.
 
 ## T3 — Journalisation des actions d'administration
 
@@ -77,8 +85,12 @@ parade est un interrupteur par joueur dans `profils`.
 | **Conservation** | Sans limite — le volume est négligeable et la valeur probante disparaît avec la purge |
 | **Table** | `audit_admin` |
 
-**Aucune donnée personnelle n'y est conservée en clair.** La suppression d'un
-compte y écrit une **empreinte** du snowflake, jamais le snowflake : c'est ce
+**Pas d'identifiant Discord en clair** — il n'y figure que sous forme de hash.
+En revanche, `details` peut contenir un **pseudo de jeu** : nom d'une fiche créée
+ou supprimée, motif d'un refus saisi par un administrateur. La politique publiée
+le dit.
+
+La suppression d'un compte y écrit une **empreinte** du snowflake, jamais le snowflake : c'est ce
 qui permet, après une restauration, de repérer un compte ressuscité et de le
 resupprimer, sans reconserver l'identifiant qu'on vient d'effacer.
 

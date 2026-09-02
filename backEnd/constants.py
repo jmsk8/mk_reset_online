@@ -106,3 +106,7 @@ CGU_VERSION = "1.0"
 PURGE_INVITATIONS_JOURS = 30      # une invitation expiree n'a plus d'usage
 PURGE_COMPTES_PENDING_JOURS = 90  # inscrit qui ne s'est jamais fait rattacher
 PURGE_LIAISONS_REFUSEES_JOURS = 365
+
+# Avatars relayes : duree du cache memoire et plafond de taille par image.
+AVATAR_CACHE_TTL = 3600
+AVATAR_MAX_BYTES = 512 * 1024

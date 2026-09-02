@@ -26,8 +26,7 @@
         }
     }
 
-    /* Messages flash en surimpression. Position fixe : le message ne doit pas
-       pousser la page vers le bas au chargement, sinon il deplace ce que la
+    /* Position fixe : un message qui pousse la page deplace ce que la
        personne est en train de lire. z-index au-dessus de la navbar (1000). */
     #messages-flash {
         position: fixed;
@@ -70,9 +69,7 @@
         }
     }
 
-    /* Une animation qui glisse peut declencher un malaise chez certaines
-       personnes ; le systeme le signale, on l'ecoute. La disparition
-       automatique, elle, reste. */
+    /* Mouvement reduit : on retire le glissement, pas la disparition. */
     @media (prefers-reduced-motion: reduce) {
         #messages-flash .notification,
         #messages-flash .notification.sortant {
@@ -163,9 +160,8 @@
         {# Compte joueur Discord. Indépendant de la session admin : les deux
            cohabitent dans le même cookie pendant la bascule. #}
         {% if compte_joueur %}
-          {# Cloche des notifications. Le contenu arrive par fetch APRES le
-             rendu : le faire cote serveur imposerait un appel au backend a
-             chaque page, pour une pastille. #}
+          {# Cloche des notifications, remplie par fetch apres le rendu : la
+             calculer cote serveur imposerait un appel backend a chaque page. #}
           <div class="navbar-item has-dropdown is-hoverable" id="zone-cloche">
             <a class="navbar-link is-arrowless" title="Notifications">
               <span class="icon"><i class="fas fa-bell"></i></span>
@@ -191,9 +187,7 @@
               <a class="navbar-item" href="/mon-compte">
                 <i class="fas fa-id-card mr-2"></i> Mon compte
               </a>
-              {# « Mon profil » mene a la fiche publique, pas a un ecran de
-                 reglages : sans fiche rattachee, il n'y a rien a montrer, donc
-                 l'entree cede la place au rattachement. #}
+              {# Sans fiche rattachee, il n'y a pas de profil a montrer. #}
               {% if compte_joueur.joueur_id %}
                 <a class="navbar-item" href="/joueur/{{ compte_joueur.joueur_id }}">
                   <i class="fas fa-id-badge mr-2"></i> Mon profil
@@ -203,9 +197,6 @@
                   <i class="fas fa-link mr-2"></i> Me rattacher à un joueur
                 </a>
               {% endif %}
-              {# La gestion des comptes vit dans le seul menu Admin : elle y est
-                 deja, et `est_admin` couvre aussi bien la session Discord que
-                 le mot de passe partage. #}
               <hr class="navbar-divider">
               <a class="navbar-item" href="/logout">
                 <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
@@ -285,14 +276,9 @@
   </div>
 </nav>
 
-{# Messages flash, affiches ICI et nulle part ailleurs.
-
-   Un flash reste en session tant qu'aucun rendu ne le consomme. Tant que
-   seules trois pages appelaient get_flashed_messages(), « Vous avez ete
-   deconnecte » attendait sagement dans le cookie et ressortait plus tard,
-   empile avec « Connecte en tant que ... », sur la premiere page qui daignait
-   les lire. La navbar est incluse par toutes les pages : le message est donc
-   consomme sur le rendu suivant, quel qu'il soit. #}
+{# Messages flash, affiches ICI et nulle part ailleurs : un flash reste en
+   session tant qu'aucun rendu ne le consomme, et la navbar est la seule chose
+   que toutes les pages incluent. #}
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     {# Un echec doit rester lisible plus longtemps qu'une confirmation : on ne
@@ -345,9 +331,8 @@
       });
     }
 
-    // Disparition automatique des messages flash. Le compte a rebours se
-    // suspend au survol : un message de huit secondes qui s'evapore pendant
-    // qu'on le lit est pire que pas de message du tout.
+    // Disparition automatique. Le compte a rebours se suspend au survol :
+    // un message qui s'evapore pendant qu'on le lit est pire que rien.
     document.querySelectorAll('#messages-flash .notification').forEach(bulle => {
       const delai = parseInt(bulle.dataset.delai, 10) || 5000;
       let minuteur;
@@ -355,9 +340,8 @@
       const fermer = () => {
         clearTimeout(minuteur);
         bulle.classList.add('sortant');
-        // Repli si l'animation ne joue pas (mouvement reduit, onglet en
-        // arriere-plan) : sans lui, animationend ne vient jamais et la bulle
-        // resterait a l'ecran pour toujours.
+        // Repli si l'animation ne joue pas : sans lui, animationend ne
+        // vient jamais et la bulle reste a l'ecran.
         const retrait = setTimeout(() => bulle.remove(), 400);
         bulle.addEventListener('animationend', () => {
           clearTimeout(retrait);
@@ -373,9 +357,8 @@
       armer();
     });
 
-    // ---- Notifications -----------------------------------------------
-    // Tout passe par textContent : ces textes sont figés en base, mais ils
-    // citent des noms de fiche et des motifs de refus saisis par des humains.
+    // Notifications. textContent partout : ces textes citent des noms de
+    // fiche et des motifs de refus saisis par des humains.
     {% if compte_joueur %}
     (async function () {
       const badge = document.getElementById('badge-notifs');
@@ -462,8 +445,7 @@
 
     {% if est_admin %}
     (async function () {
-      // Deux pastilles, une seule requête : l'onglet Admin porte le total,
-      // l'entrée Gestion Comptes le détail qui la concerne.
+      // Une requête, deux pastilles : le total et le détail.
       let res;
       try {
         res = await (await fetch('/admin/notifications')).json();

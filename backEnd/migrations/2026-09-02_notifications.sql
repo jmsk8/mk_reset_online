@@ -1,14 +1,9 @@
--- Notifications destinees a un compte.
+-- Notifications destinees a un compte : ce qu'un administrateur decide sur le
+-- dos de quelqu'un se passait jusqu'ici en silence.
 --
--- Jusqu'ici, tout ce qu'un administrateur decidait sur le dos de quelqu'un se
--- passait en silence : une revendication refusee, une fiche supprimee, un
--- compte delie. La personne revenait un jour sur /mon-compte et constatait
--- que quelque chose avait change, sans savoir quoi ni pourquoi.
---
--- Le texte est FIGE a l'emission, et non reconstruit a l'affichage. Une
--- notification parle souvent d'une chose qui n'existe plus -- la fiche qu'on
--- vient de supprimer, la demande qu'on vient de refuser. La reconstruire par
--- jointure donnerait « votre demande pour (null) a ete refusee ».
+-- Le texte est FIGE a l'emission. Une notification parle souvent d'une chose
+-- qui n'existe plus, et la reconstruire par jointure donnerait « votre demande
+-- pour (null) a ete refusee ».
 
 BEGIN;
 
@@ -24,9 +19,8 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     lu_at       TIMESTAMPTZ
 );
 
--- Index partiel : la seule question posee a chaque chargement de page est
--- « combien de non-lues ? ». Les lues, elles, ne sont lues que sur ouverture
--- du panneau.
+-- Index partiel : la question posee a chaque page est « combien de
+-- non-lues ? ».
 CREATE INDEX IF NOT EXISTS idx_notifications_non_lues
     ON public.notifications(compte_id) WHERE lu_at IS NULL;
 

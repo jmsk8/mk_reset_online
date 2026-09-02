@@ -146,9 +146,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// Dernier chargement de /admin/joueurs, indexe par id. deletePlayer() ne
-// recoit qu'un id par son onclick : sans ce cache, il faudrait un aller-retour
-// reseau juste pour savoir si la fiche porte l'identite de quelqu'un.
+// Dernier chargement de /admin/joueurs, indexe par id : deletePlayer() ne
+// recoit qu'un id par son onclick.
 const joueursCharges = {};
 
 async function loadPlayers() {
@@ -175,8 +174,6 @@ async function loadPlayers() {
         const tr = document.createElement('tr');
         const tierClass = getTierColor(player.tier);
 
-        // Fiche rattachee a un compte Discord : ce n'est plus un simple nom
-        // dans un classement, c'est l'identite de quelqu'un qui se connecte.
         const badgeCompte = player.compte_lie
             ? `<span class="icon has-text-link ml-1" title="Compte Discord rattaché : `
               + `${escapeHtml(player.compte_lie.pseudo)}"><i class="fab fa-discord"></i></span>`
@@ -243,9 +240,7 @@ async function loadConfig() {
 async function deletePlayer(id) {
     const joueur = joueursCharges[id];
 
-    // Fiche rattachee : la personne perd sa fiche sans avoir rien demande, et
-    // son compte Discord retombe « sans fiche ». Ca merite mieux qu'un
-    // « Êtes-vous sûr ? » generique.
+    // Fiche rattachee : ca merite mieux qu'un « Êtes-vous sûr ? » generique.
     if (joueur && joueur.compte_lie) {
         if (!confirm(
             "⚠️ ATTENTION — cette fiche est rattachée à un compte Discord.\n\n"
