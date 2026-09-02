@@ -1,3 +1,12 @@
+# Journaux plafonnes a 30 Mo par service. Sans rotation, le journal d'acces
+# nginx -- qui contient les IP des visiteurs -- vivait aussi longtemps que le
+# conteneur, et la duree annoncee dans la politique n'etait imposee par rien.
+x-journaux: &journaux
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
       image: postgres:17-alpine
@@ -9,6 +18,7 @@ services:
         - POSTGRES_USER=${POSTGRES_USER}
         - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
         - POSTGRES_DB=${POSTGRES_DB}
+      logging: *journaux
       restart: unless-stopped
       healthcheck:
         test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
@@ -66,6 +76,7 @@ services:
       - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI:-}
       # Amorcage du premier superadmin, sans effet des qu'il en existe un.
       - DISCORD_SUPERADMIN_ID=${DISCORD_SUPERADMIN_ID:-}
+    logging: *journaux
     restart: unless-stopped
     deploy:
       resources:
@@ -94,14 +105,13 @@ services:
       # aucun code, il delegue a /auth/discord/exchange.
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
       - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI:-}
-      # Identite de l'editeur, affichee par /mentions-legales et
-      # /confidentialite. Le repli n'est PAS vide : une variable absente
-      # arriverait sinon comme une chaine vide, et la page legale afficherait
-      # un editeur blanc au lieu d'avouer qu'il manque.
+      # Le repli n'est PAS vide : une variable absente arriverait comme une
+      # chaine vide, et la page legale afficherait un editeur blanc.
       - SITE_EDITEUR=${SITE_EDITEUR:-à renseigner}
       - SITE_CONTACT=${SITE_CONTACT:-à renseigner}
       - SITE_HEBERGEUR=${SITE_HEBERGEUR:-à renseigner}
-      - SITE_RETENTION_LOGS=${SITE_RETENTION_LOGS:-12 mois au maximum}
+      - SITE_RETENTION_LOGS=${SITE_RETENTION_LOGS:-le temps qu'une rotation les écrase, sur 30 Mo au maximum}
+    logging: *journaux
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
@@ -137,6 +147,7 @@ services:
       # Vide = toutes origines acceptées. À renseigner en production, sinon
       # n'importe quel site peut ouvrir une connexion permanente sur ce service.
       - ALLOWED_ORIGINS=${WS_ALLOWED_ORIGINS:-}
+    logging: *journaux
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
@@ -176,6 +187,7 @@ services:
         condition: service_healthy
       race:
         condition: service_healthy
+    logging: *journaux
     restart: unless-stopped
     deploy:
       resources:

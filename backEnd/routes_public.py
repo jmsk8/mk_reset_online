@@ -10,7 +10,6 @@ from constants import DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAUL
 from db import get_db_connection
 from cache import get_cached, set_cached
 from routes_comptes import profil_public
-from auth_discord import avatar_url
 from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
@@ -992,10 +991,9 @@ def get_joueur_stats(nom):
                 awards_list = []
                 award_groups = {}
                 for r in cur.fetchall():
-                    # award_nom, et surtout pas nom : `nom` est le parametre de
-                    # la route, celui qui repart dans la charge utile pour
-                    # titrer la fiche. L'ecraser ici renommait le joueur avec
-                    # son dernier trophee sur /joueur/<id>.
+                    # award_nom et non nom : `nom` est le parametre de la
+                    # route, celui qui titre la fiche. L'ecraser ici renommait
+                    # le joueur avec son dernier trophee.
                     emoji, award_nom, description, code, saison_nom, is_yearly = r[:6]
                     is_league_award, a_ligue_nom, a_ligue_couleur, a_ligue_id, cur_couleur, cur_nom = r[6:]
 
@@ -1294,13 +1292,12 @@ def stats_joueurs():
                     if t in dist: dist[t] += 1
                     else: dist['U'] += 1
 
-                # Avatar : meme condition que profil_public -- compte
-                # `linked` uniquement. Un compte en attente n'a pas encore
-                # prouve qu'il est bien cette personne, son avatar n'a rien a
-                # faire en face de la fiche.
+                # Avatar : memes conditions que profil_public -- compte lie,
+                # fiche non anonymisee.
                 cur.execute("""
                     SELECT
                         j.nom, j.mu, j.sigma, j.tier,
+                        j.id,
                         COUNT(p.tournoi_id) as nb_tournois,
                         COALESCE(SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END), 0) as victoires,
                         AVG(p.score) as score_moyen,
@@ -1309,6 +1306,7 @@ def stats_joueurs():
                     FROM joueurs j
                     LEFT JOIN participations p ON j.id = p.joueur_id
                     LEFT JOIN comptes c ON c.joueur_id = j.id AND c.statut = 'linked'
+                                       AND j.anonymise_at IS NULL
                     GROUP BY j.id, j.nom, j.mu, j.sigma, j.tier, c.discord_id, c.discord_avatar_hash
                     ORDER BY (j.mu - 3 * j.sigma) DESC;
                 """)
@@ -1322,14 +1320,11 @@ def stats_joueurs():
                 "nom": row[0],
                 "score_trueskill": round(ts, 3),
                 "tier": row[3],
-                "nombre_tournois": row[4],
-                "victoires": row[5],
-                "score_moyen": round(float(row[6]), 1) if row[6] else 0.0,
-                "color": row[7] if row[7] else "#FFFFFF",
-                # None quand personne n'est rattache : le gabarit affiche alors
-                # une pastille neutre. On ne fabrique pas d'avatar Discord par
-                # defaut ici -- il exigerait un snowflake qu'on n'a pas.
-                "avatar_url": avatar_url(row[8], row[9]) if row[8] else None
+                "nombre_tournois": row[5],
+                "victoires": row[6],
+                "score_moyen": round(float(row[7]), 1) if row[7] else 0.0,
+                "color": row[8] if row[8] else "#FFFFFF",
+                "avatar_url": "/avatar/joueur/%d" % row[4] if row[9] else None
             })
 
         result = {"joueurs": joueurs, "distribution_tiers": dist}

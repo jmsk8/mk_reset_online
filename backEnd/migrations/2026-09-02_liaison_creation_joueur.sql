@@ -1,18 +1,9 @@
--- Une demande de liaison peut desormais viser une fiche qui N'EXISTE PAS ENCORE.
+-- Une demande de liaison peut desormais viser une fiche a CREER.
 --
--- Le nouvel arrivant qui ne trouve pas sa fiche n'avait aucune issue : la liste
--- des fiches revendicables pouvait etre vide, et la page se contentait alors de
--- lui dire de contacter un administrateur -- hors du site, sans trace.
---
--- Plutot qu'une seconde table et une seconde file d'attente, la demande de
--- creation emprunte celle qui existe : meme ecran d'admin, meme approbation,
--- meme journal. Une demande porte donc SOIT un joueur_id (rattachement), SOIT
--- un nom a creer, jamais les deux ni aucun des deux -- c'est ce que dit la
--- contrainte.
---
--- Le nom est fige a la demande, et non relu au moment d'approuver : l'admin
--- doit approuver ce qu'il a sous les yeux, pas ce que le pseudo Discord sera
--- devenu entre-temps.
+-- Elle emprunte la file d'attente existante plutot qu'une seconde table :
+-- meme ecran d'admin, meme approbation, meme journal. Une demande porte donc
+-- soit un joueur_id, soit un nom a creer, jamais les deux -- c'est la
+-- contrainte plus bas.
 
 BEGIN;
 

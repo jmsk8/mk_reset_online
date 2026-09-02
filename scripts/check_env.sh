@@ -9,12 +9,9 @@ ENV_FILE="$ROOT_DIR/.env"
 # PLUS la réécriture du fichier : seule la clé manquante est demandée et ajoutée.
 REQUIRED_VARS=(POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB ADMIN_PASSWORD_HASH SECRET_KEY)
 
-# Clés FACULTATIVES : la stack démarre sans elles, et elles ont le droit de
-# rester vides. Le script ne les demande jamais et ne bloque jamais dessus — il
-# les pose une fois dans le fichier, vides, pour qu'on sache qu'elles existent.
-# Vide n'est pas la même chose qu'absent pour docker compose, mais le compose
-# les interpole en `${VAR:-à renseigner}` : le `:-` couvre les deux cas, et la
-# page légale avoue qu'il manque quelque chose au lieu d'afficher un blanc.
+# Clés FACULTATIVES : jamais demandées, jamais bloquantes, et elles ont le
+# droit de rester vides — le compose les interpole en `${VAR:-à renseigner}`,
+# dont le `:-` couvre aussi bien l'absence que la valeur vide.
 OPTIONAL_VARS=(SITE_EDITEUR SITE_CONTACT SITE_HEBERGEUR SITE_RETENTION_LOGS)
 
 if [ -t 1 ]; then
@@ -174,9 +171,8 @@ merge_into_env() {
   mv "$tmp" "$ENV_FILE"
 }
 
-# Ajoute les clés facultatives ABSENTES du fichier, vides et commentées.
-# Absentes, pas vides : une clé que quelqu'un a délibérément laissée à `KEY=`
-# doit le rester, sinon chaque `make up` réécrirait le fichier pour rien.
+# Ajoute les clés facultatives ABSENTES du fichier, vides. Absentes et non
+# vides : une clé laissée à `KEY=` doit le rester.
 seed_optional_vars() {
   local k manquantes=()
   [ -f "$ENV_FILE" ] || return 0
@@ -185,8 +181,7 @@ seed_optional_vars() {
   done
   [ "${#manquantes[@]}" -eq 0 ] && return 0
 
-  # Saut de ligne préalable si le fichier n'en finit pas par un, sinon la
-  # première clé se collerait à la dernière ligne existante.
+  # Saut de ligne préalable si le fichier n'en finit pas par un.
   [ -s "$ENV_FILE" ] && [ -n "$(tail -c1 "$ENV_FILE")" ] && echo >> "$ENV_FILE"
   {
     echo "# Mentions légales — facultatif. Laisser vide affiche « à renseigner »"

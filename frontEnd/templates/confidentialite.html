@@ -47,8 +47,8 @@
                                 <tr><td>Identifiant Discord</td><td>Discord</td><td>vous reconnaître d'une visite à l'autre</td></tr>
                                 <tr><td>Pseudo et pseudo d'affichage</td><td>Discord</td><td>vous identifier auprès des administrateurs</td></tr>
                                 <tr><td>Référence de votre avatar</td><td>Discord</td><td>affichage</td></tr>
-                                <tr><td>Bio, couleur, liens de réseaux</td><td>vous</td><td>facultatif, affiché sur votre fiche</td></tr>
                                 <tr><td>Navigateur utilisé</td><td>votre navigateur</td><td>écran « vos sessions actives »</td></tr>
+                                <tr><td>Notifications reçues</td><td>le site</td><td>vous informer des décisions qui vous concernent</td></tr>
                             </tbody>
                         </table>
                         <p>
@@ -83,9 +83,12 @@
                                 types de Discord.
                             </li>
                             <li>
-                                <strong>Le réseau de diffusion d'images de Discord</strong> — votre
-                                avatar n'est pas copié sur nos serveurs : c'est votre navigateur
-                                qui va le chercher directement chez Discord.
+                                <strong>Le réseau de diffusion d'images de Discord</strong> — notre
+                                serveur y récupère votre avatar, puis le sert lui-même. Les
+                                navigateurs des personnes qui consultent le site ne contactent
+                                jamais Discord : celui-ci ne voit ni leur adresse IP, ni les pages
+                                qu'elles regardent. Nous en gardons une copie en mémoire vive
+                                pendant une heure au maximum, jamais sur disque.
                             </li>
                             <li>
                                 <strong>{{ hebergeur }}</strong> — hébergement du site.
@@ -94,40 +97,13 @@
                         <p>Aucune donnée n'est vendue, louée, ni utilisée à des fins publicitaires.
                            Il n'y a ni cookie publicitaire, ni outil de mesure d'audience tiers.</p>
 
-                        <div class="notification is-warning is-light">
-                            <p class="has-text-weight-semibold">
-                                <i class="fas fa-triangle-exclamation mr-2"></i>
-                                Deux points que nous préférons dire clairement
-                            </p>
-                            <p class="mt-2">
-                                <strong>Votre avatar révèle votre identifiant Discord.</strong>
-                                L'adresse de l'image affichée sur votre fiche contient cet
-                                identifiant, et cette fiche est publique. Quiconque la consulte peut
-                                donc le lire. C'est la contrepartie de ne stocker aucune copie de
-                                votre image chez nous. Si cela vous gêne, ne rattachez pas de compte
-                                Discord, ou demandez-nous la suppression du vôtre.
-                            </p>
-                            <p class="mt-2">
-                                <strong>Le code du site est public, et son historique aussi.</strong>
-                                Un fichier de démonstration versionné a contenu de vrais pseudos de
-                                joueurs et leur historique de matchs. Le fichier actuel ne contient
-                                plus que des données fictives, mais les versions antérieures restent
-                                accessibles dans l'historique du dépôt, que nous avons choisi de ne
-                                pas réécrire. Aucun identifiant Discord, aucune adresse e-mail et
-                                aucun mot de passe n'y figure — uniquement des pseudos de jeu et des
-                                résultats de tournois, déjà publics sur le site.
-                            </p>
-                        </div>
-
                         <h2 class="title is-4">4. Combien de temps</h2>
                         <table class="table is-fullwidth is-striped">
                             <tbody>
-                                <tr><td>Compte et profil</td><td>tant que vous le gardez</td></tr>
-                                <tr><td>Session de connexion</td><td>30 jours, puis supprimée</td></tr>
-                                <tr><td>Compte jamais rattaché à un joueur et inactif</td><td>90 jours</td></tr>
-                                <tr><td>Lien d'invitation expiré</td><td>30 jours</td></tr>
-                                <tr><td>Demande de rattachement refusée</td><td>1 an</td></tr>
-                                <tr><td>Journal des actions d'administration</td><td>conservé, sans donnée personnelle</td></tr>
+                                <tr><td>Compte, profil et notifications</td><td>jusqu'à ce que vous supprimiez votre compte</td></tr>
+                                <tr><td>Session de connexion</td><td>30 jours au maximum</td></tr>
+                                <tr><td>Invitation expirée, demande refusée, compte jamais rattaché et inactif</td><td>supprimés lors des purges, déclenchées par un administrateur</td></tr>
+                                <tr><td>Journal des actions d'administration</td><td>conservé ; il peut contenir un pseudo de jeu</td></tr>
                                 <tr><td>Dossier sportif</td><td>conservé (voir §6)</td></tr>
                             </tbody>
                         </table>
@@ -175,6 +151,8 @@
                             l'utilisez ailleurs, par exemple — <strong>demandez-nous son
                             anonymisation</strong> : il sera remplacé par un identifiant neutre, et
                             vos résultats resteront comptabilisés sans vous être rattachés.
+                            Elle retire aussi de la fiche votre avatar, votre bio et vos liens de
+                            réseaux, qui vous identifieraient sans cela mieux qu'un pseudo.
                         </p>
 
                         <h2 class="title is-4">7. Modifications</h2>

@@ -13,17 +13,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <style>
-        /* Tout ce qui s'affiche dans ces quatre vues vient d'un utilisateur :
-           pseudo Discord, nom de fiche, message de revendication, libellé
-           d'invitation. Un « mot » de 500 caractères sans une seule espace ne
-           possède aucun point de coupure, s'affiche sur une ligne unique et
-           pousse la carte hors de l'écran.
-
-           `anywhere` plutôt que `break-word` : les deux coupent au milieu d'un
-           mot en dernier recours, mais `anywhere` est aussi pris en compte pour
-           calculer la largeur minimale de la boîte — c'est ce qui empêche une
-           cellule de tableau de rester large à cause d'un mot qu'elle contient.
-           La propriété est héritée : la poser sur le conteneur suffit. */
+        /* Tout ce qui s'affiche ici est saisi par un utilisateur : un « mot »
+           de 500 caractères sans espace pousse la carte hors de l'écran.
+           `anywhere` et non `break-word` : lui seul entre dans le calcul de la
+           largeur minimale, sans quoi une cellule reste large. */
         #vue-liaisons, #vue-comptes, #vue-invitations, #vue-bots {
             overflow-wrap: anywhere;
         }
@@ -88,7 +81,7 @@
         function avatar(url) {
             const fig = document.createElement('figure');
             fig.className = 'image is-32x32 mr-2';
-            if (typeof url === 'string' && url.startsWith('https://cdn.discordapp.com/')) {
+            if (typeof url === 'string' && url.startsWith('/avatar/')) {
                 const img = document.createElement('img');
                 img.className = 'is-rounded';
                 img.src = url;
@@ -171,8 +164,7 @@
 
                 const revend = document.createElement('p');
                 if (d.type === 'creation') {
-                    // Une demande de creation n'a pas de fiche a montrer : c'est
-                    // le nom propose, fige au moment de la demande, qui compte.
+                    // Pas de fiche a montrer : c'est le nom propose qui compte.
                     revend.appendChild(txt('span', 'demande la '));
                     revend.appendChild(txt('strong', 'création'));
                     revend.appendChild(txt('span', ' de la fiche '));
@@ -219,10 +211,9 @@
                 });
                 const non = txt('button', 'Refuser', 'button is-danger is-light is-small');
                 non.addEventListener('click', async () => {
-                    // prompt() renvoie null quand on clique « Annuler », et une
-                    // chaîne vide quand on valide sans rien écrire. Le `|| ''`
-                    // d'origine confondait les deux : renoncer au motif refusait
-                    // quand même la demande, qui disparaissait de la file.
+                    // prompt() renvoie null sur « Annuler » et '' sur une
+                    // validation vide : le `|| ''` d'origine refusait la
+                    // demande dans les deux cas.
                     const motif = prompt('Motif du refus (facultatif) :');
                     if (motif === null) return;
                     const r = await api('/admin/liaisons/' + d.id + '/reject', 'POST', {motif});

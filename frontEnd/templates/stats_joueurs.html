@@ -97,16 +97,15 @@
         }
     </style>
     <style>
-        /* Avatar : l'image doit remplir le carré de 48px de Bulma sans se
-           déformer — une pp Discord n'est pas toujours carrée. */
+        /* Remplir le carré de 48px sans déformer : un avatar Discord n'est
+           pas toujours carré. */
         .avatar-joueur {
             width: 48px; height: 48px;
             object-fit: cover;
             border: 2px solid rgba(255, 255, 255, 0.15);
         }
 
-        /* Repli quand aucun compte Discord n'est rattaché, ou quand le CDN ne
-           répond pas. Un cercle neutre plutôt qu'un trou dans la mise en page. */
+        /* Repli sans compte rattaché : un cercle neutre plutôt qu'un trou. */
         .avatar-defaut {
             display: inline-flex;
             align-items: center;
@@ -198,10 +197,7 @@
                                         <div class="media-left">
                                             <figure class="image is-48x48">
                                                 {% if joueur.avatar_url %}
-                                                    {# referrerpolicy : sans ça, un <img> vers le CDN
-                                                       Discord transmettrait l'URL de la page visitée.
-                                                       onerror : si le CDN ne répond pas, on retombe sur
-                                                       la pastille neutre au lieu d'une image cassée. #}
+                                                    {# onerror : pastille neutre plutôt qu'une image cassée. #}
                                                     <img class="is-rounded avatar-joueur" loading="lazy"
                                                          src="{{ joueur.avatar_url }}" alt=""
                                                          referrerpolicy="no-referrer"

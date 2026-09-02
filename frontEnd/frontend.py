@@ -470,7 +470,9 @@ MENTIONS = {
     'editeur': os.environ.get('SITE_EDITEUR', '[à renseigner : nom de l’éditeur]'),
     'contact': os.environ.get('SITE_CONTACT', '[à renseigner : adresse de contact]'),
     'hebergeur': os.environ.get('SITE_HEBERGEUR', '[à renseigner : hébergeur et pays]'),
-    'retention_logs': os.environ.get('SITE_RETENTION_LOGS', '12 mois au maximum'),
+    'retention_logs': os.environ.get(
+        'SITE_RETENTION_LOGS',
+        "le temps qu'une rotation les écrase, sur 30 Mo au maximum"),
 }
 # ⚠️ Doit rester identique à constants.CGU_VERSION côté backend : c'est le
 # backend qui décide si le consentement doit être redemandé, le frontend ne fait
@@ -711,11 +713,53 @@ def mon_compte_liaison():
     )
 
 
+# Plus large que les 5 s des appels JSON : le backend peut avoir a telecharger
+# l'image chez Discord avant de repondre.
+AVATAR_TIMEOUT = 10
+
+
+def _relayer_avatar(chemin, headers=None):
+    """Relaie une image depuis le backend, en conservant son cache navigateur."""
+    try:
+        amont = requests.get(
+            f"{BACKEND_URL}{chemin}", headers=headers or {}, timeout=AVATAR_TIMEOUT,
+        )
+    except requests.exceptions.RequestException:
+        return '', 502
+    if amont.status_code != 200:
+        return '', amont.status_code
+    reponse = Response(amont.content,
+                       mimetype=amont.headers.get('Content-Type', 'image/png'))
+    reponse.headers['Cache-Control'] = amont.headers.get(
+        'Cache-Control', 'public, max-age=3600')
+    return reponse
+
+
+@app.route('/avatar/joueur/<int:joueur_id>')
+def proxy_avatar_joueur(joueur_id):
+    return _relayer_avatar(f'/avatar/joueur/{joueur_id}')
+
+
+@app.route('/avatar/moi')
+def proxy_avatar_moi():
+    headers = player_headers()
+    if headers is None:
+        return '', 404
+    return _relayer_avatar('/avatar/moi', headers)
+
+
+@app.route('/avatar/compte/<int:compte_id>')
+def proxy_avatar_compte(compte_id):
+    headers = admin_headers()
+    if headers is None:
+        return '', 404
+    return _relayer_avatar(f'/avatar/compte/{compte_id}', headers)
+
+
 @app.route('/me/notifications', methods=['GET'])
 def proxy_mes_notifications():
-    """Interrogee par la navbar a chaque page. Repond 200 avec un compteur a
-    zero plutot qu'une erreur quand personne n'est connecte : la navbar n'a pas
-    a distinguer « pas connecte » de « en panne »."""
+    """Appelée par la navbar à chaque page. Renvoie un compteur à zéro plutôt
+    qu'une erreur : la navbar reste muette au lieu de casser."""
     headers = player_headers()
     if headers is None:
         return jsonify({'non_lues': 0, 'notifications': []})
@@ -736,8 +780,7 @@ def proxy_notifications_lues():
 
 @app.route('/admin/notifications', methods=['GET'])
 def proxy_notifications_admin():
-    """Pastilles de la navbar admin. Meme parti pris : jamais d'erreur, un
-    compteur a zero suffit a ne rien afficher."""
+    """Pastilles de la navbar admin. Même parti pris : jamais d'erreur."""
     headers = admin_headers()
     if headers is None:
         return jsonify({'total': 0, 'liaisons_en_attente': 0})
@@ -749,8 +792,8 @@ def proxy_notifications_admin():
 
 @app.route('/auth/demande-creation', methods=['POST'])
 def proxy_demande_creation():
-    """Demande de creation d'une fiche joueur. Le nom vient du pseudo Discord,
-    lu cote backend : le navigateur ne le choisit pas."""
+    """Demande de création d'une fiche. Le nom vient du pseudo Discord, lu côté
+    backend : le navigateur ne le choisit pas."""
     headers = player_headers()
     if headers is None:
         return jsonify({'error': 'Non autorisé'}), 401
@@ -777,9 +820,8 @@ def proxy_demande_liaison():
 
 
 # Pas d'écran de réglages de profil : « Mon profil » mène à la fiche publique.
-# `GET/PUT /me/profil` existe toujours côté backend, mais n'est plus relayé ici
-# — et le backend n'est proxifié par nginx que via ce frontend, donc les deux
-# routes sont hors d'atteinte tant que ce proxy n'est pas rétabli.
+# `GET/PUT /me/profil` existe encore côté backend, sans proxy ici — donc hors
+# d'atteinte, nginx ne servant le backend qu'à travers ce frontend.
 
 
 @app.route('/admin/comptes')
@@ -1298,13 +1340,20 @@ def admin_ligues_page():
 
 @app.after_request
 def add_header(response):
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    # Les avatars gardent le cache posé par _relayer_avatar.
+    if not request.path.startswith('/avatar/'):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Pas de script-src ni de style-src : les gabarits reposent sur des
+    # gestionnaires inline, les interdire casserait le site.
+    response.headers["Content-Security-Policy"] = (
+        "img-src 'self' data:; frame-ancestors 'self'"
+    )
     return response
 
 if __name__ == '__main__':

@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import hashlib
 import logging
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -44,6 +45,12 @@ DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', '')
 # Amorcage du tout premier superadmin : aucune IHM ne peut le creer, puisque
 # toute route d'attribution de role exige d'etre deja superadmin.
 DISCORD_SUPERADMIN_ID = os.environ.get('DISCORD_SUPERADMIN_ID', '')
+
+
+# Valide avant de finir dans un chemin d'URL : on ne construit pas une URL
+# publique avec une valeur distante non verifiee.
+RE_SNOWFLAKE = re.compile(r'^[0-9]{1,32}$')
+RE_AVATAR_HASH = re.compile(r'^[A-Za-z0-9_]{1,64}$')
 
 
 class DiscordAuthError(Exception):
@@ -144,11 +151,23 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     if not me.get('id'):
         raise DiscordAuthError("Profil Discord sans identifiant", 502, 'profil_illisible')
 
+    discord_id = str(me['id'])
+    if not RE_SNOWFLAKE.match(discord_id):
+        logger.warning("Identifiant Discord au format inattendu, connexion refusee")
+        raise DiscordAuthError("Profil Discord invalide", 502, 'profil_illisible')
+
+    avatar_hash = (me.get('avatar') or '')[:64] or None
+    if avatar_hash is not None and not RE_AVATAR_HASH.match(avatar_hash):
+        # Degrade au lieu de refuser : avatar_url() retombe sur l'avatar par
+        # defaut, perdre une image ne justifie pas de bloquer une connexion.
+        logger.warning("Hash d'avatar Discord au format inattendu, ignore")
+        avatar_hash = None
+
     return {
-        'discord_id': str(me['id']),          # snowflake : toujours une chaine
+        'discord_id': discord_id,             # snowflake : toujours une chaine
         'username': (me.get('username') or '')[:64] or None,
         'global_name': (me.get('global_name') or '')[:64] or None,
-        'avatar_hash': (me.get('avatar') or '')[:64] or None,
+        'avatar_hash': avatar_hash,
     }
 
 
@@ -338,7 +357,7 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
             'id': compte['id'],
             'discord_id': compte['discord_id'],
             'pseudo': compte['discord_global_name'] or compte['discord_username'],
-            'avatar_url': avatar_url(compte['discord_id'], compte['discord_avatar_hash']),
+            'avatar_url': '/avatar/moi',
             'joueur_id': compte['joueur_id'],
             'statut': compte['statut'],
             'role': compte['role'],

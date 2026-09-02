@@ -36,17 +36,14 @@ admin_bp = Blueprint('admin', __name__)
 
 
 
-# Import depuis routes_comptes, comme routes_public le fait deja pour
-# profil_public : aucune boucle, routes_comptes n'importe rien d'ici.
 from routes_comptes import notifier_tous
 
 
 def _notifier_recap_publie(cur, saison_id):
-    """Annonce un recapitulatif, au moment ou il DEVIENT visible.
+    """Annonce un recap au moment ou il devient visible.
 
-    Pas a sa creation : POST /admin/saisons cree un brouillon (is_active =
-    false) que /recap ne liste pas. Annoncer la creation enverrait tout le
-    monde vers une page ou le recap n'apparait pas encore.
+    Pas a sa creation : POST /admin/saisons cree un brouillon que /recap ne
+    liste pas encore.
     """
     cur.execute("SELECT nom FROM saisons WHERE id = %s", (saison_id,))
     row = cur.fetchone()
@@ -321,9 +318,6 @@ def api_get_joueurs():
                 cur.execute("""
                     SELECT j.id, j.nom, j.mu, j.sigma, j.tier, j.is_ranked, j.consecutive_missed, j.color,
                            l.id, l.nom, l.couleur,
-                           -- Compte Discord rattache, s'il y en a un : la fiche
-                           -- n'est alors plus un simple nom dans un classement,
-                           -- c'est l'identite de quelqu'un qui se connecte.
                            COALESCE(c.discord_global_name, c.discord_username), c.statut
                     FROM Joueurs j
                     LEFT JOIN Ligues l ON j.ligue_id = l.id
@@ -408,11 +402,9 @@ def api_delete_joueur(id):
                         "alternative": f"/admin/joueurs/{id}/anonymiser",
                     }), 409
 
-                # Compte Discord rattache : la FK est en ON DELETE SET NULL,
-                # donc la suppression seule laisserait un compte `statut =
-                # 'linked'` SANS fiche -- un etat que rien d'autre ne produit et
-                # qu'aucun ecran ne sait rattraper. On delie proprement, comme
-                # le fait /admin/comptes/<id>/delier, avant de supprimer.
+                # La FK est en ON DELETE SET NULL : supprimer sans delier
+                # laisserait un compte `linked` sans fiche, etat qu'aucun ecran
+                # ne sait rattraper.
                 cur.execute(
                     """SELECT id, statut,
                               COALESCE(discord_global_name, discord_username)
@@ -423,8 +415,7 @@ def api_delete_joueur(id):
                 compte_delie = None
                 if compte is not None:
                     compte_id, statut_compte, pseudo = compte
-                    # Une suspension est une decision independante : la relever
-                    # ici rouvrirait un acces que personne n'a demande a rouvrir.
+                    # Une suspension est une decision independante du lien.
                     nouveau_statut = 'pending' if statut_compte == 'linked' else statut_compte
                     cur.execute(
                         """UPDATE comptes
@@ -1248,9 +1239,6 @@ def add_tournament():
                         WHERE j.id = data.id
                     """, absent_updates)
 
-                # Dans la transaction, comme toutes les autres notifications :
-                # un rollback ne doit pas laisser l'annonce d'un tournoi qui
-                # n'a finalement pas ete enregistre.
                 notifier_tous(
                     cur, 'tournoi_ajoute',
                     "Nouveau tournoi du %s" % date_tournoi.strftime('%d/%m/%Y'),
