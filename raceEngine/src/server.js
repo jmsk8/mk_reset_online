@@ -1,49 +1,32 @@
-'use strict';
-
 // Moteur de course autoritatif du banner SMK.
 //
 // Une seule course tourne ici, et c'est elle que tous les navigateurs
-// regardent : les clients ne simulent rien, ils affichent. Voir
-// docs/MIGRATION_BANNER_WSS.md, option A.
+// regardent : les clients ne simulent rien, ils affichent. L'architecture
+// complete est dans docs/banner/architecture.md.
 //
-//   node server.js                  service normal (HTTP + WebSocket)
-//   node server.js --duration 600   soak de 10 minutes, course forcee, puis bilan
-//   node server.js --always-on      simule meme sans spectateur
-//   node server.js --quiet          pas de rapport periodique
+//   node src/server.js                  service normal (HTTP + WebSocket)
+//   node src/server.js --duration 600   soak de 10 minutes, course forcee, puis bilan
+//   node src/server.js --always-on      simule meme sans spectateur
+//   node src/server.js --quiet          pas de rapport periodique
 //
 // Cycle de vie : la course demarre a la premiere connexion et s'arrete 30 s
 // apres le depart du dernier spectateur. Personne devant l'ecran, aucun CPU
 // consomme. Le delai de grace evite qu'un simple F5 ne reparte de zero.
 
-const fs = require('fs');
-const http = require('http');
-const path = require('path');
-const { WebSocketServer } = require('ws');
+import http from 'node:http';
+import { WebSocketServer } from 'ws';
 
-const protocol = require('./protocol');
-const track = require('./track');
-
-// Le moteur et sa configuration sont les fichiers du front, tels quels : aucune
-// copie, donc aucune derive possible entre ce qui est simule et ce qui est
-// affiche. Dans le conteneur ils sont montes a cote de ce fichier, dans le
-// depot ils vivent sous frontEnd/static/js.
-function loadShared(name) {
-    const candidates = ['.', '../frontEnd/static/js'];
-    for (const dir of candidates) {
-        const full = path.join(__dirname, dir, name);
-        if (fs.existsSync(full)) return require(full);
-    }
-    throw new Error(`${name} introuvable (cherche dans : ${candidates.join(', ')})`);
-}
-
-const PH = loadShared('physics.js');
-const CFG = loadShared('physics-config.js');
+import * as protocol from './protocol.js';
+import * as track from './track.js';
+import * as PH from './engine/index.js';
+import CFG from './config/index.js';
 
 // Les circuits sont des dessins, pas du code : ils vivent dans tracks/, monte
-// en lecture seule comme le moteur. Charges une fois au demarrage, puis relus a
-// chaque redemarrage a chaud — dessiner un circuit et faire `make restart-race`
-// suffit a le voir tourner, sans reconstruire l'image.
-const TRACKS_DIR = track.resolveTracksDir(__dirname);
+// en lecture seule dans le conteneur — le moteur, lui, y est copie. Charges une
+// fois au demarrage, puis relus a chaque redemarrage a chaud : dessiner un
+// circuit et faire `make restart-race` suffit a le voir tourner, sans
+// reconstruire l'image.
+const TRACKS_DIR = track.resolveTracksDir(import.meta.dirname);
 
 let TRACKS;
 try {
@@ -397,14 +380,9 @@ function broadcast() {
     const payload = JSON.stringify(snapshot);
 
     // Le releve de vision du kart suivi, pour les seules connexions qui l'ont
-    // demande. Il ne peut pas voyager dans le payload commun : il pese cent fois
-    // l'entier de decision et ne concerne qu'un kart, choisi par un spectateur.
-    //
+    // demande : il pese cent fois l'entier de decision et ne concerne qu'un kart.
     // D'ou cette seconde serialisation, et son prix bien delimite — une par
-    // spectateur qui regarde, zero quand personne ne regarde. Le cas courant,
-    // celui de la banniere ouverte dans mille onglets, ne paie rien du tout : la
-    // boucle ci-dessous est exactement celle d'avant tant qu'aucun `watch` n'est
-    // arrive.
+    // spectateur qui regarde, zero quand personne ne regarde.
     let watched = null;
 
     for (const [ws, meta] of clients) {
@@ -467,15 +445,11 @@ const httpServer = http.createServer((req, res) => {
     res.end('not found\n');
 });
 
-// Deux snapshots consecutifs se ressemblent enormement : memes cles, memes
-// karts, quelques chiffres qui changent. C'est le cas ideal pour deflate, a
-// condition de garder le contexte de compression d'un message a l'autre — c'est
-// justement la ressemblance entre messages qui paye.
-//
-// La fenetre est volontairement reduite a 4 Ko (2^12) : elle couvre largement
-// l'historique utile a des messages de quelques centaines d'octets, tout en
-// bornant la memoire par connexion, qui compte avec la limite a 128 Mo prevue
-// pour ce conteneur. Les petits messages (pong) ne sont pas compresses.
+// Deux snapshots consecutifs se ressemblent enormement : c'est le cas ideal pour
+// deflate, a condition de garder le contexte de compression d'un message a
+// l'autre. La fenetre est reduite a 4 Ko : elle couvre l'historique utile a des
+// messages de quelques centaines d'octets tout en bornant la memoire par
+// connexion, qui compte avec la limite a 128 Mo du conteneur.
 const wss = new WebSocketServer({
     noServer: true,
     maxPayload: MAX_PAYLOAD,
@@ -544,13 +518,11 @@ wss.on('connection', ws => {
             return;
         }
 
-        // Le releve de vision d'UN kart, pour la carte de debug. `id` absent ou
-        // nul rend la connexion au flux commun.
-        //
-        // C'est la seule demande qui fasse travailler le service pour un seul
-        // spectateur, d'ou sa forme : un identifiant, pas un abonnement a
-        // negocier, et rien qui touche a la course. Un client qui ment sur `id`
-        // obtient au pire la vue d'un autre kart — tout ceci est deja public.
+        // Le releve de vision d'UN kart, pour la carte de debug ; `id` absent
+        // rend la connexion au flux commun. Seule demande qui fasse travailler le
+        // service pour un spectateur, d'ou sa forme : un identifiant, rien qui
+        // touche a la course. Un client qui ment sur `id` obtient au pire la vue
+        // d'un autre kart.
         if (msg.t === 'watch') {
             // `null` explicite : le client rend la connexion au flux commun.
             // A ne surtout pas passer par `Number`, qui rend 0 — soit le kart

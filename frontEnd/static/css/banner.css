@@ -1,9 +1,26 @@
+/* Banner SMK — la feuille de style de la course affichee sur la page d'accueil.
+   
+   Le JS correspondant est decoupe sous static/js/banner/. Cette feuille reste UN
+   fichier : une feuille de style bloque le rendu, et une quinzaine de requetes
+   bloquantes retarderaient l'apparition du bandeau. L'ordre de la cascade est ici
+   un contrat.
+   
+   Sections, dans l'ordre : cadre et logo, decor defilant, tuyaux, corps sur la
+   piste, souffle de la bleue, Lakitu, classement final, tableau du grand prix,
+   rideau de depart, etat de la connexion, cartouche du kart suivi, neige, HUD de
+   debug, classement lateral, course figee, orage, Bill Ball, ecran de demarrage.
+   
+   Regle qui vaut partout : le CSS decrit un ASPECT, jamais un deroule. Ce qui
+   avance dans le temps est pose image par image par le rendu, d'apres les dates
+   du snapshot. */
+
+/* ── Cadre, mise en page et logo ───────────────────────────────────────────────
+   Le bandeau lui-meme et ce qui le cadre. Tout le reste se pose dedans, en
+   coordonnees de monde traduites en pixels par static/js/banner/layout.js. */
 .hero.smk-snes-banner {
     position: relative;
-    /* Meme decoupage que sur PC, a l'echelle : le bord haut de la piste mordait
-       sur le decor, puis les karts debordaient sur la bordure. Le ciel a gagne,
-       puis l'asphalte derriere la piste. La piste ROULABLE, elle, n'a jamais
-       change de taille. Voir `--road-band-pct` et `.layer-ground`. */
+    /* Meme decoupage que sur PC, a l'echelle. La piste ROULABLE n'a jamais change
+       de taille — voir `--road-band-pct` et `.layer-ground`. */
     height: 262px;
     overflow: visible;
     background-color: #f7ce8c;
@@ -14,9 +31,8 @@
 
 @media screen and (min-width: 769px) {
     .hero.smk-snes-banner {
-        /* 408 : 264 px de ciel + 144 px d'asphalte, dont 126 roulables.
-           Le ciel garde la hauteur reglee au tour precedent — la bordure ne
-           bouge pas —, les 18 px ajoutes sont du bitume derriere la piste. */
+        /* 408 : 264 px de ciel + 144 px d'asphalte, dont 126 roulables. Les 18 px
+           ajoutes sont du bitume derriere la piste, la bordure ne bouge pas. */
         height: 408px;
     }
 }
@@ -29,33 +45,25 @@
     height: 100%;
     overflow: hidden;
 
-    /* ── La PISTE, en % de la scene ────────────────────────────────────
-       Ce que les karts peuvent atteindre : `road.minY` a son bord bas,
-       `road.maxY` au bord haut. C'est elle, et non l'asphalte, qui convertit
-       une profondeur en pixels — 30.882 % de 408 px = 126 px, soit les 3.6 px
-       par unite que `bodies.depthPx` pose en config moteur.
-
-       Elle est PLUS COURTE que l'asphalte, et c'est voulu : les karts de la
-       rangee du fond posaient leurs roues sur la bordure rouge et blanche. Les
-       ~18 px d'ecart sont du bitume derriere la piste, sur lequel rien ne
-       roule — la piste jouable n'y perd rien, elle garde ses 35 unites a leur
-       echelle. Baisser encore la rangee du fond = baisser ce nombre, et monter
-       `.layer-ground` d'autant pour que la bordure ne bouge pas.
-
+    /* LA PISTE, en % de la scene : ce que les karts peuvent atteindre. C'est
+       elle, et non l'asphalte, qui convertit une profondeur en pixels — 30.882 %
+       de 408 px = 126 px, soit les 3.6 px par unite de `bodies.depthPx`.
+       
+       Plus courte que l'asphalte, et c'est voulu : les karts du fond posaient
+       leurs roues sur la bordure. Les ~18 px d'ecart sont du bitume ou rien ne
+       roule.
+       
        Declaree ici plutot que deduite d'une hauteur d'element : le JS la lit
-       telle quelle (`refreshLayoutMetrics`), la feuille de style reste la seule
-       a la decider. */
+       telle quelle, la feuille de style reste seule a la decider. */
     --road-band-pct: 30.882;
 
-    /* ── L'ASPHALTE, en % de la scene ──────────────────────────────────
-       Ce qu'on VOIT de la route : la piste jouable ci-dessus, plus les ~18 px
-       de bitume derriere elle. C'est la surface peinte, donc la reference de
-       tout ce qui se pose dessus — le sol, la bande d'arrivee — et son
-       complement est la hauteur du ciel.
-
-       Declaree ici et lue partout ailleurs : elle vivait recopiee a trois
-       endroits, et la bande d'arrivee s'est retrouvee calee sur la piste
-       jouable au lieu de l'asphalte. Elle ne couvrait plus toute la route. */
+    /* L'ASPHALTE, en % de la scene : ce qu'on VOIT de la route — la piste jouable
+       plus les ~18 px de bitume derriere elle. C'est la surface peinte, donc la
+       reference de tout ce qui se pose dessus, et son complement est la hauteur
+       du ciel.
+       
+       Recopiee a trois endroits, elle avait laisse la bande d'arrivee calee sur
+       la piste jouable au lieu de l'asphalte. */
     --ground-pct: 35.294;
 }
 
@@ -84,18 +92,12 @@
     pointer-events: none;
 }
 
-/* Le logo ne retrecit pas avec la scene.
-
-   Il vit dans `.game-content-wrapper` pour se peindre au bon rang — entre le
-   decor et les corps de course —, mais ce wrapper est reduit de 0.6 sur mobile
-   pour montrer plus de piste. Le logo n'est pas de la piste : il est du decor de
-   page, et doit garder sa taille.
-
-   L'echelle inverse le remet a 1:1, et les trois autres valeurs replacent la
-   boite : 60 % d'un wrapper qui fait 166.67 % du hero, c'est exactement le hero,
-   et 20 % de marge de chaque cote la centre dedans. Tout ce qu'elle contient —
-   la largeur du logo, son decalage, son halo — garde donc la valeur ecrite,
-   sans compensation a la propriete. */
+/* Le logo ne retrecit pas avec la scene : il vit dans `.game-content-wrapper`
+   pour se peindre au bon rang, mais ce wrapper est reduit de 0.6 sur mobile pour
+   montrer plus de piste — et le logo est du decor de page, pas de la piste.
+   
+   L'echelle inverse le remet a 1:1, les trois autres valeurs replacent la boite.
+   Tout ce qu'elle contient garde donc la valeur ecrite, sans compensation. */
 @media screen and (max-width: 768px) {
     .hero-body-content {
         width: 60%;
@@ -122,12 +124,13 @@
     }
 }
 
-/* Le défilement passe par `transform` et non par `background-position` :
-   celle-ci repeint la texture du calque entier à chaque image, et aucun moteur
-   ne sait la compositer — le `will-change` qui l'accompagnait n'était qu'un
-   indice sans effet. Le calque est donc élargi d'un PAS (LAYER_STEP, 480 px) et
-   translaté dans [-480, 0] ; `background-position` ne rattrape les multiples du
-   pas qu'une fois tous les 480 px parcourus. Voir scrollLayer(). */
+/* ── Decor defilant : fond, soleil, sol, ligne ─────────────────────────────────
+   Quatre couches, quatre vitesses. Le defilement passe par `transform` et non
+   par `background-position` : c'est la seule forme que le compositeur sait
+   animer sans repeindre. */
+/* `background-position` repeint la texture du calque entier a chaque image et
+   aucun moteur ne sait la compositer. Le calque est donc elargi d'un PAS
+   (LAYER_STEP, 480 px) et translate dans [-480, 0]. Voir `scrollLayer()`. */
 .layer-scrolling-bg {
     position: absolute;
     top: 0;
@@ -175,28 +178,22 @@
     display: block;
 }
 
-/* La lueur, sur son propre élément et PLEINE jusqu'au centre.
-
-   Elle était un triple `drop-shadow()` animé en boucle. Animer `filter` refait
-   la rastérisation du calque à chaque image — ici un halo flou de 95 px de
-   rayon, en continu, sur toute la durée de vie de la page. Le même battement
-   joue maintenant sur `opacity` et `transform`, les deux seules propriétés
-   qu'un compositeur sait animer sans repeindre.
-
-   Le dégradé part du centre : un cœur transparent laissait un anneau détaché,
-   le halo ne commençant qu'une fois le disque passé. Il couvre donc tout le
-   soleil, et c'est le disque posé par-dessus qui en cache le milieu — la
-   lueur ne se voit qu'à partir du bord, mais sans rupture.
-
-   La phase reste calée sur l'horloge du serveur : --sun-phase est posée par
-   alignAnimationPhase(), un pseudo-élément n'acceptant pas de style inline. */
+/* La lueur, sur son propre element et PLEINE jusqu'au centre.
+   
+   Elle etait un triple `drop-shadow()` anime en boucle : animer `filter` refait
+   la rasterisation du calque a chaque image. Le meme battement joue maintenant
+   sur `opacity` et `transform`, les deux seules proprietes qu'un compositeur sait
+   animer sans repeindre.
+   
+   Le degrade part du centre : un coeur transparent laissait un anneau detache. La
+   phase reste calee sur l'horloge du serveur (`--sun-phase`), un pseudo-element
+   n'acceptant pas de style inline. */
 .hero.smk-snes-banner[data-season="summer"] .layer-sun::before {
     content: '';
     position: absolute;
-    /* Un débord d'un carré de chaque côté : la boîte fait donc 300 % dans les
-       deux sens, et elle est centrée. Pas de `margin: -150%` — une marge en
-       pourcentage se résout sur la LARGEUR du parent, `margin-top` comprise,
-       et le halo serait tombé à côté du soleil verticalement. */
+    /* Un debord d'un carre de chaque cote : la boite fait 300 % dans les deux
+       sens, et elle est centree. Pas de `margin: -150%` — une marge en
+       pourcentage se resout sur la LARGEUR du parent, `margin-top` comprise. */
     inset: -100%;
     border-radius: 50%;
     pointer-events: none;
@@ -259,20 +256,16 @@
     background-image: url('../img/banners/summer/index-banner-summer-foureground.png');
 }
 
-/* ── L'asphalte : 144 px sur PC, dont 126 roulables ────────────────────
-   L'asphalte n'est PLUS la piste. Il la contient : la piste occupe ses 126 px
-   du bas (`--road-band-pct`), les ~18 px du haut sont du bitume que personne ne
-   foule. Sans eux, un kart de la rangee du fond posait ses roues sur la bordure
-   rouge et blanche, qui est pourtant le bord de la route.
-
-   Les deux ont longtemps ete la meme chose, et c'est ce qui rendait
-   `bodies.depthPx` egal a 1 % de la scene. Ce n'est plus vrai, et le client ne
-   le suppose plus : il convertit les profondeurs avec la bande roulable
-   (`depthToWorldPx`) et ne se sert de cette hauteur-ci que pour savoir jusqu'ou
-   la neige peut se poser.
-
-   Monter ce pourcentage recule la bordure sans toucher a la piste ; il faut
-   alors monter la hauteur du hero d'autant, sinon c'est le ciel qui paie. */
+/* L'asphalte n'est PLUS la piste, il la contient : la piste occupe ses 126 px du
+   bas (`--road-band-pct`), les ~18 px du haut sont du bitume que personne ne
+   foule. Sans eux, un kart du fond posait ses roues sur la bordure.
+   
+   Les deux ont longtemps ete la meme chose, ce qui rendait `bodies.depthPx` egal
+   a 1 % de la scene. Le client ne le suppose plus : il convertit avec la bande
+   roulable et ne se sert de cette hauteur que pour la neige.
+   
+   Monter ce pourcentage recule la bordure sans toucher a la piste ; il faut alors
+   monter la hauteur du hero d'autant, sinon c'est le ciel qui paie. */
 .layer-ground {
     position: absolute;
     bottom: 0;
@@ -294,13 +287,12 @@
     background-image: repeating-linear-gradient(90deg, #cc0000 0px, #cc0000 40px, #ffffff 40px, #ffffff 80px);
     z-index: 5;
     box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-    /* Le defilement est pilote par la camera (--road-offset, pose a chaque
-       frame par renderState) et non plus par une animation CSS libre : deux
-       spectateurs verraient sinon la route a des phases differentes.
-       La variable alimente une `transform`, seule propriété qu'un compositeur
-       sait animer seul ; en `background-position` elle repeignait la bande à
-       chaque image. Un pseudo-élément n'acceptant pas de style inline, c'est
-       le parent qui la porte. */
+    /* Le defilement est pilote par la camera (`--road-offset`, posee a chaque
+       image) et non par une animation CSS libre : deux spectateurs verraient
+       sinon la route a des phases differentes. La variable alimente une
+       `transform`, seule propriete qu'un compositeur sait animer seul ; un
+       pseudo-element n'acceptant pas de style inline, c'est le parent qui la
+       porte. */
     transform: translate3d(var(--road-offset, 0px), 0, 0);
     will-change: transform;
 }
@@ -325,22 +317,18 @@
     will-change: transform;
 }
 
-/* Le tuyau, planté sur la piste. Ancré par sa base à sa profondeur, comme un
-   kart : le z-index posé par le JS le fait passer devant ou derrière selon qui
-   roule le plus près du spectateur.
-
-   ── Le DESSIN rétrécit sur mobile, l'emprise non ────────────────────────
-   `--pipe-w` / `--pipe-h` sont la taille que le serveur envoie (`WORLD.pipeDraw`,
-   celle dont descend la hitbox), posées en inline par le rendu. Le facteur qui
-   les accompagne ici n'existe que parce que le mobile montre plus de piste dans
-   moins de place — le kart y passe de 100 px à 80 pour la même raison.
-
-   Le tuyau était le seul corps à garder sa taille PC : 67.2 px face à un kart de
-   80 au lieu de 100, un quart trop gros pour ce qui l'entoure. Le facteur du
-   kart (0.8) le ramenait exactement à sa proportion PC, et c'était un cheveu
-   trop petit à l'œil — d'où 0.85, réglé au rendu. Un obstacle se lit d'un peu
-   plus loin qu'un concurrent, il a le droit de peser un peu plus.
-
+/* ── Tuyaux ────────────────────────────────────────────────────────────────────
+   Le seul obstacle fixe de la piste. Ancre par sa base a sa profondeur, comme
+   un kart : c'est ce qui le fait passer devant ou derriere au bon moment. */
+/* Le tuyau, plante sur la piste. Ancre par sa base a sa profondeur comme un kart
+   : le z-index pose par le JS le fait passer devant ou derriere.
+   
+   LE DESSIN retrecit sur mobile, l'emprise non. `--pipe-w` / `--pipe-h` sont la
+   taille que le serveur envoie, posees en inline par le rendu ; le facteur qui
+   les accompagne n'existe que parce que le mobile montre plus de piste dans moins
+   de place. A 0.85 plutot que le 0.8 du kart : un obstacle se lit d'un peu plus
+   loin qu'un concurrent, il a le droit de peser un peu plus.
+   
    Comme pour le kart, la hitbox ne bouge pas : c'est le dessin qui suit
    l'appareil, jamais la simulation. */
 .pipe {
@@ -396,6 +384,9 @@
     100% { transform: translate3d(0, 0, 0)     scale(1, 1); }
 }
 
+/* ── Corps sur la piste : boite, kart, objet tenu ──────────────────────────────
+   Ce qui roule et ce qui se ramasse. La largeur de base est celle du kart de
+   REFERENCE ; chaque personnage la multiplie par l'echelle de son sprite. */
 /* Ancree au sol comme les karts : sa profondeur passe par la `translate3d`
    posee a chaque image, la seule qui suive la bande d'asphalte mesuree. */
 .item-box {
@@ -408,19 +399,16 @@
     will-change: transform;
 }
 
-/* La largeur de base est celle du kart de RÉFÉRENCE, et `--kart-length` dit ce
-   que ce kart-ci en fait : chaque personnage est dessiné au prorata de son PNG,
-   et son emprise suit le même rapport (cf. `bodies` en config moteur). La
-   variable est posée en inline par le rendu, qui la tient du serveur ; sans
-   elle, le repli à 1 redonne exactement la largeur d'avant.
-
-   Une variable et non une largeur en px calculée en JS : c'est ici que vit la
-   différence PC / mobile, et la poser en pixels obligerait à la recalculer à
-   chaque changement d'appareil. */
-/* Ancré au sol : la profondeur (`yPercent`) est pliée dans la `translate3d`
-   posée à chaque image, et non plus dans un `bottom` en pourcentage, qui est
-   une propriété de mise en page et relançait le calcul du conteneur entier —
-   annulant du même coup le `will-change` ci-dessous. Voir depthToY(). */
+/* La largeur de base est celle du kart de REFERENCE, et `--kart-length` dit ce
+   que ce kart-ci en fait : chaque personnage est dessine au prorata de son PNG,
+   et son emprise suit le meme rapport. Sans elle, le repli a 1 redonne la largeur
+   d'avant.
+   
+   Une variable et non une largeur en px calculee en JS : c'est ici que vit la
+   difference PC / mobile. */
+/* Ancre au sol : la profondeur est pliee dans la `translate3d` posee a chaque
+   image, et non dans un `bottom` en pourcentage — propriete de mise en page, qui
+   relancait le calcul du conteneur entier. */
 .kart-container-moving {
     position: absolute;
     left: 0;
@@ -438,13 +426,11 @@
 /* Porte le miroir du tête-à-queue : les orientations ouest n'existent pas en
    asset, on retourne leur symétrique est. Élément dédié car snesBounce occupe
    déjà `transform` sur l'img. */
-/* Porte le rapetissement de l'éclair, et lui seul. Élément distinct de
-   .kart-sprite parce que celui-ci s'inverse à chaque image du tête-à-queue :
-   empiler l'échelle dessus ferait passer la transition sur le miroir, et le
-   kart s'écraserait à chaque changement de frame au lieu de se retourner net.
-   Origine au sol, pour qu'un kart réduit reste sur ses roues.
-   --kart-scale est posée par reconcileShrink() : l'ampleur du malus est une
-   valeur de gameplay, elle vient du serveur et n'a pas à être écrite ici. */
+/* Porte le rapetissement de l'eclair, et lui seul. Element distinct de
+   `.kart-sprite` parce que celui-ci s'inverse a chaque image du tete-a-queue :
+   empiler l'echelle dessus ferait s'ecraser le kart a chaque changement de frame
+   au lieu de se retourner net. Origine au sol, pour qu'un kart reduit reste sur
+   ses roues. */
 .kart-scaler {
     width: 100%;
     line-height: 0;
@@ -453,10 +439,9 @@
     transition: transform 220ms ease-out;
 }
 
-/* Écrasé par un kart resté grand. Deuxième facteur d'échelle et non un
-   remplacement du premier : un kart peut être petit ET aplati, les deux malus
-   ayant leur propre compte à rebours. Le sprite s'élargit un peu en même temps
-   qu'il s'aplatit — une galette, pas un kart rétréci en hauteur. */
+/* Ecrase par un kart reste grand. Deuxieme facteur d'echelle et non un
+   remplacement du premier : un kart peut etre petit ET aplati. Le sprite
+   s'elargit un peu en meme temps — une galette, pas un kart retreci en hauteur. */
 .kart-scaler.is-flat {
     --kart-flat-x: 1.35;
     --kart-flat-y: 0.28;
@@ -484,11 +469,10 @@
     filter: drop-shadow(-4px 4px 0px rgba(0,0,0,0.4));
 }
 
-/* `steps(1, end)` : la teinte tient sa valeur d'une image-clé à l'autre au lieu
-   d'être interpolée. starRainbow anime `filter`, qui refait la rastérisation du
-   sprite à chaque changement de valeur — en `linear` c'était soixante fois par
-   seconde, par kart étoilé ; en paliers, quatre fois par cycle. C'est aussi le
-   cycle de palette du jeu d'origine, qui clignote au lieu de dégrader. */
+/* `steps(1, end)` : la teinte tient sa valeur d'une image-cle a l'autre au lieu
+   d'etre interpolee. `starRainbow` anime `filter`, qui refait la rasterisation du
+   sprite a chaque changement — soixante fois par seconde en `linear`, quatre par
+   cycle en paliers. C'est aussi le cycle de palette du jeu d'origine. */
 .kart-container-moving.star-active .kart-static-png {
     animation: snesBounce 0.15s infinite alternate ease-in-out,
                starRainbow 0.3s steps(1, end) infinite;
@@ -514,13 +498,12 @@
     100% { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(360deg) brightness(1.3); }
 }
 
-/* Souffle de la carapace bleue. Aucun sprite : un halo qui s'ouvre et s'efface.
-
-   L'enveloppe ne porte que la position, écrite en inline par le rendu ; c'est
-   l'élément intérieur qui est animé. Animer l'enveloppe reviendrait à écraser
-   cette position : dans la cascade, une animation l'emporte sur un style
-   inline. Même découpage que le rebond des objets tenus, qui anime l'image et
-   non son conteneur. */
+/* ── Souffle de la carapace bleue ──────────────────────────────────────────────
+   Aucun sprite : un halo qui s'ouvre et s'efface. Sa duree suit `blastMs` —
+   ce qu'on voit est exactement ce qui touche. */
+/* L'enveloppe ne porte que la position, ecrite en inline par le rendu ; c'est
+   l'element interieur qui est anime. Animer l'enveloppe ecraserait cette position
+   — dans la cascade, une animation l'emporte sur un style inline. */
 .blue-blast {
     /* Un dôme, pas une bulle : posé sur la piste, et assez haut pour couvrir un
        kart, qui fait 100 px. */
@@ -774,13 +757,12 @@
     }
 }
 
-/* ── Rideau de départ ─────────────────────────────────────────────────────
-   Damier noir et blanc qui couvre la scène le temps qu'elle soit prête, puis
-   se lève. Il masque la reconstruction du décor et, plus tard, celle d'une
-   course déjà commencée : un arrivant ne doit jamais voir la scène s'assembler.
-   La section est en `overflow: visible` (le classement déborde en dessous),
-   d'où le conteneur de découpe : sans lui, le rideau levé irait recouvrir la
-   navbar. */
+/* Damier noir et blanc qui couvre la scene le temps qu'elle soit prete, puis se
+   leve. Il masque la reconstruction du decor et, plus tard, celle d'une course
+   deja commencee.
+   
+   La section est en `overflow: visible` (le classement deborde en dessous), d'ou
+   ce conteneur de decoupe : sans lui, le rideau leve irait recouvrir la navbar. */
 .race-curtain-clip {
     position: absolute;
     top: 0;
@@ -819,14 +801,10 @@
     transition: transform 0.7s cubic-bezier(0.4, 0, 0.5, 1);
 }
 
-/* Le rideau prend sa place sans la jouer. Il sert à l'ouverture de la page :
-   on arrive sur une scène déjà couverte, le seul mouvement qu'on doit voir est
-   sa levée. Sans ça on le regardait tomber sur une scène qu'il était censé
-   avoir toujours cachée.
-
-   Posée puis retirée à l'image suivante (index.html), donc jamais en travers
-   d'une vraie descente — celle de la fin de course, elle, se regarde.
-   Après `.is-down` : même spécificité, c'est l'ordre qui tranche. */
+/* Le rideau prend sa place sans la jouer : on arrive sur une scene deja couverte,
+   et le seul mouvement qu'on doit voir est sa levee. Posee puis retiree a l'image
+   suivante (index.html), donc jamais en travers d'une vraie descente. Apres
+   `.is-down` : meme specificite, c'est l'ordre qui tranche. */
 .race-curtain.is-instant {
     transition: none;
 }
@@ -985,6 +963,8 @@
 }
 
 
+/* ── Neige (hiver) ─────────────────────────────────────────────────────────────
+   Purement decoratif, et sans effet sur la course. */
 .snow-container {
     position: absolute;
     top: 0;
@@ -1049,22 +1029,18 @@
 }
 
 
-/* La carte de debug : un tour complet a plat. L'abscisse est le monde, et
-   l'ordonnee la PROFONDEUR de la piste — c'est ce qui permet d'y lire une vue,
-   dont tout se joue en profondeur. Elle etait haute de 60 px avec tout le monde
-   sur une seule rangee ; il lui faut de quoi separer trente unites de piste. */
+/* ── HUD de debug : carte, vision, emprises ────────────────────────────────────
+   Rien ici ne s'affiche hors de `GAME_CONFIG.debugMode`. C'est un instrument
+   d'observation : il lit l'etat, il ne l'ecrit jamais. */
 /* La carte de debug : une fenetre de piste vue de dessus, a l'ECHELLE 1 — un
-   pixel de monde pour un pixel de carte. Cf. la note de section dans
-   smk-banner.js.
-
-   Sa HAUTEUR n'est donc pas une decision de mise en page : c'est la profondeur
-   de la piste, en pixels, et rien d'autre. `updateMapView()` l'ecrit a chaque
-   changement de cadrage ; la valeur ci-dessous n'est qu'un point de depart, le
-   temps de la premiere image.
-
-   Sa LARGEUR est prise aussi grande que la page le permet, et sans plafond :
-   a echelle fixe, chaque pixel de cadre gagne est un pixel de piste vu en plus.
-   C'est le seul reglage qui reste, et il ne joue plus sur la taille des corps. */
+   pixel de monde pour un pixel de carte (cf. `banner/debug.js`).
+   
+   Sa HAUTEUR n'est donc pas une decision de mise en page : c'est la profondeur de
+   la piste en pixels, ecrite par `updateMapView()`. La valeur ci-dessous n'est
+   qu'un point de depart.
+   
+   Sa LARGEUR est prise aussi grande que la page le permet, et sans plafond : a
+   echelle fixe, chaque pixel gagne est un pixel de piste vu en plus. */
 #debug-hud {
     position: fixed;
     bottom: 10px;
@@ -1096,9 +1072,9 @@
 }
 
 /* Le champ du balayage : jusqu'ou porte le regard, du cote ou il regarde. */
-/* Le champ du balayage. Il etait a 7 % d'opacite — invisible sur un fond noir,
-   et plus encore sous les angles morts qui se peignent par-dessus a 62 %. Un
-   calque qu'on ne voit pas ne vaut pas mieux qu'un calque absent. */
+/* Le champ du balayage : jusqu'ou porte le regard, du cote ou il regarde. Il
+   etait a 7 % d'opacite — invisible sur fond noir, et plus encore sous les angles
+   morts peints par-dessus. */
 .dv-cone {
     background: rgba(0, 255, 136, 0.18);
     border-left: 2px solid rgba(0, 255, 136, 0.85);
@@ -1286,13 +1262,8 @@
     z-index: 3;
 }
 
-/* Un corps se dessine a SON EMPRISE, pas en pastille de taille fixe : la
-   largeur, la hauteur et la rondeur arrivent en style inline, calculees par
-   `sizeEntity()` a partir des demi-emprises que le serveur envoie. Rien ici ne
-   fixe donc de dimension — une taille en dur reprendrait la main sur la seule
-   chose que la carte a a dire.
-
-   Ce qui reste : le centrage sur le point, la couleur, et l'ordre de lecture. */
+/* Un corps se dessine a SON EMPRISE et non en pastille de taille fixe : largeur,
+   hauteur et rondeur arrivent en style inline. */
 .debug-entity {
     position: absolute;
     top: 50%;
@@ -1358,6 +1329,9 @@
 }
 
 
+/* ── Classement lateral, pause et vote ─────────────────────────────────────────
+   Hors du cadre du bandeau, donc hors de portee du rideau : c'est pourquoi il
+   porte son propre voile. */
 #race-leaderboard {
     position: absolute;
     top: 100%;
@@ -1616,9 +1590,7 @@
     }
 }
 
-/* ==========================================================================
-   Course figée
-   ==========================================================================
+/* ── Course figée ──────────────────────────────────────────────────────────────
    Le bouton pause arrête le rendu JS en cessant de peindre : les positions sont
    posées à chaque frame par renderState(), il suffit de ne plus l'appeler. Les
    animations CSS, elles, ne passent pas par nous — la toupie du kart touché, le
@@ -1639,9 +1611,7 @@
     animation-play-state: paused !important;
 }
 
-/* ==========================================================================
-   Orage de l'éclair
-   ==========================================================================
+/* ── Orage de l'éclair ─────────────────────────────────────────────────────────
    Un seul calque, sous les karts (z-index 400) : la scène s'assombrit, les
    karts restent lisibles. L'opacité du calque est posée à chaque frame par
    renderStorm() d'après les dates du snapshot ; le CSS ne décrit que l'aspect,
@@ -1782,9 +1752,7 @@
     }
 }
 
-/* ==========================================================================
-   Bill Ball
-   ==========================================================================
+/* ── Bill Ball ─────────────────────────────────────────────────────────────────
    Le kart n'est pas masqué : c'est son image qui est remplacée par celle du
    bill, le temps du vol. Tout ce qui suit est de l'habillage — la vitesse, la
    trajectoire et les dégâts sont côté serveur.

@@ -93,11 +93,13 @@ Chaque saison attribue des distinctions aux joueurs :
 Le projet suit une architecture frontend/backend découplée, orchestrée via Docker Compose :
 
 ```
-nginx (port 80) -> frontend Flask (port 5000) -> backend API (port 8080) -> PostgreSQL
+nginx (port 80) ─┬─ /        -> frontend Flask (5000) -> backend API (8080) -> PostgreSQL
+                 └─ /ws/race -> service race (3000, Node)
 ```
 
 - **Backend** : API REST qui gère toute la logique métier (TrueSkill, awards, ligues, administration). Point d'entrée `backEnd/backend.py`, logique répartie en modules dédiés (`routes_public.py`, `routes_admin.py`, `services.py`).
 - **Frontend** : Serveur Flask qui consomme l'API backend et rend les templates Jinja2. Code principal dans `frontEnd/frontend.py`.
+- **Race** : moteur de course du bandeau d'accueil, en Node. Une seule course tourne, tous les navigateurs la regardent — le client n'affiche, il ne simule pas. Volontairement isolé du réseau de la base : ni session, ni cookie, ni Postgres. Voir [docs/banner/](docs/banner/).
 - **Nginx** : Reverse proxy qui route les requêtes vers le frontend.
 - **PostgreSQL** : Base relationnelle initialisée via `schema.sql` et `seed.sql`.
 
@@ -105,13 +107,23 @@ nginx (port 80) -> frontend Flask (port 5000) -> backend API (port 8080) -> Post
 
 ```
 mk_reset_online/
-├── backEnd/           # API REST (Flask, TrueSkill, logique métier)
+├── backEnd/               # API REST (Flask, TrueSkill, logique métier)
 ├── frontEnd/
-│   ├── templates/     # Templates Jinja2 (16 pages)
-│   └── static/        # CSS, JS, images, sprites
-├── nginx/             # Configuration Nginx
-├── nix/               # Environnement Nix Flakes
-├── dumps/             # Sauvegardes locales de la base (non versionné)
+│   ├── templates/         # Templates Jinja2
+│   └── static/
+│       ├── js/banner/     # Le rendu du bandeau, en scripts chargés dans l'ordre
+│       ├── css/           # Feuilles de style
+│       └── img/           # Sprites, décors, avatars
+├── raceEngine/            # Moteur de course du bandeau (Node)
+│   ├── src/engine/        #   la simulation
+│   ├── src/config/        #   ses réglages
+│   └── tools/             #   bancs d'essai et vérificateurs
+├── tracks/                # Les circuits, dessinés en Markdown
+├── nginx/                 # Configuration Nginx
+├── nix/                   # Environnement Nix Flakes
+├── scripts/               # Utilitaires (dumps, données d'exemple, sprites)
+├── docs/                  # Documentation technique
+├── dumps/                 # Sauvegardes locales de la base (non versionné)
 └── docker-compose.yml
 ```
 

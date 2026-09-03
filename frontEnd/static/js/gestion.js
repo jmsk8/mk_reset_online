@@ -4,8 +4,8 @@ function escapeHtml(str) {
 }
 
 async function apiCall(endpoint, method = 'GET', body = null) {
-    // Pas d'en-tête d'auth : les endpoints visés sont les routes proxy du
-    // frontend, qui injectent X-Admin-Token depuis la session serveur.
+    // Pas d'en-tête d'auth : ces URL sont les routes proxy du frontend, qui
+    // injectent X-Admin-Token depuis la session serveur.
     const headers = { 'Content-Type': 'application/json' };
 
     const csrfMeta = document.querySelector('meta[name="csrf-token"]');
@@ -265,10 +265,8 @@ async function deletePlayer(id) {
         return;
     }
 
-    // Le backend refuse de supprimer un joueur qui a un historique : retirer
-    // ses participations fausserait le classement de tous les autres, sans
-    // moyen de le recalculer. Il propose l'anonymisation à la place — encore
-    // faut-il pouvoir la déclencher d'ici.
+    // Le backend refuse de supprimer un joueur qui a un historique et propose
+    // l'anonymisation : encore faut-il pouvoir la déclencher d'ici.
     if (res.code === 'historique_non_vide') {
         if (!confirm(
             (res.error || "") + "\n\n"

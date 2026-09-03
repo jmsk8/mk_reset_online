@@ -1,5 +1,11 @@
 # Déplacement latéral des karts — défauts recensés et pistes d'équilibrage
 
+> **Archive.** Ce document décrit un état du code qui n'existe plus : les chemins
+> de fichiers et numéros de ligne cités sont ceux de sa date de rédaction. Il est
+> gardé parce qu'il explique *pourquoi* les choses sont comme elles sont.
+> L'état actuel est décrit dans [architecture.md](architecture.md) et
+> [protocole.md](protocole.md).
+
 > Document de travail interne. Écrit le **2026-08-28** sur la branche `dev`, après lecture
 > intégrale de la chaîne de pilotage latéral de `physics.js` (perception → décision →
 > braquage → intégration) et de la config associée.

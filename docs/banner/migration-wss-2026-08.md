@@ -1,5 +1,11 @@
 # Migration du banner SMK vers WebSocket (WSS)
 
+> **Archive.** Ce document décrit un état du code qui n'existe plus : les chemins
+> de fichiers et numéros de ligne cités sont ceux de sa date de rédaction. Il est
+> gardé parce qu'il explique *pourquoi* les choses sont comme elles sont.
+> L'état actuel est décrit dans [architecture.md](architecture.md) et
+> [protocole.md](protocole.md).
+
 > Objectif : **tous les visiteurs voient exactement la même course**, au lieu d'une
 > simulation locale et aléatoire par navigateur.
 >

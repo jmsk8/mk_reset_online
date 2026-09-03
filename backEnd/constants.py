@@ -38,22 +38,19 @@ GM_BASE_WEIGHT_V2 = 15.0
 
 # IP v2 : ratio_ajuste = ratio * force_lobby, avec
 #   force_lobby = 1 + PER_MU * (mu_moyen_du_lobby - mu_moyen_de_reference)
-# les deux moyennes etant calculees en excluant le joueur concerne. Lobby au
-# niveau de la reference => force_lobby = 1.0, donc v2 = v1.
+# les deux moyennes excluant le joueur concerne. Lobby au niveau de la
+# reference => force_lobby = 1.0, donc v2 = v1.
 #
-# L'ecart est pris en points de mu et non en rapport : le mu TrueSkill est une
-# echelle d'intervalle dont l'origine est arbitraire (50 ici, 25 dans la lib),
-# donc seule la difference a un sens. Un rapport rendrait la correction
-# dependante du niveau general, qu'un reset global suffirait a deplacer.
+# L'ecart est en points de mu et non en rapport : le mu TrueSkill est une
+# echelle d'intervalle dont l'origine est arbitraire, seule la difference a un
+# sens.
 IP_V2_FORCE_LOBBY_PER_MU = 0.02   # correction par point de mu d'ecart. 0 = desactive
 IP_V2_FORCE_LOBBY_MIN = 0.5
 IP_V2_FORCE_LOBBY_MAX = 2.0
 IP_VERSION_DEFAULT = "v1"
 
-# La moyenne de reference est figee par journee : la grille des joueurs est
-# sauvegardee (table grille_snapshots) juste avant la generation du premier
-# tournoi du jour, et les tournois suivants de la meme journee (session de
-# matchmaking scindee en plusieurs lobbies) reutilisent cette meme grille.
+# La moyenne de reference est figee par journee (table grille_snapshots), juste
+# avant le premier tournoi du jour ; les suivants reutilisent cette grille.
 # Ces deux drapeaux definissent qui compte dans la moyenne.
 IP_V2_REF_REQUIRE_TIER = True     # exclut les joueurs sans tier (tier = 'U')
 IP_V2_REF_REQUIRE_RANKED = True   # exclut les joueurs inactifs (is_ranked = false)
@@ -65,9 +62,9 @@ CACHE_TTL_SECONDS = 300
 DEFAULT_PAGE_SIZE = 50
 
 # --- Authentification Discord / comptes joueurs ---------------------------
-# Duree de vie ABSOLUE d'une session joueur : aucune route ne la prolonge.
-# C'est ce qui distingue sessions_joueurs de l'ancienne api_tokens, dont le
-# renouvellement sans borne rendait un token vole valable indefiniment.
+# Duree de vie ABSOLUE : aucune route ne la prolonge. C'est ce qui distingue
+# sessions_joueurs de l'ancienne api_tokens, dont le renouvellement sans borne
+# rendait un token vole valable indefiniment.
 SESSION_JOUEUR_LIFETIME_DAYS = 30
 # Les comptes privilegies ont une session bien plus courte : ils ouvrent
 # beaucoup plus de portes qu'un compte joueur.
@@ -90,15 +87,14 @@ ROLE_SUPERADMIN = "superadmin"
 ROLE_HIERARCHY = {ROLE_PLAYER: 0, ROLE_ADMIN: 1, ROLE_SUPERADMIN: 2}
 
 # --- Matchmaking ----------------------------------------------------------
-# Taille maximale d'un lobby. Etait une constante JS dans matchmaking.html ;
-# elle vit ici depuis que l'algorithme est cote serveur, pour que la page admin
-# et le bot Discord partagent la meme valeur.
+# Taille maximale d'un lobby. Cote serveur depuis que la page admin et le bot
+# Discord partagent le meme algorithme.
 MAX_PAR_LOBBY = 10
 
 # --- RGPD -----------------------------------------------------------------
 # Version des conditions acceptees. La changer force une nouvelle acceptation :
-# comptes.cgu_version garde celle qui a ete reellement acceptee, ce qui permet
-# de demontrer QUOI a ete accepte, et pas seulement QUAND.
+# comptes.cgu_version garde celle reellement acceptee, ce qui demontre QUOI a
+# ete accepte et pas seulement QUAND.
 CGU_VERSION = "1.0"
 
 # Durees de conservation. Chacune doit pouvoir se justifier : conserver sans

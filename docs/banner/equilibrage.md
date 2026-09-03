@@ -14,9 +14,9 @@ et l'écart est structurel, pas statistique (bruit à ±1.0 point).
 
 ## Fichiers
 
-- `frontEnd/static/js/physics.js` — le moteur. `deriveCharacterStats` construit
+- `raceEngine/src/engine/` — le moteur. `stats.js` / `deriveCharacterStats` construit
   les stats dérivées ; la boucle de déplacement est dans `stepPhysics`.
-- `frontEnd/static/js/physics-config.js` — tous les coefficients (`kartStats`,
+- `raceEngine/src/config/` — tous les coefficients (`kartStats`,
   `speeds`, `physics`, `pipe`, `itemDistribution`…).
 - `raceEngine/tools/simulate.js` — banc de mesure hors horloge. Il **charge** le
   moteur et la config sans jamais les modifier : il observe. ~1000 courses en
@@ -204,6 +204,6 @@ seule de 6 % à 15 %, la piste B devient inutile.
   d'export — si tu changes cette formule dans le moteur, la décomposition
   mentira sans rien signaler.
 - Le moteur tourne à l'identique côté front et côté service : toute
-  modification doit rester dans les fichiers partagés `physics*.js`.
+  modification doit rester dans `raceEngine/src/engine/` et `raceEngine/src/config/`.
 - Style du code : commentaires en français **sans accents**, qui expliquent le
   pourquoi et pas le quoi. Suis ce qui existe.

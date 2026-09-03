@@ -8,11 +8,9 @@ from typing import Any
 
 from constants import CACHE_TTL_SECONDS
 
-# Borne dure du cache. Une entrée n'est purgée qu'à la LECTURE d'une clé périmée :
-# une clé écrite puis jamais relue resterait indéfiniment en mémoire. Sans
-# plafond, un jeu de clés pilotable depuis internet ferait grossir le dict
-# jusqu'à l'OOM du conteneur (512 Mo). L'ordre d'insertion de l'OrderedDict sert
-# d'approximation LRU : on évince la plus ancienne.
+# Borne dure du cache. Une entrée n'est purgée qu'à la LECTURE d'une clé
+# périmée : sans plafond, un jeu de clés pilotable depuis internet ferait
+# grossir le dict jusqu'à l'OOM. L'ordre d'insertion sert d'approximation LRU.
 CACHE_MAX_ENTRIES = 200
 
 _cache_store: OrderedDict[str, tuple[Any, float]] = OrderedDict()

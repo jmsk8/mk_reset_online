@@ -36,7 +36,7 @@ dernière colonne touche la première : le tour boucle.
 
 Le nombre de rangées n'est qu'une résolution de dessin : il ne change pas la
 largeur de la piste, qui reste fixée par `road.minY`/`road.maxY` dans
-[physics-config.js](../frontEnd/static/js/physics-config.js). Dessiner huit
+[src/config/world.js](../raceEngine/src/config/world.js). Dessiner huit
 rangées donne simplement deux fois plus de finesse pour placer une boîte.
 
 ## Les pipes
@@ -120,7 +120,7 @@ Le tour n'est pas obligé de faire 96 colonnes, mais sa longueur ne se choisit
 pas à la légère : elle est la seule mesure du jeu que le dessin déplace.
 
 - **la distribution des objets** se règle en distances absolues
-  (`distanceRef: 3500`, `spreadRef: 4000` dans `physics-config.js`). Sur un tour
+  (`distanceRef: 3500`, `spreadRef: 4000` dans `raceEngine/src/config/items.js`). Sur un tour
   deux fois plus court, un même retard en pixels représente une bien plus grosse
   part de la course, et la compensation frappe plus fort ;
 - **la course entière** dure cinq tours et doit rester sous `race.maxRaceMs`

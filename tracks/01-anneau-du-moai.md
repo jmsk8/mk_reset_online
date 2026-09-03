@@ -1,6 +1,6 @@
 # Anneau du Moai
 
-Le circuit historique du banner, celui qui vivait en dur dans `physics-config.js`
+Le circuit historique du banner, celui qui vivait en dur dans la configuration du moteur
 avant que les tracés ne se dessinent. Un anneau nu : ligne d'arrivée, un rideau
 de quatre boîtes au tiers du tour, et rien d'autre entre les deux.
 

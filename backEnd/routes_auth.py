@@ -1,8 +1,4 @@
-"""Routes d'authentification Discord et gestion des invitations.
-
-Regroupees ici plutot que dans routes_admin.py : tout le domaine « qui es-tu »
-vit au meme endroit, et routes_admin.py depasse deja le millier de lignes.
-"""
+"""Routes d'authentification Discord et gestion des invitations."""
 
 from __future__ import annotations
 
@@ -33,9 +29,8 @@ auth_bp = Blueprint('auth', __name__)
 def discord_exchange():
     """Echange le code OAuth contre une session. Appele par le frontend seul.
 
-    Le frontend doit utiliser un timeout DEDIE (>= 15 s) pour cette route :
-    deux appels reseau vers Discord se cachent derriere, et son timeout par
-    defaut de 5 s couperait alors que le compte vient d'etre cree.
+    Le frontend doit utiliser un timeout DEDIE (>= 15 s) : deux appels reseau vers
+    Discord se cachent derriere.
     """
     data = request.get_json(silent=True) or {}
     code = data.get('code')
@@ -120,11 +115,9 @@ def config():
 def lire_invitation(token):
     """Etat d'une invitation. STRICTEMENT idempotent : ne consomme rien.
 
-    Coller le lien d'invitation dans un salon Discord declenche un GET du
-    crawler qui deroule l'apercu. Si l'affichage consommait l'invitation, un
-    lien max_uses=1 serait brule avant que quiconque ait pu cliquer. Les
-    apercus de Slack, Signal ou d'un antivirus d'entreprise font pareil.
-    La consommation a lieu dans /auth/discord/exchange, au retour de Discord.
+    Coller le lien dans un salon declenche un GET du crawler Discord (Slack et
+    Signal font pareil) : un lien max_uses=1 serait brule avant le premier clic.
+    La consommation a lieu dans /auth/discord/exchange.
     """
     try:
         with get_db_connection() as conn:
@@ -200,9 +193,8 @@ def lister_invitations():
 def creer_invitation():
     """Cree une invitation et renvoie le lien UNE SEULE FOIS.
 
-    Seul le sha256 part en base : le token est irrecuperable ensuite. C'est
-    aussi ce qui rend inexploitable un token qui aurait fuite dans les logs
-    d'acces nginx, ou le chemin complet est journalise.
+    Seul le sha256 part en base : un token qui fuirait dans les logs d'acces nginx
+    resterait inexploitable.
     """
     data = request.get_json(silent=True) or {}
     label = (data.get('label') or '')[:100] or None
