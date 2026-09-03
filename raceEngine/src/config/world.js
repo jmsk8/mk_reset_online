@@ -98,15 +98,31 @@ export default {
         // Deux lignes paralleles filant en diagonale : `lanes` donne leur
         // profondeur de depart, `laneSlope` ce que chaque rang y ajoute.
         //
-        // Profondeur totale = backOffset + 3 * rowGap + colStagger. A tenir avec
-        // parkStartOffset dans les ~600 unites visibles d'un telephone, sinon le
-        // fond de grille sort du cadre.
+        // La grille respire un peu plus qu'avant, sur les deux axes. En longueur
+        // les karts se suivaient a 75-80 px pour une hitbox de 60 (`kartVsKart.x`)
+        // — legal, mais assez serre pour qu'un depart turbo se joue dans la
+        // carrosserie du voisin ; ils sont maintenant a 80-90. En profondeur les
+        // deux colonnes s'ecartent, et la diagonale s'accentue avec elles, sans
+        // quoi elargir l'une refermait l'autre.
+        //
+        //     colonne 0   y 3.15 -> 8.93     colonne 1   y 24.85 -> 30.63
+        //
+        // Les deux extremes restent hors de la bande de frottement
+        // (`edgeSafetyMargin`, soit y < 2 ou y > 33) : personne ne demarre en
+        // payant le bord.
+        //
+        // Profondeur totale = backOffset + 3 * rowGap + colStagger, soit 720 px
+        // contre 665. A tenir avec parkStartOffset dans les ~600 unites visibles
+        // d'un telephone, sinon le fond de grille sort du cadre — c'est LE prix de
+        // cet ecartement, et le seul. Cette meme profondeur borne aussi le
+        // chargement d'un trace (`track.js`) : elle exige un tour deux fois plus
+        // long qu'elle, et signale les boites ou les pipes poses dedans.
         grid: {
             backOffset: 120,
-            rowGap: 155,
-            colStagger: 80,
-            lanes: [0.13, 0.66],
-            laneSlope: 0.045
+            rowGap: 170,
+            colStagger: 90,
+            lanes: [0.09, 0.71],
+            laneSlope: 0.055
         },
 
         // Le reste des tirages est un depart rate.

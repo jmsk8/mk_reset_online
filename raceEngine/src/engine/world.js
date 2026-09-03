@@ -110,7 +110,6 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
             rank: index + 1,
 
             aiState: 'cruising',
-            originalLaneY: verticalPos,
 
             hitEndTime: 0,
 

@@ -37,12 +37,26 @@ function steerPace(kart) {
     return pace < 0 ? 0 : (pace > 1 ? 1 : pace);
 }
 
+// Les deux facteurs d'allure, pour une allure DONNEE. Tires de `steerGrip` et
+// `steerBite` parce qu'ils repondent maintenant a deux questions distinctes : ce
+// que le kart a sous les mains CET INSTANT, et ce dont une manoeuvre disposera en
+// moyenne D'ICI A SON ECHEANCE (`steerCapOver`).
+function gripAt(cfg, pace) {
+    const p = cfg.physics.steer.pace;
+    if (!p.drag) return 1;
+    return 1 - p.drag * Math.pow(pace, p.curve);
+}
+
+function biteAt(cfg, pace) {
+    const bite = cfg.physics.steer.pace.bite;
+    if (!(bite > 0)) return 1;
+    return (pace >= bite) ? 1 : pace / bite;
+}
+
 // Ce qu'il reste de volant a l'allure du moment. Vaut 1 a l'arret, et
 // `1 - drag` a pleine pointe.
 function steerGrip(cfg, kart) {
-    const pace = cfg.physics.steer.pace;
-    if (!pace.drag) return 1;
-    return 1 - pace.drag * Math.pow(steerPace(kart), pace.curve);
+    return gripAt(cfg, steerPace(kart));
 }
 
 // Ce que le volant MORD a l'allure du moment.
@@ -55,17 +69,73 @@ function steerGrip(cfg, kart) {
 // `bite` ce qu'on n'a pas encore FAUTE d'avancer. Au-dessus de `bite`, rien ne
 // change.
 function steerBite(cfg, kart) {
-    const bite = cfg.physics.steer.pace.bite;
-    if (!(bite > 0)) return 1;
-
-    const pace = steerPace(kart);
-    return (pace >= bite) ? 1 : pace / bite;
+    return biteAt(cfg, steerPace(kart));
 }
 
 function steerCap(cfg, kart, base) {
     if (kart.isBill) return base;
     return base * kart.stats.agility * steerGrip(cfg, kart)
         * steerBite(cfg, kart) * kart.steerBoost;
+}
+
+// LES DEUX MESURES D'UN PLAN. Une manoeuvre laterale se juge sur une fenetre —
+// combien de temps me reste-t-il, et de quel volant y disposerai-je — et les deux
+// se lisaient jusqu'ici sur l'instant. C'est exact tant que rien ne change ; ca
+// devient faux precisement quand la question se pose, c'est-a-dire apres un choc.
+
+// Temps, en ms, pour couvrir `dist` px de piste, en partant de la vitesse du
+// moment et sous l'acceleration du kart.
+//
+// `dist / vitesse` ne vaut que si la vitesse ne change pas. Un kart qui vient de
+// heurter un tuyau est A ZERO : la division rendait alors quatre-vingt-dix
+// SECONDES de fenetre pour les quatre-vingt-dix pixels de son recul, et tout
+// couloir de la piste paraissait atteignable. Le kart s'engageait vers l'autre
+// cote, redemarrait, et se recognait au meme endroit sans avoir traverse.
+//
+// Deux regimes, comme dans le moteur : la montee a `accelerationRate`, puis la
+// pointe. Le plafond est `topSpeed` et non l'elan du moment — surestimer la
+// vitesse RACCOURCIT la fenetre, donc rend moins de portee laterale : l'erreur
+// tombe du cote prudent.
+function approachMs(cfg, kart, dist) {
+    if (dist <= 0) return 0;
+
+    const v = kart.absoluteVelocity > 0 ? kart.absoluteVelocity : 0;
+    const top = kart.stats.topSpeed;
+    const a = cfg.speeds.accelerationRate * kart.stats.acceleration;
+
+    if (!(a > 0) || !(top > 0)) return (dist / Math.max(v, 1)) * 1000;
+    if (v >= top) return (dist / top) * 1000;
+
+    // Ce que la montee en regime couvre a elle seule.
+    const ramp = (top * top - v * v) / (2 * a);
+    if (dist <= ramp) return ((Math.sqrt(v * v + 2 * a * dist) - v) / a) * 1000;
+
+    return ((top - v) / a + (dist - ramp) / top) * 1000;
+}
+
+// Le volant dont une manoeuvre disposera EN MOYENNE sur sa fenetre, et non celui
+// que le kart a cet instant.
+//
+// Les deux se separent des qu'il vient d'etre arrete. `steerBite` annule le
+// volant a l'arret, et il a raison — on ne braque pas une voiture immobile. Mais
+// un PLANIFICATEUR qui lit ce zero en conclut qu'aucun couloir n'est atteignable
+// : `steerReach` rend 0, `steerDelay` rend l'infini, et `chooseLane` n'a plus
+// une seule option finie a proposer. Il repondait « nulle part » la ou la reponse
+// etait « pas encore ».
+//
+// L'allure retenue est celle du trajet — `dist / duree` — soit la moyenne exacte
+// sur la fenetre. Elle ne remplace pas `steerCap` : celui-ci reste seul a dire ce
+// que `steer` peut commander sur le tick en cours.
+function steerCapOver(cfg, kart, base, dist, ms) {
+    if (kart.isBill || ms <= 0 || !(kart.stats.topSpeed > 0)) {
+        return steerCap(cfg, kart, base);
+    }
+
+    const mean = (dist / (ms / 1000)) / kart.stats.topSpeed;
+    const pace = mean < 0 ? 0 : (mean > 1 ? 1 : mean);
+
+    return base * kart.stats.agility * gripAt(cfg, pace) * biteAt(cfg, pace)
+        * kart.steerBoost;
 }
 
 // Ce que braquer coute en vitesse d'avance, en multiplicateur a appliquer tel
@@ -148,7 +218,9 @@ function steerDelay(cfg, cap, dy) {
 }
 
 export {
+    approachMs,
     steerCap,
+    steerCapOver,
     steerCost,
     steerDelay,
     steerGrip,

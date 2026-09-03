@@ -54,10 +54,7 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
     const plan = kart.plan;
     if (plan.threatId && plan.kind === 'spin' && !plan.idle
         && !pipeOutranksPlan(cfg, kart)) {
-        if (kart.aiState !== 'dodging') {
-            kart.aiState = 'dodging';
-            kart.originalLaneY = kart.yPercent;
-        }
+        kart.aiState = 'dodging';
 
         // Le frein n'accompagne que les esquives qui ne sont pas franches :
         // accule il n'a plus que lui, en traversee il recule l'impact le temps de
@@ -84,7 +81,6 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
     if (plan.threatId
         && (plan.kind === 'giveWay' || (plan.kind === 'safety' && !plan.idle))) {
         kart.aiState = plan.kind;
-        kart.originalLaneY = kart.yPercent;
 
         // Se ranger ne suffit pas a laisser passer : sans lever le pied, celui
         // qui suit ne double jamais et le kart reste devant sa rouge, range pour
@@ -156,7 +152,6 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
             const aim = ai.steering.aim;
             if (Math.abs(diff) > aim.tolerance) {
                 kart.aiState = 'aiming';
-                kart.originalLaneY = kart.yPercent;
                 steer(cfg, kart, deltaTime, desired, aim.speed, aim);
                 return;
             }
@@ -177,7 +172,6 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
         // se relance a la premiere bousculade.
         const pass = ai.steering.overtake;
         const clear = ai.overtakeMinDistance + cfg.hitboxes.kartVsKart.y * 0.5;
-        kart.originalLaneY = kart.yPercent;
         steer(cfg, kart, deltaTime, sight.aheadKartY + dir * clear, pass.speed, pass);
         return;
     }
@@ -217,31 +211,30 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
                      kart.yPercent + dir * ai.wanderOffset));
     }
 
-    const home = ai.steering.home;
-
     if (now < kart.wanderEndTime) {
-        kart.originalLaneY = kart.yPercent;
         const drift = ai.steering.wander;
         steer(cfg, kart, deltaTime, kart.wanderY, drift.speed, drift);
         return;
     }
 
-    // Le retour a sa ligne apres un ecart. La tolerance du profil dit quand elle
-    // est tenue, et le kart s'y arrete de lui-meme au lieu d'y etre pose —
-    // c'etait le dernier endroit ou une profondeur s'ecrivait sans passer par le
-    // volant.
-    if (kart.aiState === 'dodging') {
-        if (Math.abs(kart.originalLaneY - kart.yPercent) <= home.tolerance) {
-            kart.aiState = 'cruising';
-        }
-        steer(cfg, kart, deltaTime, kart.originalLaneY, home.speed, home);
-        return;
-    }
-
     // La croisiere ne vise rien : elle laisse le volant revenir a zero. Dit dans
     // la langue du systeme, c'est viser l'endroit ou l'on va s'arreter.
+    //
+    // ET IL N'Y A RIEN APRES : aucun retour a la ligne d'avant l'ecart. La piste
+    // est une bande qui defile, `yPercent` en est la PROFONDEUR et non une
+    // trajectoire — pas de virage, pas de corde, et la seule profondeur que la
+    // physique fasse payer est le mur lui-meme (`clampKartToRoad`). Une esquive
+    // finie ne laisse donc le kart nulle part de mauvais : elle le laisse la ou
+    // le placement venait de le juger le moins cher.
+    //
+    // Ce qui vivait ici visait une profondeur MEMORISEE au lieu de la note, seul
+    // endroit du pilotage a le faire. Quatre manoeuvres reecrivaient ce souvenir
+    // a chaque image sans jamais le lire — l'effacement etait devenu le vrai
+    // comportement — et ce qui en restait ramenait le kart vers une place que
+    // personne n'avait revue depuis.
+    const cruise = ai.steering.cruise;
     kart.aiState = 'cruising';
-    steer(cfg, kart, deltaTime, steerSettle(cfg, kart), home.speed, home);
+    steer(cfg, kart, deltaTime, steerSettle(cfg, kart), 0, cruise);
 }
 
 export {
