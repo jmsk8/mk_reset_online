@@ -3,7 +3,7 @@
 // collision propre et une manoeuvre d'evitement dediee.
 
 import { getShortestDistance } from './geometry.js';
-import { steerCap, steerDelay, steerReach } from './steering.js';
+import { approachMs, steerCapOver, steerDelay, steerReach } from './steering.js';
 import { isRamming, kartHalfExtents } from './bodies.js';
 import { spendItem } from './items.js';
 import { chooseLane, laneScore, laneSlop, steer, steerSettle } from './driving.js';
@@ -293,16 +293,47 @@ function collideKartWithPipes(cfg, state, kart, now, events) {
 // comportement toute seule et en mieux (`spanWeight`), et elle compte AUSSI les
 // objets au sol et les carrosseries, que l'enfilage ignorait — un kart pouvait
 // viser un couloir avec une banane dedans, et la prenait.
-function choosePipeLane(cfg, kart, rng, ttc, current) {
+// Elle prend une DISTANCE et non un temps : les deux conversions — combien de
+// temps il reste, et de quel volant il disposera d'ici la — vont ensemble et se
+// trompaient ensemble. Les laisser a l'appelant revenait a les redemander a
+// chaque site d'appel, et a les y refaire fausses.
+function choosePipeLane(cfg, kart, rng, dist, current) {
     const place = cfg.vision.place;
     const lane = cfg.ai.steering.pipe;
-    const cap = steerCap(cfg, kart, lane.speed);
+
+    // La distance qui compte est celle du CONTACT, pas celle du centre : la
+    // carrosserie touche `kartVsPipe.x` plus tot, et c'est a cet instant-la qu'il
+    // faut etre sorti de la voie. Budgeter jusqu'au centre offrait cinquante
+    // pixels de piste en trop — negligeable a pleine allure, plus du double de la
+    // fenetre juste apres un choc, ou il ne reste que le recul a parcourir.
+    const clear = dist - cfg.hitboxes.kartVsPipe.x;
+    const near = clear > 0 ? clear : 0;
+
+    // LE TRAJET REEL, qui sert a jauger le volant, et LA FENETRE ACCORDEE, qui
+    // sert a classer les couloirs. Les deux se separent en fin de contournement :
+    // le tuyau vise etant tenu jusqu'a etre derriere, le trajet tend vers zero, et
+    // sans plancher le kart se replacerait sur sa ligne au moment ou il aurait du
+    // viser le tuyau SUIVANT.
+    //
+    // Mais l'allure, elle, se lit sur le trajet VRAI. Deduite de la fenetre
+    // plancheriee, elle disait 0.75 la ou le kart roule a 0.94 — un kart lance qui
+    // se croit au ralenti, donc un volant surevalue par `grip` juste au moment ou
+    // il ne reste plus rien a corriger.
+    const trip = approachMs(cfg, kart, near);
+    const ttc = Math.max(trip, cfg.vision.reviewIntervalMs);
+    const cap = steerCapOver(cfg, kart, lane.speed, near, trip);
     const chosen = chooseLane(cfg, rng, kart, cap, ttc, lane);
 
     // Aucun endroit tenable d'ici la : il garde sa ligne et grappille ce qu'il
     // peut. Arriver contre le bord du tuyau vaut mieux que se figer, la poussee
     // du choc l'en degagera.
-    if (chosen === null) return kart.yPercent;
+    //
+    // Mais un couloir DEJA CHOISI vaut mieux que cette ligne : rendre `yPercent`
+    // par-dessus lui effacait une decision valable pour la position du moment,
+    // laquelle vaut « reste ou tu es » — c'est-a-dire, apres un choc, contre le
+    // tuyau. La reprise avait alors une chance sur deux de defaire le seul bon
+    // choix du kart.
+    if (chosen === null) return (current !== null) ? current : kart.yPercent;
     if (current === null) return chosen;
 
     // S'ENGAGER : on ne change de couloir que si le nouveau est NETTEMENT
@@ -363,23 +394,26 @@ function steerAroundPipes(cfg, state, rng, now, kart, deltaTime) {
         }
     }
 
-    // Temps restant avant le tuyau : c'est lui qui dit jusqu'ou le kart peut se
-    // deplacer d'ici la, donc quels couloirs comptent.
-    //
-    // Jamais moins que d'ici la prochaine reprise : le tuyau vise etant tenu
-    // jusqu'a etre derriere, ce temps tend vers zero en fin de depassement, et le
-    // kart se replacait sur sa ligne au moment ou il aurait du viser le tuyau
-    // SUIVANT.
-    const horizon = ms => Math.max(ms, cfg.vision.reviewIntervalMs);
     if (kart.pipeTargetIndex < 0) {
         // Le plus proche DEVANT, aligne ou non : on se place pour un tuyau avant
         // d'etre dans son axe, sinon on ne slalome pas, on rebondit.
         if (sight.pipeAheadIndex < 0) return false;
 
+        // Deja dans la zone de contact : il n'y a pas de fenetre, donc pas encore
+        // de decision a prendre. IL NE S'ENGAGE PAS — s'engager ici figerait le
+        // couloir sur un « reste ou tu es » jusqu'a la reprise suivante, tiree au
+        // sort et jouee a pile ou face (`reviewChance`), soit jusqu'a une seconde
+        // et demie d'attente.
+        //
+        // Et c'est exactement l'etat ou un choc laisse le kart : arrete, contre le
+        // tuyau, la cible effacee par `collideKartWithPipes`. Il tient sa ligne et
+        // repose la question au tick suivant ; le recul lui rend sa fenetre en un
+        // ou deux dixiemes, et il decide alors sur des nombres vrais.
+        if (sight.pipeAheadDist <= reach.x) return false;
+
         kart.pipeTargetIndex = sight.pipeAheadIndex;
         dist = sight.pipeAheadDist;
-        kart.pipeLaneY = choosePipeLane(cfg, kart, rng,
-            horizon((dist / Math.max(kart.absoluteVelocity, 1)) * 1000), null);
+        kart.pipeLaneY = choosePipeLane(cfg, kart, rng, dist, null);
         kart.pipeReviewAt = now + reviewDelay(cfg, rng);
 
     } else if (now >= kart.pipeReviewAt) {
@@ -394,20 +428,13 @@ function steerAroundPipes(cfg, state, rng, now, kart, deltaTime) {
         kart.pipeReviewAt = now + reviewDelay(cfg, rng);
         if (rng() < cfg.vision.reviewChance) {
             kart.pipeLaneY = choosePipeLane(cfg, kart, rng,
-                horizon((Math.max(dist, 0) / Math.max(kart.absoluteVelocity, 1)) * 1000),
-                kart.pipeLaneY);
+                dist > 0 ? dist : 0, kart.pipeLaneY);
         }
     }
 
     const lane = cfg.ai.steering.pipe;
     const settle = steerSettle(cfg, kart);
     const need = Math.abs(kart.pipeLaneY - settle);
-
-    // `originalLaneY` suit le couloir et non la ligne d'avant la manoeuvre :
-    // c'est lui que le retour au calme rejoint, et le laisser en arriere y
-    // ramenerait le kart, c'est-a-dire dans le tuyau. Pose AVANT le desengagement
-    // ci-dessous.
-    kart.originalLaneY = kart.pipeLaneY;
 
     // Rien a corriger : sa ligne EST le meilleur couloir. Il rend la main plutot
     // que de monopoliser le pilotage — sur un circuit charge un tuyau est presque

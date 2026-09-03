@@ -238,10 +238,16 @@ export default {
             // seule qui n'ait aucune decision derriere.
             wander:   { speed: 4, gain: 6, tolerance: 0.6, guard: true },
 
-            // Le retour a sa ligne, une fois l'ecart fini. Tolerance large :
-            // rentrer au dixieme pres n'a aucun interet, et la viser relancait
-            // une correction a chaque bousculade.
-            home:     { speed: 20, gain: 6, tolerance: 1, guard: true },
+            // La croisiere. Elle ne rejoint rien — elle vise l'endroit ou le
+            // kart s'arreterait — donc `steer` la juge tenue d'entree et se
+            // contente de relacher le volant. `speed` et `gain` ne seront jamais
+            // lus : les ecrire laisserait croire qu'elle pilote.
+            //
+            // Elle a remplace le retour a la ligne d'avant l'ecart, qui visait
+            // une profondeur memorisee au lieu de la note de placement. Sur une
+            // piste sans virage, ou `yPercent` est une profondeur et non une
+            // trajectoire, il n'y a pas de ligne a retrouver.
+            cruise:   { tolerance: 0, guard: false },
 
             // Le bill. Sa vitesse vient de `bill.centerSpeed` : il ne pilote pas,
             // il devie — et `steerCap` le laisse hors de l'agilite comme de
