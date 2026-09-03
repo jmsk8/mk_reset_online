@@ -1,21 +1,17 @@
-'use strict';
-
 // Protocole serveur → client du banner.
 //
-// Regle qui gouverne tout ce fichier : **le snapshot fait foi**. Un spectateur
-// qui se connecte a la 187e seconde n'a vu passer aucun evenement, et doit
-// pourtant afficher une scene complete et juste. Donc tout ce qui est visible a
-// l'ecran doit se trouver dans le snapshot — jamais seulement dans un
-// evenement. Les evenements ne servent qu'a jouer des animations.
+// Regle qui gouverne tout ce fichier : LE SNAPSHOT FAIT FOI. Un spectateur qui se
+// connecte a la 187e seconde n'a vu passer aucun evenement et doit pourtant
+// afficher une scene complete et juste — les evenements ne servent qu'a jouer des
+// animations.
 //
-// Corollaire pratique : avant d'ajouter un element visuel cote client, se
-// demander « un arrivant peut-il le deduire du seul snapshot ? ». Si non, c'est
-// ici qu'il manque un champ.
+// Avant d'ajouter un element visuel cote client : un arrivant peut-il le deduire
+// du seul snapshot ? Si non, c'est ici qu'il manque un champ.
 
-const PROTOCOL_VERSION = 10;
+const PROTOCOL_VERSION = 11;
 
 // Champ de bits de l'etat d'un kart. Compact parce qu'il part dix fois par
-// seconde a chaque spectateur (voir §6.7 du document de migration).
+// seconde a chaque spectateur.
 const FLAG_GRID = 1;      // sur la grille, avant le coup d'envoi
 const FLAG_HIT = 2;       // percute -> tete-a-queue
 const FLAG_STOPPED = 4;   // immobilise apres impact -> sprite fige
@@ -26,23 +22,17 @@ const FLAG_BILL = 64;     // transforme en Bill Ball -> sprite remplace
 const FLAG_BUMPED = 128;  // arrete net par un pipe : arret et recul, sprite inchange
 const FLAG_FLAT = 256;    // ecrase par un kart reste grand -> sprite aplati
 
-// ── Le releve de decision, pour le HUD de debug ──────────────────────────
+// Le releve de decision, pour le HUD de debug : ce que le kart VOIT et ce qu'il
+// en FAIT, en un seul entier. Rien ici ne pilote le rendu — un client qui
+// l'ignore affiche exactement la meme course.
 //
-// Ce que le kart VOIT et ce qu'il en FAIT, en un seul entier par kart.
+// Il part toujours, et c'est un choix : un releve disponible sur demande
+// obligerait a redemarrer le service pour observer un comportement qu'on vient de
+// voir. A huit karts et dix envois par seconde, un entier ne pese rien.
 //
-// Il part toujours, et c'est un choix : le fichier pose en regle que le
-// snapshot fait foi, et un releve qui ne serait la que sur demande obligerait a
-// redemarrer le service pour observer un comportement qu'on vient de voir. A
-// huit karts et dix envois par seconde, un entier tient dans quelques dizaines
-// d'octets — moins que le tableau des points, qui voyage pour la meme raison.
-//
-// Rien ici ne pilote le rendu : c'est une observation, jamais un etat de jeu.
-// Un client qui l'ignore affiche exactement la meme course.
-// L'ORDRE de ces deux tables est le contrat : le client n'envoie pas les mots,
-// il lit l'indice et affiche son propre libelle. Les tables jumelles sont dans
-// `smk-banner.js`, sous le meme nom. Y inserer une valeur au milieu decale tout
-// l'affichage en silence — on ajoute a la fin, ou on incremente
-// PROTOCOL_VERSION.
+// Les deux tables voyagent DANS le `hello` (`world.ai`) : le client recoit un
+// indice ET l'ordre qui lui donne son sens, puis traduit la cle en libelle.
+// Inserer un etat au milieu ne decale donc rien.
 const AI_STATES = ['cruising', 'pipe', 'dodging', 'safety', 'giveWay', 'aiming'];
 const AI_DANGERS = ['', 'carrier', 'ram', 'shot'];
 
@@ -72,46 +62,29 @@ function aiTuple(cfg, kart, now) {
     if (sight.pipeIndex >= 0) v |= 1 << 11;
 
     // Le porteur qu'on SUIT : quelqu'un devant, dans l'axe, avec de quoi finir
-    // derriere lui — et il n'a pas besoin de l'avoir deja lache pour compter.
+    // derriere lui — sans avoir besoin de l'avoir deja lache.
     //
-    // C'etait le seul danger que le releve ne disait pas. La ligne « derriere »
-    // ne parle que de l'arriere, et le bit precedent ne s'allume que pour une
-    // menace DEJA LANCEE : on voyait donc un kart se ranger sans savoir
-    // pourquoi, et surtout on ne pouvait pas voir qu'il ne se rangeait pas.
-    //
-    // Il porte le souvenir autant que la vue (cf. `sight.frontAt`), et c'est
-    // voulu : le HUD doit dire ce sur quoi le kart DECIDE, pas ce que le
-    // dernier balayage a ramene.
+    // C'etait le seul danger que le releve ne disait pas : on voyait un kart se
+    // ranger sans savoir pourquoi, et surtout on ne pouvait pas voir qu'il ne se
+    // rangeait pas. Il porte le souvenir autant que la vue — le HUD doit dire ce
+    // sur quoi le kart DECIDE.
     if (sight.pressure && !sight.pressureBack) v |= 1 << 12;
 
     return v;
 }
 
-// ── La vue elle-meme, pour la carte de debug ────────────────────────────
+// La vue elle-meme, pour la carte de debug. L'entier `aiTuple` dit ce que le kart
+// a RETENU, pas ce qu'il a regarde ni ce qu'une ombre lui a cache — et c'est
+// precisement la que se logent les erreurs de perception.
 //
-// L'entier `aiTuple` dit ce que le kart a RETENU. Il ne dit pas ce qu'il a
-// regarde, ni jusqu'ou, ni ce que l'ombre d'un autre lui a cache — et c'est
-// precisement la que se logent les erreurs de perception : un kart qui ignore
-// une banane et un kart qui ne la voit pas produisent le meme releve.
+// Il part SUR DEMANDE (`{t:'watch', id}`) et non dans le snapshot : celui-ci est
+// serialise une fois pour tous, ce releve pese cent fois l'entier de decision, et
+// il ne sert qu'au spectateur qui a ouvert la carte. Personne ne regarde : pas un
+// octet de plus.
 //
-// ── Pourquoi ceci ne part pas dans le snapshot ──────────────────────────
-//
-// Le snapshot est serialise UNE FOIS pour tous les spectateurs, et c'est ce qui
-// rend le service tenable. Ce releve-ci pese cent fois l'entier de decision —
-// les spans a eux seuls font une vingtaine d'entrees — et ne sert qu'a un
-// spectateur sur mille, celui qui a ouvert la carte. Le diffuser a tout le monde
-// pour qu'un seul le lise serait payer la dette de tous pour l'outil d'un seul.
-//
-// Il part donc SUR DEMANDE, pour le kart demande (`{t:'watch', id}`), et le
-// service ne paie une seconde serialisation que pour les connexions qui l'ont
-// demande. Personne ne regarde : rien ne change, pas un octet.
-//
-// La regle du fichier tient quand meme, et c'est l'essentiel : le client ne
-// DEDUIT rien. Tout ce qui se dessine est ici, releve tel que le moteur l'a
-// arrete au dernier balayage.
-//
-// Convention de signe, la meme que partout : un kart s'identifie en negatif
-// (`-1 - id`), un objet a partir de 1.
+// La regle du fichier tient quand meme — le client ne DEDUIT rien, tout ce qui se
+// dessine est ici. Convention de signe habituelle : un kart en negatif (`-1 -
+// id`), un objet a partir de 1.
 function visionTuple(kart) {
     const sight = kart.sight;
     if (!sight) return null;
@@ -129,13 +102,12 @@ function visionTuple(kart) {
     const hidden = [];
     for (let i = 0; i < sight.hiddenCount; i++) hidden.push(sight.hiddenIds[i]);
 
-    // Les ombres, resolues ICI en profondeurs plutot qu'envoyees en pentes. Le
-    // client aurait a refaire la projection sinon, et une projection refaite est
-    // une projection qui peut diverger — c'est la regle du fichier.
+    // Les ombres, resolues ICI en profondeurs plutot qu'envoyees en pentes : une
+    // projection refaite cote client est une projection qui peut diverger.
     //
-    // Chaque ombre est un trapeze au sol : [debut, fin] en ecart au kart, et les
-    // deux profondeurs a chaque bout. Deux bouts, parce qu'elle s'ELARGIT en
-    // s'eloignant de l'oeil — c'est la moitie du modele.
+    // Chaque ombre est un trapeze au sol — [debut, fin] en ecart au kart, et les
+    // deux profondeurs a chaque bout, car elle s'ELARGIT en s'eloignant de
+    // l'oeil.
     const shadows = [];
     for (let i = 0; i < sight.shadowCount; i++) {
         const from = sight.shadowFrom[i];
@@ -152,18 +124,17 @@ function visionTuple(kart) {
 
     return {
         // Le kart observe, et l'etat de son regard AU MOMENT DU BALAYAGE. Pas
-        // `sight.back`, qui bascule a la cadence de l'affichage : ce qui a
-        // rempli cette vue est `scanBack`, et dessiner l'autre ferait pointer le
-        // cone dans le sens ou le contenu n'a pas ete releve.
+        // `sight.back`, qui bascule a la cadence de l'affichage : dessiner
+        // l'autre ferait pointer le cone dans le sens ou le contenu n'a pas ete
+        // releve.
         id: kart.id,
         back: sight.back ? 1 : 0,
         scanBack: sight.scanBack ? 1 : 0,
         range: Math.round(sight.scanRange),
         at: Math.round(sight.at),
 
-        // D'ou part le regard. Le client a bien la position du kart, mais
-        // interpolee : la faire servir d'origine decalerait tout le dessin d'une
-        // demi-frame par rapport a ce qui a ete percu.
+        // D'ou part le regard. Le client a la position du kart, mais interpolee :
+        // la faire servir d'origine decalerait tout le dessin d'une demi-frame.
         x: round(kart.worldX, 2),
         y: round(kart.yPercent, 2),
 
@@ -171,9 +142,9 @@ function visionTuple(kart) {
         hidden: hidden,
         shadows: shadows,
 
-        // Le recul de la camera, pour la poser sur la carte. Elle n'est pas sur
-        // le kart, et c'est visible : les ombres partent d'un point qui n'est
-        // pas lui.
+        // Le recul de la camera, pour la poser sur la carte : elle n'est pas sur
+        // le kart, et c'est visible — les ombres partent d'un point qui n'est pas
+        // lui.
         eyeBack: Math.round(sight.eyeBack),
 
         // Ce que la marche a retenu, dans l'ordre ou le pilotage le lit.
@@ -221,21 +192,16 @@ function kartFlags(kart) {
     return flags;
 }
 
-// [id, worldX, yPercent, totalDistance, flags, rank, heldId, heldType,
-//  heldHold, orbitAngle, orbIds, hitEnd, bumpEnd]
+// [id, worldX, yPercent, totalDistance, flags, rank, heldId, heldType, heldHold,
+// orbitAngle, orbIds, hitEnd, bumpEnd]
 //
-// `heldType` est indispensable : sans lui le client ne peut pas choisir le
-// sprite de l'objet tenu, et un arrivant verrait une banane a la place d'une
-// carapace. Pour un objet en orbite c'est le type de l'objet enfant qui est
-// transmis — c'est le seul dont le rendu a besoin.
+// `heldType` est indispensable : sans lui un arrivant verrait une banane a la
+// place d'une carapace. Pour une orbite c'est le type de l'objet ENFANT qui part,
+// seul utile au rendu.
 //
-// `hitEnd` est la fin du malus, en temps serveur. Le tete-a-queue est une
-// animation derivee du temps : sans cette date, un arrivant saurait qu'un kart
-// est percute mais pas depuis quand, et le ferait tourner a contretemps.
-//
-// `bumpEnd` joue le meme role pour le choc contre un pipe : le recul se joue au
-// debut de l'arret, pas a la fin, et un arrivant doit savoir ou en est le kart
-// qu'il trouve immobile contre un tuyau.
+// `hitEnd` et `bumpEnd` sont les fins de malus en temps serveur. Le tete-a-queue
+// et le recul sont des animations derivees du temps : sans ces dates, un arrivant
+// saurait qu'un kart est touche mais pas depuis quand.
 function kartTuple(kart) {
     const held = kart.heldItem;
     const orbit = held && held.holdPosition === 'orbit';
@@ -268,20 +234,16 @@ function itemTuple(item) {
         item.currentFrame,
         item.hop ? round(item.hop, 1) : 0,
         // Une banane en cloche n'a PAS de hitbox tant qu'elle monte, et ca ne se
-        // devine pas depuis `hop` : celui-ci reste positif a la descente, ou
-        // elle touche de nouveau. Le drapeau part donc tel quel, pour la carte
-        // de debug — un objet qui traverse un kart sans rien lui faire est
-        // exactement ce qu'une carte de hitbox doit pouvoir montrer.
+        // devine pas depuis `hop`, positif aussi a la descente. Le drapeau part
+        // tel quel pour la carte de debug.
         item.rising ? 1 : 0
     ];
 }
 
-// [debut, frappe, fin, lanceur], en temps serveur, ou null hors orage. Les trois
-// dates suffisent au client a placer la scene ou qu'il en soit : le ciel
-// s'assombrit de `debut` a `frappe`, la foudre tombe a `frappe`, le jour revient
-// a `fin`. C'est le minimum pour qu'un spectateur arrive en plein orage le voie
-// au bon stade au lieu de le rejouer depuis le debut. Le lanceur suit : c'est le
-// seul que la foudre epargne, et le client doit l'epargner aussi.
+// [debut, frappe, fin, lanceur] en temps serveur, ou null hors orage. Les trois
+// dates suffisent au client a placer la scene ou qu'il en soit, plutot que de
+// rejouer l'orage depuis le debut. Le lanceur suit : c'est le seul que la foudre
+// epargne.
 function stormTuple(state) {
     const storm = state.storm;
     if (!storm) return null;
@@ -289,10 +251,8 @@ function stormTuple(state) {
 }
 
 // [manche, points de la course, points du grand prix]. Les deux tableaux sont
-// alignes sur l'ordre de `state.karts`, qui est aussi celui des identifiants et
-// celui du `hello` : le client lit la case i pour le kart i, sans avoir a
-// transporter les noms a chaque envoi. Les points de la course restent a zero
-// tant qu'elle n'est pas close.
+// alignes sur l'ordre de `state.karts`, qui est aussi celui du `hello` : le
+// client lit la case i pour le kart i, sans transporter les noms a chaque envoi.
 function grandPrixTuple(state) {
     return [
         state.gpRound,
@@ -311,17 +271,15 @@ function signTuple(state) {
 // meme dans chaque snapshot, contre la certitude qu'aucun spectateur ne verra le
 // decor decale.
 //
-// `vote` est le decompte du vote de redemarrage, [poses, spectateurs]. Il ne
-// vient pas de l'etat du monde mais du service, seul a connaitre les
-// connexions — d'ou ce parametre plutot qu'une lecture dans `state`. Le
-// snapshot etant serialise une fois pour tout le monde, il ne peut porter que
-// le total : chaque client se souvient seul de son propre vote.
+// `vote` vient du service et non de l'etat du monde, seul a connaitre les
+// connexions. Le snapshot etant serialise une fois pour tous, il ne peut porter
+// que le total : chaque client se souvient seul de son propre vote.
 function buildSnapshot(cfg, state, simTime, vote) {
     return {
         t: 's',
-        // Arrondi a la milliseconde : l'horloge de simulation avance par pas de
-        // 33,333 ms et traine donc des decimales qui ne servent a rien — le
-        // client interpole sur des intervalles de 66 ms.
+        // Arrondi a la milliseconde : l'horloge de simulation traine des
+        // decimales qui ne servent a rien, le client interpolant sur des
+        // intervalles de 66 ms.
         ts: Math.round(simTime),
         cx: round(state.cameraX, 2),
         bx: round(state.bgCameraX, 2),
@@ -352,13 +310,12 @@ function buildSnapshot(cfg, state, simTime, vote) {
     };
 }
 
-// Envoye une fois par connexion. Contient l'identite des karts, la geometrie du
-// monde, et un premier snapshot complet : de quoi construire la scene sans rien
-// savoir de ce qui s'est passe avant.
+// Envoye une fois par connexion : l'identite des karts, la geometrie du monde, et
+// un premier snapshot complet — de quoi construire la scene sans rien savoir de
+// ce qui precede.
 //
-// Le client ne garde aucune copie des constantes de simulation : elles arrivent
-// toutes ici. C'est ce qui evite qu'un reglage de gameplay change d'un cote
-// sans l'autre (§6.9).
+// Le client ne garde aucune copie des constantes de simulation, elles arrivent
+// toutes ici : c'est ce qui evite qu'un reglage change d'un cote sans l'autre.
 function buildHello(cfg, state, simTime, t0, vote) {
     return {
         t: 'hello',
@@ -397,70 +354,56 @@ function buildHello(cfg, state, simTime, t0, vote) {
             // client ne decide pas de l'ampleur d'un malus de gameplay.
             shrinkScale: cfg.lightning.scale,
 
-            // Les emprises REELLES des corps, pour la carte de debug. Elles ne
-            // servent qu'a dessiner, comme les distances de vue juste en
-            // dessous : une carte qui pose des pastilles de taille fixe ne dit
-            // rien des largeurs qui decident du jeu — ni qu'un tuyau est plus
-            // large qu'un kart, ni qu'une boite se ramasse sur la moitie de la
-            // profondeur de piste.
+            // Les cles du releve de decision, DANS L'ORDRE des indices envoyes
+            // par `aiTuple`. Le client y lit le sens d'un indice au lieu de
+            // maintenir une copie de cet ordre.
+            ai: { states: AI_STATES, dangers: AI_DANGERS },
+
+            // Les emprises REELLES des corps, pour la carte de debug : une carte
+            // qui pose des pastilles de taille fixe ne dit rien des largeurs qui
+            // decident du jeu.
             //
             // Ce sont des DEMI-emprises, et celles du corps lui-meme. La
             // distinction compte : les valeurs de `cfg.hitboxes` sont des ecarts
-            // entre CENTRES, donc deja des sommes de deux corps, et les envoyer
-            // telles quelles ferait dessiner des marques deux fois trop grandes.
+            // entre CENTRES, donc deja des sommes de deux corps.
             hitboxes: {
-                // Le kart de REFERENCE — le sprite moyen du plateau. Chaque kart
-                // a la sienne, plus longue ou plus courte selon son PNG, et elle
-                // voyage avec son identite (`karts[].body` plus bas) : c'est
-                // celle-la que la carte dessine. Celle-ci reste le repli, pour
-                // un corps sans identite ou un serveur plus ancien.
+                // Le kart de REFERENCE. Chaque kart a la sienne, qui voyage avec
+                // son identite (`karts[].body`) : celle-ci n'est que le repli.
                 kart: {
                     x: cfg.hitboxes.kartVsKart.x / 2,
                     y: cfg.hitboxes.kartVsKart.y / 2
                 },
                 // Le tuyau porte sa propre emprise, sans rien y sommer — et elle
-                // est RONDE : ce sont les demi-axes d'un disque, pas les cotes
-                // d'une boite. Le client dessine la forme, pas seulement la
-                // taille.
+                // est RONDE : ce sont les demi-axes d'un disque. Le client
+                // dessine la forme, pas seulement la taille.
                 pipe: {
                     x: cfg.pipe.hitbox.x,
                     y: cfg.pipe.hitbox.y,
                     round: true
                 },
-                // Un objet au sol ou en vol — carapace, banane. Meme emprise
-                // pour tous, et prise DIRECTEMENT dans `bodies.item`.
+                // Un objet au sol ou en vol. Meme emprise pour tous, prise
+                // DIRECTEMENT dans `bodies.item` : deduite par soustraction
+                // depuis `itemVsKart`, elle rendait ce qui restait une fois la
+                // carrosserie derivee du sprite — a `fill: 0.75`, une carapace se
+                // dessinait quatre fois trop petite.
                 //
-                // Elle se deduisait par soustraction — `itemVsKart` moins la
-                // demi-carrosserie — et c'etait juste tant que la somme et la
-                // carrosserie s'accordaient. Une fois la carrosserie derivee du
-                // sprite et la somme restee figee, la soustraction rendait ce
-                // qui restait : a `fill: 0.75`, une carapace se dessinait quatre
-                // fois trop petite. C'est ce qu'on voyait sur la carte, et
-                // c'etait fidele — l'incoherence etait dans la config.
-                //
-                // La bleue n'en a pas et n'apparait pas ici : elle survole tout,
-                // et son souffle est un rayon qui CROIT avec le temps — deux
-                // choses qu'une emprise fixe ne sait pas dire.
+                // La bleue n'apparait pas ici : elle survole tout, et son souffle
+                // est un rayon qui CROIT avec le temps.
                 item: {
                     x: cfg.bodies.item.x,
                     y: cfg.bodies.item.y
                 },
                 // Ou se tient un objet TRAINE derriere son porteur, en ecart
-                // signe au centre du kart. C'est une position et non une
-                // emprise, mais elle vit ici parce qu'elle ne sert qu'a la meme
-                // chose : placer une hitbox sur la carte.
-                //
-                // A ne pas confondre avec `offsets.rendering.heldItemBehind`,
-                // qui est un decalage de DESSIN et ne vaut pas la meme chose sur
-                // mobile. Celui-ci est la valeur du monde, celle que la passe de
-                // collision utilise.
+                // signe au centre. C'est une position et non une emprise, mais
+                // elle ne sert qu'a la meme chose : placer une hitbox sur la
+                // carte. A ne pas confondre avec
+                // `offsets.rendering.heldItemBehind`, qui est un decalage de
+                // DESSIN.
                 heldBehindX: cfg.offsets.world.heldItemBehind,
 
-                // La boite a objets fait exception et n'est PAS une somme :
-                // `itemBox.x` (10) est plus petit que la demi-carrosserie d'un
-                // kart (30), ce qu'aucune somme ne permet. C'est une zone de
-                // ramassage — l'endroit ou doit passer un CENTRE de kart — et
-                // elle se dessine telle quelle.
+                // La boite a objets n'est PAS une somme : `itemBox.x` est plus
+                // petit que la demi-carrosserie d'un kart. C'est une zone de
+                // ramassage — l'endroit ou doit passer un CENTRE de kart.
                 itemBox: {
                     x: cfg.hitboxes.itemBox.x,
                     y: cfg.hitboxes.itemBox.y
@@ -468,13 +411,9 @@ function buildHello(cfg, state, simTime, t0, vote) {
             },
 
             // Les distances de la VUE, pour la carte de debug. Elles ne servent
-            // qu'a dessiner : le releve de vision (`visionTuple`) porte deja ce
-            // que le kart a effectivement percu, et rien ici ne sert a le
-            // recalculer. Une portee dessinee est un decor, pas une deduction.
-            //
-            // Elles voyagent dans le `hello` comme toutes les autres constantes,
-            // pour la meme raison : le client n'en garde aucune copie, et un
-            // reglage change d'un cote ne peut pas rester faux de l'autre.
+            // qu'a dessiner — `visionTuple` porte deja ce que le kart a percu.
+            // Elles voyagent dans le `hello` comme le reste : le client n'en
+            // garde aucune copie.
             vision: {
                 rangeFront: cfg.vision.range.front,
                 rangeBack: cfg.vision.range.back,
@@ -487,27 +426,22 @@ function buildHello(cfg, state, simTime, t0, vote) {
             },
 
             // Taille DESSINEE du tuyau, en px de monde. Elle descend du serveur
-            // parce que c'est elle qui decide de l'emprise : `pipe.hitbox` en
-            // est une fraction fixe (cf. `bodies` en config). La laisser au
-            // client rouvrirait la divergence qu'elle vient de fermer — un
-            // sprite qui deborde de ce qui arrete un kart.
-            //
-            // La hauteur suit les proportions du fichier, elle ne se regle pas.
+            // parce que c'est elle qui decide de l'emprise (`pipe.hitbox` en est
+            // une fraction fixe) : la laisser au client rouvrirait la divergence
+            // qu'elle vient de fermer. La hauteur suit les proportions du
+            // fichier.
             pipeDraw: {
                 w: round(cfg.pipe.draw.w, 2),
                 h: round(cfg.pipe.draw.h, 2)
             }
         },
 
-        // L'identite d'un kart, et son gabarit. Les deux voyagent ensemble parce
-        // qu'ils viennent de la meme source : son sprite. `body` porte sa
-        // demi-emprise reelle — ce que la carte de debug dessine — et `scale` le
-        // rapport de son dessin a celui du kart de reference, que le client
-        // multiplie par sa propre largeur (qui vaut moins sur mobile).
-        //
-        // Sans `scale`, le client redessinerait tous les karts a la meme
-        // longueur alors que leurs emprises different : le dessin cesserait
-        // d'etre la hitbox, ce que ce changement corrige precisement.
+        // L'identite d'un kart, et son gabarit : les deux viennent de la meme
+        // source, son sprite. `body` porte sa demi-emprise reelle, `scale` le
+        // rapport de son dessin a celui du kart de reference — que le client
+        // multiplie par sa propre largeur, qui vaut moins sur mobile. Sans
+        // `scale`, tous les karts seraient dessines a la meme longueur alors que
+        // leurs emprises different.
         karts: state.karts.map(kart => {
             const body = cfg.bodies.kart[kart.charName] || cfg.bodies.ref;
             return {
@@ -522,13 +456,10 @@ function buildHello(cfg, state, simTime, t0, vote) {
         }),
         boxes: state.itemBoxes.map(box => ({ x: round(box.worldX, 2), y: round(box.y, 2) })),
 
-        // Les pipes ne bougent ni ne se detruisent : le `hello` suffit, ils
-        // n'ont rien a faire dans un snapshot envoye dix fois par seconde.
-        // L'ordre est celui de `state.pipes`, et c'est lui que porte l'index
-        // d'un evenement `pipeShaken`.
-        // `kind` porte la couleur du tuyau, et rien d'autre : le jeu ne la lit
-        // pas, mais le decor ne peut pas la deduire — d'ou sa place ici, comme
-        // le veut la regle du fichier.
+        // Les tuyaux ne bougent ni ne se detruisent : le `hello` suffit. L'ordre
+        // est celui de `state.pipes`, et c'est lui que porte l'index d'un
+        // evenement `pipeShaken`. `kind` porte la couleur, que le jeu ne lit pas
+        // mais que le decor ne peut pas deduire.
         pipes: state.pipes.map(pipe => ({
             x: round(pipe.worldX, 2),
             y: round(pipe.y, 2),
@@ -539,31 +470,29 @@ function buildHello(cfg, state, simTime, t0, vote) {
     };
 }
 
-// Seuls ces evenements declenchent quelque chose cote client : le sursaut de la
-// photo a l'impact, et le glissement au classement. Tous les autres decrivent
-// des creations ou des destructions, que la reconciliation deduit deja du
-// snapshot — les transmettre ne ferait que donner deux sources de verite.
+// Seuls ces evenements declenchent quelque chose cote client. Les autres
+// decrivent des creations ou des destructions que la reconciliation deduit deja
+// du snapshot — les transmettre donnerait deux sources de verite.
+//
 // `pipeShaken` en fait partie parce qu'il ne se deduit d'aucun snapshot : le
-// tuyau est au meme endroit avant et apres, seul le sursaut a eu lieu. Le choc
-// d'un kart, lui, n'y est pas — il se lit dans son drapeau et sa date de fin.
+// tuyau est au meme endroit avant et apres, seul le sursaut a eu lieu.
 const BROADCAST_EVENTS = new Set(['kartHit', 'leaderboardPosition', 'pipeShaken']);
 
 function filterEvents(events) {
     return events.filter(ev => {
         if (!BROADCAST_EVENTS.has(ev.type)) return false;
 
-        // Le classement est recalcule toutes les 500 ms et emet une position
-        // pour chacun des huit karts, meme quand rien n'a bouge : seize
-        // evenements par seconde dont l'immense majorite ne declenche aucune
-        // animation. Seul un changement de place merite d'etre transmis —
-        // l'arrivee au classement (prevPosition === -1) en est un.
+        // Le classement est recalcule toutes les 500 ms et emet une position pour
+        // chacun des huit karts, meme quand rien n'a bouge. Seul un changement de
+        // place merite d'etre transmis — l'arrivee au classement (prevPosition
+        // === -1) en est un.
         if (ev.type === 'leaderboardPosition' && ev.newPosition === ev.prevPosition) return false;
 
         return true;
     });
 }
 
-module.exports = {
+export {
     PROTOCOL_VERSION,
     FLAG_GRID,
     FLAG_HIT,

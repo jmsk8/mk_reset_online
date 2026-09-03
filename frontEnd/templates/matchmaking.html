@@ -122,11 +122,8 @@
     </section>
 
 <script>
-        // L'algorithme de composition vit désormais dans services.py, côté
-        // serveur : la page d'administration et le bot Discord appellent le
-        // même code. Deux implémentations du même algorithme divergent
-        // toujours, et l'écart ne se voit qu'au moment où un lobby est mal
-        // composé.
+        // L'algorithme vit dans services.py : la page d'administration et le bot
+        // Discord appellent le même code.
         function escapeHtml(str) {
             if (str == null) return '';
             return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
@@ -226,9 +223,8 @@
                 btnGenerate.classList.add('is-loading');
                 let data;
                 try {
-                    // On n'envoie que les noms : les scores sont relus en base.
-                    // Un client qui fournirait les siens pourrait composer les
-                    // lobbies à sa guise.
+                    // On n'envoie que les noms : les scores sont relus en base, sinon un client
+                    // composerait les lobbies à sa guise.
                     const res = await fetch('/admin/matchmaking/generer', {
                         method: 'POST',
                         headers: {

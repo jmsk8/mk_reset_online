@@ -1,20 +1,15 @@
 """API de service pour les bots Discord.
 
-Un bot est un TIERS, pas un administrateur. Trois regles en decoulent, et elles
-priment sur toute commodite :
+Un bot est un TIERS, pas un administrateur :
 
-- **lecture seule.** Aucune route n'ecrit dans joueurs, participations ou
-  comptes. `matchmaking` calcule, il n'enregistre rien.
-- **donnees minimales.** Classement et identite Discord, rien d'autre. Ni bio,
-  ni invitation, ni role, ni audit -- publier le role reviendrait a designer les
-  administrateurs a quiconque possede un jeton de bot.
-- **comptes `linked` seulement.** Un compte `pending` est une identite NON
-  verifiee : la publier reviendrait a valider la revendication a la place de
-  l'administrateur.
+- **lecture seule** : `matchmaking` calcule, il n'enregistre rien ;
+- **donnees minimales** : classement et identite Discord. Publier le role
+  designerait les administrateurs a quiconque possede un jeton ;
+- **comptes `linked` seulement** : un compte `pending` est une identite non
+  verifiee.
 
-Exposition : ces routes ne sont pas joignables directement depuis internet.
-nginx n'est pas sur le reseau `backend` ; c'est le frontend qui proxifie
-/api/bot/, comme il le fait deja pour les routes d'administration.
+Ces routes ne sont pas joignables directement : nginx n'est pas sur le reseau
+`backend`, c'est le frontend qui proxifie /api/bot/.
 """
 
 from __future__ import annotations
@@ -87,9 +82,8 @@ def bot_joueur_par_discord(discord_id):
         return jsonify({"error": "Erreur serveur"}), 500
 
     if row is None:
-        # Volontairement indistinct : compte inconnu, non lie ou suspendu
-        # donnent la meme reponse. Detailler renseignerait un tiers sur qui
-        # possede un compte.
+        # Volontairement indistinct : compte inconnu, non lie ou suspendu donnent la
+        # meme reponse. Detailler renseignerait un tiers sur qui possede un compte.
         return jsonify({"error": "Aucun joueur lie a ce compte Discord",
                         "code": "non_lie"}), 404
 
@@ -141,8 +135,8 @@ def bot_matchmaking():
     """Compose les lobbies. Meme code que la page d'administration.
 
     Accepte des `discord_ids`, des `joueur_ids` ou des `noms`. Les scores sont
-    toujours relus en base : un appelant qui fournirait les siens pourrait
-    composer les lobbies a sa guise.
+    toujours relus en base : un appelant qui fournirait les siens composerait les
+    lobbies a sa guise.
     """
     data = request.get_json(silent=True) or {}
     discord_ids = data.get('discord_ids')

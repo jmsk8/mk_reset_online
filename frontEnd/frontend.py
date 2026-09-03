@@ -30,29 +30,24 @@ except KeyError as e:
     logger.error(f"❌ Variable d'environnement manquante : {e}")
     sys.exit(1)
 
-# 30 jours : la session joueur doit survivre à la fermeture du navigateur.
-# La session admin, elle, ne dépend PAS de cette durée — son minuteur est
-# recalculé depuis token_start_time (cf. inject_lifetime).
+# 30 jours : la session joueur survit à la fermeture du navigateur. La session
+# admin ne dépend pas de cette durée (cf. inject_lifetime).
 app.permanent_session_lifetime = timedelta(days=30)
 # Durée de vie du token admin côté backend (constants.TOKEN_LIFETIME_MINUTES).
 # Dupliquée ici faute d'un module partagé : à garder synchronisée.
 ADMIN_TOKEN_LIFETIME_MINUTES = 60
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-# NE PAS passer à 'Strict' : le retour de Discord vers /auth/discord/callback est
-# une navigation cross-site. En Lax le cookie part bien sur une navigation GET de
-# premier niveau, donc la vérification du state fonctionne. En Strict, le cookie
-# ne serait pas envoyé, le state serait introuvable, et la connexion échouerait
-# sans message exploitable.
+# NE PAS passer à 'Strict' : le retour de Discord est une navigation cross-site.
+# En Strict le cookie ne partirait pas, le state serait introuvable, et la
+# connexion échouerait sans message exploitable.
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# Le cookie "Secure" n'est envoyé par le navigateur que sur une connexion HTTPS.
-# En local (docker compose, TLS_MODE=http par défaut) ça bloquerait toute
-# connexion admin : on aligne le flag sur le TLS_MODE réellement servi par nginx.
+# Le flag Secure suit le TLS_MODE réellement servi par nginx : en http local, il
+# bloquerait toute connexion admin.
 app.config['SESSION_COOKIE_SECURE'] = (os.environ.get('TLS_MODE', 'http') == 'https')
-# flask-wtf a son propre TTL (3600 s par défaut), indépendant de la session.
-# Sans ça, un joueur qui laisse sa page de profil ouverte plus d'une heure voit
-# son enregistrement rejeté avec un message incompréhensible. À None, la
-# validité du token CSRF suit celle de la session.
+# flask-wtf a son propre TTL (3600 s), indépendant de la session : une page
+# laissée ouverte une heure voyait son enregistrement rejeté. À None, il suit
+# la session.
 app.config['WTF_CSRF_TIME_LIMIT'] = None
 
 csrf = CSRFProtect(app)
@@ -78,9 +73,8 @@ def check_admin_token_validity():
                 timeout=1
             )
 
-            # Ne purger QUE sur un refus explicite. Un 5xx ou un timeout dit que
-            # le backend a un hoquet, pas que la session est invalide : purger
-            # dans ce cas déconnecte tout le monde à chaque redémarrage.
+            # Ne purger QUE sur un refus explicite : un 5xx dit que le backend a un hoquet,
+            # pas que la session est invalide.
             if response.status_code in (401, 403):
                 logger.warning("Token admin refusé -> déconnexion.")
                 session.pop('admin_token', None)
@@ -98,10 +92,8 @@ def check_admin_token_validity():
 def inject_lifetime():
     """Minuteur de session admin affiché dans la navbar.
 
-    Calculé depuis la durée de vie du TOKEN admin, et non depuis celle du
-    cookie : le cookie dure 30 jours pour la session joueur, ce qui afficherait
-    « expire dans 30 jours » et empêcherait le setTimeout de la navbar de se
-    déclencher un jour.
+    Calculé depuis la durée de vie du TOKEN admin : celle du cookie vaut 30 jours
+    et afficherait « expire dans 30 jours ».
     """
     total_lifetime = ADMIN_TOKEN_LIFETIME_MINUTES * 60
 
@@ -125,10 +117,8 @@ def inject_saisons():
 def backend_request(method, endpoint, data=None, params=None, headers=None, timeout=5):
     """Appel JSON au backend.
 
-    `timeout` est paramétrable pour l'échange OAuth : deux appels réseau vers
-    Discord se cachent derrière, et 5 s couperaient alors que le compte vient
-    d'être créé et l'invitation consommée — l'utilisateur retenterait avec un
-    lien déjà brûlé.
+    `timeout` est paramétrable pour l'échange OAuth : 5 s couperaient alors que le
+    compte vient d'être créé et l'invitation consommée.
     """
     url = f"{BACKEND_URL}{endpoint}"
     try:
@@ -158,8 +148,7 @@ def backend_request(method, endpoint, data=None, params=None, headers=None, time
 def _session_admin_expiree():
     """Sortie commune quand le backend refuse la session sur une page admin.
 
-    Renvoyer un admin Discord vers le formulaire de mot de passe n'aurait aucun
-    sens : ce n'est pas par là qu'il se reconnecte.
+    Un admin Discord ne se reconnecte pas par le formulaire de mot de passe.
     """
     if session.get('player_token'):
         session.pop('player_token', None)
@@ -175,13 +164,10 @@ def _session_admin_expiree():
 def _est_admin():
     """Vrai si la session ouvre les pages d'administration.
 
-    ATTENTION — c'est une porte d'INTERFACE, pas une frontière de privilège.
-    Le rôle lu ici vient de la copie mise en session à la connexion ; il peut
-    donc être périmé si un super-admin vient de le retirer. L'autorité reste le
-    backend, qui relit le rôle en base à chaque requête protégée.
-    Le rafraîchir ici coûterait un appel réseau sur chaque page ET chaque proxy,
-    exactement ce que R-28 demande d'éviter. Conséquence assumée : un admin
-    rétrogradé voit encore la page, mais n'en obtient plus les données.
+    Porte d'INTERFACE, pas frontière de privilège : le rôle vient de la copie mise
+    en session à la connexion et peut être périmé. L'autorité reste le backend, qui
+    le relit en base à chaque requête protégée. Le rafraîchir ici coûterait un appel
+    réseau par page (R-28). Un admin rétrogradé voit donc la page, sans les données.
     """
     compte = session.get('compte') or {}
     return bool(session.get('admin_token')) or compte.get('role') in ('admin', 'superadmin')
@@ -190,9 +176,8 @@ def _est_admin():
 def admin_headers():
     """En-tête d'auth admin, construit depuis la session serveur.
 
-    Privilégie la session Discord quand elle porte le rôle, et retombe sur le
-    mot de passe sinon. Les deux voies coexistent le temps de la bascule : le
-    backend accepte explicitement l'une OU l'autre.
+    Session Discord si elle porte le rôle, mot de passe sinon : le backend accepte
+    explicitement l'une OU l'autre.
     """
     compte = session.get('compte') or {}
     if session.get('player_token') and compte.get('role') in ('admin', 'superadmin'):
@@ -229,10 +214,8 @@ def proxy_saisons_public():
 
 @app.route('/admin/refresh', methods=['POST'])
 def proxy_refresh():
-    # Prolonge la session par mot de passe, et elle seule : une session Discord
-    # n'a rien à renouveler (son expiration est absolue). L'en-tête est donc
-    # explicite ici, surtout pas admin_headers(), qui préférerait la voie
-    # Discord et se ferait refuser par une route restée sur @admin_required.
+    # Prolonge la session par mot de passe, et elle seule : une session Discord a
+    # une expiration absolue. D'où l'en-tête explicite, surtout pas admin_headers().
     if not session.get('admin_token'):
         return jsonify({"error": "No token"}), 401
     headers = {'X-Admin-Token': session['admin_token']}
@@ -375,9 +358,8 @@ def _rendre_fiche_joueur(nom, data):
 def joueur_detail(joueur_id):
     """URL canonique d'une fiche joueur.
 
-    Construite sur l'identifiant et non sur le nom : le nom bouge (synchro d'un
-    pseudo Discord, anonymisation, correction de faute de frappe) et emporte
-    avec lui tous les liens déjà partagés dans Discord.
+    Sur l'identifiant et non sur le nom : le nom bouge, et emporte avec lui tous
+    les liens déjà partagés.
     """
     data, status = backend_request('GET', f'/joueur/{joueur_id}')
     if status == 200:
@@ -388,19 +370,16 @@ def joueur_detail(joueur_id):
 
 @app.route('/stats/joueur/<nom>')
 def stats_joueur_detail(nom):
-    """Ancienne URL, conservée : des liens circulent déjà avec cette forme.
+    """Ancienne URL, conservée : des liens circulent déjà sous cette forme.
 
-    Redirige en 301 vers l'URL canonique, pour que les liens repartagés depuis
-    ici soient stables. Le coût est un aller-retour supplémentaire, sur ce seul
-    chemin hérité.
+    301 vers l'URL canonique, pour que ce qui est repartagé depuis ici soit stable.
     """
     resolu, status = backend_request('GET', f'/joueurs/resolve/{nom}')
     if status == 200 and isinstance(resolu, dict) and resolu.get('id'):
         return redirect(url_for('joueur_detail', joueur_id=resolu['id']), code=301)
 
-    # Backend indisponible : on sert la page à l'ancienne plutôt que d'afficher
-    # une erreur. Une 301 est mise en cache par le navigateur — l'émettre sur la
-    # foi d'une résolution incertaine graverait une mauvaise redirection.
+    # Backend indisponible : on sert la page à l'ancienne. Une 301 est mise en cache
+    # par le navigateur, l'émettre sur une résolution incertaine la graverait.
     data, status = backend_request('GET', f'/stats/joueur/{nom}')
     if status == 200:
         return _rendre_fiche_joueur(nom, data)
@@ -452,20 +431,17 @@ def stats_tournoi_detail(tournoi_id):
 # ===========================================================================
 
 DISCORD_CLIENT_ID = os.environ.get('DISCORD_CLIENT_ID', '')
-# Toujours l'environnement, jamais url_for(_external=True) : Flask est derrière
-# nginx puis gunicorn sans ProxyFix et produirait du http://, alors que Discord
-# exige une correspondance au caractère près avec le portail développeur.
+# Toujours l'environnement, jamais url_for(_external=True) : derrière nginx puis
+# gunicorn sans ProxyFix, Flask produirait du http://.
 DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', '')
 DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 # L'échange déclenche deux appels réseau vers Discord côté backend.
 OAUTH_EXCHANGE_TIMEOUT = 20
 
 
-# Identite de l'editeur, affichee dans les pages legales. Renseignee par
-# l'environnement : ce sont des informations personnelles (nom, adresse de
-# contact) qui n'ont pas a etre figees dans un depot public.
-# ⚠️ Tant que ces variables ne sont pas definies, les pages legales affichent
-# des mentions « a renseigner » : elles sont donc incompletes au sens de la loi.
+# Identité de l'éditeur, affichée dans les pages légales. Renseignée par
+# l'environnement : informations personnelles, hors d'un dépôt public.
+# ⚠️ Non définies, les pages légales sont incomplètes au sens de la loi.
 MENTIONS = {
     'editeur': os.environ.get('SITE_EDITEUR', '[à renseigner : nom de l’éditeur]'),
     'contact': os.environ.get('SITE_CONTACT', '[à renseigner : adresse de contact]'),
@@ -488,10 +464,10 @@ def inject_mentions():
 
 @app.context_processor
 def inject_discord_configure():
-    """Le bouton de connexion ne doit pas s'afficher si Discord n'est pas configuré.
+    """Le bouton de connexion ne s'affiche pas si Discord n'est pas configuré.
 
-    Lu depuis l'environnement du frontend, sans appel au backend : c'est une
-    décision d'affichage sur chaque page, elle ne vaut pas un aller-retour.
+    Lu depuis l'environnement : une décision d'affichage ne vaut pas un
+    aller-retour vers le backend sur chaque page.
     """
     return dict(discord_configure=bool(DISCORD_CLIENT_ID and DISCORD_REDIRECT_URI))
 
@@ -500,8 +476,7 @@ def inject_discord_configure():
 def inject_est_admin():
     """Expose la porte d'interface admin aux templates.
 
-    Les templates testaient `session.admin_token`, ce qui masquait le menu
-    d'administration à un admin connecté par Discord.
+    `session.admin_token` masquait le menu à un admin connecté par Discord.
     """
     return dict(est_admin=_est_admin())
 
@@ -514,12 +489,10 @@ def inject_compte():
 
 @app.route('/invite/<token>')
 def invite(token):
-    """Page d'accueil d'une invitation.
+    """Page d'accueil d'une invitation. STRICTEMENT idempotente.
 
-    STRICTEMENT idempotente : elle ne consomme rien. Coller ce lien dans un
-    salon Discord déclenche un GET du crawler qui déroule l'aperçu ; si
-    l'affichage consommait l'invitation, un lien à usage unique serait brûlé
-    avant que quiconque ait pu cliquer.
+    Coller ce lien dans un salon déclenche un GET du crawler Discord : si
+    l'affichage consommait l'invitation, un lien à usage unique serait brûlé.
     """
     data, status = backend_request('GET', f'/auth/invitation/{token}')
     invitation = data if status == 200 and isinstance(data, dict) else None
@@ -649,9 +622,8 @@ def player_logout():
 def player_headers():
     """En-tête d'auth joueur, construit depuis la session serveur.
 
-    Le navigateur n'envoie jamais ce jeton lui-même : le mettre dans le DOM
-    créerait exactement la surface d'exfiltration qu'on vient de retirer aux
-    pages admin.
+    Le mettre dans le DOM recréerait la surface d'exfiltration qu'on vient de
+    retirer aux pages admin.
     """
     token = session.get('player_token')
     return {'X-Session-Token': token} if token else None

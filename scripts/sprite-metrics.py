@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Mesure les sprites du banner et reimprime le bloc `bodies.sprite` de
-physics-config.js.
+raceEngine/src/config/bodies.js.
 
 Trois nombres par fichier :
 
@@ -25,7 +25,7 @@ import zlib
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMG = os.path.join(ROOT, 'frontEnd', 'static', 'img')
 
-# L'ordre est celui de physics-config.js : celui de kartStats.characters, du
+# L'ordre est celui de la configuration : celui de kartStats.characters, du
 # plus lourd au plus leger. La sortie se colle telle quelle.
 KARTS = ['bowser', 'dk', 'mario', 'luigi', 'yoshi', 'peach', 'toad', 'koopa']
 

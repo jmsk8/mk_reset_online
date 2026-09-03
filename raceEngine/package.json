@@ -2,15 +2,19 @@
   "name": "mk-race-engine",
   "version": "1.0.0",
   "private": true,
-  "description": "Moteur de course autoritatif du banner SMK (voir docs/MIGRATION_BANNER_WSS.md)",
-  "main": "server.js",
+  "type": "module",
+  "description": "Moteur de course autoritatif du banner SMK (voir docs/banner/architecture.md)",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js",
-    "soak": "node server.js --duration 600",
+    "start": "node src/server.js",
+    "soak": "node src/server.js --duration 600",
+    "tracks": "node tools/tracks.js",
+    "simulate": "node tools/simulate.js",
+    "scenario": "node tools/scenario.js",
     "spectate": "node tools/spectate.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.11"
   },
   "dependencies": {
     "ws": "^8.18.0"

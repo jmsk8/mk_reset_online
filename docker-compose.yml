@@ -130,17 +130,13 @@ services:
   race:
     build:
       context: ./raceEngine
-      dockerfile: Dockerfile.race
     expose:
       - "3000"
     volumes:
-      # Le moteur et sa configuration sont les fichiers servis au navigateur,
-      # montés tels quels : une seule version au monde, donc aucune dérive
-      # possible entre ce qui est simulé et ce qui est affiché.
-      - ./frontEnd/static/js/physics.js:/app/physics.js:ro
-      - ./frontEnd/static/js/physics-config.js:/app/physics-config.js:ro
       # Les circuits sont dessinés, pas compilés : montés, ils se retouchent
-      # sans reconstruire l'image. `make restart-race` relit le dossier.
+      # sans reconstruire l'image. `make restart-race` relit le dossier. Le
+      # moteur, lui, est copié dans l'image — c'est du code serveur, le
+      # navigateur ne le charge plus.
       - ./tracks:/app/tracks:ro
     environment:
       - PORT=3000

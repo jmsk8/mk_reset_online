@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 
-# Clés sans lesquelles la stack ne démarre pas. En ajouter une ici ne provoque
-# PLUS la réécriture du fichier : seule la clé manquante est demandée et ajoutée.
+# Clés sans lesquelles la stack ne démarre pas. En ajouter une ici ne réécrit
+# PAS le fichier : seule la clé manquante est demandée et ajoutée.
 REQUIRED_VARS=(POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB ADMIN_PASSWORD_HASH SECRET_KEY)
 
 # Clés FACULTATIVES : jamais demandées, jamais bloquantes, et elles ont le
@@ -20,7 +20,7 @@ else
   C_GREEN=''; C_YELLOW=''; C_RED=''; C_RESET=''
 fi
 # Tous les diagnostics partent sur stderr : value_for_key() capture stdout pour
-# en faire la valeur écrite dans le .env — un message qui s'y égare y atterrit.
+# en faire la valeur écrite dans le .env.
 info()  { printf "${C_GREEN}[env]${C_RESET} %s\n" "$1" >&2; }
 warn()  { printf "${C_YELLOW}[env]${C_RESET} %s\n" "$1" >&2; }
 err()   { printf "${C_RED}[env]${C_RESET} %s\n" "$1" >&2; }
@@ -68,8 +68,7 @@ gen_secret() {
 
 PROMPT_RESULT=""
 
-# Sur EOF (entrée redirigée, pipe fermé), `read` échoue : on sort au lieu de
-# boucler indéfiniment sur « Vide, recommence ».
+# Sur EOF (entrée redirigée), `read` échoue : on sort au lieu de boucler.
 prompt_password() {
   local label="$1" p1 p2
   while true; do
@@ -101,7 +100,7 @@ prompt_value() {
 }
 
 # Demande la valeur d'une clé manquante. Ne renvoie QUE la valeur sur stdout :
-# tous les messages partent sur stderr, sinon ils atterriraient dans le .env.
+# les messages partent sur stderr, sinon ils atterrissent dans le .env.
 value_for_key() {
   local key="$1" v
   case "$key" in
@@ -119,8 +118,8 @@ value_for_key() {
       v="$(bcrypt_hash "$PROMPT_RESULT")"
       printf '%s' "$(escape_for_compose "$v")" ;;
     SECRET_KEY)
-      # Jamais demandée : générée, et JAMAIS régénérée si déjà présente
-      # (une rotation déconnecte toutes les sessions — cf. R-29).
+      # Jamais demandée : générée, et jamais régénérée si déjà présente — une
+      # rotation déconnecte toutes les sessions (R-29).
       info "SECRET_KEY absente — génération d'une nouvelle clé."
       gen_secret ;;
     DISCORD_CLIENT_ID)
@@ -136,9 +135,8 @@ value_for_key() {
   esac
 }
 
-# Ajoute les clés manquantes SANS toucher au reste du fichier : commentaires,
-# ordre, et toutes les variables hors REQUIRED_VARS (DOMAIN, TLS_MODE,
-# HTTP_PUBLISH, HTTPS_PUBLISH…) sont préservés à l'octet près.
+# Ajoute les clés manquantes SANS toucher au reste : commentaires, ordre et
+# variables hors REQUIRED_VARS sont préservés à l'octet près.
 merge_into_env() {
   local -n _keys="$1"
   local -n _vals="$2"
@@ -147,8 +145,7 @@ merge_into_env() {
   tmp="$(umask 077; mktemp "$ROOT_DIR/.env.XXXXXX")"
 
   if [ -f "$ENV_FILE" ]; then
-    # Recopie l'existant, en retirant les seules lignes des clés qu'on
-    # s'apprête à écrire et qui sont vides (KEY= sans valeur).
+    # Recopie l'existant, en retirant les lignes vides des clés qu'on réécrit.
     local filter=""
     for key in "${_keys[@]}"; do
       filter="${filter}/^${key}=[[:space:]]*$/d;"
@@ -228,9 +225,9 @@ main() {
   local keys=() vals=() v
   for k in "${missing[@]}"; do
     v="$(value_for_key "$k")"
-    # value_for_key tourne dans un $( ) : un `exit 1` interne (bcrypt absent, par
-    # exemple) ne tue que le sous-shell et renverrait une valeur vide. Sans ce
-    # garde-fou, on écrirait un .env d'apparence complète avec un hash vide.
+    # value_for_key tourne dans un $( ) : un `exit 1` interne ne tue que le
+    # sous-shell et renverrait une valeur vide. Sans ce garde-fou, on écrirait un
+    # .env d'apparence complète avec un hash vide.
     if [ -z "$v" ]; then
       err "Impossible d'obtenir une valeur pour $k — abandon, le .env n'est pas modifié."
       exit 1

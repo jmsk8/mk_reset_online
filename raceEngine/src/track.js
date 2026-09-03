@@ -1,12 +1,8 @@
-'use strict';
-
 // Lecture des circuits dessines.
 //
-// Un circuit n'est plus quatre nombres dans physics-config.js : c'est un dessin
-// dans tracks/, relu au demarrage du service. Le format tient en trois
-// caracteres — `X` pour les bords, `x` pour la ligne de depart/arrivee, `B`
-// pour une boite a objets — et le reste du fichier est de la prose : c'est un
-// .md ordinaire, qui se lit tel quel sur GitHub.
+// Un circuit est un dessin dans tracks/, relu au demarrage. Le format tient en
+// trois caracteres — `X` pour les bords, `x` pour la ligne, `B` pour une boite —
+// et le reste du fichier est de la prose : c'est un .md qui se lit sur GitHub.
 //
 //     ```track
 //     XXXXXXXXXXXXXXXX
@@ -15,25 +11,20 @@
 //     XXXXXXXXXXXXXXXX
 //     ```
 //
-// Le dessin est vu de dessus, la course allant vers la droite, et la derniere
-// colonne touche la premiere : le tour boucle. Une colonne vaut CELL_PX pixels
-// de monde ; les rangees comprises entre les deux bords se partagent la
-// profondeur de la piste, qui elle reste une constante de physique
-// (road.minY..road.maxY). C'est pourquoi un `X` au milieu du dessin est refuse :
-// une piste qui se resserre demanderait un profil de bords transmis au client
-// et une route dessinee colonne par colonne, ce que le bandeau CSS actuel ne
-// sait pas faire.
+// Vu de dessus, la course allant vers la droite, la derniere colonne touchant la
+// premiere. Une colonne vaut CELL_PX px de monde ; les rangees se partagent la
+// profondeur de la piste, qui reste une constante de physique. Un `X` au milieu
+// du dessin est donc refuse : une piste qui se resserre demanderait un profil de
+// bords transmis au client, ce que le bandeau CSS ne sait pas faire.
 //
-// Ce fichier ne connait pas la physique : il rend des coordonnees en cellules.
-// C'est `applyTrack` qui les pose sur une config, seul endroit ou le dessin et
-// les reglages se rencontrent.
+// Ce fichier ne connait pas la physique : il rend des cellules. C'est
+// `applyTrack` qui les pose sur une config.
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'node:fs';
+import path from 'node:path';
 
-// Un caractere = un motif rouge/blanc de la bordure. C'est l'unite visible la
-// plus fine du decor : en dessous, une colonne de dessin ne correspondrait plus
-// a rien de reperable a l'ecran.
+// Un caractere = un motif rouge/blanc de la bordure, l'unite visible la plus fine
+// du decor.
 const CELL_PX = 80;
 
 const FENCE_OPEN = /^\s*```+\s*track\s*$/;
@@ -69,11 +60,8 @@ function extractBlock(text, source) {
     fail(source, 0, 'aucun bloc ```track. Un circuit se dessine entre ```track et ```.');
 }
 
-// Le dessin en coordonnees de cellules, sans aucune notion de pixel ni de
-// profondeur : `applyTrack` s'en charge.
-//
-// `source` ne sert qu'aux messages d'erreur — un dessin faux doit dire quel
-// fichier et quelle ligne relire.
+// Le dessin en coordonnees de cellules, sans notion de pixel ni de profondeur.
+// `source` ne sert qu'aux messages d'erreur.
 function parseTrack(text, source) {
     const block = extractBlock(text, source);
 
@@ -151,15 +139,11 @@ function parseTrack(text, source) {
                 continue;
             }
 
-            // Deux couleurs, un seul obstacle. `P` plante un tuyau vert, `p`
-            // un rouge, et c'est TOUTE la difference : meme emprise, meme
-            // choc, meme place dans les priorites de l'IA. La couleur ne
-            // voyage que jusqu'au decor.
-            //
-            // Elle n'est donc pas un element de plus a apprendre pour dessiner
-            // un circuit : un tuyau est un tuyau, et le tracé se juge sur les
-            // memes chiffres qu'avant — cf. `narrowestPassage`, qui ne les
-            // distingue pas.
+            // Deux couleurs, un seul obstacle : `P` plante un tuyau vert, `p` un
+            // rouge, et c'est TOUTE la difference — meme emprise, meme choc, meme
+            // place dans les priorites. La couleur ne voyage que jusqu'au decor,
+            // et n'est donc pas un element de plus a apprendre pour dessiner un
+            // circuit.
             if (ch === 'P' || ch === 'p') {
                 pipes.push({
                     col: col,
@@ -197,17 +181,14 @@ function parseTrack(text, source) {
     };
 }
 
-// Le passage le plus etroit de la piste, une fois les pipes poses.
+// Le passage le plus etroit de la piste, une fois les tuyaux poses.
 //
-// Deux pipes voisins sans etre alignes se recouvrent partiellement, et c'est
-// cette zone de recouvrement qui decide du passage : il ne suffit pas de
-// regarder chaque colonne dessinee, il faut balayer la piste. Le pas vaut la
-// demi-emprise d'un pipe, qui ne peut donc etre saute.
+// Deux tuyaux voisins sans etre alignes se recouvrent partiellement, et c'est
+// cette zone qui decide du passage : il faut balayer la piste, pas seulement
+// regarder chaque colonne dessinee. Le pas vaut la demi-emprise d'un tuyau.
 //
-// Les intervalles sont en position de centre de kart : `kartVsPipe` porte deja
-// la demi-carrosserie, si bien qu'une place libre de zero suffirait a passer en
-// theorie. `minPassageY` demande de la marge, parce qu'un kart arrive rarement
-// pile dans l'axe.
+// Les intervalles sont en position de CENTRE de kart : `kartVsPipe` porte deja la
+// demi-carrosserie, et `minPassageY` demande la marge.
 function narrowestPassage(cfg, pipes, width) {
     const hx = cfg.hitboxes.kartVsPipe.x;
     const hy = cfg.hitboxes.kartVsPipe.y;
@@ -246,18 +227,16 @@ function narrowestPassage(cfg, pipes, width) {
     return { free: worst, x: worstX };
 }
 
-// Le dessin pose sur une config de physique : c'est le seul endroit ou une
-// colonne devient une distance et une rangee une profondeur.
-//
-// Rend une config neuve plutot que de modifier celle recue : deux courses d'un
-// meme grand prix ne tournent pas sur le meme circuit, et la config de l'une ne
-// doit rien laisser dans celle de l'autre.
+// Le dessin pose sur une config de physique : seul endroit ou une colonne devient
+// une distance et une rangee une profondeur. Rend une config neuve plutot que de
+// modifier celle recue — deux courses d'un grand prix ne tournent pas sur le meme
+// circuit.
 function applyTrack(cfg, track) {
     const width = track.columns * CELL_PX;
 
-    // La grille se deploie en amont de la ligne. Si le tour est plus court que
-    // ce qu'elle occupe, le fond de grille depasse la ligne par l'arriere et
-    // les karts partent avec un tour d'avance sur eux-memes.
+    // La grille se deploie en amont de la ligne. Si le tour est plus court que ce
+    // qu'elle occupe, le fond de grille depasse la ligne par l'arriere et les
+    // karts partent avec un tour d'avance sur eux-memes.
     const grid = cfg.race.grid;
     const gridDepth = grid.backOffset + 3 * grid.rowGap + grid.colStagger;
     if (width < gridDepth * 2) {
@@ -268,9 +247,9 @@ function applyTrack(cfg, track) {
 
     const finishLineX = track.finishColumn * CELL_PX;
 
-    // Rangee du haut = fond de piste = road.maxY, puisque yPercent est une
-    // hauteur a l'ecran : plus c'est haut, plus c'est loin. Une seule rangee
-    // dessinee ne designe aucun bord en particulier, donc le milieu.
+    // Rangee du haut = fond de piste = `road.maxY`, `yPercent` etant une hauteur
+    // a l'ecran. Une seule rangee dessinee ne designe aucun bord : donc le
+    // milieu.
     const depth = cfg.road.maxY - cfg.road.minY;
     const rowY = row => (track.rows > 1)
         ? cfg.road.maxY - row * (depth / (track.rows - 1))
@@ -376,7 +355,8 @@ function resolveTracksDir(base) {
 
     throw new Error('dossier tracks/ introuvable (cherche dans : '
         + candidates.filter(Boolean).join(', ') + '). '
-        + 'Dans le conteneur il est monte par docker-compose, comme physics.js.');
+        + 'Dans le conteneur il est monte par docker-compose : le moteur y est '
+        + 'copie, les circuits non, pour se retoucher sans reconstruire l\'image.');
 }
 
 // Tous les circuits du dossier, dans l'ordre des noms de fichiers : c'est cet
@@ -420,7 +400,7 @@ function forRound(tracks, round) {
     return tracks[((round - 1) % tracks.length + tracks.length) % tracks.length];
 }
 
-module.exports = {
+export {
     CELL_PX,
     parseTrack,
     applyTrack,

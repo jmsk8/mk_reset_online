@@ -1,29 +1,21 @@
-// Banc de scenario : une situation posee a la main, et la trace de ce que le
-// kart en fait, tick par tick.
-//
-// Le banc d'equilibrage (`simulate.js`) dit SI le pilotage marche, sur mille
-// courses. Celui-ci dit POURQUOI il a fait ce qu'il a fait, sur une situation.
-// Les deux sont des observateurs : ni l'un ni l'autre n'ecrit dans le moteur.
+// Banc de scenario : une situation posee a la main, et la trace de ce que le kart
+// en fait, tick par tick. `simulate.js` dit SI le pilotage marche ; celui-ci dit
+// POURQUOI il a fait ce qu'il a fait. Ni l'un ni l'autre n'ecrit dans le moteur.
 //
 //     node tools/scenario.js
 //
-// Une ligne ne sort que lorsque quelque chose change, sinon la trace serait
-// illisible. Les colonnes disent, dans l'ordre : la profondeur du kart, sa
-// vitesse laterale, la manoeuvre en cours, ce que la vue retient comme menace
-// et dans combien de temps, le plan qui commande, la profondeur qu'il vise, et
-// les drapeaux du plan.
+// Une ligne ne sort que lorsque quelque chose change. Les colonnes : profondeur,
+// vitesse laterale, manoeuvre, menace retenue et son delai, plan qui commande,
+// profondeur visee, drapeaux du plan.
 //
-// Ajouter un cas, c'est une ligne `run(...)` en bas de fichier. Pour isoler une
-// decision, tous les autres karts sont laisses sur la grille : ils ne roulent
-// pas, et la vue ne les voit donc pas.
-//
-// A jeter sans remords : rien du moteur n'en depend.
-const PH = require('/repo/frontEnd/static/js/physics.js');
-const CFG = require('/repo/frontEnd/static/js/physics-config.js');
-const track = require('/repo/raceEngine/track.js');
+// Ajouter un cas, c'est une ligne `run(...)` en bas de fichier. Les autres karts
+// restent sur la grille, pour isoler une decision.
+import * as PH from '../src/engine/index.js';
+import CFG from '../src/config/index.js';
+import * as track from '../src/track.js';
 
 const DT = 1 / 30, DT_MS = DT * 1000;
-const tracks = track.loadTracks(track.resolveTracksDir('/repo/raceEngine'), CFG);
+const tracks = track.loadTracks(track.resolveTracksDir(import.meta.dirname), CFG);
 const cfg = track.applyTrack(CFG, tracks[0]);
 
 function makeRng(seed) {

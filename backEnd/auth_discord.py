@@ -1,22 +1,17 @@
 """Echange OAuth2 Discord et gestion des comptes.
 
-L'echange se fait cote BACKEND et non cote frontend : DISCORD_CLIENT_SECRET
-reste dans l'environnement du seul service qui possede deja des secrets, la
-base garde un unique proprietaire, et le frontend ne manipule aucun secret
-Discord. Le frontend se contente de relayer le `code`.
+L'echange se fait cote BACKEND : DISCORD_CLIENT_SECRET reste dans le seul
+service qui possede deja des secrets, le frontend ne relaie que le `code`.
 
-Trois pieges Discord sont traites ici, et chacun produit une erreur sans
-message utile quand on les rate :
+Trois pieges Discord, chacun produisant une erreur sans message utile :
 
-1. /oauth2/token attend du x-www-form-urlencoded -> requests `data=`, pas `json=`.
-2. redirect_uri doit etre identique AU CARACTERE PRES entre /authorize, /token
-   et le portail developpeur. Il vient donc de l'environnement, jamais de
-   url_for(_external=True) : Flask est derriere deux proxys sans ProxyFix et
-   produirait du http://.
-3. L'echange est IDEMPOTENT. Deux appels reseau se cachent derriere, et le
-   frontend peut abandonner avant la fin : si le compte existe deja, on
-   renvoie une session valide au lieu d'echouer, sinon l'utilisateur retente
-   avec une invitation deja consommee et se retrouve bloque.
+1. /oauth2/token attend du x-www-form-urlencoded -> `data=`, pas `json=`.
+2. redirect_uri identique AU CARACTERE PRES entre /authorize, /token et le
+   portail. D'ou l'environnement et jamais url_for(_external=True), qui
+   produirait du http:// derriere les deux proxys.
+3. L'echange est IDEMPOTENT : si le compte existe deja on renvoie une
+   session, sinon un frontend qui abandonne en cours laisse l'utilisateur
+   avec une invitation deja consommee.
 """
 
 from __future__ import annotations
@@ -42,8 +37,8 @@ logger = logging.getLogger(__name__)
 DISCORD_CLIENT_ID = os.environ.get('DISCORD_CLIENT_ID', '')
 DISCORD_CLIENT_SECRET = os.environ.get('DISCORD_CLIENT_SECRET', '')
 DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', '')
-# Amorcage du tout premier superadmin : aucune IHM ne peut le creer, puisque
-# toute route d'attribution de role exige d'etre deja superadmin.
+# Amorcage du premier superadmin : aucune IHM ne peut le creer, toute route
+# d'attribution de role exigeant d'etre deja superadmin.
 DISCORD_SUPERADMIN_ID = os.environ.get('DISCORD_SUPERADMIN_ID', '')
 
 
@@ -75,12 +70,8 @@ def hash_token(token: str) -> str:
 def avatar_url(discord_id: str, avatar_hash: str | None, size: int = 128) -> str:
     """URL CDN de l'avatar, avec repli sur l'avatar par defaut Discord.
 
-    Aucune copie n'est stockee : ni volume media a sauvegarder, ni pipeline
-    d'upload a securiser. Le hash change des que la personne change d'avatar,
-    d'ou le rafraichissement a chaque connexion.
-
-    Le calcul du repli utilise un decalage sur le snowflake : il DOIT se faire
-    ici et pas en JS, ou l'entier depasserait 2^53.
+    Le repli decale le snowflake : a faire ici et pas en JS, ou l'entier
+    depasserait 2^53.
     """
     if avatar_hash:
         return f"{DISCORD_CDN_BASE}/avatars/{discord_id}/{avatar_hash}.png?size={size}"
@@ -94,14 +85,13 @@ def avatar_url(discord_id: str, avatar_hash: str | None, size: int = 128) -> str
 def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     """Echange le code OAuth contre un access_token, puis lit /users/@me.
 
-    Ne loggue jamais le corps des reponses : il contient le code, l'access_token
-    et le refresh_token, qui n'ont rien a faire dans les logs Docker.
+    Ne loggue jamais le corps des reponses : il contient le code et les jetons.
     """
     if not discord_configured():
         raise DiscordAuthError("Authentification Discord non configuree", 503, 'non_configure')
 
     # Toujours la valeur de l'environnement : Discord compare caractere par
-    # caractere avec ce qui est enregistre dans le portail developpeur.
+    # caractere avec le portail developpeur.
     uri = redirect_uri or DISCORD_REDIRECT_URI
 
     try:
@@ -175,9 +165,8 @@ def upsert_compte(cur, profil: dict, invitation_id: int | None = None,
                   cgu_acceptee: bool = False) -> dict:
     """Cree ou rafraichit le compte, et renvoie son etat.
 
-    Le miroir Discord (pseudo, avatar) est rafraichi a CHAQUE connexion. Ce
-    n'est qu'un miroir : rien n'est propage vers joueurs.nom, cette
-    propagation est un geste admin explicite.
+    Le miroir Discord est rafraichi a chaque connexion. Rien n'est propage vers
+    joueurs.nom : c'est un geste admin explicite.
     """
     cur.execute(
         """
@@ -193,9 +182,8 @@ def upsert_compte(cur, profil: dict, invitation_id: int | None = None,
             discord_synced_at   = now(),
             last_login_at       = now(),
             updated_at          = now()
-        -- Les colonnes cgu_* sont volontairement absentes du DO UPDATE : la
-        -- date du consentement d'origine ne doit pas etre ecrasee a chaque
-        -- reconnexion, sinon on ne sait plus quand la personne a accepte.
+        -- cgu_* volontairement absentes du DO UPDATE : la date du consentement
+        -- d'origine ne doit pas etre ecrasee a chaque reconnexion.
         RETURNING id, discord_id, discord_username, discord_global_name,
                   discord_avatar_hash, joueur_id, statut, role,
                   cgu_accepted_at, cgu_version
@@ -217,9 +205,8 @@ def upsert_compte(cur, profil: dict, invitation_id: int | None = None,
 def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
     """Promeut le compte d'amorcage, et lui seul, s'il n'y a aucun superadmin.
 
-    La condition « aucun superadmin existant » est essentielle : sans elle, la
-    variable d'environnement resterait une porte derobee permanente, activable
-    par quiconque met la main sur le .env.
+    Sans la condition « aucun superadmin existant », la variable
+    d'environnement serait une porte derobee permanente.
     """
     if not DISCORD_SUPERADMIN_ID or compte['discord_id'] != DISCORD_SUPERADMIN_ID:
         return False
@@ -255,8 +242,7 @@ def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
 def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tuple[str, datetime]:
     """Cree une session et renvoie (token en clair, expiration).
 
-    Le token en clair n'est renvoye qu'ici : la base n'en garde que le sha256.
-    L'expiration est absolue, aucune route ne la prolonge.
+    La base n'en garde que le sha256. L'expiration est absolue.
     """
     token = secrets.token_urlsafe(32)
     if role == ROLE_PLAYER:
@@ -278,14 +264,11 @@ def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tu
 def consume_invitation(cur, token: str | None) -> tuple[int, int | None]:
     """Valide et consomme une invitation. Renvoie (id, joueur_id vise).
 
-    La consommation n'a lieu QU'ICI, apres retour de Discord — jamais a
-    l'affichage de la page d'invitation : coller le lien dans un salon
-    declenche un GET du crawler Discord, qui brulerait un lien max_uses=1 avant
-    que quiconque ait pu cliquer.
+    La consommation n'a lieu QU'ICI, au retour de Discord : coller le lien dans
+    un salon declenche un GET du crawler, qui brulerait un lien max_uses=1 avant
+    que quiconque ait clique.
 
-    Cette fonction n'est appelee que pour un compte qui n'existe pas encore :
-    un utilisateur deja inscrit ne reconsomme rien, ce qui rend l'echange
-    rejouable quand le frontend a abandonne en cours de route.
+    Appelee seulement pour un compte inexistant, ce qui rend l'echange rejouable.
     """
     if not token:
         raise DiscordAuthError("Invitation requise", 403, 'invitation_requise')
@@ -315,8 +298,8 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
           redirect_uri: str | None = None, cgu_acceptee: bool = False) -> dict:
     """Parcours complet : code -> profil Discord -> compte -> session.
 
-    Tout se joue dans une seule transaction : soit le compte, l'invitation
-    consommee et la session existent ensemble, soit rien n'a eu lieu.
+    Une seule transaction : le compte, l'invitation consommee et la session
+    existent ensemble, ou rien n'a eu lieu.
     """
     profil = exchange_code(code, redirect_uri)
 

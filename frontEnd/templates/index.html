@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/form-readability.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/smk-banner.css') }}?v={{ app_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/banner.css') }}?v={{ app_version }}">
     
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
@@ -104,7 +104,7 @@
     </div>
 
     <script>
-        /* La sortie du voile, pilotée ici et non dans smk-banner.js : ce script
+        /* La sortie du voile, pilotée ici et non dans banner/curtain.js : ce script
            s'exécute avec le HTML, donc bien avant que la course puisse se dire
            prête, et il reste debout même si le banner tombe. Cacher toute la
            page est justement ce qu'on ne veut pas rater. */
@@ -112,20 +112,17 @@
             const splash = document.getElementById('boot-splash');
             if (!splash) return;
 
-            // Deja vu dans cet onglet : le CSS ne l'affiche pas, on le retire
-            // et aucune minuterie ne part.
+            // Deja vu dans cet onglet : on retire le voile, aucune minuterie ne part.
             if (document.documentElement.classList.contains('boot-seen')) {
                 splash.remove();
                 return;
             }
 
-            // Le noir (0.5 s), l'apparition du logo (0.5 s), puis le temps de
-            // le lire : en dessous, l'écran d'accueil n'est qu'un clignotement.
+            // Le noir (0.5 s), le logo (0.5 s), puis le temps de le lire.
             const SPLASH_MIN_MS = 1800;
 
-            // Filet : serveur muet ou images bloquées, le voile s'en va quand
-            // même. Sous le failsafe du rideau (5 s), pour ne pas laisser la
-            // page noire aussi longtemps qu'il met à abandonner.
+            // Filet : serveur muet ou images bloquées, le voile s'en va quand même.
+            // Sous le failsafe du rideau (5 s).
             const SPLASH_MAX_MS = 4000;
 
             const startedAt = Date.now();
@@ -135,9 +132,8 @@
                 if (dismissed) return;
                 dismissed = true;
                 splash.classList.add('is-gone');
-                // Retiré du DOM une fois le fondu fini : un voile transparent
-                // qui reste en place n'a plus rien à y faire. À tenir au-dessus
-                // de la transition de `.boot-splash` (1.2 s).
+                // Retiré du DOM une fois le fondu fini. À tenir au-dessus de la transition
+                // de `.boot-splash` (1.2 s).
                 setTimeout(() => splash.remove(), 1400);
             }
 
@@ -145,8 +141,7 @@
                 setTimeout(dismiss, Math.max(0, SPLASH_MIN_MS - (Date.now() - startedAt)));
             }
 
-            // Émis quand le rideau à damier se lève (smk-banner.js) : le voile
-            // et le rideau se croisent, on voit la course démarrer dedans.
+            // Émis quand le rideau se lève (banner/curtain.js) : voile et rideau se croisent.
             document.addEventListener('race:ready', onReady, { once: true });
             setTimeout(onReady, SPLASH_MAX_MS);
         })();
@@ -392,10 +387,28 @@
     {% include 'footer.html' %}
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    {# physics.js et physics-config.js ne sont plus chargés par le navigateur : la course
-       est simulée par le service `race`, le client ne fait que l'afficher. Le cache-buster
-       reste nécessaire, nginx servant les .js avec expires 7d. #}
-    <script src="{{ url_for('static', filename='js/smk-banner.js') }}?v={{ app_version }}"></script>
+    {# Le banner, découpé en scripts classiques chargés DANS CET ORDRE.
+
+       Des scripts classiques et non des modules ES, faute d'étape de build : un
+       `import` échapperait au cache-buster `?v=`, et un déploiement laisserait des
+       morceaux de banner en cache (nginx sert les .js avec expires 7d). Chargés
+       ainsi, ils partagent la même portée globale que le fichier unique qu'ils
+       remplacent — le découpage ne change rien à la sémantique.
+
+       Seul `main.js` exécute quelque chose au chargement, d'où sa place en fin de
+       liste ; les autres se contentent de déclarer et pourraient venir dans
+       n'importe quel ordre.
+
+       Aucune physique n'est chargée ici : le moteur vit dans raceEngine/src/engine/,
+       côté serveur, et le client ne fait qu'afficher ce qu'il reçoit. #}
+    {% for module in [
+        'config', 'state', 'layout', 'assets', 'camera', 'focus', 'director',
+        'controls', 'leaderboard', 'scene', 'items', 'curtain', 'reconcile',
+        'effects', 'results', 'render', 'interpolate', 'net', 'loop', 'debug',
+        'snow', 'main'
+    ] %}
+    <script src="{{ url_for('static', filename='js/banner/' ~ module ~ '.js') }}?v={{ app_version }}"></script>
+    {% endfor %}
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {

@@ -106,11 +106,11 @@ re-front:            ## Rebuild and restart frontend
 re-back:             ## Rebuild and restart backend
 	$(COMPOSE) up --build -d --no-deps backend
 
-# --force-recreate : physics.js et physics-config.js sont montes, pas copies
-# dans l'image. Sans lui, quand seuls ces deux fichiers changent l'image reste
-# identique, compose repond « up-to-date » et ne recree rien — le process Node
-# garde alors l'ancienne config en cache (require au demarrage). Avec, le
-# moteur repart toujours d'un process neuf, donc d'un grand prix neuf.
+# --force-recreate : le moteur est copie dans l'image, donc un changement de
+# code la reconstruit et compose recree de lui-meme. Mais tracks/ est monte, pas
+# copie : sans ce drapeau, retoucher un seul circuit laisse l'image identique,
+# compose repond « up-to-date » et ne recree rien. Avec, le moteur repart
+# toujours d'un process neuf, donc d'un grand prix neuf.
 re-race:             ## Rebuild and restart the banner race engine (nouveau grand prix)
 	$(COMPOSE) up --build -d --no-deps --force-recreate race
 
@@ -210,7 +210,7 @@ race-tracks:         ## Verifie les circuits de tracks/ (ORDER=1 pour l'ordre de
 	$(RACE_NODE) node tools/tracks.js $(if $(ORDER),--order,)
 
 race-soak:           ## Soak du moteur seul, 10 min, sans WebSocket (DURATION=... pour changer)
-	$(RACE_NODE) node server.js --duration $${DURATION:-600} --always-on
+	$(RACE_NODE) node src/server.js --duration $${DURATION:-600} --always-on
 
 # Banc d'equilibrage : enchaine des courses hors horloge, des milliers en
 # quelques secondes. RACES=... pour la taille de l'echantillon, SEED=... pour
@@ -224,6 +224,11 @@ race-sim:            ## Simule N courses et sort les stats (RACES=1000 SEED=42 C
 	$(RACE_NODE) node tools/simulate.js --races $${RACES:-200} \
 		$(if $(SEED),--seed $(SEED),) $(if $(CHAIN),--chain,) $(if $(CSV),--csv,) \
 		$(if $(TRACK),--track $(TRACK),)
+
+# Trace tick par tick UNE situation, pour comprendre une decision de pilotage
+# que le banc d'equilibrage signale sans l'expliquer.
+race-scenario:       ## Deroule les scenarios de pilotage et trace les decisions
+	$(RACE_NODE) node tools/scenario.js
 
 race-spectate:       ## Test de l'arrivant contre le service `race` en cours d'execution (AFTER=... secondes)
 	$(COMPOSE) exec race node tools/spectate.js --after $${AFTER:-30}
@@ -244,7 +249,7 @@ help:                ## Show this help
 
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
-        race-deps race-tracks race-soak race-sim race-spectate race-nginx \
+        race-deps race-tracks race-soak race-sim race-scenario race-spectate race-nginx \
         reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help
 

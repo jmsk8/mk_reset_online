@@ -112,9 +112,8 @@
         document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.fade-in').forEach(e => e.classList.add('visible'));
 
-            // Le bouton reste inerte tant que la case n'est pas cochée. Le
-            // consentement est ensuite porté par le paramètre `cgu`, que la
-            // route de connexion mémorise en session.
+            // Le bouton reste inerte tant que la case n'est pas cochée. Le consentement
+            // part ensuite dans le paramètre `cgu`.
             const cgu = document.getElementById('cgu');
             const btn = document.getElementById('btn-discord');
             if (cgu && btn) {

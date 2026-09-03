@@ -1,21 +1,14 @@
 """Decorateurs d'authentification et d'autorisation.
 
-Deux mecanismes cohabitent pendant la bascule :
+Deux mecanismes cohabitent pendant la bascule : `admin_required` (mot de passe
+partage, voue a disparaitre) et `role_required` (session Discord).
 
-- `admin_required` : l'ancien, mot de passe partage + token opaque dans
-  api_tokens. Voue a disparaitre.
-- `role_required` : le nouveau, session Discord + comptes.role.
+`admin_or_role_required` accepte les deux et loggue laquelle a servi. C'est le
+SEUL point ou la double lecture est autorisee : deux decorateurs empiles se
+comportent comme un ET alors qu'on veut un OU.
 
-`admin_or_role_required` accepte explicitement les deux et loggue laquelle a
-servi. C'est le SEUL point ou la double lecture est autorisee : un decorateur
-retire sans que le nouveau soit branche laisse une route ouverte, et deux
-decorateurs empiles se comportent comme un ET alors qu'on veut un OU. A la fin
-de la bascule, ce decorateur et `admin_required` disparaissent ensemble, et les
-logs disent s'il restait des appels par mot de passe.
-
-Distinction 401/403/503, cf. R-28 : le frontend purge la session sur 401/403,
-donc une simple indisponibilite de la base ne doit JAMAIS produire ces codes,
-sinon un hoquet du backend deconnecte tout le monde.
+Distinction 401/403/503 (R-28) : le frontend purge la session sur 401/403, une
+indisponibilite de la base ne doit donc jamais produire ces codes.
 """
 
 from __future__ import annotations
@@ -73,9 +66,8 @@ def admin_required(f):
 def _charger_compte_session():
     """Resout le token de session en compte. Renvoie (compte, reponse d'erreur).
 
-    Le role est TOUJOURS relu en base, jamais lu depuis un jeton ou un cookie :
-    retirer un role doit prendre effet immediatement, pas au bout de 30 jours.
-    La requete est indexee et ne concerne que des routes authentifiees.
+    Le role est TOUJOURS relu en base : retirer un role doit prendre effet
+    immediatement, pas au bout de 30 jours.
     """
     token = request.headers.get(SESSION_HEADER, None)
     if not token:
@@ -139,9 +131,8 @@ def player_required(f):
 def role_required(role_minimum: str):
     """Exige une session ET un role au moins egal a `role_minimum`.
 
-    Les roles sont ordonnes : un superadmin satisfait une exigence d'admin.
-    C'est la seule frontiere de privilege de l'application — aucune route ne
-    doit deduire un droit d'autre chose que de ce decorateur.
+    Les roles sont ordonnes : un superadmin satisfait une exigence d'admin. Seule
+    frontiere de privilege de l'application.
     """
     seuil = ROLE_HIERARCHY[role_minimum]
 

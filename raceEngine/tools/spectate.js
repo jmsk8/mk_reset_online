@@ -1,5 +1,3 @@
-'use strict';
-
 // Le « test de l'arrivant ».
 //
 // Un spectateur qui se connecte en pleine course doit pouvoir reconstruire une
@@ -17,7 +15,7 @@
 //
 // Les points marques MANQUE sont ceux qui feraient afficher une scene fausse.
 
-const WebSocket = require('ws');
+import WebSocket from 'ws';
 
 const args = process.argv.slice(2);
 function argValue(name, fallback) {

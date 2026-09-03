@@ -52,9 +52,9 @@ def _leave_one_out(sum_mu: float, count_mu: int, own_mu: float | None) -> float 
     return (sum_mu - float(own_mu)) / (count_mu - 1)
 
 
-# Coefficient de force du lobby (IP v2, voir IP_V2_* dans constants.py) : ecart
-# en points de mu entre le lobby et la grille figee du jour du tournoi (toutes
-# ligues confondues). Vaut 1.0 si non calculable.
+# Force du lobby (IP v2, cf IP_V2_* dans constants.py) : ecart de mu entre le
+# lobby et la grille figee du jour, toutes ligues confondues. 1.0 si
+# non calculable.
 def _force_lobby(mu_moyen_lobby: float | None, mu_moyen_reference: float | None) -> float:
     if mu_moyen_lobby is None or mu_moyen_reference is None:
         return 1.0
@@ -62,9 +62,8 @@ def _force_lobby(mu_moyen_lobby: float | None, mu_moyen_reference: float | None)
     return max(IP_V2_FORCE_LOBBY_MIN, min(IP_V2_FORCE_LOBBY_MAX, force))
 
 
-# Un joueur compte dans la moyenne de reference IP v2 s'il "a un rank" :
-# present dans la grille (tier attribue) et pas inactif. Les deux criteres se
-# desactivent independamment via IP_V2_REF_* dans constants.py.
+# Un joueur compte dans la reference IP v2 s'il a un rank : present dans la
+# grille et pas inactif. Les deux criteres se desactivent via IP_V2_REF_*.
 def _counts_in_reference(is_ranked: bool, tier: str | None) -> bool:
     if IP_V2_REF_REQUIRE_RANKED and not is_ranked:
         return False
@@ -73,9 +72,8 @@ def _counts_in_reference(is_ranked: bool, tier: str | None) -> bool:
     return True
 
 
-# Grilles figees des journees couvertes par la periode (cf grille_snapshots).
-# Retourne {date: {"sum": mu cumule, "count": effectif, "mus": {joueur_id: mu}}},
-# le detail par joueur servant au leave-one-out.
+# {date: {"sum": mu cumule, "count": effectif, "mus": {joueur_id: mu}}}, le
+# detail par joueur servant au leave-one-out.
 def _load_reference_grids(cur: Any, d_debut: str, d_fin: str) -> dict:
     cur.execute("""
         SELECT date, joueur_id, mu, is_ranked, tier
@@ -93,10 +91,8 @@ def _load_reference_grids(cur: Any, d_debut: str, d_fin: str) -> dict:
     return grids
 
 
-# Moyenne de reference pour un joueur donne : mu moyen de la grille figee du
-# jour, le joueur lui-meme exclu s'il en fait partie (meme principe de
-# leave-one-out que pour le lobby). None si la journee n'a pas de grille figee,
-# auquel cas l'appelant se rabat sur la moyenne de periode.
+# Mu moyen de la grille figee du jour, le joueur lui-meme exclu. None si la
+# journee n'a pas de grille : l'appelant se rabat sur la moyenne de periode.
 def _reference_mu(grid: dict | None, joueur_id: int) -> float | None:
     if not grid or grid["count"] <= 0:
         return None
@@ -236,12 +232,10 @@ def recalculate_tiers() -> None:
             conn.rollback()
 
 
-# Fige la grille des joueurs pour cette journee, si elle ne l'est pas deja.
-# A appeler avant toute modification de mu/sigma : c'est le premier tournoi du
-# jour qui definit la reference IP v2, les suivants (session de matchmaking
-# scindee en plusieurs lobbies) reutilisent la meme grille.
-# L'existence est testee sur la journee entiere, et pas ligne par ligne : sinon
-# un joueur cree entre-temps viendrait s'ajouter a une grille deja figee.
+# A appeler avant toute modification de mu/sigma : le premier tournoi du jour
+# definit la reference IP v2, les suivants reutilisent la meme grille.
+# Existence testee sur la journee entiere et non ligne par ligne : sinon un
+# joueur cree entre-temps s'ajouterait a une grille deja figee.
 def snapshot_grille(cur: Any, date_tournoi: Any) -> bool:
     cur.execute("SELECT 1 FROM grille_snapshots WHERE date = %s LIMIT 1", (date_tournoi,))
     if cur.fetchone():
@@ -255,9 +249,8 @@ def snapshot_grille(cur: Any, date_tournoi: Any) -> bool:
     return True
 
 
-# Libere la grille figee d'une journee dont plus aucun tournoi ne subsiste,
-# pour qu'un tournoi rejoue a cette date reparte de l'etat courant. Tant qu'il
-# reste un tournoi ce jour-la, la grille reste valable et n'est pas touchee.
+# Libere la grille d'une journee dont plus aucun tournoi ne subsiste, pour
+# qu'un tournoi rejoue a cette date reparte de l'etat courant.
 def drop_grille_snapshot_if_orphan(cur: Any, date_tournoi: Any) -> None:
     cur.execute("SELECT 1 FROM Tournois WHERE date = %s LIMIT 1", (date_tournoi,))
     if cur.fetchone():
@@ -537,8 +530,8 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
     for jid, p in players.items():
         data: list[float | None] = []
         points: list[dict | None] = []
-        # v1 et v2 calcules en parallele pour pouvoir afficher les deux dans
-        # le tooltip, quelle que soit la version active sur le graphique.
+        # v1 et v2 calcules en parallele : le tooltip affiche les deux, quelle que
+        # soit la version active.
         num_total_v1 = 0.0
         denom_total_v1 = 0.0
         num_total_v2 = 0.0
@@ -824,9 +817,8 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             old_mu = row[11]
             if tid not in tournoi_meta:
                 tournoi_meta[tid] = {"sum_score": 0.0, "count": 0, "sum_mu": 0.0, "count_mu": 0}
-                # Une session (ex: matchmaking qui scinde un gros groupe) peut generer
-                # plusieurs tournois le meme jour dans la meme ligue. On les regroupe
-                # ici comme pour la penalisation d'absence (cf routes_admin.py).
+                # Une session de matchmaking peut generer plusieurs tournois le meme jour dans
+                # la meme ligue : on les regroupe, comme pour la penalisation d'absence.
                 session_keys[tid] = (row[7], row[10])
             tournoi_meta[tid]["count"] += 1
             tournoi_meta[tid]["sum_score"] += score
@@ -1151,16 +1143,12 @@ def _apply_inter_league_moves(conn: Any, moves_count: int, ranking_data: dict, r
 # ---------------------------------------------------------------------------
 # Matchmaking
 # ---------------------------------------------------------------------------
-# Portage fidele de buildLobbies(), qui vivait dans matchmaking.html. Deplace
-# ici pour que la page d'administration et le bot Discord appellent le MEME
-# code : deux implementations du meme algorithme finissent toujours par
-# diverger, et personne ne s'en apercoit avant qu'un lobby soit mal compose.
+# Portage de buildLobbies(), qui vivait dans matchmaking.html : la page
+# d'administration et le bot Discord doivent appeler le MEME code.
 #
-# Principe : les joueurs sont tries par score decroissant, puis coupes en k
-# tranches contigues de tailles aussi egales que possible. Quand n n'est pas
-# divisible par k, les joueurs en trop sont attribues un par un, et le point de
-# coupure est choisi la ou l'ecart de score est le plus faible -- on preferera
-# toujours separer deux joueurs eloignes plutot que deux joueurs proches.
+# Joueurs tries par score decroissant, puis coupes en k tranches contigues de
+# tailles aussi egales que possible. Le point de coupure est choisi la ou
+# l'ecart de score est le plus faible.
 
 def construire_lobbies(joueurs, max_par_lobby=None):
     """Repartit des joueurs en lobbies equilibres.
@@ -1207,17 +1195,13 @@ def construire_lobbies(joueurs, max_par_lobby=None):
             ecart_dessus = abs(pivot['ts'] - dessus['ts'])
             ecart_dessous = abs(pivot['ts'] - dessous['ts']) if dessous else float('inf')
 
-            # CORRECTIF par rapport au JS d'origine. Un lobby ne peut recevoir
-            # qu'UN seul joueur en plus du socle. Sans cette condition, un lobby
-            # deja agrandi par la branche « bascule » de l'iteration precedente
-            # pouvait en recevoir un second et atteindre base+2 -- soit 11
-            # joueurs pour une limite de 10, dans environ 3 % des compositions
-            # de 11 a 40 joueurs. Un lobby injouable, que l'admin devait
-            # rattraper a la main.
+            # CORRECTIF par rapport au JS d'origine : un lobby ne peut recevoir qu'UN
+            # joueur en plus du socle. Sans cette condition, un lobby deja agrandi a
+            # l'iteration precedente atteignait base+2 -- 11 joueurs pour une limite de
+            # 10, dans 3 % des compositions de 11 a 40 joueurs.
             #
-            # La repartition correcte est connue d'avance : exactement `pivots`
-            # lobbies de taille base+1, et k - pivots de taille base. Le choix
-            # ne porte donc que sur LESQUELS, jamais sur combien.
+            # La repartition est connue d'avance : exactement `pivots` lobbies de taille
+            # base+1. Le choix ne porte que sur LESQUELS, jamais sur combien.
             deja_servi = taille > base
             if deja_servi or ecart_dessus > ecart_dessous:
                 tailles[i + 1] += 1     # il rejoint le suivant
@@ -1244,11 +1228,10 @@ def resoudre_joueurs_matchmaking(cur, noms=None, joueur_ids=None, discord_ids=No
 
     Renvoie (joueurs trouves, identifiants introuvables).
     """
-    # `demandes` porte les valeurs NORMALISEES, celles-la memes qui partent dans
-    # la requete. Comparer les valeurs brutes au retour de la base ferait
-    # declarer introuvable un joueur pourtant trouve : un bot qui envoie ses
-    # snowflakes en nombres JSON obtenait les bons lobbies, et la liste complete
-    # de ses joueurs en « introuvables ».
+    # `demandes` porte les valeurs NORMALISEES, celles qui partent dans la
+    # requete. Comparer les valeurs brutes au retour de la base ferait declarer
+    # introuvable un joueur pourtant trouve : un bot envoyant ses snowflakes en
+    # nombres JSON obtenait les bons lobbies et tous ses joueurs en introuvables.
     if joueur_ids:
         cle, condition = 'id', "j.id = ANY(%s)"
         demandes = [int(x) for x in joueur_ids]
@@ -1287,9 +1270,8 @@ def resoudre_joueurs_matchmaking(cur, noms=None, joueur_ids=None, discord_ids=No
 # ---------------------------------------------------------------------------
 # Purges RGPD
 # ---------------------------------------------------------------------------
-# « Limitation de la conservation » (art. 5.1.e) : garder une donnee sans raison
-# est un manquement au meme titre que supprimer ce qu'on doit conserver. Chaque
-# duree ci-dessous doit pouvoir se justifier a l'oral.
+# Art. 5.1.e : garder une donnee sans raison est un manquement. Chaque duree
+# ci-dessous doit pouvoir se justifier a l'oral.
 
 def purger_donnees_expirees(cur):
     """Supprime ce qui n'a plus de raison d'etre conserve. Renvoie le detail.
@@ -1300,22 +1282,19 @@ def purger_donnees_expirees(cur):
     """
     bilan = {}
 
-    # Une session expiree ne sert plus a rien, meme pas a l'ecran « vos
-    # sessions actives ».
+    # Une session expiree ne sert plus a rien, meme pas a l'ecran des sessions.
     cur.execute("DELETE FROM sessions_joueurs WHERE expires_at < now()")
     bilan['sessions'] = cur.rowcount
 
-    # Une invitation expiree depuis un mois : le lien est mort, et son
-    # empreinte n'a plus d'usage.
+    # Le lien est mort depuis un mois, son empreinte n'a plus d'usage.
     cur.execute(
         "DELETE FROM invitations WHERE expires_at < now() - make_interval(days => %s)",
         (PURGE_INVITATIONS_JOURS,),
     )
     bilan['invitations'] = cur.rowcount
 
-    # Compte cree puis jamais rattache a une fiche joueur, et inactif depuis
-    # trois mois : c'est une inscription abandonnee. On ne touche PAS aux
-    # comptes lies, ni a ceux qui portent un role.
+    # Inscription abandonnee : jamais rattachee, inactive depuis trois mois. On ne
+    # touche pas aux comptes lies, ni a ceux qui portent un role.
     cur.execute(
         """DELETE FROM comptes
            WHERE statut = 'pending'
@@ -1326,8 +1305,7 @@ def purger_donnees_expirees(cur):
     )
     bilan['comptes_abandonnes'] = cur.rowcount
 
-    # Trace d'un refus de liaison : utile quelque temps pour expliquer une
-    # decision, plus au-dela.
+    # Un refus s'explique quelque temps, pas indefiniment.
     cur.execute(
         """DELETE FROM liaisons_demandes
            WHERE statut = 'rejected' AND decided_at < now() - make_interval(days => %s)""",

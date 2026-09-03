@@ -565,11 +565,9 @@ def classement():
         page = request.args.get('page', type=int)
         limit = request.args.get('limit', DEFAULT_PAGE_SIZE, type=int)
 
-        # Normalisation AVANT la clé de cache. La requête SQL ignore déjà un tier
-        # invalide, mais une clé construite sur la saisie brute laisserait
-        # n'importe qui faire grossir _cache_store depuis internet (?tier=<aléa>
-        # en boucle), chaque entrée étant une copie du classement complet — sur
-        # un conteneur backend plafonné à 512 Mo.
+        # Normalisation AVANT la clé de cache : construite sur la saisie brute, elle
+        # laisserait n'importe qui faire grossir _cache_store depuis internet
+        # (?tier=<aléa> en boucle), chaque entrée copiant le classement complet.
         tier_filtre = tier_raw.upper() if tier_raw and tier_raw.upper() in ('S', 'A', 'B', 'C') else None
         try:
             ligue_filtre = int(ligue_raw) if ligue_raw else None
@@ -1198,16 +1196,14 @@ def get_joueur_stats(nom):
                 "color": color if color else "#FFFFFF",
                 "ligue": {"nom": ligue_nom, "couleur": ligue_color} if ligue_nom else None
             },
-            # Le nom fait partie de la charge utile, pas seulement de l'URL :
-            # /joueur/<id> delegue a cette route et n'a aucune autre source pour
-            # le titre de la fiche. Sans lui, la page canonique affiche « None ».
+            # Le nom fait partie de la charge utile : /joueur/<id> delegue ici et n'a
+            # aucune autre source pour le titre de la fiche.
             "nom": nom,
             # Cette route n'est pas cachee (c'est /classement qui l'est) :
             # une edition de profil est donc visible immediatement.
             "profil": profil,
-            # URL canonique. joueurs.nom bouge -- synchronisation d'un pseudo
-            # Discord, anonymisation, simple correction de faute de frappe -- et
-            # tout lien construit sur le nom meurt avec lui.
+            # URL canonique : joueurs.nom bouge, et tout lien construit sur le nom meurt
+            # avec lui.
             "url_canonique": "/joueur/%d" % jid,
             "historique": historique_data,
             "awards": awards_list,
@@ -1225,8 +1221,7 @@ def get_joueur_stats_par_id(joueur_id):
     """Fiche joueur par identifiant : l'URL qui survit a un renommage.
 
     Delegue a la route par nom plutot que de dupliquer trois cents lignes de
-    calcul. Le detour par le nom est le prix a payer pour ne pas entretenir deux
-    implementations qui finiraient par diverger.
+    calcul, au prix d'un detour.
     """
     try:
         with get_db_connection() as conn:

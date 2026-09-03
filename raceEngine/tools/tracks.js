@@ -1,5 +1,3 @@
-'use strict';
-
 // Relecture des circuits dessines, hors service.
 //
 // Le moteur refuse de demarrer sur un dessin faux — c'est ce qu'on veut en
@@ -13,20 +11,8 @@
 // tombe la ligne, a quelle profondeur chaque boite se pose. C'est la seule facon
 // de verifier qu'un trace fait bien ce qu'on croyait dessiner.
 
-const path = require('path');
-const fs = require('fs');
-
-function loadShared(name) {
-    const candidates = ['..', '../../frontEnd/static/js'];
-    for (const dir of candidates) {
-        const full = path.join(__dirname, dir, name);
-        if (fs.existsSync(full)) return require(full);
-    }
-    throw new Error(`${name} introuvable (cherche dans : ${candidates.join(', ')})`);
-}
-
-const CFG = loadShared('physics-config.js');
-const track = require('../track');
+import CFG from '../src/config/index.js';
+import * as track from '../src/track.js';
 
 const args = process.argv.slice(2);
 const SHOW_ORDER = args.includes('--order');
@@ -34,7 +20,7 @@ const SHOW_ORDER = args.includes('--order');
 let dir;
 let tracks;
 try {
-    dir = track.resolveTracksDir(path.join(__dirname, '..'));
+    dir = track.resolveTracksDir(import.meta.dirname);
     tracks = track.loadTracks(dir, CFG);
 } catch (err) {
     console.error(`✗ ${err.message}`);

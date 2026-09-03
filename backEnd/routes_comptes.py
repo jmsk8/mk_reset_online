@@ -1,15 +1,8 @@
 """Liaison compte <-> joueur, synchronisation des profils, gestion des roles.
 
-Trois gestes vivent ici, et tous les trois sont des gestes ADMIN :
-
-- approuver une revendication d'identite (le joueur declare, l'admin valide) ;
-- propager le pseudo Discord vers joueurs.nom (jamais automatique, cf. sync) ;
-- attribuer ou retirer un role (reserve au superadmin).
-
-La revendication est purement declarative : n'importe qui disposant d'un lien
-d'invitation peut pretendre etre le meilleur joueur du classement. Le seul
-controle est la vigilance de l'admin, d'ou l'apercu systematique avant
-validation et la preference pour les invitations nominatives.
+La revendication est declarative : n'importe qui disposant d'une invitation
+peut pretendre etre le meilleur joueur du classement. Le seul controle est
+la vigilance de l'admin, d'ou l'apercu avant validation.
 """
 
 from __future__ import annotations
@@ -58,9 +51,8 @@ def _acteur_id():
 def notifier(cur, compte_id, type_notif, titre, corps=None):
     """Depose une notification. A appeler DANS la transaction de la decision.
 
-    Le texte est fige ici : une notification parle souvent d'une chose qui
-    vient de disparaitre, et une jointure a l'affichage donnerait « votre
-    demande pour (null) a ete refusee ».
+    Le texte est fige ici : une notification parle souvent d'une chose qui vient
+    de disparaitre, et une jointure a l'affichage donnerait « (null) ».
     """
     if compte_id is None:
         return
@@ -139,12 +131,9 @@ def notifier_tous(cur, type_notif, titre, corps=None):
 @comptes_bp.route('/auth/joueurs-disponibles', methods=['GET'])
 @player_required
 def joueurs_disponibles():
-    """Fiches joueur revendicables.
+    """Fiches revendicables : sans compte, et non anonymisees.
 
-    Ne renvoie QUE les joueurs sans compte : lister les autres reviendrait a
-    publier qui possede un compte Discord, ce que personne n'a demande.
-    Les fiches anonymisees sont exclues aussi -- elles correspondent a
-    quelqu'un qui a justement demande a ne plus etre identifiable.
+    Lister les autres publierait qui possede un compte Discord.
     """
     try:
         with get_db_connection() as conn:
@@ -171,9 +160,8 @@ def demander_liaison():
     joueur_id = data.get('joueur_id')
     message = (data.get('message') or '')[:500] or None
 
-    # `isinstance(True, int)` vaut True en Python : sans exclure les booleens,
-    # un corps {"joueur_id": true} passerait la validation et viserait le
-    # joueur n°1.
+    # isinstance(True, int) vaut True : sans exclure les booleens, un corps
+    # {"joueur_id": true} viserait le joueur n°1.
     if not isinstance(joueur_id, int) or isinstance(joueur_id, bool):
         return jsonify({"error": "Joueur manquant", "code": "joueur_manquant"}), 400
 
@@ -202,9 +190,7 @@ def demander_liaison():
                             "code": "joueur_deja_pris",
                         }), 409
 
-                    # Les deux index uniques partiels (un pending par compte, un
-                    # par joueur) transformeraient un doublon en 500 : on repond
-                    # proprement avant d'y arriver.
+                    # Les index uniques partiels transformeraient un doublon en 500.
                     cur.execute(
                         "SELECT id FROM liaisons_demandes WHERE compte_id = %s AND statut = 'pending'",
                         (compte['id'],),
@@ -406,10 +392,8 @@ def lister_liaisons():
         "joueur": {"id": r[11], "nom": r[12]} if r[11] is not None else None,
         # Nom de la fiche a creer, fige au moment de la demande.
         "nom_demande": r[14],
-        # Invitation nominative : l'admin voit si la revendication correspond
-        # bien au joueur qu'il visait en creant le lien. Sur une demande de
-        # creation, la non-concordance est le signal utile : l'invitation
-        # visait une fiche precise, la personne en veut une neuve.
+        # Invitation nominative : l'admin voit si la revendication correspond au joueur
+        # vise. Sur une demande de creation, c'est la non-concordance qui informe.
         "joueur_vise_par_invitation": r[13],
         "concordance_invitation": (r[13] is not None and r[13] == r[11]),
     } for r in rows])
@@ -420,18 +404,14 @@ def lister_liaisons():
 def approuver_liaison(demande_id):
     """Approuve une revendication et rattache le compte au joueur.
 
-    Tout se joue dans une transaction avec verrouillage : deux approbations
-    concurrentes sur la meme fiche violeraient la contrainte UNIQUE de
-    comptes.joueur_id et produiraient une 500 illisible. Le SELECT ... FOR
-    UPDATE serialise les deux, et la seconde obtient un 409 explicite.
+    SELECT ... FOR UPDATE : deux approbations concurrentes sur la meme fiche
+    violeraient la contrainte UNIQUE de comptes.joueur_id ; la seconde obtient
+    un 409 explicite.
 
-    L'approbation ne synchronise RIEN : propager le pseudo Discord vers
-    joueurs.nom est un geste separe et explicite (voir /sync).
+    Une demande visant une fiche a CREER la cree dans la meme transaction :
+    si le rattachement echoue, aucune fiche orpheline ne subsiste.
 
-    Deux formes de demande arrivent ici. Celle qui vise une fiche existante se
-    contente de la rattacher. Celle qui vise une fiche a CREER (joueur_id NULL,
-    nom dans nom_demande) la cree d'abord, dans la meme transaction : si le
-    rattachement echoue ensuite, aucune fiche orpheline ne subsiste.
+    Ne synchronise RIEN : propager le pseudo est un geste separe (voir /sync).
     """
     try:
         with get_db_connection() as conn:
@@ -456,9 +436,7 @@ def approuver_liaison(demande_id):
 
                     creation = joueur_id is None
                     if creation:
-                        # Le nom est re-valide MAINTENANT : entre la demande et
-                        # ce clic, add_tournament a pu creer la fiche a la
-                        # volee, ou une autre approbation prendre le nom.
+                        # Re-valide maintenant : add_tournament a pu creer la fiche entre-temps.
                         nom, erreur = _nom_creable(cur, nom_demande)
                         if erreur is not None:
                             conn.rollback()
@@ -584,9 +562,7 @@ def refuser_liaison(demande_id):
 def lister_comptes():
     """Liste des comptes, avec l'ecart entre pseudo Discord et nom du joueur.
 
-    C'est cet ecart qui declenche la proposition de resynchronisation : le
-    pseudo Discord bouge quand la personne le change, le nom du joueur ne bouge
-    que quand un admin le decide.
+    C'est cet ecart qui declenche la proposition de resynchronisation.
     """
     try:
         with get_db_connection() as conn:
@@ -626,9 +602,8 @@ def lister_comptes():
 def _verifier_sync(cur, compte_id):
     """Prepare une synchronisation. Renvoie (donnees, reponse d'erreur).
 
-    Toutes les raisons de refuser sont evaluees ici, pour que l'apercu et
-    l'ecriture donnent exactement le meme verdict -- un apercu qui annonce un
-    succes suivi d'une ecriture qui echoue serait pire que pas d'apercu.
+    Toutes les raisons de refuser sont evaluees ici : l'apercu et l'ecriture
+    doivent rendre le meme verdict.
     """
     cur.execute(
         """SELECT c.discord_username, c.discord_global_name, c.joueur_id, j.nom
@@ -670,9 +645,8 @@ def _verifier_sync(cur, compte_id):
             "error": "Le nom du joueur est deja a jour", "code": "deja_synchro",
         }), 409)
 
-    # joueurs.nom est UNIQUE et sensible a la casse : "Mario" et "mario"
-    # coexistent en base, mais on refuse quand meme, sinon deux fiches
-    # deviendraient indiscernables a l'oeil.
+    # joueurs.nom est UNIQUE mais sensible a la casse : "Mario" et "mario"
+    # coexisteraient tout en etant indiscernables a l'oeil.
     cur.execute(
         "SELECT id, nom FROM joueurs WHERE lower(nom) = lower(%s) AND id <> %s",
         (nouveau, joueur_id),
@@ -714,10 +688,9 @@ def apercu_sync(compte_id):
 def synchroniser_profil(compte_id):
     """Propage le pseudo Discord vers joueurs.nom. Geste ADMIN, jamais automatique.
 
-    Quatre raisons de ne pas automatiser : joueurs.nom est UNIQUE, il circule
-    dans une septantaine de innerHTML, il sert d'URL publique, et un joueur qui
-    change de pseudo tous les deux jours ferait bouger le classement affiche
-    sans que personne ne l'ait voulu.
+    joueurs.nom est UNIQUE, circule dans une septantaine de innerHTML et sert
+    d'URL publique ; et un pseudo qui change tous les deux jours ferait bouger
+    le classement affiche sans que personne l'ait voulu.
     """
     try:
         with get_db_connection() as conn:
@@ -760,13 +733,9 @@ def synchroniser_profil(compte_id):
 def changer_role(compte_id):
     """Attribue ou retire un role. Reservee au superadmin.
 
-    C'est la SEULE route qui ecrit comptes.role. Le role etant la seule
-    frontiere de privilege de l'application, aucune autre route ne doit pouvoir
-    y toucher, meme indirectement par une mise a jour generique de colonnes.
-
-    Le garde-fou du dernier superadmin est ce qui separe « je me suis trompe »
-    de « plus personne ne peut administrer le site » : sans mot de passe de
-    secours, un retrait de trop verrouille tout.
+    SEULE route qui ecrit comptes.role, seule frontiere de privilege de
+    l'application. Le garde-fou du dernier superadmin separe « je me suis
+    trompe » de « plus personne ne peut administrer le site ».
     """
     nouveau = (request.get_json(silent=True) or {}).get('role')
     if nouveau not in ROLE_HIERARCHY:
@@ -830,15 +799,12 @@ def changer_role(compte_id):
 def revoquer_sessions(compte_id):
     """Ferme toutes les sessions d'un compte, sur tous ses appareils.
 
-    Sert d'abord a un compte Discord compromis, quand quelqu'un d'autre detient
-    le cookie. Pour un retrait de role, c'est une ceinture et non une bretelle :
-    le role etant relu en base a chaque requete protegee, la degradation prend
-    deja effet immediatement.
+    Pour un compte compromis. Sur un retrait de role c'est une ceinture : le
+    role est relu en base a chaque requete protegee.
 
-    Le decorateur accepte les DEUX voies : le bouton est affiche a tout
-    administrateur sur /admin/comptes, y compris connecte par mot de passe
-    pendant la bascule. Sur `role_required` seul, il repondait 401 a celui-la --
-    un bouton visible et mort.
+    Le decorateur accepte les deux voies d'authentification : sur
+    `role_required` seul, un admin connecte par mot de passe voyait un bouton
+    mort.
     """
     try:
         with get_db_connection() as conn:
@@ -872,9 +838,8 @@ def delier_compte(compte_id):
         with get_db_connection() as conn:
             try:
                 with conn.cursor() as cur:
-                    # FOR UPDATE : sans lui, un deliement concurrent d'une
-                    # approbation laisse joueur_id dans l'etat que l'ordre
-                    # d'arrivee decide, et l'audit raconte l'inverse du resultat.
+                    # FOR UPDATE : sans lui, un deliement concurrent d'une approbation laisse
+                    # joueur_id dans l'etat que l'ordre d'arrivee decide.
                     cur.execute(
                         "SELECT joueur_id, statut FROM comptes WHERE id = %s FOR UPDATE",
                         (compte_id,),
@@ -892,14 +857,11 @@ def delier_compte(compte_id):
                             "code": "non_lie",
                         }), 409
 
-                    # Un compte suspendu le reste : la suspension est une
-                    # decision independante du rattachement, et la relever ici
-                    # rouvrirait un acces que personne n'a demande a rouvrir.
+                    # Une suspension est une decision independante du rattachement.
                     nouveau_statut = 'pending' if statut == 'linked' else statut
 
-                    # profil_synced_at datait une propagation de pseudo vers une
-                    # fiche qui n'est plus la sienne : le garder ferait mentir la
-                    # colonne « derniere synchro » de /admin/comptes.
+                    # profil_synced_at datait une propagation vers une fiche qui n'est plus la
+                    # sienne.
                     cur.execute(
                         """UPDATE comptes
                            SET joueur_id = NULL, statut = %s,
@@ -953,9 +915,7 @@ def changer_statut(compte_id):
                     (nouveau, compte_id),
                 )
                 if nouveau == 'suspended':
-                    # Suspendre sans fermer les sessions laisserait la personne
-                    # connectee jusqu'a expiration : la suspension ne serait
-                    # qu'un libelle d'affichage.
+                    # Sans fermer les sessions, la suspension ne serait qu'un libelle d'affichage.
                     cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte_id,))
                 _audit(cur, 'statut_change', 'compte', compte_id,
                        {"ancien": row[0], "nouveau": nouveau})
@@ -970,11 +930,9 @@ def changer_statut(compte_id):
 # Profil joueur
 # ---------------------------------------------------------------------------
 
-# On stocke un IDENTIFIANT, jamais une URL. Laisser le joueur saisir une URL
-# complete ferait atterrir une valeur qu'il controle dans un href : il suffirait
-# d'un « javascript: » pour executer du script chez tous les visiteurs de sa
-# fiche. En ne gardant que le handle, l'URL est construite ici, et il n'existe
-# aucun moyen d'en sortir.
+# On stocke un IDENTIFIANT, jamais une URL : une URL complete saisie par le
+# joueur atterrirait dans un href, et un « javascript: » suffirait a executer
+# du script chez tous les visiteurs de sa fiche.
 RESEAUX_CONNUS = {
     'twitch':  'https://twitch.tv/%s',
     'youtube': 'https://youtube.com/@%s',
@@ -1109,12 +1067,9 @@ def profil_public(cur, joueur_id):
     qui clique « se connecter avec Discord ».
     """
     cur.execute(
-        # `j.anonymise_at IS NULL` : sans cette condition, une fiche
-        # anonymisee continuait d'afficher l'avatar Discord, la bio et les
-        # liens sociaux de son proprietaire. L'anonymisation ne remplacait
-        # que le pseudo -- or l'URL de l'avatar contient l'identifiant
-        # Discord, et un handle Twitch identifie mieux qu'un pseudo de jeu.
-        # La promesse « votre fiche ne vous identifie plus » etait fausse.
+        # anonymise_at IS NULL : sans cette condition, une fiche anonymisee affichait
+        # encore l'avatar, la bio et les liens de son proprietaire -- et l'URL de
+        # l'avatar contenait l'identifiant Discord.
         """SELECT c.discord_id, c.discord_avatar_hash, p.bio, p.couleur_accent, p.reseaux
            FROM comptes c
            JOIN joueurs j ON j.id = c.joueur_id

@@ -460,13 +460,9 @@ def api_delete_joueur(id):
 def api_anonymiser_joueur(id):
     """Détache l'identité d'un joueur sans toucher à son dossier sportif.
 
-    Alternative à la suppression : aucun nom de joueur n'étant dénormalisé
-    (participations, awards, ghost_log et league_movements référencent tous
-    joueur_id), un simple UPDATE du nom se propage partout et laisse les stats,
-    le TrueSkill et les awards strictement identiques.
-
-    Le suffixe aléatoire évite la collision avec un joueur qui porterait
-    littéralement « Joueur #12 » — joueurs.nom est UNIQUE.
+    Aucun nom n'étant dénormalisé, un UPDATE du nom se propage partout et laisse
+    stats, TrueSkill et awards identiques. Le suffixe aléatoire évite la collision
+    avec un joueur qui porterait littéralement « Joueur #12 ».
     """
     try:
         with get_db_connection() as conn:
@@ -491,9 +487,8 @@ def api_anonymiser_joueur(id):
                     "UPDATE Joueurs SET nom = %s, color = %s, anonymise_at = now() WHERE id = %s",
                     (nouveau_nom, '#FFFFFF', id),
                 )
-                # On verrouille l'ancien nom par son empreinte, jamais en clair :
-                # sans ca, le ressaisir dans le formulaire de tournoi recreerait
-                # a la volee une fiche portant l'identite qu'on vient d'effacer.
+                # L'ancien nom est verrouille par son empreinte, jamais en clair : sinon le
+                # ressaisir dans le formulaire de tournoi recreerait la fiche effacee.
                 cur.execute(
                     "INSERT INTO noms_interdits (nom_hash) VALUES (%s) ON CONFLICT DO NOTHING",
                     (hashlib.sha256(ancien_nom.strip().lower().encode('utf-8')).hexdigest(),),
@@ -1030,9 +1025,8 @@ def add_tournament():
                         ligue_nom_archive = res_ligue[0]
                         ligue_couleur_archive = res_ligue[1]
 
-                # Reference IP v2 : on fige la grille telle qu'elle est maintenant,
-                # avant que le tournoi ne fasse bouger le moindre mu. Sans effet si
-                # un tournoi de la meme journee l'a deja figee.
+                # Reference IP v2 : on fige la grille avant que le tournoi ne fasse bouger le
+                # moindre mu. Sans effet si un tournoi du meme jour l'a deja figee.
                 snapshot_grille(cur, date_tournoi)
 
                 cur.execute("""
@@ -1054,10 +1048,8 @@ def add_tournament():
                     if res:
                         jid, mu, sigma = res
                     else:
-                        # Nom inconnu : creation a la volee, sauf s'il s'agit
-                        # d'une identite anonymisee. La recreer ferait
-                        # reapparaitre ce qu'on venait d'effacer, et repartirait
-                        # sur un doublon avec un mu/sigma par defaut.
+                        # Nom inconnu : creation a la volee, sauf identite anonymisee -- la recreer
+                        # ferait reapparaitre ce qu'on venait d'effacer, sur un doublon.
                         cur.execute(
                             "SELECT 1 FROM noms_interdits WHERE nom_hash = %s",
                             (hashlib.sha256(nom.strip().lower().encode('utf-8')).hexdigest(),),

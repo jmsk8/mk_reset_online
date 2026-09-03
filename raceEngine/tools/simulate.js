@@ -1,11 +1,6 @@
-'use strict';
-
-// Banc d'essai d'equilibrage.
-//
-// Enchaine des courses hors horloge : la meme physique que le service, mais
-// avancee en boucle serree au lieu d'un setInterval. Une course de 77 secondes
-// simulees passe en quelques millisecondes, ce qui rend mesurable ce qu'un soak
-// en temps reel ne donnerait qu'apres des heures.
+// Banc d'essai d'equilibrage. Enchaine des courses hors horloge : la meme
+// physique que le service, avancee en boucle serree. Une course de 77 secondes
+// simulees passe en quelques millisecondes.
 //
 //   node tools/simulate.js                    200 courses, grille au hasard
 //   node tools/simulate.js --races 5000       plus d'echantillon
@@ -14,31 +9,13 @@
 //   node tools/simulate.js --csv              une ligne par course, pour tableur
 //   node tools/simulate.js --track anneau     un seul circuit au lieu de tous
 //
-// Deux facons de mesurer, et elles ne repondent pas a la meme question :
-//
-//   grille au hasard (defaut) — chaque course repart d'un tirage neuf. C'est ce
-//     qu'il faut pour juger les statistiques des karts : la place de depart ne
-//     vient plus polluer le resultat.
-//
-//   --chain — le vainqueur repart en pole, comme le service le fait entre deux
-//     courses d'un grand prix. C'est ce qui se passe reellement a l'ecran, mais
-//     l'avantage de grille s'y cumule et masque la part des statistiques.
+// Grille au hasard (defaut) : chaque course repart d'un tirage neuf, ce qu'il
+// faut pour juger les statistiques des karts. `--chain` reproduit le grand prix,
+// mais l'avantage de grille s'y cumule et masque la part des statistiques.
 
-const path = require('path');
-const fs = require('fs');
-
-function loadShared(name) {
-    const candidates = ['..', '../../frontEnd/static/js'];
-    for (const dir of candidates) {
-        const full = path.join(__dirname, dir, name);
-        if (fs.existsSync(full)) return require(full);
-    }
-    throw new Error(`${name} introuvable (cherche dans : ${candidates.join(', ')})`);
-}
-
-const PH = loadShared('physics.js');
-const CFG = loadShared('physics-config.js');
-const track = require('../track');
+import * as PH from '../src/engine/index.js';
+import CFG from '../src/config/index.js';
+import * as track from '../src/track.js';
 
 // Meme cadence que le service : changer l'une sans l'autre ferait mesurer une
 // physique qui n'est pas celle qui tourne.
@@ -67,7 +44,7 @@ const SEED = Number(argValue('--seed', 0)) || 0;
 // mesure.
 let TRACKS;
 try {
-    TRACKS = track.loadTracks(track.resolveTracksDir(path.join(__dirname, '..')), CFG);
+    TRACKS = track.loadTracks(track.resolveTracksDir(import.meta.dirname), CFG);
 } catch (err) {
     console.error(`Circuits illisibles : ${err.message}`);
     process.exit(1);
@@ -125,14 +102,10 @@ const SLOW_RATIO = 0.90;
 const N = ROSTER.length;
 const LAPS = CFG.race.laps;
 
-// Types distribuables, dans l'ordre de la config. `blueShell` n'y figure pas :
-// elle a son propre tirage, hors de la table des poids.
-//
-// Les objets en orbite (les triples) sont retires de la liste : ils annoncent le
-// type de leur enfant et non le leur, si bien qu'un triple banane arrive dans
-// les compteurs comme trois bananes. C'est la bonne mesure — trois bananes
-// larguees valent trois bananes — mais le type « triple » lui-meme resterait a
-// zero et donnerait une ligne trompeuse.
+// Types distribuables, dans l'ordre de la config. `blueShell` a son propre
+// tirage. Les triples sont retires : ils annoncent le type de leur enfant, si
+// bien qu'un triple banane arrive comme trois bananes — c'est la bonne mesure,
+// mais le type « triple » resterait a zero et donnerait une ligne trompeuse.
 const ORBIT_TYPES = Object.keys(CFG.orbitItems || {});
 const ITEM_TYPES = Object.keys(CFG.itemDistribution.items)
     .filter(t => !(CFG.disabledItems || []).includes(t) && !ORBIT_TYPES.includes(t))
@@ -539,7 +512,7 @@ const elapsed = (Date.now() - started) / 1000;
 if (done === 0) {
     console.error(`\nAucune des ${RACES} courses n'a abouti en ${MAX_TICKS} pas simules.`);
     console.error('La condition d\'arret n\'est jamais atteinte : verifier race.stopAtFinisher');
-    console.error('et race.maxRaceMs dans physics-config.js, ainsi que la longueur des circuits');
+    console.error('et race.maxRaceMs dans src/config/world.js, ainsi que la longueur des circuits');
     console.error('de tracks/ — cinq tours d\'un trace trop long depassent le delai maximum.');
     process.exit(1);
 }

@@ -1,16 +1,12 @@
 -- Socle de l'authentification Discord et des comptes joueurs.
 --
--- Principe directeur : separer l'IDENTITE (le compte Discord, la personne) du
--- DOSSIER SPORTIF (la table joueurs, un competiteur pseudonyme). Supprimer un
--- compte detruit la premiere colonne et ne touche pas la seconde : aucun nom de
--- joueur n'etant denormalise, l'historique des matchs reste intact ET coherent.
--- C'est ce qui rend la suppression RGPD possible sans casser le classement --
--- le moteur TrueSkill etant incremental, il ne sait pas se recalculer.
+-- Principe : separer l'IDENTITE (le compte Discord) du DOSSIER SPORTIF (la
+-- table joueurs, un competiteur pseudonyme). Supprimer un compte detruit la
+-- premiere et laisse la seconde intacte -- c'est ce qui rend la suppression
+-- RGPD possible sans casser un classement que TrueSkill ne sait pas recalculer.
 --
--- Convention temporelle : ces tables sont en TIMESTAMPTZ, alors que l'existant
--- est en TIMESTAMP naif. Cote Python, utiliser EXCLUSIVEMENT
--- datetime.now(timezone.utc) pour ces tables. Ne jamais melanger les deux
--- conventions dans une meme comparaison.
+-- Ces tables sont en TIMESTAMPTZ alors que l'existant est en TIMESTAMP naif :
+-- cote Python, utiliser EXCLUSIVEMENT datetime.now(timezone.utc) pour elles.
 
 BEGIN;
 
