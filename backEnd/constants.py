@@ -38,19 +38,22 @@ GM_BASE_WEIGHT_V2 = 15.0
 
 # IP v2 : ratio_ajuste = ratio * force_lobby, avec
 #   force_lobby = 1 + PER_MU * (mu_moyen_du_lobby - mu_moyen_de_reference)
-# les deux moyennes excluant le joueur concerne. Lobby au niveau de la
-# reference => force_lobby = 1.0, donc v2 = v1.
+# les deux moyennes etant calculees en excluant le joueur concerne. Lobby au
+# niveau de la reference => force_lobby = 1.0, donc v2 = v1.
 #
-# L'ecart est en points de mu et non en rapport : le mu TrueSkill est une
-# echelle d'intervalle dont l'origine est arbitraire, seule la difference a un
-# sens.
+# L'ecart est pris en points de mu et non en rapport : le mu TrueSkill est une
+# echelle d'intervalle dont l'origine est arbitraire (50 ici, 25 dans la lib),
+# donc seule la difference a un sens. Un rapport rendrait la correction
+# dependante du niveau general, qu'un reset global suffirait a deplacer.
 IP_V2_FORCE_LOBBY_PER_MU = 0.02   # correction par point de mu d'ecart. 0 = desactive
 IP_V2_FORCE_LOBBY_MIN = 0.5
 IP_V2_FORCE_LOBBY_MAX = 2.0
 IP_VERSION_DEFAULT = "v1"
 
-# La moyenne de reference est figee par journee (table grille_snapshots), juste
-# avant le premier tournoi du jour ; les suivants reutilisent cette grille.
+# La moyenne de reference est figee par journee : la grille des joueurs est
+# sauvegardee (table grille_snapshots) juste avant la generation du premier
+# tournoi du jour, et les tournois suivants de la meme journee (session de
+# matchmaking scindee en plusieurs lobbies) reutilisent cette meme grille.
 # Ces deux drapeaux definissent qui compte dans la moyenne.
 IP_V2_REF_REQUIRE_TIER = True     # exclut les joueurs sans tier (tier = 'U')
 IP_V2_REF_REQUIRE_RANKED = True   # exclut les joueurs inactifs (is_ranked = false)
