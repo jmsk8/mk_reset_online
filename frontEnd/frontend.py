@@ -161,6 +161,48 @@ def _session_admin_expiree():
     return redirect(url_for('admin_login'))
 
 
+# Rôles qui ouvrent les pages d'administration. UNE seule liste : la même
+# valeur était écrite en dur dans _est_admin et admin_headers, et n'en corriger
+# qu'une donne le symptôme le plus déroutant qui soit -- la page s'ouvre, mais
+# aucune requête n'est authentifiée, donc elle reste vide sans message d'erreur.
+ROLES_ADMIN = ('admin', 'chef_admin', 'superadmin')
+
+# Copie du catalogue de backEnd/constants.py -- le frontend est un service
+# séparé, il ne peut pas l'importer. Même duplication assumée que CGU_VERSION,
+# et même exigence : les deux listes doivent rester alignées (test_revue).
+PERMISSIONS_CATALOGUE = frozenset({
+    'gestion_joueurs', 'gestion_ligues', 'gestion_saisons',
+    'gestion_liaisons', 'gestion_comptes', 'gestion_invitations',
+    'gestion_config', 'gestion_matchmaking',
+})
+
+
+def _role_session():
+    """Rôle réel de la session, '' si absent. Copie potentiellement périmée."""
+    return (session.get('compte') or {}).get('role') or ''
+
+
+def _permissions_session():
+    """Permissions de la session, comme un set. Vide plutôt que None.
+
+    Sert UNIQUEMENT à décider ce que l'interface montre. Le backend relit rôle
+    et permissions en base à chaque requête protégée : une copie périmée fait
+    voir un bouton de trop, jamais obtenir un droit de trop (plan B.0).
+
+    Une session ouverte avant ce chantier n'a pas la clé. Le repli ne vaut que
+    pour chef_admin et superadmin, dont le socle EST le catalogue quoi qu'il
+    arrive : leur accorder la liste complète ne suppose rien. Un admin, lui,
+    repart de zéro jusqu'à sa reconnexion -- montrer un menu complet à qui n'a
+    aucune permission ne ferait que produire des 403 au premier clic.
+    """
+    compte = session.get('compte') or {}
+    permissions = compte.get('permissions')
+    if permissions is None:
+        socle_complet = compte.get('role') in ('chef_admin', 'superadmin')
+        return set(PERMISSIONS_CATALOGUE) if socle_complet else set()
+    return set(permissions)
+
+
 def _est_admin():
     """Vrai si la session ouvre les pages d'administration.
 
@@ -168,9 +210,11 @@ def _est_admin():
     en session à la connexion et peut être périmé. L'autorité reste le backend, qui
     le relit en base à chaque requête protégée. Le rafraîchir ici coûterait un appel
     réseau par page (R-28). Un admin rétrogradé voit donc la page, sans les données.
+
+    Ne dit RIEN des droits réels depuis la hiérarchie à 4 rôles : un admin sans
+    aucune permission ouvre la page et n'y verra que ce que le backend lui sert.
     """
-    compte = session.get('compte') or {}
-    return bool(session.get('admin_token')) or compte.get('role') in ('admin', 'superadmin')
+    return bool(session.get('admin_token')) or _role_session() in ROLES_ADMIN
 
 
 def admin_headers():
@@ -179,8 +223,7 @@ def admin_headers():
     Session Discord si elle porte le rôle, mot de passe sinon : le backend accepte
     explicitement l'une OU l'autre.
     """
-    compte = session.get('compte') or {}
-    if session.get('player_token') and compte.get('role') in ('admin', 'superadmin'):
+    if session.get('player_token') and _role_session() in ROLES_ADMIN:
         return {'X-Session-Token': session['player_token']}
     if session.get('admin_token'):
         return {'X-Admin-Token': session['admin_token']}
@@ -477,8 +520,21 @@ def inject_est_admin():
     """Expose la porte d'interface admin aux templates.
 
     `session.admin_token` masquait le menu à un admin connecté par Discord.
+
+    Trois valeurs, pas une, depuis la hiérarchie à 4 rôles :
+      - `est_admin` : la page s'ouvre-t-elle ? (inchangé)
+      - `role_admin` : le rôle réel, pour les capacités qui ne sont PAS des
+        permissions (reset global, jetons de bot, legs).
+      - `peut(...)` : le helper de gate pour tout le reste. Un template ne doit
+        jamais tester un rôle en dur pour une zone déléguable -- c'est le
+        pendant côté interface de R-50.
     """
-    return dict(est_admin=_est_admin())
+    permissions = _permissions_session()
+    return dict(
+        est_admin=_est_admin(),
+        role_admin=_role_session(),
+        peut=lambda permission: permission in permissions,
+    )
 
 
 @app.context_processor
@@ -652,6 +708,9 @@ def mon_compte():
         'pseudo': moi.get('pseudo'), 'avatar_url': moi.get('avatar_url'),
         'joueur_id': moi.get('joueur_id'), 'statut': moi.get('statut'),
         'role': moi.get('role'),
+        # Rafraîchies en même temps que le rôle : sans ça, un droit accordé
+        # aujourd'hui n'apparaîtrait dans les menus qu'à la prochaine connexion.
+        'permissions': moi.get('permissions'),
     }
 
     demande, _ = backend_request('GET', '/auth/ma-demande', headers=player_headers())
@@ -802,7 +861,14 @@ def admin_comptes():
         flash('Accès réservé aux administrateurs', 'warning')
         return redirect(url_for('admin_login'))
     compte = session.get('compte') or {}
-    return render_template('admin_comptes.html', est_superadmin=(compte.get('role') == 'superadmin'))
+    # `role_admin` et `peut()` viennent du context processor ; `mon_compte_id`
+    # permet au JS de ne pas proposer à quelqu'un d'agir sur sa propre ligne
+    # (auto-modification et auto-legs sont refusés côté backend de toute façon).
+    return render_template(
+        'admin_comptes.html',
+        est_superadmin=(compte.get('role') == 'superadmin'),
+        mon_compte_id=compte.get('id'),
+    )
 
 
 # Proxies JSON de la page d'administration des comptes. Tous construisent
@@ -850,6 +916,29 @@ def proxy_sync(compte_id):
 @app.route('/admin/comptes/<int:compte_id>/role', methods=['POST'])
 def proxy_role(compte_id):
     return _proxy_admin('POST', f'/admin/comptes/{compte_id}/role', json_body=True)
+
+
+@app.route('/admin/comptes/<int:compte_id>/permissions', methods=['GET'])
+def proxy_permissions(compte_id):
+    return _proxy_admin('GET', f'/admin/comptes/{compte_id}/permissions')
+
+
+@app.route('/admin/comptes/<int:compte_id>/permissions/<permission>',
+           methods=['POST', 'DELETE'])
+def proxy_permission(compte_id, permission):
+    # La permission n'est pas validée ici : le backend la confronte au
+    # catalogue et au plafond de l'acteur. Filtrer aussi de ce côté donnerait
+    # deux listes à garder synchronisées, dont une sans autorité.
+    return _proxy_admin(request.method,
+                        f'/admin/comptes/{compte_id}/permissions/{permission}')
+
+
+@app.route('/admin/comptes/<int:compte_id>/leguer-superadmin', methods=['POST'])
+def proxy_leguer_superadmin(compte_id):
+    # Le corps porte la confirmation forte (pseudo Discord retapé) : elle doit
+    # traverser intacte, c'est elle qui distingue le geste voulu du clic.
+    return _proxy_admin('POST', f'/admin/comptes/{compte_id}/leguer-superadmin',
+                        json_body=True)
 
 
 @app.route('/admin/comptes/<int:compte_id>/statut', methods=['POST'])

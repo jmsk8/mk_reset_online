@@ -102,13 +102,18 @@ r = cli.post('/admin/matchmaking', json={'noms': ['A'], 'joueur_ids': [7]},
 check("deux listes à la fois -> 400", r.status_code in (400, 403), r.status_code)
 
 print("\n=== F9 : aucun bouton visible ne doit être mort ===")
-# La page /admin/comptes s'ouvre aux DEUX voies d'authentification. Toute action
-# qu'elle affiche sans condition doit donc accepter les deux : sur
-# `role_required` seul, le bouton répondait 401 à un admin par mot de passe.
+# Hypothèse d'origine (caduque) : « la page s'ouvre aux DEUX voies d'auth, toute
+# action qu'elle affiche doit accepter les deux ». La hiérarchie admin convertit
+# ces routes en @permission_required, qui n'accepte QUE la session Discord --
+# le mot de passe partagé disparaît route par route (R-54), c'est acté.
+#
+# Ce qui reste vrai et vérifié ici : une action affichée sans condition ne doit
+# pas être réservée à un palier que la page n'affiche pas. Les actions de gestion
+# de compte relèvent de gestion_comptes ; celles du superadmin sont masquées.
 comptes_src = io_open(os.path.join(RACINE, 'routes_comptes.py'))
 admin_html = io_open(os.path.join(FRONT, 'templates', 'admin_comptes.html'))
 lignes = comptes_src.split("\n")
-routes_superadmin, routes_deux_voies = [], []
+routes_superadmin, routes_gestion_comptes = [], []
 for i, l in enumerate(lignes):
     if l.startswith("@comptes_bp.route") and "/admin/" in l:
         j, decos = i + 1, []
@@ -117,10 +122,11 @@ for i, l in enumerate(lignes):
             j += 1
         chemin = l.split("'")[1]
         if any("ROLE_SUPERADMIN" in d for d in decos): routes_superadmin.append(chemin)
-        elif any("admin_or_role_required" in d for d in decos): routes_deux_voies.append(chemin)
+        elif any("gestion_comptes" in d for d in decos): routes_gestion_comptes.append(chemin)
 
-check("la fermeture des sessions accepte les deux voies",
-      '/admin/comptes/<int:compte_id>/sessions' in routes_deux_voies, routes_deux_voies)
+check("la fermeture des sessions relève de gestion_comptes",
+      '/admin/comptes/<int:compte_id>/sessions' in routes_gestion_comptes,
+      routes_gestion_comptes)
 # Les routes réservées au superadmin sont légitimes : l'interface masque leurs
 # commandes derrière `est_superadmin`, elles ne sont donc jamais mortes.
 check("les routes superadmin sont bien masquées côté interface",

@@ -9,8 +9,10 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request, g
 
-from constants import INVITATION_LIFETIME_HOURS, CGU_VERSION
-from auth import player_required, admin_or_role_required, SESSION_HEADER
+from constants import (INVITATION_LIFETIME_HOURS, CGU_VERSION, ROLE_ADMIN,
+                       ROLE_CHEF_ADMIN, ROLE_HIERARCHY, PERMISSIONS_CATALOGUE)
+from auth import (player_required, admin_or_role_required, permission_required,
+                  SESSION_HEADER)
 from auth_discord import (
     DiscordAuthError, login, hash_token, discord_configured,
 )
@@ -97,8 +99,38 @@ def me():
         "joueur_nom": nom_joueur,
         "statut": compte['statut'],
         "role": compte['role'],
+        # Ce que l'interface a le droit d'AFFICHER, jamais ce qu'elle autorise :
+        # le backend relit role et permissions en base a chaque requete protegee.
+        # Cette liste peut donc etre perimee, c'est assume (plan B.0).
+        "permissions": sorted(_permissions_effectives(compte)),
         "cgu_a_accepter": compte.get('cgu_version') != CGU_VERSION,
     })
+
+
+def _permissions_effectives(compte: dict) -> set:
+    """Permissions dont ce compte dispose reellement, role compris.
+
+    chef_admin et superadmin recoivent le catalogue entier : leur socle EST le
+    catalogue, et l'interface doit le refleter sans reimplementer la regle.
+    Un admin n'a que ses lignes permissions_admin ; un player, rien.
+    """
+    if ROLE_HIERARCHY.get(compte['role'], 0) >= ROLE_HIERARCHY[ROLE_CHEF_ADMIN]:
+        return set(PERMISSIONS_CATALOGUE)
+    if compte['role'] != ROLE_ADMIN:
+        return set()
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT permission FROM permissions_admin WHERE compte_id = %s",
+                    (compte['id'],),
+                )
+                return {r[0] for r in cur.fetchall()}
+    except Exception as e:
+        # Renvoyer une liste vide degrade l'affichage (des onglets manquent),
+        # ca ne donne aucun droit : l'autorisation reste cote backend.
+        logger.warning("Lecture des permissions du compte %s impossible: %s", compte['id'], e)
+        return set()
 
 
 @auth_bp.route('/auth/config', methods=['GET'])
@@ -156,7 +188,7 @@ def lire_invitation(token):
 
 
 @auth_bp.route('/admin/invitations', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_invitations')
 def lister_invitations():
     """Liste les invitations. Ne renvoie JAMAIS de token : seul le hash existe."""
     try:
@@ -189,7 +221,7 @@ def lister_invitations():
 
 
 @auth_bp.route('/admin/invitations', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_invitations')
 def creer_invitation():
     """Cree une invitation et renvoie le lien UNE SEULE FOIS.
 
@@ -242,7 +274,7 @@ def creer_invitation():
 
 
 @auth_bp.route('/admin/invitations/<int:invitation_id>/revoquer', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_invitations')
 def revoquer_invitation(invitation_id):
     try:
         with get_db_connection() as conn:

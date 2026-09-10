@@ -25,6 +25,11 @@ for _m in ('trueskill', 'numpy', 'bcrypt', 'psycopg2', 'psycopg2.extras'):
 sys.modules['psycopg2'].extras = sys.modules['psycopg2.extras']
 
 # --- faux psycopg2/db -------------------------------------------------------
+# Sentinelle de plan : « cette requete n'a touche aucune ligne » (rowcount = 0).
+# Sert aux INSERT ... ON CONFLICT DO NOTHING et aux DELETE sans effet.
+ROWCOUNT_ZERO = object()
+
+
 class FakeCursor:
     def __init__(self, plan):
         self.plan = plan          # liste de (motif regex, ligne renvoyee)
@@ -35,12 +40,27 @@ class FakeCursor:
         norm = ' '.join(sql.split())
         self.executed.append((norm, params))
         self._row = None
+        self.rowcount = 1
         for motif, ligne in self.plan:
             if re.search(motif, norm, re.I):
                 self._row = ligne(params) if callable(ligne) else ligne
+                # ON CONFLICT DO NOTHING et DELETE distinguent « fait » de
+                # « rien a faire » par rowcount. Une entree de plan valant
+                # ROWCOUNT_ZERO simule le second cas.
+                if self._row is ROWCOUNT_ZERO:
+                    self._row, self.rowcount = None, 0
                 break
-    def fetchone(self): return self._row
-    def fetchall(self): return []
+    def fetchone(self):
+        # Une requete planifiee avec PLUSIEURS lignes (liste) rend sa premiere
+        # ligne a fetchone, comme le ferait psycopg2.
+        if isinstance(self._row, list):
+            return self._row[0] if self._row else None
+        return self._row
+    def fetchall(self):
+        # Renvoie les lignes planifiees quand le plan en donne une liste. Les
+        # plans qui ne prevoient qu'un tuple (le cas majoritaire) gardent
+        # l'ancien comportement : fetchall n'a alors rien a rendre.
+        return list(self._row) if isinstance(self._row, list) else []
     def __enter__(self): return self
     def __exit__(self, *a): return False
 

@@ -1,0 +1,67 @@
+{# Reset global du sigma -- extrait de gestion_joueurs.html (Phase 0 de
+   docs/hierarchie-admin-plan.md).
+
+   Ce bloc est SEPARE des autres outils de gestion joueurs a dessein : il agit
+   sur TOUS les joueurs d'un coup, et son annulation depend de l'absence de
+   tournoi posterieur. C'est une capacite reservee (cible du chantier :
+   chef_admin), pas une operation de routine sur une fiche.
+
+   Le distinguer visuellement et dans le DOM evite qu'une future revue le prenne
+   pour un bouton de gestion ordinaire et le rende delegable par erreur (R-51).
+   Le gate d'interface viendra ici meme, en Phase 4. #}
+<div class="card glass-card mb-6 fade-in" id="bloc-reset-global"
+     style="border: 1px solid rgba(255, 183, 15, 0.45);">
+    <div class="card-header" style="background: rgba(255, 183, 15, 0.08);">
+        <p class="card-header-title">
+            <span class="icon is-medium mr-2"><i class="fas fa-triangle-exclamation has-text-warning"></i></span>
+            Reset Global du Sigma
+        </p>
+        <span class="tag is-warning is-light is-uppercase mt-3 mr-4" style="height: 1.75em;">
+            Action globale
+        </span>
+    </div>
+    <div class="card-content">
+        <div class="content has-text-grey-light is-small mb-4">
+            <p>
+                <i class="fas fa-info-circle"></i>
+                Cette action ajoute de l'incertitude (Sigma) à <strong>tous</strong> les joueurs.
+                Elle ne peut être annulée que si aucun tournoi n'a été enregistré depuis.
+            </p>
+        </div>
+
+        <div class="columns is-multiline">
+            <div class="column is-6">
+                <div class="field">
+                    <label class="label has-text-white">Date d'application</label>
+                    <div class="control has-icons-left">
+                        <input class="input" type="date" id="globalResetDate">
+                        <span class="icon is-small is-left">
+                            <i class="fas fa-calendar"></i>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="column is-6">
+                <div class="field">
+                    <label class="label has-text-white">Valeur Sigma à ajouter</label>
+                    <div class="control has-icons-left">
+                        <input class="input" type="number" id="globalResetValue" placeholder="0.3" step="0.01" value="0.3">
+                        <span class="icon is-small is-left">
+                            <i class="fas fa-chart-line"></i>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="column is-12">
+                <div class="buttons is-right">
+                    <button onclick="revertGlobalReset()" class="button is-danger is-outlined is-small">
+                        <i class="fas fa-undo mr-2"></i> Annuler le dernier reset
+                    </button>
+                    <button onclick="applyGlobalReset()" class="button is-warning">
+                        <i class="fas fa-bolt mr-2"></i> Activer le Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

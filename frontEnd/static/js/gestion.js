@@ -21,9 +21,27 @@ async function apiCall(endpoint, method = 'GET', body = null) {
         const response = await fetch(endpoint, options);
         
         if (response.status === 401 || response.status === 403) {
+            // Tous les refus ne sont pas une session morte. Depuis la hiérarchie
+            // à 4 rôles, un 403 dit le plus souvent « ce droit ne vous a pas été
+            // accordé » : rediriger vers la connexion serait absurde, l'intéressé
+            // se reconnecterait pour retomber sur le même refus. On distingue
+            // donc sur le code renvoyé (hierarchie-admin-plan.md, B.5).
+            let code = null;
+            try { code = JSON.parse(await response.clone().text()).code; } catch (e) {}
+
+            const REFUS_DE_DROIT = ['permission_manquante', 'droits_insuffisants',
+                                    'cible_protegee', 'auto_modification',
+                                    'plafond_delegation'];
+            if (response.status === 403 && REFUS_DE_DROIT.includes(code)) {
+                console.warn("⛔ Droit manquant :", code);
+                alert("Vous n'avez pas ce droit. S'il vient de vous être retiré, "
+                      + "rechargez la page.");
+                return { error: "Droits insuffisants", code: code };
+            }
+
             console.warn("⛔ Session expirée ou non autorisée");
             alert("Votre session a expiré. Redirection vers la connexion...");
-            window.location.href = '/admin'; 
+            window.location.href = '/admin';
             return { error: "Non autorisé" };
         }
 

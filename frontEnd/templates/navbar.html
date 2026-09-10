@@ -150,10 +150,9 @@
           <span>Récapitulatifs</span>
         </a>
 
-        <a class="navbar-item" href="/admin/matchmaking">
-          <span class="icon"><i class="fas fa-random"></i></span>
-          <span>Matchmaking</span>
-        </a>
+        {# Le Matchmaking a rejoint le menu Admin : c'est une page d'administration
+           (route /admin/matchmaking, permission gestion_matchmaking), elle n'a
+           pas sa place dans la barre publique. #}
       </div>
 
       <div class="navbar-end">
@@ -212,35 +211,57 @@
               <span class="tag is-danger is-rounded ml-2 is-hidden" id="badge-admin">0</span>
             </a>
             
+            {# Chaque entrée est gatée par SA permission : sans ça, un admin sans
+               droits verrait un menu complet dont chaque lien répond 403. Les
+               capacités de rôle (annuler un tournoi) se testent par rôle, elles
+               ne sont pas déléguables. Voir hierarchie-admin-plan.md, annexe B.4. #}
             <div class="navbar-dropdown is-right">
-              <a class="navbar-item" href="/add_tournament">
-                <i class="fas fa-plus-circle mr-2"></i> Enregistrer un Tournoi
-              </a>
-              <a class="navbar-item" href="/admin/gestion">
-                <i class="fas fa-users-cog mr-2"></i> Gestion TrueSkill
-              </a>
-              
-              <a class="navbar-item" href="/admin/ligues">
-                <i class="fas fa-shield-alt mr-2"></i> Gestion Ligues
-              </a>
+              {% if peut('gestion_joueurs') %}
+                <a class="navbar-item" href="/add_tournament">
+                  <i class="fas fa-plus-circle mr-2"></i> Enregistrer un Tournoi
+                </a>
+                <a class="navbar-item" href="/admin/gestion">
+                  <i class="fas fa-users-cog mr-2"></i> Gestion TrueSkill
+                </a>
+              {% endif %}
 
-              <a class="navbar-item" href="/admin/saisons-gestion">
-                <i class="fas fa-calendar-alt mr-2"></i> Gestion Saisons
-              </a>
+              {% if peut('gestion_ligues') %}
+                <a class="navbar-item" href="/admin/ligues">
+                  <i class="fas fa-shield-alt mr-2"></i> Gestion Ligues
+                </a>
+              {% endif %}
 
-              <a class="navbar-item" href="/admin/comptes">
-                <i class="fas fa-users-gear mr-2"></i> Gestion Comptes
-                <span class="tag is-danger is-rounded ml-2 is-hidden" id="badge-admin-comptes">0</span>
-              </a>
-              
+              {% if peut('gestion_saisons') %}
+                <a class="navbar-item" href="/admin/saisons-gestion">
+                  <i class="fas fa-calendar-alt mr-2"></i> Gestion Saisons
+                </a>
+              {% endif %}
+
+              {% if peut('gestion_matchmaking') %}
+                <a class="navbar-item" href="/admin/matchmaking">
+                  <i class="fas fa-random mr-2"></i> Matchmaking
+                </a>
+              {% endif %}
+
+              {# Onglet composite : trois zones déléguables séparément. Chaque
+                 sous-onglet porte son propre gate dans la page elle-même. #}
+              {% if peut('gestion_comptes') or peut('gestion_liaisons') or peut('gestion_invitations') %}
+                <a class="navbar-item" href="/admin/comptes">
+                  <i class="fas fa-users-gear mr-2"></i> Gestion Comptes
+                  <span class="tag is-danger is-rounded ml-2 is-hidden" id="badge-admin-comptes">0</span>
+                </a>
+              {% endif %}
+
+              {% if role_admin in ('chef_admin', 'superadmin') %}
+                <hr class="navbar-divider">
+
+                <a class="navbar-item has-text-danger" onclick="revertLastTournament()">
+                  <i class="fas fa-undo mr-2"></i> Annuler le dernier tournoi
+                </a>
+              {% endif %}
+
               <hr class="navbar-divider">
-              
-              <a class="navbar-item has-text-danger" onclick="revertLastTournament()">
-                <i class="fas fa-undo mr-2"></i> Annuler le dernier tournoi
-              </a>
-              
-              <hr class="navbar-divider">
-              
+
               {% if session.get('admin_token') %}
                 <a class="navbar-item" href="/admin/logout">
                   <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion

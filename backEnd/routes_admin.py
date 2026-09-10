@@ -19,9 +19,11 @@ from constants import (
     DEFAULT_TAU, DEFAULT_GHOST_PENALTY, DEFAULT_UNRANKED_THRESHOLD, DEFAULT_SIGMA_THRESHOLD,
     DEFAULT_GHOST_THRESHOLD_DAYS, DEFAULT_GHOST_INTERVAL_DAYS,
     GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES, IP_VERSION_DEFAULT,
+    ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN,
 )
 from db import get_db_connection, ADMIN_PASSWORD_HASH
-from auth import admin_required, admin_or_role_required
+from auth import (admin_required, admin_or_role_required, permission_required,
+                  role_required)
 from cache import invalidate_cache
 from utils import generate_unique_slug, extract_league_number
 from services import (
@@ -110,14 +112,14 @@ def admin_logout():
 
 
 @admin_bp.route('/admin/check-token', methods=['GET'])
-@admin_or_role_required
+@role_required(ROLE_ADMIN)
 def check_token():
     return jsonify({"status": "valid"}), 200
 
 
 
 @admin_bp.route('/api/admin/fix-db-structure', methods=['GET'])
-@admin_or_role_required
+@role_required(ROLE_SUPERADMIN)
 def fix_db_structure():
     try:
         with get_db_connection() as conn:
@@ -145,8 +147,20 @@ def fix_db_structure():
 
 
 
+# ---------------------------------------------------------------------------
+# Reset global du sigma -- CAPACITE DE ROLE, jamais une permission delegable.
+#
+# NE JAMAIS convertir ces deux routes en @permission_required('gestion_joueurs')
+# lors du chantier hierarchie-admin (voir docs/hierarchie-admin-plan.md, Phase 0
+# et R-51). Elles touchent TOUS les joueurs d'un coup et leur annulation depend
+# de l'absence de tournoi posterieur : c'est d'une autre nature que l'edition
+# d'une fiche joueur, malgre leur proximite dans ce fichier.
+#
+# Decorateur cible du chantier : @role_required(ROLE_CHEF_ADMIN).
+# ---------------------------------------------------------------------------
+
 @admin_bp.route('/api/admin/global-reset', methods=['POST'])
-@admin_or_role_required
+@role_required(ROLE_CHEF_ADMIN)
 def apply_global_reset():
     data = request.get_json()
     try:
@@ -188,8 +202,10 @@ def apply_global_reset():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
+# Meme regle que apply_global_reset ci-dessus : capacite de role, cible
+# @role_required(ROLE_CHEF_ADMIN), jamais une permission delegable.
 @admin_bp.route('/api/admin/revert-global-reset', methods=['POST'])
-@admin_or_role_required
+@role_required(ROLE_CHEF_ADMIN)
 def revert_global_reset():
     try:
         with get_db_connection() as conn:
@@ -223,7 +239,7 @@ def revert_global_reset():
 
 
 @admin_bp.route('/admin/config', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_config')
 def get_config():
     try:
         with get_db_connection() as conn:
@@ -247,7 +263,7 @@ def get_config():
 
 
 @admin_bp.route('/admin/config', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_config')
 def update_config():
     data = request.get_json()
     try:
@@ -310,7 +326,7 @@ def update_config():
 
 
 @admin_bp.route('/admin/joueurs', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_joueurs')
 def api_get_joueurs():
     try:
         with get_db_connection() as conn:
@@ -343,7 +359,7 @@ def api_get_joueurs():
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['PUT'])
-@admin_or_role_required
+@permission_required('gestion_joueurs')
 def api_update_joueur(id):
     data = request.get_json()
     try:
@@ -365,7 +381,7 @@ def api_update_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['DELETE'])
-@admin_or_role_required
+@permission_required('gestion_joueurs')
 def api_delete_joueur(id):
     """Supprime un joueur, sauf s'il a un historique de matchs.
 
@@ -456,7 +472,7 @@ def api_delete_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>/anonymiser', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_joueurs')
 def api_anonymiser_joueur(id):
     """Détache l'identité d'un joueur sans toucher à son dossier sportif.
 
@@ -513,7 +529,7 @@ def api_anonymiser_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_joueurs')
 def api_add_joueur():
     data = request.get_json()
     try:
@@ -551,7 +567,7 @@ def api_add_joueur():
 
 
 @admin_bp.route('/admin/types-awards', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_saisons')
 def get_admin_award_types():
     try:
         with get_db_connection() as conn:
@@ -566,7 +582,7 @@ def get_admin_award_types():
 
 
 @admin_bp.route('/admin/saisons', methods=['GET', 'POST'])
-@admin_or_role_required
+@permission_required('gestion_saisons')
 def admin_saisons():
     if request.method == 'GET':
         with get_db_connection() as conn:
@@ -662,7 +678,7 @@ def admin_saisons():
 
 
 @admin_bp.route('/admin/saisons/<int:saison_id>', methods=['DELETE'])
-@admin_or_role_required
+@permission_required('gestion_saisons')
 def delete_saison(saison_id):
     try:
         with get_db_connection() as conn:
@@ -721,7 +737,7 @@ def delete_saison(saison_id):
 
 
 @admin_bp.route('/admin/count-tournois-range', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_saisons')
 def count_tournois_by_range():
     d_debut = request.args.get('date_debut')
     d_fin = request.args.get('date_fin')
@@ -749,7 +765,7 @@ def count_tournois_by_range():
 
 
 @admin_bp.route('/admin/saisons/<int:id>/count-tournois', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_saisons')
 def count_tournois_by_mode(id):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -779,7 +795,7 @@ def count_tournois_by_mode(id):
 
 
 @admin_bp.route('/admin/saisons/<int:id>/save-awards', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_saisons')
 def save_season_awards(id):
     data = request.get_json() or {}
     move_criterion = data.get('move_criterion')
@@ -980,7 +996,7 @@ def save_season_awards(id):
 
 
 @admin_bp.route('/add-tournament', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_joueurs')
 def add_tournament():
     data = request.get_json()
     date_tournoi_str = data.get('date')
@@ -1248,8 +1264,12 @@ def add_tournament():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
+# CAPACITE DE ROLE, jamais une permission delegable (hierarchie-admin-plan.md 5).
+# Cible : @role_required(ROLE_CHEF_ADMIN). Son bouton est dans navbar.html (donc
+# visible depuis toutes les pages admin) : le gate d'interface va la-bas, pas
+# dans une page precise.
 @admin_bp.route('/api/admin/revert-last-tournament', methods=['POST'])
-@admin_or_role_required
+@role_required(ROLE_CHEF_ADMIN)
 def revert_last_tournament():
     try:
         with get_db_connection() as conn:
@@ -1294,8 +1314,13 @@ def revert_last_tournament():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
+# CAPACITE DE ROLE, jamais une permission delegable (hierarchie-admin-plan.md 5).
+# Route deja signalee dangereuse par R-37 (mu/sigma non restaures apres
+# suppression) et sans proxy frontend aujourd'hui : si quelqu'un lui en ajoute
+# un, il garde le decorateur ci-dessous, pas un chemin d'auth plus permissif
+# (R-58).
 @admin_bp.route('/delete-tournament/<int:id>', methods=['DELETE'])
-@admin_or_role_required
+@role_required(ROLE_CHEF_ADMIN)
 def delete_tournament(id):
     try:
         with get_db_connection() as conn:
@@ -1349,7 +1374,7 @@ def delete_tournament(id):
 
 
 @admin_bp.route('/admin/ligues/setup', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_ligues')
 def setup_ligues():
     data = request.get_json()
     ligues_data = data.get('ligues', [])
@@ -1417,7 +1442,7 @@ def setup_ligues():
 
 
 @admin_bp.route('/admin/ligues/draft-simulation', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_ligues')
 def draft_simulation():
     force_reset = request.args.get('force_reset') == 'true'
 

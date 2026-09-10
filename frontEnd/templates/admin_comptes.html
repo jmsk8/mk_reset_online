@@ -60,6 +60,11 @@
     {% include 'footer.html' %}
     <script>
     const EST_SUPERADMIN = {{ 'true' if est_superadmin else 'false' }};
+    const MON_COMPTE_ID = {{ mon_compte_id if mon_compte_id else 'null' }};
+    // Changer un rôle est une capacité de rôle, pas une permission déléguable :
+    // elle se teste donc par le rôle, jamais par peut() (hierarchie-admin 2).
+    const PEUT_CHANGER_ROLE = {{ 'true' if role_admin in ('chef_admin', 'superadmin') else 'false' }};
+    const PEUT_GERER_COMPTES = {{ 'true' if peut('gestion_comptes') else 'false' }};
 
     document.addEventListener('DOMContentLoaded', () => {
         const csrf = document.querySelector('meta[name="csrf-token"]').content;
@@ -76,6 +81,17 @@
             el.textContent = contenu == null ? '' : String(contenu);
             if (classe) el.className = classe;
             return el;
+        }
+
+        // Icône Font Awesome sans innerHTML : la règle ci-dessus ne souffre pas
+        // d'exception « ce n'est qu'un littéral », sinon elle s'érode.
+        function icone(nom, classeSpan, classeIcone) {
+            const span = document.createElement('span');
+            span.className = classeSpan || 'icon';
+            const i = document.createElement('i');
+            i.className = 'fas ' + nom + (classeIcone ? ' ' + classeIcone : '');
+            span.appendChild(i);
+            return span;
         }
 
         function avatar(url) {
@@ -268,17 +284,37 @@
                 tr.appendChild(txt('td', c.statut));
 
                 const tdR = document.createElement('td');
-                if (EST_SUPERADMIN) {
+                // Qui peut changer le rôle de qui : le superadmin est intouchable,
+                // un chef_admin l'est pour ses pairs, et personne n'agit sur soi.
+                // Le backend juge, ceci évite d'afficher un contrôle voué au 403.
+                const cibleProtegee = c.role === 'superadmin'
+                    || (c.role === 'chef_admin' && !EST_SUPERADMIN);
+                if (PEUT_CHANGER_ROLE && !cibleProtegee && c.id !== MON_COMPTE_ID) {
                     const sel = document.createElement('select');
-                    ['player', 'admin', 'superadmin'].forEach(r => {
+                    // superadmin n'est jamais dans cette liste : il ne s'attribue
+                    // pas, il se lègue. chef_admin seulement pour le superadmin.
+                    const choix = EST_SUPERADMIN
+                        ? ['player', 'admin', 'chef_admin']
+                        : ['player', 'admin'];
+                    choix.forEach(r => {
                         const o = document.createElement('option');
                         o.value = r; o.textContent = r;
                         if (r === c.role) o.selected = true;
                         sel.appendChild(o);
                     });
                     sel.addEventListener('change', async () => {
-                        const r = await api('/admin/comptes/' + c.id + '/role', 'POST', {role: sel.value});
-                        if (r.ok) { afficher('success', 'Rôle mis à jour.'); }
+                        const corps = {role: sel.value};
+                        let r = await api('/admin/comptes/' + c.id + '/role', 'POST', corps);
+                        // R-60 : retomber à zéro chef_admin retire le filet qui
+                        // protège d'un verrouillage du superadmin. Jamais un clic
+                        // silencieux -- on redemande, puis on renvoie le drapeau.
+                        if (!r.ok && r.data.code === 'dernier_chef_admin') {
+                            if (confirm(r.data.error + '\n\nContinuer ?')) {
+                                corps.confirmer_dernier_chef_admin = true;
+                                r = await api('/admin/comptes/' + c.id + '/role', 'POST', corps);
+                            } else { chargerComptes(); return; }
+                        }
+                        if (r.ok) { afficher('success', 'Rôle mis à jour.'); chargerComptes(); }
                         else { afficher('danger', r.data.error || 'Échec.'); chargerComptes(); }
                     });
                     const wrap = document.createElement('div');
@@ -287,6 +323,9 @@
                     tdR.appendChild(wrap);
                 } else {
                     tdR.appendChild(txt('span', c.role));
+                    if (c.role === 'superadmin') {
+                        tdR.appendChild(txt('span', 'unique', 'tag is-light ml-2'));
+                    }
                 }
                 tr.appendChild(tdR);
 
@@ -350,12 +389,265 @@
                 });
                 actions.appendChild(bSusp);
 
+                // Permissions à la carte : n'ont de sens que sur un admin. Un
+                // player n'a rien à recevoir, un chef_admin a déjà tout le
+                // catalogue par son socle -- lui afficher des cases à cocher
+                // laisserait croire qu'on peut lui en retirer.
+                if (PEUT_CHANGER_ROLE && c.role === 'admin' && c.id !== MON_COMPTE_ID) {
+                    const bPerm = txt('button', 'Permissions', 'button is-link is-light is-small');
+                    bPerm.addEventListener('click', () => ouvrirPermissions(c));
+                    actions.appendChild(bPerm);
+                }
+
+                // Legs : seul le superadmin le propose, jamais sur sa propre
+                // ligne (auto-legs refusé côté backend, plan 6bis).
+                if (EST_SUPERADMIN && c.id !== MON_COMPTE_ID) {
+                    const bLegs = txt('button', 'Léguer le superadmin',
+                                      'button is-danger is-light is-small');
+                    bLegs.addEventListener('click', () => leguerSuperadmin(c));
+                    actions.appendChild(bLegs);
+                }
+
                 tdA.appendChild(actions);
                 tr.appendChild(tdA);
                 tbody.appendChild(tr);
             });
             table.appendChild(tbody);
             vue.appendChild(table);
+        }
+
+        // ---- Permissions à la carte ----
+        // Panneau déplié sous la ligne du compte plutôt qu'une modale : les
+        // cases se cochent une par une, chacune est un appel réseau, et voir la
+        // ligne d'origine pendant qu'on les manipule évite de se tromper de
+        // compte.
+        async function ouvrirPermissions(c) {
+            const existant = document.getElementById('panneau-permissions');
+            if (existant) existant.remove();
+
+            const r = await api('/admin/comptes/' + c.id + '/permissions');
+            if (!r.ok) { afficher('danger', r.data.error || 'Lecture impossible.'); return; }
+
+            const boite = document.createElement('div');
+            boite.id = 'panneau-permissions';
+            // PAS de classe `fade-in` : elle pose opacity:0 et attend la classe
+            // `visible`, ajoutée par gestion.js -- qui n'est pas chargé sur cette
+            // page. Le panneau serait construit, inséré, et parfaitement
+            // invisible.
+            boite.className = 'card glass-card mt-5';
+            boite.style.border = '1px solid rgba(59, 130, 246, 0.35)';
+
+            // -- En-tête : de qui parle-t-on, et combien de droits --------------
+            const entete = document.createElement('div');
+            entete.className = 'card-header';
+            const titre = document.createElement('p');
+            titre.className = 'card-header-title';
+            titre.appendChild(icone('fa-key', 'icon is-medium mr-2', 'has-text-link'));
+            titre.appendChild(document.createTextNode('Permissions de '));
+            titre.appendChild(txt('strong', c.pseudo, 'ml-1'));
+            entete.appendChild(titre);
+
+            const compteur = txt('span', '', 'tag is-link is-light mt-3 mr-4');
+            compteur.style.height = '1.75em';
+            entete.appendChild(compteur);
+            boite.appendChild(entete);
+
+            const corps = document.createElement('div');
+            corps.className = 'card-content';
+
+            corps.appendChild(txt('p',
+                "Un administrateur ne peut rien tant qu'aucune case n'est cochée. "
+                + "Chaque droit prend effet immédiatement, sans reconnexion.",
+                'has-text-grey-light is-size-7 mb-4'));
+
+            const accordees = new Set(r.data.permissions || []);
+            const delegables = new Set(r.data.delegables || []);
+
+            // Le catalogue vient du backend : c'est lui qui fait autorité sur ce
+            // qui existe. Ce dictionnaire n'ajoute que du texte lisible -- une
+            // permission qu'il ne connaîtrait pas reste affichée, sous son nom
+            // technique, plutôt que de disparaître silencieusement.
+            // Chaque description dit ce que la personne POURRA FAIRE, pas de quel
+            // domaine elle relève : « Paramètres globaux du calcul TrueSkill »
+            // ne permet à personne de décider s'il faut cocher la case.
+            // 4e élément optionnel : l'avertissement des droits à effet large.
+            const LIBELLES = {
+                gestion_joueurs:     ['Joueurs et tournois', 'fa-users-cog',
+                                      'Créer, renommer et supprimer des fiches joueurs, corriger '
+                                      + 'leur score, et enregistrer les résultats des tournois.',
+                                      'Inclut la suppression définitive d\'une fiche et '
+                                      + "l'anonymisation RGPD."],
+                gestion_ligues:      ['Ligues', 'fa-shield-alt',
+                                      'Créer les ligues, y répartir les joueurs et simuler un '
+                                      + 'draft avant de l\'appliquer.'],
+                gestion_saisons:     ['Saisons et awards', 'fa-calendar-alt',
+                                      'Ouvrir et clôturer les saisons, fixer leurs dates, et '
+                                      + 'attribuer les awards de fin de saison.',
+                                      'Supprimer une saison efface son récapitulatif.'],
+                gestion_liaisons:    ['Demandes de liaison', 'fa-link',
+                                      'Valider ou refuser les joueurs qui demandent à rattacher '
+                                      + 'leur compte Discord à une fiche du site.'],
+                gestion_comptes:     ['Comptes Discord', 'fa-users-gear',
+                                      'Voir la liste des comptes, les suspendre, fermer leurs '
+                                      + 'sessions, les détacher de leur fiche et synchroniser '
+                                      + 'leur pseudo.',
+                                      'Ne permet PAS de changer un rôle ni d\'accorder des droits.'],
+                gestion_invitations: ['Invitations', 'fa-envelope-open-text',
+                                      'Créer les liens qui permettent à un nouveau joueur de '
+                                      + 's\'inscrire, et les révoquer avant expiration.'],
+                gestion_config:      ['Réglages du classement', 'fa-sliders',
+                                      'Régler le mode fantôme (pénalité d\'inactivité), le '
+                                      + 'nombre de tournois requis pour être classé, et activer '
+                                      + 'le mode ligue.',
+                                      'Ces réglages s\'appliquent à TOUS les joueurs.'],
+                gestion_matchmaking: ['Matchmaking', 'fa-random',
+                                      'Composer des lobbies équilibrés à partir des joueurs '
+                                      + 'présents, depuis la page dédiée.'],
+            };
+
+            const majCompteur = () => {
+                const n = accordees.size;
+                compteur.textContent = n === 0 ? 'aucun droit'
+                                     : n + (n > 1 ? ' droits accordés' : ' droit accordé');
+            };
+            majCompteur();
+
+            // Accordées d'abord : on voit ce que le compte PEUT faire avant ce
+            // qu'il ne peut pas, plutôt qu'un ordre alphabétique qui les mélange.
+            const toutes = Array.from(new Set([...delegables, ...accordees]))
+                .sort((a, b) => (accordees.has(b) - accordees.has(a))
+                                || (LIBELLES[a]?.[0] || a).localeCompare(LIBELLES[b]?.[0] || b));
+
+            toutes.forEach(p => {
+                const [nom, ic, desc, alerte] = LIBELLES[p] || [p, 'fa-circle-dot', ''];
+                const horsPortee = !delegables.has(p);
+
+                const ligne = document.createElement('label');
+                ligne.className = 'is-flex is-align-items-flex-start p-3 mb-2';
+                ligne.style.cssText =
+                    'gap:.75rem; border-radius:6px; cursor:' + (horsPortee ? 'not-allowed' : 'pointer')
+                    + '; background:rgba(255,255,255,.03); border:1px solid transparent;'
+                    // .75 et non .55 : une ligne hors de portée doit se voir comme
+                    // inactive, pas devenir illisible -- son intitulé reste une
+                    // information utile (« ce droit existe, mais pas pour vous »).
+                    + (horsPortee ? 'opacity:.75;' : '');
+                if (!horsPortee) {
+                    ligne.addEventListener('mouseenter', () => {
+                        ligne.style.background = 'rgba(59,130,246,.10)';
+                        ligne.style.borderColor = 'rgba(59,130,246,.35)';
+                    });
+                    ligne.addEventListener('mouseleave', () => {
+                        ligne.style.background = 'rgba(255,255,255,.03)';
+                        ligne.style.borderColor = 'transparent';
+                    });
+                }
+
+                const case_ = document.createElement('input');
+                case_.type = 'checkbox';
+                case_.checked = accordees.has(p);
+                case_.style.marginTop = '.25rem';
+                // Grisée au-delà du plafond de l'acteur : défensif seulement,
+                // le backend refuserait de toute façon (plan 2, contrainte 5).
+                case_.disabled = horsPortee;
+                case_.addEventListener('change', async () => {
+                    case_.disabled = true;
+                    const methode = case_.checked ? 'POST' : 'DELETE';
+                    const rep = await api(
+                        '/admin/comptes/' + c.id + '/permissions/' + encodeURIComponent(p),
+                        methode);
+                    case_.disabled = false;
+                    if (rep.ok) {
+                        if (case_.checked) { accordees.add(p); } else { accordees.delete(p); }
+                        majCompteur();
+                        afficher('success', case_.checked
+                            ? 'Droit « ' + nom + ' » accordé.'
+                            : 'Droit « ' + nom + ' » retiré.');
+                    } else {
+                        case_.checked = !case_.checked;   // on rejoue l'état réel
+                        afficher('danger', rep.data.error || 'Échec.');
+                    }
+                });
+                ligne.appendChild(case_);
+
+                const bloc = document.createElement('div');
+                bloc.style.flex = '1';
+
+                const entete_l = document.createElement('div');
+                entete_l.className = 'is-flex is-align-items-center';
+                entete_l.style.gap = '.5rem';
+                entete_l.appendChild(icone(ic, 'icon is-small', 'has-text-link'));
+                entete_l.appendChild(txt('span', nom, 'has-text-weight-semibold'));
+                if (horsPortee) {
+                    entete_l.appendChild(txt('span', 'hors de votre portée', 'tag is-light'));
+                }
+                bloc.appendChild(entete_l);
+
+                if (desc) {
+                    bloc.appendChild(txt('p', desc, 'has-text-grey-light is-size-7 mt-1'));
+                }
+
+                // Les droits à portée large le disent : c'est au moment de cocher
+                // que l'information est utile, pas dans une documentation.
+                if (alerte) {
+                    const av = document.createElement('p');
+                    // has-text-warning (et non -dark) : le fond est sombre, le
+                    // jaune foncé de Bulma y serait illisible.
+                    av.className = 'is-size-7 mt-1 has-text-warning';
+                    av.appendChild(icone('fa-triangle-exclamation', 'icon is-small mr-1'));
+                    av.appendChild(document.createTextNode(alerte));
+                    bloc.appendChild(av);
+                }
+
+                // Le nom technique : c'est lui qu'on lit dans l'audit et les logs,
+                // il doit donc rester déchiffrable. Une pastille discrète le range
+                // sous le libellé sans le noyer -- l'atténuer par une opacité le
+                // rendait illisible sur ce fond sombre.
+                const tech = txt('code', p, 'is-size-7 mt-2');
+                tech.style.cssText =
+                    'display:inline-block; background:rgba(255,255,255,.07);'
+                    + 'border:1px solid rgba(255,255,255,.12); border-radius:4px;'
+                    + 'padding:.1rem .45rem; color:#94a3b8; letter-spacing:.02em;';
+                bloc.appendChild(tech);
+
+                ligne.appendChild(bloc);
+                corps.appendChild(ligne);
+            });
+
+            const fermer = txt('button', 'Fermer', 'button is-small mt-4');
+            fermer.addEventListener('click', () => boite.remove());
+            corps.appendChild(fermer);
+
+            boite.appendChild(corps);
+            document.getElementById('vue-comptes').appendChild(boite);
+            boite.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        }
+
+        // ---- Legs du rôle superadmin ----
+        async function leguerSuperadmin(c) {
+            // Deux confirmations, et la seconde n'est pas décorative : le pseudo
+            // retapé est vérifié par le backend contre discord_username. Un clic
+            // seul ne doit pas pouvoir transmettre le rôle.
+            const avertissement =
+                'Léguer le rôle superadmin à « ' + c.pseudo + ' » ?\n\n'
+                + 'Vous PERDREZ ce rôle et deviendrez chef_admin.\n'
+                + 'Cette action est irréversible sans l\'accord du nouveau superadmin.';
+            if (!confirm(avertissement)) return;
+
+            const saisi = prompt(
+                'Pour confirmer, retapez le pseudo Discord exact du compte cible '
+                + '(son identifiant, pas son nom affiché) :');
+            if (saisi === null) return;
+
+            const r = await api('/admin/comptes/' + c.id + '/leguer-superadmin', 'POST',
+                                {confirmation_pseudo: saisi});
+            if (r.ok) {
+                afficher('success',
+                         'Rôle superadmin transmis. Vous êtes désormais chef_admin. '
+                         + 'Rechargez la page pour voir vos nouveaux droits.');
+                chargerComptes();
+            } else {
+                afficher('danger', r.data.error || 'Échec.');
+            }
         }
 
         // ---- Invitations ----

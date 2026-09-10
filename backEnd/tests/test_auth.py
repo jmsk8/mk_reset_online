@@ -78,6 +78,9 @@ cur, conn = install_db([
     (r"SELECT id, statut FROM comptes", None),
     (r"FROM invitations WHERE token_hash", (7, None, 1, 0, FUTUR, None)),
     (r"INSERT INTO comptes", ligne_compte(avatar='')),
+    # Verrou pose sur la ligne d'amorcage avant de compter (hierarchie-admin 6bis.0) :
+    # deux connexions simultanees ne doivent pas franchir la garde ensemble.
+    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
     (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (0,)),      # aucun superadmin
 ])
 import auth_discord; importlib.reload(auth_discord)
@@ -91,6 +94,7 @@ cur, conn = install_db([
     (r"SELECT id, statut FROM comptes", None),
     (r"FROM invitations WHERE token_hash", (7, None, 1, 0, FUTUR, None)),
     (r"INSERT INTO comptes", ligne_compte(avatar='')),
+    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
     (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (1,)),      # un superadmin existe
 ])
 import auth_discord; importlib.reload(auth_discord)
