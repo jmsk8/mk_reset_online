@@ -189,7 +189,12 @@ Conséquences directes, à traiter comme des exigences et non comme des détails
 - **R-10 s'éteint de lui-même** (plus de `refresh-token` sans borne), à condition que
   `sessions_joueurs` ne reproduise pas le motif : expiration **absolue**, hash en base.
 
-### 3.3bis Trois niveaux d'autorisation **[DÉCIDÉ]**
+### 3.3bis Trois niveaux d'autorisation **[DÉCIDÉ, remplacé — voir [hierarchie-admin-plan.md](hierarchie-admin-plan.md)]**
+
+> Ce modèle à 3 rôles est étendu à 4 rôles (`chef_admin` en plus) + permissions déléguées à la
+> carte pour le palier `admin` — conception dans
+> [hierarchie-admin-plan.md](hierarchie-admin-plan.md), répondant à la question 10 du §10.2.
+> Ce paragraphe reste la référence historique du modèle initial, non codé pour l'instant.
 
 `comptes.role ∈ {'player', 'admin', 'superadmin'}`, strictement ordonnés.
 

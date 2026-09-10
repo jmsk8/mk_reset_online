@@ -1,8 +1,14 @@
 from harness import *
 from flask import Flask
 
-def monter(plan, role='admin'):
-    """Monte le blueprint des comptes avec une session au role voulu."""
+def monter(plan, role='chef_admin'):
+    """Monte le blueprint des comptes avec une session au role voulu.
+
+    chef_admin par defaut : depuis la hierarchie a 4 roles, un compte admin
+    n'a AUCUNE permission tant qu'on ne lui en accorde pas. Le socle du
+    chef_admin couvre tout le catalogue, ce qui donne ici l'equivalent de
+    l'ancien « admin » sans avoir a scripter une ligne permissions_admin
+    dans chaque plan."""
     plan = list(plan) + [
         (r"FROM sessions_joueurs s JOIN comptes c",
          ligne_session(compte_id=1, discord_id='111', username='admin',
@@ -139,22 +145,37 @@ cli, cur, conn, _ = monter([(r"SELECT role FROM comptes WHERE id", ('player',))]
 r = cli.post('/admin/comptes/5/role', json={'role': 'superadmin'}, headers=H)
 check("un admin ne peut PAS attribuer de rôle -> 403", r.status_code == 403, r.status_code)
 
+# Depuis la hierarchie a 4 roles, changer_role ne touche PLUS un superadmin :
+# compte_cible_protegee l'arrete avant la garde du dernier superadmin, et le
+# role ne se quitte que par legs. Ce que ces deux cas verifiaient (« on ne
+# tombe pas a zero superadmin ») est desormais porte par la structure, pas par
+# un compteur.
 cli, cur, conn, _ = monter([
     (r"SELECT role FROM comptes WHERE id", ('superadmin',)),
-    (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (0,)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/role', json={'role': 'player'}, headers=H)
-check("rétrograder le DERNIER superadmin -> 409",
-      r.status_code == 409 and r.get_json()['code'] == 'dernier_superadmin', r.get_json())
+check("un superadmin est intouchable par changer_role -> 403",
+      r.status_code == 403 and r.get_json()['code'] == 'cible_protegee', r.get_json())
 check("aucune écriture du rôle", not any('UPDATE comptes SET role' in s for s, _ in cur.executed))
 
+# Le role superadmin ne s'attribue pas non plus : il se legue.
 cli, cur, conn, _ = monter([
-    (r"SELECT role FROM comptes WHERE id", ('superadmin',)),
-    (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (1,)),
+    (r"SELECT role FROM comptes WHERE id", ('admin',)),
+], role='superadmin')
+r = cli.post('/admin/comptes/5/role', json={'role': 'superadmin'}, headers=H)
+check("poser 'superadmin' par changer_role -> 400",
+      r.status_code == 400 and r.get_json()['code'] == 'superadmin_non_attribuable', r.get_json())
+
+# Retrogradation ordinaire : un admin redevient player, et ses permissions a la
+# carte sont purgees dans la foulee (R-53).
+cli, cur, conn, _ = monter([
+    (r"SELECT role FROM comptes WHERE id", ('admin',)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/role', json={'role': 'player'}, headers=H)
-check("rétrogradation possible s'il en reste un autre -> 200", r.status_code == 200, r.get_json())
+check("rétrograder un admin -> 200", r.status_code == 200, r.get_json())
 check("changement de rôle audité", any('INSERT INTO audit_admin' in s for s, _ in cur.executed))
+check("R-53 : permissions purgées à la sortie du rôle admin",
+      any('DELETE FROM permissions_admin' in s for s, _ in cur.executed))
 
 cli, cur, conn, _ = monter([(r"SELECT role FROM comptes WHERE id", ('player',))], role='superadmin')
 r = cli.post('/admin/comptes/5/role', json={'role': 'root'}, headers=H)

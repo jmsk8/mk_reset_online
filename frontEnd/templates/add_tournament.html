@@ -349,8 +349,19 @@
                         ligue_id: ligueId
                     })
                 })
-                .then(res => {
+                .then(async res => {
                     if (res.status === 401 || res.status === 403) {
+                        // Un 403 « droit manquant » ne doit PAS déconnecter :
+                        // cette branche partait sur /admin/logout, qui détruit
+                        // la session pour une permission non accordée. Voir
+                        // hierarchie-admin-plan.md, B.5.
+                        let code = null;
+                        try { code = (await res.clone().json()).code; } catch (e) {}
+                        if (res.status === 403 && code === 'permission_manquante') {
+                            alert("Vous n'avez pas le droit d'enregistrer un tournoi. "
+                                  + "S'il vient de vous être retiré, rechargez la page.");
+                            throw new Error("Droits insuffisants");
+                        }
                         alert("Session expirée. Veuillez vous reconnecter.");
                         window.location.href = '/admin/logout';
                         throw new Error("Session expirée");

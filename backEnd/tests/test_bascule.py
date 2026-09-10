@@ -12,6 +12,9 @@ print("\n=== Inventaire : aucune route admin sans authentification ===")
 src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'routes_admin.py'),
            encoding='utf-8').read().split("\n")
 sans_auth, par_voie = [], {'admin_required': [], 'admin_or_role_required': []}
+# Depuis la hierarchie a 4 roles, une route peut aussi porter permission_required
+# ou role_required : ce sont des protections a part entiere, pas une absence.
+PROTEGE_AUSSI = ('permission_required', 'role_required')
 for i, l in enumerate(src):
     if l.lstrip().startswith("@admin_bp.route"):
         j, decos = i + 1, []
@@ -21,10 +24,12 @@ for i, l in enumerate(src):
             j += 1
         route = l.strip()
         trouve = [d for d in decos if d in par_voie]
-        if not trouve:
-            sans_auth.append(route)
-        else:
+        if trouve:
             par_voie[trouve[0]].append(route)
+        elif any(d.startswith(PROTEGE_AUSSI) for d in decos):
+            pass          # protegee par le nouveau modele
+        else:
+            sans_auth.append(route)
 
 publiques_attendues = {'admin-auth', 'admin-logout'}
 nues = {_re.search(r"'/([\w-]+)", r).group(1) for r in sans_auth}
@@ -45,9 +50,12 @@ check("seul refresh-token reste sur le mot de passe seul",
 print("\n=== check-token : la sonde qui garde trois pages ===")
 # Restee sur @admin_required, elle renvoyait 401 a une session Discord : un
 # admin Discord n'aurait jamais pu ouvrir gestion, saisons ni ligues.
+# Desormais role_required(ROLE_ADMIN) : sonde de session, pas une capacite --
+# la mettre sous une permission l'aurait rendue inutilisable a un admin
+# fraichement cree, cassant la detection de session cote frontend (annexe A).
 i = next(k for k, l in enumerate(src) if "'/admin/check-token'" in l)
-check("check-token accepte les deux voies",
-      any('admin_or_role_required' in src[k] for k in range(i, i + 4)),
+check("check-token reste ouverte a tout admin",
+      any('role_required(ROLE_ADMIN)' in src[k] for k in range(i, i + 4)),
       src[i:i+3])
 
 print("\n=== Le décorateur de transition : un OU, jamais un ET ===")
@@ -63,7 +71,8 @@ def app_transition(plan):
         return jsonify({"ok": True})
     return app.test_client(), cur
 
-SESSION = [(r"FROM sessions_joueurs s JOIN comptes c", ligne_session(role='admin'))]
+# chef_admin : un admin n'a plus de permission par defaut (hierarchie a 4 roles).
+SESSION = [(r"FROM sessions_joueurs s JOIN comptes c", ligne_session(role='chef_admin'))]
 MDP = [(r"SELECT expires_at FROM api_tokens", (datetime.now() + timedelta(hours=1),))]
 
 cli, cur = app_transition(SESSION)
@@ -84,13 +93,23 @@ cli, cur = app_transition([(r"FROM sessions_joueurs s JOIN comptes c",
                             ligne_session(joueur_id=9))])
 check("session valide SANS le rôle -> 403", cli.get('/x', headers={'X-Session-Token': 't'}).status_code == 403)
 
-print("\n=== R-38 : le dernier superadmin ===")
-# Deja couvert cote route en phase 2 ; on verifie ici que rien dans la bascule
-# n'a ouvert un second chemin d'ecriture du role.
+print("\n=== R-38 / R-40 : qui écrit comptes.role ===")
+# Deja couvert cote route en phase 2 ; on verifie ici que rien n'a ouvert un
+# chemin d'ecriture du role en dehors des deux routes prevues.
+#
+# Trois ecritures attendues, pas une : changer_role (qui ne pose jamais
+# superadmin) et les DEUX UPDATE du legs, qui retrograde l'ancien avant de
+# promouvoir le nouveau dans la meme transaction. Exception deliberee et etroite
+# a R-40, expliquee en hierarchie-admin-plan.md 6bis.1 -- les deux routes ne
+# doivent PAS etre fusionnees : la garde du dernier superadmin de changer_role
+# refuserait justement la retrogradation par laquelle le legs commence.
 comptes_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
                                 'routes_comptes.py'), encoding='utf-8').read()
 ecritures = comptes_src.count("SET role")
-check("une seule écriture de comptes.role dans tout le module", ecritures == 1, ecritures)
+check("exactement trois écritures de comptes.role (changer_role + legs)",
+      ecritures == 3, ecritures)
+check("le legs est bien une route distincte de changer_role",
+      'leguer-superadmin' in comptes_src and 'def changer_role' in comptes_src)
 admin_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
                               'routes_admin.py'), encoding='utf-8').read()
 check("routes_admin.py n'écrit jamais le rôle", "SET role" not in admin_src)

@@ -28,7 +28,8 @@ import requests
 from constants import (
     DISCORD_API_BASE, DISCORD_CDN_BASE, DISCORD_HTTP_TIMEOUT,
     SESSION_JOUEUR_LIFETIME_DAYS, SESSION_ADMIN_LIFETIME_HOURS,
-    ROLE_PLAYER, ROLE_SUPERADMIN, CGU_VERSION,
+    ROLE_PLAYER, ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERARCHY,
+    PERMISSIONS_CATALOGUE, CGU_VERSION,
 )
 from db import get_db_connection
 
@@ -207,10 +208,27 @@ def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
 
     Sans la condition « aucun superadmin existant », la variable
     d'environnement serait une porte derobee permanente.
+
+    TROISIEME ecrivain de comptes.role = 'superadmin', avec changer_role (qui ne
+    l'ecrit jamais) et le legs. Ce n'est pas une route : pas d'IHM, pas de
+    session admin, juste une reconnexion Discord du compte designe. Reste
+    disponible apres un legs -- si le nouveau superadmin disparait, l'ancien
+    redevient eligible : filet de secours assume face a R-47, bien plus leger
+    qu'un break-glass SQL (docs/hierarchie-admin-plan.md 6bis.0).
     """
     if not DISCORD_SUPERADMIN_ID or compte['discord_id'] != DISCORD_SUPERADMIN_ID:
         return False
     if compte['role'] == ROLE_SUPERADMIN:
+        return False
+
+    # Verrou sur la ligne d'amorcage avant de compter : deux connexions Discord
+    # simultanees de ce meme compte sur une base vierge franchiraient sinon la
+    # garde toutes les deux. La seconde heurterait alors idx_comptes_superadmin_unique
+    # (23505) au lieu de sortir proprement par le chemin « existe deja ».
+    # FOR UPDATE ne peut pas porter sur le COUNT lui-meme (agregation).
+    cur.execute("SELECT role FROM comptes WHERE id = %s FOR UPDATE", (compte['id'],))
+    row = cur.fetchone()
+    if row is None or row[0] == ROLE_SUPERADMIN:
         return False
 
     cur.execute(
@@ -237,6 +255,21 @@ def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
     compte['role'] = ROLE_SUPERADMIN
     logger.info("Compte %s promu superadmin par amorcage", compte['id'])
     return True
+
+
+def _permissions_pour_session(cur, compte: dict) -> list:
+    """Permissions a exposer a l'interface, role compris. Triees, jamais None.
+
+    chef_admin et superadmin recoivent le catalogue entier : leur socle EST le
+    catalogue (plan 2). Un admin n'a que ses lignes accordees, un player rien.
+    """
+    if ROLE_HIERARCHY.get(compte['role'], 0) >= ROLE_HIERARCHY[ROLE_CHEF_ADMIN]:
+        return sorted(PERMISSIONS_CATALOGUE)
+    if compte['role'] != ROLE_ADMIN:
+        return []
+    cur.execute("SELECT permission FROM permissions_admin WHERE compte_id = %s",
+                (compte['id'],))
+    return sorted(r[0] for r in cur.fetchall())
 
 
 def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tuple[str, datetime]:
@@ -328,6 +361,11 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
                 token, expires_at = create_session(
                     cur, compte['id'], compte['role'], user_agent
                 )
+                # Lues dans CETTE transaction, curseur deja ouvert : l'interface
+                # a besoin des permissions des la connexion pour construire ses
+                # menus, et les pages d'administration ne rappellent pas
+                # /auth/me. Aucune requete supplementaire.
+                permissions = _permissions_pour_session(cur, compte)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -344,6 +382,9 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
             'joueur_id': compte['joueur_id'],
             'statut': compte['statut'],
             'role': compte['role'],
+            # Ce que l'interface AFFICHE, jamais ce qu'elle autorise : copie
+            # potentiellement perimee, l'autorite reste le backend (plan B.0).
+            'permissions': permissions,
             # Permet au frontend de reclamer le consentement aux comptes
             # anterieurs a sa mise en place.
             'cgu_a_accepter': compte['cgu_version'] != CGU_VERSION,

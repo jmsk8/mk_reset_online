@@ -22,57 +22,18 @@
         <div class="container">
             <h1 class="title has-text-centered glow-text mb-6">Gestion des Joueurs</h1>
 
+            {# Hors de la grille des outils de gestion : capacite reservee, pas une
+               operation de routine. Voir partiels/reset_global.html et Phase 0 de
+               docs/hierarchie-admin-plan.md.
+
+               Capacite de role, donc testee par le role : elle n'est PAS dans le
+               catalogue des permissions deleguables, et ne doit jamais y entrer. #}
+            {% if role_admin in ('chef_admin', 'superadmin') %}
+                {% include 'partiels/reset_global.html' %}
+            {% endif %}
+
             <div class="columns is-variable is-6">
                 <div class="column is-8">
-                    
-                    <div class="card glass-card mb-6 fade-in">
-                        <div class="card-header">
-                            <p class="card-header-title">
-                                <span class="icon is-medium mr-2"><i class="fas fa-magic has-text-warning"></i></span>
-                                Reset Global du Sigma
-                            </p>
-                        </div>
-                        <div class="card-content">
-                            <div class="content has-text-grey-light is-small mb-4">
-                                <p><i class="fas fa-info-circle"></i> Cette action ajoute de l'incertitude (Sigma) à <strong>tous</strong> les joueurs.</p>
-                            </div>
-                            
-                            <div class="columns is-multiline">
-                                <div class="column is-6">
-                                    <div class="field">
-                                        <label class="label has-text-white">Date d'application</label>
-                                        <div class="control has-icons-left">
-                                            <input class="input" type="date" id="globalResetDate">
-                                            <span class="icon is-small is-left">
-                                                <i class="fas fa-calendar"></i>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="column is-6">
-                                    <div class="field">
-                                        <label class="label has-text-white">Valeur Sigma à ajouter</label>
-                                        <div class="control has-icons-left">
-                                            <input class="input" type="number" id="globalResetValue" placeholder="0.3" step="0.01" value="0.3">
-                                            <span class="icon is-small is-left">
-                                                <i class="fas fa-chart-line"></i>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="column is-12">
-                                    <div class="buttons is-right">
-                                        <button onclick="revertGlobalReset()" class="button is-danger is-outlined is-small">
-                                            <i class="fas fa-undo mr-2"></i> Annuler le dernier reset
-                                        </button>
-                                        <button onclick="applyGlobalReset()" class="button is-warning">
-                                            <i class="fas fa-bolt mr-2"></i> Activer le Reset
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
                     <div class="card glass-card mb-6 fade-in">
                         <div class="card-header">

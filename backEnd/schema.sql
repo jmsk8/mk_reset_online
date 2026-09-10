@@ -272,11 +272,35 @@ CREATE TABLE public.comptes (
     created_at           timestamp with time zone NOT NULL DEFAULT now(),
     updated_at           timestamp with time zone NOT NULL DEFAULT now(),
     last_login_at        timestamp with time zone,
-    CONSTRAINT comptes_role_valide   CHECK (role   IN ('player', 'admin', 'superadmin')),
+    CONSTRAINT comptes_role_valide   CHECK (role   IN ('player', 'admin', 'chef_admin', 'superadmin')),
     CONSTRAINT comptes_statut_valide CHECK (statut IN ('pending', 'linked', 'rejected', 'suspended'))
 );
 
 CREATE INDEX idx_comptes_role ON public.comptes(role) WHERE role <> 'player';
+
+-- Unicite STRICTE du superadmin. Garantit « jamais 2+ » ; le « jamais 0 » reste
+-- applicatif (garde du dernier superadmin, atomicite du legs).
+-- Index PARTIEL donc non-deferrable : le legs DOIT retrograder l'ancien avant de
+-- promouvoir le nouveau, sous peine de 23505.
+CREATE UNIQUE INDEX idx_comptes_superadmin_unique
+    ON public.comptes (role)
+    WHERE role = 'superadmin';
+
+-- PERMISSIONS_ADMIN -- droits nommes accordes un par un a un compte role=admin.
+-- Les roles chef_admin et superadmin n'y figurent jamais : leur socle couvre le
+-- catalogue entier par construction.
+CREATE TABLE public.permissions_admin (
+    id          SERIAL PRIMARY KEY,
+    compte_id   integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
+    permission  character varying(50) NOT NULL,
+    -- Toujours g.compte['id'], jamais une valeur venue de la requete.
+    accorde_par integer REFERENCES public.comptes(id) ON DELETE SET NULL,
+    created_at  timestamp with time zone NOT NULL DEFAULT now(),
+    -- Rend l'octroi idempotent (ON CONFLICT DO NOTHING).
+    CONSTRAINT permissions_admin_unique UNIQUE (compte_id, permission)
+);
+
+CREATE INDEX idx_permissions_admin_compte ON public.permissions_admin(compte_id);
 
 -- LIAISONS_DEMANDES -- file d'attente du rattachement compte <-> joueur.
 CREATE TABLE public.liaisons_demandes (

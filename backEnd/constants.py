@@ -85,9 +85,33 @@ DISCORD_HTTP_TIMEOUT = 10
 
 ROLE_PLAYER = "player"
 ROLE_ADMIN = "admin"
+# Palier intermediaire : tout le catalogue delegable ci-dessous, SAUF les jetons
+# de bot. Designe par le superadmin seul, jamais par un pair.
+ROLE_CHEF_ADMIN = "chef_admin"
 ROLE_SUPERADMIN = "superadmin"
 # Ordre de privilege : un superadmin satisfait une exigence d'admin.
-ROLE_HIERARCHY = {ROLE_PLAYER: 0, ROLE_ADMIN: 1, ROLE_SUPERADMIN: 2}
+ROLE_HIERARCHY = {ROLE_PLAYER: 0, ROLE_ADMIN: 1, ROLE_CHEF_ADMIN: 2, ROLE_SUPERADMIN: 3}
+
+# Catalogue des permissions delegables a un compte role=admin, une par une.
+#
+# Les jetons de bot n'y figurent JAMAIS : c'est une capacite de role, verifiee
+# par role_required(ROLE_SUPERADMIN) en direct. Ce n'est pas une case decochee,
+# c'est un pouvoir qui n'existe pas dans ce systeme -- y compris pour un
+# superadmin qui voudrait le deleguer.
+#
+# Meme chose pour le reset global, la purge RGPD, l'annulation de tournoi et le
+# changement de role : capacites de role, jamais des entrees d'ici.
+# Cartographie complete : docs/hierarchie-admin-plan.md, annexe A.
+PERMISSIONS_CATALOGUE = frozenset({
+    "gestion_joueurs",
+    "gestion_ligues",
+    "gestion_saisons",
+    "gestion_liaisons",
+    "gestion_comptes",
+    "gestion_invitations",
+    "gestion_config",
+    "gestion_matchmaking",
+})
 
 # --- Matchmaking ----------------------------------------------------------
 # Taille maximale d'un lobby. Cote serveur depuis que la page admin et le bot

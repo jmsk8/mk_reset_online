@@ -12,6 +12,15 @@ serveur, et tous les navigateurs la regardent.
 | [equilibrage.md](equilibrage.md) | Comment régler les statistiques des pilotes, et avec quel banc |
 | [../../tracks/README.md](../../tracks/README.md) | Comment dessiner un circuit |
 
+## Chantiers — ce qui n'est pas encore construit
+
+Une conception écrite avant le code, pour pouvoir l'implémenter plus tard sans refaire
+l'analyse. Rien de ce qu'ils décrivent ne tourne.
+
+| Document | Sujet |
+|---|---|
+| [moteur-cpp-plan.md](moteur-cpp-plan.md) | Reprendre la simulation en C++ derrière le même protocole, front inchangé, moteur JS conservé en référence |
+
 ## Archives — des décisions passées
 
 Ces documents décrivent un état du code qui n'existe plus. Ils sont gardés parce

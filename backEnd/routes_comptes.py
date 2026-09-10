@@ -19,10 +19,13 @@ import requests
 
 from flask import Blueprint, jsonify, request, g, make_response
 
-from constants import (ROLE_ADMIN, ROLE_SUPERADMIN, ROLE_HIERARCHY, CGU_VERSION,
+from constants import (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERARCHY,
+                       CGU_VERSION, PERMISSIONS_CATALOGUE,
                        DEFAULT_MU, DEFAULT_SIGMA, DISCORD_HTTP_TIMEOUT,
                        AVATAR_CACHE_TTL, AVATAR_MAX_BYTES)
-from auth import player_required, role_required, admin_or_role_required
+from auth import (player_required, role_required, admin_or_role_required,
+                 permission_required, compte_cible_protegee,
+                 permissions_delegables_par, refuse_auto_modification)
 from auth_discord import avatar_url, hash_token
 from cache import invalidate_cache
 from services import (construire_lobbies, resoudre_joueurs_matchmaking,
@@ -342,7 +345,7 @@ def annuler_demande():
 # ---------------------------------------------------------------------------
 
 @comptes_bp.route('/admin/liaisons', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_liaisons')
 def lister_liaisons():
     statut = request.args.get('statut', 'pending')
     if statut not in ('pending', 'approved', 'rejected', 'all'):
@@ -400,7 +403,7 @@ def lister_liaisons():
 
 
 @comptes_bp.route('/admin/liaisons/<int:demande_id>/approve', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_liaisons')
 def approuver_liaison(demande_id):
     """Approuve une revendication et rattache le compte au joueur.
 
@@ -509,7 +512,7 @@ def approuver_liaison(demande_id):
 
 
 @comptes_bp.route('/admin/liaisons/<int:demande_id>/reject', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_liaisons')
 def refuser_liaison(demande_id):
     motif = ((request.get_json(silent=True) or {}).get('motif') or '')[:500] or None
     try:
@@ -558,7 +561,7 @@ def refuser_liaison(demande_id):
 # ---------------------------------------------------------------------------
 
 @comptes_bp.route('/admin/comptes', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_comptes')
 def lister_comptes():
     """Liste des comptes, avec l'ecart entre pseudo Discord et nom du joueur.
 
@@ -668,7 +671,7 @@ def _verifier_sync(cur, compte_id):
 
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/sync-preview', methods=['GET'])
-@admin_or_role_required
+@permission_required('gestion_comptes')
 def apercu_sync(compte_id):
     """Avant/apres, sans rien ecrire."""
     try:
@@ -684,7 +687,8 @@ def apercu_sync(compte_id):
 
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/sync', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_comptes')
+@compte_cible_protegee
 def synchroniser_profil(compte_id):
     """Propage le pseudo Discord vers joueurs.nom. Geste ADMIN, jamais automatique.
 
@@ -729,20 +733,59 @@ def synchroniser_profil(compte_id):
 
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/role', methods=['POST'])
-@role_required(ROLE_SUPERADMIN)
+@role_required(ROLE_CHEF_ADMIN)
+@compte_cible_protegee
 def changer_role(compte_id):
-    """Attribue ou retire un role. Reservee au superadmin.
+    """Attribue ou retire un role. Ouverte au chef_admin et au superadmin.
 
-    SEULE route qui ecrit comptes.role, seule frontiere de privilege de
-    l'application. Le garde-fou du dernier superadmin separe « je me suis
-    trompe » de « plus personne ne peut administrer le site ».
+    Frontiere de privilege de l'application. Le garde-fou du dernier superadmin
+    separe « je me suis trompe » de « plus personne ne peut administrer le
+    site ».
+
+    Cette route ne pose JAMAIS superadmin : ce role ne se transmet que par legs
+    (docs/hierarchie-admin-plan.md 6bis), une transaction unique qui retrograde
+    l'ancien et promeut le nouveau. La garde du dernier superadmin ci-dessous
+    est ce qui porte le « jamais zero » ICI ; le legs le porte autrement, par
+    son atomicite -- d'ou deux routes distinctes, a ne pas fusionner (6bis.1).
+
+    Plafond par acteur : le superadmin pose player/admin/chef_admin, un
+    chef_admin seulement player/admin -- il ne cree donc pas un pair. Il ne peut
+    pas non plus toucher une cible deja chef_admin : c'est compte_cible_protegee
+    qui l'en empeche, pas ce corps de fonction (R-56).
     """
-    nouveau = (request.get_json(silent=True) or {}).get('role')
+    acteur = g.compte
+    acteur_est_superadmin = acteur['role'] == ROLE_SUPERADMIN
+
+    corps = request.get_json(silent=True) or {}
+    nouveau = corps.get('role')
     if nouveau not in ROLE_HIERARCHY:
         return jsonify({
             "error": "Role invalide", "code": "role_invalide",
             "roles": sorted(ROLE_HIERARCHY, key=ROLE_HIERARCHY.get),
         }), 400
+
+    # Le role superadmin ne s'attribue pas : il se legue. Sans ce refus,
+    # ROLE_HIERARCHY (qui a gagne chef_admin) laisserait poser 'superadmin'
+    # ici et heurter idx_comptes_superadmin_unique.
+    if nouveau == ROLE_SUPERADMIN:
+        return jsonify({
+            "error": "Le role superadmin ne s'attribue pas : il se legue.",
+            "code": "superadmin_non_attribuable",
+        }), 400
+
+    # Un chef_admin ne designe pas un pair : seul le superadmin le fait
+    # (plan 2, contrainte 3).
+    if nouveau == ROLE_CHEF_ADMIN and not acteur_est_superadmin:
+        return jsonify({
+            "error": "Seul le super-administrateur peut designer un chef d'administration.",
+            "code": "droits_insuffisants",
+        }), 403
+
+    # Auto-modification de role interdite, superadmin compris : sa seule sortie
+    # du role est le legs (plan 2, contrainte 4).
+    erreur = refuse_auto_modification(_acteur_id(), compte_id)
+    if erreur is not None:
+        return erreur
 
     try:
         with get_db_connection() as conn:
@@ -758,6 +801,16 @@ def changer_role(compte_id):
                         conn.rollback()
                         return jsonify({"status": "success", "role": nouveau, "inchange": True})
 
+                    # CEINTURE. Depuis la hierarchie a 4 roles, ce cas n'est plus
+                    # atteignable par cette route : une cible superadmin est
+                    # arretee avant par compte_cible_protegee (403), et l'acteur
+                    # lui-meme par refuse_auto_modification (403). Un superadmin
+                    # ne quitte son role que par le legs.
+                    #
+                    # Conservee volontairement : elle ne coute qu'un SELECT dans
+                    # un cas qui ne se produit pas, et redeviendrait la derniere
+                    # barriere si l'un de ces deux gardes sautait. Ne pas la
+                    # retirer au motif qu'elle « ne sert jamais ».
                     if ancien == ROLE_SUPERADMIN and nouveau != ROLE_SUPERADMIN:
                         cur.execute(
                             "SELECT COUNT(*) FROM comptes WHERE role = %s AND id <> %s",
@@ -773,6 +826,26 @@ def changer_role(compte_id):
                                 "code": "dernier_superadmin",
                             }), 409
 
+                    # R-60 : retomber a zero chef_admin retire le filet sur lequel
+                    # R-47 s'appuie en cas de verrouillage du superadmin. Pas un
+                    # blocage -- le superadmin reste souverain -- mais jamais un
+                    # clic silencieux : la confirmation est un champ nomme.
+                    if ancien == ROLE_CHEF_ADMIN and nouveau != ROLE_CHEF_ADMIN:
+                        cur.execute(
+                            "SELECT COUNT(*) FROM comptes WHERE role = %s AND id <> %s",
+                            (ROLE_CHEF_ADMIN, compte_id),
+                        )
+                        if (cur.fetchone()[0] == 0
+                                and corps.get('confirmer_dernier_chef_admin') is not True):
+                            conn.rollback()
+                            return jsonify({
+                                "error": "C'est le dernier chef d'administration. Sans lui, si le "
+                                         "super-administrateur perd son acces, plus personne ne "
+                                         "pourra administrer le site sans intervention en base. "
+                                         "Confirmez pour continuer.",
+                                "code": "dernier_chef_admin",
+                            }), 409
+
                     cur.execute(
                         "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
                         (nouveau, compte_id),
@@ -782,6 +855,16 @@ def changer_role(compte_id):
                               else 'role_attribue')
                     _audit(cur, action, 'compte', compte_id,
                            {"ancien": ancien, "nouveau": nouveau, "origine": "ihm"})
+
+                    # R-53 : quitter le role admin purge les permissions a la
+                    # carte. Sans ca, un compte retrograde puis re-promu plus
+                    # tard retrouverait des droits que personne n'a redonnes.
+                    if ancien == ROLE_ADMIN and nouveau != ROLE_ADMIN:
+                        cur.execute("DELETE FROM permissions_admin WHERE compte_id = %s",
+                                    (compte_id,))
+                        if cur.rowcount:
+                            _audit(cur, 'permissions_purgees', 'compte', compte_id,
+                                   {"motif": "sortie_role_admin", "nouveau_role": nouveau})
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -794,8 +877,270 @@ def changer_role(compte_id):
     return jsonify({"status": "success", "ancien": ancien, "role": nouveau})
 
 
+# ---------------------------------------------------------------------------
+# Permissions a la carte -- accordees a un compte role=admin, une par une.
+# ---------------------------------------------------------------------------
+
+@comptes_bp.route('/admin/comptes/<int:compte_id>/permissions', methods=['GET'])
+@role_required(ROLE_CHEF_ADMIN)
+def lister_permissions(compte_id):
+    """Permissions d'un compte, plus le catalogue delegable par l'acteur.
+
+    Lecture seule : pas de compte_cible_protegee, voir un compte n'est pas agir
+    dessus (plan 4.4, point B).
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT role FROM comptes WHERE id = %s", (compte_id,))
+                row = cur.fetchone()
+                if row is None:
+                    return jsonify({"error": "Compte introuvable"}), 404
+                cur.execute(
+                    "SELECT permission FROM permissions_admin WHERE compte_id = %s "
+                    "ORDER BY permission",
+                    (compte_id,),
+                )
+                accordees = [r[0] for r in cur.fetchall()]
+    except Exception as e:
+        logger.error("Lecture des permissions du compte %s impossible: %s", compte_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    return jsonify({
+        "compte_id": compte_id,
+        "role": row[0],
+        "permissions": accordees,
+        # Ce que l'acteur peut accorder, pour que l'IHM grise le reste. Le
+        # backend reste seul juge : ce champ informe, il n'autorise pas.
+        "delegables": sorted(permissions_delegables_par(g.compte)),
+    })
+
+
+@comptes_bp.route('/admin/comptes/<int:compte_id>/permissions/<permission>', methods=['POST'])
+@role_required(ROLE_CHEF_ADMIN)
+@compte_cible_protegee
+def accorder_permission(compte_id, permission):
+    """Accorde une permission nommee a un compte role=admin.
+
+    Trois refus distincts, a ne pas confondre : la permission n'existe pas
+    (catalogue), l'acteur ne la possede pas lui-meme (plafond, contrainte 5),
+    la cible n'est pas un admin (les autres roles n'en ont pas l'usage).
+    """
+    if permission not in PERMISSIONS_CATALOGUE:
+        return jsonify({
+            "error": "Permission inconnue", "code": "permission_inconnue",
+            "permissions": sorted(PERMISSIONS_CATALOGUE),
+        }), 400
+
+    # « Il ne peut pas donner des droits qu'il n'a pas » (plan 2, contrainte 5).
+    if permission not in permissions_delegables_par(g.compte):
+        return jsonify({
+            "error": "Vous ne pouvez pas accorder un droit que vous n'avez pas.",
+            "code": "plafond_delegation",
+        }), 403
+
+    erreur = refuse_auto_modification(_acteur_id(), compte_id)
+    if erreur is not None:
+        return erreur
+
+    try:
+        with get_db_connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT role FROM comptes WHERE id = %s FOR UPDATE", (compte_id,))
+                    row = cur.fetchone()
+                    if row is None:
+                        conn.rollback()
+                        return jsonify({"error": "Compte introuvable"}), 404
+                    if row[0] != ROLE_ADMIN:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Les permissions ne s'accordent qu'a un compte admin. "
+                                     "Un chef d'administration a deja tout le catalogue.",
+                            "code": "cible_non_admin",
+                        }), 409
+
+                    # accorde_par vient de la session, JAMAIS du corps (R-49).
+                    cur.execute(
+                        "INSERT INTO permissions_admin (compte_id, permission, accorde_par) "
+                        "VALUES (%s, %s, %s) ON CONFLICT (compte_id, permission) DO NOTHING",
+                        (compte_id, permission, _acteur_id()),
+                    )
+                    nouvelle = bool(cur.rowcount)
+                    if nouvelle:
+                        _audit(cur, 'permission_accordee', 'compte', compte_id,
+                               {"permission": permission})
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+    except Exception as e:
+        logger.error("Octroi de '%s' au compte %s impossible: %s", permission, compte_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    return jsonify({"status": "success", "permission": permission, "inchange": not nouvelle})
+
+
+@comptes_bp.route('/admin/comptes/<int:compte_id>/permissions/<permission>', methods=['DELETE'])
+@role_required(ROLE_CHEF_ADMIN)
+@compte_cible_protegee
+def retirer_permission(compte_id, permission):
+    """Retire une permission. Un DELETE, pas un drapeau : permissions_admin est
+    l'etat courant des droits, l'historique vit dans audit_admin (plan 3.3).
+
+    Le plafond s'applique aussi au retrait : sans ca, un acteur pourrait defaire
+    ce qu'il n'aurait pas pu faire.
+    """
+    if permission not in PERMISSIONS_CATALOGUE:
+        return jsonify({
+            "error": "Permission inconnue", "code": "permission_inconnue",
+        }), 400
+
+    if permission not in permissions_delegables_par(g.compte):
+        return jsonify({
+            "error": "Vous ne pouvez pas retirer un droit que vous n'avez pas.",
+            "code": "plafond_delegation",
+        }), 403
+
+    erreur = refuse_auto_modification(_acteur_id(), compte_id)
+    if erreur is not None:
+        return erreur
+
+    try:
+        with get_db_connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM permissions_admin WHERE compte_id = %s AND permission = %s",
+                        (compte_id, permission),
+                    )
+                    retiree = bool(cur.rowcount)
+                    if retiree:
+                        _audit(cur, 'permission_retiree', 'compte', compte_id,
+                               {"permission": permission})
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+    except Exception as e:
+        logger.error("Retrait de '%s' au compte %s impossible: %s", permission, compte_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    return jsonify({"status": "success", "permission": permission, "inchange": not retiree})
+
+
+# ---------------------------------------------------------------------------
+# Legs du role superadmin -- geste unique, atomique, irreversible.
+# ---------------------------------------------------------------------------
+
+@comptes_bp.route('/admin/comptes/<int:compte_id>/leguer-superadmin', methods=['POST'])
+@role_required(ROLE_SUPERADMIN)
+# PAS de @compte_cible_protegee : ce decorateur refuse toute action sur un
+# superadmin, or l'acteur EST le superadmin et la cible ne l'est pas encore.
+# La protection equivalente est portee par role_required(SUPERADMIN) ci-dessus
+# (seul le superadmin appelle) et par le refus d'auto-legs plus bas.
+def leguer_superadmin(compte_id):
+    """Legue le role superadmin a un autre compte, quel que soit son role.
+
+    SECONDE route qui ecrit comptes.role, avec changer_role -- exception
+    deliberee et etroite a R-40. Ne JAMAIS fusionner les deux : la garde du
+    dernier superadmin de changer_role refuserait precisement la retrogradation
+    par laquelle ce legs commence. Chacune porte le « jamais zero » a sa facon,
+    l'une par un refus, l'autre par son atomicite (plan 6bis.1).
+
+    L'ancien superadmin devient chef_admin : il redevient touchable par le
+    nouveau, sans retomber a zero.
+    """
+    acteur_id = _acteur_id()
+
+    erreur = refuse_auto_modification(acteur_id, compte_id)
+    if erreur is not None:
+        return erreur
+
+    confirmation = (request.get_json(silent=True) or {}).get('confirmation_pseudo')
+
+    try:
+        with get_db_connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    # Les deux lignes verrouillees en UNE requete, triees par id :
+                    # deux SELECT ... FOR UPDATE dans un ordre dependant des
+                    # parametres sont un interblocage en attente.
+                    cur.execute(
+                        "SELECT id, role, discord_username FROM comptes WHERE id IN (%s, %s) "
+                        "ORDER BY id FOR UPDATE",
+                        (min(acteur_id, compte_id), max(acteur_id, compte_id)),
+                    )
+                    lignes = {r[0]: r for r in cur.fetchall()}
+
+                    cible = lignes.get(compte_id)
+                    if cible is None:
+                        conn.rollback()
+                        return jsonify({"error": "Compte introuvable"}), 404
+
+                    # Role de l'acteur relu SOUS verrou : role_required l'a lu
+                    # avant la transaction, et deux legs concurrents ne doivent
+                    # pas reussir tous les deux.
+                    moi = lignes.get(acteur_id)
+                    if moi is None or moi[1] != ROLE_SUPERADMIN:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Vous n'etes plus super-administrateur.",
+                            "code": "plus_superadmin",
+                        }), 409
+
+                    # Confirmation forte sur discord_username (le handle stable),
+                    # jamais sur le nom d'affichage : celui-ci est librement
+                    # modifiable et un homonyme rendrait la confirmation vide de
+                    # sens (plan 6bis.2).
+                    if not confirmation or confirmation != cible[2]:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Le pseudo saisi ne correspond pas au compte cible.",
+                            "code": "confirmation_invalide",
+                        }), 400
+
+                    ancien_role_cible = cible[1]
+
+                    # ORDRE IMPOSE par l'index partiel non-deferrable (plan 3.2) :
+                    # retrograder l'ancien AVANT de promouvoir le nouveau.
+                    # L'inverse leve 23505 a chaque tentative.
+                    cur.execute(
+                        "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
+                        (ROLE_CHEF_ADMIN, acteur_id),
+                    )
+                    cur.execute(
+                        "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
+                        (ROLE_SUPERADMIN, compte_id),
+                    )
+
+                    # La cible quitte le role admin : meme purge qu'ailleurs (R-53).
+                    if ancien_role_cible == ROLE_ADMIN:
+                        cur.execute("DELETE FROM permissions_admin WHERE compte_id = %s",
+                                    (compte_id,))
+                        if cur.rowcount:
+                            _audit(cur, 'permissions_purgees', 'compte', compte_id,
+                                   {"motif": "legs_superadmin"})
+
+                    # UNE seule ligne d'audit : c'est un seul geste (plan 3.4).
+                    _audit(cur, 'superadmin_legue', 'compte', compte_id,
+                           {"ancien": acteur_id, "nouveau": compte_id,
+                            "ancien_role_cible": ancien_role_cible})
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+    except Exception as e:
+        logger.error("Legs du superadmin %s -> %s impossible: %s", acteur_id, compte_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    logger.warning("LEGS SUPERADMIN : %s -> %s", acteur_id, compte_id)
+    return jsonify({"status": "success", "ancien": acteur_id, "nouveau": compte_id})
+
+
 @comptes_bp.route('/admin/comptes/<int:compte_id>/sessions', methods=['DELETE'])
-@admin_or_role_required
+@permission_required('gestion_comptes')
+@compte_cible_protegee
 def revoquer_sessions(compte_id):
     """Ferme toutes les sessions d'un compte, sur tous ses appareils.
 
@@ -824,7 +1169,8 @@ def revoquer_sessions(compte_id):
 
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/delier', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_comptes')
+@compte_cible_protegee
 def delier_compte(compte_id):
     """Detache un compte de sa fiche joueur. L'inverse de /approve.
 
@@ -895,7 +1241,8 @@ def delier_compte(compte_id):
 
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/statut', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_comptes')
+@compte_cible_protegee
 def changer_statut(compte_id):
     """Suspend ou reactive un compte. Ne touche jamais au role ni au joueur lie."""
     nouveau = (request.get_json(silent=True) or {}).get('statut')
@@ -1167,7 +1514,7 @@ def avatar_moi():
 
 
 @comptes_bp.route('/avatar/compte/<int:compte_id>', methods=['GET'])
-@admin_or_role_required
+@role_required(ROLE_ADMIN)
 def avatar_compte(compte_id):
     """Avatar d'un compte, quel que soit son statut : l'administration montre
     aussi les comptes en attente et suspendus."""
@@ -1192,7 +1539,7 @@ def avatar_compte(compte_id):
 # ---------------------------------------------------------------------------
 
 @comptes_bp.route('/admin/matchmaking', methods=['POST'])
-@admin_or_role_required
+@permission_required('gestion_matchmaking')
 def matchmaking_admin():
     """Compose les lobbies pour la page d'administration.
 
@@ -1429,7 +1776,7 @@ def marquer_notifications_lues():
 
 
 @comptes_bp.route('/admin/notifications', methods=['GET'])
-@admin_or_role_required
+@role_required(ROLE_ADMIN)
 def compteur_admin():
     """Ce qui attend une decision d'administrateur, pour les pastilles de la
     navbar. Appelee a chaque chargement de page : elle reste un COUNT."""
@@ -1655,7 +2002,7 @@ def supprimer_mon_compte():
 
 
 @comptes_bp.route('/admin/purge-rgpd', methods=['POST'])
-@admin_or_role_required
+@role_required(ROLE_CHEF_ADMIN)
 def declencher_purge():
     """Lance la purge des donnees expirees.
 
