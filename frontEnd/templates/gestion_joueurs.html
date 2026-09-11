@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestion des Joueurs - Admin</title>
+    <title>Fiches joueurs - Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/css/styles.css">
@@ -20,124 +20,11 @@
 
     <section class="section">
         <div class="container">
-            <h1 class="title has-text-centered glow-text mb-6">Gestion des Joueurs</h1>
+            <h1 class="title has-text-centered glow-text mb-6">Fiches joueurs</h1>
 
-            {# Hors de la grille des outils de gestion : capacite reservee, pas une
-               operation de routine. Voir partiels/reset_global.html et Phase 0 de
-               docs/hierarchie-admin-plan.md.
-
-               Capacite de role, donc testee par le role : elle n'est PAS dans le
-               catalogue des permissions deleguables, et ne doit jamais y entrer. #}
-            {% if role_admin in ('chef_admin', 'superadmin') %}
-                {% include 'partiels/reset_global.html' %}
-            {% endif %}
 
             <div class="columns is-variable is-6">
                 <div class="column is-8">
-
-                    <div class="card glass-card mb-6 fade-in">
-                        <div class="card-header">
-                            <p class="card-header-title"><i class="fas fa-cogs mr-2"></i> Configuration Globale</p>
-                        </div>
-                        <div class="card-content">
-                            <form id="configForm">
-                                <div class="columns is-multiline is-variable is-4">
-                                    <div class="column is-4">
-                                        <div class="field">
-                                            <label class="label has-text-white">Valeur Tau</label>
-                                            <div class="control">
-                                                <input class="input" type="number" step="0.001" id="configTau" placeholder="0.083">
-                                            </div>
-                                            <p class="help has-text-grey-light">Incertitude dynamique</p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="column is-4">
-                                        <div class="field">
-                                            <label class="label has-text-white">Limite Unranked</label>
-                                            <div class="control">
-                                                <input class="input" type="number" step="1" id="configUnrankedLimit" placeholder="10">
-                                            </div>
-                                            <p class="help has-text-grey-light">Tournois manqués</p>
-                                        </div>
-                                    </div>
-
-                                    <div class="column is-4">
-                                        <div class="field">
-                                            <label class="label has-text-white">Rang Sigma</label>
-                                            <div class="control">
-                                                <input class="input" type="number" step="0.01" id="configSigmaLimit" placeholder="4.0">
-                                            </div>
-                                            <p class="help has-text-grey-light">Sigma max pour Rank</p>
-                                        </div>
-                                    </div>
-
-                                    <div class="column is-12">
-                                        <div class="box has-background-dark" style="border: 1px solid #22c55e;">
-                                            <label class="label has-text-white mb-3">Indice de Performance (IP) du classement de saison en cours</label>
-                                            <div class="field">
-                                                <div class="control">
-                                                    <label class="radio has-text-white mr-4">
-                                                        <input type="radio" name="ipVersionLive" value="v1" id="configIpVersionV1">
-                                                        <span class="tag is-light ml-1">v1</span> perf brut 
-                                                    </label>
-                                                    <label class="radio has-text-white">
-                                                        <input type="radio" name="ipVersionLive" value="v2" id="configIpVersionV2">
-                                                        <span class="tag is-success is-light ml-1">v2</span> applique une force de lobby à la perf du joueur
-                                                    </label>
-                                                </div>
-                                            </div>
-                                            <p class="has-text-grey-light is-size-7 is-italic mt-2">
-                                                Pilote uniquement le classement de saison en cours. Les récaps déjà générés ne bougent pas.
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div class="column is-12">
-                                        <div class="box has-background-dark" style="border: 1px solid #3b82f6;">
-                                            <label class="label has-text-white mb-3">Gestion des Absences (Ghost)</label>
-                                            <div class="field mb-4">
-                                                <input type="checkbox" id="configGhost" class="switch is-rounded is-info">
-                                                <label for="configGhost" class="has-text-white ml-2">Activer les pénalités d'absence</label>
-                                            </div>
-                                            <div class="columns is-mobile is-multiline">
-                                                <div class="column is-6">
-                                                    <label class="has-text-white is-size-7">Après combien de jours sans jouer</label>
-                                                    <div class="field has-addons mt-1">
-                                                        <p class="control"><input class="input is-small" type="number" step="1" min="1" id="configGhostThresholdDays" placeholder="28" style="width: 80px;"></p>
-                                                        <p class="control"><a class="button is-static is-small">jours</a></p>
-                                                    </div>
-                                                </div>
-                                                <div class="column is-6">
-                                                    <label class="has-text-white is-size-7">Puis une pénalité tous les</label>
-                                                    <div class="field has-addons mt-1">
-                                                        <p class="control"><input class="input is-small" type="number" step="1" min="1" id="configGhostIntervalDays" placeholder="7" style="width: 80px;"></p>
-                                                        <p class="control"><a class="button is-static is-small">jours</a></p>
-                                                    </div>
-                                                </div>
-                                                <div class="column is-6">
-                                                    <label class="has-text-white is-size-7">Valeur de la pénalité</label>
-                                                    <div class="field has-addons mt-1">
-                                                        <p class="control"><a class="button is-static is-small">Sigma +</a></p>
-                                                        <p class="control"><input class="input is-small" type="number" step="0.01" id="configGhostPenalty" placeholder="0.1" style="width: 80px;"></p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <p class="has-text-grey-light is-size-7 is-italic mt-2">
-                                                Le décompte part du dernier tournoi joué par le joueur. Un changement ne s'applique qu'aux tournois ajoutés ensuite.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="column is-12 has-text-right">
-                                        <button type="submit" class="button is-info">
-                                            <i class="fas fa-save mr-2"></i> Enregistrer la configuration
-                                        </button>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
 
                     <div class="card glass-card mb-6 fade-in">
                         <div class="card-header">

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ajouter un Tournoi</title>
+    <title>Gestion tournois - Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/css/styles.css">
@@ -36,7 +36,7 @@
     <section class="section">
         <div class="container">
             <h1 class="title has-text-centered mb-6">
-                <i class="fas fa-plus-circle"></i> Enregistrer un Tournoi
+                <i class="fas fa-trophy"></i> Gestion tournois
             </h1>
 
             <div class="columns is-variable is-6">
@@ -142,10 +142,143 @@
                     </div>
                 </div>
             </div>
+
+            {# ---- Annuler le dernier tournoi -------------------------------
+               Déplacé depuis navbar.html : le bouton y était global, donc
+               présent sur toutes les pages admin alors qu'il n'a de sens qu'ici.
+               Un geste irréversible accessible partout invite au clic
+               accidentel (onglets-admin-plan.md 3.1).
+
+               Capacité de rôle, pas une permission déléguable : testée par le
+               rôle, jamais par peut(). #}
+            {% if role_admin in ('chef_admin', 'superadmin') %}
+            <div class="card glass-card mb-6" id="bloc-annuler-tournoi"
+                 style="border: 1px solid rgba(239, 68, 68, 0.45);">
+                <div class="card-header" style="background: rgba(239, 68, 68, 0.08);">
+                    <p class="card-header-title">
+                        <span class="icon is-medium mr-2"><i class="fas fa-undo has-text-danger"></i></span>
+                        Annuler le dernier tournoi
+                    </p>
+                    <span class="tag is-danger is-light is-uppercase mt-3 mr-4" style="height: 1.75em;">
+                        Irréversible
+                    </span>
+                </div>
+                <div class="card-content">
+                    <p class="has-text-grey-light is-size-7 mb-4">
+                        Retire le tournoi le plus récent et <strong>restaure les scores des
+                        joueurs</strong> tels qu'ils étaient avant. Ne concerne que le dernier :
+                        un tournoi plus ancien ne peut pas être supprimé depuis l'interface.
+                    </p>
+                    <div class="buttons is-right">
+                        <button onclick="revertLastTournament()" class="button is-danger is-outlined">
+                            <i class="fas fa-undo mr-2"></i> Annuler le dernier tournoi
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {# ---- Liste des tournois enregistrés ---------------------------
+               Alimentée par GET /stats/tournois, qui existait déjà : rien de
+               nouveau côté backend. Lecture seule -- la suppression d'un
+               tournoi ancien est hors périmètre tant que delete_tournament ne
+               restaure pas mu/sigma (R-37, onglets-admin-plan.md 4). #}
+            <div class="card glass-card mb-6">
+                <div class="card-header">
+                    <p class="card-header-title">
+                        <span class="icon is-medium mr-2"><i class="fas fa-list has-text-info"></i></span>
+                        Tournois enregistrés
+                    </p>
+                    <span class="tag is-info is-light mt-3 mr-4" style="height: 1.75em;">
+                        {{ tournois|length }}
+                    </span>
+                </div>
+                <div class="card-content">
+                    {% if tournois %}
+                    <div style="max-height: 26rem; overflow-y: auto;">
+                        <table class="table is-fullwidth is-striped is-hoverable">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Ligue</th>
+                                    <th class="has-text-centered">Joueurs</th>
+                                    <th>Vainqueur</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {# Le plus récent en tête : c'est celui que le bouton
+                                   d'annulation ci-dessus retirerait. #}
+                                {% for t in tournois %}
+                                <tr>
+                                    <td>{{ t.date }}</td>
+                                    <td>
+                                        {% if t.ligue_couleur %}
+                                            <span class="tag" style="background-color: {{ t.ligue_couleur }}; color: #fff;">
+                                                {{ t.ligue_nom }}
+                                            </span>
+                                        {% else %}
+                                            <span class="has-text-grey">{{ t.ligue_nom }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="has-text-centered">{{ t.nb_joueurs }}</td>
+                                    <td>{{ t.vainqueur or '—' }}</td>
+                                    <td class="has-text-right">
+                                        <a class="button is-small is-light" href="/stats/tournoi/{{ t.id }}">
+                                            <i class="fas fa-eye mr-1"></i> Détail
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="has-text-grey">Aucun tournoi enregistré pour l'instant.</p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </section>
 
 <script>
+        {# Déplacée depuis navbar.html avec le bouton qu'elle sert : elle y était
+           chargée sur toutes les pages du site pour un geste qui n'a lieu qu'ici.
+           Sous le même gate que le bouton — inutile de servir le code d'une
+           action à qui ne peut pas la déclencher. #}
+        {% if role_admin in ('chef_admin', 'superadmin') %}
+        function revertLastTournament() {
+            if (!confirm("⚠️ ATTENTION : Voulez-vous vraiment ANNULER le dernier tournoi enregistré ?\n\nLes scores des joueurs reviendront à leur état précédent.\nCette action est irréversible.")) {
+                return;
+            }
+
+            document.body.style.cursor = 'wait';
+            const csrfToken = "{{ csrf_token() }}";
+
+            fetch('/admin/revert_last', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.body.style.cursor = 'default';
+                if (data.status === 'success') {
+                    alert("✅ Succès : " + data.message);
+                    window.location.reload();
+                } else {
+                    alert("❌ Erreur : " + (data.message || data.error));
+                }
+            })
+            .catch(err => {
+                document.body.style.cursor = 'default';
+                alert("Erreur réseau");
+            });
+        }
+        {% endif %}
+
         function escapeHtml(str) {
             if (str == null) return '';
             return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');

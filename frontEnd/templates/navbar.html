@@ -216,35 +216,44 @@
                capacités de rôle (annuler un tournoi) se testent par rôle, elles
                ne sont pas déléguables. Voir hierarchie-admin-plan.md, annexe B.4. #}
             <div class="navbar-dropdown is-right">
+              {# 1 — Tournois #}
               {% if peut('gestion_joueurs') %}
-                <a class="navbar-item" href="/add_tournament">
-                  <i class="fas fa-plus-circle mr-2"></i> Enregistrer un Tournoi
-                </a>
-                <a class="navbar-item" href="/admin/gestion">
-                  <i class="fas fa-users-cog mr-2"></i> Gestion TrueSkill
+                <a class="navbar-item" href="/admin/tournois">
+                  <i class="fas fa-trophy mr-2"></i> Gestion tournois
                 </a>
               {% endif %}
 
+              {# 2 — Réglages : gestion_config OU la capacité de reset global.
+                 Le `or` reflète la page, qui héberge les deux (onglets-admin 3.2). #}
+              {% if peut('gestion_config') or role_admin in ('chef_admin', 'superadmin') %}
+                <a class="navbar-item" href="/admin/reglages">
+                  <i class="fas fa-sliders mr-2"></i> Réglages TrueSkill
+                </a>
+              {% endif %}
+
+              {# 3 — Fiches joueurs #}
+              {% if peut('gestion_joueurs') %}
+                <a class="navbar-item" href="/admin/joueurs-fiches">
+                  <i class="fas fa-id-card mr-2"></i> Fiches joueurs
+                </a>
+              {% endif %}
+
+              {# 4 — Ligues #}
               {% if peut('gestion_ligues') %}
                 <a class="navbar-item" href="/admin/ligues">
                   <i class="fas fa-shield-alt mr-2"></i> Gestion Ligues
                 </a>
               {% endif %}
 
+              {# 5 — Saisons #}
               {% if peut('gestion_saisons') %}
                 <a class="navbar-item" href="/admin/saisons-gestion">
                   <i class="fas fa-calendar-alt mr-2"></i> Gestion Saisons
                 </a>
               {% endif %}
 
-              {% if peut('gestion_matchmaking') %}
-                <a class="navbar-item" href="/admin/matchmaking">
-                  <i class="fas fa-random mr-2"></i> Matchmaking
-                </a>
-              {% endif %}
-
-              {# Onglet composite : trois zones déléguables séparément. Chaque
-                 sous-onglet porte son propre gate dans la page elle-même. #}
+              {# 6 — Comptes. Onglet composite : trois zones déléguables
+                 séparément, chaque sous-onglet porte son gate dans la page. #}
               {% if peut('gestion_comptes') or peut('gestion_liaisons') or peut('gestion_invitations') %}
                 <a class="navbar-item" href="/admin/comptes">
                   <i class="fas fa-users-gear mr-2"></i> Gestion Comptes
@@ -252,13 +261,17 @@
                 </a>
               {% endif %}
 
-              {% if role_admin in ('chef_admin', 'superadmin') %}
-                <hr class="navbar-divider">
-
-                <a class="navbar-item has-text-danger" onclick="revertLastTournament()">
-                  <i class="fas fa-undo mr-2"></i> Annuler le dernier tournoi
+              {# 7 — Matchmaking #}
+              {% if peut('gestion_matchmaking') %}
+                <a class="navbar-item" href="/admin/matchmaking">
+                  <i class="fas fa-random mr-2"></i> Matchmaking
                 </a>
               {% endif %}
+
+              {# « Annuler le dernier tournoi » a rejoint la page Gestion tournois
+                 (onglets-admin-plan.md 3.1) : un geste irréversible accessible
+                 depuis toutes les pages admin invite au clic accidentel, et il
+                 n'a de sens qu'à côté de la liste des tournois. #}
 
               <hr class="navbar-divider">
 
@@ -547,35 +560,4 @@
       });
     }
   });
-
-  function revertLastTournament() {
-    if (!confirm("⚠️ ATTENTION : Voulez-vous vraiment ANNULER le dernier tournoi enregistré ?\n\nLes scores des joueurs reviendront à leur état précédent.\nCette action est irréversible.")) {
-        return;
-    }
-
-    document.body.style.cursor = 'wait';
-    const csrfToken = "{{ csrf_token() }}";
-
-    fetch('/admin/revert_last', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        document.body.style.cursor = 'default';
-        if (data.status === 'success') {
-            alert("✅ Succès : " + data.message);
-            window.location.reload();
-        } else {
-            alert("❌ Erreur : " + (data.message || data.error));
-        }
-    })
-    .catch(err => {
-        document.body.style.cursor = 'default';
-        alert("Erreur réseau");
-    });
-  }
 </script>
