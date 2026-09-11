@@ -233,25 +233,35 @@ async function loadPlayers() {
 }
 
 async function loadConfig() {
-    const res = await apiCall('/admin/config', 'GET');
-    if (res && !res.error) {
-        if (res.tau !== undefined) document.getElementById('configTau').value = res.tau;
-        if (res.ghost_enabled !== undefined) document.getElementById('configGhost').checked = res.ghost_enabled;
-        if (res.ghost_penalty !== undefined) document.getElementById('configGhostPenalty').value = res.ghost_penalty;
-        if (res.ghost_threshold_days !== undefined) document.getElementById('configGhostThresholdDays').value = res.ghost_threshold_days;
-        if (res.ghost_interval_days !== undefined) document.getElementById('configGhostIntervalDays').value = res.ghost_interval_days;
-        if (res.unranked_threshold !== undefined) document.getElementById('configUnrankedLimit').value = res.unranked_threshold;
-        
-        const sigmaInput = document.getElementById('configSigmaLimit');
-        if (sigmaInput && res.sigma_threshold !== undefined) {
-            sigmaInput.value = res.sigma_threshold;
-        }
+    // Le formulaire de configuration ne vit plus que sur la page Réglages : ce
+    // script sert aussi les Fiches joueurs, qui ne le contient pas. Sortir tôt
+    // évite l'appel réseau inutile ET la TypeError sur un getElementById nul,
+    // qui interromprait tout le reste du script.
+    if (!document.getElementById('configForm')) return;
 
-        if (res.ip_version_live !== undefined) {
-            const isV2 = res.ip_version_live === 'v2';
-            document.getElementById('configIpVersionV2').checked = isV2;
-            document.getElementById('configIpVersionV1').checked = !isV2;
-        }
+    const res = await apiCall('/admin/config', 'GET');
+    if (!res || res.error) return;
+
+    // Chaque champ est posé indépendamment : un id absent ne doit pas empêcher
+    // les suivants d'être remplis.
+    const poser = (id, valeur, propriete) => {
+        if (valeur === undefined) return;
+        const el = document.getElementById(id);
+        if (el) el[propriete || 'value'] = valeur;
+    };
+
+    poser('configTau', res.tau);
+    poser('configGhost', res.ghost_enabled, 'checked');
+    poser('configGhostPenalty', res.ghost_penalty);
+    poser('configGhostThresholdDays', res.ghost_threshold_days);
+    poser('configGhostIntervalDays', res.ghost_interval_days);
+    poser('configUnrankedLimit', res.unranked_threshold);
+    poser('configSigmaLimit', res.sigma_threshold);
+
+    if (res.ip_version_live !== undefined) {
+        const isV2 = res.ip_version_live === 'v2';
+        poser('configIpVersionV2', isV2, 'checked');
+        poser('configIpVersionV1', !isV2, 'checked');
     }
 }
 

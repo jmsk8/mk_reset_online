@@ -436,7 +436,13 @@ const httpServer = http.createServer((req, res) => {
             clients: clients.size,
             ticks: race ? race.ticks : 0,
             races: totalRaces,
-            uptime: Math.round(process.uptime())
+            uptime: Math.round(process.uptime()),
+            // Quel moteur repond vraiment. `make engine` dit ce qui est CHOISI
+            // dans .engine ; ce champ dit ce qui TOURNE. Les deux divergent tant
+            // qu'un `make re-race` n'a pas eu lieu — et un `docker compose up`
+            // tape a la main, hors du Makefile qui exporte RACE_CONTEXT, retombe
+            // sur ce moteur-ci sans le dire.
+            engine: 'js'
         }));
         return;
     }

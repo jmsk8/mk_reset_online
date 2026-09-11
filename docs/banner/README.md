@@ -12,14 +12,15 @@ serveur, et tous les navigateurs la regardent.
 | [equilibrage.md](equilibrage.md) | Comment régler les statistiques des pilotes, et avec quel banc |
 | [../../tracks/README.md](../../tracks/README.md) | Comment dessiner un circuit |
 
-## Chantiers — ce qui n'est pas encore construit
-
-Une conception écrite avant le code, pour pouvoir l'implémenter plus tard sans refaire
-l'analyse. Rien de ce qu'ils décrivent ne tourne.
+## Chantiers — en cours de construction
 
 | Document | Sujet |
 |---|---|
-| [moteur-cpp-plan.md](moteur-cpp-plan.md) | Reprendre la simulation en C++ derrière le même protocole, front inchangé, moteur JS conservé en référence |
+| [moteur-cpp-plan.md](moteur-cpp-plan.md) | La conception : reprendre la simulation en C++ derrière le même protocole, front inchangé, moteur JS conservé en référence |
+| [moteur-cpp-avancement.md](moteur-cpp-avancement.md) | Ce qui tourne (M0-M5), les écarts assumés, et ce qui reste vide |
+
+Le moteur C++ vit dans `raceEngineCpp/` et se choisit avec `make engine-cpp` /
+`make engine-js`. Le JS reste le défaut et la référence.
 
 ## Archives — des décisions passées
 

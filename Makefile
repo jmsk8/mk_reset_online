@@ -13,6 +13,15 @@ DUMP         ?= backEnd/dump.sql
 DUMP_FILE     = $(if $(filter /%,$(DUMP)),$(DUMP),./$(DUMP))
 export DUMP_FILE
 
+# Moteur du service `race` : JS (raceEngine/) ou C++ (raceEngineCpp/). Le choix
+# est COLLANT — il s'ecrit dans `.engine` (gitignore) et vaut pour toutes les
+# cibles. Avec un `ENGINE=cpp` a taper a chaque commande, un seul `make up`
+# distrait remettrait le moteur JS en service sans que rien ne le signale, et le
+# banner changerait de comportement sans explication.
+ENGINE       ?= $(if $(wildcard .engine),$(shell cat .engine),js)
+RACE_CONTEXT  = $(if $(filter cpp,$(ENGINE)),./raceEngineCpp,./raceEngine)
+export RACE_CONTEXT
+
 # Le volume porte le nom du projet en préfixe : `config --volumes` ne renvoie
 # que le nom déclaré, insuffisant pour docker volume rm.
 RM_PG_VOLUME = vol=$$($(COMPOSE) config | awk '/^volumes:/{v=1} v && /name:/{print $$2; exit}'); \
@@ -200,6 +209,26 @@ RACE_DOCKER = docker run --rm -u "$$(id -u):$$(id -g)" -e npm_config_cache=/tmp/
 RACE_IMAGE  = node:22-alpine
 RACE_NODE   = $(RACE_DOCKER) $(RACE_IMAGE)
 
+# ── Bascule de moteur ────────────────────────
+#
+# `make engine` dit ce qui est CHOISI, `/healthz` dit ce qui TOURNE : les deux
+# peuvent diverger tant qu'un `make re-race` n'a pas eu lieu. C'est voulu — la
+# bascule n'entraine pas de reconstruction surprise, elle imprime la commande
+# suivante et s'arrete la.
+engine:              ## Affiche le moteur de course actif
+	@echo "moteur choisi : $(ENGINE)  (contexte $(RACE_CONTEXT))"
+	@printf 'moteur qui tourne : '
+	@$(COMPOSE) exec -T race wget -qO- http://localhost:3000/healthz 2>/dev/null \
+		| sed -n 's/.*"engine":"\([^"]*\)".*/\1/p' || echo "service arrete"
+
+engine-js:           ## Bascule le service race sur le moteur JS
+	@echo js > .engine
+	@echo "moteur JS choisi. Pour l'appliquer : make re-race"
+
+engine-cpp:          ## Bascule le service race sur le moteur C++
+	@echo cpp > .engine
+	@echo "moteur C++ choisi. Pour l'appliquer : make re-race"
+
 race-deps:           ## Installe ws dans raceEngine/node_modules (pour les tests hors conteneur)
 	$(RACE_NODE) npm install --no-audit --no-fund
 
@@ -230,8 +259,14 @@ race-sim:            ## Simule N courses et sort les stats (RACES=1000 SEED=42 C
 race-scenario:       ## Deroule les scenarios de pilotage et trace les decisions
 	$(RACE_NODE) node tools/scenario.js
 
+# `exec race node ...` supposait que le conteneur du moteur embarque node : c'est
+# faux des que le moteur est le binaire C++, et le test se coupait la branche sur
+# laquelle il est assis. On emprunte donc une image node et on la colle dans la
+# PILE RESEAU du conteneur race, ou `localhost:3000` est le moteur — quel que
+# soit le langage dans lequel il est ecrit.
 race-spectate:       ## Test de l'arrivant contre le service `race` en cours d'execution (AFTER=... secondes)
-	$(COMPOSE) exec race node tools/spectate.js --after $${AFTER:-30}
+	$(RACE_DOCKER) --network container:$$($(COMPOSE) ps -q race) $(RACE_IMAGE) \
+		node tools/spectate.js --url ws://127.0.0.1:3000/ws/race --after $${AFTER:-30}
 
 # Meme test, mais par l'URL publique : c'est le seul qui traverse nginx, donc le
 # seul qui verifie l'upgrade WebSocket, les timeouts et limit_conn.
@@ -250,6 +285,7 @@ help:                ## Show this help
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
         race-deps race-tracks race-soak race-sim race-scenario race-spectate race-nginx \
+        engine engine-js engine-cpp \
         reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help
 

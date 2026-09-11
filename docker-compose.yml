@@ -129,7 +129,10 @@ services:
 
   race:
     build:
-      context: ./raceEngine
+      # Le moteur se choisit avec `make engine-js` / `make engine-cpp`, qui
+      # ecrivent `.engine`. Le repli sur ./raceEngine couvre un `docker compose`
+      # tape a la main, hors du Makefile qui exporte la variable.
+      context: ${RACE_CONTEXT:-./raceEngine}
     expose:
       - "3000"
     volumes:

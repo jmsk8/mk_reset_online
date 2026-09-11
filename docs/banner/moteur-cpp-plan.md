@@ -10,9 +10,10 @@
 >
 > Conventions : **[DÉCIDÉ]** = tranché par l'utilisateur · **[À TRANCHER]** = arbitrage attendu.
 >
-> **Rien n'est codé.** Ce document est la conception à implémenter, pas un journal
-> d'avancement — celui-ci (`moteur-cpp-avancement.md`) sera créé au démarrage réel du
-> chantier, sur le modèle de [../auth-discord-avancement.md](../auth-discord-avancement.md).
+> **M0 à M5 sont codés** (2026-09-11) : `raceEngineCpp/` tourne, parle le protocole 11 et
+> passe l'audit du contrat. Ce document reste la CONCEPTION ; l'état d'avancement et les
+> écarts constatés sont dans
+> [moteur-cpp-avancement.md](moteur-cpp-avancement.md).
 
 ---
 

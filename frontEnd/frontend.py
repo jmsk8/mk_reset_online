@@ -1127,7 +1127,7 @@ def admin_login():
             session['admin_token'] = data.get("token")
             session['token_start_time'] = time.time()
             flash('Connexion réussie', 'success')
-            return redirect(url_for('add_tournament'))
+            return redirect(url_for('admin_tournois'))
         else:
             flash('Mot de passe incorrect', 'danger')
     return render_template("admin_login.html")
@@ -1149,8 +1149,8 @@ def admin_logout():
     return redirect(url_for('index'))
 
 
-@app.route('/add_tournament', methods=['GET', 'POST'])
-def add_tournament():
+@app.route('/admin/tournois', methods=['GET', 'POST'])
+def admin_tournois():
     if not _est_admin():
         flash('Accès réservé aux administrateurs', 'warning')
         return redirect(url_for('admin_login'))
@@ -1175,12 +1175,12 @@ def add_tournament():
                 joueurs_data.append({"nom": nom, "score": int(score)})
             except ValueError:
                 flash(f"Score invalide pour {nom}", "danger")
-                return redirect(url_for('add_tournament'))
+                return redirect(url_for('admin_tournois'))
             i += 1
             
         if len(joueurs_data) < 2:
             flash("Il faut au moins 2 joueurs.", "warning")
-            return redirect(url_for('add_tournament'))
+            return redirect(url_for('admin_tournois'))
 
         headers = admin_headers()
         payload = {"date": date_tournoi, "joueurs": joueurs_data}
@@ -1197,7 +1197,14 @@ def add_tournament():
 
     data, status = backend_request('GET', '/joueurs/noms')
     joueurs = data if status == 200 else []
-    return render_template("add_tournament.html", joueurs=joueurs)
+
+    # Liste des tournois, rendue côté serveur : /stats/tournois sert un template
+    # HTML, pas du JSON, elle n'est donc pas consommable en fetch. La charger ici
+    # évite d'ajouter un proxy JSON pour une donnée déjà publique.
+    tournois_data, tournois_status = backend_request('GET', '/stats/tournois')
+    tournois = tournois_data if tournois_status == 200 else []
+
+    return render_template("add_tournament.html", joueurs=joueurs, tournois=tournois)
 
 @app.route('/admin/matchmaking', methods=['GET'])
 def matchmaking():
@@ -1223,8 +1230,8 @@ def admin_revert_last():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/admin/gestion')
-def admin_gestion():
+@app.route('/admin/joueurs-fiches')
+def admin_joueurs_fiches():
     if not _est_admin():
         flash('Accès interdit.', 'danger')
         return redirect(url_for('admin_login'))
@@ -1233,6 +1240,31 @@ def admin_gestion():
     if status in [401, 403]:
         return _session_admin_expiree()
     return render_template('gestion_joueurs.html')
+
+
+@app.route('/admin/reglages')
+def admin_reglages():
+    """Réglages du classement : configuration globale et reset du sigma.
+
+    Deux droits distincts y cohabitent, d'où le `or` : la configuration relève
+    de gestion_config (déléguable), le reset global d'une capacité de rôle qui,
+    elle, ne se délègue jamais. Chaque bloc est gaté séparément DANS le
+    template -- ce gate-ci n'ouvre que la porte.
+    """
+    if not _est_admin():
+        flash('Accès interdit.', 'danger')
+        return redirect(url_for('admin_login'))
+
+    if not ('gestion_config' in _permissions_session()
+            or _role_session() in ('chef_admin', 'superadmin')):
+        flash("Vous n'avez pas accès aux réglages du classement.", 'warning')
+        return redirect(url_for('index'))
+
+    headers = admin_headers()
+    _, status = backend_request('GET', '/admin/check-token', headers=headers)
+    if status in [401, 403]:
+        return _session_admin_expiree()
+    return render_template('admin_reglages.html')
 
 @app.route('/admin/saisons-gestion')
 def admin_saisons_page():
