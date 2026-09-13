@@ -65,6 +65,11 @@
     // elle se teste donc par le rôle, jamais par peut() (hierarchie-admin 2).
     const PEUT_CHANGER_ROLE = {{ 'true' if role_admin in ('chef_admin', 'superadmin') else 'false' }};
     const PEUT_GERER_COMPTES = {{ 'true' if peut('gestion_comptes') else 'false' }};
+    // Sous-permissions (enfant -> parent), servies par le backend : affichage en
+    // retrait, case inactive tant que le parent manque, décochage en cascade.
+    // `tojson` échappe pour un contexte <script> ; l'autorité reste le backend,
+    // qui exige les deux permissions sur les routes concernées.
+    const SOUS_PERMISSIONS = {{ sous_permissions | tojson }};
 
     document.addEventListener('DOMContentLoaded', () => {
         const csrf = document.querySelector('meta[name="csrf-token"]').content;
@@ -127,6 +132,17 @@
             const res = await fetch(url, opts);
             let data = null;
             try { data = await res.json(); } catch (e) { /* réponse vide */ }
+
+            // Session expirée pendant que la page était ouverte. Sans ce
+            // traitement, chaque appel affichait « Chargement impossible. » sans
+            // jamais dire pourquoi ni proposer de se reconnecter -- le serveur a
+            // déjà purgé la session, l'accueil affichera le message.
+            if (res.status === 401 || res.status === 403) {
+                window.location = '/';
+                // Laisse la navigation se faire : les appelants testent `ok`, et
+                // on ne veut pas qu'ils peignent une erreur au passage.
+                return {ok: false, status: res.status, data: {}, redirige: true};
+            }
             return {ok: res.ok, status: res.status, data: data || {}};
         }
 
@@ -472,14 +488,21 @@
             // ne permet à personne de décider s'il faut cocher la case.
             // 4e élément optionnel : l'avertissement des droits à effet large.
             const LIBELLES = {
-                gestion_joueurs:     ['Joueurs et tournois', 'fa-users-cog',
-                                      'Créer, renommer et supprimer des fiches joueurs, corriger '
-                                      + 'leur score, et enregistrer les résultats des tournois.',
-                                      'Inclut la suppression définitive d\'une fiche et '
-                                      + "l'anonymisation RGPD."],
+                gestion_joueurs:     ['Fiches joueurs', 'fa-users-cog',
+                                      'Créer, renommer et corriger le score des fiches joueurs.'],
+                rgpd_joueurs:        ['Anonymisation et suppression (RGPD)', 'fa-user-shield',
+                                      'Anonymiser une fiche joueur, ou la supprimer '
+                                      + 'définitivement quand elle n\'a aucun match.',
+                                      'Gestes irréversibles. Nécessite « Fiches joueurs ».'],
+                gestion_tournois:    ['Tournois', 'fa-trophy',
+                                      'Enregistrer les résultats d\'un tournoi.',
+                                      'Ne permet pas de créer une fiche joueur : un nom inconnu '
+                                      + 'est refusé, il faut la permission « Fiches joueurs ».'],
                 gestion_ligues:      ['Ligues', 'fa-shield-alt',
-                                      'Créer les ligues, y répartir les joueurs et simuler un '
-                                      + 'draft avant de l\'appliquer.'],
+                                      'Activer le mode ligue, créer les ligues, y répartir les '
+                                      + 'joueurs et simuler un draft avant de l\'appliquer.',
+                                      'Désactiver le mode ligue supprime définitivement toutes '
+                                      + 'les ligues existantes.'],
                 gestion_saisons:     ['Saisons et awards', 'fa-calendar-alt',
                                       'Ouvrir et clôturer les saisons, fixer leurs dates, et '
                                       + 'attribuer les awards de fin de saison.',
@@ -495,11 +518,12 @@
                 gestion_invitations: ['Invitations', 'fa-envelope-open-text',
                                       'Créer les liens qui permettent à un nouveau joueur de '
                                       + 's\'inscrire, et les révoquer avant expiration.'],
-                gestion_config:      ['Réglages du classement', 'fa-sliders',
-                                      'Régler le mode fantôme (pénalité d\'inactivité), le '
-                                      + 'nombre de tournois requis pour être classé, et activer '
-                                      + 'le mode ligue.',
-                                      'Ces réglages s\'appliquent à TOUS les joueurs.'],
+                gestion_config:      ['Réglage TS', 'fa-sliders',
+                                      'Régler le mode fantôme (pénalité d\'inactivité) et le '
+                                      + 'nombre de tournois requis pour être classé, et remettre '
+                                      + 'le classement à zéro (reset global).',
+                                      'Ces réglages s\'appliquent à TOUS les joueurs, et le reset '
+                                      + 'global réinitialise le classement de tout le monde.'],
                 gestion_matchmaking: ['Matchmaking', 'fa-random',
                                       'Composer des lobbies équilibrés à partir des joueurs '
                                       + 'présents, depuis la page dédiée.'],
@@ -514,31 +538,68 @@
 
             // Accordées d'abord : on voit ce que le compte PEUT faire avant ce
             // qu'il ne peut pas, plutôt qu'un ordre alphabétique qui les mélange.
+            //
+            // Une sous-permission est triée avec SON PARENT (même rang, puis
+            // juste après lui) : sinon « Fiches joueurs » accordée et sa
+            // sous-permission refusée se retrouveraient aux deux extrémités de
+            // la liste, et le retrait ne voudrait plus rien dire visuellement.
+            const rang = p => SOUS_PERMISSIONS[p] || p;
+            const cle = p => (LIBELLES[rang(p)]?.[0] || rang(p));
+            // Épinglées en tête, accordées ou non : ce sont les droits qu'on
+            // vient chercher en premier en ouvrant ce panneau. Ordre du menu
+            // Admin, où « Gestion tournois » est aussi la première entrée.
+            const EPINGLEES = ['gestion_tournois'];
+            const epingle = p => {
+                const i = EPINGLEES.indexOf(rang(p));
+                return i === -1 ? EPINGLEES.length : i;
+            };
             const toutes = Array.from(new Set([...delegables, ...accordees]))
-                .sort((a, b) => (accordees.has(b) - accordees.has(a))
-                                || (LIBELLES[a]?.[0] || a).localeCompare(LIBELLES[b]?.[0] || b));
+                .sort((a, b) => (epingle(a) - epingle(b))
+                                || (accordees.has(rang(b)) - accordees.has(rang(a)))
+                                || cle(a).localeCompare(cle(b))
+                                // Le parent avant son enfant, à clé égale.
+                                || ((SOUS_PERMISSIONS[a] ? 1 : 0) - (SOUS_PERMISSIONS[b] ? 1 : 0)));
+
+            // Registre des cases rendues : le parent doit pouvoir agir sur la
+            // sienne quand on le décoche, sans relire le DOM.
+            const cases = {};
 
             toutes.forEach(p => {
                 const [nom, ic, desc, alerte] = LIBELLES[p] || [p, 'fa-circle-dot', ''];
                 const horsPortee = !delegables.has(p);
+                const parent = SOUS_PERMISSIONS[p];
+                // Une sous-permission n'est activable que si son parent l'est :
+                // le backend exige les deux, une case cochable sans effet serait
+                // exactement le bouton menant à un 403 prévisible qu'on évite.
+                const parentManquant = parent && !accordees.has(parent);
 
                 const ligne = document.createElement('label');
                 ligne.className = 'is-flex is-align-items-flex-start p-3 mb-2';
                 ligne.style.cssText =
-                    'gap:.75rem; border-radius:6px; cursor:' + (horsPortee ? 'not-allowed' : 'pointer')
+                    'gap:.75rem; border-radius:6px; cursor:'
+                    + (horsPortee || parentManquant ? 'not-allowed' : 'pointer')
                     + '; background:rgba(255,255,255,.03); border:1px solid transparent;'
+                    // Décalage et liseré : la sous-permission se lit comme
+                    // rattachée à la ligne du dessus, pas comme un droit de plus.
+                    + (parent ? 'margin-left:2rem; border-left:2px solid rgba(59,130,246,.35);' : '')
                     // .75 et non .55 : une ligne hors de portée doit se voir comme
                     // inactive, pas devenir illisible -- son intitulé reste une
                     // information utile (« ce droit existe, mais pas pour vous »).
-                    + (horsPortee ? 'opacity:.75;' : '');
-                if (!horsPortee) {
+                    + (horsPortee || parentManquant ? 'opacity:.75;' : '');
+                if (!horsPortee && !parentManquant) {
+                    // Ne touche qu'aux bords haut/droite/bas : `borderColor` en
+                    // bloc écraserait le liseré gauche d'une sous-permission.
                     ligne.addEventListener('mouseenter', () => {
                         ligne.style.background = 'rgba(59,130,246,.10)';
-                        ligne.style.borderColor = 'rgba(59,130,246,.35)';
+                        ligne.style.borderTopColor = 'rgba(59,130,246,.35)';
+                        ligne.style.borderRightColor = 'rgba(59,130,246,.35)';
+                        ligne.style.borderBottomColor = 'rgba(59,130,246,.35)';
                     });
                     ligne.addEventListener('mouseleave', () => {
                         ligne.style.background = 'rgba(255,255,255,.03)';
-                        ligne.style.borderColor = 'transparent';
+                        ligne.style.borderTopColor = 'transparent';
+                        ligne.style.borderRightColor = 'transparent';
+                        ligne.style.borderBottomColor = 'transparent';
                     });
                 }
 
@@ -548,7 +609,9 @@
                 case_.style.marginTop = '.25rem';
                 // Grisée au-delà du plafond de l'acteur : défensif seulement,
                 // le backend refuserait de toute façon (plan 2, contrainte 5).
-                case_.disabled = horsPortee;
+                // Grisée aussi tant que le parent n'est pas accordé.
+                case_.disabled = horsPortee || parentManquant;
+                cases[p] = case_;
                 case_.addEventListener('change', async () => {
                     case_.disabled = true;
                     const methode = case_.checked ? 'POST' : 'DELETE';
@@ -558,10 +621,26 @@
                     case_.disabled = false;
                     if (rep.ok) {
                         if (case_.checked) { accordees.add(p); } else { accordees.delete(p); }
+
+                        // Répercuter sur les sous-permissions : le backend les
+                        // emporte avec leur parent, l'affichage doit dire la
+                        // même chose sans exiger un rechargement.
+                        let emportees = 0;
+                        Object.keys(SOUS_PERMISSIONS).forEach(enfant => {
+                            if (SOUS_PERMISSIONS[enfant] !== p || !cases[enfant]) return;
+                            cases[enfant].disabled = !case_.checked;
+                            if (!case_.checked && cases[enfant].checked) {
+                                cases[enfant].checked = false;
+                                accordees.delete(enfant);
+                                emportees++;
+                            }
+                        });
+
                         majCompteur();
                         afficher('success', case_.checked
                             ? 'Droit « ' + nom + ' » accordé.'
-                            : 'Droit « ' + nom + ' » retiré.');
+                            : 'Droit « ' + nom + ' » retiré.'
+                              + (emportees ? ' Sa sous-autorisation a été retirée aussi.' : ''));
                     } else {
                         case_.checked = !case_.checked;   // on rejoue l'état réel
                         afficher('danger', rep.data.error || 'Échec.');
@@ -579,6 +658,13 @@
                 entete_l.appendChild(txt('span', nom, 'has-text-weight-semibold'));
                 if (horsPortee) {
                     entete_l.appendChild(txt('span', 'hors de votre portée', 'tag is-light'));
+                } else if (parentManquant) {
+                    // Dit POURQUOI la case est inactive : sans ça, elle passerait
+                    // pour un bug plutôt que pour une dépendance.
+                    entete_l.appendChild(txt(
+                        'span',
+                        'nécessite « ' + (LIBELLES[parent]?.[0] || parent) + ' »',
+                        'tag is-warning is-light'));
                 }
                 bloc.appendChild(entete_l);
 

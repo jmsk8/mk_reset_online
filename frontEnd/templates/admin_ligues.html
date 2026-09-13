@@ -270,11 +270,16 @@
 
         async function saveInterLeagueMoves() {
             const newValue = parseInt(document.getElementById('interLeagueMoves').value) || 0;
-            const currentConfig = await apiCall('/admin/config', 'GET');
-            if (currentConfig.error) return;
 
-            const payload = { ...currentConfig, inter_league_moves: newValue };
-            const res = await apiCall('/admin/config', 'POST', payload);
+            // N'envoyer QUE la clé de ligue. Cette page relisait la config
+            // entière pour la reposter telle quelle : elle réécrivait donc tau,
+            // la pénalité fantôme et le seuil de classement à chaque geste —
+            // écrasant ce qu'un autre admin venait d'y changer, et déclenchant
+            // le reclassement de tous les joueurs lié à unranked_threshold.
+            // `update_config` n'écrit désormais que les clés réellement
+            // envoyées (elle appliquait ses défauts aux absentes).
+            const res = await apiCall('/admin/config', 'POST',
+                                      { inter_league_moves: newValue });
 
             if (res.status === 'success') {
                 interLeagueMoves = newValue;
@@ -293,11 +298,9 @@
                 }
             }
 
-            const currentConfig = await apiCall('/admin/config', 'GET');
-            if(currentConfig.error) return;
-
-            const fullPayload = { ...currentConfig, league_mode_enabled: newState };
-            const res = await apiCall('/admin/config', 'POST', fullPayload);
+            // Uniquement la clé de ligue, même raison que saveInterLeagueMoves.
+            const res = await apiCall('/admin/config', 'POST',
+                                      { league_mode_enabled: newState });
             
             if (res.status === 'success') {
                 isLeagueEnabled = newState; 

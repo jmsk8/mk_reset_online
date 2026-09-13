@@ -198,6 +198,13 @@
 
     {% include 'footer.html' %}
     
+    {# Sous-permission RGPD : sans elle, la suppression et l'anonymisation
+       répondent 403. Le bouton ne doit donc pas s'afficher -- un bouton qui mène
+       à un refus prévisible est le défaut que ce chantier corrige partout
+       ailleurs (§B.0 du plan hiérarchie). Déclaré AVANT gestion.js, qui le lit. #}
+    <script>
+        const PEUT_RGPD_JOUEURS = {{ 'true' if peut('rgpd_joueurs') else 'false' }};
+    </script>
     <script src="../static/js/gestion.js"></script>
 </body>
 </html>

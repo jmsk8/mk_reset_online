@@ -14,7 +14,12 @@ src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'route
 sans_auth, par_voie = [], {'admin_required': [], 'admin_or_role_required': []}
 # Depuis la hierarchie a 4 roles, une route peut aussi porter permission_required
 # ou role_required : ce sont des protections a part entiere, pas une absence.
-PROTEGE_AUSSI = ('permission_required', 'role_required')
+#
+# player_required s'y ajoute depuis le 2026-09-13 : /admin/config melange deux
+# domaines de permission (Reglage TS et Ligues) et verifie chacun DANS son
+# corps -- un decorateur de permission y refuserait l'un des deux profils avant
+# meme d'entrer. La route reste authentifiee, c'est ce que ce test verifie.
+PROTEGE_AUSSI = ('permission_required', 'role_required', 'player_required')
 for i, l in enumerate(src):
     if l.lstrip().startswith("@admin_bp.route"):
         j, decos = i + 1, []
@@ -34,6 +39,20 @@ for i, l in enumerate(src):
 publiques_attendues = {'admin-auth', 'admin-logout'}
 nues = {_re.search(r"'/([\w-]+)", r).group(1) for r in sans_auth}
 check("seuls le login et le logout sont publics", nues == publiques_attendues, nues)
+
+# Contrepartie du relachement ci-dessus : player_required n'autorise QU'A entrer.
+# Toute route admin qui s'en contente doit verifier un droit dans son corps,
+# sinon un simple joueur connecte y accederait -- exactement le mode d'echec de
+# R-43, une route qui a l'air protegee et ne l'est pas.
+src_entier = "\n".join(src)
+for nom_fn in ('get_config', 'update_config'):
+    deb = src_entier.find('def %s(' % nom_fn)
+    fin = src_entier.find('\n@admin_bp.route', deb)
+    corps = src_entier[deb:fin if fin > deb else len(src_entier)]
+    lecture_seule = nom_fn == 'get_config'
+    check("  %s : droit verifie dans le corps" % nom_fn,
+          lecture_seule or 'compte_a_permission' in corps,
+          "aucune verification de permission")
 check("aucune route empilant les deux décorateurs (ce serait un ET, pas un OU)",
       all(not (r in par_voie['admin_required'] and r in par_voie['admin_or_role_required'])
           for r in sans_auth + par_voie['admin_required'] + par_voie['admin_or_role_required']))

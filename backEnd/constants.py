@@ -99,11 +99,25 @@ ROLE_HIERARCHY = {ROLE_PLAYER: 0, ROLE_ADMIN: 1, ROLE_CHEF_ADMIN: 2, ROLE_SUPERA
 # c'est un pouvoir qui n'existe pas dans ce systeme -- y compris pour un
 # superadmin qui voudrait le deleguer.
 #
-# Meme chose pour le reset global, la purge RGPD, l'annulation de tournoi et le
+# Meme chose pour la purge RGPD, l'annulation de tournoi, l'anonymisation et le
 # changement de role : capacites de role, jamais des entrees d'ici.
 # Cartographie complete : docs/hierarchie-admin-plan.md, annexe A.
+#
+# LE RESET GLOBAL, LUI, EST DELEGABLE depuis le 2026-09-13 : il releve de
+# gestion_config. Decision explicite (contexte 8.5-D), qui INVERSE R-51 du plan
+# hierarchie -- ne pas le « corriger » en le remettant hors catalogue sans
+# revalidation. Motif : le reset passe PAR le moteur TrueSkill, il est tracable
+# et reproductible, contrairement a une saisie manuelle de score.
 PERMISSIONS_CATALOGUE = frozenset({
     "gestion_joueurs",
+    # SOUS-PERMISSION de gestion_joueurs : les deux gestes irreversibles sur une
+    # fiche (anonymiser, supprimer). Les routes concernees exigent les DEUX --
+    # c'est une restriction au sein du domaine, jamais un droit autonome.
+    # Entree du catalogue a part entiere malgre tout : elle s'accorde et se
+    # retire comme les autres, et permissions_delegables_par n'a pas a connaitre
+    # de cas particulier.
+    "rgpd_joueurs",
+    "gestion_tournois",
     "gestion_ligues",
     "gestion_saisons",
     "gestion_liaisons",
@@ -112,6 +126,33 @@ PERMISSIONS_CATALOGUE = frozenset({
     "gestion_config",
     "gestion_matchmaking",
 })
+
+# Sous-permissions : enfant -> parent exige en plus.
+#
+# Une entree ici veut dire « cette permission ne vaut RIEN seule » : la route
+# protegee exige l'enfant ET le parent. Donnee plutot que regle eparpillee, pour
+# que l'interface (case en retrait, decochee avec son parent) et le backend
+# lisent la meme source -- et qu'ajouter une sous-permission n'oblige pas a
+# retrouver tous les endroits qui la supposent.
+SOUS_PERMISSIONS = {
+    "rgpd_joueurs": "gestion_joueurs",
+}
+
+
+def permissions_effectives(accordees) -> set:
+    """Retire les sous-permissions dont le parent manque. Renvoie un set.
+
+    `permissions_admin` peut contenir un orphelin : octroi anterieur a la
+    creation de la sous-permission, SQL direct, ou parent retire par un chemin
+    qui l'aurait ignore. Une telle ligne ne donne AUCUN droit -- permission_required
+    exige le parent -- mais l'interface la lirait comme accordee et afficherait
+    un bouton qui repond 403.
+
+    A appliquer partout ou l'on expose des permissions a l'affichage.
+    """
+    accordees = set(accordees)
+    return {p for p in accordees
+            if SOUS_PERMISSIONS.get(p) is None or SOUS_PERMISSIONS[p] in accordees}
 
 # --- Matchmaking ----------------------------------------------------------
 # Taille maximale d'un lobby. Cote serveur depuis que la page admin et le bot

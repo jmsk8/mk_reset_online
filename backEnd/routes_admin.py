@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import bcrypt
 import trueskill
 import psycopg2.extras
-from flask import Blueprint, jsonify, request, abort
+from flask import Blueprint, jsonify, request, abort, g
 
 from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, TRUESKILL_BETA, TRUESKILL_DRAW_PROBABILITY,
@@ -23,7 +23,7 @@ from constants import (
 )
 from db import get_db_connection, ADMIN_PASSWORD_HASH
 from auth import (admin_required, admin_or_role_required, permission_required,
-                  role_required)
+                  role_required, player_required, compte_a_permission)
 from cache import invalidate_cache
 from utils import generate_unique_slug, extract_league_number
 from services import (
@@ -148,19 +148,23 @@ def fix_db_structure():
 
 
 # ---------------------------------------------------------------------------
-# Reset global du sigma -- CAPACITE DE ROLE, jamais une permission delegable.
+# Reset global du sigma -- permission gestion_config (« Reglage TS »).
 #
-# NE JAMAIS convertir ces deux routes en @permission_required('gestion_joueurs')
-# lors du chantier hierarchie-admin (voir docs/hierarchie-admin-plan.md, Phase 0
-# et R-51). Elles touchent TOUS les joueurs d'un coup et leur annulation depend
-# de l'absence de tournoi posterieur : c'est d'une autre nature que l'edition
-# d'une fiche joueur, malgre leur proximite dans ce fichier.
+# CHANGEMENT DE DOCTRINE, 2026-09-13 (contexte 8.5-D) : ces deux routes etaient
+# @role_required(ROLE_CHEF_ADMIN), sous un commentaire « NE JAMAIS convertir »
+# qui appliquait R-51. Elles sont desormais DELEGABLES via gestion_config.
 #
-# Decorateur cible du chantier : @role_required(ROLE_CHEF_ADMIN).
+# Motif : le reset passe PAR le moteur TrueSkill, il est tracable et
+# reproductible -- d'une autre nature qu'une saisie manuelle de score. Qui regle
+# le TrueSkill regle donc aussi ce qui le remet a zero, et les deux vivent sur
+# la meme page (/admin/reglages).
+#
+# R-51 est inverse en connaissance de cause. Ne pas revenir a chef_admin+ sans
+# revalidation : ce n'est pas un oubli.
 # ---------------------------------------------------------------------------
 
 @admin_bp.route('/api/admin/global-reset', methods=['POST'])
-@role_required(ROLE_CHEF_ADMIN)
+@permission_required('gestion_config')
 def apply_global_reset():
     data = request.get_json()
     try:
@@ -202,10 +206,11 @@ def apply_global_reset():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# Meme regle que apply_global_reset ci-dessus : capacite de role, cible
-# @role_required(ROLE_CHEF_ADMIN), jamais une permission delegable.
+# Meme regle que apply_global_reset ci-dessus : delegable via gestion_config.
+# Annuler un reset doit suivre le droit de l'appliquer -- separer les deux
+# laisserait quelqu'un declencher un geste qu'il ne peut pas reprendre.
 @admin_bp.route('/api/admin/revert-global-reset', methods=['POST'])
-@role_required(ROLE_CHEF_ADMIN)
+@permission_required('gestion_config')
 def revert_global_reset():
     try:
         with get_db_connection() as conn:
@@ -239,8 +244,16 @@ def revert_global_reset():
 
 
 @admin_bp.route('/admin/config', methods=['GET'])
-@permission_required('gestion_config')
+@player_required
 def get_config():
+    """Lecture seule des reglages. Ouverte a toute session authentifiee.
+
+    Trois pages d'administration en dependent sans relever de gestion_config :
+    Ligues (etat du mode ligue), Saisons (mouvements inter-ligues) et Fiches
+    joueurs. L'exiger ici rendrait ces pages inutilisables a qui porte leur
+    propre permission -- et ces valeurs ne sont pas des secrets : le mode ligue
+    et le seuil de classement se deduisent deja des pages publiques.
+    """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -263,33 +276,88 @@ def get_config():
 
 
 @admin_bp.route('/admin/config', methods=['POST'])
-@permission_required('gestion_config')
+@player_required
 def update_config():
+    """Reglages TrueSkill, et les clefs de mode ligue. DEUX permissions.
+
+    Depuis le 2026-09-13 les clefs de ligue (league_mode_enabled,
+    inter_league_moves) relevent de gestion_ligues, le reste de gestion_config
+    (« Reglage TS »).
+
+    PAS de @permission_required ici, volontairement : le decorateur s'execute
+    avant le corps et exigerait gestion_config de tout le monde -- un admin qui
+    n'a que « Ligues » serait refuse avant d'avoir pu activer le mode ligue,
+    c'est-a-dire l'inverse de la separation voulue. Chaque domaine porte donc sa
+    propre verification ci-dessous, et l'appel qui ne touche a rien est refuse.
+
+    Le refus est EXPLICITE (403) et non un silence : desactiver le mode ligue
+    detruit l'affectation de tous les joueurs, croire l'avoir fait sans que rien
+    ne bouge serait le pire des deux mondes.
+    """
     data = request.get_json()
     try:
-        tau = float(data.get('tau', DEFAULT_TAU))
-        ghost = str(data.get('ghost_enabled', 'false')).lower()
-        ghost_penalty = float(data.get('ghost_penalty', DEFAULT_GHOST_PENALTY))
-        ghost_threshold_days = max(1, int(data.get('ghost_threshold_days', DEFAULT_GHOST_THRESHOLD_DAYS)))
-        ghost_interval_days = max(1, int(data.get('ghost_interval_days', DEFAULT_GHOST_INTERVAL_DAYS)))
-        unranked_threshold = int(data.get('unranked_threshold', DEFAULT_UNRANKED_THRESHOLD))
-        sigma_threshold = float(data.get('sigma_threshold', DEFAULT_SIGMA_THRESHOLD))
-        ip_version_live = str(data.get('ip_version_live', IP_VERSION_DEFAULT))
-        if ip_version_live not in ('v1', 'v2'):
-            return jsonify({"error": "ip_version_live invalide"}), 400
+        touche_ligues = 'league_mode_enabled' in data or 'inter_league_moves' in data
+        if touche_ligues:
+            accordee, erreur = compte_a_permission(g.compte, 'gestion_ligues')
+            if erreur is not None:
+                return erreur
+            if not accordee:
+                return jsonify({
+                    "error": "Le mode ligue releve de la permission « Ligues ».",
+                    "code": "permission_manquante",
+                }), 403
+        # Ces huit clefs ne sont ecrites QUE si elles sont dans le payload.
+        # Elles l'etaient auparavant a chaque appel, defauts compris : un client
+        # qui n'envoyait que sa propre clef reinitialisait donc tau, la penalite
+        # fantome et le seuil de classement sans le savoir. C'est exactement ce
+        # que faisait la page Ligues, qui relisait toute la config pour la
+        # reposter -- contournable seulement tant que les deux domaines
+        # partageaient la meme permission.
+        configs = []
+        touche_trueskill = False
+
+        if 'tau' in data:
+            configs.append(('tau', str(float(data['tau']))))
+        if 'ghost_enabled' in data:
+            configs.append(('ghost_enabled', str(data['ghost_enabled']).lower()))
+        if 'ghost_penalty' in data:
+            configs.append(('ghost_penalty', str(float(data['ghost_penalty']))))
+        if 'ghost_threshold_days' in data:
+            configs.append(('ghost_threshold_days', str(max(1, int(data['ghost_threshold_days'])))))
+        if 'ghost_interval_days' in data:
+            configs.append(('ghost_interval_days', str(max(1, int(data['ghost_interval_days'])))))
+        if 'sigma_threshold' in data:
+            configs.append(('sigma_threshold', str(float(data['sigma_threshold']))))
+        if 'ip_version_live' in data:
+            ip_version_live = str(data['ip_version_live'])
+            if ip_version_live not in ('v1', 'v2'):
+                return jsonify({"error": "ip_version_live invalide"}), 400
+            configs.append(('ip_version_live', ip_version_live))
+
+        # A part : sa valeur pilote le reclassement de TOUS les joueurs plus bas.
+        unranked_threshold = None
+        if 'unranked_threshold' in data:
+            unranked_threshold = int(data['unranked_threshold'])
+            configs.append(('unranked_threshold', str(unranked_threshold)))
+
+        touche_trueskill = bool(configs)
+        if touche_trueskill:
+            accordee, erreur = compte_a_permission(g.compte, 'gestion_config')
+            if erreur is not None:
+                return erreur
+            if not accordee:
+                return jsonify({
+                    "error": "Ces reglages relevent de la permission « Reglage TS ».",
+                    "code": "permission_manquante",
+                }), 403
+
+        # Sans ce refus, un compte sans aucune des deux permissions obtiendrait
+        # un 200 pour un appel qui n'ecrit rien -- une reussite apparente.
+        if not touche_trueskill and not touche_ligues:
+            return jsonify({"error": "Aucun reglage fourni"}), 400
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                configs = [
-                    ('tau', str(tau)),
-                    ('ghost_enabled', ghost),
-                    ('ghost_penalty', str(ghost_penalty)),
-                    ('ghost_threshold_days', str(ghost_threshold_days)),
-                    ('ghost_interval_days', str(ghost_interval_days)),
-                    ('unranked_threshold', str(unranked_threshold)),
-                    ('sigma_threshold', str(sigma_threshold)),
-                    ('ip_version_live', ip_version_live),
-                ]
 
                 if 'league_mode_enabled' in data:
                     league_mode = str(data.get('league_mode_enabled')).lower()
@@ -309,10 +377,14 @@ def update_config():
                         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                     """, (k, v))
 
-                cur.execute("""
-                    UPDATE Joueurs
-                    SET is_ranked = (COALESCE(consecutive_missed, 0) < %s)
-                """, (unranked_threshold,))
+                # Uniquement si le seuil a ete fourni : sans ce garde, un appel
+                # qui ne touche qu'au mode ligue passerait None ici et
+                # declasserait tous les joueurs d'un coup.
+                if unranked_threshold is not None:
+                    cur.execute("""
+                        UPDATE Joueurs
+                        SET is_ranked = (COALESCE(consecutive_missed, 0) < %s)
+                    """, (unranked_threshold,))
 
             conn.commit()
             recalculate_tiers()
@@ -381,7 +453,7 @@ def api_update_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['DELETE'])
-@permission_required('gestion_joueurs')
+@permission_required('rgpd_joueurs')   # sous-permission : exige aussi gestion_joueurs
 def api_delete_joueur(id):
     """Supprime un joueur, sauf s'il a un historique de matchs.
 
@@ -472,7 +544,7 @@ def api_delete_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>/anonymiser', methods=['POST'])
-@permission_required('gestion_joueurs')
+@permission_required('rgpd_joueurs')   # sous-permission : exige aussi gestion_joueurs
 def api_anonymiser_joueur(id):
     """Détache l'identité d'un joueur sans toucher à son dossier sportif.
 
@@ -996,7 +1068,7 @@ def save_season_awards(id):
 
 
 @admin_bp.route('/add-tournament', methods=['POST'])
-@permission_required('gestion_joueurs')
+@permission_required('gestion_tournois')
 def add_tournament():
     data = request.get_json()
     date_tournoi_str = data.get('date')
@@ -1076,6 +1148,24 @@ def add_tournament():
                                 "error": "Le nom « %s » correspond a un joueur anonymise et ne "
                                          "peut pas etre recree. Choisissez un autre nom." % nom,
                                 "code": "nom_interdit",
+                            }), 409
+                        # Creer une fiche releve de gestion_joueurs, pas de
+                        # gestion_tournois. Sans ce garde-fou la scission des
+                        # deux permissions (2026-09-13) serait contournable en
+                        # tapant simplement un nom absent dans le formulaire de
+                        # tournoi -- le chemin normal de cette route, pas un cas
+                        # limite.
+                        accordee, erreur = compte_a_permission(g.compte, 'gestion_joueurs')
+                        if erreur is not None:
+                            conn.rollback()
+                            return erreur
+                        if not accordee:
+                            conn.rollback()
+                            return jsonify({
+                                "error": "Le joueur « %s » n'existe pas. Sa creation releve de la "
+                                         "permission « Fiches joueurs » : demandez sa creation "
+                                         "prealable, ou verifiez l'orthographe." % nom,
+                                "code": "joueur_inconnu",
                             }), 409
                         cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked) VALUES (%s, %s, %s, 'U', true) RETURNING id", (nom, DEFAULT_MU, DEFAULT_SIGMA))
                         jid, mu, sigma = cur.fetchone()[0], DEFAULT_MU, DEFAULT_SIGMA

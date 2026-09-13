@@ -10,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request, g
 
 from constants import (INVITATION_LIFETIME_HOURS, CGU_VERSION, ROLE_ADMIN,
-                       ROLE_CHEF_ADMIN, ROLE_HIERARCHY, PERMISSIONS_CATALOGUE)
+                       ROLE_CHEF_ADMIN, ROLE_HIERARCHY, PERMISSIONS_CATALOGUE,
+                       permissions_effectives)
 from auth import (player_required, admin_or_role_required, permission_required,
                   SESSION_HEADER)
 from auth_discord import (
@@ -107,6 +108,24 @@ def me():
     })
 
 
+@auth_bp.route('/auth/check-session', methods=['GET'])
+@player_required
+def check_session():
+    """Sonde « ma session est-elle encore valide ? ». Miroir de /admin/check-token.
+
+    Appelee par le before_request du frontend a CHAQUE page : elle ne doit donc
+    rien lire de plus que la verification de session deja faite par
+    player_required. D'ou l'absence de corps utile -- /auth/me ferait une requete
+    de plus pour le nom du joueur, payee sur toutes les pages du site.
+
+    Ne dit RIEN du role : un admin retrograde garde son onglet jusqu'a sa
+    prochaine visite sur /mon-compte. Limite assumee (avancement, phase 4) ; la
+    frontiere de privilege reste le backend, qui relit le role a chaque requete
+    protegee.
+    """
+    return jsonify({"status": "valid"}), 200
+
+
 def _permissions_effectives(compte: dict) -> set:
     """Permissions dont ce compte dispose reellement, role compris.
 
@@ -125,7 +144,9 @@ def _permissions_effectives(compte: dict) -> set:
                     "SELECT permission FROM permissions_admin WHERE compte_id = %s",
                     (compte['id'],),
                 )
-                return {r[0] for r in cur.fetchall()}
+                # Filtre les sous-permissions orphelines : les exposer ferait
+                # afficher un bouton que le backend refuse.
+                return permissions_effectives(r[0] for r in cur.fetchall())
     except Exception as e:
         # Renvoyer une liste vide degrade l'affichage (des onglets manquent),
         # ca ne donne aucun droit : l'autorisation reste cote backend.

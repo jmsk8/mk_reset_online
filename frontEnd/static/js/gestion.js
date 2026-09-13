@@ -222,9 +222,10 @@ async function loadPlayers() {
                     onclick="openEditModal(${player.id}, '${escapeHtml(player.nom).replace(/'/g, "\\'")}', ${player.mu}, ${player.sigma}, ${player.is_ranked}, ${player.consecutive_missed}, '${escapeHtml(player.color || '#ffffff')}')">
                     <i class="fas fa-edit"></i>
                 </button>
+                ${typeof PEUT_RGPD_JOUEURS !== 'undefined' && !PEUT_RGPD_JOUEURS ? '' : `
                 <button class="button is-small is-danger is-outlined" onclick="deletePlayer(${player.id})">
                     <i class="fas fa-trash"></i>
-                </button>
+                </button>`}
             </td>
         `;
         tbody.appendChild(tr);

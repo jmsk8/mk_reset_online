@@ -29,7 +29,7 @@ from constants import (
     DISCORD_API_BASE, DISCORD_CDN_BASE, DISCORD_HTTP_TIMEOUT,
     SESSION_JOUEUR_LIFETIME_DAYS, SESSION_ADMIN_LIFETIME_HOURS,
     ROLE_PLAYER, ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERARCHY,
-    PERMISSIONS_CATALOGUE, CGU_VERSION,
+    PERMISSIONS_CATALOGUE, CGU_VERSION, permissions_effectives,
 )
 from db import get_db_connection
 
@@ -269,7 +269,9 @@ def _permissions_pour_session(cur, compte: dict) -> list:
         return []
     cur.execute("SELECT permission FROM permissions_admin WHERE compte_id = %s",
                 (compte['id'],))
-    return sorted(r[0] for r in cur.fetchall())
+    # Meme filtre qu'ailleurs : une sous-permission sans son parent ne donne
+    # aucun droit, l'exposer ferait afficher un bouton voue au 403.
+    return sorted(permissions_effectives(r[0] for r in cur.fetchall()))
 
 
 def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tuple[str, datetime]:

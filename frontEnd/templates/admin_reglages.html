@@ -25,17 +25,17 @@
                 calcul du classement.
             </p>
 
-            {# Deux niveaux de droits sur une même page, chacun sous SON gate :
-               le reset global est une capacité de rôle (chef_admin), la
-               configuration une permission déléguable (gestion_config). Sans ces
-               deux gates séparés, on reproduirait ici le défaut qu'on corrige --
-               un admin voyant un formulaire qu'il ne peut pas enregistrer.
+            {# Un seul gate depuis le 2026-09-13 : le reset global est devenu
+               délégable via gestion_config (contexte 8.5-D), il suit donc la
+               configuration au lieu d'exiger chef_admin. Les deux blocs restent
+               visuellement distincts pour la lisibilité, mais ils ne portent
+               plus de frontière de droits différente.
                Voir docs/onglets-admin-plan.md 3.2. #}
 
             <div class="columns is-centered">
                 <div class="column is-10">
 
-                    {% if role_admin in ('chef_admin', 'superadmin') %}
+                    {% if peut('gestion_config') %}
                         {% include 'partiels/reset_global.html' %}
                     {% endif %}
 
