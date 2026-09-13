@@ -3,12 +3,13 @@
 
    Ce bloc est SEPARE des autres outils de gestion joueurs a dessein : il agit
    sur TOUS les joueurs d'un coup, et son annulation depend de l'absence de
-   tournoi posterieur. C'est une capacite reservee (cible du chantier :
-   chef_admin), pas une operation de routine sur une fiche.
+   tournoi posterieur -- pas une operation de routine sur une fiche.
 
-   Le distinguer visuellement et dans le DOM evite qu'une future revue le prenne
-   pour un bouton de gestion ordinaire et le rende delegable par erreur (R-51).
-   Le gate d'interface viendra ici meme, en Phase 4. #}
+   DEPUIS LE 2026-09-13 il est delegable via gestion_config (« Reglage TS »),
+   ce qui INVERSE R-51 : il passe par le moteur TrueSkill, donc il suit les
+   reglages de ce moteur. Le gate est pose par admin_reglages.html, qui
+   l'inclut. La separation visuelle demeure, mais elle ne marque plus une
+   frontiere de droits. #}
 <div class="card glass-card mb-6 fade-in" id="bloc-reset-global"
      style="border: 1px solid rgba(255, 183, 15, 0.45);">
     <div class="card-header" style="background: rgba(255, 183, 15, 0.08);">

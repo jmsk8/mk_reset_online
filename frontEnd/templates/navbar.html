@@ -216,16 +216,17 @@
                capacités de rôle (annuler un tournoi) se testent par rôle, elles
                ne sont pas déléguables. Voir hierarchie-admin-plan.md, annexe B.4. #}
             <div class="navbar-dropdown is-right">
-              {# 1 — Tournois #}
-              {% if peut('gestion_joueurs') %}
+              {# 1 — Tournois : permission propre depuis le 2026-09-13, séparée
+                 de la gestion des fiches joueurs. #}
+              {% if peut('gestion_tournois') %}
                 <a class="navbar-item" href="/admin/tournois">
                   <i class="fas fa-trophy mr-2"></i> Gestion tournois
                 </a>
               {% endif %}
 
-              {# 2 — Réglages : gestion_config OU la capacité de reset global.
-                 Le `or` reflète la page, qui héberge les deux (onglets-admin 3.2). #}
-              {% if peut('gestion_config') or role_admin in ('chef_admin', 'superadmin') %}
+              {# 2 — Réglages : gestion_config seule. Le reset global qu'héberge
+                 la page relève désormais de cette même permission. #}
+              {% if peut('gestion_config') %}
                 <a class="navbar-item" href="/admin/reglages">
                   <i class="fas fa-sliders mr-2"></i> Réglages TrueSkill
                 </a>
@@ -282,14 +283,15 @@
               {% endif %}
             </div>
           </div>
-        {% elif not compte_joueur %}
-          <div class="navbar-item">
-            <a class="button is-primary" href="/admin">
-              <span class="icon"><i class="fas fa-lock"></i></span>
-              <span>Admin</span>
-            </a>
-          </div>
         {% endif %}
+
+        {# Le bouton « Admin » vers /admin a été retiré le 2026-09-13 : l'écran
+           de mot de passe qu'il ouvrait ne donne plus accès à rien — plus aucune
+           route backend n'accepte ce jeton. Il envoyait donc les visiteurs dans
+           une impasse, juste au-dessus du bouton Discord qui, lui, fonctionne.
+           La route /admin existe toujours et reste atteignable en tapant l'URL :
+           c'est le filet break-glass, à supprimer avec l'étape 6 de la phase 4
+           (docs/auth-discord-avancement.md). #}
 
         {# Retour d'un joueur déjà inscrit. Sans ce bouton, le seul chemin vers
            la connexion Discord était la page d'invitation — or l'invitation est

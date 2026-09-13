@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from flask import request, jsonify, g
 
 from constants import (ROLE_HIERARCHY, ROLE_PLAYER, ROLE_ADMIN, ROLE_CHEF_ADMIN,
-                       ROLE_SUPERADMIN, PERMISSIONS_CATALOGUE)
+                       ROLE_SUPERADMIN, PERMISSIONS_CATALOGUE, SOUS_PERMISSIONS)
 from db import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -236,15 +236,27 @@ def permission_required(permission: str):
                 )
                 return _erreur("Droits insuffisants", 403, 'permission_manquante')
 
+            # Une sous-permission ne vaut rien sans son parent : l'interface la
+            # presente en retrait et la decoche avec lui, mais c'est ICI que la
+            # regle tient. Sans ca, un octroi direct par l'API donnerait un droit
+            # que l'interface presente comme impossible.
+            requises = [permission]
+            parent = SOUS_PERMISSIONS.get(permission)
+            if parent is not None:
+                requises.append(parent)
+
             try:
-                accordee = _a_permission(compte['id'], permission)
+                manquante = next(
+                    (p for p in requises if not _a_permission(compte['id'], p)), None
+                )
             except _DbIndisponible:
                 return _erreur("Service indisponible", 503, 'indisponible')
 
-            if not accordee:
+            if manquante is not None:
                 logger.warning(
-                    "Permission '%s' refusee a %s (role %s) sur %s",
+                    "Permission '%s' refusee a %s (role %s) sur %s%s",
                     permission, compte['id'], role, request.path,
+                    " (parent '%s' manquant)" % manquante if manquante != permission else "",
                 )
                 return _erreur("Droits insuffisants", 403, 'permission_manquante')
 
@@ -252,6 +264,44 @@ def permission_required(permission: str):
             return f(*args, **kwargs)
         return decorated_function
     return decorateur
+
+
+def compte_a_permission(compte: dict, permission: str):
+    """Le compte deja authentifie porte-t-il cette permission ? Pour une
+    verification SECONDAIRE a l'interieur d'une route.
+
+    Renvoie (accordee: bool, reponse d'erreur | None) -- la reponse est un 503
+    si la base n'a pas repondu, jamais un False silencieux (meme raison qu'en
+    R-55 : « je n'ai pas pu savoir » n'est pas « pas le droit »).
+
+    Existe parce que deux routes melangent deux domaines de permission dans un
+    seul point d'entree, et qu'un decorateur ne peut pas trancher a leur place :
+
+      - update_config ecrit les reglages TrueSkill ET les clefs de mode ligue ;
+      - add_tournament enregistre un tournoi ET cree la fiche d'un joueur
+        inconnu au passage.
+
+    chef_admin et superadmin passent toujours, comme dans permission_required :
+    leur socle EST le catalogue.
+    """
+    if permission not in PERMISSIONS_CATALOGUE:
+        raise ValueError(f"Permission inconnue du catalogue : {permission!r}")
+
+    if ROLE_HIERARCHY.get(compte['role'], ROLE_HIERARCHY[ROLE_PLAYER]) >= ROLE_HIERARCHY[ROLE_CHEF_ADMIN]:
+        return True, None
+    if compte['role'] != ROLE_ADMIN:
+        return False, None
+
+    # Meme regle que permission_required : une sous-permission exige son parent.
+    requises = [permission]
+    parent = SOUS_PERMISSIONS.get(permission)
+    if parent is not None:
+        requises.append(parent)
+
+    try:
+        return all(_a_permission(compte['id'], p) for p in requises), None
+    except _DbIndisponible:
+        return False, _erreur("Service indisponible", 503, 'indisponible')
 
 
 def permissions_delegables_par(compte: dict) -> frozenset:

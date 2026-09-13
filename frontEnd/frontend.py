@@ -59,34 +59,54 @@ def inject_version():
     return dict(app_version=APP_VERSION)
 
 
+def _sonde_session(endpoint, headers):
+    """Interroge une sonde de session. Renvoie True si le backend la refuse.
+
+    Ne purge QUE sur un refus explicite (401/403) : un 5xx ou un timeout dit que
+    le backend a un hoquet, pas que la session est invalide (R-28). Confondre les
+    deux déconnecterait tout le monde à chaque redémarrage du backend.
+    """
+    try:
+        response = requests.get(f"{BACKEND_URL}{endpoint}", headers=headers, timeout=1)
+    except Exception as e:
+        logger.warning("Vérification de session impossible (%s) — session conservée", e)
+        return False
+
+    if response.status_code in (401, 403):
+        return True
+    if response.status_code != 200:
+        logger.warning(
+            "Backend indisponible (HTTP %s) — session conservée.", response.status_code
+        )
+    return False
+
+
 @app.before_request
-def check_admin_token_validity():
+def check_session_validity():
+    """Surveille les DEUX voies d'authentification à chaque requête.
+
+    La session Discord était la grande absente : rien ne la revalidait jamais, et
+    `_est_admin()` lisant une copie figée en cookie, un jeton expiré laissait
+    l'utilisateur affiché comme connecté, onglet admin compris, jusqu'à ce qu'il
+    visite /mon-compte. Les pages admin s'ouvraient alors sur une erreur au
+    chargement des données plutôt que sur une reconnexion.
+    """
     if request.path.startswith('/static'):
         return
 
+    if session.get('player_token'):
+        if _sonde_session('/auth/check-session',
+                          {'X-Session-Token': session['player_token']}):
+            logger.warning("Session Discord refusée -> déconnexion.")
+            session.pop('player_token', None)
+            session.pop('compte', None)
+
     if 'admin_token' in session:
-        token = session['admin_token']
-        try:
-            response = requests.get(
-                f"{BACKEND_URL}/admin/check-token",
-                headers={'X-Admin-Token': token},
-                timeout=1
-            )
-
-            # Ne purger QUE sur un refus explicite : un 5xx dit que le backend a un hoquet,
-            # pas que la session est invalide.
-            if response.status_code in (401, 403):
-                logger.warning("Token admin refusé -> déconnexion.")
-                session.pop('admin_token', None)
-                session.pop('token_start_time', None)
-            elif response.status_code != 200:
-                logger.warning(
-                    "Backend indisponible (HTTP %s) — session conservée.",
-                    response.status_code,
-                )
-
-        except Exception as e:
-            logger.warning(f"Vérification du token impossible ({e}) — session conservée")
+        if _sonde_session('/admin/check-token',
+                          {'X-Admin-Token': session['admin_token']}):
+            logger.warning("Token admin refusé -> déconnexion.")
+            session.pop('admin_token', None)
+            session.pop('token_start_time', None)
 
 @app.context_processor
 def inject_lifetime():
@@ -148,17 +168,22 @@ def backend_request(method, endpoint, data=None, params=None, headers=None, time
 def _session_admin_expiree():
     """Sortie commune quand le backend refuse la session sur une page admin.
 
-    Un admin Discord ne se reconnecte pas par le formulaire de mot de passe.
+    Purge les DEUX voies : la session Discord et l'ancien jeton par mot de passe
+    peuvent coexister dans le même cookie, et n'en retirer qu'une laissait
+    l'utilisateur affiché comme connecté.
+
+    Renvoie toujours vers l'accueil, jamais vers le formulaire de mot de passe :
+    plus aucune route backend n'accepte ce jeton (aucun usage d'
+    `admin_or_role_required` ne subsiste), s'y reconnecter ne rouvrirait donc
+    rien. La suppression complète de ce chemin reste à faire en commit isolé
+    (avancement, phase 4 étape 6).
     """
-    if session.get('player_token'):
-        session.pop('player_token', None)
-        session.pop('compte', None)
-        flash('Votre session a expiré. Reconnectez-vous avec Discord.', 'warning')
-        return redirect(url_for('index'))
+    session.pop('player_token', None)
+    session.pop('compte', None)
     session.pop('admin_token', None)
     session.pop('token_start_time', None)
-    flash('Session expirée.', 'warning')
-    return redirect(url_for('admin_login'))
+    flash('Votre session a expiré. Reconnectez-vous avec Discord.', 'warning')
+    return redirect(url_for('index'))
 
 
 # Rôles qui ouvrent les pages d'administration. UNE seule liste : la même
@@ -171,10 +196,17 @@ ROLES_ADMIN = ('admin', 'chef_admin', 'superadmin')
 # séparé, il ne peut pas l'importer. Même duplication assumée que CGU_VERSION,
 # et même exigence : les deux listes doivent rester alignées (test_revue).
 PERMISSIONS_CATALOGUE = frozenset({
-    'gestion_joueurs', 'gestion_ligues', 'gestion_saisons',
-    'gestion_liaisons', 'gestion_comptes', 'gestion_invitations',
-    'gestion_config', 'gestion_matchmaking',
+    'gestion_joueurs', 'rgpd_joueurs', 'gestion_tournois', 'gestion_ligues',
+    'gestion_saisons', 'gestion_liaisons', 'gestion_comptes',
+    'gestion_invitations', 'gestion_config', 'gestion_matchmaking',
 })
+
+# Copie de backEnd/constants.SOUS_PERMISSIONS (enfant -> parent), même
+# duplication assumée que le catalogue lui-même. Sert à l'affichage en retrait
+# et au décochage en cascade ; l'autorité reste le backend, qui exige les deux.
+SOUS_PERMISSIONS = {
+    'rgpd_joueurs': 'gestion_joueurs',
+}
 
 
 def _role_session():
@@ -859,7 +891,16 @@ def proxy_demande_liaison():
 def admin_comptes():
     if not _est_admin():
         flash('Accès réservé aux administrateurs', 'warning')
-        return redirect(url_for('admin_login'))
+        return redirect(url_for('index'))
+
+    # Revalidation avant rendu, comme les autres pages admin. Sans elle, la page
+    # s'ouvrait sur la foi du cookie puis son JS se heurtait à un 401 au premier
+    # chargement de données : l'utilisateur voyait « Chargement impossible. »
+    # au lieu d'être invité à se reconnecter.
+    _, status = backend_request('GET', '/admin/check-token', headers=admin_headers())
+    if status in (401, 403):
+        return _session_admin_expiree()
+
     compte = session.get('compte') or {}
     # `role_admin` et `peut()` viennent du context processor ; `mon_compte_id`
     # permet au JS de ne pas proposer à quelqu'un d'agir sur sa propre ligne
@@ -868,6 +909,9 @@ def admin_comptes():
         'admin_comptes.html',
         est_superadmin=(compte.get('role') == 'superadmin'),
         mon_compte_id=compte.get('id'),
+        # Le panneau de permissions affiche les sous-permissions en retrait sous
+        # leur parent, et les décoche avec lui.
+        sous_permissions=SOUS_PERMISSIONS,
     )
 
 
@@ -1153,14 +1197,21 @@ def admin_logout():
 def admin_tournois():
     if not _est_admin():
         flash('Accès réservé aux administrateurs', 'warning')
-        return redirect(url_for('admin_login'))
+        return redirect(url_for('index'))
+
+    # Permission propre depuis la scission du 2026-09-13 : sans ce garde, un
+    # admin qui n'a que « Fiches joueurs » ouvrirait un formulaire dont chaque
+    # enregistrement répondrait 403.
+    if 'gestion_tournois' not in _permissions_session():
+        flash("Vous n'avez pas accès à l'enregistrement des tournois.", 'warning')
+        return redirect(url_for('index'))
 
     headers = admin_headers()
     _, status = backend_request('GET', '/admin/check-token', headers=headers)
     if status in [401, 403]:
-        session.pop('admin_token', None)
-        flash('Votre session a expiré. Veuillez vous reconnecter.', 'danger')
-        return redirect(url_for('admin_login'))
+        # Purge les deux voies : ne retirer qu'admin_token laissait la session
+        # Discord périmée en cookie, donc l'utilisateur toujours affiché connecté.
+        return _session_admin_expiree()
 
     if request.method == 'POST':
         date_tournoi = request.form.get('date')
@@ -1234,7 +1285,7 @@ def admin_revert_last():
 def admin_joueurs_fiches():
     if not _est_admin():
         flash('Accès interdit.', 'danger')
-        return redirect(url_for('admin_login'))
+        return redirect(url_for('index'))
     headers = admin_headers()
     _, status = backend_request('GET', '/admin/check-token', headers=headers)
     if status in [401, 403]:
@@ -1244,19 +1295,18 @@ def admin_joueurs_fiches():
 
 @app.route('/admin/reglages')
 def admin_reglages():
-    """Réglages du classement : configuration globale et reset du sigma.
+    """Réglage TS : configuration globale et reset du sigma.
 
-    Deux droits distincts y cohabitent, d'où le `or` : la configuration relève
-    de gestion_config (déléguable), le reset global d'une capacité de rôle qui,
-    elle, ne se délègue jamais. Chaque bloc est gaté séparément DANS le
-    template -- ce gate-ci n'ouvre que la porte.
+    Un seul droit depuis le 2026-09-13 : le reset global est devenu délégable
+    via gestion_config (contexte 8.5-D), il ne relève plus d'une capacité de
+    rôle. Le `or role_admin in (...)` d'avant n'a donc plus d'objet -- un
+    chef_admin porte gestion_config par construction, son socle EST le catalogue.
     """
     if not _est_admin():
         flash('Accès interdit.', 'danger')
-        return redirect(url_for('admin_login'))
+        return redirect(url_for('index'))
 
-    if not ('gestion_config' in _permissions_session()
-            or _role_session() in ('chef_admin', 'superadmin')):
+    if 'gestion_config' not in _permissions_session():
         flash("Vous n'avez pas accès aux réglages du classement.", 'warning')
         return redirect(url_for('index'))
 
@@ -1270,7 +1320,7 @@ def admin_reglages():
 def admin_saisons_page():
     if not _est_admin():
         flash('Accès interdit.', 'danger')
-        return redirect(url_for('admin_login'))
+        return redirect(url_for('index'))
     headers = admin_headers()
     _, status = backend_request('GET', '/admin/check-token', headers=headers)
     if status in [401, 403]:
@@ -1421,7 +1471,7 @@ def proxy_draft_simulation():
 def admin_ligues_page():
     if not _est_admin():
         flash('Accès interdit.', 'danger')
-        return redirect(url_for('admin_login'))
+        return redirect(url_for('index'))
     
     headers = admin_headers()
     _, status = backend_request('GET', '/admin/check-token', headers=headers)

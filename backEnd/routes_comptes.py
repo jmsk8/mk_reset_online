@@ -20,7 +20,7 @@ import requests
 from flask import Blueprint, jsonify, request, g, make_response
 
 from constants import (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERARCHY,
-                       CGU_VERSION, PERMISSIONS_CATALOGUE,
+                       CGU_VERSION, PERMISSIONS_CATALOGUE, SOUS_PERMISSIONS,
                        DEFAULT_MU, DEFAULT_SIGMA, DISCORD_HTTP_TIMEOUT,
                        AVATAR_CACHE_TTL, AVATAR_MAX_BYTES)
 from auth import (player_required, role_required, admin_or_role_required,
@@ -960,6 +960,27 @@ def accorder_permission(compte_id, permission):
                             "code": "cible_non_admin",
                         }), 409
 
+                    # Une sous-permission sans son parent ne donnerait aucun
+                    # droit (permission_required exige les deux) : l'accorder
+                    # afficherait une case cochee sans effet. Refus explicite
+                    # plutot qu'un 200 trompeur. Lu dans la transaction, apres le
+                    # FOR UPDATE : le parent ne peut pas disparaitre entre-temps.
+                    parent = SOUS_PERMISSIONS.get(permission)
+                    if parent is not None:
+                        cur.execute(
+                            "SELECT 1 FROM permissions_admin "
+                            "WHERE compte_id = %s AND permission = %s",
+                            (compte_id, parent),
+                        )
+                        if cur.fetchone() is None:
+                            conn.rollback()
+                            return jsonify({
+                                "error": "Ce droit complete « %s », qui doit etre accorde "
+                                         "d'abord." % parent,
+                                "code": "parent_manquant",
+                                "parent": parent,
+                            }), 409
+
                     # accorde_par vient de la session, JAMAIS du corps (R-49).
                     cur.execute(
                         "INSERT INTO permissions_admin (compte_id, permission, accorde_par) "
@@ -1006,18 +1027,27 @@ def retirer_permission(compte_id, permission):
     if erreur is not None:
         return erreur
 
+    # Retirer un parent emporte ses sous-permissions : laissees seules elles ne
+    # donneraient aucun droit (permission_required exige le parent), mais elles
+    # resteraient cochees dans l'interface et reviendraient a la vie au moindre
+    # re-octroi du parent -- un droit rendu sans que personne ne l'ait decide.
+    enfants = [e for e, p in SOUS_PERMISSIONS.items() if p == permission]
+    a_retirer = [permission] + enfants
+
     try:
         with get_db_connection() as conn:
             try:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "DELETE FROM permissions_admin WHERE compte_id = %s AND permission = %s",
-                        (compte_id, permission),
+                        "DELETE FROM permissions_admin WHERE compte_id = %s "
+                        "AND permission = ANY(%s)",
+                        (compte_id, a_retirer),
                     )
                     retiree = bool(cur.rowcount)
                     if retiree:
                         _audit(cur, 'permission_retiree', 'compte', compte_id,
-                               {"permission": permission})
+                               {"permission": permission,
+                                "sous_permissions_emportees": enfants})
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -1026,7 +1056,8 @@ def retirer_permission(compte_id, permission):
         logger.error("Retrait de '%s' au compte %s impossible: %s", permission, compte_id, e)
         return jsonify({"error": "Erreur serveur"}), 500
 
-    return jsonify({"status": "success", "permission": permission, "inchange": not retiree})
+    return jsonify({"status": "success", "permission": permission,
+                    "inchange": not retiree, "sous_permissions_retirees": enfants})
 
 
 # ---------------------------------------------------------------------------

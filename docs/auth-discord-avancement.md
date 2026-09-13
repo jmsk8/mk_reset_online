@@ -4,7 +4,11 @@
 > [auth-discord-plan.md](auth-discord-plan.md) ; **ce fichier-ci ne dit que ce qui est fait,
 > ce qui a été trouvé en chemin, et ce qui reste**. Les codes `R-xx` renvoient au §8 du plan.
 >
-> **Dernière mise à jour : 2026-09-02** — après une revue complète (§ « Revue du 2026-09-02 »).
+> **Dernière mise à jour : 2026-09-13** — correctif du défaut de session expirée (§ phase 4), et
+> constat que le code a dépassé le tableau de la bascule : le mot de passe n'ouvre plus aucune route.
+>
+> **La couche au-dessus** — rôles admin, permissions déléguables, onglets — est suivie dans
+> [hierarchie-admin-avancement.md](hierarchie-admin-avancement.md).
 
 ## Où on en est
 
@@ -193,7 +197,7 @@ supprime réellement le mot de passe, ne peut pas l'être sans une décision hum
 | 2 | Les routes admin acceptent les deux voies | ✅ 22 routes sur 23 |
 | 3 | Le frontend envoie la bonne voie | ✅ 21 en-têtes, 19 gardes, navbar |
 | 4 | Routes super-admin | ✅ livré en phase 2 |
-| 5 | Période de recouvrement | ⬜ **à vivre** : administrer via Discord plusieurs jours |
+| 5 | Période de recouvrement | ✅ **vécue** : plus aucune route n'accepte le mot de passe (voir ci-dessous) |
 | 6 | Découplage du mot de passe | 🔴 **bloqué** — voir ci-dessous |
 | 7 | Runbook break-glass écrit **et testé** | 🟡 écrit ([runbook-admin.md](runbook-admin.md)), **pas testé** |
 
@@ -244,6 +248,59 @@ pourquoi.
 échouera si une route se retrouve sans authentification, ou avec les deux décorateurs empilés
 (ce qui donnerait un ET là où on veut un OU).
 
+### ⚠️ Le code a dépassé ce tableau : le mot de passe n'ouvre plus rien
+
+**Constaté le 2026-09-13**, en analysant le défaut de session ci-dessous. L'étape 2 disait
+« 22 routes sur 23 acceptent les deux voies ». Ce n'est plus vrai :
+
+- **`admin_or_role_required` n'est utilisé sur aucune route** — zéro occurrence comme décorateur.
+  Il reste importé par trois modules, sans emploi.
+- `/admin/check-token` est passée à `@role_required(ROLE_ADMIN)`.
+- Le seul `@admin_required` restant est sur `/admin/refresh-token`, qui ne sert qu'à prolonger un
+  jeton devenu inutile.
+
+Autrement dit **l'étape 5 (période de recouvrement) est terminée dans les faits** : toutes les
+routes admin exigent déjà une session Discord. `/admin-auth` délivre toujours un jeton, mais ce
+jeton n'ouvre plus aucune porte — on peut s'y connecter, et rien ne fonctionne ensuite.
+
+C'est ce qui produisait le symptôme « je retombe parfois sur l'ancienne page de connexion par mot
+de passe » : `_session_admin_expiree()` y renvoyait, et s'y reconnecter ne servait à rien.
+**Corrigé a minima** : toutes les sorties de session renvoient désormais vers l'accueil avec
+« reconnectez-vous avec Discord ». Plus aucun `url_for('admin_login')` ne subsiste.
+
+**L'étape 6 reste à faire**, en commit isolé, et ses trois prérequis restent entiers : deux
+`superadmin` distincts, break-glass exécuté une fois, période de recouvrement. Le code y est prêt ;
+c'est la décision humaine qui manque toujours.
+
+### 🔴 Défaut trouvé le 2026-09-13 : une session Discord expirée restait affichée comme valide
+
+**Symptômes** : après expiration du jeton, l'utilisateur se voyait toujours connecté, onglet admin
+compris ; l'onglet ouvrait une page qui échouait sur « Chargement impossible. » ; un retour arrière
+le réaffichait connecté.
+
+**Cause unique.** Le frontend décide l'état connecté et l'ouverture des pages admin en lisant une
+copie figée dans le cookie (`session['compte']`, via `_est_admin()`), et **rien ne revalidait jamais
+`player_token`** — contrairement à `admin_token`, surveillé à chaque requête depuis toujours. Le
+seul endroit qui purgeait une session Discord périmée était `/mon-compte`, une page qu'on ne visite
+pas forcément. Le cookie survivait donc indéfiniment à la session qu'il décrit.
+
+Trois conséquences en cascade, toutes corrigées :
+
+| Où | Ce qui n'allait pas |
+|---|---|
+| `before_request` | ne surveillait que `admin_token`. Surveille maintenant les deux voies, via la nouvelle sonde `/auth/check-session` (`@player_required`, aucune lecture SQL au-delà de la vérification de session — `/auth/me` aurait ajouté une requête par page) |
+| `/admin/comptes` | **seule page admin sans revalidation** avant rendu : elle s'ouvrait sur la foi du cookie, puis son JS se heurtait au 401. Revalide désormais comme les cinq autres |
+| `admin_tournois` | sur 401/403, ne purgeait que `admin_token`, laissant la session Discord périmée en place. Passe par `_session_admin_expiree()`, qui purge les deux |
+| JS d'`admin_comptes.html` | aucun appel ne regardait le statut 401/403 : chaque échec affichait un message inerte. `api()` redirige maintenant vers l'accueil |
+
+**Ce qui n'était pas en cause**, vérifié : le cache HTTP. `after_request` pose déjà
+`no-cache, no-store, must-revalidate` partout. Le « retour arrière toujours connecté » n'avait
+besoin d'aucun bfcache pour s'expliquer — une vraie requête serveur avec un cookie jamais purgé
+suffisait.
+
+**Ce n'était pas une faille de privilège** : le backend relit rôle et permissions en base à chaque
+requête protégée. L'utilisateur voyait une interface fausse, jamais des données interdites.
+
 ### Limite connue et assumée
 
 `_est_admin()`, côté frontend, lit le rôle depuis la **copie mise en session à la connexion**.
@@ -254,6 +311,13 @@ privilège est au backend ; la fonction côté frontend n'est qu'une porte d'int
 Le rafraîchir coûterait un appel réseau sur chaque page **et** chaque proxy, exactement ce que
 R-28 demande d'éviter. Si la confusion devient gênante, la parade est de rafraîchir le rôle sur
 les seules pages admin, pas sur les proxys.
+
+**Portée exacte depuis le correctif du 2026-09-13** : cette limite ne vaut plus que pour le
+**changement de rôle**. Une session **expirée ou révoquée** est désormais détectée à chaque requête
+et purgée — c'était le défaut ci-dessus. Reste donc le seul cas d'un admin rétrogradé pendant que
+sa session est valide : `/auth/check-session` valide l'existence de la session, pas le rôle, et
+c'est délibéré — relire le rôle sur chaque page ramènerait le coût que R-28 refuse. Il voit encore
+l'onglet jusqu'à sa prochaine visite sur `/mon-compte`, jamais les données.
 
 ---
 
@@ -489,6 +553,7 @@ l'API Discord simulée. Seul `flask` est requis.
 | `test_revue.py` | non-régressions des 9 défauts trouvés en revue (F1 à F9) |
 | `test_rgpd.py` | effacement (le dossier sportif est intact, table par table), audit avant suppression, empreinte au lieu du snowflake, export complet, garde-fous des purges |
 | `test_profils.py` | validation des réseaux (`javascript:`, `data:`, URL complète, échappement d'attribut), couleur, liste blanche des champs éditables, contenu du profil public |
+| `test_session_expiree.py` | la sonde `/auth/check-session` et son coût, la revalidation des deux voies dans `before_request`, la purge sur 401/403 seulement (R-28), aucune page admin rendue sur la seule foi du cookie, la sortie de session, la réaction du JS au 401 |
 
 `run.sh` affiche un décompte final et nomme les fichiers en échec : un fichier qui plante à
 l'import n'affiche aucune assertion, et son absence passerait autrement inaperçue au milieu des

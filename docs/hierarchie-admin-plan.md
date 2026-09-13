@@ -12,9 +12,17 @@
 > numérotation de [auth-discord-plan.md](auth-discord-plan.md#8-registre-des-risques) à partir de
 > R-46** — les deux registres se lisent comme un seul.
 >
-> **Rien n'est codé.** Ce document est la conception à implémenter, pas un journal d'avancement —
-> celui-ci (`hierarchie-admin-avancement.md`) sera créé au démarrage réel du chantier, sur le modèle
-> de [auth-discord-avancement.md](auth-discord-avancement.md).
+> ~~**Rien n'est codé.**~~ **Les 6 phases sont livrées** (2026-09-10), et deux chantiers s'y sont
+> ajoutés depuis. Ce document reste la **conception et le registre des risques** ; il ne bouge que
+> si une décision change.
+> **L'avancement est suivi dans [hierarchie-admin-avancement.md](hierarchie-admin-avancement.md)** —
+> c'est le fichier à lire en premier pour savoir où en est le chantier, ce qui reste, et les pièges
+> déjà rencontrés.
+>
+> ⚠️ **Deux décisions de ce document ont été inversées depuis.** Voir l'avancement, § Chantier 4 :
+> **R-51** (le reset global est devenu délégable via `gestion_config`) et le §4.3bis/R-52, dont la
+> règle à deux cas en dur doit céder la place à une règle de rang générique (lacune de sécurité
+> prouvée, voir « Ce qui reste »).
 
 ---
 

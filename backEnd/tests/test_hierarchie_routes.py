@@ -227,8 +227,12 @@ d = r.get_json()
 check("lecture -> 200", r.status_code == 200, d)
 check("  permissions accordées listées",
       d.get('permissions') == ['gestion_saisons', 'gestion_ligues'], d.get('permissions'))
-check("  plafond de l'acteur exposé pour l'IHM", len(d.get('delegables') or []) == 8,
-      d.get('delegables'))
+# Compare au catalogue plutot qu'a un compte en dur : le socle d'un chef_admin
+# EST le catalogue, et un nombre fige cassait ce test a chaque ajout de
+# permission sans rien reveler d'autre que sa propre obsolescence.
+from constants import PERMISSIONS_CATALOGUE as _CATALOGUE
+check("  plafond de l'acteur exposé pour l'IHM",
+      set(d.get('delegables') or []) == set(_CATALOGUE), d.get('delegables'))
 
 cli, cur, conn = monter([(r"SELECT role FROM comptes WHERE id", None)], role='chef_admin')
 check("compte inexistant -> 404",
