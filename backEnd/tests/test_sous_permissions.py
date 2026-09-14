@@ -189,6 +189,100 @@ check("  et le bouton Supprimer y est conditionné",
       'PEUT_RGPD_JOUEURS' in gestion_js)
 
 
+print("\n=== Ergonomie du panneau : confirmation et scroll ===")
+import re as _re2
+
+# Le bandeau remontait la page a CHAQUE succes : cocher un droit dans le volet
+# des permissions (deplie en bas) renvoyait en haut, et il fallait redescendre
+# pour cocher le suivant. Un succes de permission ne doit plus rien deplacer.
+i = comptes_html.find('function afficher(')
+corps_afficher = comptes_html[i:i + 900]
+check("afficher() sait ne pas bouger la page",
+      'discret' in corps_afficher, corps_afficher[:200])
+
+i = comptes_html.find("case_.addEventListener('change'")
+# Borne sur la vraie fin du handler, pas sur une taille devinee : un nombre trop
+# court faisait echouer l'assertion sur du code pourtant present.
+handler = comptes_html[i:comptes_html.find('ligne.appendChild(case_)', i)]
+check("un succès de permission n'appelle plus le bandeau",
+      "afficher('success'" not in handler, handler[-600:])
+check("  le retour se fait sur la ligne cochée",
+      'flash(entete_l' in handler)
+check("  mais un échec reste visible en haut",
+      "afficher('danger'" in handler)
+check("flash() ne touche jamais au défilement",
+      'scrollTo' not in comptes_html[comptes_html.find('function flash('):
+                                     comptes_html.find('function flash(') + 700])
+
+# Tout changement de droits ou d'etat d'un compte passe par une confirmation
+# nommant la cible : sur une liste, « Confirmer ? » ne dit pas sur QUI on agit.
+check("un helper de confirmation nommant la cible existe",
+      'function confirmer(' in comptes_html and 'const nomDe' in comptes_html)
+
+ecritures = [(m.group(2), m.group(1)) for m in _re2.finditer(
+    r"api\(\s*'([^']+)'[^)]*?,\s*'(POST|DELETE|PUT)'", comptes_html, _re2.S)]
+# Creer une invitation ou un jeton ne detruit ni ne modifie rien d'existant :
+# seules ces deux-la restent sans confirmation, deliberement.
+SANS_CONFIRMATION = {'/admin/invitations', '/admin/service-tokens'}
+manquantes = []
+for methode, url in ecritures:
+    if url in SANS_CONFIRMATION:
+        continue
+    j = comptes_html.find("'%s'" % url)
+    amont = comptes_html[max(0, j - 900):j]
+    if not ('confirmer(' in amont or 'confirm(' in amont or 'prompt(' in amont):
+        manquantes.append((methode, url))
+check("toute écriture destructrice demande confirmation", not manquantes, manquantes)
+
+for geste in ('Changer le rôle', 'Suspendre ce compte', 'Fermer toutes les sessions',
+              'Révoquer cette invitation'):
+    check("  « %s » est confirmé" % geste, geste in comptes_html)
+
+# Annuler ne doit pas laisser l'ecran affirmer un etat que la base n'a pas.
+check("annuler un changement de rôle remet le sélecteur",
+      'sel.value = c.role;' in comptes_html)
+check("annuler une permission remet la case",
+      _re2.search(r"case_\.checked = !case_\.checked;\s*\n\s*return;", comptes_html)
+      is not None)
+
+
+print("\n=== Onglets : ce qu'on ne peut pas faire ne s'affiche pas ===")
+# Les trois onglets de /admin/comptes relevent de trois permissions distinctes.
+# Seul « Jetons de bot » etait gate : un admin sans gestion_invitations voyait
+# l'onglet, cliquait, et atterrissait sur la page d'accueil sans explication.
+for onglet, perm in (('liaisons', 'gestion_liaisons'),
+                     ('comptes', 'gestion_comptes'),
+                     ('invitations', 'gestion_invitations')):
+    i = comptes_html.find('data-onglet="%s"' % onglet)
+    amont = comptes_html[max(0, i - 260):i]
+    check("l'onglet %s est gaté par %s" % (onglet, perm),
+          "peut('%s')" % perm in amont, amont[-120:])
+    # La vue doit suivre l'onglet : une vue rendue sans son onglet serait du
+    # code mort, un onglet sans sa vue un clic dans le vide.
+    j = comptes_html.find('id="vue-%s"' % onglet)
+    check("  et sa vue l'est aussi",
+          "peut('%s')" % perm in comptes_html[max(0, j - 200):j])
+
+# Les vues absentes ne doivent jamais etre dereferencees : un getElementById
+# sur une vue non rendue renvoie null, et la TypeError tuerait tout le script.
+for fn in ('chargerLiaisons', 'chargerComptes', 'chargerInvitations', 'chargerBots'):
+    i = comptes_html.find('function %s(' % fn)
+    check("%s sort si sa vue n'existe pas" % fn,
+          'if (!vue) return;' in comptes_html[i:i + 700], fn)
+
+check("l'onglet actif est choisi parmi ceux rendus",
+      'montrer(onglets[0])' in comptes_html)
+check("  et plus codé en dur dans le gabarit",
+      'class="is-active" data-onglet' not in comptes_html)
+
+# La page s'ouvre avec l'une des trois permissions ; sans aucune, elle serait
+# vide -- la navbar masque deja l'entree, la route doit refuser l'URL directe.
+i = front.find('def admin_comptes(')
+check("la route refuse qui n'a aucune des trois permissions",
+      "'gestion_comptes', 'gestion_liaisons', 'gestion_invitations'"
+      in front[i:i + 900])
+
+
 print("\n" + "=" * 60)
 print("%d/%d assertions" % (sum(OK), len(OK)))
 sys.exit(0 if all(OK) else 1)

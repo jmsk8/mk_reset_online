@@ -113,11 +113,10 @@
                                 <p><strong>Sigma :</strong> Incertitude sur le niveau (défaut: 8.333).</p>
                                 <hr class="has-background-grey-dark">
                                 <p><strong>Tier :</strong> Calculé automatiquement.</p>
-                                <ul>
-                                    <li><span class="tag tier-s is-light">S</span> Top Tier</li>
-                                    <li><span class="tag tier-a is-light">A</span> Excellent</li>
-                                    <li><span class="tag tier-b is-light">B</span> Moyen +</li>
-                                    <li><span class="tag tier-c is-light">C</span> Débutant</li>
+                                {# Liste peuplee dynamiquement par gestion.js (loadTierLegend) depuis
+                                   /admin/tiers : plus de S/A/B/C figes, voir
+                                   docs/tableau-seuils-tiers-plan.md Partie B. #}
+                                <ul id="tierLegendList">
                                     <li><span class="tag is-white">U</span> Non classé (ou inactif)</li>
                                 </ul>
                             </div>

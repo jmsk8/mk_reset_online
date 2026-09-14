@@ -10,6 +10,19 @@ DEFAULT_GHOST_INTERVAL_DAYS = 7
 DEFAULT_UNRANKED_THRESHOLD = 10
 DEFAULT_SIGMA_THRESHOLD = 4.0
 
+# Tiers par defaut (nom, couleur, seuil en multiples d'ecart-type, rang) :
+# comportement historique de tier_for_score (mean+stdev / mean / mean-stdev),
+# desormais une liste geree en base (table `tiers`, voir services.py et
+# docs/tableau-seuils-tiers-plan.md Partie B). Sert de valeur de secours si la
+# table est vide, et de cible au bouton « Reinitialiser » de l'admin. Rang
+# decroissant du meilleur au pire ; seuil_k None = plancher (pas de seuil bas).
+DEFAULT_TIERS = [
+    {"nom": "S", "couleur": "#f77b7b", "seuil_k": 1.0, "rang": 3},
+    {"nom": "A", "couleur": "#9cda74", "seuil_k": 0.0, "rang": 2},
+    {"nom": "B", "couleur": "#7fe6ee", "seuil_k": -1.0, "rang": 1},
+    {"nom": "C", "couleur": "#ae6ce4", "seuil_k": None, "rang": 0},
+]
+
 RANKED_SIGMA_LIMIT = 2.5
 GHOST_SIGMA_CAP = 3.5
 GHOST_MISSED_THRESHOLD = 4

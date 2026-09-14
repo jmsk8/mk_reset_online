@@ -59,17 +59,31 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     }
 }
 
+// Couleurs des tiers dynamiques (Partie B) : chargees une fois depuis
+// /admin/tiers et mises en cache ici plutot que refaire un appel reseau par
+// ligne de tableau. `tiersColorCache` mappe nom -> couleur hex ; 'U' reste
+// hors de la table `tiers`, gere a part.
+let tiersColorCache = null;
+
+async function loadTiersColorCache() {
+    if (tiersColorCache) return tiersColorCache;
+    const res = await apiCall('/admin/tiers', 'GET');
+    tiersColorCache = Array.isArray(res)
+        ? Object.fromEntries(res.map(t => [t.nom, t.couleur]))
+        : {};
+    return tiersColorCache;
+}
+
+// Renvoie {class, style} pour un badge de tier : `style` porte la couleur
+// dynamique (fond degrade non reproduit ici -- juste la couleur du tier),
+// `class` gere seulement les cas hors table (U, tier inconnu/vide).
 function getTierColor(rank) {
-    if (!rank) return 'is-light';
+    if (!rank) return { class: 'is-light', style: '' };
     const cleanedRank = rank.trim();
-    switch(cleanedRank) {
-        case 'S': return 'tier-s';
-        case 'A': return 'tier-a';
-        case 'B': return 'tier-b';
-        case 'C': return 'tier-c';
-        case 'U': return 'is-white';
-        default: return 'is-light';
-    }
+    if (cleanedRank === 'U') return { class: 'is-white', style: '' };
+    const couleur = tiersColorCache && tiersColorCache[cleanedRank];
+    if (couleur) return { class: '', style: `background:${couleur}; color:#fff;` };
+    return { class: 'is-light', style: '' };
 }
 
 
@@ -83,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadPlayers();
     loadConfig();
+    loadTierLegend();
 
     const dateInput = document.getElementById('globalResetDate');
     if (dateInput) {
@@ -171,10 +186,10 @@ const joueursCharges = {};
 async function loadPlayers() {
     const tbody = document.getElementById('playersTableBody');
     if (!tbody) return;
-    
+
     tbody.innerHTML = '<tr><td colspan="5" class="has-text-centered has-text-grey">Chargement en cours...</td></tr>';
 
-    const res = await apiCall('/admin/joueurs', 'GET');
+    const [res] = await Promise.all([apiCall('/admin/joueurs', 'GET'), loadTiersColorCache()]);
     tbody.innerHTML = '';
 
     if (res.error) {
@@ -190,7 +205,7 @@ async function loadPlayers() {
     res.forEach(player => {
         joueursCharges[player.id] = player;
         const tr = document.createElement('tr');
-        const tierClass = getTierColor(player.tier);
+        const tierBadge = getTierColor(player.tier);
 
         const badgeCompte = player.compte_lie
             ? `<span class="icon has-text-link ml-1" title="Compte Discord rattaché : `
@@ -215,7 +230,7 @@ async function loadPlayers() {
                 ${player.sigma ? parseFloat(player.sigma).toFixed(3) : '0.000'}
             </td>
             <td ${rowOpacity}>
-                <span class="tag ${tierClass}">${escapeHtml(player.tier || '?')}</span>
+                <span class="tag ${tierBadge.class}" style="${tierBadge.style}">${escapeHtml(player.tier || '?')}</span>
             </td>
             <td class="has-text-right">
                 <button class="button is-small is-info is-outlined mr-1"
@@ -264,6 +279,34 @@ async function loadConfig() {
         poser('configIpVersionV2', isV2, 'checked');
         poser('configIpVersionV1', !isV2, 'checked');
     }
+}
+
+// Legende des tiers (page Fiches joueurs) : tiers dynamiques (Partie B),
+// plus de S/A/B/C figes dans le gabarit -- voir
+// docs/tableau-seuils-tiers-plan.md. Le 'U' (non classe) reste dans le HTML,
+// hors de la table `tiers`, et sert de point d'ancrage pour l'insertion.
+async function loadTierLegend() {
+    const list = document.getElementById('tierLegendList');
+    if (!list) return; // page sans ce bloc
+
+    const res = await apiCall('/admin/tiers', 'GET');
+    if (!Array.isArray(res)) return;
+
+    const uLi = list.querySelector('li');
+    res.slice().sort((a, b) => b.rang - a.rang).forEach((t, idx, arr) => {
+        const li = document.createElement('li');
+        const tag = document.createElement('span');
+        tag.className = 'tag is-light';
+        tag.style.background = t.couleur;
+        tag.style.color = '#fff';
+        tag.textContent = t.nom;
+        const isPlancher = idx === arr.length - 1;
+        li.appendChild(tag);
+        li.appendChild(document.createTextNode(
+            ' ' + (isPlancher ? 'Débutant' : (idx === 0 ? 'Top Tier' : 'Intermédiaire'))
+        ));
+        list.insertBefore(li, uLi);
+    });
 }
 
 async function deletePlayer(id) {

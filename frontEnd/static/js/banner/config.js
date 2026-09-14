@@ -15,7 +15,7 @@ const LIGHTNING_SVG =
 const LIGHTNING_SRC = 'data:image/svg+xml,' + encodeURIComponent(LIGHTNING_SVG);
 
 const GAME_CONFIG = {
-    debugMode: true,
+    debugMode: false,
 
     resources: {
         characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],

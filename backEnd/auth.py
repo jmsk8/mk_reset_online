@@ -333,12 +333,32 @@ def refuse_auto_modification(acteur_id: int, cible_id: int):
 
 
 def compte_cible_protegee(f):
-    """Interdit d'agir sur un compte plus protege que soi.
+    """Interdit d'agir sur un compte de rang egal ou superieur au sien.
 
-    Deux regles, memes consequences :
-      - le superadmin est intouchable par quiconque d'autre que lui-meme ;
-      - un chef_admin est intouchable par un autre chef_admin (seul le
-        superadmin agit sur un chef_admin).
+    UNE regle de rang, et rien d'autre (docs/hierarchie-admin-plan.md 8.1) :
+
+        rang(acteur) >  rang(cible)  -> autorise
+        rang(acteur) <= rang(cible)  -> 403 cible_protegee
+
+    Consequences : un admin n'agit que sur un player ; un chef_admin sur un
+    player et un admin, jamais sur un pair ; le superadmin sur tout le monde
+    sauf un autre superadmin -- et il est seul a tout instant, donc en pratique
+    sur tout le monde.
+
+    ELLE REMPLACE deux `if` en dur (cible superadmin, cible chef_admin) qui ne
+    disaient RIEN du cas admin -> admin : un simple admin porteur de
+    gestion_comptes pouvait suspendre un pair admin et fermer ses sessions, sur
+    les quatre routes /sync /sessions /delier /statut. Prouve par execution le
+    2026-09-13, corrige le 2026-09-14 (test_audit_permissions.py, section 3).
+
+    Le cas chef_admin contre chef_admin (R-52) n'est plus un cas particulier :
+    il tombe de l'egalite des rangs. Ne pas le re-ajouter en dur.
+
+    L'egalite refuse, y compris entre pairs : c'est le coeur de la regle. Agir
+    sur SOI-MEME reste permis (teste plus haut, avant meme la lecture en base) --
+    fermer ses propres sessions est legitime ; ce sont les routes qui doivent
+    refuser l'auto-modification quand elle n'a pas de sens, via
+    refuse_auto_modification.
 
     Un decorateur plutot qu'une fonction appelee a la main dans chaque route :
     rien n'empeche un futur endpoint d'oublier un appel, alors qu'un decorateur
@@ -369,20 +389,35 @@ def compte_cible_protegee(f):
             logger.error("Verification de cible protegee impossible: %s", e)
             return _erreur("Service indisponible", 503, 'indisponible')
 
+        # row is None : compte inexistant. On laisse passer -- c'est a la route
+        # de repondre 404, le decorateur n'a pas a trancher a sa place (et un
+        # 403 ici revelerait l'inexistence par un code different).
         if row is not None:
             role_cible = row[0]
-            acteur_est_superadmin = acteur['role'] == ROLE_SUPERADMIN
+            # Defaut ferme des deux cotes : un role inconnu en base vaut le rang
+            # le PLUS BAS pour l'acteur (il ne peut presque rien) et le plus
+            # HAUT pour la cible (elle est presque intouchable). Une colonne
+            # corrompue ne doit jamais ouvrir une porte.
+            rang_acteur = ROLE_HIERARCHY.get(acteur['role'], ROLE_HIERARCHY[ROLE_PLAYER])
+            rang_cible = ROLE_HIERARCHY.get(role_cible, ROLE_HIERARCHY[ROLE_SUPERADMIN])
 
-            if role_cible == ROLE_SUPERADMIN:
-                return _erreur(
-                    "Ce compte est le super-administrateur : action impossible.",
-                    403, 'cible_protegee',
+            if rang_acteur <= rang_cible:
+                logger.warning(
+                    "Cible protegee : %s (role %s) refuse sur le compte %s (role %s), %s",
+                    acteur['id'], acteur['role'], cible_id, role_cible, request.path,
                 )
-            if role_cible == ROLE_CHEF_ADMIN and not acteur_est_superadmin:
-                return _erreur(
-                    "Seul le super-administrateur peut agir sur un chef d'administration.",
-                    403, 'cible_protegee',
-                )
+                # Le message nomme le rang de la cible : « action impossible »
+                # sans dire pourquoi renvoie l'admin vers un support qui ne peut
+                # pas deviner non plus.
+                if role_cible == ROLE_SUPERADMIN:
+                    message = "Ce compte est le super-administrateur : action impossible."
+                elif rang_acteur == rang_cible:
+                    message = ("Ce compte a le meme niveau de privilege que le votre : "
+                               "seul un compte de rang superieur peut agir dessus.")
+                else:
+                    message = ("Ce compte est plus privilegie que le votre : "
+                               "action impossible.")
+                return _erreur(message, 403, 'cible_protegee')
 
         return f(*args, **kwargs)
     return decorated_function

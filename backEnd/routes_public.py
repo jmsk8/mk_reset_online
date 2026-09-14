@@ -6,14 +6,16 @@ from typing import Any
 
 from flask import Blueprint, jsonify, request, abort, render_template
 
-from constants import DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAULT_PAGE_SIZE, IP_VERSION_DEFAULT
+from constants import (
+    DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAULT_PAGE_SIZE, IP_VERSION_DEFAULT,
+)
 from db import get_db_connection
 from cache import get_cached, set_cached
 from routes_comptes import profil_public
 from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
-    tier_thresholds, normal_top_percent, build_distribution,
+    tier_thresholds, normal_top_percent, build_distribution, load_tiers,
     compute_ip_evolution, compute_position_evolution, compute_position_breakdown,
 )
 
@@ -565,19 +567,10 @@ def classement():
         page = request.args.get('page', type=int)
         limit = request.args.get('limit', DEFAULT_PAGE_SIZE, type=int)
 
-        # Normalisation AVANT la clé de cache : construite sur la saisie brute, elle
-        # laisserait n'importe qui faire grossir _cache_store depuis internet
-        # (?tier=<aléa> en boucle), chaque entrée copiant le classement complet.
-        tier_filtre = tier_raw.upper() if tier_raw and tier_raw.upper() in ('S', 'A', 'B', 'C') else None
         try:
             ligue_filtre = int(ligue_raw) if ligue_raw else None
         except (TypeError, ValueError):
             ligue_filtre = None
-
-        cache_key = f"classement:{tier_filtre}:{ligue_filtre}"
-        cached = get_cached(cache_key)
-        if cached is not None and page is None:
-            return jsonify(cached)
 
         query = """
             SELECT
@@ -591,23 +584,38 @@ def classement():
         params: list[Any] = []
         conditions = []
 
-        if tier_filtre is not None:
-            conditions.append("j.tier = %s")
-            params.append(tier_filtre)
-
-        if ligue_filtre is not None:
-            conditions.append("j.ligue_id = %s")
-            params.append(ligue_filtre)
-
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-
-        query += " GROUP BY j.id, j.nom, j.mu, j.sigma, j.score_trueskill, j.tier, j.color, j.is_ranked"
-        query += " ORDER BY j.score_trueskill DESC NULLS LAST"
-
         joueurs = []
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # Normalisation AVANT la clé de cache : construite sur la saisie
+                # brute, elle laisserait n'importe qui faire grossir _cache_store
+                # depuis internet (?tier=<aléa> en boucle), chaque entrée copiant
+                # le classement complet. Les noms valides ne sont plus S/A/B/C en
+                # dur (tiers dynamiques, Partie B) mais lus depuis la table `tiers`.
+                noms_tiers_valides = {t["nom"] for t in load_tiers(cur)}
+                tier_filtre = (
+                    tier_raw.upper() if tier_raw and tier_raw.upper() in noms_tiers_valides else None
+                )
+
+                cache_key = f"classement:{tier_filtre}:{ligue_filtre}"
+                cached = get_cached(cache_key)
+                if cached is not None and page is None:
+                    return jsonify(cached)
+
+                if tier_filtre is not None:
+                    conditions.append("j.tier = %s")
+                    params.append(tier_filtre)
+
+                if ligue_filtre is not None:
+                    conditions.append("j.ligue_id = %s")
+                    params.append(ligue_filtre)
+
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+
+                query += " GROUP BY j.id, j.nom, j.mu, j.sigma, j.score_trueskill, j.tier, j.color, j.is_ranked"
+                query += " ORDER BY j.score_trueskill DESC NULLS LAST"
+
                 cur.execute("SELECT value FROM Configuration WHERE key = 'sigma_threshold'")
                 res_conf = cur.fetchone()
                 threshold = float(res_conf[0]) if res_conf else DEFAULT_SIGMA_THRESHOLD
@@ -802,6 +810,14 @@ def classement_saison():
 
 @public_bp.route('/tier-seuils')
 def tier_seuils():
+    """Seuils ET metadonnees (nom, couleur, rang) de chaque tier.
+
+    Depuis les tiers dynamiques (Partie B), la forme de reponse est une LISTE
+    ordonnee par rang decroissant plutot qu'un objet {"S":.., "A":..} fige --
+    tout consommateur (classement.html, recap.html) doit boucler dessus au
+    lieu de referencer S/A/B/C en dur. `seuil` est le score-frontiere calcule
+    pour la distribution actuelle (None pour le plancher).
+    """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -809,13 +825,22 @@ def tier_seuils():
                 res = cur.fetchone()
                 threshold = float(res[0]) if res else DEFAULT_SIGMA_THRESHOLD
 
+                tiers = load_tiers(cur)
+
                 cur.execute("SELECT mu, sigma, is_ranked FROM Joueurs")
                 valid_scores = [
                     trueskill_score(mu, sigma)
                     for mu, sigma, is_ranked in cur.fetchall()
                     if has_tier(is_ranked, sigma, threshold)
                 ]
-                return jsonify(tier_thresholds(valid_scores))
+                seuils = tier_thresholds(valid_scores, tiers)
+                return jsonify([
+                    {
+                        "nom": t["nom"], "couleur": t["couleur"], "rang": t["rang"],
+                        "seuil": seuils.get(t["nom"]) if t["seuil_k"] is not None else None,
+                    }
+                    for t in tiers
+                ])
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 
@@ -1281,11 +1306,12 @@ def stats_joueurs():
             with conn.cursor() as cur:
                 cur.execute("SELECT tier FROM joueurs")
                 tier_rows = cur.fetchall()
-                dist = {'S': 0, 'A': 0, 'B': 0, 'C': 0, 'U': 0}
+                # Comptage dynamique (Partie B) : plus de cles S/A/B/C figees,
+                # un tier renomme ou ajoute par l'admin doit aussi compter.
+                dist: dict[str, int] = {}
                 for tr in tier_rows:
                     t = tr[0] if tr[0] and tr[0] not in ['Unranked', '?', ''] else 'U'
-                    if t in dist: dist[t] += 1
-                    else: dist['U'] += 1
+                    dist[t] = dist.get(t, 0) + 1
 
                 # Avatar : memes conditions que profil_public -- compte lie,
                 # fiche non anonymisee.

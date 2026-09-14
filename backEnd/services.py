@@ -11,6 +11,7 @@ import psycopg2.extras
 
 from constants import (
     DEFAULT_SIGMA_THRESHOLD,
+    DEFAULT_TIERS,
     RANKED_SIGMA_LIMIT, GHOST_SIGMA_CAP,
     CHILLGUY_DELTA_LIMIT, BORDERLINE_INSTABILITY_THRESHOLD, BORDERLINE_AWARD_THRESHOLD,
     BORDERLINE_IP_WEIGHT,
@@ -113,27 +114,68 @@ def compute_distribution_stats(scores: Iterable[float]) -> tuple[float, float] |
     return mean, stdev
 
 
-def tier_thresholds(scores: Iterable[float]) -> dict[str, float]:
+def load_tiers(cur) -> list[dict]:
+    """Charge la liste des tiers depuis la table `tiers`, tries par rang
+    decroissant (le meilleur en premier). Retombe sur DEFAULT_TIERS si la
+    table est vide -- ne devrait pas arriver en usage normal (le seed de
+    migration l'evite), mais garantit qu'un recalcul ne classe jamais
+    personne en 'U' faute de tiers a comparer.
+
+    Prend un curseur deja ouvert (plutot qu'une connexion) : appele depuis
+    des fonctions qui tiennent deja leur propre transaction (recalculate_tiers,
+    routes admin), pour ne pas emboiter une seconde connexion.
+    """
+    cur.execute("SELECT id, nom, couleur, seuil_k, rang FROM tiers ORDER BY rang DESC")
+    rows = cur.fetchall()
+    if not rows:
+        # `id: None` explicite : le panneau admin distingue ainsi une ligne
+        # reellement en base d'un simple defaut de secours non persiste.
+        return [dict(t, id=None) for t in DEFAULT_TIERS]
+    # `id` est indispensable au panneau d'administration : c'est lui qui
+    # identifie la ligne a deplacer, modifier ou supprimer. Sans lui, le front
+    # confondait tous les tiers (tous `undefined`) et n'agissait que sur le
+    # premier -- bug constate en recette le 13/09.
+    return [
+        {"id": i, "nom": n, "couleur": c, "seuil_k": k, "rang": r}
+        for i, n, c, k, r in rows
+    ]
+
+
+def tier_thresholds(scores: Iterable[float], tiers: list[dict]) -> dict[str, float]:
+    """Score-frontiere (mean + seuil_k*stdev) pour chaque tier ayant un
+    seuil_k -- le plancher (seuil_k None) n'a pas de frontiere basse et vaut
+    toujours 0 dans le retour, pour compatibilite avec les gabarits qui
+    l'affichent (ex: classement.html) sans avoir a tester sa presence.
+
+    `tiers` doit deja etre trie par rang decroissant (cf load_tiers).
+    """
     stats = compute_distribution_stats(scores)
+    seuils = {t["nom"]: 0 for t in tiers}
     if stats is None:
-        return {"S": 0, "A": 0, "B": 0, "C": 0}
+        return seuils
     mean, stdev = stats
-    return {
-        "S": round(mean + stdev, 3),
-        "A": round(mean, 3),
-        "B": round(mean - stdev, 3),
-        "C": 0,
-    }
+    for t in tiers:
+        if t["seuil_k"] is not None:
+            seuils[t["nom"]] = round(mean + t["seuil_k"] * stdev, 3)
+    return seuils
 
 
-def tier_for_score(score: float, mean: float, stdev: float) -> str:
-    if score > mean + stdev:
-        return "S"
-    if score > mean:
-        return "A"
-    if score > mean - stdev:
-        return "B"
-    return "C"
+def tier_for_score(score: float, mean: float, stdev: float, tiers: list[dict]) -> str:
+    """Premier tier (dans l'ordre decroissant de rang) dont le score-frontiere
+    est depasse ; le tier de plus petit rang sert de secours (son seuil_k est
+    normalement None -- s'il ne l'est pas, ex. donnee corrompue, le secours
+    reste correct : personne n'a matche au-dessus).
+
+    `tiers` doit deja etre trie par rang decroissant (cf load_tiers). Une
+    liste vide n'est pas cense arriver (load_tiers retombe sur DEFAULT_TIERS)
+    mais retourne 'U' plutot que de lever, par coherence avec has_tier().
+    """
+    if not tiers:
+        return 'U'
+    for t in tiers:
+        if t["seuil_k"] is not None and score > mean + t["seuil_k"] * stdev:
+            return t["nom"]
+    return tiers[-1]["nom"]
 
 
 def normal_top_percent(score: float, mean: float, stdev: float) -> float:
@@ -154,10 +196,18 @@ def build_distribution(
     scored = [(p, s) for p, s in scored if s is not None]
     stats = compute_distribution_stats(s for _, s in scored)
 
-    dist: dict[str, list] = {"curve": [], "players": []}
+    dist: dict = {"curve": [], "players": []}
     if stats is None:
         return dist
     mean, stdev = stats
+    # Renvoyes tels quels : le front en a besoin pour convertir les seuils
+    # (stockes en ecart-type) en position sur l'axe des scores bruts. Les
+    # reconstruire cote JS depuis min/max de la courbe est fragile -- la
+    # boucle ci-dessous n'atteint pas toujours x_max exactement (accumulation
+    # flottante sur _CURVE_RESOLUTION pas), ce qui decalait legerement mean/
+    # stdev recalcules et donc les lignes de seuil affichees (bug du 14/09).
+    dist["mean"] = mean
+    dist["stdev"] = stdev
 
     x_min = mean - _CURVE_SPREAD * stdev
     x_max = mean + _CURVE_SPREAD * stdev
@@ -201,6 +251,8 @@ def recalculate_tiers() -> None:
                 res = cur.fetchone()
                 threshold = float(res[0]) if res else DEFAULT_SIGMA_THRESHOLD
 
+                tiers = load_tiers(cur)
+
                 cur.execute("SELECT id, mu, sigma, is_ranked FROM Joueurs")
                 all_players = cur.fetchall()
 
@@ -215,7 +267,9 @@ def recalculate_tiers() -> None:
                 for pid, mu, sigma, is_ranked in all_players:
                     if stats is not None and has_tier(is_ranked, sigma, threshold):
                         mean_score, std_dev = stats
-                        new_tier = tier_for_score(trueskill_score(mu, sigma), mean_score, std_dev)
+                        new_tier = tier_for_score(
+                            trueskill_score(mu, sigma), mean_score, std_dev, tiers
+                        )
                     else:
                         new_tier = 'U'
                     tier_updates.append((pid, new_tier))
