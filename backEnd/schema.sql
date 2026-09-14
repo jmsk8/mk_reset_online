@@ -43,6 +43,30 @@ INSERT INTO public.configuration (key, value) VALUES
 ('inter_league_moves', '0'),
 ('ip_version_live', 'v1');
 
+-- TIERS : liste geree par l'admin (nom, couleur, seuil en ecart-type, rang).
+-- Remplace les seuils tier_k_s/a/b qui vivaient dans `configuration` --
+-- migres ici pour pouvoir ajouter/supprimer/reordonner des tiers, pas
+-- seulement regler 3 frontieres fixes. Voir docs/tableau-seuils-tiers-plan.md
+-- Partie B. 'U' (non classe) reste hors de cette table, cable en dur dans le
+-- code (has_tier(), IP_V2_REF_REQUIRE_TIER).
+--
+-- Rang decroissant du meilleur au pire ; seuil_k NULL uniquement pour le
+-- tier au plus petit rang (le plancher, sans seuil bas par definition).
+CREATE TABLE public.tiers (
+    id SERIAL PRIMARY KEY,
+    nom VARCHAR(10) NOT NULL,
+    couleur VARCHAR(20) NOT NULL,
+    seuil_k DOUBLE PRECISION,
+    rang INTEGER NOT NULL UNIQUE
+);
+ALTER TABLE public.tiers OWNER TO CURRENT_USER;
+
+INSERT INTO public.tiers (nom, couleur, seuil_k, rang) VALUES
+('S', '#f77b7b', 1.0, 3),
+('A', '#9cda74', 0.0, 2),
+('B', '#7fe6ee', -1.0, 1),
+('C', '#ae6ce4', NULL, 0);
+
 -- LIGUES (Déplacé avant pour les références)
 CREATE TABLE public.ligues (
     id SERIAL PRIMARY KEY,

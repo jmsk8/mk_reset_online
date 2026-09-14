@@ -349,6 +349,13 @@ un `chef_admin`, l'intouchabilité protège les actions, pas le fait de voir que
 compris pour les vues détaillées (historique, sessions) — un `chef_admin` peut tout voir sur le
 superadmin, il ne peut juste rien modifier.
 
+> ⚠️ **RÉVISÉ le 2026-09-13 pour le journal d'actions.** Un `chef_admin` ne peut **pas** lire les
+> logs du `superadmin` — voir [audit-admin-plan.md](audit-admin-plan.md) §4. Le « historique » cité
+> ci-dessus désignait des vues d'état (sessions, liaisons), décidées quand aucun journal n'existait.
+> Lire le journal de quelqu'un, c'est l'auditer : l'ouvrir à un subordonné inverserait la hiérarchie
+> sur le terrain du contrôle. La portée écriture seule du décorateur reste exacte ; c'est la route
+> d'audit qui porte son propre garde-fou de rang à la lecture.
+
 Ce même décorateur porte aussi la branche `chef_admin` face à ses pairs, tranchée en §4.3bis.
 
 ### 4.5 Auto-modification interdite

@@ -131,10 +131,10 @@
                     {{ nom }}
                 </h1>
                 <h2 class="subtitle has-text-centered">
-                    {% if stats.tier == 'S' %}<span class="tag tier-s">Tier S</span>
-                    {% elif stats.tier == 'A' %}<span class="tag tier-a">Tier A</span>
-                    {% elif stats.tier == 'B' %}<span class="tag tier-b">Tier B</span>
-                    {% elif stats.tier == 'C' %}<span class="tag tier-c">Tier C</span>
+                    {# Couleur portee par les donnees (tiers dynamiques, Partie B) --
+                       plus de branches S/A/B/C figees, voir docs/tableau-seuils-tiers-plan.md. #}
+                    {% if tiers_couleurs.get(stats.tier) %}
+                        <span class="tag" style="background: {{ tiers_couleurs[stats.tier] }}; color: white;">Tier {{ stats.tier }}</span>
                     {% else %}<span class="tag is-white">Tier {{ stats.tier }}</span>{% endif %}
 
                     {% if stats.ligue %}

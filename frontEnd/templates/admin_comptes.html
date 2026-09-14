@@ -39,21 +39,42 @@
             <h1 class="title"><i class="fas fa-users-gear mr-2"></i> Gestion des comptes</h1>
             <div id="alerte"></div>
 
+            {# Chaque onglet correspond à UNE permission, et n'apparaît que si on
+               la porte : la page s'ouvre dès qu'on a l'une des trois, mais ce
+               qu'on ne peut pas faire ne doit pas s'afficher. Sans ces gates, un
+               admin sans `gestion_invitations` voyait l'onglet, cliquait, et se
+               retrouvait sur la page d'accueil sans explication.
+               Le premier onglet visible est marqué actif côté JS, pas ici : en
+               dur, il aurait pu être un onglet auquel on n'a pas droit. #}
             <div class="tabs is-boxed">
                 <ul>
-                    <li class="is-active" data-onglet="liaisons"><a>Demandes de liaison <span class="tag is-danger ml-2 is-hidden" id="badge-liaisons">0</span></a></li>
-                    <li data-onglet="comptes"><a>Comptes</a></li>
-                    <li data-onglet="invitations"><a>Invitations</a></li>
+                    {% if peut('gestion_liaisons') %}
+                        <li data-onglet="liaisons"><a>Demandes de liaison <span class="tag is-danger ml-2 is-hidden" id="badge-liaisons">0</span></a></li>
+                    {% endif %}
+                    {% if peut('gestion_comptes') %}
+                        <li data-onglet="comptes"><a>Comptes</a></li>
+                    {% endif %}
+                    {% if peut('gestion_invitations') %}
+                        <li data-onglet="invitations"><a>Invitations</a></li>
+                    {% endif %}
                     {% if est_superadmin %}
                         <li data-onglet="bots"><a>Jetons de bot</a></li>
                     {% endif %}
                 </ul>
             </div>
 
-            <div id="vue-liaisons"><div class="has-text-grey">Chargement…</div></div>
-            <div id="vue-comptes" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
-            <div id="vue-invitations" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
-            <div id="vue-bots" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+            {% if peut('gestion_liaisons') %}
+                <div id="vue-liaisons" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+            {% endif %}
+            {% if peut('gestion_comptes') %}
+                <div id="vue-comptes" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+            {% endif %}
+            {% if peut('gestion_invitations') %}
+                <div id="vue-invitations" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+            {% endif %}
+            {% if est_superadmin %}
+                <div id="vue-bots" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+            {% endif %}
         </div>
     </section>
 
@@ -61,6 +82,15 @@
     <script>
     const EST_SUPERADMIN = {{ 'true' if est_superadmin else 'false' }};
     const MON_COMPTE_ID = {{ mon_compte_id if mon_compte_id else 'null' }};
+    // Rangs des rôles, MÊME table que ROLE_HIERARCHY côté backend (constants.py).
+    // Sert à ne pas afficher un contrôle voué au 403 : le backend refuse d'agir
+    // sur un compte de rang égal ou supérieur (auth.compte_cible_protegee).
+    const RANGS = {player: 0, admin: 1, chef_admin: 2, superadmin: 3};
+    const MON_RANG = RANGS[{{ role_admin | tojson }}] ?? 0;
+    // Un rôle inconnu compte comme le rang le plus HAUT : on n'affiche pas un
+    // bouton parce qu'on n'a pas su lire la cible. Même défaut fermé qu'en back.
+    const estCibleProtegee = c =>
+        MON_RANG <= (RANGS[c.role] ?? RANGS.superadmin);
     // Changer un rôle est une capacité de rôle, pas une permission déléguable :
     // elle se teste donc par le rôle, jamais par peut() (hierarchie-admin 2).
     const PEUT_CHANGER_ROLE = {{ 'true' if role_admin in ('chef_admin', 'superadmin') else 'false' }};
@@ -114,14 +144,51 @@
             return fig;
         }
 
-        function afficher(type, texte) {
+        // `discret` : afficher sans jamais bouger la page. Pour les gestes faits
+        // depuis un volet déplié plus bas (les cases de permissions), où
+        // remonter au bandeau fait perdre l'endroit où on travaillait -- il
+        // fallait redescendre pour cocher la case suivante.
+        function afficher(type, texte, discret) {
             alerte.innerHTML = '';
             const d = document.createElement('div');
             d.className = 'notification is-' + type + ' is-light';
             d.textContent = texte;
             alerte.appendChild(d);
+
+            if (discret) return;
+            // Sinon on remonte : le bandeau vit en haut de page, et un message
+            // qu'on ne voit pas ne sert à rien.
             window.scrollTo({top: 0, behavior: 'smooth'});
         }
+
+        // Retour visuel SUR l'élément qu'on vient d'actionner, sans toucher au
+        // défilement. Sert aux gestes répétés (cocher plusieurs droits d'affilée)
+        // où un bandeau en haut de page oblige à faire l'aller-retour.
+        function flash(hote, mot) {
+            const ancien = hote.querySelector('.flash-droit');
+            if (ancien) ancien.remove();
+            const t = txt('span', mot, 'tag is-success is-light flash-droit ml-2');
+            t.style.transition = 'opacity .4s';
+            hote.appendChild(t);
+            setTimeout(() => {
+                t.style.opacity = '0';
+                // Retiré du DOM après le fondu : laisser des étiquettes mortes
+                // s'accumuler finirait par décaler la mise en page.
+                setTimeout(() => t.remove(), 400);
+            }, 1600);
+        }
+
+        // Confirmation avant tout changement de droits ou d'état d'un compte.
+        // Toujours nommer la cible : sur une liste de comptes, « Confirmer ? »
+        // ne dit pas sur QUI on est en train d'agir, et une ligne voisine se
+        // clique vite.
+        function confirmer(action, cible, detail) {
+            return confirm(action + '\n\nCompte : ' + (cible || '?')
+                           + (detail ? '\n\n' + detail : ''));
+        }
+
+        // Nom lisible d'un compte, pour les confirmations.
+        const nomDe = c => c.pseudo || c.joueur_nom || ('compte #' + c.id);
 
         async function api(url, method = 'GET', body = null) {
             const opts = {method, headers: {'X-CSRFToken': csrf}};
@@ -147,27 +214,41 @@
         }
 
         // ---- Onglets ----
-        document.querySelectorAll('.tabs li').forEach(li => {
-            li.addEventListener('click', () => {
-                document.querySelectorAll('.tabs li').forEach(x => x.classList.remove('is-active'));
-                li.classList.add('is-active');
-                ['liaisons', 'comptes', 'invitations', 'bots'].forEach(n => {
-                    document.getElementById('vue-' + n).classList.toggle('is-hidden', n !== li.dataset.onglet);
-                });
-                charger(li.dataset.onglet);
+        // Les onglets absents du gabarit sont ceux qu'on n'a pas le droit
+        // d'ouvrir : leur `<div>` de vue n'existe pas non plus. On travaille
+        // donc sur ce qui est RÉELLEMENT rendu -- un getElementById sur une vue
+        // absente renverrait null, et le TypeError casserait tout le script.
+        const onglets = Array.from(document.querySelectorAll('.tabs li'))
+                             .map(li => li.dataset.onglet);
+
+        function montrer(onglet) {
+            document.querySelectorAll('.tabs li').forEach(x => {
+                x.classList.toggle('is-active', x.dataset.onglet === onglet);
             });
+            onglets.forEach(n => {
+                const vue = document.getElementById('vue-' + n);
+                if (vue) vue.classList.toggle('is-hidden', n !== onglet);
+            });
+            charger(onglet);
+        }
+
+        document.querySelectorAll('.tabs li').forEach(li => {
+            li.addEventListener('click', () => montrer(li.dataset.onglet));
         });
 
         function charger(onglet) {
             if (onglet === 'liaisons') chargerLiaisons();
             else if (onglet === 'comptes') chargerComptes();
             else if (onglet === 'bots') chargerBots();
-            else chargerInvitations();
+            else if (onglet === 'invitations') chargerInvitations();
         }
 
         // ---- Demandes de liaison ----
         async function chargerLiaisons() {
             const vue = document.getElementById('vue-liaisons');
+            // Absente si la permission correspondante manque : la vue n'est
+            // alors pas rendue du tout (gates du gabarit).
+            if (!vue) return;
             const {ok, data} = await api('/admin/liaisons?statut=pending');
             vue.innerHTML = '';
             if (!ok) { vue.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
@@ -232,6 +313,18 @@
                 actions.className = 'buttons mt-3';
                 const oui = txt('button', 'Approuver', 'button is-success is-small');
                 oui.addEventListener('click', async () => {
+                    // Ce geste rattache une identité Discord à une fiche joueur :
+                    // il valide une revendication que personne d'autre ne vérifie.
+                    const creation = d.type === 'creation';
+                    const fiche = creation ? d.nom_demande : (d.joueur && d.joueur.nom);
+                    if (!confirmer(
+                            creation
+                                ? 'Créer la fiche « ' + fiche + ' » et l\'y rattacher ?'
+                                : 'Approuver la liaison vers « ' + fiche + ' » ?',
+                            d.compte.pseudo,
+                            creation
+                                ? 'Une nouvelle fiche joueur sera créée.'
+                                : 'Ce compte Discord sera rattaché à cette fiche joueur.')) return;
                     oui.classList.add('is-loading');
                     const r = await api('/admin/liaisons/' + d.id + '/approve', 'POST', {});
                     if (r.ok) {
@@ -262,6 +355,11 @@
         // ---- Comptes ----
         async function chargerComptes() {
             const vue = document.getElementById('vue-comptes');
+            // Absente si on n'a pas `gestion_comptes`. Approuver une liaison
+            // rafraîchit cette vue au passage : sans ce garde, un admin qui n'a
+            // que `gestion_liaisons` déclencherait une TypeError à chaque
+            // approbation, et le reste du script mourrait avec.
+            if (!vue) return;
             const {ok, data} = await api('/admin/api/comptes');
             vue.innerHTML = '';
             if (!ok) { vue.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
@@ -300,11 +398,11 @@
                 tr.appendChild(txt('td', c.statut));
 
                 const tdR = document.createElement('td');
-                // Qui peut changer le rôle de qui : le superadmin est intouchable,
-                // un chef_admin l'est pour ses pairs, et personne n'agit sur soi.
-                // Le backend juge, ceci évite d'afficher un contrôle voué au 403.
-                const cibleProtegee = c.role === 'superadmin'
-                    || (c.role === 'chef_admin' && !EST_SUPERADMIN);
+                // Qui peut agir sur qui : une seule règle de rang, la même qu'en
+                // backend — on n'agit que sur un compte STRICTEMENT moins
+                // privilégié, et jamais sur soi. Le backend reste seul juge,
+                // ceci évite d'afficher un contrôle voué au 403.
+                const cibleProtegee = estCibleProtegee(c);
                 if (PEUT_CHANGER_ROLE && !cibleProtegee && c.id !== MON_COMPTE_ID) {
                     const sel = document.createElement('select');
                     // superadmin n'est jamais dans cette liste : il ne s'attribue
@@ -319,6 +417,18 @@
                         sel.appendChild(o);
                     });
                     sel.addEventListener('change', async () => {
+                        // Le sélecteur a DÉJÀ changé d'apparence quand on arrive
+                        // ici : annuler doit le remettre sur le rôle réel, sinon
+                        // l'écran affirme un rôle que la base n'a pas.
+                        if (!confirmer(
+                                'Changer le rôle : ' + c.role + ' → ' + sel.value + ' ?',
+                                nomDe(c),
+                                sel.value === 'player'
+                                    ? 'Ses permissions admin seront effacées.'
+                                    : null)) {
+                            sel.value = c.role;
+                            return;
+                        }
                         const corps = {role: sel.value};
                         let r = await api('/admin/comptes/' + c.id + '/role', 'POST', corps);
                         // R-60 : retomber à zéro chef_admin retire le filet qui
@@ -349,7 +459,15 @@
                 const actions = document.createElement('div');
                 actions.className = 'buttons are-small';
 
-                if (c.desynchronise) {
+                // Les quatre gestes ci-dessous passent tous par
+                // @compte_cible_protegee : sur une cible de rang égal ou
+                // supérieur, ils répondent 403. Les afficher quand même
+                // promettait une action impossible (plan §B.0). Agir sur SOI
+                // reste permis : le décorateur laisse passer ce cas.
+                const peutAgir = PEUT_GERER_COMPTES
+                    && (c.id === MON_COMPTE_ID || !cibleProtegee);
+
+                if (c.desynchronise && peutAgir) {
                     const b = txt('button', 'Synchroniser le pseudo', 'button is-info is-small');
                     b.addEventListener('click', async () => {
                         const ap = await api('/admin/comptes/' + c.id + '/sync-preview');
@@ -367,7 +485,7 @@
                 }
 
                 // Désynchroniser : n'a de sens que sur un compte rattaché.
-                if (c.joueur_nom) {
+                if (c.joueur_nom && peutAgir) {
                     const bDel = txt('button', 'Désynchroniser', 'button is-warning is-light is-small');
                     bDel.addEventListener('click', async () => {
                         const question = 'Détacher ce compte Discord de la fiche « '
@@ -384,26 +502,35 @@
                     actions.appendChild(bDel);
                 }
 
-                const bSess = txt('button', 'Fermer les sessions', 'button is-light is-small');
-                bSess.addEventListener('click', async () => {
-                    if (!confirm('Fermer toutes les sessions de ce compte ?')) return;
-                    const r = await api('/admin/comptes/' + c.id + '/sessions', 'DELETE');
-                    afficher(r.ok ? 'success' : 'danger',
-                             r.ok ? (r.data.sessions_fermees + ' session(s) fermée(s).')
-                                  : (r.data.error || 'Échec.'));
-                });
-                actions.appendChild(bSess);
+                if (peutAgir) {
+                    const bSess = txt('button', 'Fermer les sessions', 'button is-light is-small');
+                    bSess.addEventListener('click', async () => {
+                        if (!confirmer('Fermer toutes les sessions de ce compte ?', nomDe(c),
+                                       'Il devra se reconnecter avec Discord.')) return;
+                        const r = await api('/admin/comptes/' + c.id + '/sessions', 'DELETE');
+                        afficher(r.ok ? 'success' : 'danger',
+                                 r.ok ? (r.data.sessions_fermees + ' session(s) fermée(s).')
+                                      : (r.data.error || 'Échec.'));
+                    });
+                    actions.appendChild(bSess);
 
-                const suspendu = c.statut === 'suspended';
-                const bSusp = txt('button', suspendu ? 'Réactiver' : 'Suspendre',
-                                  'button is-small ' + (suspendu ? 'is-success is-light' : 'is-danger is-light'));
-                bSusp.addEventListener('click', async () => {
-                    const cible = suspendu ? (c.joueur_id ? 'linked' : 'pending') : 'suspended';
-                    const r = await api('/admin/comptes/' + c.id + '/statut', 'POST', {statut: cible});
-                    if (r.ok) { afficher('success', 'Statut mis à jour.'); chargerComptes(); }
-                    else { afficher('danger', r.data.error || 'Échec.'); }
-                });
-                actions.appendChild(bSusp);
+                    const suspendu = c.statut === 'suspended';
+                    const bSusp = txt('button', suspendu ? 'Réactiver' : 'Suspendre',
+                                      'button is-small ' + (suspendu ? 'is-success is-light' : 'is-danger is-light'));
+                    bSusp.addEventListener('click', async () => {
+                        const cible = suspendu ? (c.joueur_id ? 'linked' : 'pending') : 'suspended';
+                        if (!confirmer(suspendu ? 'Réactiver ce compte ?' : 'Suspendre ce compte ?',
+                                       nomDe(c),
+                                       suspendu
+                                           ? 'Il pourra de nouveau se connecter.'
+                                           : 'Ses sessions seront fermées et il ne pourra plus '
+                                             + 'se connecter.')) return;
+                        const r = await api('/admin/comptes/' + c.id + '/statut', 'POST', {statut: cible});
+                        if (r.ok) { afficher('success', 'Statut mis à jour.'); chargerComptes(); }
+                        else { afficher('danger', r.data.error || 'Échec.'); }
+                    });
+                    actions.appendChild(bSusp);
+                }
 
                 // Permissions à la carte : n'ont de sens que sur un admin. Un
                 // player n'a rien à recevoir, un chef_admin a déjà tout le
@@ -613,6 +740,21 @@
                 case_.disabled = horsPortee || parentManquant;
                 cases[p] = case_;
                 case_.addEventListener('change', async () => {
+                    // Confirmation avant d'écrire : la case a déjà basculé
+                    // visuellement, annuler doit donc la remettre comme elle
+                    // était, sinon l'écran affiche un droit qui n'existe pas.
+                    const enfants = Object.keys(SOUS_PERMISSIONS)
+                        .filter(e => SOUS_PERMISSIONS[e] === p && accordees.has(e));
+                    if (!confirmer(
+                            (case_.checked ? 'Accorder' : 'Retirer')
+                            + ' le droit « ' + nom + ' » ?',
+                            nomDe(c),
+                            !case_.checked && enfants.length
+                                ? 'Sa sous-autorisation sera retirée aussi.'
+                                : null)) {
+                        case_.checked = !case_.checked;
+                        return;
+                    }
                     case_.disabled = true;
                     const methode = case_.checked ? 'POST' : 'DELETE';
                     const rep = await api(
@@ -637,12 +779,15 @@
                         });
 
                         majCompteur();
-                        afficher('success', case_.checked
-                            ? 'Droit « ' + nom + ' » accordé.'
-                            : 'Droit « ' + nom + ' » retiré.'
-                              + (emportees ? ' Sa sous-autorisation a été retirée aussi.' : ''));
+                        // Aucun bandeau en haut de page sur un succès : la case
+                        // cochée et le compteur du panneau disent déjà ce qui
+                        // s'est passé, et remonter ferait perdre l'endroit où on
+                        // travaille. Le retour se fait SUR la ligne.
+                        flash(entete_l, case_.checked ? 'accordé' : 'retiré'
+                              + (emportees ? ' (avec sa sous-autorisation)' : ''));
                     } else {
                         case_.checked = !case_.checked;   // on rejoue l'état réel
+                        // Un échec, lui, doit se voir : on remonte au bandeau.
                         afficher('danger', rep.data.error || 'Échec.');
                     }
                 });
@@ -739,6 +884,9 @@
         // ---- Invitations ----
         async function chargerInvitations() {
             const vue = document.getElementById('vue-invitations');
+            // Absente si la permission correspondante manque : la vue n'est
+            // alors pas rendue du tout (gates du gabarit).
+            if (!vue) return;
             vue.innerHTML = '';
 
             const form = document.createElement('div');
@@ -823,6 +971,11 @@
                 if (etat === 'active') {
                     const b = txt('button', 'Révoquer', 'button is-danger is-light is-small');
                     b.addEventListener('click', async () => {
+                        // Irréversible : le lien cesse de fonctionner, et celui
+                        // à qui on l'a envoyé ne pourra plus s'inscrire.
+                        if (!confirmer('Révoquer cette invitation ?',
+                                       i.label || ('invitation #' + i.id),
+                                       'Le lien cessera immédiatement de fonctionner.')) return;
                         const r = await api('/admin/invitations/' + i.id + '/revoquer', 'POST', {});
                         if (r.ok) chargerListeInvitations();
                         else afficher('danger', r.data.error || 'Échec.');
@@ -841,6 +994,9 @@
 
         async function chargerBots() {
             const vue = document.getElementById('vue-bots');
+            // Absente si la permission correspondante manque : la vue n'est
+            // alors pas rendue du tout (gates du gabarit).
+            if (!vue) return;
             vue.innerHTML = '';
 
             const form = document.createElement('div');
@@ -956,7 +1112,10 @@
             liste.appendChild(table);
         }
 
-        chargerLiaisons();
+        // Ouvre le premier onglet AUTORISÉ, pas « Demandes de liaison » en dur :
+        // un admin qui n'a que `gestion_invitations` chargeait sinon une vue
+        // absente du gabarit.
+        if (onglets.length) montrer(onglets[0]);
     });
     </script>
 </body>

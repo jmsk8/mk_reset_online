@@ -13,6 +13,28 @@
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Meme mise en page que le graphique de distribution du classement
+           (classement.html) : legende scrollable a gauche, courbe a droite. */
+        .chart-container-wrapper { display: flex; align-items: stretch; height: 380px; }
+        .chart-legend { width: 180px; overflow-y: auto; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.1); margin-right: 15px; }
+        .chart-legend::-webkit-scrollbar { width: 5px; }
+        .chart-legend::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+        .chart-area { flex-grow: 1; position: relative; touch-action: none; }
+        .legend-item { display: flex; align-items: center; padding: 6px 8px; margin-bottom: 4px; border-radius: 4px; }
+        .legend-color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; flex-shrink: 0; }
+        .legend-name { flex-grow: 1; font-size: 0.85rem; }
+        .legend-val { font-size: 0.75rem; opacity: 0.7; margin-left: 6px; }
+        #tierChartArea { cursor: default; }
+        #tierChartArea.dragging-handle { cursor: ew-resize; }
+        @media (max-width: 768px) {
+            .chart-container-wrapper { flex-direction: column; height: auto; }
+            .chart-legend { width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; max-height: 130px; display: flex; flex-wrap: wrap; }
+            .legend-item { width: 50%; }
+            .chart-area { height: 320px; }
+        }
+    </style>
 </head>
 <body>
     {% include 'navbar.html' %}
@@ -145,6 +167,73 @@
                     </div>
                     {% endif %}
 
+                    {% if peut('gestion_config') %}
+                    <div class="card glass-card mb-6 fade-in">
+                        <div class="card-header">
+                            <p class="card-header-title"><i class="fas fa-chart-area mr-2"></i> Tiers</p>
+                        </div>
+                        <div class="card-content">
+                            <p class="has-text-grey-light is-size-7 mb-4">
+                                Les frontières de tier sont exprimées en écarts-types (σ) autour de la
+                                moyenne des scores classés (score = moyenne + k × σ). Fais glisser une
+                                ligne sur le graphique, ou règle la valeur en σ dans le tableau ci-dessous
+                                — les tiers affichés se recalculent en direct. Ajoute, renomme, recolore,
+                                réordonne ou supprime un tier depuis ce même tableau.
+                                <strong>Enregistrer applique aussitôt le changement au tier de tous les joueurs.</strong>
+                            </p>
+
+                            <div id="tierChartLoading" class="has-text-centered has-text-grey-light py-6">
+                                <i class="fas fa-spinner fa-spin mr-2"></i> Chargement de la distribution…
+                            </div>
+
+                            <div id="tierChartWrapper" style="display:none;">
+                                <div class="chart-container-wrapper">
+                                    <div class="chart-legend" id="tierLegend"></div>
+                                    <div class="chart-area" id="tierChartArea">
+                                        <div id="tierChartTooltip" class="speech-bubble" style="position:absolute; opacity:0; pointer-events:none;"></div>
+                                        <canvas id="tierChart"></canvas>
+                                    </div>
+                                </div>
+
+                                <div class="table-container mt-4">
+                                    <table class="table is-fullwidth is-narrow">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:70px;">Ordre</th>
+                                                <th style="width:60px;">Couleur</th>
+                                                <th>Nom</th>
+                                                <th>Seuil</th>
+                                                <th style="width:50px;"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tiersListBody"></tbody>
+                                    </table>
+                                </div>
+
+                                <div class="level mt-2">
+                                    <div class="level-left">
+                                        <button type="button" id="tierAddBtn" class="button is-small">
+                                            <i class="fas fa-plus mr-1"></i> Ajouter un tier
+                                        </button>
+                                    </div>
+                                    <div class="level-right">
+                                        <button type="button" id="tierResetBtn" class="button is-small mr-2">
+                                            <i class="fas fa-rotate-left mr-1"></i> Réinitialiser (S/A/B/C)
+                                        </button>
+                                        <button type="button" id="tierSaveBtn" class="button is-info">
+                                            <i class="fas fa-save mr-2"></i> Enregistrer les tiers
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="tierChartEmpty" class="notification is-warning is-light" style="display:none;">
+                                Pas assez de joueurs classés pour afficher une distribution.
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     {# Cas de bord : la page s'ouvre à qui a l'un OU l'autre droit.
                        Si les deux gates ci-dessus sont faux, la page serait vide
                        sans explication -- or ce n'est pas censé arriver, la route
@@ -162,5 +251,6 @@
 
     {% include 'footer.html' %}
     <script src="../static/js/gestion.js"></script>
+    <script src="../static/js/tier_thresholds.js"></script>
 </body>
 </html>

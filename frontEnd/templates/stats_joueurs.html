@@ -212,8 +212,10 @@
                                         <div class="media-content">
                                             <p class="title is-4 has-text-light mb-1 is-flex is-align-items-center">
                                                 <span class="mr-2">{{ joueur.nom }}</span>
-                                                {% if joueur.tier in ['S', 'A', 'B', 'C'] %}
-                                                    <span class="tag tier-{{ joueur.tier|lower }}">{{ joueur.tier }}</span>
+                                                {# Couleur portee par les donnees (tiers dynamiques, Partie B) --
+                                                   voir docs/tableau-seuils-tiers-plan.md. #}
+                                                {% if tiers_couleurs.get(joueur.tier) %}
+                                                    <span class="tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: white;">{{ joueur.tier }}</span>
                                                 {% else %}
                                                     <span class="tag is-light">U</span>
                                                 {% endif %}

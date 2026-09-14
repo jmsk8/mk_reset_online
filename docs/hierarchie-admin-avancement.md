@@ -5,8 +5,8 @@
 > fait, ce qui a été trouvé en chemin, et ce qui reste**. Les codes `R-xx` renvoient au §7 du plan
 > (numérotation continue depuis [auth-discord-plan.md](auth-discord-plan.md)).
 >
-> **Dernière mise à jour : 2026-09-13** — scission des permissions (§ Chantier 4) et correctif de
-> session expirée (§ Chantier 3).
+> **Dernière mise à jour : 2026-09-14** — règle de rang générique (§ Chantier 6) : la lacune
+> `admin` → `admin` est fermée.
 >
 > Documents liés : [hierarchie-admin-plan.md](hierarchie-admin-plan.md) (le modèle) ·
 > [onglets-admin-plan.md](onglets-admin-plan.md) (les 7 onglets, livré) ·
@@ -23,8 +23,9 @@
 | **3** — Session Discord expirée | ✅ livré le 2026-09-13 | revalidation des deux voies, 19 assertions |
 | **4** — Scission des permissions | ✅ livré le 2026-09-13 | 9 permissions, 3 contournements fermés, 34 assertions |
 | **5** — Sous-permission RGPD | ✅ livré le 2026-09-13 | `rgpd_joueurs`, mécanique parent/enfant, 26 assertions |
-| **6** — Règle de rang générique (8.1) | 🔴 **à faire** | lacune de sécurité prouvée, entièrement spécifiée |
-| **7** — Tests des 3 routes d'onglets (8.3) | ⬜ à faire | aucun test ne couvre ces pages |
+| **6** — Règle de rang générique (8.1) | ✅ livré le 2026-09-14 | lacune fermée, matrice 4×4, 149 assertions |
+| **7** — Journal des actions admin | 📋 **conçu, non codé** | [audit-admin-plan.md](audit-admin-plan.md) — 4 phases |
+| **8** — Tests des 3 routes d'onglets (8.3) | ⬜ à faire | aucun test ne couvre ces pages |
 
 **Rien n'est commité** — l'utilisateur fait ses commits lui-même.
 
@@ -319,53 +320,136 @@ La documentation affirmait que `test_revue.py` vérifiait l'alignement des deux 
 `test_sous_permissions.py`, et porte aussi sur les deux tables `SOUS_PERMISSIONS` ; vérifié en
 désalignant volontairement un catalogue, il échoue en nommant la permission fautive.
 
-**Tests** — `test_sous_permissions.py` (33 assertions) : les quatre combinaisons parent/enfant sur
+### Ergonomie du panneau (2026-09-13, retours d'usage)
+
+- **Le bandeau de message remontait la page à chaque succès.** Cocher un droit dans le volet des
+  permissions — déplié en bas de page — renvoyait en haut, et il fallait redescendre pour cocher le
+  suivant. **Un succès de permission n'affiche plus de bandeau du tout** : le retour se fait sur la
+  ligne cochée (étiquette « accordé »/« retiré » qui s'efface), et le compteur du panneau se met à
+  jour. Un *échec*, lui, remonte toujours — il doit se voir.
+  > Première tentative insuffisante : ne remonter que si le bandeau est hors de vue. Or il l'est
+  > précisément quand on travaille dans le volet déplié — la condition se déclenchait donc à chaque
+  > fois. C'est le geste répété qui ne doit rien déplacer, pas la position du bandeau qui compte.
+- **Confirmation sur tout changement de droits ou d'état d'un compte** : rôle, statut
+  (suspendre/réactiver), permissions, fermeture des sessions, approbation de liaison, révocation
+  d'invitation. Chaque question **nomme la cible** — sur une liste de comptes, « Confirmer ? » ne
+  dit pas sur qui on agit, et une ligne voisine se clique vite.
+- **Annuler remet le contrôle dans son état réel** : sélecteur de rôle et case à cocher basculent
+  visuellement *avant* le handler, les laisser ainsi ferait affirmer à l'écran un droit que la base
+  n'a pas.
+- Restent volontairement sans confirmation : **créer** une invitation ou un jeton de bot — elles ne
+  détruisent ni ne modifient rien d'existant.
+- **Les onglets suivent les permissions.** Seul « Jetons de bot » était gaté : un admin sans
+  `gestion_invitations` voyait l'onglet *Invitations*, cliquait, et atterrissait sur la page
+  d'accueil sans explication. Les trois onglets (et leurs vues) sont désormais gatés chacun par sa
+  permission, l'onglet actif au chargement est le premier **autorisé** (il était codé en dur sur
+  *Demandes de liaison*), et la route refuse qui n'a aucune des trois — la navbar le faisait déjà.
+  > 🐛 **Bug latent trouvé au passage** : approuver une liaison appelle `chargerComptes()` pour
+  > rafraîchir l'autre onglet. Un admin ayant `gestion_liaisons` mais pas `gestion_comptes` aurait
+  > donc déclenché une `TypeError` sur une vue absente — et tout le script serait mort avec. Les
+  > quatre fonctions de chargement sortent maintenant si leur vue n'existe pas.
+
+**Tests** — `test_sous_permissions.py` (42 assertions) : les quatre combinaisons parent/enfant sur
 le décorateur, les trois points où la règle tient, le filtrage des orphelines, l'alignement des
-catalogues, et les gates d'interface.
+catalogues, les gates d'interface, et l'ergonomie ci-dessus (dont un inventaire automatique qui
+échoue si une écriture destructrice perd sa confirmation).
+
+---
+
+## Chantier 6 — Règle de rang générique ✅ 2026-09-14
+
+La lacune `admin` → `admin` est **fermée**. Les deux `if` en dur de `compte_cible_protegee`
+(`auth.py`) sont remplacés par la comparaison de rang décidée en §8.1, lue sur `ROLE_HIERARCHY` :
+
+```
+rang(acteur) >  rang(cible)  -> autorisé
+rang(acteur) <= rang(cible)  -> refusé (403 cible_protegee)
+```
+
+### La matrice, vérifiée par exécution
+
+Les 16 combinaisons acteur × cible sont testées. **Une seule case changeait** : `admin → admin`,
+qui renvoyait 200 — un admin porteur de `gestion_comptes` suspendait un pair et fermait ses
+sessions, sur les 4 routes `/sync` `/sessions` `/delier` `/statut`.
+
+| Acteur ↓ / Cible → | player | admin | chef_admin | superadmin |
+|---|---|---|---|---|
+| **player** | 403 | 403 | 403 | 403 |
+| **admin** | 200 | **403** *(était 200)* | 403 | 403 |
+| **chef_admin** | 200 | 200 | 403 | 403 |
+| **superadmin** | 200 | 200 | 200 | 403 |
+
+Le cas chef_admin-vs-chef_admin (R-52) tombe désormais de l'égalité des rangs, sans cas à part.
+
+Un `player` n'atteint jamais ce décorateur : `permission_required` l'arrête avant, avec le code
+`permission_manquante` et non `cible_protegee`. Le test le vérifie explicitement — sinon sa ligne
+verte affirmerait une protection de rang qui n'a pas joué.
+
+### Trois points que la règle a dû trancher au-delà du rang
+
+- **Défaut fermé des deux côtés.** Un rôle illisible en base vaut le rang le plus **bas** pour
+  l'acteur et le plus **haut** pour la cible. Une colonne corrompue ne doit jamais ouvrir de porte.
+- **Agir sur soi reste permis.** Le décorateur sort avant même de lire la base — fermer ses propres
+  sessions est légitime. C'est aux routes de refuser l'auto-modification quand elle n'a pas de
+  sens, via `refuse_auto_modification` ; ce partage n'a pas bougé.
+- **Cible inexistante : on laisse passer.** C'est à la route de répondre 404. Un 403 ici
+  révélerait l'inexistence d'un compte par un code d'erreur différent.
+
+Le message d'erreur nomme maintenant le rang de la cible (pair, plus privilégié, ou superadmin) :
+« action impossible » sans motif renvoyait l'admin vers un support qui ne pouvait pas deviner non
+plus.
+
+### Côté interface — le garde qui manquait
+
+`admin_comptes.html` ne calculait `cibleProtegee` que pour le sélecteur de rôle, en dupliquant les
+deux anciennes règles en JS. Il applique maintenant la **même** règle de rang, via une table
+`RANGS` alignée sur `ROLE_HIERARCHY` (un test échoue si les deux divergent).
+
+Surtout, **les quatre boutons d'action n'avaient aucun garde** et menaient à un 403 prévisible,
+contraire au §B.0 du plan : « Synchroniser », « Désynchroniser », « Fermer les sessions » et
+« Suspendre » sont désormais sous une condition `peutAgir` unique. Ils restent affichés sur sa
+propre ligne, puisque le backend l'autorise.
+
+⚠️ **Ne pas ré-introduire de `if role_cible == ...`** dans le corps de la décision : un test
+statique échoue si un rôle y est cité en dur. C'est exactement ce qui avait produit la lacune.
+
+**Portée respectée** : `changer_role` n'a **pas** été touché — sa logique de plafond (quelle
+*valeur* de rôle poser) reste distincte de celle-ci (quelle *cible* on peut toucher).
+
+**Tests** — `test_audit_permissions.py` (149 assertions). Vérifié par mutation : en remettant `<`
+au lieu de `<=`, 8 assertions tombent, dont R-52 — qu'aucun test ne couvrait réellement avant.
 
 ---
 
 ## Ce qui reste
 
-### 🔴 1. `compte_cible_protegee` — un admin peut agir sur un pair admin
+### 1. Journal des actions admin — conçu, non codé
 
-**Lacune de sécurité réelle, prouvée par exécution le 2026-09-13.** Acteur : un simple `admin`
-porteur de `gestion_comptes`. Cible : un autre `admin`.
+[audit-admin-plan.md](audit-admin-plan.md). La table `audit_admin` existe et 16 actions y sont déjà
+tracées, **mais toutes sur le domaine des comptes** : aucune action sur le dossier sportif ne l'est
+— y compris la **modification manuelle de mu/sigma**, le reset global et la suppression de tournoi.
+Quatre écritures oublient par ailleurs `acteur_compte_id`, dont l'anonymisation d'un joueur : elles
+disent ce qui s'est passé, jamais par qui. Et aucune route ne lit cette table.
 
-```
-POST /admin/comptes/9/statut  {"statut": "suspended"}
-  -> 200 {'status': 'success', 'statut': 'suspended'}
-```
+Décidé : consultation réservée à `chef_admin`+ (capacité de rôle) ; **deux vues** — un bouton
+« Logs » sur la ligne d'un compte, et un onglet *Logs* donnant le journal complet, téléchargeable,
+qui survit au rôle et au compte ; rétention illimitée ; tournois tracés en résumé.
 
-Il **suspend un autre admin et ferme ses sessions**. Face à un `chef_admin`, le même appel renvoie
-bien 403 — ce qui prouve que le décorateur fonctionne : c'est la **règle qui est incomplète**, pas
-le câblage. `auth.py` ne code que deux cas en dur (cible `superadmin`, cible `chef_admin`), aucun
-pour `admin` → `admin`.
+⚠️ **Deux décisions y révisent des choix antérieurs**, à ne pas « corriger » sans revalidation :
+un `chef_admin` ne peut **pas** lire les logs du `superadmin` (révise le point B du §9 du plan
+hiérarchie, qui n'excluait la lecture d'aucune vue), et **la suppression d'un compte n'efface pas
+ses lignes d'audit ni l'identité de leur auteur**.
 
-**4 routes exposées**, celles en `@permission_required('gestion_comptes')` : `/sync`, `/sessions`,
-`/delier`, `/statut`. Les quatre autres routes portant `@compte_cible_protegee` (`/role`, octroi et
-retrait de permission, legs) sont en `role_required(CHEF_ADMIN)` ou plus — hors d'atteinte d'un
-simple `admin`, donc hors du trou.
+🔴 **Conséquence : la promotion devient une proposition à accepter.** Puisque les actions d'un admin
+sont conservées nominativement et sans limite de durée, la personne doit accepter le rôle **et** la
+politique « en tant qu'administrateur » — et le rôle n'est posé **qu'à l'acceptation**. En cas de
+refus, le compte reste `player` et le proposant est notifié ; tant que la réponse se fait attendre,
+un badge le signale dans la gestion des comptes. Patron à reprendre : `liaisons_demandes`, qui fait
+déjà exactement ça (état en attente, décision, notification, index unique partiel).
 
-**Aucun test ne couvre ce palier** — les 76 assertions de `test_hierarchie_routes.py` testent
-chef_admin et superadmin, jamais admin→admin.
-
-**Solution déjà décidée** (contexte §8.1) : remplacer les deux `if` en dur par une règle de rang
-générique réutilisant `ROLE_HIERARCHY`.
-
-```
-rang(acteur) > rang(cible)  -> autorisé
-rang(acteur) <= rang(cible) -> refusé (403 cible_protegee)
-```
-
-Conséquence : `admin` → seulement `player` ; `chef_admin` → `player` et `admin`, jamais un pair ;
-`superadmin` → tout le monde. Le cas chef_admin-vs-chef_admin (R-52) tombe naturellement de cette
-règle, plus besoin d'un cas à part.
-
-**Portée à ne pas dévier** : ne **pas** toucher `changer_role` — sa logique de plafond (quelle
-*valeur* de rôle poser) est distincte de celle-ci (quelle *cible* on peut toucher). Côté frontend,
-`admin_comptes.html` calcule `cibleProtegee` pour le seul sélecteur de rôle ; les trois boutons
-d'action n'ont aucun garde équivalent et mènent à un 403 prévisible, contraire au §B.0 du plan.
+⚠️ Deux conséquences à connaître : **cette phase est bloquante** pour la mise en place du journal
+(informer après coup ne rattrape rien), et elle crée un **quatrième écrivain de `comptes.role`** —
+`test_bascule.py`, qui en compte exactement trois, échouera et devra être mis à jour, pas neutralisé.
 
 ### 2. Tests des 3 routes d'onglets (§8.3)
 
@@ -393,6 +477,7 @@ requis.
 | `test_sous_permissions.py` | la mécanique parent/enfant : décorateur, octroi, retrait en cascade, gates d'interface |
 | `test_session_expiree.py` | la revalidation des deux voies et les gates de page |
 | `test_bascule.py` | inventaire des décorateurs par analyse du source (aucune route ouverte) |
+| `test_audit_permissions.py` | revue transverse : matrice de rang 4×4, clôture du catalogue, plafond, 503, gates |
 
 ⚠️ **Trois échecs préexistants**, hors périmètre de ces chantiers et vérifiés identiques avant/après
 chaque livraison : `test_auth` 25/26 (un cas d'avatar CDN), `test_liaisons` 30/36,

@@ -398,10 +398,15 @@ def classement():
     if ligues_status == 200 and isinstance(ligues_data, list):
         ligues = ligues_data
 
-    seuils = {}
-    seuils_data, seuils_status = backend_request('GET', '/tier-seuils')
-    if seuils_status == 200 and isinstance(seuils_data, dict):
-        seuils = seuils_data
+    # Liste ordonnee par rang decroissant (nom, couleur, seuil) -- plus un
+    # dict fige {"S":.., "A":..} depuis les tiers dynamiques (Partie B).
+    tiers = []
+    tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
+    if tiers_status == 200 and isinstance(tiers_data, list):
+        tiers = tiers_data
+    # Lookup nom -> couleur pour le badge de tier de chaque joueur (evite de
+    # coder S/A/B/C en dur dans le gabarit, cf docs/tableau-seuils-tiers-plan.md).
+    tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers if t.get('nom')}
 
     saison = None
     if vue == 'saison':
@@ -412,9 +417,16 @@ def classement():
         if s_status == 200 and isinstance(s_data, dict):
             saison = s_data
 
-    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, seuils=seuils, distribution_data=distribution_data, vue=vue, saison=saison)
+    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, tiers=tiers, tiers_couleurs=tiers_couleurs, distribution_data=distribution_data, vue=vue, saison=saison)
 
 def _rendre_fiche_joueur(nom, data):
+    # Couleur du tier portee par les donnees (tiers dynamiques, Partie B) :
+    # plus de branches S/A/B/C figees dans stats_joueur.html.
+    tiers_couleurs = {}
+    tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
+    if tiers_status == 200 and isinstance(tiers_data, list):
+        tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers_data if t.get('nom')}
+
     return render_template(
         "stats_joueur.html",
         nom=nom,
@@ -426,6 +438,7 @@ def _rendre_fiche_joueur(nom, data):
         details=data.get('details', []),
         profil=data.get('profil'),
         url_canonique=data.get('url_canonique'),
+        tiers_couleurs=tiers_couleurs,
     )
 
 
@@ -472,7 +485,7 @@ def confirmation():
 @app.route('/stats/joueurs')
 def stats_joueurs():
     data, status = backend_request('GET', '/stats/joueurs')
-    
+
     joueurs = []
     dist = {}
 
@@ -480,10 +493,17 @@ def stats_joueurs():
         joueurs = data.get('joueurs', [])
         dist = data.get('distribution_tiers', {})
     else:
-        joueurs = [] 
+        joueurs = []
         dist = {}
-        
-    return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist)
+
+    # Couleur du tier portee par les donnees (tiers dynamiques, Partie B) --
+    # plus de classe tier-{{ tier|lower }} figee dans le gabarit.
+    tiers_couleurs = {}
+    tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
+    if tiers_status == 200 and isinstance(tiers_data, list):
+        tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers_data if t.get('nom')}
+
+    return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist, tiers_couleurs=tiers_couleurs)
 
 @app.route('/stats/tournois')
 def stats_tournois():
@@ -891,6 +911,15 @@ def proxy_demande_liaison():
 def admin_comptes():
     if not _est_admin():
         flash('Accès réservé aux administrateurs', 'warning')
+        return redirect(url_for('index'))
+
+    # La page héberge trois domaines, chacun sous sa permission : elle s'ouvre
+    # dès qu'on en a un, et chaque onglet est gaté séparément dans le gabarit.
+    # Sans ce garde, un admin qui n'en a aucun ouvrait une page vide en tapant
+    # l'URL -- la navbar, elle, masque déjà l'entrée dans ce cas.
+    if not ({'gestion_comptes', 'gestion_liaisons', 'gestion_invitations'}
+            & _permissions_session()):
+        flash("Vous n'avez pas accès à la gestion des comptes.", 'warning')
         return redirect(url_for('index'))
 
     # Revalidation avant rendu, comme les autres pages admin. Sans elle, la page
@@ -1424,6 +1453,43 @@ def proxy_config():
     elif request.method == 'POST':
         data, status = backend_request('POST', '/admin/config', data=request.get_json(), headers=headers)
     return jsonify(data), status
+
+@app.route('/admin/config/tier-distribution', methods=['GET'])
+
+def proxy_tier_distribution():
+    if not _est_admin():
+        return jsonify({'error': 'Non autorisé'}), 403
+    headers = admin_headers()
+    data, status = backend_request('GET', '/admin/config/tier-distribution', headers=headers)
+    return jsonify(data), status
+
+@app.route('/admin/tiers', methods=['GET', 'POST'])
+
+def proxy_tiers():
+    if not _est_admin():
+        return jsonify({'error': 'Non autorisé'}), 403
+    return _proxy_admin(request.method, '/admin/tiers', json_body=(request.method == 'POST'))
+
+@app.route('/admin/tiers/reorder', methods=['PUT'])
+
+def proxy_tiers_reorder():
+    if not _est_admin():
+        return jsonify({'error': 'Non autorisé'}), 403
+    return _proxy_admin('PUT', '/admin/tiers/reorder', json_body=True)
+
+@app.route('/admin/tiers/reset', methods=['POST'])
+
+def proxy_tiers_reset():
+    if not _est_admin():
+        return jsonify({'error': 'Non autorisé'}), 403
+    return _proxy_admin('POST', '/admin/tiers/reset', json_body=True)
+
+@app.route('/admin/tiers/<int:tier_id>', methods=['PUT', 'DELETE'])
+
+def proxy_tier_detail(tier_id):
+    if not _est_admin():
+        return jsonify({'error': 'Non autorisé'}), 403
+    return _proxy_admin(request.method, f'/admin/tiers/{tier_id}', json_body=(request.method == 'PUT'))
 
 @app.route('/admin/global-reset', methods=['POST'])
 

@@ -17,6 +17,7 @@ from flask import Blueprint, jsonify, request, abort, g
 from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, TRUESKILL_BETA, TRUESKILL_DRAW_PROBABILITY,
     DEFAULT_TAU, DEFAULT_GHOST_PENALTY, DEFAULT_UNRANKED_THRESHOLD, DEFAULT_SIGMA_THRESHOLD,
+    DEFAULT_TIERS,
     DEFAULT_GHOST_THRESHOLD_DAYS, DEFAULT_GHOST_INTERVAL_DAYS,
     GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES, IP_VERSION_DEFAULT,
     ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN,
@@ -30,6 +31,7 @@ from services import (
     recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
     _aggregate_season_stats, _determine_winners, _save_awards_to_db,
     _apply_inter_league_moves,
+    build_distribution, trueskill_score, has_tier, load_tiers,
 )
 
 logger = logging.getLogger(__name__)
@@ -269,7 +271,7 @@ def get_config():
             "sigma_threshold": float(rows.get('sigma_threshold', DEFAULT_SIGMA_THRESHOLD)),
             "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true',
             "inter_league_moves": int(rows.get('inter_league_moves', 0)),
-            "ip_version_live": rows.get('ip_version_live', IP_VERSION_DEFAULT)
+            "ip_version_live": rows.get('ip_version_live', IP_VERSION_DEFAULT),
         })
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
@@ -334,6 +336,11 @@ def update_config():
                 return jsonify({"error": "ip_version_live invalide"}), 400
             configs.append(('ip_version_live', ip_version_live))
 
+        # Les seuils de tiers (nom/couleur/seuil_k/rang) ne relevent plus de
+        # cette route depuis les tiers dynamiques (Partie B) : ils vivent
+        # dans la table `tiers`, geree par les routes CRUD /admin/tiers/*
+        # plus bas dans ce fichier.
+
         # A part : sa valeur pilote le reclassement de TOUS les joueurs plus bas.
         unranked_threshold = None
         if 'unranked_threshold' in data:
@@ -395,6 +402,351 @@ def update_config():
         logger.error(f"Erreur requête: {e}")
         return jsonify({"error": "Requête invalide"}), 400
 
+
+@admin_bp.route('/admin/config/tier-distribution', methods=['GET'])
+@permission_required('gestion_config')
+def get_tier_distribution():
+    """Courbe + position des joueurs rankes actuels, pour le tableau de
+    reglage des seuils de tiers (page Reglages TrueSkill). Meme population
+    que recalculate_tiers() : c'est la distribution qui sera reellement
+    utilisee au prochain recalcul, le preview doit lui etre fidele.
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM Configuration WHERE key = 'sigma_threshold'")
+                res = cur.fetchone()
+                threshold = float(res[0]) if res else DEFAULT_SIGMA_THRESHOLD
+
+                cur.execute("SELECT nom, mu, sigma, is_ranked, color FROM Joueurs")
+                rows = cur.fetchall()
+
+        players = [
+            {"nom": nom, "mu": mu, "sigma": sigma, "color": color}
+            for nom, mu, sigma, is_ranked, color in rows
+            if has_tier(is_ranked, sigma, threshold)
+        ]
+        dist = build_distribution(players, lambda p: trueskill_score(p["mu"], p["sigma"]))
+        return jsonify(dist)
+    except Exception as e:
+        logger.error(f"Erreur tier-distribution: {e}")
+        return jsonify({"error": "Erreur serveur"}), 500
+
+
+# --- Tiers dynamiques (Partie B, docs/tableau-seuils-tiers-plan.md) --------
+#
+# 'U' (non classe / hors distribution) reste cable en dur ailleurs (has_tier,
+# IP_V2_REF_REQUIRE_TIER, valeur par defaut a la creation d'un joueur) : ce
+# n'est pas une ligne de cette table, et un admin ne peut ni le nommer ainsi
+# ni le supprimer via ces routes -- _nom_valide() le refuse explicitement.
+#
+# Toutes ces routes sont sous gestion_config, comme le reste des reglages
+# TrueSkill (cf update_config plus haut), et recalculent les tiers de tous
+# les joueurs immediatement apres chaque ecriture -- meme comportement que
+# /admin/config.
+
+def _nom_tier_valide(nom) -> str | None:
+    """Normalise et valide un nom de tier ; None si invalide (vide, > 10
+    caracteres, ou 'U' qui est reserve au sentinel hors-distribution)."""
+    if not isinstance(nom, str):
+        return None
+    nom = nom.strip()
+    if not (1 <= len(nom) <= 10):
+        return None
+    if nom.upper() == 'U':
+        return None
+    return nom
+
+
+def _couleur_valide(couleur) -> str | None:
+    import re as _re
+    if not isinstance(couleur, str):
+        return None
+    couleur = couleur.strip()
+    return couleur if _re.fullmatch(r'#[0-9a-fA-F]{3,8}', couleur) else None
+
+
+def _renumeroter_rangs(cur) -> None:
+    """Rangs toujours 0..N-1 sans trou, dans l'ordre croissant deja en base.
+    A appeler apres toute suppression : un trou casserait l'hypothese
+    « le plancher est le tier de plus petit rang » si le trou se trouvait
+    juste au-dessus du rang 0."""
+    cur.execute("SELECT id FROM tiers ORDER BY rang ASC")
+    ids = [r[0] for r in cur.fetchall()]
+    for nouveau_rang, tid in enumerate(ids):
+        cur.execute("UPDATE tiers SET rang = %s WHERE id = %s", (nouveau_rang, tid))
+
+
+def _appliquer_plancher(cur) -> None:
+    """Efface le seuil du tier de plus petit rang : le plancher n'a pas de
+    frontiere basse, par definition.
+
+    NE FABRIQUE AUCUNE VALEUR. Une version precedente donnait d'office
+    `voisin + 1.0` a tout tier sans seuil qui n'etait plus le plancher --
+    elle inventait donc une frontiere que l'admin n'avait pas demandee, ce qui
+    corrompait le classement (bug de recette du 14/09 : un tier se retrouvait
+    a 1.0 au milieu du classement, au-dessus de tiers censes lui etre
+    superieurs). Un tier promu au-dessus du plancher recoit sa vraie valeur du
+    PUT correspondant ; s'il n'en a pas, `tier_for_score()` le traite comme le
+    dernier recours, ce qui reste coherent.
+
+    N'est appelee qu'en fin d'operation (creation, suppression,
+    reordonnancement), jamais entre deux ecritures d'une meme sequence.
+    """
+    cur.execute("SELECT id, seuil_k FROM tiers ORDER BY rang ASC LIMIT 1")
+    row = cur.fetchone()
+    if row is not None and row[1] is not None:
+        cur.execute("UPDATE tiers SET seuil_k = NULL WHERE id = %s", (row[0],))
+
+
+@admin_bp.route('/admin/tiers', methods=['GET'])
+@player_required
+def get_tiers():
+    """Lecture seule, ouverte a toute session authentifiee -- meme raison
+    que get_config() : ces valeurs ne sont pas des secrets, et /classement
+    (page publique) en depend deja indirectement via /tier-seuils."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                tiers = load_tiers(cur)
+        return jsonify(tiers)
+    except Exception as e:
+        logger.error(f"Erreur get_tiers: {e}")
+        return jsonify({"error": "Erreur serveur"}), 500
+
+
+@admin_bp.route('/admin/tiers', methods=['POST'])
+@permission_required('gestion_config')
+def create_tier():
+    """Cree un tier. Position d'insertion optionnelle (`apres_rang`) : sans
+    elle, le nouveau tier prend le rang le plus haut (meilleur tier) --
+    choix par defaut le moins surprenant pour un ajout."""
+    data = request.get_json() or {}
+    nom = _nom_tier_valide(data.get('nom'))
+    if nom is None:
+        return jsonify({"error": "Nom de tier invalide (1-10 caracteres, 'U' reserve)"}), 400
+    couleur = _couleur_valide(data.get('couleur'))
+    if couleur is None:
+        return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
+    seuil_k = data.get('seuil_k')
+    try:
+        seuil_k = float(seuil_k) if seuil_k is not None else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "seuil_k invalide"}), 400
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM tiers WHERE UPPER(nom) = UPPER(%s)", (nom,))
+                if cur.fetchone()[0] > 0:
+                    return jsonify({"error": f"Un tier « {nom} » existe deja"}), 400
+
+                apres_rang = data.get('apres_rang')
+                cur.execute("SELECT rang FROM tiers ORDER BY rang DESC LIMIT 1")
+                rang_max = cur.fetchone()
+                rang_max = rang_max[0] if rang_max else -1
+
+                if apres_rang is None:
+                    # Par defaut : au sommet (meilleur tier).
+                    nouveau_rang = rang_max + 1
+                else:
+                    # Insertion juste au-dessus du rang donne : decale tout ce
+                    # qui est strictement au-dessus pour lui faire de la place.
+                    apres_rang = int(apres_rang)
+                    cur.execute("UPDATE tiers SET rang = rang + 1 WHERE rang > %s", (apres_rang,))
+                    nouveau_rang = apres_rang + 1
+
+                # Le nouveau tier n'est jamais le plancher a la creation (sauf
+                # table vide, cas degenere non attendu en usage normal) :
+                # _appliquer_plancher() rectifie de toute facon juste apres si
+                # besoin, donc seuil_k fourni est respecte tel quel ici.
+                cur.execute(
+                    "INSERT INTO tiers (nom, couleur, seuil_k, rang) VALUES (%s, %s, %s, %s) RETURNING id",
+                    (nom, couleur, seuil_k, nouveau_rang),
+                )
+                nouvel_id = cur.fetchone()[0]
+                _appliquer_plancher(cur)
+            conn.commit()
+            recalculate_tiers()
+            invalidate_cache()
+        # L'id est renvoye pour que l'appelant (panneau de gestion des tiers)
+        # puisse suivre ce tier sans avoir a le reidentifier par son nom
+        # ensuite (fragile si un renommage est encore en cours cote client).
+        return jsonify({"status": "success", "id": nouvel_id})
+    except Exception as e:
+        logger.error(f"Erreur create_tier: {e}")
+        return jsonify({"error": "Requête invalide"}), 400
+
+
+@admin_bp.route('/admin/tiers/<int:tier_id>', methods=['PUT'])
+@permission_required('gestion_config')
+def update_tier(tier_id):
+    """Renomme / recolore / change le seuil d'UN tier. Le rang se change via
+    /admin/tiers/reorder, pas ici -- un changement de rang isole ouvrirait un
+    etat incoherent (deux tiers au meme rang) le temps de plusieurs appels."""
+    data = request.get_json() or {}
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, rang FROM tiers WHERE id = %s", (tier_id,))
+                row = cur.fetchone()
+                if row is None:
+                    return jsonify({"error": "Tier introuvable"}), 404
+
+                champs, valeurs = [], []
+                if 'nom' in data:
+                    nom = _nom_tier_valide(data['nom'])
+                    if nom is None:
+                        return jsonify({"error": "Nom de tier invalide (1-10 caracteres, 'U' reserve)"}), 400
+                    cur.execute(
+                        "SELECT COUNT(*) FROM tiers WHERE UPPER(nom) = UPPER(%s) AND id != %s",
+                        (nom, tier_id),
+                    )
+                    if cur.fetchone()[0] > 0:
+                        return jsonify({"error": f"Un tier « {nom} » existe deja"}), 400
+                    champs.append("nom = %s"); valeurs.append(nom)
+                if 'couleur' in data:
+                    couleur = _couleur_valide(data['couleur'])
+                    if couleur is None:
+                        return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
+                    champs.append("couleur = %s"); valeurs.append(couleur)
+                # seuil_k accepte tel quel, y compris sur le tier actuellement
+                # plancher : le panneau d'administration envoie ses PUT AVANT
+                # le /reorder, donc « qui est le plancher » est encore l'ancien
+                # etat a cet instant. Refuser ici bloquait tout ajout d'un
+                # nouveau tier sous le plancher existant (bug de recette du
+                # 13/09). L'invariant « seul le rang le plus bas a seuil_k
+                # NULL » est retabli par _appliquer_plancher() ci-dessous, et
+                # de nouveau apres le reorder.
+                if 'seuil_k' in data:
+                    if data['seuil_k'] is None:
+                        champs.append("seuil_k = NULL")
+                    else:
+                        try:
+                            seuil_k = float(data['seuil_k'])
+                        except (TypeError, ValueError):
+                            return jsonify({"error": "seuil_k invalide"}), 400
+                        champs.append("seuil_k = %s"); valeurs.append(seuil_k)
+
+                if not champs:
+                    return jsonify({"error": "Aucun champ a modifier"}), 400
+
+                valeurs.append(tier_id)
+                cur.execute(f"UPDATE tiers SET {', '.join(champs)} WHERE id = %s", valeurs)
+                # PAS de _appliquer_plancher() ici : le panneau envoie un PUT
+                # par tier AVANT le /reorder final, donc le tier vise peut
+                # encore etre le plancher en base alors qu'il ne le sera plus
+                # apres reordonnancement. Rejouer l'invariant a cet instant
+                # effacait le seuil tout juste ecrit (bug du 14/09 : la valeur
+                # saisie etait perdue, puis remplacee par une valeur inventee).
+                # C'est /reorder, qui connait l'ordre final, qui le retablit.
+            conn.commit()
+            recalculate_tiers()
+            invalidate_cache()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        logger.error(f"Erreur update_tier: {e}")
+        return jsonify({"error": "Requête invalide"}), 400
+
+
+@admin_bp.route('/admin/tiers/<int:tier_id>', methods=['DELETE'])
+@permission_required('gestion_config')
+def delete_tier(tier_id):
+    """Supprime un tier. S'il etait le plancher, le tier juste au-dessus
+    devient automatiquement le nouveau plancher (_appliquer_plancher) --
+    decision de l'utilisateur (13/09), voir docs/tableau-seuils-tiers-plan.md
+    Partie B. Refuse de vider la table : il faut toujours au moins un tier
+    pour que has_tier()/recalculate_tiers() aient un resultat autre que 'U'."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM tiers")
+                if cur.fetchone()[0] <= 1:
+                    return jsonify({"error": "Impossible de supprimer le dernier tier restant"}), 400
+
+                cur.execute("DELETE FROM tiers WHERE id = %s", (tier_id,))
+                if cur.rowcount == 0:
+                    return jsonify({"error": "Tier introuvable"}), 404
+
+                _renumeroter_rangs(cur)
+                _appliquer_plancher(cur)
+            conn.commit()
+            recalculate_tiers()
+            invalidate_cache()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        logger.error(f"Erreur delete_tier: {e}")
+        return jsonify({"error": "Requête invalide"}), 400
+
+
+@admin_bp.route('/admin/tiers/reorder', methods=['PUT'])
+@permission_required('gestion_config')
+def reorder_tiers():
+    """Recoit l'ordre COMPLET des tiers (liste d'ids, du meilleur au pire) et
+    reassigne tous les rangs d'un coup -- evite un etat incoherent (deux
+    tiers au meme rang) qu'un reordonnancement fait d'appels individuels
+    pourrait produire entre deux requetes."""
+    data = request.get_json() or {}
+    ordre = data.get('ordre')
+    if not isinstance(ordre, list) or not ordre:
+        return jsonify({"error": "« ordre » doit etre une liste non vide d'ids"}), 400
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM tiers")
+                ids_existants = {r[0] for r in cur.fetchall()}
+                try:
+                    ids_recus = {int(i) for i in ordre}
+                except (TypeError, ValueError):
+                    return jsonify({"error": "« ordre » doit contenir des ids entiers"}), 400
+                if ids_recus != ids_existants:
+                    return jsonify({"error": "« ordre » doit contenir exactement tous les tiers existants"}), 400
+
+                # Rang decroissant : premier de la liste = meilleur tier =
+                # rang le plus haut. Passage par des rangs temporaires
+                # negatifs : `rang` est UNIQUE, des UPDATE un par un vers les
+                # rangs finaux (0..n-1, deja tous occupes) violeraient la
+                # contrainte des le premier si son rang cible est encore pris
+                # par un autre tier de la boucle.
+                n = len(ordre)
+                for position, tid in enumerate(ordre):
+                    cur.execute("UPDATE tiers SET rang = %s WHERE id = %s", (-(position + 1), int(tid)))
+                for position, tid in enumerate(ordre):
+                    cur.execute("UPDATE tiers SET rang = %s WHERE id = %s", (n - 1 - position, int(tid)))
+
+                _appliquer_plancher(cur)
+            conn.commit()
+            recalculate_tiers()
+            invalidate_cache()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        logger.error(f"Erreur reorder_tiers: {e}")
+        return jsonify({"error": "Requête invalide"}), 400
+
+
+@admin_bp.route('/admin/tiers/reset', methods=['POST'])
+@permission_required('gestion_config')
+def reset_tiers():
+    """Restaure exactement S/A/B/C avec les seuils par defaut (DEFAULT_TIERS)
+    -- le bouton « Reinitialiser » du panneau de gestion des tiers. Detruit
+    toute personnalisation en cours, le frontend confirme avant d'appeler."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM tiers")
+                for t in DEFAULT_TIERS:
+                    cur.execute(
+                        "INSERT INTO tiers (nom, couleur, seuil_k, rang) VALUES (%s, %s, %s, %s)",
+                        (t["nom"], t["couleur"], t["seuil_k"], t["rang"]),
+                    )
+            conn.commit()
+            recalculate_tiers()
+            invalidate_cache()
+        return jsonify({"status": "success"})
+    except Exception as e:
+        logger.error(f"Erreur reset_tiers: {e}")
+        return jsonify({"error": "Erreur serveur"}), 500
 
 
 @admin_bp.route('/admin/joueurs', methods=['GET'])

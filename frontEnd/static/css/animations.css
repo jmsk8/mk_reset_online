@@ -106,23 +106,12 @@
     border-color: rgba(255, 255, 255, 0.4);
 }
 
-.tag.tier-s {
-    background: linear-gradient(45deg, #f77b7b, #e98282);
+/* Badge de tier dynamique (Partie B, docs/tableau-seuils-tiers-plan.md) :
+   la couleur vient des donnees (tiers geres par l'admin), plus de classes
+   tier-s/a/b/c figees par lettre. Le fond exact est pose en style inline
+   (background: <couleur du tier>) par chaque gabarit/script ; cette classe
+   ne porte plus que l'habillage commun (texte blanc, leger relief). */
+.tag.tier-tag {
     color: white !important;
-    box-shadow: 0 0 10px rgba(255, 126, 95, 0.5);
-}
-
-.tag.tier-a {
-    background: linear-gradient(45deg, #9cda74, #aeee89);
-    color: white !important;
-}
-
-.tag.tier-b {
-    background: linear-gradient(45deg, #7fe6ee, #80ecfa);
-    color: white !important;
-}
-
-.tag.tier-c {
-    background: linear-gradient(45deg, #ae6ce4, #c069e9);
-    color: white !important;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
 }
