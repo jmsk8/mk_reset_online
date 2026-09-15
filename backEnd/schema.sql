@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS public.ghost_log CASCADE;
 DROP TABLE IF EXISTS public.awards_obtenus CASCADE;
 DROP TABLE IF EXISTS public.participations CASCADE;
 DROP TABLE IF EXISTS public.tournois CASCADE;
+DROP TABLE IF EXISTS public.sessions_tournois CASCADE;
 DROP TABLE IF EXISTS public.joueurs CASCADE;
 DROP TABLE IF EXISTS public.configuration CASCADE;
 DROP TABLE IF EXISTS public.saisons CASCADE;
@@ -35,8 +36,8 @@ INSERT INTO public.configuration (key, value) VALUES
 ('tau', '0.083'),
 ('ghost_enabled', 'false'),
 ('ghost_penalty', '0.1'),
-('ghost_threshold_days', '28'),
-('ghost_interval_days', '7'),
+('ghost_threshold_sessions', '4'),
+('ghost_interval_sessions', '1'),
 ('unranked_threshold', '10'),
 ('sigma_threshold', '4.0'),
 ('league_mode_enabled', 'false'),
@@ -98,14 +99,35 @@ CREATE SEQUENCE public.joueurs_id_seq AS integer START WITH 1 INCREMENT BY 1 NO 
 ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
 ALTER TABLE ONLY public.joueurs ALTER COLUMN id SET DEFAULT nextval('public.joueurs_id_seq'::regclass);
 
+-- SESSIONS DE TOURNOIS
+-- Occasion de jeu regroupant un ou plusieurs tournois (typiquement deux lobbies
+-- simultanes). Un tournoi seul forme une session a un seul element : c'est le
+-- cas normal, pas un cas particulier -- d'ou tournois.session_id NOT NULL.
+--
+-- A ne pas confondre avec sessions_joueurs, qui porte l'authentification.
+-- Conception : docs/plan-sessions-tournois.md
+CREATE TABLE public.sessions_tournois (
+    id integer NOT NULL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.sessions_tournois OWNER TO CURRENT_USER;
+
+CREATE SEQUENCE public.sessions_tournois_id_seq AS integer START WITH 1 INCREMENT BY 1 NO MINVALUE NO MAXVALUE CACHE 1;
+ALTER SEQUENCE public.sessions_tournois_id_seq OWNED BY public.sessions_tournois.id;
+ALTER TABLE ONLY public.sessions_tournois ALTER COLUMN id SET DEFAULT nextval('public.sessions_tournois_id_seq'::regclass);
+
 -- TOURNOIS
--- Mise à jour : Ajout des colonnes pour l'archivage (snapshot)
+-- ligue_nom / ligue_couleur : archive de la ligue au moment du tournoi.
 CREATE TABLE public.tournois (
-    id integer NOT NULL PRIMARY KEY, 
+    id integer NOT NULL PRIMARY KEY,
     date date NOT NULL,
     ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
     ligue_nom character varying(100),    -- Archive du nom au moment du tournoi
-    ligue_couleur character varying(20)  -- Archive de la couleur
+    ligue_couleur character varying(20), -- Archive de la couleur
+    -- Jamais NULL : un tournoi non lie est seul dans sa session. Remplace le
+    -- regroupement implicite par (date, ligue_id) qui etait recalcule a deux
+    -- endroits du code (penalite d'absence et comptage des awards).
+    session_id INTEGER NOT NULL REFERENCES public.sessions_tournois(id) ON DELETE SET NULL
 );
 ALTER TABLE public.tournois OWNER TO CURRENT_USER;
 
@@ -427,6 +449,7 @@ CREATE INDEX idx_participations_joueur_id ON public.participations(joueur_id);
 CREATE INDEX idx_participations_tournoi_id ON public.participations(tournoi_id);
 CREATE INDEX idx_joueurs_ligue_id ON public.joueurs(ligue_id);
 CREATE INDEX idx_tournois_date ON public.tournois(date);
+CREATE INDEX idx_tournois_session ON public.tournois(session_id);
 CREATE INDEX idx_awards_obtenus_joueur_id ON public.awards_obtenus(joueur_id);
 CREATE INDEX idx_awards_obtenus_saison_id ON public.awards_obtenus(saison_id);
 CREATE INDEX idx_ghost_log_joueur_id ON public.ghost_log(joueur_id);

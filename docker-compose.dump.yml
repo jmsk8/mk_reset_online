@@ -43,6 +43,8 @@ services:
       - ./backEnd/migrations/2026-09-10_hierarchie_admin.sql:/docker-entrypoint-initdb.d/12_hierarchie_admin.sql
       - ./backEnd/migrations/2026-09-13_add_tier_thresholds.sql:/docker-entrypoint-initdb.d/13_tier_thresholds.sql
       - ./backEnd/migrations/2026-09-13_add_tiers_table.sql:/docker-entrypoint-initdb.d/14_tiers_table.sql
+      - ./backEnd/migrations/2026-09-15_sessions_tournois.sql:/docker-entrypoint-initdb.d/15_sessions_tournois.sql
+      - ./backEnd/migrations/2026-09-16_penalite_en_sessions.sql:/docker-entrypoint-initdb.d/16_penalite_en_sessions.sql
 
       # Controle final : verifie que le rattrapage a bien eu lieu et ARRETE
       # l'initialisation sinon. Sans lui, une migration qui echoue laisse une

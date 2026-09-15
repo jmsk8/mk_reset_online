@@ -86,7 +86,7 @@ ABSENTS_TOUS = [(10, 3, True), (20, 5, False), (30, 2, True)]
 print("\n=== revert_last_tournament : le decrement ne touche plus toute la base ===")
 
 cli, cur, conn, lots = monter([
-    (r"SELECT id, date FROM Tournois ORDER BY date DESC", (77, '2026-09-01')),
+    (r"SELECT id, date, session_id FROM Tournois ORDER BY date DESC", (77, '2026-09-01', 501)),
     (r"SELECT joueur_id, old_mu, old_sigma FROM Participations", [(10, 25.0, 8.0)]),
     (r"SELECT joueur_id, old_sigma FROM ghost_log", [(20, 7.5)]),
     (r"key = 'unranked_threshold'", ('5',)),
@@ -127,7 +127,7 @@ print("\n=== Le compteur d'un participant n'est jamais decremente ===")
 # a 0, la valeur d'avant est perdue (aucun old_missed en base). Le decrementer
 # le ferait passer SOUS sa valeur reelle.
 cli, cur, conn, lots = monter([
-    (r"SELECT id, date FROM Tournois ORDER BY date DESC", (77, '2026-09-01')),
+    (r"SELECT id, date, session_id FROM Tournois ORDER BY date DESC", (77, '2026-09-01', 501)),
     (r"SELECT joueur_id, old_mu, old_sigma FROM Participations", [(10, 25.0, 8.0)]),
     (r"SELECT joueur_id, old_sigma FROM ghost_log", []),
     (r"key = 'unranked_threshold'", ('5',)),
@@ -146,7 +146,7 @@ check("aucun doublon dans le lot ecrit", len(ids) == len(set(ids)), ids)
 
 print("\n=== Un joueur a missed = 0 n'est jamais decremente sous zero ===")
 cli, cur, conn, lots = monter([
-    (r"SELECT id, date FROM Tournois ORDER BY date DESC", (77, '2026-09-01')),
+    (r"SELECT id, date, session_id FROM Tournois ORDER BY date DESC", (77, '2026-09-01', 501)),
     (r"SELECT joueur_id, old_mu, old_sigma FROM Participations", [(10, 25.0, 8.0)]),
     (r"SELECT joueur_id, old_sigma FROM ghost_log", []),
     (r"key = 'unranked_threshold'", ('5',)),
@@ -165,7 +165,7 @@ check("aucune valeur negative ecrite",
 
 print("\n=== is_ranked : restaure sous le seuil, jamais retire au-dessus ===")
 cli, cur, conn, lots = monter([
-    (r"SELECT id, date FROM Tournois ORDER BY date DESC", (77, '2026-09-01')),
+    (r"SELECT id, date, session_id FROM Tournois ORDER BY date DESC", (77, '2026-09-01', 501)),
     (r"SELECT joueur_id, old_mu, old_sigma FROM Participations", []),
     (r"SELECT joueur_id, old_sigma FROM ghost_log", []),
     (r"key = 'unranked_threshold'", ('3',)),
@@ -187,7 +187,7 @@ check("22 : deja classe, la route ne le declasse pas",
 print("\n=== delete_tournament : meme regle, comportement inchange ===")
 cli, cur, conn, lots = monter([
     (r"key = 'unranked_threshold'", ('5',)),
-    (r"SELECT date FROM Tournois WHERE id", ('2026-09-01',)),
+    (r"SELECT date, session_id FROM Tournois WHERE id", ('2026-09-01', 501)),
     (r"SELECT joueur_id, old_sigma FROM ghost_log", [(20, 7.5)]),
     (r"SELECT joueur_id FROM Participations WHERE tournoi_id", [(10,)]),
     (r"SELECT id, consecutive_missed, is_ranked FROM Joueurs", ABSENTS_SANS_PARTICIPANT),

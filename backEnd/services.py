@@ -229,16 +229,35 @@ def build_distribution(
     return dist
 
 
+# Filet de rattrapage d'un decalage de sequence, appele au demarrage
+# (backend.py). Un dump restaure avec des id explicites laisse sa sequence a 1 :
+# le prochain INSERT heurte alors une cle primaire existante.
+#
+# sessions_tournois en fait partie parce que sa migration insere des id
+# explicites (backfill par id du tournoi-ancre) -- exactement le cas que cette
+# fonction rattrape.
+_TABLES_A_SEQUENCE = [
+    'Joueurs', 'Tournois', 'sessions_tournois', 'saisons', 'types_awards', 'awards_obtenus',
+]
+
+
 def sync_sequences() -> None:
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            tables = ['Joueurs', 'Tournois', 'saisons', 'types_awards', 'awards_obtenus']
-            for table in tables:
+            for table in _TABLES_A_SEQUENCE:
                 try:
-                    seq_name = f"public.{table.lower()}_id_seq"
-                    query = f"SELECT setval('{seq_name}', (SELECT MAX(id) FROM public.{table}))"
-                    cur.execute(query)
+                    # COALESCE(..., 1) : MAX(id) vaut NULL sur une table vide, et
+                    # setval(NULL) echoue -- sans lui, l'exception ci-dessous
+                    # avalait le cas silencieusement.
+                    cur.execute(
+                        f"SELECT setval('public.{table.lower()}_id_seq',"
+                        f" COALESCE((SELECT MAX(id) FROM public.{table}), 1))"
+                    )
                 except Exception:
+                    # Table absente : une migration n'a pas encore tourne. Non
+                    # bloquant au demarrage, mais tracé -- sinon un decalage de
+                    # sequence reel reste invisible jusqu'au prochain INSERT.
+                    logger.warning("sync_sequences : sequence de %s non synchronisee", table)
                     conn.rollback()
         conn.commit()
 
@@ -310,6 +329,262 @@ def drop_grille_snapshot_if_orphan(cur: Any, date_tournoi: Any) -> None:
     if cur.fetchone():
         return
     cur.execute("DELETE FROM grille_snapshots WHERE date = %s", (date_tournoi,))
+
+
+# Supprime une session que plus aucun tournoi ne reference. Meme role et meme
+# emplacement d'appel que drop_grille_snapshot_if_orphan ci-dessus : a appeler
+# depuis revert_last_tournament et delete_tournament, avec la session_id lue
+# AVANT la suppression du tournoi.
+#
+# Une session vide est inoffensive pour le calcul (aucun tournoi n'y pointe),
+# mais la laisser fausserait tout comptage de sessions -- or c'est precisement
+# ce que ce chantier rend fiable (classement de saison, recaps, seuils d'awards).
+def drop_session_if_orphan(cur: Any, session_id: Any) -> None:
+    if session_id is None:
+        return
+    cur.execute("SELECT 1 FROM Tournois WHERE session_id = %s LIMIT 1", (session_id,))
+    if cur.fetchone():
+        return
+    cur.execute("DELETE FROM sessions_tournois WHERE id = %s", (session_id,))
+
+
+# Nombre de joueurs a nommer dans un message de conflit. Purement cosmetique :
+# la DETECTION ne depend jamais de cette borne, une seule ligne suffit a refuser.
+MAX_CONFLITS_NOMMES = 5
+
+
+# La penalite d'absence est-elle due a cette session-ci ?
+#
+# `sessions_loupees` est consecutive_missed APRES incrementation pour le tour en
+# cours. La penalite tombe au palier `seuil`, puis tous les `intervalle`
+# ensuite : seuil=4, intervalle=1 -> 4e, 5e, 6e... ; seuil=2, intervalle=3 ->
+# 2e, 5e, 8e...
+#
+# Remplace un calcul d'ecart calendaire (date de derniere apparition ou de
+# derniere penalite, comparee a la date du tournoi). Consequence VOULUE : une
+# periode sans session ne penalise personne, puisque le compteur ne bouge pas.
+# La penalite sanctionne les occasions loupees, pas le temps qui passe.
+# Conception : docs/plan-sessions-tournois.md, decision 8 et 5.4
+def penalite_due(sessions_loupees: int, seuil: int, intervalle: int) -> bool:
+    if sessions_loupees < seuil:
+        return False
+    # max(1, ...) : un intervalle nul ou negatif ferait une division par zero,
+    # et la configuration est modifiable depuis l'interface d'administration.
+    return (sessions_loupees - seuil) % max(1, intervalle) == 0
+
+
+# Un joueur ne peut jouer qu'UN tournoi par session : deux lobbies simultanes,
+# on ne peut pas etre dans les deux (plan-sessions-tournois.md, decision 9).
+#
+# Renvoie les noms des joueurs de `tournoi_id` deja presents dans un AUTRE
+# tournoi de la session cible -- liste vide si la liaison est licite.
+#
+# Le filtre porte sur la SESSION entiere, pas sur le seul tournoi designe :
+# lier C a B quand B est deja avec A doit verifier C contre A et B. Une
+# "simplification" en « WHERE t.id = autre_tournoi_id » passerait les tests
+# evidents et laisserait ce trou transitif.
+#
+# `t.id <> tournoi_id` exclut le tournoi courant : sans lui, s'il a deja rejoint
+# la session, ses propres joueurs remontent comme conflits et TOUTE liaison est
+# refusee. Redondant quand l'appelant verifie avant de fusionner (l'ordre
+# recommande), garde de securite sinon.
+def joueurs_en_conflit_de_session(cur: Any, tournoi_id: Any, autre_tournoi_id: Any) -> list:
+    cur.execute("""
+        SELECT DISTINCT j.nom
+        FROM Participations p
+        JOIN Joueurs j  ON j.id = p.joueur_id
+        JOIN Tournois t ON t.id = p.tournoi_id
+        WHERE t.session_id = (SELECT session_id FROM Tournois WHERE id = %s)
+          AND t.id <> %s
+          AND p.joueur_id IN (SELECT joueur_id FROM Participations WHERE tournoi_id = %s)
+        ORDER BY j.nom
+        LIMIT %s
+    """, (autre_tournoi_id, tournoi_id, tournoi_id, MAX_CONFLITS_NOMMES))
+    return [r[0] for r in cur.fetchall()]
+
+
+# Variante pour la fusion de deux sessions DEJA peuplees (liaison tardive) : il
+# faut comparer les deux ensembles dans leur entier, pas un tournoi contre une
+# session. Meme regle, perimetre different.
+def joueurs_en_conflit_entre_sessions(cur: Any, session_a: Any, session_b: Any) -> list:
+    if session_a == session_b:
+        return []
+    cur.execute("""
+        SELECT DISTINCT j.nom
+        FROM Participations pa
+        JOIN Tournois ta      ON ta.id = pa.tournoi_id
+        JOIN Participations pb ON pb.joueur_id = pa.joueur_id
+        JOIN Tournois tb      ON tb.id = pb.tournoi_id
+        JOIN Joueurs j        ON j.id = pa.joueur_id
+        WHERE ta.session_id = %s AND tb.session_id = %s
+        ORDER BY j.nom
+        LIMIT %s
+    """, (session_a, session_b, MAX_CONFLITS_NOMMES))
+    return [r[0] for r in cur.fetchall()]
+
+
+# Reunit deux tournois dans une meme session, en gardant la session d'id le plus
+# PETIT et en y reaffectant les tournois de l'autre.
+#
+# Cette convention rend le resultat independant de l'ordre des arguments et fait
+# qu'une session garde son identite au fil des fusions successives.
+#
+# Idempotente : deux tournois deja dans la meme session -> aucune ecriture,
+# l'admin peut cliquer deux fois sans consequence.
+#
+# NE VERIFIE PAS les conflits de joueurs : c'est a l'appelant de le faire AVANT,
+# pour pouvoir refuser sans avoir rien ecrit. Voir joueurs_en_conflit_*.
+#
+# Renvoie la session_id conservee.
+# Recalcule les absences apres une fusion de sessions, et renvoie la liste des
+# joueurs corriges.
+#
+# LE PROBLEME. Deux tournois enregistres separement, puis lies apres coup :
+# chacun a compte ses absences comme si l'autre n'existait pas. Une fois les
+# deux dans la meme session, la regle « une session manquee = +1 » est violee de
+# deux facons :
+#
+#   1. Un joueur qui a joue l'un des tournois a ete compte ABSENT de l'autre.
+#      Jouer un seul tournoi de la session suffit a compter present pour toute
+#      la session : son compteur doit perdre ces absences.
+#   2. Un joueur absent de TOUS les tournois de la session a ete compte une fois
+#      par tournoi, au lieu d'une fois pour la session. Son compteur doit perdre
+#      les absences en trop (nb_tournois_manques - 1).
+#
+# Ne concerne QUE la liaison tardive. Le chemin nominal (liaison demandee avant
+# l'enregistrement) connait la session avant de calculer et n'ecrit jamais ces
+# absences (docs/plan-sessions-tournois.md, decision 10).
+#
+# POURQUOI RETIRER penalty_applied ET NON RESTAURER old_sigma. old_sigma est
+# l'etat du joueur au moment de cette penalite precise. Le reecrire ecraserait
+# tout ce qui a bouge depuis (matchs joues, autres penalites, corrections
+# d'admin). On retire donc exactement ce que la penalite avait ajoute -- une
+# soustraction est commutative, une restauration d'etat ne l'est pas.
+#
+# GHOST_SIGMA_CAP complique le calcul : une penalite ecretee par le plafond a
+# ajoute MOINS que ghost_penalty. penalty_applied porte la valeur reellement
+# appliquee, d'ou son usage ici plutot qu'une relecture de la configuration.
+def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> list:
+    # Les tournois de la session, et qui a joue dans chacun.
+    cur.execute("SELECT id FROM Tournois WHERE session_id = %s", (session_id,))
+    tournois = [r[0] for r in cur.fetchall()]
+    if len(tournois) < 2:
+        # Session a un seul tournoi : aucune absence ne peut etre en trop.
+        return []
+
+    cur.execute("""
+        SELECT DISTINCT p.joueur_id
+        FROM Participations p
+        JOIN Tournois t ON t.id = p.tournoi_id
+        WHERE t.session_id = %s
+    """, (session_id,))
+    presents = [r[0] for r in cur.fetchall()]
+
+    # Combien d'absences en trop chaque joueur porte-t-il ?
+    #
+    # Un present doit avoir 0 absence imputable a cette session : on retire
+    # toutes celles qu'il a prises pour les tournois qu'il n'a pas joues.
+    # Un absent complet doit n'en avoir qu'une : on retire les autres.
+    #
+    # Le nombre d'absences prises pour cette session n'est stocke nulle part --
+    # `consecutive_missed` est un cumul. On le DEDUIT du nombre de tournois de
+    # la session auxquels le joueur n'a pas participe, ce qui est exact tant que
+    # le joueur etait dans le perimetre de calcul de chacun. Approximation
+    # assumee pour le mode ligue, ou un joueur hors perimetre n'avait de toute
+    # facon pas ete incremente : la borne max(...) ci-dessous empeche alors de
+    # retirer plus que ce qu'il porte.
+    cur.execute("""
+        SELECT j.id,
+               %s - count(DISTINCT p.tournoi_id) AS tournois_manques
+        FROM Joueurs j
+        LEFT JOIN Participations p
+               ON p.joueur_id = j.id AND p.tournoi_id = ANY(%s)
+        WHERE COALESCE(j.consecutive_missed, 0) > 0
+        GROUP BY j.id
+    """, (len(tournois), tournois))
+    manques = {jid: n for jid, n in cur.fetchall()}
+
+    # Penalites de sigma portees par un tournoi de cette session, par joueur.
+    cur.execute("""
+        SELECT g.joueur_id, SUM(g.penalty_applied), count(*)
+        FROM ghost_log g
+        JOIN Tournois t ON t.id = g.tournoi_id
+        WHERE t.session_id = %s
+        GROUP BY g.joueur_id
+    """, (session_id,))
+    penalites = {jid: (float(cumul), nb) for jid, cumul, nb in cur.fetchall()}
+
+    corriges = []
+    for joueur_id, tournois_manques in manques.items():
+        # Un present garde 0 absence pour la session, un absent en garde 1.
+        a_garder = 0 if joueur_id in presents else 1
+        en_trop = tournois_manques - a_garder
+        cumul_sigma, nb_penalites = penalites.get(joueur_id, (0.0, 0))
+
+        if en_trop <= 0 and nb_penalites == 0:
+            continue
+
+        cur.execute(
+            "SELECT sigma, COALESCE(consecutive_missed, 0) FROM Joueurs WHERE id = %s",
+            (joueur_id,))
+        ligne = cur.fetchone()
+        if ligne is None:
+            continue
+        sigma_actuel, missed_actuel = float(ligne[0]), int(ligne[1])
+
+        # Jamais plus que ce que le joueur porte reellement : son compteur a pu
+        # etre remis a 0 depuis (il a rejoue), ou ne jamais avoir ete incremente
+        # (hors perimetre de ligue).
+        retrait = min(max(en_trop, 0), missed_actuel)
+        nouveau_missed = missed_actuel - retrait
+        nouveau_sigma = max(sigma_actuel - cumul_sigma, 0.0)
+
+        if retrait == 0 and nb_penalites == 0:
+            continue
+
+        # is_ranked est recalcule : un joueur exclu du classement par ces
+        # absences doit y revenir s'il repasse sous le seuil.
+        #
+        # Le calcul se fait en Python plutot que dans un UPDATE auto-referent :
+        # SET is_ranked = (... consecutive_missed ...) lirait l'ancienne valeur
+        # de la colonne (semantique SQL correcte, mais piege a la relecture --
+        # on croit lire la nouvelle).
+        cur.execute("""
+            UPDATE Joueurs
+            SET sigma = %s, consecutive_missed = %s, is_ranked = %s
+            WHERE id = %s
+        """, (nouveau_sigma, nouveau_missed, nouveau_missed < threshold, joueur_id))
+        corriges.append(joueur_id)
+
+    # Le journal doit refleter l'etat courant : ces penalites n'existent plus.
+    # Toutes celles de la session partent, y compris celles d'un absent complet :
+    # sa penalite sera de nouveau due au prochain tournoi s'il reste au palier.
+    if penalites:
+        cur.execute("""
+            DELETE FROM ghost_log
+            WHERE tournoi_id = ANY(%s)
+        """, (tournois,))
+
+    return corriges
+
+
+def fusionner_sessions(cur: Any, tournoi_id: Any, autre_tournoi_id: Any) -> Any:
+    cur.execute(
+        "SELECT id, session_id FROM Tournois WHERE id IN (%s, %s)",
+        (tournoi_id, autre_tournoi_id))
+    sessions = {tid: sid for tid, sid in cur.fetchall()}
+    gardee, absorbee = sessions.get(tournoi_id), sessions.get(autre_tournoi_id)
+
+    if gardee is None or absorbee is None or gardee == absorbee:
+        return gardee if gardee is not None else absorbee
+
+    gardee, absorbee = min(gardee, absorbee), max(gardee, absorbee)
+    cur.execute("UPDATE Tournois SET session_id = %s WHERE session_id = %s",
+                (gardee, absorbee))
+    # La session absorbee n'a plus aucun tournoi : la laisser fausserait tout
+    # comptage de sessions.
+    cur.execute("DELETE FROM sessions_tournois WHERE id = %s", (absorbee,))
+    return gardee
 
 
 # Defait la penalite d'absence d'un tournoi qu'on annule : decremente
@@ -867,7 +1142,8 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                 SELECT
                     j.id, j.nom, p.score, p.position,
                     p.new_score_trueskill, p.mu, p.sigma,
-                    t.date, p.tournoi_id, j.sigma, t.ligue_id, p.old_mu
+                    t.date, p.tournoi_id, j.sigma, t.ligue_id, p.old_mu,
+                    t.session_id
                 FROM Participations p
                 JOIN Tournois t ON p.tournoi_id = t.id
                 JOIN Joueurs j ON p.joueur_id = j.id
@@ -906,16 +1182,27 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                     period_count_mu += 1
 
         tournoi_meta = {}
-        session_keys = {}
+        # Sessions distinctes de la periode. Une session = une occasion de jeu :
+        # deux lobbies lies comptent pour UN tournoi dans ce denominateur.
+        #
+        # Remplace un regroupement par (date, ligue_id) recalcule ici, qui
+        # dupliquait hors de add_tournament l'heuristique que ce chantier
+        # supprime. Comme le backfill a utilise la meme cle, le resultat est
+        # identique sur l'historique : c'est un refactor, pas un changement de
+        # regle -- la difference n'apparait que pour les liaisons futures.
+        #
+        # Affichage : cette valeur reste presentee comme un nombre de TOURNOIS
+        # (classement de saison, recaps). La session est l'unite de calcul, le
+        # tournoi l'unite d'affichage.
+        # Conception : docs/plan-sessions-tournois.md, decision 7
+        sessions_vues = set()
         for row in rows:
             tid = row[8]
             score = float(row[2])
             old_mu = row[11]
+            sessions_vues.add(row[12])
             if tid not in tournoi_meta:
                 tournoi_meta[tid] = {"sum_score": 0.0, "count": 0, "sum_mu": 0.0, "count_mu": 0}
-                # Une session de matchmaking peut generer plusieurs tournois le meme jour dans
-                # la meme ligue : on les regroupe, comme pour la penalisation d'absence.
-                session_keys[tid] = (row[7], row[10])
             tournoi_meta[tid]["count"] += 1
             tournoi_meta[tid]["sum_score"] += score
             if old_mu is not None:
@@ -926,7 +1213,7 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1.0
             # avg_old_mu leave-one-out : calcule par joueur plus bas (cf _leave_one_out).
 
-        total_tournois = len(set(session_keys.values()))
+        total_tournois = len(sessions_vues)
         min_participation_req = total_tournois * MIN_PARTICIPATION_RATIO
 
         stats = {}

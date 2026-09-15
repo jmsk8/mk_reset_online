@@ -483,13 +483,15 @@ def dernier_tournoi():
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT ligue_id, ligue_nom, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
+                cur.execute(
+                    "SELECT ligue_id, ligue_nom, session_id FROM Tournois"
+                    " ORDER BY date DESC, id DESC LIMIT 1")
                 last_record = cur.fetchone()
 
                 if not last_record:
                     return jsonify([])
 
-                last_ligue_id, last_ligue_nom, last_date = last_record
+                last_ligue_id, last_ligue_nom, last_session_id = last_record
                 is_league_latest = (last_ligue_id is not None) or (last_ligue_nom is not None and last_ligue_nom != 'Mixte')
 
                 final_data = []
@@ -521,14 +523,31 @@ def dernier_tournoi():
                     tournois_to_fetch.sort(key=lambda x: x['date_sort'], reverse=True)
 
                 else:
+                    # Les tournois de la SESSION du dernier tournoi : une carte si
+                    # le tournoi etait seul, plusieurs s'il partageait sa soiree
+                    # avec d'autres lobbies.
+                    #
+                    # Remplace un regroupement par semaine calendaire, qui etait
+                    # une troisieme heuristique de « meme occasion de jeu » --
+                    # distincte de celles de la penalite et des awards. Sur tout
+                    # l'historique reel, les deux donnaient le meme resultat
+                    # (jamais deux dates de jeu dans une meme semaine) : la
+                    # bascule ne change donc rien a l'affichage, elle remplace
+                    # une coincidence par la donnee explicite.
+                    #
+                    # Le filtre de ligue devient redondant avec le filtre de
+                    # session (une session ne contient que des tournois de meme
+                    # ligue). Conserve volontairement : il documente l'intention
+                    # de cette branche et protege si cet invariant changeait.
+                    # Conception : docs/plan-sessions-tournois.md
                     cur.execute("""
                         SELECT id, date
                         FROM Tournois
                         WHERE ligue_id IS NULL
                           AND (ligue_nom IS NULL OR ligue_nom = 'Mixte')
-                          AND date_trunc('week', date) = date_trunc('week', %s::date)
+                          AND session_id = %s
                         ORDER BY date DESC, id DESC
-                    """, (last_date,))
+                    """, (last_session_id,))
                     tournois_to_fetch = [{
                         "id": tid,
                         "date": tdate.strftime("%d/%m/%Y"),
@@ -1368,12 +1387,15 @@ def get_tournois_list():
                            (SELECT j.nom FROM Participations p2
                             JOIN Joueurs j ON p2.joueur_id = j.id
                             WHERE p2.tournoi_id = t.id
-                            ORDER BY p2.score DESC LIMIT 1) as vainqueur
+                            ORDER BY p2.score DESC LIMIT 1) as vainqueur,
+                           t.session_id,
+                           (SELECT count(*) FROM Tournois t2
+                            WHERE t2.session_id = t.session_id) as nb_dans_session
                     FROM Tournois t
                     JOIN Participations p ON t.id = p.tournoi_id
                     LEFT JOIN Ligues l ON t.ligue_id = l.id
-                    GROUP BY t.id, t.date, t.ligue_nom, t.ligue_couleur, l.nom, l.couleur
-                    ORDER BY t.date DESC
+                    GROUP BY t.id, t.date, t.session_id, t.ligue_nom, t.ligue_couleur, l.nom, l.couleur
+                    ORDER BY t.date DESC, t.id DESC
                 """)
                 tournois = [{
                     "id": r[0],
@@ -1383,7 +1405,12 @@ def get_tournois_list():
                     "participants": r[2],
                     "ligue_nom": r[3] if r[3] else "N/A",
                     "ligue_couleur": r[4] if r[4] else None,
-                    "vainqueur": r[5]
+                    "vainqueur": r[5],
+                    # Sert au bouton « Lier » de la page Gestion tournois : un
+                    # tournoi deja accompagne dans sa session s'affiche comme
+                    # tel, pour que l'admin voie ce qu'il a deja regroupe.
+                    "session_id": r[6],
+                    "nb_dans_session": r[7],
                 } for r in cur.fetchall()]
         return jsonify(tournois)
     except Exception:

@@ -128,18 +128,30 @@
                                                 <label for="configGhost" class="has-text-white ml-2">Activer les pénalités d'absence</label>
                                             </div>
                                             <div class="columns is-mobile is-multiline">
+                                                {# Seuils en SESSIONS LOUPÉES, plus en jours : la
+                                                   pénalité sanctionne les occasions de jeu
+                                                   manquées, pas le temps écoulé. Une période sans
+                                                   session ne pénalise donc personne — c'est voulu.
+                                                   Voir docs/plan-sessions-tournois.md, décision 8 #}
+                                                <div class="column is-12">
+                                                    <p class="has-text-grey-light is-size-7 mb-2">
+                                                        Une <strong>session</strong> est une occasion de jeu : deux lobbies
+                                                        joués la même soirée et liés entre eux ne comptent que pour une.
+                                                        Une période sans aucune session ne pénalise personne.
+                                                    </p>
+                                                </div>
                                                 <div class="column is-6">
-                                                    <label class="has-text-white is-size-7">Après combien de jours sans jouer</label>
+                                                    <label class="has-text-white is-size-7">Après combien de sessions loupées</label>
                                                     <div class="field has-addons mt-1">
-                                                        <p class="control"><input class="input is-small" type="number" step="1" min="1" id="configGhostThresholdDays" placeholder="28" style="width: 80px;"></p>
-                                                        <p class="control"><a class="button is-static is-small">jours</a></p>
+                                                        <p class="control"><input class="input is-small" type="number" step="1" min="1" id="configGhostThresholdSessions" placeholder="4" style="width: 80px;"></p>
+                                                        <p class="control"><a class="button is-static is-small">sessions</a></p>
                                                     </div>
                                                 </div>
                                                 <div class="column is-6">
-                                                    <label class="has-text-white is-size-7">Puis une pénalité tous les</label>
+                                                    <label class="has-text-white is-size-7">Puis une pénalité toutes les</label>
                                                     <div class="field has-addons mt-1">
-                                                        <p class="control"><input class="input is-small" type="number" step="1" min="1" id="configGhostIntervalDays" placeholder="7" style="width: 80px;"></p>
-                                                        <p class="control"><a class="button is-static is-small">jours</a></p>
+                                                        <p class="control"><input class="input is-small" type="number" step="1" min="1" id="configGhostIntervalSessions" placeholder="1" style="width: 80px;"></p>
+                                                        <p class="control"><a class="button is-static is-small">sessions</a></p>
                                                     </div>
                                                 </div>
                                                 <div class="column is-6">
