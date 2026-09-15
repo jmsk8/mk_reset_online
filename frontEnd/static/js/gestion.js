@@ -409,10 +409,17 @@ async function saveEdit() {
         mu: parseFloat(document.getElementById('editMu').value),
         sigma: parseFloat(document.getElementById('editSigma').value),
         is_ranked: document.getElementById('editIsRankedValue').value === 'true',
-        consecutive_missed: parseInt(document.getElementById('editMissed').value),
         color: document.getElementById('editColor').value
     };
     
+    // consecutive_missed n'est envoye que si le champ est modifiable : il
+    // declenche la penalite de sigma, donc seul le superadmin y a la main
+    // (le serveur refait la verification de toute facon).
+    const champMissed = document.getElementById('editMissed');
+    if (champMissed && !champMissed.disabled) {
+        data.consecutive_missed = parseInt(champMissed.value);
+    }
+
     if (isNaN(data.mu) || isNaN(data.sigma)) {
         alert("Erreur: Mu et Sigma doivent être des nombres.");
         return;

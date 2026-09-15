@@ -836,7 +836,7 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 ligue_filter = " AND t.ligue_id IS NULL"
 
             cur.execute(f"""
-                SELECT t.id, t.date, t.ligue_id
+                SELECT t.id, t.date, t.ligue_id, t.session_id
                 FROM tournois t
                 WHERE t.date >= %s AND t.date <= %s{ligue_filter}
                 ORDER BY t.date ASC, t.id ASC
@@ -870,11 +870,17 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                     period_sum_mu += float(old_mu)
                     period_count_mu += 1
 
-    labels = [d.strftime("%d/%m") for _, d, _ in tournois]
-    tournoi_ids = [tid for tid, _, _ in tournois]
-    tournoi_dates = {tid: d for tid, d, _ in tournois}
+    labels = [d.strftime("%d/%m") for _, d, _, _ in tournois]
+    tournoi_ids = [tid for tid, _, _, _ in tournois]
+    tournoi_dates = {tid: d for tid, d, _, _ in tournois}
     tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
-    total_tournois = len(tournoi_ids)
+    # Denominateur du seuil de participation : des SESSIONS, comme
+    # _aggregate_season_stats. Deux lobbies lies ne valent qu'une occasion de
+    # jeu ; compter les tournois bruts ici donnerait un seuil different de
+    # celui des awards sur la meme saison.
+    # `tournoi_ids` reste une liste de tournois : elle indexe les courbes
+    # d'evolution, qui ont un point par tournoi joue.
+    total_tournois = len({sid for _t, _d, _lg, sid in tournois})
 
     seuil_participation = total_tournois * MIN_PARTICIPATION_RATIO
 
@@ -909,7 +915,7 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
         denom_total_v2 = 0.0
         matchs = 0
         seen_first = False
-        for idx in range(total_tournois):
+        for idx in range(len(tournoi_ids)):
             entry = p["by_idx"].get(idx)
             point_detail = None
             if entry is not None:
@@ -999,7 +1005,7 @@ def compute_position_evolution(d_debut: str, d_fin: str, recap_mode: str | None 
                 ligue_filter = " AND t.ligue_id IS NULL"
 
             cur.execute(f"""
-                SELECT t.id, t.date
+                SELECT t.id, t.date, t.session_id
                 FROM tournois t
                 WHERE t.date >= %s AND t.date <= %s{ligue_filter}
                 ORDER BY t.date ASC, t.id ASC
@@ -1015,11 +1021,17 @@ def compute_position_evolution(d_debut: str, d_fin: str, recap_mode: str | None 
             """, params)
             parts = cur.fetchall()
 
-    labels = [d.strftime("%d/%m") for _, d in tournois]
-    tournoi_ids = [tid for tid, _ in tournois]
-    tournoi_dates = {tid: d for tid, d in tournois}
+    labels = [d.strftime("%d/%m") for _, d, _ in tournois]
+    tournoi_ids = [tid for tid, _, _ in tournois]
+    tournoi_dates = {tid: d for tid, d, _ in tournois}
     tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
-    total_tournois = len(tournoi_ids)
+    # Denominateur du seuil de participation : des SESSIONS, comme
+    # _aggregate_season_stats. Deux lobbies lies ne valent qu'une occasion de
+    # jeu ; compter les tournois bruts ici donnerait un seuil different de
+    # celui des awards sur la meme saison.
+    # `tournoi_ids` reste une liste de tournois : elle indexe les courbes
+    # d'evolution, qui ont un point par tournoi joue.
+    total_tournois = len({sid for _t, _d, sid in tournois})
 
     field_size = {}
     for tid, _jid, _nom, _col, _pos in parts:
@@ -1040,7 +1052,7 @@ def compute_position_evolution(d_debut: str, d_fin: str, recap_mode: str | None 
         sum_pos = 0
         matchs = 0
         wins = 0
-        for idx in range(total_tournois):
+        for idx in range(len(tournoi_ids)):
             entry = p["by_idx"].get(idx)
             if entry is None:
                 data.append(None)

@@ -4,6 +4,10 @@
 > commits lui-même ([[user-handles-commits]]). Document de conception, pas d'implémentation avant
 > relecture de ce fichier en entier.
 >
+> 📋 **Le suivi de chantier est dans
+> [sessions-tournois-avancement.md](sessions-tournois-avancement.md)** — état des phases, ce qui a
+> été trouvé en chemin, ce qui reste. Ce fichier-ci porte la conception et les audits.
+>
 > ⚠️ **Audit du 15/09 : voir §13.** Six failles trouvées, **toutes tranchées le jour même** par les
 > réponses de l'utilisateur. Plus aucune décision en suspens ; seul point de vigilance technique
 > restant : le test F-4 (cohérence compteur/sigma sur le cycle d'annulation, §13.4), à écrire avant
@@ -2598,3 +2602,89 @@ Vérifié sur les cas réels avant implémentation :
 Le plan avait été relu deux fois et audité deux fois, avec 11 failles trouvées — et il portait
 quand même ce trou. Ce qui l'a révélé n'est ni une relecture ni un test : c'est **un essai en usage
 réel sur des données réelles**. Les vérifications du §19.6 ne sont pas une formalité.
+
+---
+
+## 21. 🔍 Passe de vérification complète (15/09) — deux trous fermés
+
+Relecture systématique de tout le chantier après la mise en service. **Deux défauts trouvés**, dont
+un que le plan avait décidé sans jamais l'appliquer.
+
+### 21.1 🔴 `consecutive_missed` était resté éditable (décision 8 non appliquée)
+
+Le §13.2 tranchait : le compteur devient **non éditable**, sinon il ne peut pas servir de
+déclencheur fiable à la pénalité. **Ce n'avait jamais été fait** — le champ restait modifiable via
+`PUT /admin/joueurs/<id>` et depuis la modale d'édition.
+
+C'est probablement une cause du compteur périmé constaté en usage : toute édition de fiche joueur
+écrasait le compteur par la valeur du formulaire.
+
+| Fichier | Changement |
+|---|---|
+| `routes_admin.py` | `api_update_joueur` ne touche le compteur que si le compte est **superadmin** et que le payload le porte explicitement |
+| `gestion.js` | le champ n'est envoyé que s'il est actif — envoyer une valeur que le serveur ignore donnerait l'illusion d'une modification |
+| `gestion_joueurs.html` | champ `readonly disabled`, sauf pour le superadmin ; libellé « Sessions manquées » |
+
+L'information reste **affichée** partout où elle l'était (décision 8).
+
+**Amendement du 15/09 (demande de l'utilisateur) : le superadmin garde la main.** Il faut une porte
+de sortie pour rattraper un compteur faux sans passer par la base. C'est une **capacité de rôle**,
+jamais une permission déléguable — même règle que l'annulation de tournoi
+([[hierarchie-admin-plan]] §5). Le chemin normal reste `make recompter-absences`, qui recalcule tout
+le monde selon une règle unique plutôt qu'un joueur à la main ; l'édition manuelle est le recours,
+pas l'outil courant.
+
+Deux `UPDATE` distincts selon le droit, plutôt qu'une colonne conditionnelle en SQL : la requête dit
+ce qu'elle écrit. La valeur est bornée par `max(0, ...)` — un compteur négatif casserait la
+comparaison de palier.
+
+### 21.2 🟠 R-session-6 : deux seuils de participation divergents
+
+`compute_ip_evolution` et `compute_position_evolution` appliquaient `MIN_PARTICIPATION_RATIO` à un
+compte de **tournois bruts**, alors que `_aggregate_season_stats` l'applique désormais à un compte de
+**sessions**. Deux seuils différents sur la même saison — 96 contre 93 sur l'historique actuel.
+
+Le plan classait cet écart « préexistant, hors périmètre » (§9). Il ne l'est plus : la Phase 3 a
+basculé un des deux comptages, donc les laisser divergents crée une incohérence que le chantier
+lui-même a introduite.
+
+**Corrigé** : les deux fonctions comptent des sessions distinctes pour le seuil.
+
+⚠️ **Piège évité** : `tournoi_ids` reste une liste de **tournois** — elle indexe les courbes
+d'évolution, qui ont un point par tournoi joué. J'avais d'abord réindexé les boucles sur
+`total_tournois`, ce qui aurait **décalé silencieusement toutes les courbes**. Une assertion verrouille
+désormais `for idx in range(len(tournoi_ids))`.
+
+### 21.3 Le script de recomptage est désormais couvert
+
+`scripts/recompter_absences.py` n'avait aucun test. 13 assertions ajoutées, portant sur ce qui compte :
+
+- **il ne touche jamais `sigma` ni `ghost_log`** — c'est un compteur qu'on remet à jour, pas un
+  historique qu'on rejoue ;
+- la règle de ligue est respectée (session sans ligue = tout le monde ; sinon seuls les joueurs de
+  cette ligue ; sans ligue → la plus faible) ;
+- l'appartenance vient des **participations réelles**, pas de `joueurs.ligue_id` (qui est l'état
+  courant, sans historique) ;
+- il compare les **sessions**, pas seulement les dates : deux sessions non liées peuvent tomber le
+  même jour ;
+- le mode `--dry-run` n'écrit rien.
+
+### 21.4 Validation
+
+| Mutation introduite | Détecté |
+|---|---|
+| Le champ redevient éditable | ✅ 2 assertions |
+| Courbes réindexées sur les sessions (décalage silencieux) | ✅ 2 assertions |
+| Le script perd la règle de ligue | ✅ |
+
+**252 assertions** sur les 4 fichiers du chantier (38 + 88 + 93 + 33). Les 3 échecs de la suite
+(`test_auth`, `test_liaisons`, `test_profils`) précèdent ce chantier.
+
+### 21.5 Ce qui a été vérifié sans rien trouver
+
+- Un **seul** `INSERT INTO Tournois` dans tout le code, et il porte `session_id`.
+- `add_tournament` appelle bien `invalidate_cache()` et `recalculate_tiers()`.
+- Le recalcul de `is_ranked` au changement de seuil (`/admin/config`) est cohérent avec le compteur.
+- `penalite_due` se comporte correctement sur les valeurs limites : 0 absence, palier exact,
+  compteur très élevé, intervalle nul ou négatif (pas de division par zéro).
+- Les paliers ne se déclenchent jamais deux fois pour un même compteur.
