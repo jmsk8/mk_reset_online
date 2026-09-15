@@ -29,6 +29,7 @@ from cache import invalidate_cache
 from utils import generate_unique_slug, extract_league_number
 from services import (
     recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
+    annuler_absences,
     _aggregate_season_stats, _determine_winners, _save_awards_to_db,
     _apply_inter_league_moves,
     build_distribution, trueskill_score, has_tier, load_tiers,
@@ -1742,7 +1743,16 @@ def revert_last_tournament():
                         WHERE j.id = data.id
                     """, [(jid, sig) for jid, sig in ghost_rows])
 
-                cur.execute("UPDATE Joueurs SET consecutive_missed = GREATEST(0, consecutive_missed - 1)")
+                # Meme geste que delete_tournament : seuls les NON-participants
+                # reellement penalises sont decrementes, et is_ranked est recalcule.
+                # Avant, un UPDATE global sans WHERE effacait une absence a TOUTE la
+                # base -- y compris aux joueurs hors perimetre de ligue, exclus du
+                # calcul de penalite -- et l'erreur etait cumulative a chaque annulation.
+                cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
+                res = cur.fetchone()
+                threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
+                annuler_absences(cur, [jid for jid, _, _ in participants], threshold)
+
                 cur.execute("DELETE FROM ghost_log WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Participations WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (tid,))
@@ -1786,21 +1796,7 @@ def delete_tournament(id):
 
                 cur.execute("SELECT joueur_id FROM Participations WHERE tournoi_id = %s", (id,))
                 parts = [r[0] for r in cur.fetchall()]
-                q_abs = f"SELECT id, consecutive_missed, is_ranked FROM Joueurs WHERE id NOT IN ({','.join(['%s']*len(parts))})" if parts else "SELECT id, consecutive_missed, is_ranked FROM Joueurs"
-                cur.execute(q_abs, tuple(parts))
-
-                batch_updates = []
-                for pid, missed, is_r in cur.fetchall():
-                    if missed and missed > 0:
-                        new_m = missed - 1
-                        new_r = True if (not is_r and new_m < threshold) else is_r
-                        batch_updates.append((pid, new_m, new_r))
-                if batch_updates:
-                    psycopg2.extras.execute_values(cur, """
-                        UPDATE Joueurs AS j SET consecutive_missed = data.missed, is_ranked = data.ranked
-                        FROM (VALUES %s) AS data(id, missed, ranked)
-                        WHERE j.id = data.id
-                    """, batch_updates)
+                annuler_absences(cur, parts, threshold)
 
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (id,))
                 if tdate is not None:

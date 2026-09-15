@@ -257,6 +257,43 @@ def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
     return True
 
 
+def peut_amorcer_sans_invitation(cur, discord_id: str) -> bool:
+    """Ce compte Discord inexistant peut-il entrer sans invitation ?
+
+    Le compte d'amorcage doit pouvoir CREER son compte, pas seulement etre
+    promu : sur une base vierge, personne ne peut lui emettre d'invitation
+    puisque emettre demande deja un compte privilegie. Sans cette porte, le
+    premier deploiement exige un INSERT SQL a la main -- un geste non trace,
+    a faire en production, sur la table qui garde les portes d'entree.
+
+    Les conditions sont EXACTEMENT celles de promote_bootstrap_superadmin :
+    elles doivent le rester. Laisser entrer quelqu'un que la promotion
+    refuserait ensuite creerait un compte `player` ordinaire ne devant son
+    existence qu'a la variable d'environnement -- une porte ouverte sans le
+    privilege qui la justifie. Un test verrouille cette symetrie.
+
+    La troisieme condition (aucun superadmin existant) est ce qui empeche la
+    variable d'environnement d'etre une porte derobee permanente : une fois le
+    premier superadmin en place, ce chemin se referme definitivement et
+    DISCORD_SUPERADMIN_ID redevient inerte pour l'entree.
+    """
+    if not DISCORD_SUPERADMIN_ID or discord_id != DISCORD_SUPERADMIN_ID:
+        return False
+
+    cur.execute("SELECT COUNT(*) FROM comptes WHERE role = %s", (ROLE_SUPERADMIN,))
+    if cur.fetchone()[0] > 0:
+        # Meme journalisation que la promotion : le refus doit etre lisible
+        # dans les logs, sinon « invitation requise » reste inexplicable pour
+        # qui a pourtant renseigne la variable.
+        logger.warning(
+            "DISCORD_SUPERADMIN_ID ignore pour l'entree : un superadmin existe deja"
+        )
+        return False
+
+    logger.info("Amorcage : creation du compte superadmin sans invitation")
+    return True
+
+
 def _permissions_pour_session(cur, compte: dict) -> list:
     """Permissions a exposer a l'interface, role compris. Triees, jamais None.
 
@@ -356,7 +393,13 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
                 joueur_vise = None
                 if existant is None:
                     # Nouveau venu : l'invitation est obligatoire et se consomme.
-                    invitation_id, joueur_vise = consume_invitation(cur, invite_token)
+                    # SAUF pour le compte d'amorcage sur une base sans aucun
+                    # superadmin : personne ne peut lui en emettre une, puisque
+                    # emettre exige deja un compte privilegie. La promotion qui
+                    # suit (promote_bootstrap_superadmin) applique exactement les
+                    # memes conditions -- il entre donc superadmin, jamais player.
+                    if not peut_amorcer_sans_invitation(cur, profil['discord_id']):
+                        invitation_id, joueur_vise = consume_invitation(cur, invite_token)
 
                 compte = upsert_compte(cur, profil, invitation_id, cgu_acceptee)
                 promote_bootstrap_superadmin(cur, compte)

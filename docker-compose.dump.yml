@@ -5,13 +5,50 @@ services:
       - /dev/null:/docker-entrypoint-initdb.d/01_schema.sql
       - /dev/null:/docker-entrypoint-initdb.d/02_seed.sql
       - ${DUMP_FILE:-./backEnd/dump.sql}:/docker-entrypoint-initdb.d/03_dump.sql
+
+      # ── RATTRAPAGE DE SCHEMA ────────────────────────────────────────────
       # Sur ce chemin, 01_schema.sql est neutralise : la structure vient
-      # ENTIEREMENT du dump. Un dump anterieur a l'auth Discord produirait donc
-      # une base sans les tables de comptes, et toutes les routes /auth
-      # tomberaient en 500. La migration etant ecrite en CREATE TABLE IF NOT
-      # EXISTS, elle cree ce qui manque et ne fait rien sur un dump recent.
-      - ./backEnd/migrations/2026-09-02_auth_discord.sql:/docker-entrypoint-initdb.d/04_auth_discord.sql
-      - ./backEnd/migrations/2026-09-02_noms_interdits.sql:/docker-entrypoint-initdb.d/05_noms_interdits.sql
+      # ENTIEREMENT du dump. Un dump tire de la production est donc au schema
+      # de la PROD -- or aucune migration n'y a jamais ete appliquee (cf
+      # docs/auth-discord-avancement.md, « Ce qui bloque le deploiement »).
+      # Sans rattrapage, monter un tel dump donne une base a laquelle il manque
+      # 11 tables, et le backend tombe en 500 sur les pages concernees sans
+      # qu'aucun message ne dise pourquoi.
+      #
+      # TOUTES les migrations sont donc montees ici, dans l'ordre chronologique
+      # de leur nom -- qui porte les dependances reelles : auth_discord cree
+      # `comptes`, dont hierarchie_admin et liaison_creation_joueur ont besoin.
+      # Elles sont ecrites en CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT
+      # EXISTS / ON CONFLICT DO NOTHING : sur un dump deja a jour, elles ne font
+      # rien. C'est ce qui permet de les appliquer sans savoir de quelle epoque
+      # vient le dump.
+      #
+      # ⚠️ AJOUTER TOUTE NOUVELLE MIGRATION ICI. L'oubli ne casse rien
+      # immediatement -- il se manifeste des qu'on monte un dump ancien, donc
+      # longtemps apres, sur un symptome qui ne pointe pas vers ce fichier.
+      # C'est exactement ce qui s'est produit entre le 02/09 et le 14/09 : deux
+      # migrations montees, neuf oubliees.
+      #
+      # postgres execute /docker-entrypoint-initdb.d/* dans l'ordre LEXICAL :
+      # d'ou les prefixes numeriques, et le 0 de tete sur 04..09 sans lequel
+      # 10_ passerait avant 4_.
+      - ./backEnd/migrations/2026-06-17_add_borderline_award.sql:/docker-entrypoint-initdb.d/04_borderline_award.sql
+      - ./backEnd/migrations/2026-06-21_repair_orphaned_league_recaps.sql:/docker-entrypoint-initdb.d/05_repair_league_recaps.sql
+      - ./backEnd/migrations/2026-08-18_add_ip_version.sql:/docker-entrypoint-initdb.d/06_ip_version.sql
+      - ./backEnd/migrations/2026-08-20_add_grille_snapshots.sql:/docker-entrypoint-initdb.d/07_grille_snapshots.sql
+      - ./backEnd/migrations/2026-09-02_auth_discord.sql:/docker-entrypoint-initdb.d/08_auth_discord.sql
+      - ./backEnd/migrations/2026-09-02_liaison_creation_joueur.sql:/docker-entrypoint-initdb.d/09_liaison_creation_joueur.sql
+      - ./backEnd/migrations/2026-09-02_noms_interdits.sql:/docker-entrypoint-initdb.d/10_noms_interdits.sql
+      - ./backEnd/migrations/2026-09-02_notifications.sql:/docker-entrypoint-initdb.d/11_notifications.sql
+      - ./backEnd/migrations/2026-09-10_hierarchie_admin.sql:/docker-entrypoint-initdb.d/12_hierarchie_admin.sql
+      - ./backEnd/migrations/2026-09-13_add_tier_thresholds.sql:/docker-entrypoint-initdb.d/13_tier_thresholds.sql
+      - ./backEnd/migrations/2026-09-13_add_tiers_table.sql:/docker-entrypoint-initdb.d/14_tiers_table.sql
+
+      # Controle final : verifie que le rattrapage a bien eu lieu et ARRETE
+      # l'initialisation sinon. Sans lui, une migration qui echoue laisse une
+      # base a moitie migree et un conteneur qui demarre quand meme -- le mode
+      # d'echec le plus couteux, parce qu'il se decouvre en naviguant.
+      - ./scripts/verifier-schema-dump.sql:/docker-entrypoint-initdb.d/99_verifier_schema.sql
 
 volumes:
   pg_data:
