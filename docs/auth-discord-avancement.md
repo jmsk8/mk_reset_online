@@ -60,8 +60,30 @@ l'application Discord n'existe pas encore. Voir « Ce qui bloque le déploiement
 - `docker-compose.dump.yml` **neutralise `01_schema.sql`** : sur le chemin `make redump`, la
   structure vient entièrement du dump. Restaurer un dump antérieur à l'auth Discord aurait donné
   une base sans tables de comptes, et toutes les routes `/auth` en 500. Les migrations sont
-  désormais montées en `04_` et `05_` sur ce chemin ; écrites en `CREATE TABLE IF NOT EXISTS`,
-  elles créent ce qui manque et ne font rien sur un dump récent.
+  désormais montées sur ce chemin ; écrites en `CREATE TABLE IF NOT EXISTS`, elles créent ce qui
+  manque et ne font rien sur un dump récent.
+
+  > 🔴 **Ce piège s'est effectivement refermé (constaté le 2026-09-14).** Le montage était resté
+  > figé à **2 migrations sur 11** — celles du 02/09. Monter un dump de production donnait donc une
+  > base sans `notifications`, `permissions_admin` ni `tiers`, et le backend tombait en 500 sur les
+  > pages concernées **sans qu'aucun message ne pointe vers ce fichier**.
+  >
+  > Le mode d'échec est vicieux : oublier d'ajouter une migration ne casse rien sur le moment, ça se
+  > découvre bien plus tard, quand quelqu'un monte un vieux dump.
+  >
+  > **Corrigé le 14/09, avec trois garde-fous** :
+  > 1. Les **11 migrations** sont montées, préfixées `04_` à `14_` (deux chiffres obligatoires :
+  >    postgres exécute ce répertoire dans l'ordre **lexical**, donc `8_` passerait après `10_` et
+  >    `hierarchie_admin` tournerait avant que `comptes` existe).
+  > 2. `scripts/verifier-schema-dump.sql`, monté en `99_`, **interrompt l'initialisation** si une
+  >    table attendue manque. Sans lui, une migration en échec laisse une base à moitié migrée sur
+  >    laquelle le conteneur démarre quand même.
+  > 3. `backEnd/tests/test_migrations_montees.py` (15 assertions) **échoue si une migration n'est
+  >    pas montée**, si l'ordre lexical casse une dépendance, ou si une table créée par une
+  >    migration échappe au contrôle du point 2. C'est le seul endroit où l'oubli se voit **tôt**.
+  >
+  > ⚠️ **Toute nouvelle migration doit être ajoutée à `docker-compose.dump.yml`** — le test le
+  > rappellera, mais autant le savoir avant de le voir rougir.
 
 ---
 
@@ -193,7 +215,7 @@ supprime réellement le mot de passe, ne peut pas l'être sans une décision hum
 
 | # | Étape | État |
 |---|---|---|
-| 1 | Amorçage du premier `superadmin` | ✅ livré en phase 1 (`DISCORD_SUPERADMIN_ID`) |
+| 1 | Amorçage du premier `superadmin` | ✅ livré en phase 1 (`DISCORD_SUPERADMIN_ID`) — **complété le 14/09, voir ci-dessous** |
 | 2 | Les routes admin acceptent les deux voies | ✅ 22 routes sur 23 |
 | 3 | Le frontend envoie la bonne voie | ✅ 21 en-têtes, 19 gardes, navbar |
 | 4 | Routes super-admin | ✅ livré en phase 2 |
@@ -204,6 +226,55 @@ supprime réellement le mot de passe, ne peut pas l'être sans une décision hum
 **Ce qui reste sur le mot de passe, volontairement** : `POST /admin/refresh-token`. Une session
 Discord n'a rien à renouveler — son expiration est absolue, c'est ce qui la distingue de l'ancien
 `api_tokens` dont le renouvellement sans borne rendait un jeton volé valable indéfiniment.
+
+### 🔴 Défaut trouvé le 2026-09-14 : le compte d'amorçage ne pouvait pas *entrer*
+
+**Symptôme** : après un `make redump` sur un dump de production (donc une base sans aucun compte),
+se connecter avec le compte Discord désigné par `DISCORD_SUPERADMIN_ID` répondait
+**« invitation requise »**.
+
+**Cause — un problème d'ordre dans `login()`** (`auth_discord.py`) :
+
+```
+compte inexistant ?  -> consume_invitation()        ← REFUSE ICI
+                     -> promote_bootstrap_superadmin()  ← jamais atteint
+```
+
+`promote_bootstrap_superadmin` s'exécute **après** le contrôle d'invitation : il ne pouvait donc
+promouvoir qu'un compte **déjà existant**. `DISCORD_SUPERADMIN_ID` promeut, mais ne faisait pas
+entrer.
+
+**Ce n'était pas un problème local.** Sur une base de production vierge, le premier superadmin
+n'aurait pas pu se connecter — et personne n'aurait pu lui émettre d'invitation, puisque l'émettre
+exige déjà `gestion_invitations`, donc un compte privilégié. Le déploiement imposait un `INSERT`
+SQL à la main dans `invitations`, c'est-à-dire un geste non tracé, en production, sur la table qui
+garde les portes d'entrée. C'est exactement ce que l'amorçage existe pour éviter.
+
+**Correctif** : `peut_amorcer_sans_invitation(cur, discord_id)`, placée juste à côté de la
+promotion. Elle applique **exactement les trois mêmes conditions** :
+
+1. `DISCORD_SUPERADMIN_ID` renseigné ;
+2. le `discord_id` qui se connecte correspond ;
+3. **aucun superadmin n'existe encore** en base.
+
+⚠️ **La symétrie des deux gardes n'est pas cosmétique** : laisser entrer quelqu'un que la promotion
+refuserait ensuite créerait un compte `player` ordinaire ne devant son existence qu'à une variable
+d'environnement. Un test le verrouille.
+
+La troisième condition referme la porte **définitivement** dès le premier superadmin en place —
+sans elle, `DISCORD_SUPERADMIN_ID` serait une porte dérobée permanente, capable de créer un compte
+sur une base en production.
+
+**Tests** — 7 assertions ajoutées à `test_auth.py` : l'entrée sans invitation sur base vierge (et
+qu'aucune invitation n'est consommée au passage), le refus dès qu'un superadmin existe, le refus
+d'un autre `discord_id`, le refus sans la variable, et la symétrie des gardes.
+
+> **Validé par mutation, avec un enseignement.** En neutralisant la garde « aucun superadmin »,
+> l'assertion tombe bien — mais au premier essai le fichier **plantait** (`TypeError`) au lieu
+> d'afficher un échec : la porte ouverte menait à un plan de curseur incomplet. Un plantage
+> n'affiche aucun décompte et passe inaperçu au milieu des autres fichiers. Les trois cas de refus
+> attrapent désormais `Exception` pour transformer ça en assertion rouge explicite. *Même piège que
+> celui déjà consigné pour `.index()` dans un test de source.*
 
 ### Ce qui bloque l'étape 6
 
@@ -568,9 +639,19 @@ la production — c'est le premier point de la liste ci-dessous.
 ## Ce qui bloque le déploiement
 
 0. **`make build`** et non un simple `restart` : le frontend n'a pas de volume monté.
-1. **Appliquer les deux migrations à la prod**, à la main, dans l'ordre
-   (`2026-09-02_auth_discord.sql` puis `2026-09-02_noms_interdits.sql`), avec un dump de contrôle
-   avant/après. C'est aussi la première vraie validation du SQL.
+1. **Appliquer les migrations à la prod**, dans l'ordre chronologique de leur nom, avec un dump de
+   contrôle avant/après. C'est aussi la première vraie validation du SQL.
+
+   ⚠️ **Mis à jour le 2026-09-14 — il ne s'agit plus de « deux migrations » mais de 11.** Un dump
+   tiré de la production le 14/09 l'a confirmé : la prod est restée au schéma d'avant le 02/09, il
+   lui manque `comptes`, `sessions_joueurs`, `invitations`, `liaisons_demandes`, `profils`,
+   `audit_admin`, `permissions_admin`, `service_tokens`, `noms_interdits`, `notifications`, `tiers`,
+   et la colonne `joueurs.anonymise_at`.
+
+   **Répétition à blanc avant d'y aller** : `./scripts/adapter-dump.sh <dump>` charge un dump de
+   prod dans une base jetable, y applique les 11 migrations, **vérifie** le résultat (tables
+   présentes, volume de données inchangé) et ressort un dump au schéma courant. La séquence qu'il
+   exécute est exactement celle à rejouer en prod — autant la voir passer une fois sur une copie.
 2. **Créer l'application Discord** et renseigner `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`,
    `DISCORD_REDIRECT_URI` et `DISCORD_SUPERADMIN_ID`. Le `redirect_uri` doit être déclaré
    **au caractère près** dans le portail développeur, sinon Discord refuse sans message utile.

@@ -100,7 +100,96 @@ cur, conn = install_db([
 import auth_discord; importlib.reload(auth_discord)
 res7 = auth_discord.login('c', 'tok', 'UA')
 check("NON promu (superadmin déjà présent)", res7['compte']['role'] == 'player', res7['compte']['role'])
+
+print("--- le compte d'amorçage ENTRE sans invitation (base vierge) ---")
+# Corrige un blocage constaté le 14/09 : promote_bootstrap_superadmin s'exécute
+# APRES consume_invitation, donc il ne pouvait promouvoir qu'un compte déjà
+# existant. Sur une base sans aucun compte, le superadmin désigné se voyait
+# refuser l'entrée — or personne ne pouvait lui émettre d'invitation, émettre
+# exigeant déjà un compte privilégié. Le premier déploiement imposait donc un
+# INSERT SQL à la main dans la table des portes d'entrée.
+recharger(); install_discord()
+cur, conn = install_db([
+    (r"SELECT id, statut FROM comptes", None),
+    (r"INSERT INTO comptes", ligne_compte(avatar='')),
+    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
+    (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (0,)),      # aucun superadmin
+])
+import auth_discord; importlib.reload(auth_discord)
+res8 = auth_discord.login('c', None, 'UA')          # AUCUNE invitation
+check("entre sans invitation", res8['compte']['role'] == 'superadmin', res8['compte']['role'])
+check("aucune invitation consommée",
+      not any('UPDATE invitations SET uses' in s for s, _ in cur.executed))
+
+print("--- mais PAS si un superadmin existe déjà ---")
+# La porte doit se refermer définitivement une fois le premier superadmin en
+# place : sinon DISCORD_SUPERADMIN_ID serait une porte dérobée permanente,
+# capable de créer un compte sur une base en production.
+recharger(); install_discord()
+cur, conn = install_db([
+    (r"SELECT id, statut FROM comptes", None),
+    (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (1,)),      # un superadmin existe
+])
+import auth_discord; importlib.reload(auth_discord)
+# Le plan de curseur s'arrete volontairement au COUNT : si la porte s'ouvrait a
+# tort, la suite du login manquerait de donnees et leverait une erreur
+# quelconque. On l'attrape pour la transformer en assertion ROUGE plutot que de
+# laisser le fichier mourir -- un plantage n'affiche aucun decompte et son
+# absence passe inapercue au milieu des autres (piege deja rencontre le 13/09).
+try:
+    auth_discord.login('c', None, 'UA')
+    check("refusé sans invitation", False, "accepté à tort — porte dérobée !")
+except auth_discord.DiscordAuthError as e:
+    check("refusé sans invitation (porte refermée)", e.code == 'invitation_requise', e.code)
+except Exception as e:
+    check("refusé sans invitation (porte refermée)", False,
+          "la porte s'est ouverte : %s: %s" % (type(e).__name__, e))
+
+print("--- un AUTRE compte Discord n'en profite pas ---")
+recharger(); install_discord(profil={
+    'id': '999999999999999999', 'username': 'intrus',
+    'global_name': 'Intrus', 'avatar': 'x'})
+cur, conn = install_db([
+    (r"SELECT id, statut FROM comptes", None),
+    (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (0,)),      # base vierge
+])
+import auth_discord; importlib.reload(auth_discord)
+try:
+    auth_discord.login('c', None, 'UA')
+    check("intrus refusé", False, "accepté à tort")
+except auth_discord.DiscordAuthError as e:
+    check("un autre discord_id reste soumis à invitation",
+          e.code == 'invitation_requise', e.code)
+except Exception as e:
+    check("un autre discord_id reste soumis à invitation", False,
+          "la porte s'est ouverte : %s: %s" % (type(e).__name__, e))
+
+print("--- sans DISCORD_SUPERADMIN_ID, aucune porte ---")
 os.environ.pop('DISCORD_SUPERADMIN_ID')
+recharger(); install_discord()
+cur, conn = install_db([
+    (r"SELECT id, statut FROM comptes", None),
+    (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (0,)),
+])
+import auth_discord; importlib.reload(auth_discord)
+try:
+    auth_discord.login('c', None, 'UA')
+    check("refusé sans la variable", False, "accepté à tort")
+except auth_discord.DiscordAuthError as e:
+    check("variable absente : invitation exigée", e.code == 'invitation_requise', e.code)
+except Exception as e:
+    check("variable absente : invitation exigée", False,
+          "la porte s'est ouverte : %s: %s" % (type(e).__name__, e))
+
+# Les deux fonctions doivent appliquer LES MEMES conditions. Laisser entrer
+# quelqu'un que la promotion refuserait creerait un compte `player` ne devant
+# son existence qu'a la variable d'environnement.
+import inspect
+src_amorce = inspect.getsource(auth_discord.peut_amorcer_sans_invitation)
+src_promo = inspect.getsource(auth_discord.promote_bootstrap_superadmin)
+for garde in ('DISCORD_SUPERADMIN_ID', 'ROLE_SUPERADMIN'):
+    check("symétrie des gardes : %s présent des deux côtés" % garde,
+          garde in src_amorce and garde in src_promo)
 
 print("\n=== 7. Durée de session selon le rôle ===")
 recharger(); install_discord()

@@ -312,6 +312,48 @@ def drop_grille_snapshot_if_orphan(cur: Any, date_tournoi: Any) -> None:
     cur.execute("DELETE FROM grille_snapshots WHERE date = %s", (date_tournoi,))
 
 
+# Defait la penalite d'absence d'un tournoi qu'on annule : decremente
+# consecutive_missed et redonne is_ranked a qui repasse sous le seuil.
+#
+# participant_ids = les joueurs a NE PAS toucher (ceux qui ont joue le tournoi
+# annule). Leur compteur a ete remis a 0 par add_tournament, et la valeur d'avant
+# n'est stockee NULLE PART -- Participations garde old_mu/old_sigma, jamais
+# old_missed. Elle est donc definitivement perdue : ils restent a 0. Ce n'est pas
+# un oubli, c'est une limite du schema. Les decrementer serait pire encore, ils
+# passeraient sous leur vraie valeur.
+#
+# Le filtre missed > 0 ne distingue pas un absent DE CE TOURNOI d'un joueur qui
+# cumulait deja des absences hors perimetre (mode ligue). C'est une approximation
+# assumee : les deux routes d'annulation partagent ainsi exactement la meme regle
+# plutot que d'en inventer une troisieme. La correction fine suppose de savoir qui
+# etait reellement dans le perimetre, ce que seule une session explicite dira
+# (cf docs/plan-sessions-tournois.md).
+def annuler_absences(cur: Any, participant_ids: Iterable[int], threshold: int) -> None:
+    ids = list(participant_ids or [])
+    if ids:
+        cur.execute(
+            "SELECT id, consecutive_missed, is_ranked FROM Joueurs WHERE id NOT IN %s",
+            (tuple(ids),),
+        )
+    else:
+        cur.execute("SELECT id, consecutive_missed, is_ranked FROM Joueurs")
+
+    batch = []
+    for jid, missed, is_ranked in cur.fetchall():
+        if not missed or missed <= 0:
+            continue
+        new_missed = missed - 1
+        new_ranked = True if (not is_ranked and new_missed < threshold) else is_ranked
+        batch.append((jid, new_missed, new_ranked))
+
+    if batch:
+        psycopg2.extras.execute_values(cur, """
+            UPDATE Joueurs AS j SET consecutive_missed = data.missed, is_ranked = data.ranked
+            FROM (VALUES %s) AS data(id, missed, ranked)
+            WHERE j.id = data.id
+        """, batch)
+
+
 def _compute_advanced_stonks(conn: Any, d_debut: str, d_fin: str, recap_mode: str | None = None, specific_ligue_id: int | None = None) -> list[dict]:
     with conn.cursor() as cur:
         ligue_filter = ""

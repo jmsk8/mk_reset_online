@@ -88,7 +88,7 @@ qu'une reconstruction de « qui était là le même jour ».
 
 | Phase | Titre | Dépend de | Risque | Réversible ? (§12) |
 |---|---|---|---|---|
-| **0** | **Corriger `revert_last_tournament`** (§2) — défaut préexistant, indépendant des sessions | — | Moyen (change des valeurs en base) | Non (valeurs corrigées) |
+| **0** | ✅ **Corriger `revert_last_tournament`** (§2) — **livré le 2026-09-14**, non commité | — | Moyen (change des valeurs en base) | Non (valeurs corrigées) |
 | 1 | Schéma : `sessions` + `tournois.session_id` + **backfill** (§11) + `sessions` dans `sync_sequences()` | — | Faible (ajout pur ; 92 tournois, 3 paires à regrouper) | **Oui**, totalement |
 | 2 | UX de liaison après enregistrement d'un tournoi | Phase 1 | Faible (nouvel écran/modale) | **Oui**, totalement |
 | 3 | Bascule de la règle de présence sur `session_id`, **y compris `session_keys` de `services.py`** (R-session-6) | Phases 0 + 1 | **Élevé** (cœur du calcul de pénalité + seuils d'awards) | **Non** : les sigma/compteurs écrits restent |
@@ -243,6 +243,45 @@ routes plutôt qu'en ajouter).
   veut savoir ce que le bug a coûté, un `SELECT id, nom, consecutive_missed, is_ranked FROM Joueurs
   ORDER BY consecutive_missed DESC` avant/après quelques annulations est le seul constat possible —
   l'historique exact n'est pas reconstituable (§2.2).
+
+### 2.6 ✅ Livré le 2026-09-14
+
+Conforme au plan ci-dessus, sans écart de conception. **Non commité** — l'utilisateur commit
+lui-même ([[user-handles-commits]]).
+
+| Fichier | Changement |
+|---|---|
+| `services.py` | **`annuler_absences(cur, participant_ids, threshold)`** créée à côté de `drop_grille_snapshot_if_orphan` (même rôle, même emplacement) |
+| `routes_admin.py` | `revert_last_tournament` : l'`UPDATE` global remplacé par la lecture du seuil + l'appel à la fonction |
+| `routes_admin.py` | `delete_tournament` : ses 17 lignes de boucle remplacées par le même appel — **pur refactor, comportement identique** |
+| `tests/test_annulation_tournoi.py` | nouveau, 33 assertions |
+
+**Ce que le correctif change en pratique** : un joueur hors périmètre de ligue n'est plus décrémenté
+à tort (fin de la dérive cumulative), et `is_ranked` est restauré pour qui repasse sous le seuil.
+
+**Validé par mutation** : en réintroduisant l'`UPDATE Joueurs SET consecutive_missed = GREATEST(...)`
+d'origine, **17 des 33 assertions tombent**. Le test mord donc réellement sur ce défaut précis.
+
+Deux garde-fous statiques ont été ajoutés au test, contre la reproduction du défaut : il échoue si
+un `UPDATE` global de `consecutive_missed` réapparaît dans `routes_admin.py`, et si la boucle de
+décrément y est de nouveau dupliquée au lieu de passer par la fonction partagée — c'est exactement
+la divergence entre les deux routes qui avait produit le bug.
+
+⚠️ **La limite du §2.2 est documentée en commentaire dans `annuler_absences`** : les participants
+restent à 0 car `old_missed` n'existe nulle part. Ne pas « corriger » ça en croyant à un oubli —
+les décrémenter les ferait passer **sous** leur valeur réelle.
+
+**Reste à faire avant de considérer la phase close** : la vérification sur base Postgres locale
+(§2.5) — le banc d'essai ne valide pas le SQL. Noter `consecutive_missed`/`is_ranked` de trois
+joueurs (un participant, un absent pénalisé, un joueur d'une autre ligue), ajouter un tournoi,
+annuler, comparer : **le joueur hors périmètre doit être inchangé**.
+
+`annuler_absences` est la fonction que `fusionner_sessions` appellera avec une **liste** de joueurs
+en Phase 3 (§5.2) — elle est désormais écrite et éprouvée sur le cas simple, comme prévu au §2.4.
+
+⚠️ **Hors périmètre de cette phase, trouvé en la testant** : annuler un tournoi **laisse sa
+notification en place** (R-session-7, §8). La Phase 0 corrige les compteurs d'absence, pas les
+notifications — le joueur garde un message annonçant un tournoi qui n'existe plus.
 
 ---
 
@@ -642,6 +681,39 @@ ligue relève d'un besoin d'affichage différent qu'une session ne modélise pas
   pénalité, sinon les awards (Grand Master, seuils `MIN_PARTICIPATION_RATIO`) et la pénalité
   d'absence compteront les sessions différemment. Les lignes 506/651 sont un écart préexistant,
   indépendant de ce plan : à signaler à l'utilisateur, pas à corriger silencieusement ici.
+- **R-session-7 (constaté en usage réel le 2026-09-14, non corrigé)** : **annuler un tournoi laisse
+  sa notification en place.** `add_tournament` diffuse « Nouveau tournoi du JJ/MM/AAAA — N joueurs y
+  ont participé. Classement et TrueSkill sont à jour. » à tous les comptes non suspendus
+  ([routes_admin.py:1693](../backEnd/routes_admin.py#L1693), via `notifier_tous`
+  [routes_comptes.py:120](../backEnd/routes_comptes.py#L120)). **Ni `revert_last_tournament` ni
+  `delete_tournament` ne la retirent ni ne la compensent** : chaque joueur garde un message annonçant
+  un tournoi qui n'existe plus, et rien n'indique nulle part qu'il a été supprimé.
+
+  C'est un défaut **distinct** de celui de la Phase 0 (§2) et il n'a pas été corrigé avec lui : la
+  Phase 0 portait sur `consecutive_missed`/`is_ranked`, pas sur les notifications. Il est aussi
+  **indépendant du chantier sessions** — à traiter comme la Phase 0, c'est-à-dire seul.
+
+  Point de conception à trancher avant de coder, parce que les deux options ne disent pas la même
+  chose à l'utilisateur :
+
+  1. **Supprimer la notification d'origine** (`DELETE FROM notifications WHERE type =
+     'tournoi_ajoute' AND ...`). Problème : `notifications` n'a **aucune colonne `tournoi_id`**
+     ([schema.sql:353](../backEnd/schema.sql#L353)) — la seule accroche serait le titre, qui contient
+     la date, ce qui casserait sur deux tournois le même jour (cas réel : 4 dates en portent deux,
+     §10.2). Suppose donc d'ajouter une colonne de référence, ou au minimum une clé de corrélation.
+     Efface aussi une notification déjà lue, ce qui réécrit l'historique du joueur.
+  2. **Émettre une seconde notification d'annulation**, laissant la première en place. Aucun
+     changement de schéma, et c'est honnête vis-à-vis de ce qui s'est réellement passé (le tournoi a
+     existé puis a été annulé). Coût : deux messages au lieu d'un.
+
+  **Recommandation : option 2**, pour trois raisons — pas de migration, pas de réécriture de
+  l'historique du joueur, et cohérence avec le reste du système où l'annulation est un événement
+  et non un effacement. L'option 1 devient préférable seulement si l'utilisateur juge le bruit
+  gênant, et elle demande alors la colonne `tournoi_id` (utile par ailleurs).
+
+  ⚠️ Si l'option 1 est retenue un jour, **ne pas s'accrocher au titre**. C'est exactement la classe
+  d'erreur que ce plan combat : déduire un lien d'une chaîne de caractères au lieu de le stocker.
+
 - **R-session-2** : `add_tournament` est déjà une fonction longue et dense
   ([routes_admin.py:1070-1354](../backEnd/routes_admin.py#L1070-L1354)). Comme relevé dans
   [[refactor-historique-recaps-plan]] (R-refactor-1), y ajouter encore de la logique sans extraction
