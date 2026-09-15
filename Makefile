@@ -199,6 +199,10 @@ ip-backfill:         ## Reconstitue les grilles figées IP v2 des tournois déj�
 	$(COMPOSE) exec -T backend python - $(if $(DRY),--dry-run) $(if $(SINCE),--since $(SINCE)) < scripts/backfill_grille_snapshots.py
 	@$(if $(DRY),true,$(RESTART_APP))
 
+recompter-absences:  ## Remet consecutive_missed a jour en comptant des sessions (DRY=1 pour simuler)
+	$(COMPOSE) exec -T backend python - $(if $(DRY),--dry-run) < scripts/recompter_absences.py
+	@$(if $(DRY),true,$(RESTART_APP))
+
 # ── Moteur de course (banner) ────────────────
 
 # Emprunte une image node le temps d'un test, sans rien installer sur la machine
@@ -284,6 +288,7 @@ help:                ## Show this help
 
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
+        recompter-absences \
         race-deps race-tracks race-soak race-sim race-scenario race-spectate race-nginx \
         engine engine-js engine-cpp \
         reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \

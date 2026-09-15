@@ -806,12 +806,39 @@ def api_update_joueur(id):
     try:
         mu, sigma, nom = float(data['mu']), float(data['sigma']), data['nom']
         is_ranked = bool(data.get('is_ranked', True))
-        consecutive_missed = int(data.get('consecutive_missed', 0))
         color = data.get('color', '#FFFFFF')
+
+        # `consecutive_missed` declenche la penalite de sigma (decision 8 de
+        # docs/plan-sessions-tournois.md) : une valeur saisie a la main
+        # provoque ou empeche une penalite au tournoi suivant. C'est donc une
+        # valeur derivee du calcul, pas une donnee d'edition courante -- et la
+        # laisser modifiable par tout detenteur de `gestion_joueurs` l'a rendue
+        # non fiable (28 compteurs perimes constates le 15/09).
+        #
+        # Le SUPERADMIN garde la main : il faut une porte de sortie pour
+        # rattraper un compteur faux sans passer par la base. CAPACITE DE ROLE,
+        # jamais une permission delegable -- meme regle que l'annulation de
+        # tournoi (hierarchie-admin-plan.md 5).
+        #
+        # Le chemin normal reste scripts/recompter_absences.py, qui recalcule
+        # tout le monde selon une regle unique plutot qu'un joueur a la main.
+        modifier_absences = (g.compte['role'] == ROLE_SUPERADMIN
+                             and 'consecutive_missed' in data)
+        if modifier_absences:
+            consecutive_missed = max(0, int(data['consecutive_missed']))
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s, is_ranked=%s, consecutive_missed=%s, color=%s WHERE id=%s", (nom, mu, sigma, is_ranked, consecutive_missed, color, id))
+                if modifier_absences:
+                    cur.execute(
+                        "UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s, is_ranked=%s,"
+                        " consecutive_missed=%s, color=%s WHERE id=%s",
+                        (nom, mu, sigma, is_ranked, consecutive_missed, color, id))
+                else:
+                    cur.execute(
+                        "UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s, is_ranked=%s,"
+                        " color=%s WHERE id=%s",
+                        (nom, mu, sigma, is_ranked, color, id))
             conn.commit()
             recalculate_tiers()
             invalidate_cache()

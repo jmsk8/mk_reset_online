@@ -169,10 +169,29 @@
                         <div class="field">
                             <label class="label has-text-white">Absences consécutives</label>
                             <div class="control has-icons-left">
+                                {# Ce compteur déclenche la pénalité de sigma
+                                   (docs/plan-sessions-tournois.md, décision 8) : le modifier à la
+                                   main provoque ou empêche une pénalité au tournoi suivant. Il est
+                                   donc en lecture seule, sauf pour le superadmin — capacité de
+                                   rôle, jamais une permission déléguable.
+                                   Le chemin normal reste `make recompter-absences`, qui recalcule
+                                   tout le monde selon une règle unique. #}
+                                {% if role_admin == 'superadmin' %}
                                 <input class="input" type="number" step="1" min="0" id="editMissed">
+                                {% else %}
+                                <input class="input" type="number" id="editMissed" readonly disabled>
+                                {% endif %}
                                 <span class="icon is-left"><i class="fas fa-user-clock"></i></span>
                             </div>
-                            <p class="help has-text-grey">Nombre total de tournois manqués d'affilée.</p>
+                            <p class="help has-text-grey">
+                                Sessions manquées d'affilée.
+                                {% if role_admin == 'superadmin' %}
+                                Calculé automatiquement — ne le corrigez à la main que pour rattraper
+                                une valeur fausse, en sachant qu'il décide de la pénalité.
+                                {% else %}
+                                Calculé automatiquement, non modifiable.
+                                {% endif %}
+                            </p>
                         </div>
                     </div>
                 </div>

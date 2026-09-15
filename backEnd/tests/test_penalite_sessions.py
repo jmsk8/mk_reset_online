@@ -160,6 +160,65 @@ check("session_id est ajoutee EN FIN de SELECT (aucun index decale)",
       requete.index('t.session_id') > requete.index('p.old_mu'), None)
 
 
+print("\n=== Le compteur n'est modifiable que par le superadmin (decision 8) ===")
+
+# Tant que tout detenteur de `gestion_joueurs` pouvait le saisir, le compteur ne
+# pouvait pas servir de declencheur fiable : une edition de fiche l'ecrasait par
+# la valeur du formulaire (28 compteurs perimes constates le 15/09).
+#
+# Le superadmin garde la main : il faut une porte de sortie pour rattraper un
+# compteur faux. Capacite de role, jamais une permission delegable.
+bloc_edit = src_admin[src_admin.index('def api_update_joueur'):]
+bloc_edit = bloc_edit[:bloc_edit.index('\n@')]
+
+check("la modification est reservee au superadmin",
+      "g.compte['role'] == ROLE_SUPERADMIN" in bloc_edit, None)
+# `in data` : ne pas ecraser le compteur quand le payload ne le porte pas.
+check("le compteur n'est touche que s'il est explicitement fourni",
+      "'consecutive_missed' in data" in bloc_edit, None)
+check("deux UPDATE distincts selon le droit, pas de colonne conditionnelle en SQL",
+      bloc_edit.count('UPDATE Joueurs SET nom=%s') == 2, None)
+check("un compteur negatif est impossible",
+      "max(0, int(data['consecutive_missed']))" in bloc_edit, None)
+check("la raison est documentee dans le code",
+      'decision 8' in bloc_edit and 'recompter_absences' in bloc_edit, None)
+
+gestion_js = open(os.path.join(RACINE, '..', 'frontEnd', 'static', 'js', 'gestion.js'),
+                  encoding='utf-8').read()
+# Envoyer un champ que le serveur ignore donnerait l'illusion d'une modification.
+check("le JS n'envoie le compteur que si le champ est actif",
+      '!champMissed.disabled' in gestion_js, None)
+
+gestion_html = open(os.path.join(RACINE, '..', 'frontEnd', 'templates',
+                                 'gestion_joueurs.html'), encoding='utf-8').read()
+check("le champ est verrouille sauf pour le superadmin",
+      "{% if role_admin == 'superadmin' %}" in gestion_html
+      and 'id="editMissed" readonly disabled' in gestion_html, None)
+check("le libelle parle de sessions",
+      'Sessions manquées' in gestion_html, None)
+check("le superadmin est averti de l'effet sur la penalite",
+      'il décide de la pénalité' in gestion_html, None)
+
+
+print("\n=== Les courbes d'evolution comptent aussi des sessions (R-session-6) ===")
+
+# Ces deux fonctions appliquaient MIN_PARTICIPATION_RATIO a un compte de
+# tournois BRUTS, quand _aggregate_season_stats l'applique a des sessions :
+# deux seuils de participation divergents sur la meme saison.
+for fn in ('compute_ip_evolution', 'compute_position_evolution'):
+    bloc = src_services[src_services.index('def %s' % fn):]
+    bloc = bloc[:bloc.index('\ndef ')]
+    check("%s : le seuil se base sur des sessions distinctes" % fn.split('_')[1],
+          'total_tournois = len({sid for' in bloc, None)
+    check("%s : session_id est selectionnee" % fn.split('_')[1],
+          't.session_id' in bloc, None)
+    # Les courbes ont un point par TOURNOI : les indexer sur un compte de
+    # sessions les decalerait silencieusement.
+    check("%s : les courbes restent indexees sur les tournois" % fn.split('_')[1],
+          'for idx in range(len(tournoi_ids)):' in bloc
+          and 'for idx in range(total_tournois):' not in bloc, None)
+
+
 print("\n=== F-4 : le cycle d'annulation reste coherent ===")
 
 # Le couplage compteur/penalite rend l'ordre critique. Si annuler_absences
@@ -201,6 +260,54 @@ check("annuler_absences ne touche pas au sigma (c'est le role de ghost_log)",
       'sigma' not in corps_annuler, None)
 check("elle recalcule is_ranked par rapport au seuil",
       'new_missed < threshold' in corps_annuler, None)
+
+
+print("\n=== Le script de recomptage des absences ===")
+
+# Ajoute apres avoir constate (15/09) que 28 joueurs portaient un compteur
+# perime : des joueurs inactifs depuis des mois etaient a zero, sequelle du
+# defaut de revert_last_tournament (decrement global sans WHERE).
+SCRIPT = os.path.join(RACINE, '..', 'scripts', 'recompter_absences.py')
+script = open(SCRIPT, encoding='utf-8').read()
+
+# L'exigence centrale : remettre un compteur d'aplomb, pas rejouer l'historique.
+# Hors docstring : aucune ecriture de sigma nulle part dans le code.
+corps_script = script.split('"""', 2)[-1]
+check("le script ne contient aucune ecriture de sigma",
+      'SET sigma' not in corps_script and 'sigma =' not in corps_script, None)
+check("le script n'ecrit jamais dans ghost_log",
+      'INSERT INTO ghost_log' not in script and 'DELETE FROM ghost_log' not in script, None)
+check("il n'ecrit que consecutive_missed et is_ranked",
+      'SET consecutive_missed = data.missed, is_ranked = data.ranked' in script, None)
+
+# La regle de ligue donnee par l'utilisateur.
+check("une session sans ligue concerne tout le monde",
+      'ligue_session is None or ligue_session in mes_ligues' in script, None)
+check("un joueur sans ligue compte sur la ligue la plus faible",
+      'ORDER BY niveau DESC' in script, None)
+check("l'appartenance est deduite des participations, pas de joueurs.ligue_id",
+      'ligues_jouees' in script and 'j.ligue_id' not in script, None)
+
+# Comparer les dates ne suffit pas : deux sessions distinctes peuvent tomber le
+# meme jour (lobbies non lies), et « date > derniere » les exclurait toutes.
+check("le script compare les sessions, pas seulement les dates",
+      'sid not in mes_sessions' in script, None)
+check("les joueurs sans aucune participation sont ignores",
+      'jamais_joue' in script, None)
+check("is_ranked est recalcule par rapport au seuil",
+      'manquees < seuil' in script, None)
+
+# Un script qui ecrit dans le classement doit pouvoir etre simule d'abord.
+check("un mode simulation existe",
+      "'--dry-run' in sys.argv" in script, None)
+check("le mode simulation n'ecrit rien",
+      "[dry-run] rien n'a ete ecrit" in script, None)
+
+makefile = open(os.path.join(RACINE, '..', 'Makefile'), encoding='utf-8').read()
+check("une cible make expose le script",
+      'recompter-absences:' in makefile, None)
+check("la cible accepte DRY=1",
+      'recompter_absences.py' in makefile and '$(if $(DRY),--dry-run)' in makefile, None)
 
 
 print("\n=== La migration de configuration ===")
