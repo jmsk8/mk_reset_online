@@ -148,16 +148,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const tau = parseFloat(document.getElementById('configTau').value);
             const ghost = document.getElementById('configGhost').checked;
             const ghostPenalty = parseFloat(document.getElementById('configGhostPenalty').value);
-            const ghostThresholdDays = parseInt(document.getElementById('configGhostThresholdDays').value);
-            const ghostIntervalDays = parseInt(document.getElementById('configGhostIntervalDays').value);
+            const ghostThresholdSessions = parseInt(document.getElementById('configGhostThresholdSessions').value);
+            const ghostIntervalSessions = parseInt(document.getElementById('configGhostIntervalSessions').value);
             const unrankedLimit = parseInt(document.getElementById('configUnrankedLimit').value);
             const sigmaThreshold = parseFloat(document.getElementById('configSigmaLimit').value);
             const ipVersionLive = document.querySelector('input[name="ipVersionLive"]:checked')?.value || 'v1';
 
             if (isNaN(tau)) { alert("Erreur: Tau invalide."); return; }
             if (isNaN(ghostPenalty)) { alert("Erreur: Pénalité invalide."); return; }
-            if (isNaN(ghostThresholdDays) || ghostThresholdDays < 1) { alert("Erreur: Seuil d'absence (jours) invalide."); return; }
-            if (isNaN(ghostIntervalDays) || ghostIntervalDays < 1) { alert("Erreur: Fréquence de pénalité (jours) invalide."); return; }
+            if (isNaN(ghostThresholdSessions) || ghostThresholdSessions < 1) { alert("Erreur: Seuil d'absence (sessions) invalide."); return; }
+            if (isNaN(ghostIntervalSessions) || ghostIntervalSessions < 1) { alert("Erreur: Fréquence de pénalité (sessions) invalide."); return; }
             if (isNaN(unrankedLimit)) { alert("Erreur: Limite Unranked invalide."); return; }
             if (isNaN(sigmaThreshold)) { alert("Erreur: Limite Sigma invalide."); return; }
 
@@ -165,8 +165,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 tau: tau,
                 ghost_enabled: ghost,
                 ghost_penalty: ghostPenalty,
-                ghost_threshold_days: ghostThresholdDays,
-                ghost_interval_days: ghostIntervalDays,
+                ghost_threshold_sessions: ghostThresholdSessions,
+                ghost_interval_sessions: ghostIntervalSessions,
                 unranked_threshold: unrankedLimit,
                 sigma_threshold: sigmaThreshold,
                 ip_version_live: ipVersionLive
@@ -269,8 +269,8 @@ async function loadConfig() {
     poser('configTau', res.tau);
     poser('configGhost', res.ghost_enabled, 'checked');
     poser('configGhostPenalty', res.ghost_penalty);
-    poser('configGhostThresholdDays', res.ghost_threshold_days);
-    poser('configGhostIntervalDays', res.ghost_interval_days);
+    poser('configGhostThresholdSessions', res.ghost_threshold_sessions);
+    poser('configGhostIntervalSessions', res.ghost_interval_sessions);
     poser('configUnrankedLimit', res.unranked_threshold);
     poser('configSigmaLimit', res.sigma_threshold);
 

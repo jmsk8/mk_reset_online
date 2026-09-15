@@ -18,7 +18,7 @@ from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, TRUESKILL_BETA, TRUESKILL_DRAW_PROBABILITY,
     DEFAULT_TAU, DEFAULT_GHOST_PENALTY, DEFAULT_UNRANKED_THRESHOLD, DEFAULT_SIGMA_THRESHOLD,
     DEFAULT_TIERS,
-    DEFAULT_GHOST_THRESHOLD_DAYS, DEFAULT_GHOST_INTERVAL_DAYS,
+    DEFAULT_GHOST_THRESHOLD_SESSIONS, DEFAULT_GHOST_INTERVAL_SESSIONS,
     GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES, IP_VERSION_DEFAULT,
     ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN,
 )
@@ -29,7 +29,10 @@ from cache import invalidate_cache
 from utils import generate_unique_slug, extract_league_number
 from services import (
     recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
-    annuler_absences,
+    drop_session_if_orphan, annuler_absences,
+    joueurs_en_conflit_de_session, joueurs_en_conflit_entre_sessions,
+    fusionner_sessions, annuler_penalites_de_session,
+    MAX_CONFLITS_NOMMES, penalite_due,
     _aggregate_season_stats, _determine_winners, _save_awards_to_db,
     _apply_inter_league_moves,
     build_distribution, trueskill_score, has_tier, load_tiers,
@@ -38,6 +41,12 @@ from services import (
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
+
+# Fenetre de tournois proposes pour un rattachement a une session. Assez large
+# pour couvrir une soiree scindee en plusieurs lobbies, assez courte pour ne pas
+# derouler tout l'historique dans une modale.
+SESSION_CANDIDATS_PAR_DEFAUT = 20
+SESSION_CANDIDATS_MAX = 100
 
 
 
@@ -260,14 +269,16 @@ def get_config():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'ghost_threshold_days', 'ghost_interval_days', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled', 'inter_league_moves', 'ip_version_live')")
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('tau', 'ghost_enabled', 'ghost_penalty', 'ghost_threshold_sessions', 'ghost_interval_sessions', 'unranked_threshold', 'sigma_threshold', 'league_mode_enabled', 'inter_league_moves', 'ip_version_live')")
                 rows = dict(cur.fetchall())
         return jsonify({
             "tau": float(rows.get('tau', DEFAULT_TAU)),
             "ghost_enabled": rows.get('ghost_enabled', 'false') == 'true',
             "ghost_penalty": float(rows.get('ghost_penalty', DEFAULT_GHOST_PENALTY)),
-            "ghost_threshold_days": int(rows.get('ghost_threshold_days', DEFAULT_GHOST_THRESHOLD_DAYS)),
-            "ghost_interval_days": int(rows.get('ghost_interval_days', DEFAULT_GHOST_INTERVAL_DAYS)),
+            "ghost_threshold_sessions": int(rows.get('ghost_threshold_sessions',
+                                                     DEFAULT_GHOST_THRESHOLD_SESSIONS)),
+            "ghost_interval_sessions": int(rows.get('ghost_interval_sessions',
+                                                    DEFAULT_GHOST_INTERVAL_SESSIONS)),
             "unranked_threshold": int(rows.get('unranked_threshold', DEFAULT_UNRANKED_THRESHOLD)),
             "sigma_threshold": float(rows.get('sigma_threshold', DEFAULT_SIGMA_THRESHOLD)),
             "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true',
@@ -325,10 +336,15 @@ def update_config():
             configs.append(('ghost_enabled', str(data['ghost_enabled']).lower()))
         if 'ghost_penalty' in data:
             configs.append(('ghost_penalty', str(float(data['ghost_penalty']))))
-        if 'ghost_threshold_days' in data:
-            configs.append(('ghost_threshold_days', str(max(1, int(data['ghost_threshold_days'])))))
-        if 'ghost_interval_days' in data:
-            configs.append(('ghost_interval_days', str(max(1, int(data['ghost_interval_days'])))))
+        # Seuils exprimes en SESSIONS LOUPEES, plus en jours (decision 8).
+        # max(1, ...) : un seuil nul penaliserait des le tournoi ou le joueur
+        # vient de jouer, un intervalle nul diviserait par zero.
+        if 'ghost_threshold_sessions' in data:
+            configs.append(('ghost_threshold_sessions',
+                            str(max(1, int(data['ghost_threshold_sessions'])))))
+        if 'ghost_interval_sessions' in data:
+            configs.append(('ghost_interval_sessions',
+                            str(max(1, int(data['ghost_interval_sessions'])))))
         if 'sigma_threshold' in data:
             configs.append(('sigma_threshold', str(float(data['sigma_threshold']))))
         if 'ip_version_live' in data:
@@ -1427,9 +1443,18 @@ def add_tournament():
     date_tournoi_str = data.get('date')
     joueurs_data = data.get('joueurs')
     ligue_id = data.get('ligue_id')
+    # Tournoi auquel rattacher celui-ci (deux lobbies d'une meme soiree).
+    # None = ce tournoi reste seul dans sa session, cas par defaut.
+    autre_tournoi_id = data.get('autre_tournoi_id')
 
     if not date_tournoi_str or not joueurs_data:
         return jsonify({"error": "Données incomplètes"}), 400
+
+    if autre_tournoi_id is not None:
+        try:
+            autre_tournoi_id = int(autre_tournoi_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Tournoi à lier invalide."}), 400
 
     try:
         date_tournoi = datetime.strptime(date_tournoi_str, '%Y-%m-%d').date()
@@ -1470,11 +1495,21 @@ def add_tournament():
                 # moindre mu. Sans effet si un tournoi du meme jour l'a deja figee.
                 snapshot_grille(cur, date_tournoi)
 
+                # Toute creation de tournoi ouvre sa propre session : un tournoi
+                # non lie est seul dans la sienne, ce n'est pas un cas
+                # particulier. C'est ce qui garantit l'invariant session_id NOT
+                # NULL, et donc l'absence de branche « tournoi sans session »
+                # dans tout le code de calcul.
+                # Conception : docs/plan-sessions-tournois.md
+                cur.execute("INSERT INTO sessions_tournois DEFAULT VALUES RETURNING id")
+                session_id = cur.fetchone()[0]
+
                 cur.execute("""
-                    INSERT INTO Tournois (date, ligue_id, ligue_nom, ligue_couleur)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO Tournois (date, ligue_id, ligue_nom, ligue_couleur, session_id)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
-                """, (date_tournoi_str, ligue_id, ligue_nom_archive, ligue_couleur_archive))
+                """, (date_tournoi_str, ligue_id, ligue_nom_archive, ligue_couleur_archive,
+                      session_id))
                 tournoi_id = cur.fetchone()[0]
 
                 joueurs_ratings = {}
@@ -1526,6 +1561,55 @@ def add_tournament():
                     joueurs_ids_map[nom] = jid
                     joueurs_exclude_ts[nom] = exclude_ts
                     cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma, exclude_from_ts) VALUES (%s, %s, %s, %s, %s, %s)", (tournoi_id, jid, score, float(mu), float(sigma), exclude_ts))
+
+                # ── RATTACHEMENT A UNE SESSION EXISTANTE ────────────────────
+                # L'admin a demande, AVANT validation, de lier ce tournoi a un
+                # autre : deux lobbies d'une meme soiree.
+                #
+                # ORDRE DES TROIS GESTES, a ne pas modifier :
+                #   1. les participations sont inserees (fait juste au-dessus),
+                #      donc les noms saisis sont resolus en joueur_id -- on
+                #      compare des identifiants, jamais des chaines ;
+                #   2. on CONTROLE le conflit, alors que ce tournoi est encore
+                #      seul dans sa session : l'ensemble teste est donc
+                #      exactement « les autres tournois de la session cible » ;
+                #   3. on fusionne seulement si le controle passe.
+                #
+                # Inverser 2 et 3 rendrait le controle auto-referent (les
+                # joueurs de ce tournoi seraient deja dans la session cible) et
+                # ferait refuser TOUTE liaison.
+                #
+                # Le controle est refait ici meme si le client l'a deja fait via
+                # /admin/tournois/verifier-session : cette route est indicative,
+                # celle-ci est autoritaire. Sans cette reverification, deux
+                # admins simultanes -- ou un appel direct a l'API -- passeraient
+                # au travers (TOCTOU).
+                # Conception : docs/plan-sessions-tournois.md, decisions 9 et 10
+                if autre_tournoi_id is not None:
+                    cur.execute("SELECT 1 FROM Tournois WHERE id = %s", (autre_tournoi_id,))
+                    if cur.fetchone() is None:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Le tournoi auquel lier celui-ci n'existe pas.",
+                            "code": "tournoi_cible_absent",
+                        }), 404
+
+                    conflits = joueurs_en_conflit_de_session(cur, tournoi_id, autre_tournoi_id)
+                    if conflits:
+                        # Refus categorique : ni liaison, ni creation. Le
+                        # rollback annule le tournoi, ses participations, les
+                        # fiches joueurs creees a la volee et la grille figee --
+                        # l'etat d'avant est integralement restaure.
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Ces joueurs participent deja a un autre tournoi de cette "
+                                     "session : %s. Un joueur ne peut jouer qu'un seul tournoi "
+                                     "par session." % ", ".join(conflits),
+                            "code": "conflit_session",
+                            "joueurs_en_conflit": conflits,
+                        }), 409
+
+                    session_id = fusionner_sessions(cur, tournoi_id, autre_tournoi_id)
 
                 sorted_joueurs = sorted(joueurs_data, key=lambda x: x['score'], reverse=True)
 
@@ -1586,12 +1670,15 @@ def add_tournament():
                         WHERE p.tournoi_id = data.tid AND p.joueur_id = data.jid
                     """, participation_updates)
 
-                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('ghost_enabled', 'ghost_penalty', 'ghost_threshold_days', 'ghost_interval_days', 'unranked_threshold')")
+                cur.execute("SELECT key, value FROM Configuration WHERE key IN ('ghost_enabled', 'ghost_penalty', 'ghost_threshold_sessions', 'ghost_interval_sessions', 'unranked_threshold')")
                 conf = dict(cur.fetchall())
                 ghost_enabled = (conf.get('ghost_enabled') == 'true')
                 penalty_val = float(conf.get('ghost_penalty', DEFAULT_GHOST_PENALTY))
-                ghost_threshold_days = max(1, int(conf.get('ghost_threshold_days', DEFAULT_GHOST_THRESHOLD_DAYS)))
-                ghost_interval_days = max(1, int(conf.get('ghost_interval_days', DEFAULT_GHOST_INTERVAL_DAYS)))
+                # Seuils en SESSIONS LOUPEES, plus en jours (decision 8).
+                seuil_sessions = max(1, int(conf.get('ghost_threshold_sessions',
+                                                     DEFAULT_GHOST_THRESHOLD_SESSIONS)))
+                intervalle_sessions = max(1, int(conf.get('ghost_interval_sessions',
+                                                          DEFAULT_GHOST_INTERVAL_SESSIONS)))
                 unranked_limit = int(conf.get('unranked_threshold', DEFAULT_UNRANKED_THRESHOLD))
 
                 not_in_clause = f"id NOT IN ({','.join(['%s']*len(present_pids))})" if present_pids else "TRUE"
@@ -1601,29 +1688,22 @@ def add_tournament():
                 cur.execute(query_absents, tuple(abs_params))
                 all_absents = cur.fetchall()
 
+                # La ligue de la derniere apparition determine qui est concerne
+                # par ce tournoi quand le mode ligue est actif. Les dates de
+                # derniere apparition et de derniere penalite ne sont PLUS lues :
+                # le declenchement se base desormais sur consecutive_missed, un
+                # compteur de sessions loupees, et non sur un ecart calendaire.
                 all_absent_ids = [row[0] for row in all_absents]
-                last_played = {}
                 last_played_ligue = {}
-                last_ghost = {}
-                if all_absent_ids:
+                if all_absent_ids and ligue_id is not None:
                     cur.execute("""
-                        SELECT DISTINCT ON (p.joueur_id) p.joueur_id, t.date, t.ligue_id
+                        SELECT DISTINCT ON (p.joueur_id) p.joueur_id, t.ligue_id
                         FROM Participations p
                         JOIN Tournois t ON p.tournoi_id = t.id
                         WHERE p.joueur_id = ANY(%s) AND t.id <> %s AND t.date <= %s
                         ORDER BY p.joueur_id, t.date DESC, t.id DESC
                     """, (all_absent_ids, tournoi_id, date_tournoi))
-                    for jid, d, lid in cur.fetchall():
-                        last_played[jid] = d
-                        last_played_ligue[jid] = lid
-
-                    cur.execute("""
-                        SELECT g.joueur_id, MAX(g.date)
-                        FROM ghost_log g
-                        WHERE g.joueur_id = ANY(%s) AND g.tournoi_id <> %s AND g.date <= %s
-                        GROUP BY g.joueur_id
-                    """, (all_absent_ids, tournoi_id, date_tournoi))
-                    last_ghost = {r[0]: r[1] for r in cur.fetchall()}
+                    last_played_ligue = {jid: lid for jid, lid in cur.fetchall()}
 
                 absents = [
                     row for row in all_absents
@@ -1631,48 +1711,50 @@ def add_tournament():
                 ]
                 absent_ids = [row[0] for row in absents]
 
-                counted_today = set()
+                # Presents de la SESSION, et non plus « du meme jour ».
+                #
+                # Jouer un seul tournoi de la session suffit a compter present
+                # pour toute la session : ces joueurs ne prennent donc pas
+                # d'absence, meme s'ils manquent ce tournoi-ci.
+                #
+                # Remplace le couple present_today_ids/same_day_exists, qui
+                # reconstituait ce regroupement par comparaison de dates. Un
+                # ensemble vide produit exactement le meme resultat que
+                # l'ancien « same_day_exists = False » : tous les absents sont
+                # comptes. La branche conditionnelle n'a donc plus de raison
+                # d'etre.
+                # Conception : docs/plan-sessions-tournois.md, 5.1
+                deja_presents = set()
                 if absent_ids:
                     cur.execute("""
                         SELECT DISTINCT p.joueur_id
                         FROM Participations p
                         JOIN Tournois t ON p.tournoi_id = t.id
-                        WHERE t.date = %s AND t.id <> %s
+                        WHERE t.session_id = %s AND t.id <> %s
                           AND (t.ligue_id = %s OR (%s IS NULL AND t.ligue_id IS NULL))
-                    """, (date_tournoi, tournoi_id, ligue_id, ligue_id))
-                    present_today_ids = {r[0] for r in cur.fetchall()}
-
-                    cur.execute("""
-                        SELECT 1
-                        FROM Tournois t
-                        WHERE t.date = %s AND t.id <> %s
-                          AND (t.ligue_id = %s OR (%s IS NULL AND t.ligue_id IS NULL))
-                        LIMIT 1
-                    """, (date_tournoi, tournoi_id, ligue_id, ligue_id))
-                    same_day_exists = cur.fetchone() is not None
-                    if same_day_exists:
-                        counted_today = {pid for pid in absent_ids if pid not in present_today_ids}
+                    """, (session_id, tournoi_id, ligue_id, ligue_id))
+                    deja_presents = {r[0] for r in cur.fetchall()}
 
                 ghost_inserts = []
                 absent_updates = []
                 for pid, sig, missed, is_r in absents:
-                    already_today = pid in counted_today
-                    new_missed = (missed or 0) if already_today else (missed or 0) + 1
+                    # Present ailleurs dans la session : ne prend pas d'absence.
+                    present_dans_session = pid in deja_presents
+                    new_missed = (missed or 0) if present_dans_session else (missed or 0) + 1
                     new_sig = float(sig)
 
-                    lp = last_played.get(pid)
-                    lg = last_ghost.get(pid)
-                    if lp is not None and lg is not None and lg <= lp:
-                        lg = None
-                    ref = lg or lp
-                    if ghost_enabled and not already_today and ref is not None and new_sig < GHOST_SIGMA_CAP:
-                        threshold = ghost_interval_days if lg else ghost_threshold_days
-                        if (date_tournoi - ref).days >= threshold:
-                            capped_sig = min(new_sig + penalty_val, GHOST_SIGMA_CAP)
-                            applied = round(capped_sig - new_sig, 6)
-                            if applied > 0:
-                                ghost_inserts.append((pid, tournoi_id, date_tournoi_str, new_sig, capped_sig, applied))
-                                new_sig = capped_sig
+                    # Le compteur de sessions loupees decide seul du
+                    # declenchement : plus de lecture de dates ni de ghost_log.
+                    # ghost_log reste le journal des penalites (tracabilite et
+                    # restauration a l'annulation), mais n'est plus consulte
+                    # pour DECIDER.
+                    if (ghost_enabled and not present_dans_session and new_sig < GHOST_SIGMA_CAP
+                            and penalite_due(new_missed, seuil_sessions, intervalle_sessions)):
+                        capped_sig = min(new_sig + penalty_val, GHOST_SIGMA_CAP)
+                        applied = round(capped_sig - new_sig, 6)
+                        if applied > 0:
+                            ghost_inserts.append((pid, tournoi_id, date_tournoi_str, new_sig, capped_sig, applied))
+                            new_sig = capped_sig
 
                     new_is_ranked = is_r
                     if new_missed >= unranked_limit: new_is_ranked = False
@@ -1701,9 +1783,169 @@ def add_tournament():
             recalculate_tiers()
             invalidate_cache()
 
-            return jsonify({"status": "success", "tournoi_id": tournoi_id}), 201
+            return jsonify({
+                "status": "success",
+                "tournoi_id": tournoi_id,
+                "session_id": session_id,
+            }), 201
     except Exception as e:
         logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+
+# Etape 1 du rattachement a une session : quels tournois recents peut-on
+# proposer, et lesquels sont interdits parce qu'ils partagent un joueur ?
+#
+# LECTURE SEULE, et strictement indicative. Elle ne cree rien -- en particulier
+# aucune fiche joueur, alors que add_tournament en cree a la volee : un admin qui
+# ouvre la modale puis renonce ne doit rien laisser derriere lui. La consequence
+# est qu'elle compare sur les NOMS (les joueurs saisis n'ont pas encore d'id),
+# la ou add_tournament compare sur les joueur_id.
+#
+# C'est add_tournament qui tranche. Cette route sert a griser les mauvais choix
+# dans l'interface, pas a autoriser quoi que ce soit.
+# Conception : docs/plan-sessions-tournois.md, decision 10
+@admin_bp.route('/admin/tournois/verifier-session', methods=['POST'])
+@permission_required('gestion_tournois')
+def verifier_session_tournoi():
+    data = request.get_json() or {}
+    noms = [j.get('nom') for j in (data.get('joueurs') or []) if j.get('nom')]
+    try:
+        limite = int(data.get('limite', SESSION_CANDIDATS_PAR_DEFAUT))
+    except (TypeError, ValueError):
+        limite = SESSION_CANDIDATS_PAR_DEFAUT
+    limite = max(1, min(limite, SESSION_CANDIDATS_MAX))
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT t.id, t.date, t.session_id,
+                           COALESCE(t.ligue_nom, '') AS ligue,
+                           count(p.joueur_id) AS nb_joueurs
+                    FROM Tournois t
+                    LEFT JOIN Participations p ON p.tournoi_id = t.id
+                    GROUP BY t.id, t.date, t.session_id, t.ligue_nom
+                    ORDER BY t.date DESC, t.id DESC
+                    LIMIT %s
+                """, (limite,))
+                candidats = cur.fetchall()
+
+                # Les joueurs deja engages dans chaque session, pour les noms
+                # saisis. Une seule requete pour tous les candidats : la modale
+                # doit s'ouvrir vite, et le nombre de candidats est borne.
+                #
+                # Comparaison de noms normalisee (minuscules, espaces retires)
+                # comme le fait add_tournament pour les noms interdits : sans
+                # cela, « toto » et « Toto » seraient vus comme deux joueurs et
+                # un conflit resterait invisible dans l'interface.
+                engages = {}
+                if noms:
+                    cur.execute("""
+                        SELECT t.session_id, j.nom
+                        FROM Participations p
+                        JOIN Tournois t ON t.id = p.tournoi_id
+                        JOIN Joueurs j  ON j.id = p.joueur_id
+                        WHERE lower(btrim(j.nom)) = ANY(%s)
+                    """, ([n.strip().lower() for n in noms],))
+                    for sid, nom in cur.fetchall():
+                        engages.setdefault(sid, set()).add(nom)
+
+        resultat = []
+        for tid, tdate, sid, ligue, nb in candidats:
+            conflits = sorted(engages.get(sid, ()))
+            resultat.append({
+                "id": tid,
+                "date": tdate.strftime('%d/%m/%Y'),
+                "ligue": ligue,
+                "nb_joueurs": nb,
+                "liable": not conflits,
+                "joueurs_en_conflit": conflits[:MAX_CONFLITS_NOMMES],
+            })
+        return jsonify({"candidats": resultat})
+    except Exception as e:
+        logger.error(f"Erreur verifier_session_tournoi: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+
+# Liaison TARDIVE : rattacher deux tournois deja enregistres. Le chemin normal
+# est la liaison au moment de la creation (add_tournament) ; celui-ci sert quand
+# l'admin a passe l'etape puis change d'avis.
+#
+# Contrairement a la creation, les deux sessions sont ici deja peuplees : le
+# controle de conflit doit comparer les deux ensembles en entier, d'ou
+# joueurs_en_conflit_entre_sessions et non sa variante par tournoi.
+#
+# ⚠️ Ne corrige PAS les penalites d'absence deja calculees sur ces tournois.
+# Tant que la Phase 3 n'a pas basculé le calcul sur session_id, la penalite
+# ignore les sessions : il n'y a donc rien a corriger. Des que la Phase 3 est
+# livree, cette route devra defaire les penalites devenues injustifiees
+# (plan 5.2) -- sans quoi lier deux tournois laissera des absences a tort.
+@admin_bp.route('/admin/tournois/<int:tournoi_id>/lier-session', methods=['POST'])
+@permission_required('gestion_tournois')
+def lier_session_tournoi(tournoi_id):
+    data = request.get_json() or {}
+    try:
+        autre_tournoi_id = int(data.get('autre_tournoi_id'))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Tournoi à lier invalide."}), 400
+
+    if autre_tournoi_id == tournoi_id:
+        return jsonify({"error": "Un tournoi ne peut pas être lié à lui-même."}), 400
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, session_id FROM Tournois WHERE id IN (%s, %s)",
+                    (tournoi_id, autre_tournoi_id))
+                sessions = {tid: sid for tid, sid in cur.fetchall()}
+                if len(sessions) < 2:
+                    return jsonify({"error": "Tournoi introuvable."}), 404
+
+                session_a, session_b = sessions[tournoi_id], sessions[autre_tournoi_id]
+
+                conflits = joueurs_en_conflit_entre_sessions(cur, session_a, session_b)
+                if conflits:
+                    conn.rollback()
+                    return jsonify({
+                        "error": "Ces joueurs participent aux deux sessions : %s. Un joueur ne "
+                                 "peut jouer qu'un seul tournoi par session."
+                                 % ", ".join(conflits),
+                        "code": "conflit_session",
+                        "joueurs_en_conflit": conflits,
+                    }), 409
+
+                session_id = fusionner_sessions(cur, tournoi_id, autre_tournoi_id)
+
+                # Les deux tournois etaient enregistres separement : chacun a
+                # compte absents les joueurs de l'autre. Maintenant qu'ils
+                # partagent une session, jouer l'un vaut presence pour les deux
+                # -- ces absences doivent etre defaites.
+                #
+                # APRES la fusion, jamais avant : la fonction travaille sur
+                # « les presents de la session », un ensemble qui n'existe qu'une
+                # fois les deux tournois reunis.
+                # Conception : docs/plan-sessions-tournois.md, 5.2
+                cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
+                res = cur.fetchone()
+                seuil_declassement = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
+                corriges = annuler_penalites_de_session(cur, session_id, seuil_declassement)
+            conn.commit()
+            # Les sigma ont pu bouger : les tiers en dependent.
+            if corriges:
+                recalculate_tiers()
+            # Lier deux tournois change ce que la landing page doit afficher :
+            # sans cette invalidation, elle garderait l'ancien regroupement en
+            # cache jusqu'au prochain ajout de tournoi.
+            invalidate_cache()
+        return jsonify({
+            "status": "success",
+            "session_id": session_id,
+            "penalites_annulees": len(corriges),
+        })
+    except Exception as e:
+        logger.error(f"Erreur lier_session_tournoi: {e}")
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
@@ -1717,10 +1959,12 @@ def revert_last_tournament():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, date FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
+                cur.execute(
+                    "SELECT id, date, session_id FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
                 last = cur.fetchone()
                 if not last: return jsonify({"message": "Aucun tournoi à annuler."}), 404
-                tid, tdate = last[0], last[1]
+                # session_id lue MAINTENANT : apres le DELETE, elle est introuvable.
+                tid, tdate, tsession = last[0], last[1], last[2]
 
                 cur.execute("SELECT joueur_id, old_mu, old_sigma FROM Participations WHERE tournoi_id = %s", (tid,))
                 participants = cur.fetchall()
@@ -1757,6 +2001,7 @@ def revert_last_tournament():
                 cur.execute("DELETE FROM Participations WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (tid,))
                 drop_grille_snapshot_if_orphan(cur, tdate)
+                drop_session_if_orphan(cur, tsession)
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -1781,9 +2026,11 @@ def delete_tournament(id):
                 res = cur.fetchone()
                 threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
 
-                cur.execute("SELECT date FROM Tournois WHERE id = %s", (id,))
-                row_date = cur.fetchone()
-                tdate = row_date[0] if row_date else None
+                # Lues AVANT le DELETE : introuvables apres.
+                cur.execute("SELECT date, session_id FROM Tournois WHERE id = %s", (id,))
+                row_tournoi = cur.fetchone()
+                tdate = row_tournoi[0] if row_tournoi else None
+                tsession = row_tournoi[1] if row_tournoi else None
 
                 cur.execute("SELECT joueur_id, old_sigma FROM ghost_log WHERE tournoi_id = %s", (id,))
                 ghost_rows = cur.fetchall()
@@ -1801,6 +2048,7 @@ def delete_tournament(id):
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (id,))
                 if tdate is not None:
                     drop_grille_snapshot_if_orphan(cur, tdate)
+                drop_session_if_orphan(cur, tsession)
             conn.commit()
             recalculate_tiers()
             invalidate_cache()

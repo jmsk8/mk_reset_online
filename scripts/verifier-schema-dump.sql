@@ -22,7 +22,7 @@ DECLARE
     attendues TEXT[] := ARRAY[
         'audit_admin', 'comptes', 'invitations', 'liaisons_demandes',
         'noms_interdits', 'notifications', 'permissions_admin', 'profils',
-        'service_tokens', 'sessions_joueurs', 'tiers'
+        'service_tokens', 'sessions_joueurs', 'sessions_tournois', 'tiers'
     ];
     manquantes TEXT[];
 BEGIN
@@ -56,6 +56,27 @@ BEGIN
     IF (SELECT count(*) FROM public.tiers) = 0 THEN
         RAISE EXCEPTION 'Rattrapage incomplet : la table tiers est vide.'
             USING HINT = 'Le seed par defaut de 2026-09-13_add_tiers_table.sql n''a pas eu lieu.';
+    END IF;
+
+    -- Colonne ajoutee sur une table PREEXISTANTE, comme joueurs.anonymise_at :
+    -- meme mode d'echec discret, la table tournois existe de toute facon.
+    -- Le NOT NULL est l'invariant sur lequel s'appuie tout le calcul de session.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tournois' AND column_name = 'session_id'
+    ) THEN
+        RAISE EXCEPTION 'Rattrapage incomplet : tournois.session_id absente.'
+            USING HINT = '2026-09-15_sessions_tournois.sql n''a pas abouti.';
+    END IF;
+
+    -- Backfill incomplet : la colonne existe mais des tournois n'ont pas de
+    -- session. Le SET NOT NULL de la migration aurait du l'empecher ; si on
+    -- arrive ici, c'est que la colonne a ete creee sans que le backfill passe.
+    IF EXISTS (SELECT 1 FROM public.tournois WHERE session_id IS NULL) THEN
+        RAISE EXCEPTION 'Rattrapage incomplet : % tournoi(s) sans session.',
+            (SELECT count(*) FROM public.tournois WHERE session_id IS NULL)
+            USING HINT = 'Relancer 2026-09-15_sessions_tournois.sql, puis diagnostiquer avec '
+                         'SELECT id, date, ligue_id FROM tournois WHERE session_id IS NULL;';
     END IF;
 
     RAISE NOTICE 'Schema verifie : les % tables attendues sont presentes.', array_length(attendues, 1);

@@ -224,6 +224,24 @@
                                     <td class="has-text-centered">{{ t.nb_joueurs }}</td>
                                     <td>{{ t.vainqueur or '—' }}</td>
                                     <td class="has-text-right">
+                                        {# Liaison TARDIVE : rattacher ce tournoi à un autre déjà
+                                           enregistré. Le chemin normal est la modale à la saisie ;
+                                           ce bouton sert quand l'admin a cliqué « Passer » puis
+                                           change d'avis. Il défait aussi les absences comptées à
+                                           tort entre les deux tournois.
+                                           Voir docs/plan-sessions-tournois.md §19-20 #}
+                                        {% if t.nb_dans_session and t.nb_dans_session > 1 %}
+                                        <span class="tag is-link is-light mr-1"
+                                              title="Ce tournoi partage sa session avec {{ t.nb_dans_session - 1 }} autre(s)">
+                                            <i class="fas fa-link mr-1"></i> session
+                                        </span>
+                                        {% else %}
+                                        <button class="button is-small is-link is-outlined mr-1"
+                                                onclick="ouvrirLiaisonTardive({{ t.id }}, '{{ t.date }}')"
+                                                title="Rattacher ce tournoi à un autre de la même soirée">
+                                            <i class="fas fa-link"></i>
+                                        </button>
+                                        {% endif %}
                                         <a class="button is-small is-light" href="/stats/tournoi/{{ t.id }}">
                                             <i class="fas fa-eye mr-1"></i> Détail
                                         </a>
@@ -240,6 +258,77 @@
             </div>
         </div>
     </section>
+
+    {# ---- Rattachement à une session -------------------------------------
+       S'ouvre APRÈS validation du formulaire mais AVANT tout enregistrement :
+       rien n'est écrit en base tant que l'admin n'a pas répondu. Si la liaison
+       demandée est refusée (joueur commun), le tournoi n'est pas créé du tout.
+
+       Les candidats qui partagent un joueur sont grisés : le conflit n'est même
+       pas proposable. Ce n'est qu'un confort — c'est le serveur qui refuse,
+       cette liste n'autorise rien.
+       Conception : docs/plan-sessions-tournois.md, décisions 9 et 10 #}
+    <div class="modal" id="sessionModal">
+        <div class="modal-background" onclick="fermerSessionModal()"></div>
+        <div class="modal-card" style="width: 95%; max-width: 760px;">
+            <header class="modal-card-head" style="background-color: #1e293b; border-bottom: 1px solid #3b82f6;">
+                <p class="modal-card-title has-text-white">Ce tournoi fait-il partie d'une session ?</p>
+                <button class="delete" aria-label="close" onclick="fermerSessionModal()"></button>
+            </header>
+
+            <section class="modal-card-body" style="background-color: #0f172a;">
+                <p class="has-text-grey-light is-size-7 mb-4">
+                    Si ce tournoi est un <strong>second lobby</strong> joué la même soirée qu'un
+                    autre tournoi, liez-les : ils compteront pour <strong>une seule</strong>
+                    occasion de jeu dans le calcul des absences et des statistiques.
+                    Sinon, choisissez « Tournoi indépendant ».
+                </p>
+
+                <div id="sessionCandidatsChargement" class="has-text-grey has-text-centered py-4">
+                    <span class="icon"><i class="fas fa-spinner fa-pulse"></i></span>
+                    Chargement des tournois récents…
+                </div>
+
+                <div id="sessionCandidatsListe" style="display:none;"></div>
+
+                <p id="sessionCandidatsErreur" class="has-text-danger is-size-7" style="display:none;"></p>
+            </section>
+
+            <footer class="modal-card-foot" style="background-color: #1e293b; border-top: 1px solid #3b82f6;">
+                <button class="button is-success" id="sessionBtnIndependant" onclick="confirmerSession(null)">
+                    <span class="icon"><i class="fas fa-check"></i></span>
+                    <span>Tournoi indépendant</span>
+                </button>
+                <button class="button" onclick="fermerSessionModal()">Annuler</button>
+            </footer>
+        </div>
+    </div>
+
+    {# ---- Liaison tardive de deux tournois déjà enregistrés ---------------
+       Distincte de la modale ci-dessus : ici les deux tournois existent déjà,
+       donc la liaison corrige en plus les absences comptées à tort entre eux. #}
+    <div class="modal" id="liaisonTardiveModal">
+        <div class="modal-background" onclick="fermerLiaisonTardive()"></div>
+        <div class="modal-card" style="width: 95%; max-width: 680px;">
+            <header class="modal-card-head" style="background-color: #1e293b; border-bottom: 1px solid #3b82f6;">
+                <p class="modal-card-title has-text-white">Rattacher à une session</p>
+                <button class="delete" aria-label="close" onclick="fermerLiaisonTardive()"></button>
+            </header>
+            <section class="modal-card-body" style="background-color: #0f172a;">
+                <p class="has-text-grey-light is-size-7 mb-4">
+                    Choisissez le tournoi joué la <strong>même soirée</strong> que
+                    <strong id="liaisonTardiveSource">—</strong>. Les deux ne compteront
+                    alors que pour <strong>une seule</strong> occasion de jeu, et les absences
+                    comptées à tort entre eux seront annulées.
+                </p>
+                <div id="liaisonTardiveListe"></div>
+                <p id="liaisonTardiveErreur" class="has-text-danger is-size-7 mt-3" style="display:none;"></p>
+            </section>
+            <footer class="modal-card-foot" style="background-color: #1e293b; border-top: 1px solid #3b82f6;">
+                <button class="button" onclick="fermerLiaisonTardive()">Annuler</button>
+            </footer>
+        </div>
+    </div>
 
 <script>
         {# Déplacée depuis navbar.html avec le bouton qu'elle sert : elle y était
@@ -467,6 +556,101 @@
                     return;
                 }
 
+                // Le formulaire est valide : on demande la session AVANT
+                // d'enregistrer quoi que ce soit. L'envoi réel a lieu dans
+                // confirmerSession(), une fois le choix fait.
+                ouvrirSessionModal({
+                    date: date,
+                    joueurs: joueursData,
+                    ligue_id: ligueId
+                });
+            });
+
+            // Payload en attente du choix de session. Gardé côté client : le
+            // serveur ne conserve aucun état entre la question et l'envoi, il
+            // n'y a donc rien à nettoyer si l'admin ferme son onglet.
+            let tournoiEnAttente = null;
+
+            window.ouvrirSessionModal = (payload) => {
+                tournoiEnAttente = payload;
+                document.getElementById('sessionModal').classList.add('is-active');
+                document.getElementById('sessionCandidatsChargement').style.display = '';
+                document.getElementById('sessionCandidatsListe').style.display = 'none';
+                document.getElementById('sessionCandidatsErreur').style.display = 'none';
+
+                fetch('/admin/tournois/verifier-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': "{{ csrf_token() }}"
+                    },
+                    body: JSON.stringify({ joueurs: payload.joueurs })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('sessionCandidatsChargement').style.display = 'none';
+                    const liste = document.getElementById('sessionCandidatsListe');
+                    liste.style.display = '';
+
+                    const candidats = data.candidats || [];
+                    if (!candidats.length) {
+                        liste.innerHTML = '<p class="has-text-grey is-size-7">'
+                            + 'Aucun tournoi existant : celui-ci sera le premier.</p>';
+                        return;
+                    }
+
+                    liste.innerHTML = candidats.map(c => {
+                        const conflit = !c.liable;
+                        const motif = conflit
+                            ? '<span class="has-text-danger is-size-7"> — déjà : '
+                              + escapeHtmlLocal(c.joueurs_en_conflit.join(', ')) + '</span>'
+                            : '';
+                        return '<button class="button is-fullwidth is-small mb-2'
+                            + (conflit ? '' : ' is-link is-outlined') + '"'
+                            + (conflit ? ' disabled title="Ces joueurs jouent déjà dans cette session"' : '')
+                            + ' onclick="confirmerSession(' + c.id + ')"'
+                            + ' style="justify-content:flex-start;">'
+                            + '<span>' + escapeHtmlLocal(c.date)
+                            + (c.ligue ? ' · ' + escapeHtmlLocal(c.ligue) : '')
+                            + ' · ' + c.nb_joueurs + ' joueurs' + motif + '</span>'
+                            + '</button>';
+                    }).join('');
+                })
+                .catch(err => {
+                    console.error(err);
+                    document.getElementById('sessionCandidatsChargement').style.display = 'none';
+                    const erreur = document.getElementById('sessionCandidatsErreur');
+                    erreur.textContent = "Impossible de charger les tournois récents. "
+                        + "Vous pouvez enregistrer ce tournoi comme indépendant.";
+                    erreur.style.display = '';
+                });
+            };
+
+            window.fermerSessionModal = () => {
+                document.getElementById('sessionModal').classList.remove('is-active');
+                tournoiEnAttente = null;
+                btnSubmit.classList.remove('is-loading');
+            };
+
+            // Échappement minimal : ces valeurs viennent de la base (noms de
+            // joueurs saisis par un admin), donc jamais interpolées brutes.
+            function escapeHtmlLocal(s) {
+                return String(s === null || s === undefined ? '' : s)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            window.confirmerSession = (autreTournoiId) => {
+                if (!tournoiEnAttente) { return; }
+                const payload = Object.assign({}, tournoiEnAttente,
+                                              { autre_tournoi_id: autreTournoiId });
+                document.getElementById('sessionModal').classList.remove('is-active');
+                tournoiEnAttente = null;
+                envoyerTournoi(payload);
+            };
+
+            function envoyerTournoi(payload) {
                 btnSubmit.classList.add('is-loading');
                 const csrfToken = "{{ csrf_token() }}";
 
@@ -476,11 +660,7 @@
                         'Content-Type': 'application/json',
                         'X-CSRFToken': csrfToken
                     },
-                    body: JSON.stringify({
-                        date: date,
-                        joueurs: joueursData,
-                        ligue_id: ligueId
-                    })
+                    body: JSON.stringify(payload)
                 })
                 .then(async res => {
                     if (res.status === 401 || res.status === 403) {
@@ -506,6 +686,12 @@
                     if (data.status === 'success') {
                         alert("✅ Tournoi enregistré avec succès !");
                         window.location.href = '/classement';
+                    } else if (data.code === 'conflit_session') {
+                        // Refus de liaison : le tournoi n'a PAS été créé. La
+                        // saisie est intacte, l'admin peut relancer et choisir
+                        // « Tournoi indépendant » ou corriger les joueurs.
+                        alert("❌ Liaison refusée — le tournoi n'a pas été enregistré.\n\n"
+                              + data.error);
                     } else {
                         alert("❌ Erreur : " + (data.error || data.message));
                     }
@@ -514,6 +700,89 @@
                     btnSubmit.classList.remove('is-loading');
                     console.error(err);
                 });
-            });
+            }
         });
+
+        // ── Liaison tardive ───────────────────────────────────────────────
+        // Hors du DOMContentLoaded ci-dessus : ces fonctions sont appelées
+        // depuis les attributs onclick de la liste des tournois.
+        //
+        // La liste des tournois est déjà rendue côté serveur : on la sérialise
+        // ici plutôt que de rappeler /stats/tournois, qui renverrait la même
+        // chose.
+        const TOURNOIS = [
+            {% for t in tournois %}
+            { id: {{ t.id }},
+              date: "{{ t.date }}",
+              ligue: "{{ t.ligue_nom|default('', true) }}",
+              nb: {{ t.nb_joueurs }},
+              seul: {{ 'true' if not t.nb_dans_session or t.nb_dans_session <= 1 else 'false' }} },
+            {% endfor %}
+        ];
+
+        let liaisonSourceId = null;
+
+        function ouvrirLiaisonTardive(tournoiId, dateLabel) {
+            liaisonSourceId = tournoiId;
+            document.getElementById('liaisonTardiveSource').textContent =
+                'le tournoi du ' + dateLabel;
+            document.getElementById('liaisonTardiveErreur').style.display = 'none';
+
+            // Seuls les tournois encore seuls dans leur session sont proposés :
+            // lier à un tournoi déjà regroupé marcherait côté serveur, mais
+            // l'intention serait ambiguë dans cette liste.
+            const candidats = TOURNOIS.filter(t => t.id !== tournoiId && t.seul);
+            const liste = document.getElementById('liaisonTardiveListe');
+
+            if (!candidats.length) {
+                liste.innerHTML = '<p class="has-text-grey is-size-7">'
+                    + 'Aucun autre tournoi disponible.</p>';
+            } else {
+                liste.innerHTML = candidats.map(t =>
+                    '<button class="button is-fullwidth is-small is-link is-outlined mb-2"'
+                    + ' style="justify-content:flex-start;"'
+                    + ' onclick="confirmerLiaisonTardive(' + t.id + ')">'
+                    + '<span>' + t.date + (t.ligue ? ' · ' + t.ligue : '')
+                    + ' · ' + t.nb + ' joueurs</span></button>'
+                ).join('');
+            }
+            document.getElementById('liaisonTardiveModal').classList.add('is-active');
+        }
+
+        function fermerLiaisonTardive() {
+            document.getElementById('liaisonTardiveModal').classList.remove('is-active');
+            liaisonSourceId = null;
+        }
+
+        function confirmerLiaisonTardive(autreId) {
+            if (liaisonSourceId === null) { return; }
+            fetch('/admin/tournois/' + liaisonSourceId + '/lier-session', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': "{{ csrf_token() }}"
+                },
+                body: JSON.stringify({ autre_tournoi_id: autreId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const n = data.penalites_annulees || 0;
+                    alert("✅ Tournois liés dans la même session."
+                          + (n ? "\n" + n + " joueur(s) ont retrouvé leurs absences corrigées."
+                               : ""));
+                    window.location.reload();
+                } else {
+                    const err = document.getElementById('liaisonTardiveErreur');
+                    err.textContent = data.error || "Erreur inconnue.";
+                    err.style.display = '';
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                const e = document.getElementById('liaisonTardiveErreur');
+                e.textContent = "Erreur réseau.";
+                e.style.display = '';
+            });
+        }
     </script>

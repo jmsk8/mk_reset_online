@@ -314,6 +314,36 @@ def proxy_add_tournament():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# Etape 1 du rattachement a une session : liste les tournois proposables et
+# marque ceux qui partagent un joueur. Lecture seule cote backend.
+# Conception : docs/plan-sessions-tournois.md, decision 10
+@app.route('/admin/tournois/verifier-session', methods=['POST'])
+def proxy_verifier_session():
+    if not _est_admin():
+        return jsonify({'status': 'error', 'message': 'Non autorisé'}), 403
+    try:
+        response = requests.post(
+            f'{BACKEND_URL}/admin/tournois/verifier-session',
+            json=request.get_json(), headers=admin_headers())
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# Liaison tardive de deux tournois deja enregistres.
+@app.route('/admin/tournois/<int:tournoi_id>/lier-session', methods=['POST'])
+def proxy_lier_session(tournoi_id):
+    if not _est_admin():
+        return jsonify({'status': 'error', 'message': 'Non autorisé'}), 403
+    try:
+        response = requests.post(
+            f'{BACKEND_URL}/admin/tournois/{tournoi_id}/lier-session',
+            json=request.get_json(), headers=admin_headers())
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 def get_banner_season():
     today = date.today()
     md = (today.month, today.day)

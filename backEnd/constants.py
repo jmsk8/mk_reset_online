@@ -5,9 +5,18 @@ TRUESKILL_DRAW_PROBABILITY = 0.1
 
 DEFAULT_TAU = 0.083
 DEFAULT_GHOST_PENALTY = 0.1
-DEFAULT_GHOST_THRESHOLD_DAYS = 28
-DEFAULT_GHOST_INTERVAL_DAYS = 7
 DEFAULT_UNRANKED_THRESHOLD = 10
+
+# Penalite d'absence : seuils en SESSIONS LOUPEES, plus en jours calendaires.
+#
+# La penalite sanctionne le fait de louper des occasions de jeu, pas
+# l'ecoulement du temps : une periode sans session ne penalise personne. C'est
+# voulu (docs/plan-sessions-tournois.md, decision 8).
+#
+# Valeurs choisies pour reproduire l'ancien comportement au rythme observe
+# (≈1 session/semaine) : 28 jours -> 4 sessions, 7 jours -> 1 session.
+DEFAULT_GHOST_THRESHOLD_SESSIONS = 4   # sessions loupees avant la 1re penalite
+DEFAULT_GHOST_INTERVAL_SESSIONS = 1    # sessions loupees entre deux penalites
 DEFAULT_SIGMA_THRESHOLD = 4.0
 
 # Tiers par defaut (nom, couleur, seuil en multiples d'ecart-type, rang) :
