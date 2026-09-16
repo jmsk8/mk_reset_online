@@ -115,15 +115,26 @@ def check_session():
 
     Appelee par le before_request du frontend a CHAQUE page : elle ne doit donc
     rien lire de plus que la verification de session deja faite par
-    player_required. D'ou l'absence de corps utile -- /auth/me ferait une requete
-    de plus pour le nom du joueur, payee sur toutes les pages du site.
+    player_required. C'est pourquoi elle ne renvoie PAS le profil -- /auth/me
+    ferait une requete de plus pour le nom du joueur, payee sur toutes les pages.
 
-    Ne dit RIEN du role : un admin retrograde garde son onglet jusqu'a sa
-    prochaine visite sur /mon-compte. Limite assumee (avancement, phase 4) ; la
-    frontiere de privilege reste le backend, qui relit le role a chaque requete
-    protegee.
+    Elle rend en revanche le role et les permissions depuis le 2026-09-17, et
+    c'est gratuit : `player_required` les a deja lus en base pour authentifier.
+    Sans ca, le frontend devait appeler /auth/me EN PLUS a chaque rendu pour
+    savoir ce qu'il avait le droit d'afficher -- deux appels reseau synchrones
+    par page, sur 2 workers gunicorn, d'ou les 503 observes le 2026-09-17.
+
+    Referme au passage la limite que cette docstring annoncait : un admin
+    retrograde, ou a qui on vient d'accorder un droit, le voyait a sa prochaine
+    visite sur /mon-compte seulement. La frontiere de privilege reste le
+    backend, qui relit role et permissions a chaque requete protegee : cette
+    liste ne sert qu'a decider ce que l'interface AFFICHE.
     """
-    return jsonify({"status": "valid"}), 200
+    return jsonify({
+        "status": "valid",
+        "role": g.compte['role'],
+        "permissions": sorted(_permissions_effectives(g.compte)),
+    }), 200
 
 
 def _permissions_effectives(compte: dict) -> set:

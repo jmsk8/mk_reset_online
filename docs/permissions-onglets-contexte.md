@@ -611,3 +611,205 @@ tant que `gestion_tournois` ne leur est pas accordée. C'est mécanique et voulu
 Réglage TS / Ligues, le refus explicite plutôt que silencieux, le non-écrasement des clés absentes,
 le garde-fou de création de joueur, le reset délégable, et l'alignement des libellés et des gates
 d'interface.
+
+---
+
+## 8.8 Fiche joueur : un droit par geste — ✅ **LIVRÉE le 2026-09-17**
+
+Demande de l'utilisateur, arbitrée en séance. **Rouvre 8.5-C**, que le §8.7 avait abandonné le
+13/09 — ce n'est pas une régression ni un oubli de relecture : c'est une décision explicite qui
+revient sur la précédente, prise en connaissance de cause. **Ne pas la « corriger » en revenant à
+un `gestion_joueurs` fourre-tout sans revalidation.**
+
+### Le principe
+
+`gestion_joueurs` n'ouvre plus que la **lecture** : ouvrir l'onglet Fiches joueurs et consulter la
+liste. Chacun des six gestes devient une sous-permission, fille de `gestion_joueurs` — même
+mécanisme que l'ex-`rgpd_joueurs`, qui était déjà le premier cas du genre.
+
+| Sous-permission | Geste | Cible technique |
+|---|---|---|
+| `joueurs_creation` | Ajouter un joueur | `POST /admin/joueurs` |
+| `joueurs_nom` | Renommer | `PUT` — champ `nom` |
+| `joueurs_couleur` | Changer la couleur | `PUT` — champ `color` |
+| `edition_mu_sigma` | Corriger le score | `PUT` — champs `mu`/`sigma` |
+| `joueurs_statut` | Changer le statut classé | `PUT` — champ `is_ranked` |
+| `joueurs_irreversible` | Supprimer / anonymiser | `DELETE` + `POST .../anonymiser` |
+
+Catalogue : **10 → 15 entrées**.
+
+### `rgpd_joueurs` devient `joueurs_irreversible`
+
+Le nom promettait un dispositif RGPD qui n'existe pas, et l'utilisateur l'a relevé en relisant le
+catalogue. La suppression n'a rien de légal : elle **refuse** tout joueur ayant un match (les FK en
+CASCADE fausseraient le classement de tout le monde), donc elle ne sert qu'à effacer une fiche
+créée par erreur. Seule l'anonymisation relève du droit à l'effacement. Leur vrai point commun est
+d'être **sans retour** — d'où le nom.
+
+Option retenue : **un seul droit pour les deux routes** (et non deux droits séparés), l'anonymisation
+étant littéralement la porte de sortie proposée quand la suppression refuse.
+
+Migration `2026-09-17_sous_permissions_fiche_joueur.sql` : `UPDATE` du nom, précédé d'un `DELETE`
+des doublons éventuels (la contrainte `UNIQUE(compte_id, permission)` ferait échouer l'UPDATE si un
+compte portait déjà les deux lignes).
+
+### Le point de conception à connaître
+
+**`api_update_joueur` vérifie CHAMP PAR CHAMP dans son corps**, pas par décorateur — les cinq champs
+partagent un seul `UPDATE`, qu'un `@permission_required` de route entière ne saurait pas découper.
+La correspondance champ → droit vit dans `PERMISSIONS_CHAMPS_JOUEUR` (`constants.py`), lue par la
+route, le gabarit et les tests : ajouter un champ éditable ne demande pas de retrouver les trois.
+
+Deux règles qui en découlent, à ne pas défaire :
+
+1. **Un champ absent du payload, ou renvoyé identique, n'exige aucun droit.** Sinon un admin qui n'a
+   que « couleur » ne pourrait rien enregistrer, le formulaire renvoyant la fiche entière.
+2. **mu/sigma se comparent à 1e-9 près, jamais à l'identique.** Le frontend les affiche arrondis à
+   3 décimales là où TrueSkill en produit bien plus : une égalité stricte lirait `8.333` comme un
+   changement de valeur et refuserait un admin qui n'a pourtant touché à rien. Le JS ne renvoie de
+   toute façon pas un champ désactivé — la comparaison serveur est le filet pour les appels directs.
+
+### Les deux contournements fermés au passage
+
+Sans eux la séparation aurait été décorative :
+
+1. **`POST /admin/joueurs` acceptait `mu`/`sigma` libres.** Un admin « création » fixait le score
+   qu'il voulait sans `edition_mu_sigma`. Un départ hors défaut exige désormais ce droit.
+2. **DELETE puis recréation.** Fermé par le point 1 : recréer au score voulu demande maintenant le
+   même droit que le corriger en place.
+
+### L'interface : grisé, jamais masqué
+
+**Décision d'ergonomie de l'utilisateur** : un champ qu'un droit manquant rend inopérant reste
+**visible et grisé**, avec le curseur `not-allowed` et une infobulle nommant la permission qui
+manque (classe `.est-interdit`, `styles.css`). L'admin voit la valeur et comprend qu'un droit lui
+manque, au lieu de croire que la fonction n'existe pas.
+
+Ceci **change le patron précédent** : le bouton Supprimer était *caché* sans `rgpd_joueurs`, il est
+désormais grisé comme le reste. Seul le formulaire d'ajout disparaît entièrement sans
+`joueurs_creation` — il n'y a là aucune valeur à montrer, un formulaire vide et inerte
+n'apprendrait rien.
+
+⚠️ Piège rencontré : `updateRankedVisuals()` réécrit `btn.className` en entier à chaque bascule, ce
+qui effaçait `est-interdit` et rendait le bouton de statut cliquable après un simple rafraîchissement
+visuel. La classe est relue et réappliquée à chaque passage.
+
+### Conséquence en production
+
+Les admins qui portent `gestion_joueurs` **gardent l'onglet mais perdent les six gestes** tant que
+les sous-permissions ne leur sont pas accordées une par une. Mécanique et voulu : `permissions_admin`
+stocke des chaînes libres, aucune migration ne peut deviner l'intention. Même rupture que
+`gestion_tournois` le 13/09, même raison — la migration le documente explicitement.
+
+### Deux bugs trouvés par les tests d'exécution — à ne pas réintroduire
+
+Les tests statiques (lecture du source) ne les voyaient pas. Ils sont sortis en appelant
+réellement les routes, et tous deux touchaient le même point : **le frontend renvoie mu/sigma
+arrondis à 3 décimales (`toFixed(3)`) alors que TrueSkill en produit bien plus.**
+
+1. **🔴 Un admin sans `edition_mu_sigma` ne pouvait rien enregistrer du tout.** La comparaison se
+   faisait à `1e-9` près, or l'écart entre `8.333` (renvoyé) et `8.333333333` (en base) vaut
+   `3e-7`. Tout enregistrement — même un simple changement de couleur — partait en 403 sur le
+   sigma. La comparaison se fait désormais **à la précision affichée** (`DECIMALES_AFFICHEES = 3`).
+   Ne pas « resserrer » cette tolérance : c'est exactement ce qui cassait.
+
+2. **🔴 Éditer le nom d'un joueur tronquait son score.** Une fois le point 1 corrigé, le champ
+   jugé inchangé était quand même réécrit avec la valeur du payload : `sigma` passait de
+   `8.333333333` à `8.333` en base, silencieusement, à chaque ouverture de la modale. Un champ
+   inchangé **reprend désormais la valeur de la base**, jamais celle du payload.
+
+La tolérance reste volontairement stricte (`1e-9`) à la **création**, elle : on y compare aux
+constantes `DEFAULT_MU`/`DEFAULT_SIGMA`, qui tiennent en 3 décimales et que le formulaire renvoie
+à l'identique. Rien à absorber, donc rien à relâcher — et un seuil serré ferme mieux le
+contournement.
+
+### 🔴 Un droit accordé n'apparaissait qu'à la RECONNEXION
+
+Trouvé en testant l'interface, après coup. `session['compte']['permissions']` est une copie figée
+à la connexion, et **toutes les pages la lisaient** : accorder « Corriger le score » à un admin ne
+changeait rien pour lui, rafraîchissement compris. Il fallait se déconnecter et se reconnecter,
+sans qu'aucun écran ne le dise.
+
+**Le correctif : `/auth/check-session` rend désormais `role` et `permissions`.** Cette sonde est
+déjà appelée à chaque requête par le `before_request` du frontend, et `player_required` a de toute
+façon lu ces deux valeurs en base pour authentifier. Les renvoyer ne coûte donc **rien** : ni
+requête SQL, ni aller-retour réseau. Le frontend les recopie en session au passage
+(`_maj_droits_session`), et n'écrit le cookie que si quelque chose a changé.
+
+Referme au passage la limite que la docstring de `check_session` annonçait elle-même depuis le
+début (« un admin rétrogradé garde son onglet jusqu'à sa prochaine visite sur /mon-compte »).
+
+### ⚠️ La version intermédiaire qui a provoqué des 503 — ne pas y revenir
+
+Le premier correctif appelait `/auth/me` **séparément, depuis le context processor**. Ça marchait,
+et les tests passaient. Mais le context processor s'exécute avant **chaque rendu de template** :
+chaque page déclenchait donc un aller-retour réseau synchrone, avec le timeout de 5 s de
+`backend_request`.
+
+Le frontend tourne sur **2 workers gunicorn** (`Dockerfile.frontend`). Deux pages chargées en même
+temps, ou une page et ses appels JS, occupaient les deux workers en attente du backend — plus aucun
+worker libre, et nginx répondait **503 Service Temporarily Unavailable** à tout le monde. Observé
+en conditions réelles le 2026-09-17, après un changement de droits.
+
+Trois règles qui en sortent, valables au-delà de ce chantier :
+
+1. **Un rendu de page ne fait pas d'appel réseau bloquant.** Si une donnée est nécessaire à chaque
+   page, elle voyage avec un appel qui a déjà lieu — pas dans un appel de plus.
+2. **Dans le chemin d'une requête, le timeout est court.** `_sonde_session` utilise `timeout=1`
+   depuis toujours, précisément pour cette raison ; les 5 s de `backend_request` sont faites pour
+   des actions ponctuelles, pas pour du rendu.
+3. **Compter les workers.** Avec `-w 2`, il suffit de deux requêtes lentes simultanées pour que le
+   service entier paraisse mort.
+
+Un TTL de 30 s avait été tenté pour limiter la casse : il réduisait la fréquence des appels mais
+gardait le défaut de structure, et produisait un second symptôme — un droit modifié ne se voyait
+qu'après plusieurs rafraîchissements, le temps que la copie expire. La solution actuelle n'a ni
+TTL ni invalidation manuelle : la copie est fraîche à chaque requête, gratuitement.
+
+**Ce qui n'a pas changé** : le frontend n'est pas une frontière de privilège. Le backend relit rôle
+et permissions en base à chaque requête protégée. Une copie périmée fait voir un bouton de trop,
+jamais obtenir un droit de trop. Et une panne (5xx, timeout) ne purge jamais la session — seuls
+401/403 déconnectent, comme avant (R-28).
+
+> **Suite de l'enquête — ce paragraphe ne raconte que la première cause.** Supprimer l'appel
+> `/auth/me` était nécessaire, mais n'a pas suffi : les 503 sont revenus. Trois autres causes
+> indépendantes ont été trouvées ensuite (sonde rejouée sur chaque appel JSON, budget nginx
+> calibré sur la mauvaise page, avatars qui consommaient le limiteur pour **tous** les visiteurs,
+> y compris non connectés). Le récit complet, mesures à l'appui, est aux §10 et §11 de
+> [audit-503-zone-admin.md](audit-503-zone-admin.md) — c'est le document de référence sur ce sujet.
+> Les trois règles ci-dessus restent valables telles quelles.
+
+### Tests
+
+Trois fichiers, trois natures :
+
+- `backEnd/tests/test_sous_permissions.py` — **95 assertions** (contre 47 avant) : la structure,
+  lue dans le source. Catalogue, table des sous-permissions, alignement backend/frontend, libellés
+  du panneau, gabarit/JS/CSS de l'interdiction visuelle.
+- `backEnd/tests/test_fiche_joueur_droits.py` — **68 assertions**, *nouveau* : les routes
+  **exécutées** sur un curseur scripté. Chaque champ avec et sans son droit, le refus qui nomme le
+  champ, l'absence d'`UPDATE` sur refus, la précision du sigma préservée, les deux portes vers
+  mu/sigma, le parent exigé en plus de l'enfant, le passe-droit de chef_admin/superadmin, et
+  `consecutive_missed` qui reste hors catalogue.
+
+- `backEnd/tests/test_rafraichissement_droits.py` — **34 assertions**, *nouveau* : le
+  rafraîchissement des droits, monté sur le vrai `frontend.app`. Un droit accordé vu sans
+  reconnexion, un droit retiré qui disparaît, le rôle qui suit, **l'absence de tout appel réseau
+  supplémentaire** (c'est la régression qui a causé les 503), le timeout court de la sonde, les
+  pannes qui ne déconnectent pas, et six formes de corps inattendu qui ne cassent pas la page.
+  Complété le 2026-09-17 par le volet « une sonde par page » : le balayage de tout `frontEnd/` qui
+  refuse un `fetch()` de chargement sans en-tête `Accept`, et le refus d'une session révoquée sur
+  les deux chemins (document ET appel JSON non sondé). Voir §10 et §11 de
+  [audit-503-zone-admin.md](audit-503-zone-admin.md).
+
+C'est le second qui a trouvé les deux bugs de comparaison. Une vérification champ par champ ne se
+valide pas en lisant le code : il faut l'appeler.
+
+Deux tests voisins ont dû suivre, sans changement de comportement de leur côté :
+`test_penalite_sessions.py` (le compteur d'absences passe maintenant par le helper `siActif` commun
+au lieu de son propre `if`) et `test_audit_permissions.py` (son contrôle « aucune permission
+décorative » cherchait les permissions citées en dur ; `joueurs_nom` et `joueurs_statut` ne le sont
+jamais, elles sont lues depuis `PERMISSIONS_CHAMPS_JOUEUR`).
+
+**Hors périmètre, inchangé** : `consecutive_missed` reste une capacité de rôle du superadmin, jamais
+une permission déléguable (décision du 15/09, 28 compteurs périmés constatés).

@@ -37,4 +37,16 @@ USER appuser
 
 EXPOSE 8080
 
-CMD ["/bin/sh", "-c", "python -c 'from backend import sync_sequences, recalculate_tiers; sync_sequences(); recalculate_tiers()' && gunicorn -w 2 -b 0.0.0.0:8080 backend:app"]
+# Workers threadés, comme le frontend : ce service attend Postgres bien plus
+# qu'il ne calcule, et un worker sync bloqué sur une requête SQL ne sert
+# personne. 2 x 4 = 8 requêtes simultanées, à comparer au pool de 20 connexions
+# de db.py -- la borne du pool doit rester AU-DESSUS de ce produit, sans quoi un
+# thread attendrait une connexion libre en plus d'attendre la base.
+#
+# Le pool de db.py est un ThreadedConnectionPool pour cette raison précise :
+# repasser en workers sync sans le remettre en Simple serait sans danger,
+# l'inverse ne l'est pas.
+#
+# Moins de threads qu'au frontend (4 contre 8) : ici chaque thread consomme une
+# connexion Postgres, ressource bornée, là où le frontend n'attend que du réseau.
+CMD ["/bin/sh", "-c", "python -c 'from backend import sync_sequences, recalculate_tiers; sync_sequences(); recalculate_tiers()' && gunicorn -w 2 -k gthread --threads 4 -b 0.0.0.0:8080 backend:app"]

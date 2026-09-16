@@ -141,7 +141,11 @@
             const btnGenerate = document.getElementById('btnGenerate');
             const resultBox = document.getElementById('lobbies-result');
 
-            fetch('/joueurs/noms')
+            // `Accept` explicite : appel de données, pas ouverture de page --
+            // le frontend n'a donc pas à revalider la session pour lui. Sans
+            // lui, `fetch()` envoie « */* », traité comme une navigation
+            // (docs/audit-503-zone-admin.md, §10.4).
+            fetch('/joueurs/noms', { headers: { 'Accept': 'application/json' } })
                 .then(res => res.json())
                 .then(data => {
                     availablePlayers = Array.isArray(data) ? data : [];

@@ -355,6 +355,12 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
+    // Partagé par les appels de données de la navbar (notifications joueur et
+    // admin). Un `fetch()` sans `Accept` envoie « */* », que le serveur doit
+    // traiter comme une navigation : il revalidait alors la session pour chacun
+    // de ces appels. Voir _est_navigation et docs/audit-503-zone-admin.md.
+    const HEADERS_JSON = { headers: { 'Accept': 'application/json' } };
+
     const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
     if ($navbarBurgers.length > 0) {
       $navbarBurgers.forEach( el => {
@@ -441,7 +447,10 @@
 
       let res;
       try {
-        res = await (await fetch('/me/notifications')).json();
+        // `Accept` explicite : dit au frontend que c'est un appel de données et
+        // non l'ouverture d'une page, donc qu'il n'a pas à revalider la session
+        // pour lui (cf. _est_navigation, docs/audit-503-zone-admin.md).
+        res = await (await fetch('/me/notifications', HEADERS_JSON)).json();
       } catch (e) { return; }   // navbar muette plutôt que cassée
 
       if (res.non_lues > 0) {
@@ -484,7 +493,7 @@
       // Une requête, deux pastilles : le total et le détail.
       let res;
       try {
-        res = await (await fetch('/admin/notifications')).json();
+        res = await (await fetch('/admin/notifications', HEADERS_JSON)).json();
       } catch (e) { return; }
       const poser = (id, n) => {
         const el = document.getElementById(id);

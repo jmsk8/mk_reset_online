@@ -595,9 +595,20 @@
         wrapper.style.display = 'none';
         empty.style.display = 'none';
 
+        // `loadTiers()` (gestion.js) plutot qu'un apiCall direct : les deux
+        // scripts vivent sur la meme page et voulaient tous deux la liste des
+        // tiers au chargement, soit DEUX requetes pour la meme donnee. Le cache
+        // de gestion.js mutualise la promesse, donc une seule part sur le
+        // reseau. Sur une page qui en emet deja 7, c'en est une de moins dans
+        // le budget du limiteur nginx (docs/audit-503-zone-admin.md, §11).
+        //
+        // Le repli garde la page fonctionnelle si gestion.js n'est pas charge :
+        // ce script sert aussi ailleurs.
         const [dist, tiersData] = await Promise.all([
             apiCall('/admin/config/tier-distribution', 'GET'),
-            apiCall('/admin/tiers', 'GET'),
+            (typeof loadTiers === 'function')
+                ? loadTiers()
+                : apiCall('/admin/tiers', 'GET'),
         ]);
 
         loading.style.display = 'none';

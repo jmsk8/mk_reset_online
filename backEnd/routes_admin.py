@@ -21,6 +21,7 @@ from constants import (
     DEFAULT_GHOST_THRESHOLD_SESSIONS, DEFAULT_GHOST_INTERVAL_SESSIONS,
     GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES, IP_VERSION_DEFAULT,
     ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN,
+    PERMISSIONS_CHAMPS_JOUEUR,
 )
 from db import get_db_connection, ADMIN_PASSWORD_HASH
 from auth import (admin_required, admin_or_role_required, permission_required,
@@ -874,11 +875,87 @@ def api_get_joueurs():
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['PUT'])
 @permission_required('gestion_joueurs')
 def api_update_joueur(id):
+    """Edite une fiche joueur, un champ a la fois selon les droits de l'acteur.
+
+    `gestion_joueurs` ouvre la route (lecture de la fiche) ; chaque champ exige
+    en plus sa sous-permission, listee dans PERMISSIONS_CHAMPS_JOUEUR. La
+    verification est ici plutot que dans un decorateur parce que les quatre
+    champs partagent un seul UPDATE : un @permission_required de route entiere
+    ne saurait pas lequel est en cause.
+
+    Un champ absent du payload, ou renvoye identique a la base, ne demande
+    AUCUN droit -- sinon un admin qui n'a que « couleur » ne pourrait rien
+    enregistrer, le formulaire renvoyant toujours la fiche entiere.
+    """
     data = request.get_json()
     try:
-        mu, sigma, nom = float(data['mu']), float(data['sigma']), data['nom']
-        is_ranked = bool(data.get('is_ranked', True))
-        color = data.get('color', '#FFFFFF')
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT nom, mu, sigma, is_ranked, color FROM Joueurs WHERE id=%s",
+                    (id,))
+                actuel = cur.fetchone()
+        if actuel is None:
+            return jsonify({"error": "Joueur introuvable"}), 404
+
+        # Valeur demandee par champ, repliee sur l'existant quand le payload ne
+        # le porte pas. Les conversions restent groupees ici pour qu'une saisie
+        # non numerique sorte en 400 avant toute verification de droit.
+        courant = {"nom": actuel[0], "mu": float(actuel[1]), "sigma": float(actuel[2]),
+                   "is_ranked": bool(actuel[3]), "color": actuel[4] or '#FFFFFF'}
+        demande = dict(courant)
+        if 'nom' in data:
+            demande['nom'] = data['nom']
+        if 'mu' in data:
+            demande['mu'] = float(data['mu'])
+        if 'sigma' in data:
+            demande['sigma'] = float(data['sigma'])
+        if 'is_ranked' in data:
+            demande['is_ranked'] = bool(data['is_ranked'])
+        if 'color' in data:
+            demande['color'] = data['color']
+
+        # Comparaison AVANT verification : renvoyer la valeur affichee sans y
+        # toucher n'est pas une modification.
+        #
+        # mu/sigma se comparent A LA PRECISION AFFICHEE (3 decimales, cf.
+        # toFixed(3) dans openEditModal). TrueSkill produit des valeurs bien
+        # plus longues -- un sigma de 8.333333333 s'affiche « 8.333 » et revient
+        # ainsi : l'ecart est de 3e-7, donc une tolerance plus fine le lirait
+        # comme une saisie et refuserait un admin qui n'a touche a rien.
+        # C'est le defaut que ce calcul existe pour eviter.
+        DECIMALES_AFFICHEES = 3
+
+        def a_change(champ):
+            if champ in ('mu', 'sigma'):
+                return (round(demande[champ], DECIMALES_AFFICHEES)
+                        != round(courant[champ], DECIMALES_AFFICHEES))
+            return demande[champ] != courant[champ]
+
+        for champ, permission in PERMISSIONS_CHAMPS_JOUEUR.items():
+            if not a_change(champ):
+                continue
+            accordee, erreur = compte_a_permission(g.compte, permission)
+            if erreur is not None:
+                return erreur
+            if not accordee:
+                return jsonify({
+                    "error": "Vous n'avez pas le droit de modifier ce champ.",
+                    "code": "permission_manquante",
+                    "champ": champ,
+                    "permission": permission,
+                }), 403
+
+        # Un champ juge inchange garde la valeur de la BASE, pas celle du
+        # payload. Sans ca, editer le nom d'un joueur reecrirait son sigma avec
+        # les 3 decimales affichees (8.333333333 -> 8.333) : une troncature
+        # silencieuse du score, a chaque passage dans la modale.
+        for champ in PERMISSIONS_CHAMPS_JOUEUR:
+            if not a_change(champ):
+                demande[champ] = courant[champ]
+
+        mu, sigma, nom = demande['mu'], demande['sigma'], demande['nom']
+        is_ranked, color = demande['is_ranked'], demande['color']
 
         # `consecutive_missed` declenche la penalite de sigma (decision 8 de
         # docs/plan-sessions-tournois.md) : une valeur saisie a la main
@@ -921,7 +998,7 @@ def api_update_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['DELETE'])
-@permission_required('rgpd_joueurs')   # sous-permission : exige aussi gestion_joueurs
+@permission_required('joueurs_irreversible')   # sous-permission : exige aussi gestion_joueurs
 def api_delete_joueur(id):
     """Supprime un joueur, sauf s'il a un historique de matchs.
 
@@ -1012,7 +1089,7 @@ def api_delete_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>/anonymiser', methods=['POST'])
-@permission_required('rgpd_joueurs')   # sous-permission : exige aussi gestion_joueurs
+@permission_required('joueurs_irreversible')   # sous-permission : exige aussi gestion_joueurs
 def api_anonymiser_joueur(id):
     """Détache l'identité d'un joueur sans toucher à son dossier sportif.
 
@@ -1069,8 +1146,16 @@ def api_anonymiser_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs', methods=['POST'])
-@permission_required('gestion_joueurs')
+@permission_required('joueurs_creation')   # sous-permission : exige aussi gestion_joueurs
 def api_add_joueur():
+    """Cree une fiche joueur.
+
+    Le mu/sigma de depart exige `edition_mu_sigma`, comme sur l'edition : sans
+    cette seconde verification, un admin qui n'a que « creation » fixerait le
+    score qu'il veut a la creation, et pourrait meme contourner le droit sur un
+    joueur existant en le supprimant pour le recreer. Le contournement par
+    suppression suppose « irreversible » en plus, mais il resterait ouvert.
+    """
     data = request.get_json()
     try:
         nom = data.get('nom')
@@ -1080,6 +1165,38 @@ def api_add_joueur():
 
         if not nom:
             return jsonify({"error": "Le nom du joueur est requis"}), 400
+
+        # Seul un depart HORS defaut demande le droit : creer au score standard
+        # ne contourne rien, c'est ce que fait le moteur pour tout nouveau venu.
+        #
+        # Tolerance stricte ici, contrairement a l'edition : on compare aux
+        # constantes DEFAULT_MU/DEFAULT_SIGMA, qui tiennent en 3 decimales et que
+        # le formulaire renvoie a l'identique. Rien a absorber, donc rien a
+        # relacher -- et un seuil serre ferme mieux le contournement.
+        if abs(mu - DEFAULT_MU) > 1e-9 or abs(sigma - DEFAULT_SIGMA) > 1e-9:
+            accordee, erreur = compte_a_permission(g.compte, 'edition_mu_sigma')
+            if erreur is not None:
+                return erreur
+            if not accordee:
+                return jsonify({
+                    "error": "Vous ne pouvez pas fixer le score de depart. "
+                             "Creez la fiche au score par defaut.",
+                    "code": "permission_manquante",
+                    "permission": "edition_mu_sigma",
+                }), 403
+
+        # La couleur suit la meme regle que sur l'edition : la choisir a la
+        # creation est le meme geste que la changer apres coup.
+        if color != '#FFFFFF':
+            accordee, erreur = compte_a_permission(g.compte, 'joueurs_couleur')
+            if erreur is not None:
+                return erreur
+            if not accordee:
+                return jsonify({
+                    "error": "Vous ne pouvez pas choisir la couleur d'une fiche.",
+                    "code": "permission_manquante",
+                    "permission": "joueurs_couleur",
+                }), 403
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:

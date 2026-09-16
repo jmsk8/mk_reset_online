@@ -184,3 +184,18 @@ input[type="submit"]:hover {
 .fast-tip[data-tip=""]:hover::after {
     content: none;
 }
+
+/* Champ ou bouton qu'un droit manquant rend inopérant (fiche joueur, 2026-09-17).
+   Grisé plutôt que masqué : la valeur reste lisible, et le curseur barré plus
+   l'infobulle disent qu'il manque une permission -- pas que la fonction n'existe
+   pas. `pointer-events` reste actif, sinon le navigateur n'afficherait ni le
+   curseur ni le `title` sur un élément désactivé. */
+.est-interdit,
+.est-interdit:hover {
+    cursor: not-allowed !important;
+    opacity: 0.55;
+    filter: grayscale(0.4);
+}
+.est-interdit:disabled {
+    pointer-events: auto;
+}

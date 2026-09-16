@@ -118,6 +118,19 @@
             return el;
         }
 
+        // Message d'échec d'un chargement. Passe par le message d'`api()` quand
+        // il y en a un -- sur un 503 du limiteur, il dit combien de temps
+        // attendre, ce que « Chargement impossible. » ne dit pas.
+        //
+        // Factorisé, et non répété sur chaque appelant : c'est ce qui évite que
+        // le prochain chargement ajouté réécrive le message générique en dur.
+        function echecChargement(conteneur, reponse) {
+            const message = reponse && reponse.limite
+                ? (reponse.data || {}).error
+                : 'Chargement impossible.';
+            conteneur.appendChild(txt('p', message, 'has-text-danger'));
+        }
+
         // Icône Font Awesome sans innerHTML : la règle ci-dessus ne souffre pas
         // d'exception « ce n'est qu'un littéral », sinon elle s'érode.
         function icone(nom, classeSpan, classeIcone) {
@@ -191,7 +204,14 @@
         const nomDe = c => c.pseudo || c.joueur_nom || ('compte #' + c.id);
 
         async function api(url, method = 'GET', body = null) {
-            const opts = {method, headers: {'X-CSRFToken': csrf}};
+            // `Accept` explicite, comme apiCall() de gestion.js : il dit au
+            // frontend que c'est un appel de données, et non l'ouverture d'une
+            // page, donc qu'il n'a pas à revalider la session pour lui. Sans cet
+            // en-tête, `fetch()` envoie « */* », que le serveur doit traiter
+            // comme une navigation -- chaque appel de cette page repayait alors
+            // un aller-retour backend (docs/audit-503-zone-admin.md, §10.4).
+            const opts = {method, headers: {'X-CSRFToken': csrf,
+                                            'Accept': 'application/json'}};
             if (body !== null) {
                 opts.headers['Content-Type'] = 'application/json';
                 opts.body = JSON.stringify(body);
@@ -199,6 +219,22 @@
             const res = await fetch(url, opts);
             let data = null;
             try { data = await res.json(); } catch (e) { /* réponse vide */ }
+
+            // 503 = limiteur de débit nginx, pas une panne : la réponse est une
+            // page HTML, d'où le `data` vide. Message explicite plutôt que le
+            // « Chargement impossible. » générique, qui n'indique pas la seule
+            // chose utile -- attendre quelques secondes.
+            //
+            // Traité AVANT le 401/403, et surtout sans purger la session : un
+            // débit limité ne dit rien sur la validité de la session, et
+            // déconnecter ici ferait perdre son travail à quelqu'un qui a
+            // simplement cliqué trop vite.
+            if (res.status === 503) {
+                const attente = parseInt(res.headers.get('Retry-After'), 10) || 5;
+                return {ok: false, status: 503, limite: true,
+                        data: {error: `Trop de requêtes d'un coup. Patientez `
+                                      + `${attente} secondes, puis rechargez.`}};
+            }
 
             // Session expirée pendant que la page était ouverte. Sans ce
             // traitement, chaque appel affichait « Chargement impossible. » sans
@@ -249,9 +285,10 @@
             // Absente si la permission correspondante manque : la vue n'est
             // alors pas rendue du tout (gates du gabarit).
             if (!vue) return;
-            const {ok, data} = await api('/admin/liaisons?statut=pending');
+            const rep = await api('/admin/liaisons?statut=pending');
+            const {ok, data} = rep;
             vue.innerHTML = '';
-            if (!ok) { vue.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
+            if (!ok) { echecChargement(vue, rep); return; }
 
             const badge = document.getElementById('badge-liaisons');
             badge.textContent = data.length;
@@ -360,9 +397,10 @@
             // que `gestion_liaisons` déclencherait une TypeError à chaque
             // approbation, et le reste du script mourrait avec.
             if (!vue) return;
-            const {ok, data} = await api('/admin/api/comptes');
+            const rep = await api('/admin/api/comptes');
+            const {ok, data} = rep;
             vue.innerHTML = '';
-            if (!ok) { vue.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
+            if (!ok) { echecChargement(vue, rep); return; }
             if (data.length === 0) { vue.appendChild(txt('p', 'Aucun compte.', 'has-text-grey')); return; }
 
             const table = document.createElement('table');
@@ -616,24 +654,36 @@
             // 4e élément optionnel : l'avertissement des droits à effet large.
             const LIBELLES = {
                 gestion_joueurs:     ['Fiches joueurs', 'fa-users-cog',
-                                      'Créer, renommer et corriger le score des fiches joueurs.'],
-                rgpd_joueurs:        ['Anonymisation et suppression (RGPD)', 'fa-user-shield',
-                                      'Anonymiser une fiche joueur, ou la supprimer '
-                                      + 'définitivement quand elle n\'a aucun match.',
-                                      'Gestes irréversibles. Nécessite « Fiches joueurs ».'],
+                                      'Ouvrir l\'onglet Fiches joueurs et consulter la liste.',
+                                      'Lecture seule. Chaque modification demande en plus '
+                                      + 'l\'un des droits ci-dessous.'],
+                joueurs_creation:    ['Ajouter un joueur', 'fa-user-plus',
+                                      'Créer une nouvelle fiche joueur.'],
+                joueurs_nom:         ['Renommer un joueur', 'fa-signature',
+                                      'Changer le pseudo d\'une fiche existante.'],
+                joueurs_couleur:     ['Changer la couleur', 'fa-palette',
+                                      'Choisir la couleur d\'affichage d\'un joueur.'],
+                edition_mu_sigma:    ['Corriger le score', 'fa-sliders',
+                                      'Saisir à la main le mu et le sigma d\'UN joueur, '
+                                      + 'à la création comme après coup.',
+                                      'Écrase le calcul TrueSkill sans laisser de trace. '
+                                      + 'Ne donne PAS le reset global, qui relève de '
+                                      + '« Réglage TS ».'],
+                joueurs_statut:      ['Changer le statut classé', 'fa-square-check',
+                                      'Basculer un joueur entre classé (actif) et non classé.'],
+                joueurs_irreversible:['Supprimer ou anonymiser', 'fa-user-shield',
+                                      'Supprimer une fiche sans aucun match, ou anonymiser '
+                                      + 'celle d\'un joueur qui en a.'],
                 gestion_tournois:    ['Tournois', 'fa-trophy',
                                       'Enregistrer les résultats d\'un tournoi.',
                                       'Ne permet pas de créer une fiche joueur : un nom inconnu '
                                       + 'est refusé, il faut la permission « Fiches joueurs ».'],
                 gestion_ligues:      ['Ligues', 'fa-shield-alt',
                                       'Activer le mode ligue, créer les ligues, y répartir les '
-                                      + 'joueurs et simuler un draft avant de l\'appliquer.',
-                                      'Désactiver le mode ligue supprime définitivement toutes '
-                                      + 'les ligues existantes.'],
+                                      + 'joueurs et simuler un draft avant de l\'appliquer.'],
                 gestion_saisons:     ['Saisons et awards', 'fa-calendar-alt',
                                       'Ouvrir et clôturer les saisons, fixer leurs dates, et '
-                                      + 'attribuer les awards de fin de saison.',
-                                      'Supprimer une saison efface son récapitulatif.'],
+                                      + 'attribuer les awards de fin de saison.'],
                 gestion_liaisons:    ['Demandes de liaison', 'fa-link',
                                       'Valider ou refuser les joueurs qui demandent à rattacher '
                                       + 'leur compte Discord à une fiche du site.'],
@@ -648,9 +698,7 @@
                 gestion_config:      ['Réglage TS', 'fa-sliders',
                                       'Régler le mode fantôme (pénalité d\'inactivité) et le '
                                       + 'nombre de tournois requis pour être classé, et remettre '
-                                      + 'le classement à zéro (reset global).',
-                                      'Ces réglages s\'appliquent à TOUS les joueurs, et le reset '
-                                      + 'global réinitialise le classement de tout le monde.'],
+                                      + 'le classement à zéro (reset global).'],
                 gestion_matchmaking: ['Matchmaking', 'fa-random',
                                       'Composer des lobbies équilibrés à partir des joueurs '
                                       + 'présents, depuis la page dédiée.'],
@@ -680,18 +728,37 @@
                 const i = EPINGLEES.indexOf(rang(p));
                 return i === -1 ? EPINGLEES.length : i;
             };
+            // `cle` vaut le libellé du PARENT pour une sous-permission : tout un
+            // groupe partage donc la même, et c'est ce qui le garde d'un seul
+            // tenant. Les deux derniers critères ordonnent l'intérieur du
+            // groupe -- sans eux, six enfants à clé identique se retrouvaient
+            // dans un ordre arbitraire, parent parfois au milieu.
+            const ordreInterne = p => SOUS_PERMISSIONS[p]
+                ? (LIBELLES[p]?.[0] || p) : '';   // '' trie le parent en tête
             const toutes = Array.from(new Set([...delegables, ...accordees]))
                 .sort((a, b) => (epingle(a) - epingle(b))
                                 || (accordees.has(rang(b)) - accordees.has(rang(a)))
                                 || cle(a).localeCompare(cle(b))
-                                // Le parent avant son enfant, à clé égale.
-                                || ((SOUS_PERMISSIONS[a] ? 1 : 0) - (SOUS_PERMISSIONS[b] ? 1 : 0)));
+                                // Le parent avant ses enfants, puis les enfants
+                                // entre eux, par libellé.
+                                || ((SOUS_PERMISSIONS[a] ? 1 : 0) - (SOUS_PERMISSIONS[b] ? 1 : 0))
+                                || ordreInterne(a).localeCompare(ordreInterne(b)));
 
             // Registre des cases rendues : le parent doit pouvoir agir sur la
             // sienne quand on le décoche, sans relire le DOM.
             const cases = {};
+            // Rafraîchisseurs des compteurs « n/6 accordés ». Le panneau n'est
+            // jamais redessiné (cela ferait perdre l'endroit où l'on travaille),
+            // donc chaque compteur se met à jour lui-même.
+            const compteursGroupe = {};
+            const majGroupe = parent => compteursGroupe[parent]?.();
 
-            toutes.forEach(p => {
+            // Un groupe se referme dès que la ligne suivante ne lui appartient
+            // plus. Sans cette borne, six enfants alignés se lisent comme six
+            // droits indépendants qui se trouvent être décalés.
+            const memeGroupe = (a, b) => b !== undefined && rang(a) === rang(b);
+
+            toutes.forEach((p, idx) => {
                 const [nom, ic, desc, alerte] = LIBELLES[p] || [p, 'fa-circle-dot', ''];
                 const horsPortee = !delegables.has(p);
                 const parent = SOUS_PERMISSIONS[p];
@@ -699,16 +766,22 @@
                 // le backend exige les deux, une case cochable sans effet serait
                 // exactement le bouton menant à un 403 prévisible qu'on évite.
                 const parentManquant = parent && !accordees.has(parent);
+                // Dernier enfant du groupe : sa ligne ferme le liseré par le bas.
+                const finDeGroupe = parent && !memeGroupe(p, toutes[idx + 1]);
 
                 const ligne = document.createElement('label');
-                ligne.className = 'is-flex is-align-items-flex-start p-3 mb-2';
+                ligne.className = 'is-flex is-align-items-flex-start p-3 '
+                    + (finDeGroupe ? 'mb-4' : 'mb-2');
                 ligne.style.cssText =
                     'gap:.75rem; border-radius:6px; cursor:'
                     + (horsPortee || parentManquant ? 'not-allowed' : 'pointer')
                     + '; background:rgba(255,255,255,.03); border:1px solid transparent;'
                     // Décalage et liseré : la sous-permission se lit comme
                     // rattachée à la ligne du dessus, pas comme un droit de plus.
-                    + (parent ? 'margin-left:2rem; border-left:2px solid rgba(59,130,246,.35);' : '')
+                    // Coins carrés à gauche pour que le liseré des lignes
+                    // successives forme un trait continu, pas six segments.
+                    + (parent ? 'margin-left:2rem; border-left:2px solid rgba(59,130,246,.35);'
+                              + 'border-top-left-radius:0; border-bottom-left-radius:0;' : '')
                     // .75 et non .55 : une ligne hors de portée doit se voir comme
                     // inactive, pas devenir illisible -- son intitulé reste une
                     // information utile (« ce droit existe, mais pas pour vous »).
@@ -750,7 +823,11 @@
                             + ' le droit « ' + nom + ' » ?',
                             nomDe(c),
                             !case_.checked && enfants.length
-                                ? 'Sa sous-autorisation sera retirée aussi.'
+                                ? (enfants.length === 1
+                                    ? 'Sa sous-autorisation sera retirée aussi.'
+                                    : 'Ses ' + enfants.length
+                                      + ' sous-autorisations seront retirées aussi : '
+                                      + enfants.map(e => LIBELLES[e]?.[0] || e).join(', ') + '.')
                                 : null)) {
                         case_.checked = !case_.checked;
                         return;
@@ -778,6 +855,12 @@
                             }
                         });
 
+                        // Le compteur du groupe : celui de ce parent s'il en est
+                        // un, celui de son parent si c'est un enfant qu'on vient
+                        // de cocher.
+                        majGroupe(p);
+                        if (parent) majGroupe(parent);
+
                         majCompteur();
                         // Aucun bandeau en haut de page sur un succès : la case
                         // cochée et le compteur du panneau disent déjà ce qui
@@ -801,6 +884,21 @@
                 entete_l.style.gap = '.5rem';
                 entete_l.appendChild(icone(ic, 'icon is-small', 'has-text-link'));
                 entete_l.appendChild(txt('span', nom, 'has-text-weight-semibold'));
+                // Un parent annonce son groupe : « 2/6 accordés » dit d'un coup
+                // d'œil où en est le compte, là où six cases décalées obligent à
+                // les compter une par une.
+                const mesEnfants = Object.keys(SOUS_PERMISSIONS)
+                    .filter(e => SOUS_PERMISSIONS[e] === p);
+                if (mesEnfants.length) {
+                    const compteur = txt('span', '', 'tag is-light');
+                    compteursGroupe[p] = () => {
+                        const n = mesEnfants.filter(e => accordees.has(e)).length;
+                        compteur.textContent = n + '/' + mesEnfants.length + ' accordés';
+                        compteur.className = 'tag is-light' + (n ? ' is-info' : '');
+                    };
+                    compteursGroupe[p]();
+                    entete_l.appendChild(compteur);
+                }
                 if (horsPortee) {
                     entete_l.appendChild(txt('span', 'hors de votre portée', 'tag is-light'));
                 } else if (parentManquant) {
@@ -947,9 +1045,10 @@
         async function chargerListeInvitations() {
             const liste = document.getElementById('liste-invitations');
             if (!liste) return;
-            const {ok, data} = await api('/admin/invitations');
+            const rep = await api('/admin/invitations');
+            const {ok, data} = rep;
             liste.innerHTML = '';
-            if (!ok) { liste.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
+            if (!ok) { echecChargement(liste, rep); return; }
             if (data.length === 0) { liste.appendChild(txt('p', 'Aucune invitation.', 'has-text-grey')); return; }
 
             const table = document.createElement('table');
@@ -1074,9 +1173,10 @@
         async function chargerListeBots() {
             const liste = document.getElementById('liste-bots');
             if (!liste) return;
-            const {ok, data} = await api('/admin/service-tokens');
+            const rep = await api('/admin/service-tokens');
+            const {ok, data} = rep;
             liste.innerHTML = '';
-            if (!ok) { liste.appendChild(txt('p', 'Chargement impossible.', 'has-text-danger')); return; }
+            if (!ok) { echecChargement(liste, rep); return; }
             if (!data.length) { liste.appendChild(txt('p', 'Aucun jeton.', 'has-text-grey')); return; }
 
             const table = document.createElement('table');

@@ -1,8 +1,13 @@
 """Sous-permissions : une permission qui ne vaut rien sans son parent.
 
-Premier cas : `rgpd_joueurs` sous `gestion_joueurs` (2026-09-13). Elle protege
-les deux gestes irreversibles sur une fiche -- anonymiser et supprimer -- pour
-qu'ils ne soient plus emportes par le simple droit d'editer une fiche.
+Depuis le 2026-09-17, TOUTE la fiche joueur fonctionne ainsi : `gestion_joueurs`
+n'ouvre que la lecture, et chacun des six gestes (creer, renommer, couleur,
+mu/sigma, statut, supprimer/anonymiser) a sa propre sous-permission.
+
+`joueurs_irreversible` est l'ex-`rgpd_joueurs`, renommee au meme moment : le nom
+promettait un dispositif RGPD inexistant -- la suppression est du menage (elle
+refuse tout joueur ayant un match), seule l'anonymisation releve de l'effacement.
+Leur vrai point commun est d'etre sans retour.
 
 La regle tient a TROIS endroits, et ces tests couvrent les trois :
   - permission_required exige l'enfant ET le parent ;
@@ -25,8 +30,13 @@ def io_open(chemin):
 print("\n=== La table des sous-permissions est cohérente ===")
 from constants import PERMISSIONS_CATALOGUE, SOUS_PERMISSIONS
 
-check("rgpd_joueurs est une sous-permission de gestion_joueurs",
-      SOUS_PERMISSIONS.get('rgpd_joueurs') == 'gestion_joueurs', SOUS_PERMISSIONS)
+GESTES_FICHE = ('joueurs_creation', 'joueurs_nom', 'joueurs_couleur',
+                'edition_mu_sigma', 'joueurs_statut', 'joueurs_irreversible')
+for _geste in GESTES_FICHE:
+    check("%s est une sous-permission de gestion_joueurs" % _geste,
+          SOUS_PERMISSIONS.get(_geste) == 'gestion_joueurs', SOUS_PERMISSIONS)
+check("l'ex-rgpd_joueurs a bien disparu du catalogue",
+      'rgpd_joueurs' not in PERMISSIONS_CATALOGUE)
 check("enfants et parents appartiennent tous au catalogue",
       all(e in PERMISSIONS_CATALOGUE and p in PERMISSIONS_CATALOGUE
           for e, p in SOUS_PERMISSIONS.items()), SOUS_PERMISSIONS)
@@ -59,11 +69,11 @@ print("\n=== Une sous-permission orpheline n'est jamais exposée à l'interface 
 from constants import permissions_effectives
 
 check("l'orpheline est retirée",
-      permissions_effectives({'rgpd_joueurs'}) == set(),
-      permissions_effectives({'rgpd_joueurs'}))
+      permissions_effectives({'edition_mu_sigma'}) == set(),
+      permissions_effectives({'edition_mu_sigma'}))
 check("avec son parent, elle est conservée",
-      permissions_effectives({'rgpd_joueurs', 'gestion_joueurs'})
-      == {'rgpd_joueurs', 'gestion_joueurs'})
+      permissions_effectives({'edition_mu_sigma', 'gestion_joueurs'})
+      == {'edition_mu_sigma', 'gestion_joueurs'})
 check("les permissions ordinaires passent intactes",
       permissions_effectives({'gestion_saisons', 'gestion_ligues'})
       == {'gestion_saisons', 'gestion_ligues'})
@@ -81,7 +91,7 @@ print("\n=== permission_required exige l'enfant ET le parent ===")
 
 
 def app_protegee(accordees):
-    """Appli minimale derriere @permission_required('rgpd_joueurs')."""
+    """Appli minimale derriere @permission_required('joueurs_irreversible')."""
     plan = [
         (r"FROM sessions_joueurs s JOIN comptes c",
          ligne_session(compte_id=1, discord_id='111', username='a',
@@ -96,7 +106,7 @@ def app_protegee(accordees):
     app = Flask(__name__)
 
     @app.route('/protege', methods=['POST'])
-    @auth.permission_required('rgpd_joueurs')
+    @auth.permission_required('joueurs_irreversible')
     def protege():
         from flask import jsonify
         return jsonify({"ok": True})
@@ -106,10 +116,10 @@ def app_protegee(accordees):
 
 H = {'X-Session-Token': 'tok'}
 
-cli, _, _ = app_protegee({'rgpd_joueurs', 'gestion_joueurs'})
+cli, _, _ = app_protegee({'joueurs_irreversible', 'gestion_joueurs'})
 check("les deux permissions -> passe", cli.post('/protege', headers=H).status_code == 200)
 
-cli, _, _ = app_protegee({'rgpd_joueurs'})
+cli, _, _ = app_protegee({'joueurs_irreversible'})
 r = cli.post('/protege', headers=H)
 check("l'enfant SANS le parent -> 403", r.status_code == 403, (r.status_code, r.get_json()))
 
@@ -126,16 +136,63 @@ src_admin = io_open(os.path.join(RACINE, 'routes_admin.py'))
 for route, methode in (("'/admin/joueurs/<int:id>', methods=['DELETE']", 'suppression'),
                        ("'/admin/joueurs/<int:id>/anonymiser'", 'anonymisation')):
     i = src_admin.find(route)
-    check("%s sous rgpd_joueurs" % methode,
-          i >= 0 and "@permission_required('rgpd_joueurs')" in src_admin[i:i + 220],
+    check("%s sous joueurs_irreversible" % methode,
+          i >= 0 and "@permission_required('joueurs_irreversible')" in src_admin[i:i + 220],
           src_admin[i:i + 200] if i >= 0 else 'route introuvable')
 
-# L'edition ordinaire d'une fiche NE doit PAS avoir bouge : c'est le sens meme
-# de la sous-permission, isoler l'irreversible sans gener le courant.
+
+print("\n=== L'édition d'une fiche se vérifie CHAMP PAR CHAMP ===")
+# Le PUT garde `gestion_joueurs` comme porte d'entree -- c'est la lecture de la
+# fiche -- mais chaque champ exige en plus sa sous-permission, DANS le corps :
+# les cinq champs partagent un seul UPDATE, qu'un decorateur ne saurait pas
+# decouper.
+from constants import PERMISSIONS_CHAMPS_JOUEUR
+
 i = src_admin.find("'/admin/joueurs/<int:id>', methods=['PUT']")
-check("l'édition d'une fiche reste sous gestion_joueurs",
-      "@permission_required('gestion_joueurs')" in src_admin[i:i + 220],
-      src_admin[i:i + 200])
+j = src_admin.find('\n@admin_bp.route', i + 10)
+corps_put = src_admin[i:j]
+check("le PUT garde gestion_joueurs comme porte d'entrée",
+      "@permission_required('gestion_joueurs')" in corps_put[:220])
+check("  et vérifie chaque champ dans son corps",
+      'PERMISSIONS_CHAMPS_JOUEUR' in corps_put and 'compte_a_permission' in corps_put)
+check("  en refusant par un code lisible, pas un 403 muet",
+      'permission_manquante' in corps_put and '"champ"' in corps_put)
+
+check("les cinq champs éditables sont couverts",
+      set(PERMISSIONS_CHAMPS_JOUEUR) == {'nom', 'mu', 'sigma', 'is_ranked', 'color'},
+      sorted(PERMISSIONS_CHAMPS_JOUEUR))
+check("  mu et sigma relèvent du MÊME droit",
+      PERMISSIONS_CHAMPS_JOUEUR['mu'] == PERMISSIONS_CHAMPS_JOUEUR['sigma']
+      == 'edition_mu_sigma')
+check("  et chaque droit cité existe au catalogue",
+      all(p in PERMISSIONS_CATALOGUE for p in PERMISSIONS_CHAMPS_JOUEUR.values()))
+
+# Un champ absent du payload, ou renvoye identique, ne doit demander AUCUN
+# droit : le formulaire renvoie la fiche entiere, donc l'exiger interdirait a un
+# admin qui n'a que « couleur » d'enregistrer quoi que ce soit.
+check("un champ inchangé n'exige aucun droit",
+      'def a_change(' in corps_put and 'if not a_change(champ)' in corps_put)
+check("  mu/sigma se comparent à la précision AFFICHÉE, pas à l'identique",
+      'DECIMALES_AFFICHEES' in corps_put,
+      "le front affiche 3 décimales là où TrueSkill en produit plus")
+# Corollaire : un champ inchangé repart de la base, sinon éditer un nom
+# tronquerait le sigma du joueur au passage. Couvert en exécution par
+# test_fiche_joueur_droits.py.
+check("  et un champ inchangé reprend la valeur de la base",
+      'demande[champ] = courant[champ]' in corps_put, corps_put[-600:])
+
+# La creation est la 2e porte vers mu/sigma : sans cette verification, un admin
+# « creation » fixerait le score qu'il veut, et pourrait meme contourner le
+# droit sur un joueur existant en le supprimant pour le recreer.
+i = src_admin.find("'/admin/joueurs', methods=['POST']")
+j = src_admin.find('\n@admin_bp.route', i + 10)
+corps_post = src_admin[i:j]
+check("la création est sous joueurs_creation",
+      "@permission_required('joueurs_creation')" in corps_post[:220], corps_post[:200])
+check("  et un score de départ hors défaut exige edition_mu_sigma",
+      "'edition_mu_sigma'" in corps_post and 'DEFAULT_MU' in corps_post)
+check("  une couleur choisie exige joueurs_couleur",
+      "'joueurs_couleur'" in corps_post)
 
 
 print("\n=== Octroi : l'enfant sans son parent est refusé ===")
@@ -175,18 +232,42 @@ check("  et le dit, plutôt que de rester inerte",
       'nécessite' in comptes_html)
 check("cocher/décocher le parent répercute sur ses enfants",
       "SOUS_PERMISSIONS[enfant] !== p" in comptes_html)
-check("le libellé RGPD existe", 'rgpd_joueurs:' in comptes_html)
-check("  et « Fiches joueurs » ne revendique plus l'anonymisation",
-      "l'anonymisation RGPD." not in comptes_html)
+for _geste in GESTES_FICHE:
+    check("le libellé de %s existe" % _geste, _geste + ':' in comptes_html)
+check("  et « Fiches joueurs » n'annonce plus que la lecture",
+      "l'anonymisation RGPD." not in comptes_html
+      and 'Créer, renommer et corriger le score' not in comptes_html)
 
-# La page des fiches joueurs porte les boutons Supprimer/Anonymiser : sans ce
-# drapeau ils resteraient visibles pour qui n'a pas la sous-permission.
+# La page des fiches joueurs grise ce qu'un droit manquant rend inoperant. Elle
+# ne masque plus : l'admin doit voir la valeur ET comprendre au survol qu'il lui
+# manque une permission, plutot que de croire la fonction inexistante.
 fiches = io_open(os.path.join(FRONT, 'templates', 'gestion_joueurs.html'))
-check("la page Fiches joueurs expose le droit RGPD au JS",
-      'PEUT_RGPD_JOUEURS' in fiches)
+check("la page Fiches joueurs expose les droits par geste au JS",
+      'PEUT_CHAMPS_JOUEUR' in fiches)
+for _cle in ('nom', 'mu', 'color', 'is_ranked', 'creation', 'irreversible'):
+    check("  le drapeau %s est déclaré" % _cle, _cle + ':' in fiches)
+check("le formulaire d'ajout disparaît sans joueurs_creation",
+      "{% if peut('joueurs_creation') %}" in fiches)
+check("  les champs mu/sigma d'ajout sont gatés",
+      fiches.count("peut('edition_mu_sigma')") >= 2)
+
 gestion_js = io_open(os.path.join(FRONT, 'static', 'js', 'gestion.js'))
-check("  et le bouton Supprimer y est conditionné",
-      'PEUT_RGPD_JOUEURS' in gestion_js)
+check("le JS lit les droits par geste", 'PEUT_CHAMPS_JOUEUR' in gestion_js)
+check("  un champ interdit n'est PAS envoyé au backend",
+      'if (champ && !champ.disabled) data[cle]' in gestion_js,
+      "sinon le backend répond 403 sur un champ non modifié")
+check("  le bouton Supprimer est grisé plutôt que masqué",
+      "peutChamp('irreversible')" in gestion_js and 'est-interdit' in gestion_js)
+check("  le bouton de statut reste inerte sans le droit",
+      "btn.classList.contains('est-interdit')) return" in gestion_js)
+check("  et un rafraîchissement visuel ne le rend pas cliquable",
+      'const interdit =' in gestion_js,
+      "updateRankedVisuals réécrit className en entier")
+
+css = io_open(os.path.join(FRONT, 'static', 'css', 'styles.css'))
+check("le curseur interdit est défini", '.est-interdit' in css and 'not-allowed' in css)
+check("  et l'infobulle reste visible sur un champ désactivé",
+      'pointer-events: auto' in css)
 
 
 print("\n=== Ergonomie du panneau : confirmation et scroll ===")

@@ -6,7 +6,7 @@ import requests
 import time
 from urllib.parse import urlencode
 import json
-from flask import (Flask, render_template, request, redirect, url_for, session,
+from flask import (Flask, g, render_template, request, redirect, url_for, session,
                    flash, jsonify, Response)
 from datetime import timedelta, date
 from flask_wtf.csrf import CSRFProtect
@@ -59,12 +59,17 @@ def inject_version():
     return dict(app_version=APP_VERSION)
 
 
-def _sonde_session(endpoint, headers):
+def _sonde_session(endpoint, headers, sur_reponse=None):
     """Interroge une sonde de session. Renvoie True si le backend la refuse.
 
     Ne purge QUE sur un refus explicite (401/403) : un 5xx ou un timeout dit que
     le backend a un hoquet, pas que la session est invalide (R-28). Confondre les
     deux déconnecterait tout le monde à chaque redémarrage du backend.
+
+    `sur_reponse` reçoit le corps JSON d'une réponse 200. Sert à récupérer rôle
+    et permissions au passage : cet appel a lieu à chaque requête de toute
+    façon, et le backend les a déjà lus pour authentifier. En faire un second
+    appel coûterait un aller-retour réseau par page, sur 2 workers gunicorn.
     """
     try:
         response = requests.get(f"{BACKEND_URL}{endpoint}", headers=headers, timeout=1)
@@ -78,35 +83,106 @@ def _sonde_session(endpoint, headers):
         logger.warning(
             "Backend indisponible (HTTP %s) — session conservée.", response.status_code
         )
+    elif sur_reponse is not None:
+        try:
+            sur_reponse(response.json())
+        except Exception as e:
+            # Un corps illisible ne doit jamais casser la requête en cours :
+            # cette fonction tourne dans un before_request, sur toutes les pages.
+            logger.warning("Réponse de sonde illisible (%s)", e)
     return False
+
+
+def _est_navigation(chemin):
+    """Vrai si ce chemin sert une PAGE, et non une donnée pour une page déjà là.
+
+    Sert à ne sonder la session qu'une fois par page ouverte, au lieu d'une fois
+    par requête. Ouvrir les Fiches joueurs, c'est un document puis trois appels
+    JSON : sonder les quatre revalidait quatre fois la même session, à quelques
+    millisecondes d'intervalle, pour le même verdict.
+
+    La distinction se lit sur l'en-tête `Accept`, que le navigateur pose seul :
+    une navigation demande du HTML, un `fetch()` demande du JSON. Un `Accept`
+    absent ou exotique est traité comme une navigation -- se tromper dans ce sens
+    coûte une sonde de trop, jamais une session laissée valide à tort.
+
+    Ce n'est PAS une frontière de privilège, et ça n'a pas à l'être : le proxy
+    transmet le jeton au backend, qui relit rôle et permissions en base à chaque
+    requête protégée. Un appel JSON non sondé sur une session morte reçoit donc
+    un 401 du backend, relayé tel quel -- exactement ce que la sonde aurait fait.
+    """
+    if chemin.startswith('/static'):
+        return False
+    return 'application/json' not in request.headers.get('Accept', '')
 
 
 @app.before_request
 def check_session_validity():
-    """Surveille les DEUX voies d'authentification à chaque requête.
+    """Revalide la session auprès du backend à l'ouverture de chaque page.
 
     La session Discord était la grande absente : rien ne la revalidait jamais, et
     `_est_admin()` lisant une copie figée en cookie, un jeton expiré laissait
     l'utilisateur affiché comme connecté, onglet admin compris, jusqu'à ce qu'il
     visite /mon-compte. Les pages admin s'ouvraient alors sur une erreur au
     chargement des données plutôt que sur une reconnexion.
+
+    UNE sonde par page, et une seule voie. Sonder les deux voies à chaque requête
+    -- appels JSON compris -- faisait payer 9 allers-retours backend (mesurés)
+    pour ouvrir une page qui n'en vaut que 4, sur 2 workers gunicorn qui bloquent
+    pendant l'attente. D'où les 503 et les « Erreur Backend » intermittents du
+    2026-09-17 (docs/audit-503-zone-admin.md).
+
+    La voie Discord suffit quand elle porte le rôle : `/auth/check-session` rend
+    déjà rôle et permissions, et `admin_headers()` ne regarde `admin_token` que
+    si elle ne les porte pas. Sonder les deux revenait à vérifier un jeton dont
+    on n'allait pas se servir.
     """
-    if request.path.startswith('/static'):
+    if not _est_navigation(request.path):
         return
 
     if session.get('player_token'):
         if _sonde_session('/auth/check-session',
-                          {'X-Session-Token': session['player_token']}):
+                          {'X-Session-Token': session['player_token']},
+                          sur_reponse=_maj_droits_session):
             logger.warning("Session Discord refusée -> déconnexion.")
             session.pop('player_token', None)
             session.pop('compte', None)
+        else:
+            # Sonde concluante : les vues admin n'ont plus à revérifier.
+            g.session_revalidee = True
 
-    if 'admin_token' in session:
+    # Uniquement si la voie Discord ne couvre pas déjà l'accès admin : les deux
+    # jetons coexistent dans le même cookie pendant la bascule, mais un seul est
+    # effectivement envoyé au backend (cf. admin_headers).
+    if 'admin_token' in session and _role_session() not in ROLES_ADMIN:
         if _sonde_session('/admin/check-token',
                           {'X-Admin-Token': session['admin_token']}):
             logger.warning("Token admin refusé -> déconnexion.")
             session.pop('admin_token', None)
             session.pop('token_start_time', None)
+        else:
+            g.session_revalidee = True
+
+
+def _acces_admin_revoque():
+    """Vrai si le backend refuse maintenant cette session admin.
+
+    À appeler en tête de chaque vue admin, avant le rendu. Sans cette
+    revalidation, la page s'ouvrait sur la foi du cookie puis son JS se heurtait
+    à un 401 au premier chargement de données : l'utilisateur voyait
+    « Chargement impossible. » au lieu d'être invité à se reconnecter.
+
+    Ne refait PAS l'appel que le before_request vient de faire sur cette même
+    requête HTTP. Les six vues admin le rejouaient à l'identique, quelques
+    millisecondes après, pour le même verdict -- un aller-retour backend par
+    page, payé pour rien. `g` est remis à zéro à chaque requête : la mémoïsation
+    ne peut pas survivre à la requête qui l'a posée, et ne masque donc jamais une
+    révocation intervenue depuis.
+    """
+    if getattr(g, 'session_revalidee', False):
+        return False
+    _, status = backend_request('GET', '/admin/check-token', headers=admin_headers())
+    return status in (401, 403)
 
 @app.context_processor
 def inject_lifetime():
@@ -123,15 +199,13 @@ def inject_lifetime():
 
     return dict(session_lifetime=total_lifetime)
 
-@app.context_processor
-def inject_saisons():
-    try:
-        data, status = backend_request('GET', '/saisons')
-        if status == 200:
-            return dict(saisons_menu=data)
-    except Exception:
-        pass
-    return dict(saisons_menu=[])
+# `inject_saisons` a été retiré le 2026-09-17. Ce context processor appelait
+# /saisons à CHAQUE rendu de template -- un aller-retour backend synchrone par
+# page, sur 2 workers gunicorn -- pour alimenter un `saisons_menu` qu'aucun
+# gabarit ne lisait (vérifié sur tout le dépôt). Le menu des saisons est servi
+# par les vues qui en ont besoin, pas par une variable globale.
+# Si un menu global redevient nécessaire, le remettre AVEC un cache TTL : c'est
+# une donnée qui change quelques fois par an, pas à chaque affichage.
 
 
 def backend_request(method, endpoint, data=None, params=None, headers=None, timeout=5):
@@ -196,7 +270,9 @@ ROLES_ADMIN = ('admin', 'chef_admin', 'superadmin')
 # séparé, il ne peut pas l'importer. Même duplication assumée que CGU_VERSION,
 # et même exigence : les deux listes doivent rester alignées (test_revue).
 PERMISSIONS_CATALOGUE = frozenset({
-    'gestion_joueurs', 'rgpd_joueurs', 'gestion_tournois', 'gestion_ligues',
+    'gestion_joueurs', 'joueurs_creation', 'joueurs_nom', 'joueurs_couleur',
+    'edition_mu_sigma', 'joueurs_statut', 'joueurs_irreversible',
+    'gestion_tournois', 'gestion_ligues',
     'gestion_saisons', 'gestion_liaisons', 'gestion_comptes',
     'gestion_invitations', 'gestion_config', 'gestion_matchmaking',
 })
@@ -205,7 +281,12 @@ PERMISSIONS_CATALOGUE = frozenset({
 # duplication assumée que le catalogue lui-même. Sert à l'affichage en retrait
 # et au décochage en cascade ; l'autorité reste le backend, qui exige les deux.
 SOUS_PERMISSIONS = {
-    'rgpd_joueurs': 'gestion_joueurs',
+    'joueurs_creation': 'gestion_joueurs',
+    'joueurs_nom': 'gestion_joueurs',
+    'joueurs_couleur': 'gestion_joueurs',
+    'edition_mu_sigma': 'gestion_joueurs',
+    'joueurs_statut': 'gestion_joueurs',
+    'joueurs_irreversible': 'gestion_joueurs',
 }
 
 
@@ -597,6 +678,36 @@ def inject_discord_configure():
     return dict(discord_configure=bool(DISCORD_CLIENT_ID and DISCORD_REDIRECT_URI))
 
 
+def _maj_droits_session(corps):
+    """Recopie rôle et permissions servis par la sonde de session.
+
+    Appelée depuis le before_request, avec le corps de /auth/check-session. Le
+    backend les a lus pour authentifier la requête : les prendre ici ne coûte
+    rien de plus, et la copie en session reste fraîche à chaque page.
+
+    C'est ce qui manquait : cette copie était figée à la CONNEXION, donc un
+    droit accordé n'apparaissait qu'après déconnexion/reconnexion. La faire
+    relire par un appel /auth/me séparé a marché, mais ajoutait un aller-retour
+    réseau synchrone par rendu de page -- sur 2 workers gunicorn, le frontend
+    saturait et nginx répondait 503 (observé le 2026-09-17).
+
+    Le frontend n'est PAS une frontière de privilège : le backend relit rôle et
+    permissions en base à chaque requête protégée. Une copie périmée fait voir
+    un bouton de trop, jamais obtenir un droit de trop.
+    """
+    compte = session.get('compte')
+    if not isinstance(compte, dict) or not isinstance(corps, dict):
+        return
+    if 'role' not in corps and 'permissions' not in corps:
+        return      # backend plus ancien que ce champ : on garde la copie
+    if compte.get('role') == corps.get('role') \
+            and compte.get('permissions') == corps.get('permissions'):
+        return      # rien de neuf : ne pas réécrire le cookie à chaque requête
+    compte['role'] = corps.get('role')
+    compte['permissions'] = corps.get('permissions')
+    session.modified = True
+
+
 @app.context_processor
 def inject_est_admin():
     """Expose la porte d'interface admin aux templates.
@@ -952,12 +1063,7 @@ def admin_comptes():
         flash("Vous n'avez pas accès à la gestion des comptes.", 'warning')
         return redirect(url_for('index'))
 
-    # Revalidation avant rendu, comme les autres pages admin. Sans elle, la page
-    # s'ouvrait sur la foi du cookie puis son JS se heurtait à un 401 au premier
-    # chargement de données : l'utilisateur voyait « Chargement impossible. »
-    # au lieu d'être invité à se reconnecter.
-    _, status = backend_request('GET', '/admin/check-token', headers=admin_headers())
-    if status in (401, 403):
+    if _acces_admin_revoque():
         return _session_admin_expiree()
 
     compte = session.get('compte') or {}
@@ -1266,8 +1372,7 @@ def admin_tournois():
         return redirect(url_for('index'))
 
     headers = admin_headers()
-    _, status = backend_request('GET', '/admin/check-token', headers=headers)
-    if status in [401, 403]:
+    if _acces_admin_revoque():
         # Purge les deux voies : ne retirer qu'admin_token laissait la session
         # Discord périmée en cookie, donc l'utilisateur toujours affiché connecté.
         return _session_admin_expiree()
@@ -1345,9 +1450,7 @@ def admin_joueurs_fiches():
     if not _est_admin():
         flash('Accès interdit.', 'danger')
         return redirect(url_for('index'))
-    headers = admin_headers()
-    _, status = backend_request('GET', '/admin/check-token', headers=headers)
-    if status in [401, 403]:
+    if _acces_admin_revoque():
         return _session_admin_expiree()
     return render_template('gestion_joueurs.html')
 
@@ -1369,9 +1472,7 @@ def admin_reglages():
         flash("Vous n'avez pas accès aux réglages du classement.", 'warning')
         return redirect(url_for('index'))
 
-    headers = admin_headers()
-    _, status = backend_request('GET', '/admin/check-token', headers=headers)
-    if status in [401, 403]:
+    if _acces_admin_revoque():
         return _session_admin_expiree()
     return render_template('admin_reglages.html')
 
@@ -1380,9 +1481,7 @@ def admin_saisons_page():
     if not _est_admin():
         flash('Accès interdit.', 'danger')
         return redirect(url_for('index'))
-    headers = admin_headers()
-    _, status = backend_request('GET', '/admin/check-token', headers=headers)
-    if status in [401, 403]:
+    if _acces_admin_revoque():
         return _session_admin_expiree()
     return render_template('admin_saisons.html')
 
@@ -1569,11 +1668,9 @@ def admin_ligues_page():
         flash('Accès interdit.', 'danger')
         return redirect(url_for('index'))
     
-    headers = admin_headers()
-    _, status = backend_request('GET', '/admin/check-token', headers=headers)
-    if status in [401, 403]:
+    if _acces_admin_revoque():
         return _session_admin_expiree()
-        
+
     return render_template('admin_ligues.html')
 
 

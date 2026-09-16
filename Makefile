@@ -131,9 +131,30 @@ restart-race:        ## Relance un grand prix neuf sans couper le service
 
 # A lancer apres une modification de nginx/. Le rechargement relit la config et
 # reresout les upstreams, sans couper les connexions en cours.
+#
+# La comparaison d'empreintes n'est pas du zele. `nginx.conf` est monte comme
+# FICHIER (docker-compose.yml), pas comme dossier : Docker en resout l'inode au
+# demarrage du conteneur. Un editeur qui reecrit le fichier au lieu de le
+# modifier en place cree un nouvel inode, le montage reste colle a l'ancien
+# contenu, et `nginx -s reload` relit fidelement la version d'avant.
+#
+# L'echec est MUET -- `nginx -t` valide et `reload` reussit sur l'ancien
+# contenu. D'ou cette verification, qui le rend bruyant.
 reload-nginx:        ## Recharge la configuration nginx
 	$(COMPOSE) exec nginx nginx -t
 	$(COMPOSE) exec nginx nginx -s reload
+	@disque=$$(md5sum < nginx/nginx.conf | cut -d' ' -f1); \
+	 servi=$$($(COMPOSE) exec -T nginx cat /etc/nginx/nginx.conf | md5sum | cut -d' ' -f1); \
+	 if [ "$$disque" != "$$servi" ]; then \
+	   echo; \
+	   echo "  /!\\  nginx ne sert PAS le fichier du disque."; \
+	   echo "       empreinte disque    : $$disque"; \
+	   echo "       empreinte conteneur : $$servi"; \
+	   echo "       Le montage est colle a un ancien inode. Recreez le conteneur :"; \
+	   echo "         docker compose up -d --force-recreate nginx"; \
+	   exit 1; \
+	 fi; \
+	 echo "  config rechargee, et le conteneur sert bien le fichier du disque."
 
 re-db:               ## Recreate database (schema + seed)
 	$(COMPOSE) stop db

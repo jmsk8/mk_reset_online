@@ -186,8 +186,12 @@ check("la raison est documentee dans le code",
 gestion_js = open(os.path.join(RACINE, '..', 'frontEnd', 'static', 'js', 'gestion.js'),
                   encoding='utf-8').read()
 # Envoyer un champ que le serveur ignore donnerait l'illusion d'une modification.
+# Depuis le 2026-09-17 la regle vaut pour TOUS les champs de la fiche (un droit
+# par geste) : `siActif` porte la verification, et le compteur passe par lui
+# comme les autres au lieu d'avoir son propre `if`.
 check("le JS n'envoie le compteur que si le champ est actif",
-      '!champMissed.disabled' in gestion_js, None)
+      "if (champ && !champ.disabled) data[cle]" in gestion_js
+      and "siActif('editMissed', 'consecutive_missed'" in gestion_js, None)
 
 gestion_html = open(os.path.join(RACINE, '..', 'frontEnd', 'templates',
                                  'gestion_joueurs.html'), encoding='utf-8').read()

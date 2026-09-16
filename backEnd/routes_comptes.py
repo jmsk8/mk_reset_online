@@ -1473,6 +1473,12 @@ def profil_public(cur, joueur_id):
 # joueur dans la source de la page.
 # ---------------------------------------------------------------------------
 
+# Partage entre threads depuis le passage aux workers gthread (2026-09-17), et
+# sans verrou volontairement : toutes les operations faites ici sont atomiques
+# (`get`, affectation, `clear`), sans sequence lire-puis-supprimer sur une meme
+# cle -- contrairement au cache de cache.py, qui a du en recevoir un. Le pire
+# cas est que deux threads telechargent le meme avatar en parallele : du travail
+# en double, jamais une reponse fausse.
 _avatars = {}
 
 

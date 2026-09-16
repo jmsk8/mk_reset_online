@@ -6,7 +6,18 @@ function escapeHtml(str) {
 async function apiCall(endpoint, method = 'GET', body = null) {
     // Pas d'en-tête d'auth : ces URL sont les routes proxy du frontend, qui
     // injectent X-Admin-Token depuis la session serveur.
-    const headers = { 'Content-Type': 'application/json' };
+    //
+    // `Accept` est explicite et non décoratif : le frontend s'en sert pour
+    // distinguer l'ouverture d'une PAGE d'un appel de données fait par une page
+    // déjà ouverte, et ne revalider la session que dans le premier cas. Sans cet
+    // en-tête, `fetch()` envoie « */* », que le serveur doit alors traiter comme
+    // une navigation -- ce qui revalidait la session sur chacun de ces appels,
+    // soit 9 allers-retours backend pour ouvrir une page qui n'en vaut que 4
+    // (docs/audit-503-zone-admin.md).
+    const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    };
 
     const csrfMeta = document.querySelector('meta[name="csrf-token"]');
     if (csrfMeta) {
@@ -45,6 +56,18 @@ async function apiCall(endpoint, method = 'GET', body = null) {
             return { error: "Non autorisé" };
         }
 
+        // 503 = le limiteur de débit de nginx a rejeté l'appel, et sa réponse
+        // est une page HTML. Sans ce cas, on tombait dans le catch du parse et
+        // l'utilisateur lisait « Erreur serveur (Réponse invalide) » -- un
+        // message qui accuse le serveur d'être cassé alors qu'il se protège, et
+        // qui n'indique pas la seule chose utile : attendre quelques secondes.
+        if (response.status === 503) {
+            const attente = parseInt(response.headers.get('Retry-After'), 10) || 5;
+            console.warn(`⏳ Débit limité par le serveur, réessayer dans ${attente}s`);
+            return { error: `Trop de requêtes d'un coup. Patientez ${attente} secondes, `
+                            + `puis rechargez la page.`, limite: true };
+        }
+
         const text = await response.text();
         try {
             const data = JSON.parse(text);
@@ -64,13 +87,31 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 // ligne de tableau. `tiersColorCache` mappe nom -> couleur hex ; 'U' reste
 // hors de la table `tiers`, gere a part.
 let tiersColorCache = null;
+// La PROMESSE, pas seulement le résultat : loadPlayers() et loadTierLegend()
+// partent en parallèle au chargement de la page, et ne mémoriser que le
+// résultat laissait les deux appeler /admin/tiers avant qu'il n'existe. Deux
+// requêtes pour la même donnée, sur une zone nginx limitée à 30 r/min.
+let tiersPromesse = null;
+
+// La réponse brute, que loadTierLegend réutilise : elle a besoin du `rang`,
+// que la table nom -> couleur ne garde pas.
+async function loadTiers() {
+    if (tiersPromesse) return tiersPromesse;
+    tiersPromesse = apiCall('/admin/tiers', 'GET').then(res => {
+        const liste = Array.isArray(res) ? res : [];
+        tiersColorCache = Object.fromEntries(liste.map(t => [t.nom, t.couleur]));
+        return liste;
+    }).catch(e => {
+        // Un échec ne doit pas figer le cache sur une promesse rejetée :
+        // le prochain appel doit pouvoir réessayer.
+        tiersPromesse = null;
+        throw e;
+    });
+    return tiersPromesse;
+}
 
 async function loadTiersColorCache() {
-    if (tiersColorCache) return tiersColorCache;
-    const res = await apiCall('/admin/tiers', 'GET');
-    tiersColorCache = Array.isArray(res)
-        ? Object.fromEntries(res.map(t => [t.nom, t.couleur]))
-        : {};
+    await loadTiers();
     return tiersColorCache;
 }
 
@@ -113,18 +154,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const newSigma = parseFloat(document.getElementById('newSigma').value);
             const nom = document.getElementById('newNom').value;
             const newColor = document.getElementById('newColor').value;
-            
+
             if (isNaN(newMu) || isNaN(newSigma)) {
                 alert("Erreur: Mu et Sigma doivent être des nombres.");
                 return;
             }
-            
-            const data = {
-                nom: nom,
-                mu: newMu,
-                sigma: newSigma,
-                color: newColor
-            };
+
+            // Même règle qu'à l'édition : sans le droit, on n'envoie pas le
+            // champ, et le backend applique la valeur par défaut. Les champs
+            // sont déjà grisés côté gabarit, ceci ferme l'appel direct.
+            const data = { nom: nom };
+            if (peutChamp('mu')) { data.mu = newMu; data.sigma = newSigma; }
+            if (peutChamp('color')) data.color = newColor;
 
             const res = await apiCall('/admin/joueurs', 'POST', data);
             
@@ -237,8 +278,12 @@ async function loadPlayers() {
                     onclick="openEditModal(${player.id}, '${escapeHtml(player.nom).replace(/'/g, "\\'")}', ${player.mu}, ${player.sigma}, ${player.is_ranked}, ${player.consecutive_missed}, '${escapeHtml(player.color || '#ffffff')}')">
                     <i class="fas fa-edit"></i>
                 </button>
-                ${typeof PEUT_RGPD_JOUEURS !== 'undefined' && !PEUT_RGPD_JOUEURS ? '' : `
+                ${peutChamp('irreversible') ? `
                 <button class="button is-small is-danger is-outlined" onclick="deletePlayer(${player.id})">
+                    <i class="fas fa-trash"></i>
+                </button>` : `
+                <button class="button is-small is-danger is-outlined est-interdit" disabled
+                    title="Vous n'avez pas la permission « Supprimer ou anonymiser ».">
                     <i class="fas fa-trash"></i>
                 </button>`}
             </td>
@@ -289,7 +334,10 @@ async function loadTierLegend() {
     const list = document.getElementById('tierLegendList');
     if (!list) return; // page sans ce bloc
 
-    const res = await apiCall('/admin/tiers', 'GET');
+    // Passe par le cache partagé : loadPlayers() demande la même liste au même
+    // moment, et deux appels pour une donnée identique épuisent pour rien le
+    // budget de la zone nginx `admin`.
+    const res = await loadTiers();
     if (!Array.isArray(res)) return;
 
     const uLi = list.querySelector('li');
@@ -361,6 +409,25 @@ async function deletePlayer(id) {
     alert("Erreur lors de la suppression: " + (res.error || ""));
 }
 
+// Droits de la session sur la fiche joueur, déclarés par le gabarit avant ce
+// script. Le `typeof` protège les autres pages qui chargent gestion.js sans
+// les définir : elles n'ouvrent pas cette modale, mais elles lisent le fichier.
+function peutChamp(nom) {
+    const drapeaux = (typeof PEUT_CHAMPS_JOUEUR !== 'undefined') ? PEUT_CHAMPS_JOUEUR : null;
+    return drapeaux ? drapeaux[nom] === true : true;
+}
+
+// Grise un champ et explique pourquoi au survol, plutôt que de le masquer :
+// l'admin voit la valeur, comprend qu'un droit lui manque, et peut la demander.
+function interdireChamp(idChamp, permission) {
+    const champ = document.getElementById(idChamp);
+    if (!champ) return;
+    champ.disabled = true;
+    champ.readOnly = true;
+    champ.classList.add('est-interdit');
+    champ.title = "Vous n'avez pas la permission « " + permission + " ».";
+}
+
 function openEditModal(id, nom, mu, sigma, isRanked, missed, color) {
     document.getElementById('editId').value = id;
     document.getElementById('editNom').value = nom;
@@ -368,13 +435,40 @@ function openEditModal(id, nom, mu, sigma, isRanked, missed, color) {
     document.getElementById('editSigma').value = parseFloat(sigma).toFixed(3);
     document.getElementById('editMissed').value = missed !== undefined ? missed : 0;
     document.getElementById('editColor').value = color || '#ffffff';
-    
+
+    // Chaque champ est réactivé avant d'être éventuellement réinterdit : la
+    // modale est réutilisée d'un joueur à l'autre, un état laissé collé
+    // interdirait un champ pour le reste de la session.
+    const btnRanked = document.getElementById('rankedToggleBtn');
+    [['editNom', 'nom', 'Renommer'],
+     ['editMu', 'mu', 'Corriger le score'],
+     ['editSigma', 'sigma', 'Corriger le score'],
+     ['editColor', 'color', 'Changer la couleur']].forEach(([idChamp, cle, libelle]) => {
+        const champ = document.getElementById(idChamp);
+        if (!champ) return;
+        champ.disabled = false;
+        champ.readOnly = false;
+        champ.classList.remove('est-interdit');
+        champ.removeAttribute('title');
+        if (!peutChamp(cle)) interdireChamp(idChamp, libelle);
+    });
+
+    if (btnRanked) {
+        btnRanked.classList.toggle('est-interdit', !peutChamp('is_ranked'));
+        btnRanked.title = peutChamp('is_ranked')
+            ? '' : "Vous n'avez pas la permission « Changer le statut classé ».";
+    }
+
     updateRankedVisuals(isRanked);
 
     document.getElementById('editModal').classList.add('is-active');
 }
 
 function toggleRankedStatus() {
+    // Sans le droit, le bouton reste inerte plutôt que de laisser croire au
+    // changement puis d'échouer à l'enregistrement.
+    const btn = document.getElementById('rankedToggleBtn');
+    if (btn && btn.classList.contains('est-interdit')) return;
     const currentVal = document.getElementById('editIsRankedValue').value === 'true';
     updateRankedVisuals(!currentVal);
 }
@@ -385,12 +479,17 @@ function updateRankedVisuals(isRanked) {
     const icon = document.getElementById('rankedIcon');
     const text = document.getElementById('rankedText');
 
+    // `est-interdit` est posée une fois à l'ouverture de la modale, alors que
+    // className est réécrit à chaque bascule : la relire ici évite qu'un simple
+    // rafraîchissement visuel ne rende le bouton cliquable.
+    const interdit = btn.classList.contains('est-interdit') ? ' est-interdit' : '';
+
     if (isRanked) {
-        btn.className = 'button is-success is-fullwidth';
+        btn.className = 'button is-success is-fullwidth' + interdit;
         icon.innerHTML = '<i class="fas fa-check"></i>';
         text.innerText = 'Joueur Classé (Actif)';
     } else {
-        btn.className = 'button is-danger is-outlined is-fullwidth';
+        btn.className = 'button is-danger is-outlined is-fullwidth' + interdit;
         icon.innerHTML = '<i class="fas fa-times"></i>';
         text.innerText = 'Non Classé (Inactif)';
     }
@@ -403,24 +502,36 @@ function closeModal() {
 
 async function saveEdit() {
     const id = document.getElementById('editId').value;
-    
-    const data = {
-        nom: document.getElementById('editNom').value,
-        mu: parseFloat(document.getElementById('editMu').value),
-        sigma: parseFloat(document.getElementById('editSigma').value),
-        is_ranked: document.getElementById('editIsRankedValue').value === 'true',
-        color: document.getElementById('editColor').value
-    };
-    
-    // consecutive_missed n'est envoye que si le champ est modifiable : il
-    // declenche la penalite de sigma, donc seul le superadmin y a la main
-    // (le serveur refait la verification de toute facon).
-    const champMissed = document.getElementById('editMissed');
-    if (champMissed && !champMissed.disabled) {
-        data.consecutive_missed = parseInt(champMissed.value);
-    }
 
-    if (isNaN(data.mu) || isNaN(data.sigma)) {
+    // Un champ désactivé n'est PAS envoyé. Le backend n'exige la
+    // sous-permission que sur les champs présents et réellement modifiés : lui
+    // renvoyer une valeur qu'on n'a pas le droit de changer produirait un 403,
+    // même sans y avoir touché.
+    //
+    // Ce n'est pas qu'une précaution : mu et sigma sont affichés arrondis à 3
+    // décimales alors que TrueSkill en produit bien plus, donc les renvoyer
+    // tels quels serait lu comme un vrai changement de valeur.
+    const data = {};
+    const siActif = (idChamp, cle, lire) => {
+        const champ = document.getElementById(idChamp);
+        if (champ && !champ.disabled) data[cle] = lire(champ);
+    };
+
+    siActif('editNom', 'nom', c => c.value);
+    siActif('editMu', 'mu', c => parseFloat(c.value));
+    siActif('editSigma', 'sigma', c => parseFloat(c.value));
+    siActif('editColor', 'color', c => c.value);
+    // Le statut classé n'est pas un <input> : son état vit dans un champ caché,
+    // et c'est le bouton qui porte l'interdiction.
+    const btnRanked = document.getElementById('rankedToggleBtn');
+    if (btnRanked && !btnRanked.classList.contains('est-interdit')) {
+        data.is_ranked = document.getElementById('editIsRankedValue').value === 'true';
+    }
+    // consecutive_missed déclenche la pénalité de sigma : capacité de rôle du
+    // superadmin, jamais une permission déléguable.
+    siActif('editMissed', 'consecutive_missed', c => parseInt(c.value));
+
+    if (('mu' in data && isNaN(data.mu)) || ('sigma' in data && isNaN(data.sigma))) {
         alert("Erreur: Mu et Sigma doivent être des nombres.");
         return;
     }
