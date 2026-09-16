@@ -11,6 +11,7 @@ Ces assertions portent sur le SOURCE, comme test_bascule : c'est du cablage
 entre deux services, il n'y a pas de comportement a executer ici.
 """
 from harness import *
+import ast
 import re as _re
 
 RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
@@ -23,14 +24,63 @@ def io_open(chemin):
 
 
 def bloc(source, ancre, taille=1200):
-    """Portion de source suivant `ancre`, ou '' si l'ancre a disparu.
+    """Source de la fonction designee par `ancre`, ou '' si elle a disparu.
 
-    Un `.index()` nu leverait, et l'assertion suivante ne s'afficherait jamais :
-    le fichier de test mourrait a la premiere regression au lieu de nommer ce
-    qui a casse. Renvoyer '' fait echouer l'assertion, proprement.
+    Renvoyer '' plutot que lever : un `.index()` nu ferait mourir le fichier a la
+    premiere regression, et les assertions suivantes ne s'afficheraient jamais.
+    Une chaine vide fait echouer l'assertion, proprement, en la nommant.
+
+    `ancre` vaut soit « def nom_de_fonction », soit une ligne de decorateur
+    (typiquement une route) : dans les deux cas c'est la fonction CONCERNEE qui
+    est rendue, decorateurs compris, delimitee par `ast` et non par une fenetre
+    de caracteres.
+
+    Le decoupage se faisait auparavant sur une taille fixe de 1200 caracteres.
+    Il suffisait qu'une docstring s'allonge pour repousser le code utile hors de
+    la fenetre et faire echouer des assertions sur du code pourtant intact --
+    desamorce a la main une premiere fois pour `_sonde_session`, puis reapparu
+    le 2026-09-17 sur `check_session_validity`. Les bornes textuelles qui ont
+    suivi coupaient, elles, sur le `def` ou le decorateur voisin. Un vrai parseur
+    supprime la classe de bugs entiere.
+
+    `taille` ne sert plus que de repli pour les sources NON Python -- ce fichier
+    inspecte aussi du HTML/JS -- ou aucun parseur n'est disponible. Ces
+    sources-la n'ont pas de docstring pour repousser le code hors de la fenetre,
+    ce qui rend le decoupage textuel sans danger a cet endroit.
     """
-    i = source.find(ancre)
-    return '' if i < 0 else source[i:i + taille]
+    try:
+        arbre = ast.parse(source)
+    except SyntaxError:
+        # `bloc` sert aussi sur du HTML/JS (le helper api() de admin_comptes).
+        # Pas de parseur pour ces sources-la : on retombe sur la fenetre de
+        # taille fixe, acceptable parce qu'aucune docstring ne vient l'y
+        # repousser -- c'est le code Python qui souffrait de ce decoupage.
+        i = source.find(ancre)
+        return '' if i < 0 else source[i:i + taille]
+
+    lignes = source.splitlines(keepends=True)
+
+    def texte(noeud):
+        # `decorator_list` est exclu de lineno : on remonte au premier
+        # decorateur pour que « @player_required » reste dans le bloc rendu.
+        debut = min([noeud.lineno] + [d.lineno for d in noeud.decorator_list]) - 1
+        return ''.join(lignes[debut:noeud.end_lineno])
+
+    cible = ancre[4:].strip() if ancre.startswith('def ') else None
+    for noeud in ast.walk(arbre):
+        if not isinstance(noeud, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if cible is not None:
+            if noeud.name == cible:
+                return texte(noeud)
+        else:
+            # Ancre = ligne de decorateur : on cherche la fonction dont l'un des
+            # decorateurs contient cette chaine.
+            corps = texte(noeud)
+            entete = corps[:corps.find('def ')] if 'def ' in corps else corps
+            if ancre in entete:
+                return corps
+    return ''
 
 
 front = io_open(os.path.join(FRONT, 'frontend.py'))
@@ -51,7 +101,7 @@ check("elle ne fait aucune requete SQL",
       and 'cur.execute' not in sonde_backend)
 
 
-print("\n=== Le frontend revalide les DEUX voies a chaque requete ===")
+print("\n=== Le frontend revalide la session a l'ouverture de chaque page ===")
 avant_request = bloc(front, 'def check_session_validity')
 check("before_request surveille la session Discord",
       "session.get('player_token')" in avant_request)
@@ -60,10 +110,28 @@ check("before_request surveille aussi l'ancien jeton admin",
 check("un refus purge le jeton joueur ET sa copie de compte",
       "pop('player_token'" in avant_request and "pop('compte'" in avant_request)
 
+# Une sonde par PAGE, plus une par requete. Sonder aussi les appels JSON faisait
+# payer 8 allers-retours backend pour ouvrir une page qui n'en vaut que 4, sur
+# 2 workers gunicorn qui bloquaient pendant l'attente : d'ou les 503 et les
+# « Erreur Backend » intermittents du 2026-09-17 (docs/audit-503-zone-admin.md).
+check("mais pas sur les appels JSON d'une page deja ouverte",
+      '_est_navigation' in avant_request)
+navigation = bloc(front, 'def _est_navigation')
+check("distingue navigation et fetch sur l'en-tete Accept",
+      "'Accept'" in navigation and 'application/json' in navigation)
+# Se tromper doit couter une sonde de trop, jamais une session laissee valide a
+# tort : un Accept absent ou exotique est donc traite comme une navigation.
+check("et traite un Accept inconnu comme une navigation",
+      'not in' in navigation)
+
 print("\n--- mais ne purge QUE sur un refus explicite (R-28) ---")
 # Confondre « session invalide » et « backend en panne » deconnecterait tout le
 # monde a chaque redemarrage du backend.
-sonde = bloc(front, 'def _sonde_session', 900)
+# Borne sur la vraie fin de la fonction plutot que sur un nombre de caracteres :
+# une docstring qui s'allonge repoussait le code utile hors de la fenetre, et
+# ces deux assertions echouaient sur du code pourtant intact.
+_i = front.find('def _sonde_session')
+sonde = front[_i:front.find('\n@app.', _i)] if _i >= 0 else ''
 check("seuls 401/403 declenchent la purge",
       '(401, 403)' in sonde or '[401, 403]' in sonde)
 check("un timeout conserve la session",
@@ -90,8 +158,32 @@ for nom, _gabarit in PAGES_ADMIN:
     # Jusqu'a la prochaine route : la revalidation doit etre DANS la vue.
     fin = front.find('@app.route', k)
     corps = front[k:fin if fin > k else k + 4000]
+    # Soit l'appel en clair, soit le helper qui le porte. Les six vues repetaient
+    # mot pour mot le meme backend_request('/admin/check-token') ; il est
+    # factorise depuis le 2026-09-17 dans `_acces_admin_revoque`, qui memoise en
+    # plus le verdict que le before_request vient d'etablir sur la meme requete.
+    # Exiger la chaine litterale ferait echouer cette assertion sur du code qui
+    # revalide pourtant bel et bien -- ce qui s'est produit lors de la refonte.
     check("%s revalide avant de rendre" % nom,
-          '/admin/check-token' in corps, nom)
+          '/admin/check-token' in corps or '_acces_admin_revoque()' in corps, nom)
+
+
+print("\n--- et le helper qui porte cette revalidation fait vraiment l'appel ---")
+# Les six assertions ci-dessus acceptent desormais une indirection : sans les
+# trois suivantes, vider `_acces_admin_revoque` de son contenu les laisserait
+# toutes vertes en supprimant toute revalidation.
+revoque = bloc(front, 'def _acces_admin_revoque')
+check("il interroge bien le backend",
+      "'/admin/check-token'" in revoque)
+check("et traite 401/403 comme un acces revoque",
+      '(401, 403)' in revoque or '[401, 403]' in revoque)
+# La memoisation ne doit vivre que le temps d'UNE requete HTTP. Portee sur
+# `session` (cookie) ou sur un global de module, elle survivrait a la revocation
+# qu'elle est censee detecter : un admin retrograde garderait ses pages ouvertes.
+# `g` est remis a zero par Flask a chaque requete, c'est la seule portee sure.
+check("et memoise sur g, jamais sur la session ni un global",
+      'session_revalidee' in revoque and '(g,' in revoque
+      and 'session[' not in revoque)
 
 
 print("\n=== La sortie de session ne renvoie plus vers le mot de passe ===")
@@ -110,11 +202,58 @@ check("plus aucune redirection vers l'ecran mot de passe nulle part",
 print("\n=== Une page deja ouverte reagit au 401 ===")
 # Sans ca, chaque appel affichait « Chargement impossible. » sans dire pourquoi
 # ni proposer de se reconnecter -- le serveur ayant deja purge la session.
-api_js = bloc(admin_html, 'async function api(', 1400)
+# Borne sur la fin REELLE du helper (sa dernière accolade, à son indentation)
+# plutôt que sur un nombre de caractères. `bloc` ne peut pas aider ici : c'est du
+# HTML, il n'y a pas de parseur Python pour le découper, et son repli textuel a
+# la fragilité qu'on cherche à éviter -- ajouter un cas au début de la fonction
+# (le 503 du limiteur, 2026-09-17) repoussait le test 401/403 hors de la fenêtre
+# et faisait échouer ces assertions sur du code pourtant intact.
+def bloc_js(source, ancre):
+    i = source.find(ancre)
+    if i < 0:
+        return ''
+    indent = ' ' * (i - source.rfind('\n', 0, i) - 1)
+    fin = source.find('\n' + indent + '}', i)
+    return source[i:fin + len(indent) + 3] if fin > i else source[i:]
+
+
+api_js = bloc_js(admin_html, 'async function api(')
 check("le helper api() detecte le refus de session",
       'status === 401' in api_js or 'status === 403' in api_js)
 check("et redirige au lieu de peindre une erreur",
       'window.location' in api_js)
+
+
+print("\n=== Un 503 du limiteur est distingue d'une panne ===")
+# La page d'erreur du limiteur est du HTML. Les helpers qui faisaient un
+# res.json() dessus levaient une exception, ou affichaient « Erreur serveur
+# (Reponse invalide) » -- un message qui accuse le serveur d'etre casse alors
+# qu'il se protege, et qui tait la seule chose utile : attendre quelques
+# secondes. Un 503 n'est PAS une session morte : surtout ne pas deconnecter.
+_GESTION = os.path.join(FRONT, 'static', 'js', 'gestion.js')
+_SAISONS = os.path.join(FRONT, 'templates', 'admin_saisons.html')
+gestion_js = io_open(_GESTION)
+saisons_html = io_open(_SAISONS)
+
+for _nom, _src, _ancre in [
+        ('apiCall (gestion.js)', gestion_js, 'async function apiCall'),
+        ('api (admin_comptes)', admin_html, 'async function api('),
+        ('api (admin_saisons)', saisons_html, 'async function api(')]:
+    _z = bloc_js(_src, _ancre)
+    check("%s traite le 503" % _nom, 'status === 503' in _z, _z[:120])
+    check("  et lit Retry-After pour dire quand reessayer" ,
+          'Retry-After' in _z, _nom)
+    # Le traitement du 503 doit RENDRE LA MAIN avant tout code de déconnexion :
+    # un débit limité ne dit rien sur la validité de la session, et déconnecter
+    # ferait perdre son travail à quelqu'un qui a simplement cliqué trop vite.
+    # On vérifie donc qu'un `return` sépare le test du 503 de la redirection,
+    # et non l'absence de `window.location` dans la fonction (il y est
+    # légitimement, pour le 401).
+    _apres503 = _z[_z.find('status === 503'):]
+    _redir = _apres503.find('window.location')
+    _retour = _apres503.find('return')
+    check("  sans purger la session sur un 503",
+          _retour >= 0 and (_redir < 0 or _retour < _redir), _nom)
 
 
 print("\n" + "=" * 60)

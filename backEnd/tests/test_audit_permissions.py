@@ -104,6 +104,14 @@ tout = '\n'.join(sources.values())
 #    importe ; ce controle statique ne depend pas de l'import.
 citees = set(_re.findall(r"permission_required\(\s*'(\w+)'", tout))
 citees |= set(_re.findall(r"compte_a_permission\([^,]+,\s*'(\w+)'", tout))
+# Les droits par champ de la fiche joueur ne sont jamais ecrits en dur : la
+# route boucle sur PERMISSIONS_CHAMPS_JOUEUR (constants.py). Ils portent donc
+# bel et bien une verification, que ce controle statique ne verrait pas.
+from constants import PERMISSIONS_CHAMPS_JOUEUR
+check("la table des champs n'est lue que par une route qui la verifie",
+      'PERMISSIONS_CHAMPS_JOUEUR' in sources['routes_admin.py']
+      and 'compte_a_permission' in sources['routes_admin.py'])
+citees |= set(PERMISSIONS_CHAMPS_JOUEUR.values())
 check("toute permission citée dans le backend existe au catalogue",
       citees <= set(PERMISSIONS_CATALOGUE),
       sorted(citees - set(PERMISSIONS_CATALOGUE)))

@@ -373,14 +373,28 @@
         // qui ajoutent X-Admin-Token depuis la session serveur.
         const opts = {
             method: method,
-            headers: {}
+            // `Accept` explicite : dit au frontend que c'est un appel de
+            // données et non l'ouverture d'une page, donc qu'il n'a pas à
+            // revalider la session. Sans lui, `fetch()` envoie « */* », traité
+            // comme une navigation (docs/audit-503-zone-admin.md, §10.4).
+            headers: {'Accept': 'application/json'}
         };
         if (csrfToken) opts.headers['X-CSRFToken'] = csrfToken;
         if(body !== null) {
             opts.headers['Content-Type'] = 'application/json';
             opts.body = JSON.stringify(body);
         }
-        return fetch(url, opts).then(res => res.json());
+        return fetch(url, opts).then(res => {
+            // 503 = limiteur de débit nginx : la réponse est une page HTML, et
+            // un res.json() direct levait une exception non rattrapée qui
+            // laissait l'écran figé sans le moindre message.
+            if (res.status === 503) {
+                const attente = parseInt(res.headers.get('Retry-After'), 10) || 5;
+                return { error: `Trop de requêtes d'un coup. Patientez ${attente} `
+                                + `secondes, puis rechargez la page.`, limite: true };
+            }
+            return res.json().catch(() => ({ error: 'Réponse serveur illisible.' }));
+        });
     }
 
     const wrapper = document.getElementById('customVictoryWrapper');

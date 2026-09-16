@@ -25,4 +25,21 @@ USER appuser
 
 EXPOSE 5000
 
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "frontend:app"]
+# Workers THREADÉS, et non les workers sync par défaut. Ce service ne calcule
+# rien : il rend des gabarits et relaie des appels au backend. Un worker sync
+# reste donc bloqué sur le réseau, sans rien faire, pendant toute la durée de
+# l'aller-retour -- avec 2 workers, deux requêtes lentes suffisaient à mettre
+# le service en file d'attente, et un rafraîchissement de plus partait en
+# timeout côté `requests` (5 s) que le JS affichait en « Erreur Backend »
+# (2026-09-17, docs/audit-503-zone-admin.md).
+#
+# `--threads 8` donne 16 requêtes simultanées au lieu de 2. C'est calibré sur
+# l'attente réseau, pas sur le CPU : les threads Python se marcheraient dessus
+# sur du calcul, jamais sur un `requests.get` qui relâche le GIL.
+#
+# `--timeout 30` : le défaut de 30 s est conservé explicitement pour qu'il soit
+# lu en même temps que le timeout de 5 s de `backend_request` -- le second doit
+# rester bien inférieur au premier, sinon gunicorn tuerait le worker avant que
+# l'appel backend n'ait eu le temps d'échouer proprement.
+CMD ["gunicorn", "-w", "2", "-k", "gthread", "--threads", "8", \
+     "--timeout", "30", "-b", "0.0.0.0:5000", "frontend:app"]

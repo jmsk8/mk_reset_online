@@ -385,15 +385,21 @@
             const btnSubmit = document.getElementById('btnSubmit');
             const selectLigue = document.getElementById('selectLigue');
 
+            // `Accept` explicite sur les appels de données de cette page : il
+            // dit au frontend qu'il n'ouvre pas une page et n'a donc pas à
+            // revalider la session. Sans lui, `fetch()` envoie « */* », traité
+            // comme une navigation (docs/audit-503-zone-admin.md, §10.4).
+            const HEADERS_JSON = { headers: { 'Accept': 'application/json' } };
+
             try {
-                const confRes = await fetch('/admin/config');
+                const confRes = await fetch('/admin/config', HEADERS_JSON);
                 const conf = await confRes.json();
                 
                 if (conf.league_mode_enabled) {
                     isLeagueMode = true;
                     document.getElementById('leagueSelectField').style.display = 'block';
                     
-                    const liguesRes = await fetch('/api/ligues');
+                    const liguesRes = await fetch('/api/ligues', HEADERS_JSON);
                     const ligues = await liguesRes.json();
                     
                     const mixteOpt = document.createElement('option');
@@ -415,7 +421,7 @@
                 }
             } catch (e) { console.error(e); }
 
-            fetch('/joueurs/noms')
+            fetch('/joueurs/noms', HEADERS_JSON)
                 .then(res => res.json())
                 .then(data => {
                     availablePlayers = data;

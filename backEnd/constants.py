@@ -131,14 +131,31 @@ ROLE_HIERARCHY = {ROLE_PLAYER: 0, ROLE_ADMIN: 1, ROLE_CHEF_ADMIN: 2, ROLE_SUPERA
 # revalidation. Motif : le reset passe PAR le moteur TrueSkill, il est tracable
 # et reproductible, contrairement a une saisie manuelle de score.
 PERMISSIONS_CATALOGUE = frozenset({
+    # Depuis le 2026-09-17, `gestion_joueurs` ne donne que la LECTURE : ouvrir
+    # l'onglet Fiches joueurs et voir la liste. Chacun des six gestes est une
+    # sous-permission ci-dessous. Un admin qui n'a que celle-ci ne peut donc
+    # rien modifier -- c'est voulu, pas un oubli d'octroi.
     "gestion_joueurs",
-    # SOUS-PERMISSION de gestion_joueurs : les deux gestes irreversibles sur une
-    # fiche (anonymiser, supprimer). Les routes concernees exigent les DEUX --
-    # c'est une restriction au sein du domaine, jamais un droit autonome.
-    # Entree du catalogue a part entiere malgre tout : elle s'accorde et se
-    # retire comme les autres, et permissions_delegables_par n'a pas a connaitre
-    # de cas particulier.
-    "rgpd_joueurs",
+    # SOUS-PERMISSIONS de gestion_joueurs : un droit par geste. Les routes
+    # concernees exigent les DEUX -- c'est une restriction au sein du domaine,
+    # jamais un droit autonome. Entrees du catalogue a part entiere malgre
+    # tout : elles s'accordent et se retirent comme les autres, et
+    # permissions_delegables_par n'a pas a connaitre de cas particulier.
+    "joueurs_creation",
+    "joueurs_nom",
+    "joueurs_couleur",
+    # Saisie manuelle du score, sur UNE fiche. A ne pas confondre avec le reset
+    # global, qui releve de gestion_config : celui-la passe par le moteur
+    # TrueSkill (tracable, reversible), celle-ci l'ecrase directement.
+    "edition_mu_sigma",
+    "joueurs_statut",
+    # Les deux gestes irreversibles : supprimer une fiche sans match, anonymiser
+    # une fiche qui en a. Ex-`rgpd_joueurs` -- renommee le 2026-09-17 parce que
+    # le nom promettait un dispositif RGPD qui n'existe pas : la suppression est
+    # du menage (elle refuse tout joueur ayant un match), seule l'anonymisation
+    # releve du droit a l'effacement. Leur vrai point commun est d'etre sans
+    # retour.
+    "joueurs_irreversible",
     "gestion_tournois",
     "gestion_ligues",
     "gestion_saisons",
@@ -157,7 +174,27 @@ PERMISSIONS_CATALOGUE = frozenset({
 # lisent la meme source -- et qu'ajouter une sous-permission n'oblige pas a
 # retrouver tous les endroits qui la supposent.
 SOUS_PERMISSIONS = {
-    "rgpd_joueurs": "gestion_joueurs",
+    "joueurs_creation": "gestion_joueurs",
+    "joueurs_nom": "gestion_joueurs",
+    "joueurs_couleur": "gestion_joueurs",
+    "edition_mu_sigma": "gestion_joueurs",
+    "joueurs_statut": "gestion_joueurs",
+    "joueurs_irreversible": "gestion_joueurs",
+}
+
+# Sous-permissions verifiees CHAMP PAR CHAMP dans api_update_joueur, et non par
+# un decorateur : les quatre champs partagent un seul UPDATE, donc un
+# @permission_required de route entiere ne saurait pas les distinguer. Cette
+# table dit quel champ du payload exige quel droit.
+#
+# Donnee plutot que suite de `if` : la route, le frontend et les tests lisent la
+# meme source, et ajouter un champ edite ne demande pas de retrouver les trois.
+PERMISSIONS_CHAMPS_JOUEUR = {
+    "nom": "joueurs_nom",
+    "color": "joueurs_couleur",
+    "mu": "edition_mu_sigma",
+    "sigma": "edition_mu_sigma",
+    "is_ranked": "joueurs_statut",
 }
 
 
