@@ -192,9 +192,27 @@ CREATE TABLE public.global_resets (
     id SERIAL PRIMARY KEY,
     date TIMESTAMP NOT NULL,
     value_applied REAL NOT NULL,
+    -- NULL = reset applique avant l'ajout du plafond (migration
+    -- 2026-09-17_reset_global_plafond.sql), donc sans limite haute.
+    max_sigma REAL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE public.global_resets OWNER TO CURRENT_USER;
+
+-- Detail par joueur d'un reset global. Avec un plafond les joueurs ne recoivent
+-- plus tous la meme valeur, donc le revert ne peut pas se contenter de
+-- soustraire value_applied : il restaure old_sigma, joueur par joueur.
+CREATE TABLE public.global_reset_details (
+    id SERIAL PRIMARY KEY,
+    reset_id INTEGER NOT NULL REFERENCES public.global_resets(id) ON DELETE CASCADE,
+    joueur_id INTEGER NOT NULL REFERENCES public.joueurs(id) ON DELETE CASCADE,
+    old_sigma DOUBLE PRECISION NOT NULL,
+    new_sigma DOUBLE PRECISION NOT NULL,
+    delta_applied DOUBLE PRECISION NOT NULL
+);
+ALTER TABLE public.global_reset_details OWNER TO CURRENT_USER;
+CREATE INDEX idx_global_reset_details_reset
+    ON public.global_reset_details(reset_id);
 
 -- API TOKENS
 CREATE TABLE public.api_tokens (

@@ -932,7 +932,27 @@ def get_joueur_stats(nom):
                 """, (nom,))
                 raw_ghosts = cur.fetchall()
 
-                cur.execute("SELECT date, value_applied FROM global_resets ORDER BY date DESC")
+                # Depuis le plafond (2026-09-17_reset_global_plafond.sql), un
+                # reset ne touche plus tout le monde ni du meme montant : le
+                # detail par joueur dit qui a bouge, et de combien. Sans ce
+                # filtre, un joueur exclu par le plafond verrait quand meme la
+                # ligne, avec un impact qu'il n'a jamais subi.
+                #
+                # LEFT JOIN + COALESCE pour les resets ANTERIEURS a la migration,
+                # qui n'ont aucun detail : ils etaient uniformes et sans plafond,
+                # donc value_applied vaut pour tout le monde. Un INNER JOIN les
+                # effacerait de l'historique de tous les profils.
+                cur.execute("""
+                    SELECT g.date, COALESCE(d.delta_applied, g.value_applied)
+                    FROM global_resets g
+                    LEFT JOIN global_reset_details d
+                           ON d.reset_id = g.id
+                          AND d.joueur_id = (SELECT id FROM Joueurs WHERE nom = %s)
+                    WHERE d.joueur_id IS NOT NULL
+                       OR NOT EXISTS (SELECT 1 FROM global_reset_details x
+                                      WHERE x.reset_id = g.id)
+                    ORDER BY g.date DESC
+                """, (nom,))
                 raw_resets = cur.fetchall()
 
                 historique_data = []
@@ -988,7 +1008,9 @@ def get_joueur_stats(nom):
                         "type": "reset", "date": r_date_only.strftime("%d/%m/%Y"),
                         "date_sort": r_date_only.strftime("%Y-%m-%d"),
                         "score": 0, "position": "-", "score_trueskill": round(reset_ts, 3),
-                        "valeur": val_float, "ligue": "-"
+                        # delta_applied est une soustraction de flottants
+                        # (2.0 - 1.7), donc 0.2999999999999998 a l'affichage.
+                        "valeur": round(val_float, 3), "ligue": "-"
                     })
 
                 type_order = {'tournoi': 0, 'absence': 1, 'reset': 2}

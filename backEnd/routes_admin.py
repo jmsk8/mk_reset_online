@@ -178,13 +178,26 @@ def fix_db_structure():
 @admin_bp.route('/api/admin/global-reset', methods=['POST'])
 @permission_required('gestion_config')
 def apply_global_reset():
+    """Ajoute du sigma aux joueurs situes SOUS un plafond, sans le leur faire
+    depasser.
+
+    Un joueur a 1.8, reset de 0.3, plafond a 2 : il va a 2.0, pas a 2.1. Un
+    joueur deja a 2.0 ou au-dessus n'est pas touche et ne laisse aucune trace.
+
+    Le plafond est obligatoire : c'est lui qui borne le geste, et le laisser
+    optionnel rendrait « pas de plafond » atteignable par simple oubli du champ.
+    """
     data = request.get_json()
     try:
         val = float(data.get('value', 0))
+        max_sigma = float(data.get('max_sigma', 0))
         date_str = data.get('date')
 
         if val <= 0:
             return jsonify({"error": "La valeur doit être positive"}), 400
+
+        if max_sigma <= 0:
+            return jsonify({"error": "Le plafond de sigma doit être positif"}), 400
 
         if not date_str:
             return jsonify({"error": "Une date est requise"}), 400
@@ -204,15 +217,53 @@ def apply_global_reset():
                         "error": f"Impossible : {conflict_count} tournoi(s) existent à cette date ou après. Le reset invaliderait leurs calculs."
                     }), 409
 
-                cur.execute("UPDATE Joueurs SET sigma = sigma + %s", (val,))
+                cur.execute("SELECT id, sigma FROM Joueurs WHERE sigma < %s", (max_sigma,))
+                concernes = cur.fetchall()
 
-                cur.execute("INSERT INTO global_resets (date, value_applied) VALUES (%s, %s)", (target_date, val))
+                if not concernes:
+                    return jsonify({
+                        "error": f"Aucun joueur n'a un sigma inférieur à {max_sigma} : le reset n'aurait aucun effet."
+                    }), 409
+
+                # min() = c'est le plafond qui gagne quand il est plus proche
+                # que la valeur demandee.
+                lignes = [
+                    (joueur_id, sigma, min(sigma + val, max_sigma))
+                    for joueur_id, sigma in concernes
+                ]
+
+                cur.execute(
+                    "INSERT INTO global_resets (date, value_applied, max_sigma) VALUES (%s, %s, %s) RETURNING id",
+                    (target_date, val, max_sigma),
+                )
+                reset_id = cur.fetchone()[0]
+
+                psycopg2.extras.execute_values(cur, """
+                    UPDATE Joueurs AS j SET sigma = data.new_sigma
+                    FROM (VALUES %s) AS data(id, new_sigma)
+                    WHERE j.id = data.id
+                """, [(joueur_id, new_sigma) for joueur_id, _old, new_sigma in lignes])
+
+                psycopg2.extras.execute_values(cur, """
+                    INSERT INTO global_reset_details
+                        (reset_id, joueur_id, old_sigma, new_sigma, delta_applied)
+                    VALUES %s
+                """, [
+                    (reset_id, joueur_id, old_sigma, new_sigma, new_sigma - old_sigma)
+                    for joueur_id, old_sigma, new_sigma in lignes
+                ])
 
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
 
-        return jsonify({"status": "success", "message": f"Sigma augmenté de {val} pour tous les joueurs (Date: {date_str})."})
+        return jsonify({
+            "status": "success",
+            "message": (
+                f"Sigma augmenté de {val} (plafond {max_sigma}) pour "
+                f"{len(lignes)} joueur(s) (Date: {date_str})."
+            ),
+        })
     except Exception as e:
         logger.error(f"Erreur serveur: {e}")
         return jsonify({"error": "Erreur interne du serveur"}), 500
@@ -242,7 +293,28 @@ def revert_global_reset():
                         "error": f"Annulation impossible : {conflict_count} tournoi(s) ont été enregistrés depuis ce reset ({reset_date}). Annuler maintenant fausserait l'historique."
                     }), 409
 
-                cur.execute("UPDATE Joueurs SET sigma = sigma - %s", (val,))
+                cur.execute(
+                    "SELECT joueur_id, old_sigma FROM global_reset_details WHERE reset_id = %s",
+                    (reset_id,),
+                )
+                details = cur.fetchall()
+
+                if details:
+                    # Restauration a l'identique : avec un plafond, les joueurs
+                    # n'ont pas tous recu `val`, donc le soustraire ferait
+                    # descendre les joueurs ecretes plus bas que leur point de
+                    # depart. Le garde-fou ci-dessus garantit qu'aucun tournoi
+                    # n'a bouge ces sigma depuis.
+                    psycopg2.extras.execute_values(cur, """
+                        UPDATE Joueurs AS j SET sigma = data.old_sigma
+                        FROM (VALUES %s) AS data(id, old_sigma)
+                        WHERE j.id = data.id
+                    """, details)
+                else:
+                    # Reset applique avant la migration du plafond : pas de
+                    # detail par joueur, mais il etait uniforme et sans plafond.
+                    cur.execute("UPDATE Joueurs SET sigma = sigma - %s", (val,))
+
                 cur.execute("DELETE FROM global_resets WHERE id = %s", (reset_id,))
             conn.commit()
             recalculate_tiers()

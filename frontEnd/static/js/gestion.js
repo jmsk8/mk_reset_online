@@ -436,17 +436,26 @@ async function saveEdit() {
 }
 
 async function applyGlobalReset() {
-    const val = document.getElementById('globalResetValue').value;
+    const val = parseFloat(document.getElementById('globalResetValue').value);
+    const maxSigma = parseFloat(document.getElementById('globalResetMaxSigma').value);
     const dateStr = document.getElementById('globalResetDate').value;
 
     if (!dateStr) {
         alert("Veuillez sélectionner une date.");
         return;
     }
+    if (isNaN(val) || val <= 0) {
+        alert("Erreur: la valeur à ajouter doit être un nombre positif.");
+        return;
+    }
+    if (isNaN(maxSigma) || maxSigma <= 0) {
+        alert("Erreur: le plafond de Sigma doit être un nombre positif.");
+        return;
+    }
 
     const dateParts = dateStr.split('-');
     const dateDisplay = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
-    if (!confirm(`Es-tu sûr de vouloir ajouter ${val} de Sigma à TOUS les joueurs en date du ${dateDisplay} ?\n\nAttention : Cela sera refusé si un tournoi existe déjà à cette date ou après.`)) return;
+    if (!confirm(`Es-tu sûr de vouloir ajouter ${val} de Sigma (plafonné à ${maxSigma}) en date du ${dateDisplay} ?\n\nSeuls les joueurs sous ${maxSigma} sont concernés, sans dépasser ce plafond.\n\nAttention : Cela sera refusé si un tournoi existe déjà à cette date ou après.`)) return;
 
     try {
         const csrfMeta = document.querySelector('meta[name="csrf-token"]');
@@ -456,14 +465,14 @@ async function applyGlobalReset() {
             headers: {'Content-Type': 'application/json', ...csrfHeaders},
             body: JSON.stringify({
                 value: val,
+                max_sigma: maxSigma,
                 date: dateStr
             })
         });
         const data = await res.json();
-        
+
         if (res.ok) {
             alert("✅ " + data.message);
-            loadPlayers();
         } else {
             alert("⛔ Erreur : " + data.error);
         }
@@ -483,7 +492,6 @@ async function revertGlobalReset() {
         
         if (res.ok) {
             alert("✅ " + data.message);
-            loadPlayers();
         } else {
             alert("⛔ " + data.error);
         }
