@@ -2,8 +2,9 @@
    docs/hierarchie-admin-plan.md).
 
    Ce bloc est SEPARE des autres outils de gestion joueurs a dessein : il agit
-   sur TOUS les joueurs d'un coup, et son annulation depend de l'absence de
-   tournoi posterieur -- pas une operation de routine sur une fiche.
+   sur un grand nombre de joueurs d'un coup (tous ceux sous le plafond saisi),
+   et son annulation depend de l'absence de tournoi posterieur -- pas une
+   operation de routine sur une fiche.
 
    DEPUIS LE 2026-09-13 il est delegable via gestion_config (« Reglage TS »),
    ce qui INVERSE R-51 : il passe par le moteur TrueSkill, donc il suit les
@@ -25,13 +26,15 @@
         <div class="content has-text-grey-light is-small mb-4">
             <p>
                 <i class="fas fa-info-circle"></i>
-                Cette action ajoute de l'incertitude (Sigma) à <strong>tous</strong> les joueurs.
+                Cette action ajoute de l'incertitude (Sigma) aux joueurs situés
+                <strong>sous le plafond</strong>, sans jamais le leur faire dépasser.
+                Un joueur déjà au plafond ou au-dessus n'est pas touché.
                 Elle ne peut être annulée que si aucun tournoi n'a été enregistré depuis.
             </p>
         </div>
 
         <div class="columns is-multiline">
-            <div class="column is-6">
+            <div class="column is-4">
                 <div class="field">
                     <label class="label has-text-white">Date d'application</label>
                     <div class="control has-icons-left">
@@ -42,7 +45,7 @@
                     </div>
                 </div>
             </div>
-            <div class="column is-6">
+            <div class="column is-4">
                 <div class="field">
                     <label class="label has-text-white">Valeur Sigma à ajouter</label>
                     <div class="control has-icons-left">
@@ -51,6 +54,25 @@
                             <i class="fas fa-chart-line"></i>
                         </span>
                     </div>
+                </div>
+            </div>
+            {# Volontairement VIDE, et volontairement nomme « plafond » : la
+               page porte deja un champ « Limite Sigma » (configSigmaLimit,
+               reglage sigma_threshold) qui decide de l'AFFICHAGE des tiers et
+               n'a aucun rapport avec l'ecretage d'un reset. Le pre-remplir
+               depuis cette valeur suggererait un lien qui n'existe pas. #}
+            <div class="column is-4">
+                <div class="field">
+                    <label class="label has-text-white">Plafond de Sigma (ce reset)</label>
+                    <div class="control has-icons-left">
+                        <input class="input" type="number" id="globalResetMaxSigma" placeholder="ex. 2" step="0.01">
+                        <span class="icon is-small is-left">
+                            <i class="fas fa-arrow-up-from-bracket"></i>
+                        </span>
+                    </div>
+                    <p class="help has-text-grey-light">
+                        Valeur par défaut : 4
+                    </p>
                 </div>
             </div>
             <div class="column is-12">

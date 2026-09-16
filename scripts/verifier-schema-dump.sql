@@ -20,9 +20,10 @@ DECLARE
     -- encore (aucune migration n'a ete appliquee en prod). Tenir cette liste a
     -- jour en meme temps que docker-compose.dump.yml.
     attendues TEXT[] := ARRAY[
-        'audit_admin', 'comptes', 'invitations', 'liaisons_demandes',
-        'noms_interdits', 'notifications', 'permissions_admin', 'profils',
-        'service_tokens', 'sessions_joueurs', 'sessions_tournois', 'tiers'
+        'audit_admin', 'comptes', 'global_reset_details', 'invitations',
+        'liaisons_demandes', 'noms_interdits', 'notifications',
+        'permissions_admin', 'profils', 'service_tokens', 'sessions_joueurs',
+        'sessions_tournois', 'tiers'
     ];
     manquantes TEXT[];
 BEGIN
@@ -77,6 +78,17 @@ BEGIN
             (SELECT count(*) FROM public.tournois WHERE session_id IS NULL)
             USING HINT = 'Relancer 2026-09-15_sessions_tournois.sql, puis diagnostiquer avec '
                          'SELECT id, date, ligue_id FROM tournois WHERE session_id IS NULL;';
+    END IF;
+
+    -- Colonne ajoutee sur une table PREEXISTANTE : global_resets existe de
+    -- toute facon, seul le plafond manquerait. Un reset partirait alors en
+    -- erreur a chaque tentative, sans que rien n'ait signale l'echec ici.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'global_resets' AND column_name = 'max_sigma'
+    ) THEN
+        RAISE EXCEPTION 'Rattrapage incomplet : global_resets.max_sigma absente.'
+            USING HINT = '2026-09-17_reset_global_plafond.sql n''a pas abouti.';
     END IF;
 
     RAISE NOTICE 'Schema verifie : les % tables attendues sont presentes.', array_length(attendues, 1);
