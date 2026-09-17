@@ -32,10 +32,10 @@ des sessions** : une session, une fois ouverte, est trop difficile à reprendre.
 |---|---|---|---|
 | **A-01** | La durée de session est figée sur le rôle **au moment de la connexion** | 🟠 moyenne | Session |
 | **A-02** | Changer le rôle d'un compte ne ferme aucune de ses sessions | 🟠 moyenne | Session |
-| **A-03** | Personne ne peut voir ni fermer **ses propres** sessions | 🟠 moyenne | Session |
+| **A-03** | ~~Personne ne peut voir ni fermer **ses propres** sessions~~ | ✅ **corrigé 2026-09-16** | Session |
 | **A-04** | `/admin-auth` (mot de passe partagé) est toujours ouvert | 🟡 faible | Dette |
 | **A-05** | `api_tokens` stocke le jeton **en clair**, renouvelable sans borne | 🟡 faible | Dette |
-| **A-06** | Se reconnecter n'invalide aucune session existante | 🟡 faible | Session |
+| **A-06** | Se reconnecter n'invalide aucune session existante | 🟡 faible — **choix acté** (voir A-06) | Session |
 | **A-07** | Le consentement CGU est affiché mais jamais **imposé** | 🟡 faible | RGPD |
 
 Aucun constat n'est 🔴. Les trois 🟠 se corrigent ensemble, et partagent une seule cause.
@@ -90,9 +90,22 @@ Par contraste, les deux routes qui *doivent* fermer les sessions le font bien : 
 les sessions, la suspension ne serait qu'un libellé d'affichage »*. Le même raisonnement
 s'applique au changement de rôle, il n'y a juste pas été appliqué.
 
-### A-03 — aucune reprise en main par le titulaire
+### A-03 — aucune reprise en main par le titulaire — ✅ CORRIGÉ le 2026-09-16
 
-Inventaire complet de ce qui existe :
+> **Résolu.** `GET /auth/mes-sessions` liste les sessions actives du titulaire et
+> `DELETE /auth/mes-sessions` ferme les autres, épargnant la session courante par défaut. L'écran
+> « Vos appareils connectés » vit dans `/mon-compte`. Couverture : `backEnd/tests/test_mes_sessions.py`
+> (57 assertions), dont les deux qui portent le reste — le `token_hash` ne sort jamais dans la
+> réponse, et le `DELETE` ne peut toucher aucun autre `compte_id`.
+>
+> Trois décisions à connaître : pas de révocation par appareil (il n'existe aucun identifiant de
+> session exposable, la clé primaire *est* le secret), le `user_agent` est résumé en libellé issu
+> d'une liste fermée plutôt que rendu brut, et le geste ne laisse **aucune trace consultable**
+> (`audit_admin` trace ce qu'un admin fait à autrui, pas ce qu'un titulaire fait chez lui).
+> Conception : [mes-sessions-actives-plan.md](mes-sessions-actives-plan.md) et
+> [mes-sessions-actives-preparation.md](mes-sessions-actives-preparation.md).
+
+Le constat d'origine, conservé pour le contexte. Inventaire complet de ce qui existait :
 
 | Geste | Qui peut | Route |
 |---|---|---|
@@ -165,6 +178,21 @@ exactement A-03 et A-06. Aujourd'hui, la victime d'un vol ne peut rien faire seu
 reconnecter — le réflexe naturel — **n'invalide pas** le token volé (A-06) : chaque connexion
 ajoute une ligne sans toucher aux précédentes. Le seul ménage effectué porte sur les sessions
 **déjà expirées**.
+
+> **Mise à jour du 2026-09-16 — A-03 corrigé, A-06 devient un choix assumé.**
+>
+> La capacité de reprise existe désormais (voir A-03 ci-dessus). **A-06 reste vrai dans les faits
+> et le restera : `login()` n'a pas changé.** Ce n'est pas un reste à faire.
+>
+> Fermer automatiquement les anciennes sessions à chaque connexion réglerait A-06 sur le papier,
+> mais casserait l'usage normal « mon téléphone **et** mon PC », qui est légitime et fréquent. La
+> bonne réponse est de rendre le ménage **possible et visible**, pas obligatoire : c'est ce que
+> fait le bouton « Déconnecter les autres appareils ». Le réflexe de la victime n'est plus « me
+> reconnecter en espérant », c'est un geste explicite qui fait ce qu'il annonce.
+>
+> L'assertion correspondante de `test_audit_auth_discord.py` reste donc **volontairement rouge** :
+> elle constate un comportement choisi, pas un défaut en attente. La lever reviendrait à prétendre
+> que `login()` fait une rotation — ce qui serait faux.
 
 ---
 

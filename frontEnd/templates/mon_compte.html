@@ -107,6 +107,18 @@
                             </div>
                             <div id="alerte-rgpd"></div>
 
+                            <hr>
+
+                            <p class="has-text-weight-semibold">Vos appareils connectés</p>
+                            {# Rempli en fetch au chargement : /mon-compte fait déjà deux
+                               appels backend, un troisième synchrone ralentirait une page
+                               que tout le monde visite pour un bloc que peu regardent. #}
+                            <div id="liste-sessions" class="content is-small mt-2">
+                                <p class="has-text-grey">Chargement…</p>
+                            </div>
+                            <div class="buttons" id="zone-bouton-sessions"></div>
+                            <div id="alerte-sessions"></div>
+
                             <div class="content is-small has-text-grey mt-4">
                                 <p>
                                     <i class="fas fa-shield-halved"></i>
@@ -178,6 +190,169 @@
             zone.appendChild(n);
         })();
         {% endif %}
+
+        // -------------------------------------------------------------
+        // Vos appareils connectés
+        // -------------------------------------------------------------
+        (function () {
+            const liste = document.getElementById('liste-sessions');
+            const zoneBouton = document.getElementById('zone-bouton-sessions');
+            const alerteSessions = document.getElementById('alerte-sessions');
+
+            function signaler(type, texte) {
+                alerteSessions.innerHTML = '';
+                const d = document.createElement('div');
+                d.className = 'notification is-' + type + ' is-light mt-2';
+                d.textContent = texte;
+                alerteSessions.appendChild(d);
+            }
+
+            // « il y a 3 minutes » se comprend d'un coup d'œil, une date ISO non.
+            // La date absolue reste en title, pour qui veut vérifier.
+            function depuis(iso) {
+                const secondes = Math.floor((Date.now() - new Date(iso)) / 1000);
+                if (secondes < 60) return "à l'instant";
+                const paliers = [
+                    [60, 'minute'], [24, 'heure'], [7, 'jour'], [4.35, 'semaine'],
+                    [12, 'mois'], [Infinity, 'an'],
+                ];
+                let valeur = secondes, unite = 'seconde';
+                for (const [facteur, nom] of paliers) {
+                    if (valeur < facteur) break;
+                    valeur = Math.floor(valeur / facteur);
+                    unite = nom;
+                }
+                const pluriel = valeur > 1 ? (unite === 'mois' ? '' : 's') : '';
+                return 'il y a ' + valeur + ' ' + unite + pluriel;
+            }
+
+            function dateCourte(iso) {
+                return new Date(iso).toLocaleDateString('fr-FR',
+                    {day: '2-digit', month: '2-digit', year: 'numeric'});
+            }
+
+            function ligne(s) {
+                const bloc = document.createElement('div');
+                bloc.className = 'mb-3';
+
+                const titre = document.createElement('p');
+                titre.className = 'mb-0';
+                const icone = document.createElement('span');
+                icone.className = 'icon is-small has-text-grey';
+                const i = document.createElement('i');
+                i.className = 'fas fa-' + (s.courante ? 'circle-check' : 'display');
+                icone.appendChild(i);
+                titre.appendChild(icone);
+
+                const nom = document.createElement('span');
+                nom.className = 'ml-1';
+                nom.textContent = s.appareil;
+                titre.appendChild(nom);
+
+                if (s.courante) {
+                    const tag = document.createElement('span');
+                    tag.className = 'tag is-info is-light ml-2';
+                    tag.textContent = 'cet appareil';
+                    titre.appendChild(tag);
+                }
+                bloc.appendChild(titre);
+
+                const detail = document.createElement('p');
+                detail.className = 'is-size-7 has-text-grey ml-4';
+                // derniere_activite est nullable : une session créée mais jamais
+                // représentée depuis. Le dire est informatif — une session jamais
+                // utilisée sur un compte qu'on croit compromis est le signal qu'on
+                // cherche. Surtout, ne pas afficher une date d'epoch à la place.
+                const vue = s.derniere_activite
+                    ? 'vue ' + depuis(s.derniere_activite)
+                    : 'jamais utilisée';
+                detail.textContent = 'Ouverte le ' + dateCourte(s.ouverte_le) + ' · ' + vue;
+                detail.title = s.derniere_activite
+                    ? 'Dernière activité : ' + new Date(s.derniere_activite).toLocaleString('fr-FR')
+                    : 'Cette session n’a jamais servi depuis son ouverture.';
+                bloc.appendChild(detail);
+                return bloc;
+            }
+
+            async function charger() {
+                try {
+                    const res = await fetch('/mon-compte/sessions', {
+                        headers: {'Accept': 'application/json'}
+                    });
+                    if (!res.ok) throw new Error(res.status);
+                    const data = await res.json();
+                    afficherListe(data.sessions || []);
+                } catch (err) {
+                    // Jamais une liste vide en cas d'échec : elle se lirait
+                    // « aucune session », ce qui est faux et rassurant à tort.
+                    liste.innerHTML = '';
+                    const p = document.createElement('p');
+                    p.className = 'has-text-grey';
+                    p.textContent = 'Impossible de charger vos appareils pour le moment.';
+                    liste.appendChild(p);
+                    zoneBouton.innerHTML = '';
+                }
+            }
+
+            function afficherListe(sessions) {
+                liste.innerHTML = '';
+                zoneBouton.innerHTML = '';
+                sessions.forEach(s => liste.appendChild(ligne(s)));
+
+                // Proposer « déconnecter les autres » quand il n'y en a pas est
+                // une fausse action : le bouton n'apparaît qu'à partir de deux.
+                if (sessions.length < 2) return;
+
+                const btn = document.createElement('button');
+                btn.className = 'button is-warning is-light is-small';
+                const ic = document.createElement('span');
+                ic.className = 'icon';
+                const ii = document.createElement('i');
+                ii.className = 'fas fa-right-from-bracket';
+                ic.appendChild(ii);
+                const txt = document.createElement('span');
+                txt.textContent = 'Déconnecter les autres appareils';
+                btn.appendChild(ic); btn.appendChild(txt);
+                btn.addEventListener('click', () => fermer(btn, sessions.length - 1));
+                zoneBouton.appendChild(btn);
+            }
+
+            async function fermer(btn, combien) {
+                if (!confirm(
+                    'Déconnecter ' + combien + ' autre' + (combien > 1 ? 's' : '')
+                    + ' appareil' + (combien > 1 ? 's' : '') + ' ?\n\n'
+                    + 'Cet appareil-ci restera connecté. Les autres devront se '
+                    + 'reconnecter avec votre compte Discord.'
+                )) return;
+
+                btn.classList.add('is-loading');
+                try {
+                    const res = await fetch('/mon-compte/sessions/fermer', {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': csrf, 'Content-Type': 'application/json',
+                                  'Accept': 'application/json'},
+                        body: JSON.stringify({inclure_courante: false})
+                    });
+                    const d = await res.json();
+                    if (!res.ok) { signaler('danger', d.error || 'La déconnexion a échoué.'); return; }
+                    // Le backend peut avoir fermé la session courante (cas limite :
+                    // en-tête illisible côté serveur). Il le dit, on le suit.
+                    if (d.session_fermee) { window.location.href = '/'; return; }
+                    const n = d.sessions_fermees || 0;
+                    signaler('success', n > 0
+                        ? n + ' appareil' + (n > 1 ? 's ont' : ' a') + ' été déconnecté'
+                          + (n > 1 ? 's.' : '.')
+                        : 'Aucun autre appareil n’était connecté.');
+                    charger();
+                } catch (err) {
+                    signaler('danger', 'Serveur injoignable.');
+                } finally {
+                    btn.classList.remove('is-loading');
+                }
+            }
+
+            charger();
+        })();
 
         document.getElementById('btn-supprimer').addEventListener('click', async (e) => {
             const btn = e.currentTarget;

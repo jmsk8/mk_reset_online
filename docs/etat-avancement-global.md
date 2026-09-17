@@ -6,11 +6,49 @@
 > classé par priorité.
 >
 > **Dernière mise à jour : 2026-09-18**, après audit croisé docs ↔ code, puis après le chantier
-> performance/503 et sa troisième vague (§6 et « Chantiers soldés »).
+> performance/503 et sa troisième vague (§6 et « Chantiers soldés »). **Complété le 2026-09-16**
+> par l'ordre recommandé ci-dessous et le §7.
+>
+> ⚠️ **Incohérence de dates, non corrigée faute de savoir laquelle fait foi.** Ce document est
+> daté du 18/09 et décrit des livrables des 17 et 18/09, alors que la date système est le
+> **2026-09-16** et que le dernier commit (`fe69c0e`, 503 nginx) date du 16/09. Le **code
+> confirme les livrables** (migrations `2026-09-17_*` présentes, tests en place) : seules les
+> dates dérivent, d'environ deux jours. À recaler si la chronologie compte.
 >
 > À chaque reprise de chantier listé ici, mettre à jour la ligne correspondante plutôt que de
 > relire tous les docs de zéro. Quand un point est traité, le déplacer dans « Chantiers soldés »
 > avec sa date, ou le supprimer si le doc source le documente déjà correctement.
+
+## Ordre recommandé pour la prochaine maj — arbitré le 2026-09-16
+
+> Cette section classe par **urgence réelle**, pas par numéro de chantier. La numérotation de
+> « Tâches en suspens » ci-dessous est un inventaire, pas une priorité : les renvois d'autres
+> docs s'y appuient, donc elle ne bouge pas. Le critère du classement est simple — **est-ce que
+> la dette grossit pendant qu'on attend ?**
+
+| # | Action | Renvoi | Pourquoi ce rang |
+|---|---|---|---|
+| 1 | **Réaccorder les sous-permissions fiche joueur aux admins en prod** | « Chantiers soldés », 17/09 | Seul point dont l'impact est **déjà en cours** : des admins sont bloqués maintenant. Pas du code, quelques minutes dans le panneau. |
+| 2 | ~~**« Mes sessions actives »**~~ | §2 | ✅ **codé le 16/09**, non commité. Recette manuelle à faire. |
+| 3 | **Rotation logrotate des journaux nginx** | §3 | Le coût **monte tout seul** (disque). Config à poser, pas du développement. |
+| 4 | **Corriger le §8 de schema-base-de-donnees.md** | « Note obsolète » | Doc **fausse sur un contrôle de privilèges** : induit en erreur la prochaine session. ~5 min. |
+| 5 | **Test du gate de permission, côté frontend** | §5 | Angle mort réel mais **étroit** — voir la correction de périmètre ci-dessous. |
+| 6 | **Journal `audit_admin`** | §4 | **Gagne à attendre** : les INSERT tournent déjà, les données s'accumulent. |
+| 7 | **Étape 6 auth Discord** | §1 | **Pas un choix** : bloquée par des prérequis d'exploitation, se reporte d'elle-même. |
+
+**Session minimale utile : 1 + 2 + 4.** Le reste tient sans dommage.
+
+⚠️ **Correction de périmètre sur le §5** (vérifiée dans le code le 2026-09-16) : le gate
+`gestion_config` **est déjà testé côté backend** — `test_scission_permissions.py` vérifie qu'un
+`gestion_config` seul reçoit bien un 403, et `test_hierarchie_routes.py` couvre les permissions
+effectives. Le trou restant est **uniquement côté frontend**
+([frontend.py:1471](../frontEnd/frontend.py#L1471)) : la distinction session expirée (redirection)
+vs droit manquant (message, sans déconnexion). Le §5 ci-dessous surestime ce qui manque.
+
+ℹ️ **Précision sur le §4** : `audit_admin` reçoit des `INSERT` depuis **7 fichiers**
+(`auth_discord.py`, `routes_auth.py`, `services.py`, `routes_admin.py`, `routes_comptes.py`), pas
+seulement le domaine « comptes » comme l'affirme le §4. Le constat qui compte reste vrai :
+**aucun `SELECT` nulle part**.
 
 ## Tâches en suspens, par priorité
 
@@ -31,13 +69,35 @@ cases encore non cochées : deux comptes `superadmin` distincts, procédure brea
 moins une fois pour de vrai, période de recouvrement passée. Ce sont des faits d'exploitation, à
 vérifier/cocher manuellement, pas du code.
 
-### 2. "Mes sessions actives" — plan complet, rien implémenté
+### 2. "Mes sessions actives" — ✅ CODÉ le 2026-09-16, non commité, recette manuelle à faire
+
+> **Livré dans l'arbre de travail.** `GET` et `DELETE /auth/mes-sessions`, `resumer_appareil()`,
+> les deux proxys frontend et la section « Vos appareils connectés » dans `/mon-compte`.
+> `test_mes_sessions.py` : **57/57**. A-03 converti en non-régressions dans
+> `test_audit_auth_discord.py` (**79/79**), A-06 conservé comme choix acté (D5).
+> **Rien n'est commité**, et la recette à deux navigateurs reste à faire (§6 de la préparation).
+>
+> ⚠️ Un défaut préexistant a été corrigé en passant, hors périmètre annoncé :
+> `backend_request` **ignorait le corps des requêtes DELETE**
+> ([frontend.py](../frontEnd/frontend.py)) — `requests.delete()` était appelé sans `json=data`.
+> Aucun appelant existant n'en envoyait, donc c'était sans effet jusqu'ici ; mais
+> `inclure_courante` serait parti en silence. À relire, c'est un helper partagé par six appelants.
+
+Le constat d'origine, pour mémoire :
 
 [mes-sessions-actives-plan.md](mes-sessions-actives-plan.md), daté du 2026-09-15. Referme deux
 constats d'audit connus (A-03, A-06 dans audit-auth-discord.md). Petit périmètre, plan déjà prêt.
 
 - Aucune route `/auth/mes-sessions` (`GET`/`DELETE`) dans `backEnd/routes_auth.py`.
 - Aucun `backEnd/tests/test_mes_sessions.py`.
+
+**Terrain préparé le 2026-09-16** :
+[mes-sessions-actives-preparation.md](mes-sessions-actives-preparation.md). Le plan est confirmé
+(13 affirmations recoupées avec le code, les 6 décisions D1→D6 tiennent), mais ses numéros de ligne
+ont dérivé et **trois points sont à trancher avant d'écrire** : l'accès au `token_hash` (le
+décorateur ne l'expose pas — c'est D2 qui en dépend), l'affichage d'un `last_seen_at` à `NULL`, et
+l'absence assumée de trace. ⚠️ Le plan annonce que les assertions A-03 **et** A-06 vont basculer :
+**inexact pour A-06**, que D5 laisse volontairement en l'état.
 
 ### 3. RGPD — deux tâches opérationnelles non cochées
 
@@ -70,6 +130,18 @@ chacune doit appeler `_acces_admin_revoque()` avant de rendre, et le helper lui-
 **Reste à couvrir** : le **gate de permission** proprement dit — qu'un admin sans `gestion_config`
 soit bien renvoyé de `/admin/reglages`, et la distinction session expirée (redirection) vs droit
 manquant (message, pas de déconnexion). C'est le cœur du §8.3, et il n'est toujours pas testé.
+
+### 7. Sous-permissions fiche joueur — geste d'exploitation en attente (prod)
+
+Ce n'est pas du code : la migration `2026-09-17_sous_permissions_fiche_joueur.sql` **n'accorde pas
+rétroactivement** les cinq nouvelles sous-permissions, et le dit explicitement (« conséquence
+assumée et VISIBLE »). Les admins qui portaient `gestion_joueurs` gardent l'onglet mais **ont
+perdu les six gestes** (créer, renommer, couleur, mu/sigma, statut, supprimer/anonymiser).
+
+- `[ ]` Les réaccorder un par un dans le panneau des permissions, pour chaque admin concerné.
+
+Tant que ce n'est pas fait, **des admins sont bloqués en production**. C'est le rang 1 du tableau
+en tête de document : aucun autre point de la liste n'a un impact déjà en cours.
 
 ### 6. Performance / 503 — réglé le 2026-09-18, après une troisième vague
 

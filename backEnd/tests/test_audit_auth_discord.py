@@ -135,10 +135,12 @@ check("supprimer son compte ferme ses sessions (non-regression)",
 
 
 # ===========================================================================
-print("\n=== A-03 : personne ne peut voir ni fermer SES PROPRES sessions ===")
-# L'admin peut fermer les sessions d'autrui (/admin/comptes/<id>/sessions), et
-# l'export RGPD les LISTE -- mais le titulaire n'a aucun moyen de les fermer.
-# Quelqu'un dont le token a fuite n'a pas de « deconnecter partout ».
+print("\n=== A-03 : le titulaire gere ses propres sessions (CORRIGE 2026-09-16) ===")
+# Constat d'origine : l'admin pouvait fermer les sessions d'autrui et l'export
+# RGPD les listait, mais le titulaire n'avait aucun moyen de les fermer lui-meme.
+# Corrige par /auth/mes-sessions (GET + DELETE). Ces assertions sont devenues
+# des NON-REGRESSIONS : elles gardent la capacite, elles ne constatent plus un
+# defaut. Couverture detaillee dans test_mes_sessions.py.
 check("un admin peut fermer les sessions d'un compte (non-regression)",
       "/admin/comptes/<int:compte_id>/sessions" in source_comptes)
 check("l'export RGPD liste bien les sessions actives (non-regression)",
@@ -146,13 +148,21 @@ check("l'export RGPD liste bien les sessions actives (non-regression)",
 
 routes_auth_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                     '..', 'routes_auth.py'), encoding='utf-8').read()
-defaut(A_AUCUNE_GESTION_DE_SES_SESSIONS,
-       "aucune route self-service ne liste ses sessions",
-       '/auth/mes-sessions' not in routes_auth_src and
-       '/auth/sessions' not in routes_auth_src)
-defaut(A_AUCUNE_GESTION_DE_SES_SESSIONS,
-       "/auth/logout ne ferme QUE la session courante, pas les autres",
-       'WHERE token_hash = %s' in corps_de(routes_auth_src, "def logout(", 900))
+check("le titulaire peut LISTER ses sessions (A-03 corrige)",
+      "@auth_bp.route('/auth/mes-sessions', methods=['GET'])" in routes_auth_src)
+check("le titulaire peut FERMER ses autres sessions (A-03 corrige)",
+      "@auth_bp.route('/auth/mes-sessions', methods=['DELETE'])" in routes_auth_src)
+# Sans player_required, ces routes rendraient les sessions de n'importe qui.
+# Le decorateur doit se trouver entre la route et le def -- c'est le seul
+# endroit ou il s'applique.
+for _route, _fn in (("methods=['GET'])", 'def mes_sessions('),
+                    ("methods=['DELETE'])", 'def fermer_mes_sessions(')):
+    _i = routes_auth_src.find('/auth/mes-sessions')
+    _debut = routes_auth_src.find(_route, _i)
+    check("%s est protegee par player_required" % _fn[4:-1],
+          '@player_required' in routes_auth_src[_debut:routes_auth_src.find(_fn, _debut)])
+check("/auth/logout ne ferme toujours QUE la session courante (non-regression)",
+      'WHERE token_hash = %s' in corps_de(routes_auth_src, "def logout(", 900))
 
 
 # ===========================================================================

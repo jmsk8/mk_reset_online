@@ -333,6 +333,64 @@ def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tu
     return token, expires_at
 
 
+# Libelles d'appareil, pour l'ecran « Vos appareils connectes ».
+#
+# L'ORDRE DE CES TABLEAUX EST SIGNIFICATIF et c'est le seul piege de la
+# fonction : les user-agents se contiennent mutuellement. Edge annonce
+# « Edg/... Chrome/... Safari/... », Chrome annonce « Chrome/... Safari/... »,
+# et Android annonce « Linux; Android ». Tester du plus specifique au plus
+# generique est donc obligatoire -- inverser deux lignes ne casse aucun test de
+# syntaxe, seulement l'affichage, et silencieusement.
+_NAVIGATEURS = (
+    ('Edg/', 'Edge'),        # avant Chrome : son UA contient « Chrome »
+    ('OPR/', 'Opera'),       # idem
+    ('Firefox/', 'Firefox'),
+    ('Chrome/', 'Chrome'),   # avant Safari : son UA contient « Safari »
+    ('Safari/', 'Safari'),
+)
+_SYSTEMES = (
+    ('Android', 'Android'),  # avant Linux : son UA contient « Linux »
+    ('iPhone', 'iOS'),
+    ('iPad', 'iOS'),
+    ('Windows', 'Windows'),
+    ('Mac OS X', 'macOS'),
+    ('Linux', 'Linux'),
+)
+APPAREIL_INCONNU = 'Appareil inconnu'
+
+
+def resumer_appareil(user_agent: str | None) -> str:
+    """Resume un user-agent en un libelle court, issu d'une LISTE FERMEE.
+
+    Deux raisons d'exister, dans cet ordre :
+
+    1. Utilite. « Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML,
+       like Gecko) Chrome/... » n'aide personne a reconnaitre son propre
+       appareil, et reconnaitre son appareil est la SEULE fonction de l'ecran.
+    2. Surete d'affichage. Le user-agent est une chaine controlee par le client,
+       ecrite telle quelle en base depuis un en-tete HTTP. Jinja echappe par
+       defaut, mais la regle du projet est de ne pas faire reposer une garantie
+       sur un defaut.
+
+    Ne renvoie JAMAIS un fragment de l'entree : uniquement une constante des
+    tableaux ci-dessus, ou APPAREIL_INCONNU. C'est ce qui rend l'affichage sur
+    par construction plutot que par echappement -- une UA piegee ressort en
+    « Appareil inconnu », pas echappee.
+
+    L'UA brute reste disponible dans l'export RGPD : c'est bien une donnee
+    personnelle collectee, et l'export doit la restituer integralement.
+    """
+    if not user_agent:
+        return APPAREIL_INCONNU
+
+    navigateur = next((nom for motif, nom in _NAVIGATEURS if motif in user_agent), None)
+    systeme = next((nom for motif, nom in _SYSTEMES if motif in user_agent), None)
+
+    if navigateur and systeme:
+        return f"{navigateur} sur {systeme}"
+    return navigateur or systeme or APPAREIL_INCONNU
+
+
 def consume_invitation(cur, token: str | None) -> tuple[int, int | None]:
     """Valide et consomme une invitation. Renvoie (id, joueur_id vise).
 

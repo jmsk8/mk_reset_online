@@ -15,7 +15,7 @@ from constants import (INVITATION_LIFETIME_HOURS, CGU_VERSION, ROLE_ADMIN,
 from auth import (player_required, admin_or_role_required, permission_required,
                   SESSION_HEADER)
 from auth_discord import (
-    DiscordAuthError, login, hash_token, discord_configured,
+    DiscordAuthError, login, hash_token, discord_configured, resumer_appareil,
 )
 from db import get_db_connection
 
@@ -135,6 +135,126 @@ def check_session():
         "role": g.compte['role'],
         "permissions": sorted(_permissions_effectives(g.compte)),
     }), 200
+
+
+# ---------------------------------------------------------------------------
+# Mes sessions actives
+# ---------------------------------------------------------------------------
+# Referme A-03 de l'audit : le titulaire peut enfin voir et fermer ses propres
+# sessions, sans passer par un administrateur. Jusqu'ici, quelqu'un dont le
+# token avait fuite n'avait AUCUN recours seul -- et le reflexe naturel, se
+# reconnecter, n'invalide rien (une connexion ajoute une session sans toucher
+# aux precedentes). Le token vole restait vivant jusqu'a 30 jours.
+#
+# `player_required` n'expose que g.compte : ni le token, ni son hash. Les deux
+# routes relisent donc l'en-tete elles-memes, comme logout() juste au-dessus.
+# `.get()` et non [] : derriere player_required l'en-tete est forcement la,
+# mais un 500 sur une page « securite » est le pire endroit pour un theoreme.
+
+def _hash_session_courante() -> str | None:
+    """sha256 du token de la requete en cours, ou None s'il manque."""
+    token = request.headers.get(SESSION_HEADER)
+    return hash_token(token) if token else None
+
+
+@auth_bp.route('/auth/mes-sessions', methods=['GET'])
+@player_required
+def mes_sessions():
+    """Liste les sessions actives du titulaire.
+
+    Le token_hash est lu pour la seule comparaison en memoire qui marque « cet
+    appareil », et n'est JAMAIS place dans la reponse : il est la cle primaire
+    de sessions_joueurs, c'est-a-dire le verificateur d'authentification
+    lui-meme. Le descendre dans le DOM publierait la moitie du mecanisme qui
+    protege la session, et offrirait a un XSS la liste exacte des cibles a
+    revoquer. C'est aussi pourquoi il n'y a pas de revocation par appareil :
+    il n'existe aucun identifiant exposable a mettre dans le bouton.
+    """
+    courante = _hash_session_courante()
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT created_at, expires_at, last_seen_at, user_agent, token_hash
+                       FROM sessions_joueurs
+                       WHERE compte_id = %s AND expires_at > now()
+                       ORDER BY last_seen_at DESC NULLS LAST, created_at DESC""",
+                    (g.compte['id'],),
+                )
+                lignes = cur.fetchall()
+    except Exception as e:
+        logger.error("Lecture des sessions impossible: %s", e)
+        return jsonify({"error": "Service indisponible", "code": "indisponible"}), 503
+
+    # `expires_at > now()` est indispensable : les lignes mortes ne sont purgees
+    # qu'a leur prochaine presentation. Sans ce filtre l'ecran afficherait des
+    # fantomes et le compteur mentirait.
+    return jsonify({"sessions": [{
+        "appareil": resumer_appareil(r[3]),
+        "ouverte_le": r[0].isoformat(),
+        "expire_le": r[1].isoformat(),
+        # Nullable : une session creee mais jamais representee depuis. Le
+        # frontend affiche « jamais utilisee » -- c'est informatif, et une
+        # session jamais utilisee sur un compte qu'on croit compromis est
+        # precisement le signal qu'on cherche.
+        "derniere_activite": r[2].isoformat() if r[2] else None,
+        "courante": bool(courante) and r[4] == courante,
+    } for r in lignes]})
+
+
+@auth_bp.route('/auth/mes-sessions', methods=['DELETE'])
+@player_required
+def fermer_mes_sessions():
+    """Ferme les sessions du titulaire. Epargne la courante par defaut.
+
+    Le geste utile est « expulse tous les autres, je reste » : se deconnecter
+    soi-meme en prime est une punition gratuite qui pousse a ne pas cliquer.
+    `inclure_courante` existe pour l'appareil qu'on est en train d'abandonner.
+
+    Pas d'ecriture dans audit_admin : cette table trace ce qu'un ADMINISTRATEUR
+    fait a autrui (elle porte acteur_compte_id + cible_id). Un titulaire qui
+    agit sur son propre compte n'y a pas sa place, et l'y mettre brouillerait
+    la lecture du registre RGPD. Un logger.info sans donnee personnelle suffit
+    -- consequence assumee : le geste ne laisse aucune trace consultable par
+    l'utilisateur ni par le support.
+    """
+    corps = request.get_json(silent=True) or {}
+    inclure_courante = corps.get('inclure_courante') is True
+    courante = _hash_session_courante()
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # La clause compte_id est la frontiere de cloisonnement : la
+                # meme requete sans elle viderait sessions_joueurs pour tout le
+                # monde. Trois routes admin portent deja ce DELETE, celle-ci
+                # est la seule ouverte a un joueur.
+                if inclure_courante or courante is None:
+                    cur.execute(
+                        "DELETE FROM sessions_joueurs WHERE compte_id = %s",
+                        (g.compte['id'],),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM sessions_joueurs WHERE compte_id = %s AND token_hash != %s",
+                        (g.compte['id'], courante),
+                    )
+                fermees = cur.rowcount
+            conn.commit()
+    except Exception as e:
+        logger.error("Fermeture des sessions impossible: %s", e)
+        return jsonify({"error": "Service indisponible", "code": "indisponible"}), 503
+
+    # Sans donnee personnelle : un identifiant de compte et un compteur.
+    logger.info("Sessions fermees par le titulaire (compte %s): %s", g.compte['id'], fermees)
+    return jsonify({
+        "status": "success",
+        "sessions_fermees": fermees,
+        # Le frontend s'en sert pour purger son cookie : sans ca, le navigateur
+        # garderait une session serveur pointant vers une session detruite et
+        # decouvrirait le probleme par une erreur.
+        "session_fermee": inclure_courante or courante is None,
+    })
 
 
 def _permissions_effectives(compte: dict) -> set:

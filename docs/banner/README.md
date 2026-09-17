@@ -12,6 +12,20 @@ serveur, et tous les navigateurs la regardent.
 | [equilibrage.md](equilibrage.md) | Comment régler les statistiques des pilotes, et avec quel banc |
 | [../../tracks/README.md](../../tracks/README.md) | Comment dessiner un circuit |
 
+## Audits — comment l'IA décide
+
+Deux états des lieux du **moteur JS**, schémas à l'appui. Ils décrivent le fonctionnement
+*et* ses défauts ; ils ne sont pas des plans, et rien n'y a été codé.
+
+| Document | Sujet |
+|---|---|
+| [audit-decision-direction-2026-09-17.md](audit-decision-direction-2026-09-17.md) | Comment un kart décide **où se placer** : attention → perception → plan → volant |
+| [audit-decision-objets-2026-09-17.md](audit-decision-objets-2026-09-17.md) | Comment un kart décide **quoi faire de son objet** : tirage → plan → changement d'avis |
+
+⚠️ **À corriger en premier** : `tools/scenario.js` utilise `cfg.ai.crossDodgeMargin`, une clé qui
+n'existe plus — la table des temps de manœuvre rend `NaN`. Tant que ce banc est en panne, aucun
+constat de ces deux audits ne peut être mesuré (cf. D-1).
+
 ## Chantiers — en cours de construction
 
 | Document | Sujet |
