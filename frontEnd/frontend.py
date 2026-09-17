@@ -223,7 +223,10 @@ def backend_request(method, endpoint, data=None, params=None, headers=None, time
         elif method == 'PUT':
             response = requests.put(url, json=data, headers=headers, timeout=timeout)
         elif method == 'DELETE':
-            response = requests.delete(url, headers=headers, timeout=timeout)
+            # `json=data` et non rien : un DELETE peut porter un corps, et
+            # l'omettre le perdait en silence -- le paramètre partait, la route
+            # backend appliquait son défaut, et rien ne le signalait.
+            response = requests.delete(url, json=data, headers=headers, timeout=timeout)
         else:
             return None, 405
         
@@ -1270,6 +1273,47 @@ def proxy_cgu():
     if status == 200 and isinstance(session.get('compte'), dict):
         session['compte']['cgu_a_accepter'] = False
         session.modified = True
+    return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+
+
+@app.route('/mon-compte/sessions')
+def mes_sessions():
+    """Liste les appareils connectés du titulaire.
+
+    Chargée en fetch depuis /mon-compte plutôt qu'au rendu : la page fait déjà
+    deux appels backend, un troisième synchrone ralentirait une page que tout
+    le monde visite pour un bloc que peu regardent.
+    """
+    headers = player_headers()
+    if headers is None:
+        return jsonify({'error': 'Non autorisé'}), 401
+    data, status = backend_request('GET', '/auth/mes-sessions', headers=headers)
+    return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+
+
+@app.route('/mon-compte/sessions/fermer', methods=['POST'])
+def fermer_mes_sessions():
+    """Ferme les autres sessions du titulaire.
+
+    En POST et non DELETE : CSRFProtect ne couvre que les méthodes mutantes
+    qu'il connaît, et le fetch envoie déjà X-CSRFToken comme les autres actions
+    de la page. Le backend, lui, expose bien un DELETE.
+    """
+    headers = player_headers()
+    if headers is None:
+        return jsonify({'error': 'Non autorisé'}), 401
+
+    inclure = (request.get_json(silent=True) or {}).get('inclure_courante') is True
+    data, status = backend_request(
+        'DELETE', '/auth/mes-sessions',
+        data={'inclure_courante': inclure}, headers=headers,
+    )
+    # La session serveur pointerait vers une session backend détruite, et le
+    # navigateur découvrirait le problème par une erreur. Même geste que
+    # supprimer_mon_compte juste en dessous.
+    if status == 200 and isinstance(data, dict) and data.get('session_fermee'):
+        session.pop('player_token', None)
+        session.pop('compte', None)
     return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
 
 
