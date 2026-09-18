@@ -9,6 +9,8 @@ from typing import Any, Callable, Iterable
 
 import psycopg2.extras
 
+import audit
+
 from constants import (
     DEFAULT_SIGMA_THRESHOLD,
     DEFAULT_TIERS,
@@ -1711,10 +1713,10 @@ def purger_donnees_expirees(cur):
     total = sum(bilan.values())
     if total:
         # L'audit garde la trace de la purge, sans conserver ce qui a ete purge.
-        cur.execute(
-            """INSERT INTO audit_admin (action, cible_type, details)
-               VALUES ('purge_rgpd', 'systeme', %s::jsonb)""",
-            (json.dumps(bilan),),
-        )
+        # acteur_id=None EXPLICITE : la purge est declenchee par un
+        # ordonnanceur, il n'y a aucun acteur humain a nommer. Sans ce
+        # parametre, le helper irait chercher g.compte et attribuerait la
+        # purge a qui se trouve passer par la.
+        audit.ecrire(cur, 'purge_rgpd', 'systeme', details=bilan, acteur_id=None)
         logger.info("Purge RGPD : %s", bilan)
     return bilan

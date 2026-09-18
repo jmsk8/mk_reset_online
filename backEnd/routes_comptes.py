@@ -19,6 +19,8 @@ import requests
 
 from flask import Blueprint, jsonify, request, g, make_response
 
+import audit
+
 from constants import (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERARCHY,
                        CGU_VERSION, PERMISSIONS_CATALOGUE, SOUS_PERMISSIONS,
                        DEFAULT_MU, DEFAULT_SIGMA, DISCORD_HTTP_TIMEOUT,
@@ -37,18 +39,11 @@ logger = logging.getLogger(__name__)
 comptes_bp = Blueprint('comptes', __name__)
 
 
-def _audit(cur, action, cible_type=None, cible_id=None, details=None):
-    cur.execute(
-        """INSERT INTO audit_admin (action, acteur_compte_id, cible_type, cible_id, details)
-           VALUES (%s, %s, %s, %s, %s::jsonb)""",
-        (action, _acteur_id(), cible_type, cible_id,
-         json.dumps(details) if details is not None else None),
-    )
-
-
-def _acteur_id():
-    compte = getattr(g, 'compte', None)
-    return compte['id'] if compte else None
+# Alias local vers le chemin d'ecriture unique (backEnd/audit.py). Le nom est
+# conserve parce qu'il porte plus de quarante appels dans ce fichier : les
+# renommer aurait fait un diff illisible pour un gain nul.
+_audit = audit.ecrire
+_acteur_id = audit.acteur_courant
 
 
 def notifier(cur, compte_id, type_notif, titre, corps=None):
@@ -2087,18 +2082,16 @@ def supprimer_mon_compte():
                     # et acteur_compte_id est en ON DELETE SET NULL. On y consigne
                     # de quoi rejouer la suppression apres une restauration de
                     # sauvegarde, sans conserver la moindre donnee personnelle.
-                    cur.execute(
-                        """INSERT INTO audit_admin (action, cible_type, cible_id, details)
-                           VALUES (%s, %s, %s, %s::jsonb)""",
-                        ('compte_supprime', 'compte', compte_id,
-                         json.dumps({
+                    _audit(
+                        cur, 'compte_supprime', 'compte', compte_id,
+                        {
                              "joueur_id": joueur_id,
                              "origine": "self-service",
                              # Empreinte et non identifiant : permet de verifier
                              # apres restauration qu'un compte ressuscite doit
                              # etre resupprime, sans reconserver le snowflake.
                              "discord_id_hash": hash_token(g.compte['discord_id']),
-                         })),
+                        },
                     )
                     # Ordre explicite plutot que de s'en remettre aux CASCADE :
                     # le jour ou une contrainte change, on veut que ce soit ce

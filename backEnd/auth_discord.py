@@ -25,6 +25,8 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+import audit
+
 from constants import (
     DISCORD_API_BASE, DISCORD_CDN_BASE, DISCORD_HTTP_TIMEOUT,
     SESSION_JOUEUR_LIFETIME_DAYS, SESSION_ADMIN_LIFETIME_HOURS,
@@ -246,11 +248,13 @@ def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
         "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
         (ROLE_SUPERADMIN, compte['id']),
     )
-    cur.execute(
-        """INSERT INTO audit_admin (action, acteur_compte_id, cible_type, cible_id, details)
-           VALUES (%s, %s, %s, %s, %s::jsonb)""",
-        ('role_attribue', compte['id'], 'compte', compte['id'],
-         '{"ancien": "player", "nouveau": "superadmin", "origine": "amorcage"}'),
+    # acteur_id EXPLICITE : l'amorcage se produit AVANT toute session, donc
+    # g.compte n'existe pas encore. Le compte est a la fois acteur et cible --
+    # c'est exactement ce qu'un amorcage est, et le journal doit le montrer.
+    audit.ecrire(
+        cur, 'role_attribue', 'compte', compte['id'],
+        {"ancien": "player", "nouveau": "superadmin", "origine": "amorcage"},
+        acteur_id=compte['id'],
     )
     compte['role'] = ROLE_SUPERADMIN
     logger.info("Compte %s promu superadmin par amorcage", compte['id'])
