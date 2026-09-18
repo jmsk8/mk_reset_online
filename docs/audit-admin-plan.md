@@ -194,7 +194,27 @@ conséquence le jour de l'implémentation.
 
 ## 5. Découpage en phases
 
-### Phase 1 — Un seul chemin d'écriture
+### Phase 1 — Un seul chemin d'écriture — ✅ LIVRÉE le 2026-09-18
+
+> **Faite.** `backEnd/audit.py` porte le seul `INSERT INTO audit_admin` du backend ; les huit
+> écritures réparties dans cinq fichiers y passent désormais. Critère de sortie vérifié par
+> `test_audit_journal.py` (**16 assertions**), qui échoue en nommant le fichier fautif si
+> quelqu'un rouvre un second chemin.
+>
+> **Trois découvertes en cours de route :**
+>
+> - `_acteur_id` existait en **trois copies identiques** (`routes_comptes`, `routes_auth`, plus
+>   l'omission pure dans `routes_admin`). C'est la cause directe du défaut : un helper qu'on
+>   recopie est un helper qu'on finit par oublier.
+> - Deux appels ont **retrouvé leur acteur** — dont `joueur_anonymise`, une action *irréversible*
+>   dont le journal ne savait pas qui l'avait déclenchée.
+> - Deux sites tournent **hors requête HTTP** (purge RGPD sous ordonnanceur, amorçage du
+>   superadmin avant toute session). Une lecture naïve de `g` y lèverait : le helper passe par
+>   `has_request_context()`, et une **sentinelle** distingue « acteur non précisé » de « acteur
+>   volontairement absent » — sans elle, `acteur_id=None` serait écrasé par le contexte.
+>
+> ℹ️ Le nom `_audit` reste en alias local dans `routes_comptes.py` : il porte plus de quarante
+> appels, les renommer aurait fait un diff illisible pour un gain nul.
 
 Déplacer `_audit()` dans un module partagé (`audit.py`, ou `services.py`) et **convertir les quatre
 `INSERT` manuels** du §3.2 pour qu'ils passent par lui.

@@ -14,6 +14,8 @@ import trueskill
 import psycopg2.extras
 from flask import Blueprint, jsonify, request, abort, g
 
+import audit
+
 from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, TRUESKILL_BETA, TRUESKILL_DRAW_PROBABILITY,
     DEFAULT_TAU, DEFAULT_GHOST_PENALTY, DEFAULT_UNRANKED_THRESHOLD, DEFAULT_SIGMA_THRESHOLD,
@@ -1057,13 +1059,13 @@ def api_delete_joueur(id):
                            WHERE id = %s""",
                         (nouveau_statut, compte_id),
                     )
-                    cur.execute(
-                        """INSERT INTO audit_admin (action, cible_type, cible_id, details)
-                           VALUES (%s, %s, %s, %s::jsonb)""",
-                        ('liaison_annulee', 'compte', compte_id,
-                         json.dumps({"joueur_id": id, "joueur_nom": row[0],
-                                     "statut": nouveau_statut,
-                                     "origine": "suppression_fiche"})),
+                    # Passe par le helper : cet appel omettait `acteur_compte_id`,
+                    # donc le journal savait QUOI mais pas QUI (§3.2 du plan).
+                    audit.ecrire(
+                        cur, 'liaison_annulee', 'compte', compte_id,
+                        {"joueur_id": id, "joueur_nom": row[0],
+                         "statut": nouveau_statut,
+                         "origine": "suppression_fiche"},
                     )
                     cur.execute(
                         """INSERT INTO notifications (compte_id, type, titre, corps)
@@ -1126,11 +1128,9 @@ def api_anonymiser_joueur(id):
                     "INSERT INTO noms_interdits (nom_hash) VALUES (%s) ON CONFLICT DO NOTHING",
                     (hashlib.sha256(ancien_nom.strip().lower().encode('utf-8')).hexdigest(),),
                 )
-                cur.execute(
-                    """INSERT INTO audit_admin (action, cible_type, cible_id, details)
-                       VALUES (%s, %s, %s, %s::jsonb)""",
-                    ('joueur_anonymise', 'joueur', id, json.dumps({"nouveau_nom": nouveau_nom})),
-                )
+                # Idem : l'acteur manquait sur une action IRREVERSIBLE.
+                audit.ecrire(cur, 'joueur_anonymise', 'joueur', id,
+                             {"nouveau_nom": nouveau_nom})
             conn.commit()
             invalidate_cache()
 

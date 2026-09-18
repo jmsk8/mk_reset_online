@@ -19,6 +19,8 @@ from auth_discord import (
 )
 from db import get_db_connection
 
+import audit
+
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__)
@@ -407,11 +409,9 @@ def creer_invitation():
                     (hash_token(token), label, joueur_id, max_uses, expires_at),
                 )
                 invitation_id = cur.fetchone()[0]
-                cur.execute(
-                    """INSERT INTO audit_admin (action, acteur_compte_id, cible_type, cible_id, details)
-                       VALUES (%s, %s, %s, %s, %s::jsonb)""",
-                    ('invitation_creee', _acteur_id(), 'invitation', invitation_id,
-                     json.dumps({"max_uses": max_uses, "nominative": joueur_id is not None})),
+                audit.ecrire(
+                    cur, 'invitation_creee', 'invitation', invitation_id,
+                    {"max_uses": max_uses, "nominative": joueur_id is not None},
                 )
             conn.commit()
     except Exception as e:
@@ -438,11 +438,7 @@ def revoquer_invitation(invitation_id):
                 if cur.rowcount == 0:
                     conn.rollback()
                     return jsonify({"error": "Invitation introuvable ou deja revoquee"}), 404
-                cur.execute(
-                    """INSERT INTO audit_admin (action, acteur_compte_id, cible_type, cible_id)
-                       VALUES (%s, %s, %s, %s)""",
-                    ('invitation_revoquee', _acteur_id(), 'invitation', invitation_id),
-                )
+                audit.ecrire(cur, 'invitation_revoquee', 'invitation', invitation_id)
             conn.commit()
     except Exception as e:
         logger.error("Revocation d'invitation impossible: %s", e)
@@ -450,8 +446,3 @@ def revoquer_invitation(invitation_id):
     return jsonify({"status": "success"})
 
 
-def _acteur_id():
-    """Compte a l'origine de l'action, ou None si l'auth passe encore par le
-    mot de passe partage — qui, lui, n'identifie personne."""
-    compte = getattr(g, 'compte', None)
-    return compte['id'] if compte else None
