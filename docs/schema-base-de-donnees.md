@@ -585,6 +585,21 @@ sens annoncé.
 - **`docs/refactor-historique-recaps-plan.md`** — historique mu/sigma, recaps figés et
   awards traçables. Préparation seule, rien d'implémenté.
 - **`docs/plan-achievements.md`** — système d'achievements, non implémenté.
-- **`compte_cible_protegee`** — un `admin` peut encore agir sur un autre `admin` ou un
-  `chef_admin` ; la règle de rang générique n'est pas encore en place. Applicatif, pas
-  schéma.
+> ⚠️ **Correction du 2026-09-17.** Ce paragraphe affirmait jusqu'ici qu'un `admin` pouvait
+> encore agir sur un autre `admin` ou un `chef_admin`, la règle de rang générique n'étant
+> « pas encore en place ». **C'était faux, et sur un contrôle de privilèges** — donc de
+> nature à induire en erreur qui s'y fierait.
+
+- **`compte_cible_protegee`** — ✅ **livré et testé le 2026-09-14.** La règle de rang
+  générique est en place : un acteur ne peut agir que sur un compte de rang
+  **strictement inférieur** au sien, les pairs compris (un `chef_admin` ne peut rien
+  sur un autre `chef_admin`). Un rôle de cible inconnu vaut le rang le plus haut, un
+  rôle d'acteur inconnu le rang le plus bas — l'inconnu ne donne jamais de droits.
+  Voir `backEnd/auth.py` et `backEnd/tests/test_audit_auth_discord.py`. Applicatif,
+  pas schéma.
+
+  ⚠️ **Une exception délibérée**, à connaître : le décorateur laisse passer
+  l'**auto-action** (`cible_id == acteur['id']`), parce que fermer ses propres sessions
+  est légitime. C'est juste pour les sessions et faux pour le reste — c'est par là que
+  le superadmin pouvait se suspendre lui-même (constat B-02). Les routes concernées
+  portent depuis le 2026-09-17 une garde propre, `_refus_auto_verrouillage`.

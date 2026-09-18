@@ -647,6 +647,23 @@ DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 # L'échange déclenche deux appels réseau vers Discord côté backend.
 OAUTH_EXCHANGE_TIMEOUT = 20
 
+# Nombre de `state` OAuth gardés en attente simultanément, et leur durée de vie.
+#
+# Une seule case ne suffit pas : deux onglets, un double-clic, un retour arrière
+# ou le préchargement du navigateur suffisent à ce que la seconde tentative
+# écrase la première, qui échoue alors sans que rien d'anormal n'ait eu lieu.
+# C'était le constat B-01, et la cause des « bugs étranges » à la connexion.
+#
+# 5 couvre largement les cas réels (on n'ouvre pas six onglets de connexion) et
+# borne la session : sans borne, un robot qui appelle /login en boucle ferait
+# grossir le cookie jusqu'au refus du navigateur.
+#
+# 15 minutes : au-delà, l'utilisateur a abandonné. Discord n'impose rien ici,
+# c'est notre propre fenêtre — assez large pour une hésitation devant l'écran
+# de consentement, assez courte pour qu'un state oublié ne traîne pas.
+OAUTH_STATES_MAX = 5
+OAUTH_STATE_TTL = 15 * 60
+
 
 # Identité de l'éditeur, affichée dans les pages légales. Renseignée par
 # l'environnement : informations personnelles, hors d'un dépôt public.
@@ -754,6 +771,71 @@ def invite(token):
     return render_template('invite.html', invitation=invitation, invite_token=token)
 
 
+# ---------------------------------------------------------------------------
+# States OAuth en attente
+# ---------------------------------------------------------------------------
+# Referme B-01. Le défaut n'était pas dans l'un ou l'autre geste -- écrire le
+# state à la connexion et le consommer au retour sont tous deux corrects --
+# mais dans leur combinaison sur une CASE UNIQUE :
+#
+#   - la seconde connexion écrasait le state de la première, qui échouait
+#     alors qu'elle n'avait rien fait d'anormal ;
+#   - le `pop` vidait la case MÊME EN CAS D'ÉCHEC, si bien qu'un échec en
+#     provoquait un second, avec un state pourtant valide. C'est ce qui rendait
+#     le symptôme incompréhensible : deux échecs, puis un succès.
+#
+# Les deux règles ci-dessous suffisent, et l'usage unique est préservé : un
+# state retiré de la liste ne repasse jamais.
+
+def _deposer_state(state: str) -> None:
+    """Ajoute un state en attente, en purgeant les périmés et les surnuméraires."""
+    limite = time.time() - OAUTH_STATE_TTL
+    # Purge d'abord : sans elle, cinq tentatives abandonnées suffiraient à
+    # évincer un state légitime par la borne de taille.
+    en_attente = [s for s in session.get('oauth_states', [])
+                  if isinstance(s, list) and len(s) == 2 and s[1] > limite]
+    en_attente.append([state, time.time()])
+    # Les plus ANCIENS sautent en premier : au-delà de la borne, c'est la
+    # tentative la plus fraîche qui a le plus de chances d'aboutir.
+    session['oauth_states'] = en_attente[-OAUTH_STATES_MAX:]
+
+
+def _consommer_state(recu: str | None) -> bool:
+    """Retire le state correspondant. Ne consomme RIEN si rien ne correspond.
+
+    C'est le point qui referme B-01.2 : un échec ne doit pas emporter les
+    tentatives encore valides. Comparaison en temps constant, comme avant.
+    """
+    if not recu:
+        return False
+    # En OCTETS et non en str : `compare_digest` LÈVE un TypeError sur deux
+    # chaînes dont l'une n'est pas ASCII, et le state arrive d'un paramètre
+    # d'URL, donc de l'extérieur. Un `?state=é` suffisait à produire un 500 sur
+    # le chemin de connexion -- défaut antérieur à la correction de B-01, hérité
+    # tel quel en la portant. Encoder ramène le cas à une comparaison qui
+    # échoue proprement, sans rien perdre du temps constant.
+    recu_b = recu.encode('utf-8', 'surrogatepass')
+    limite = time.time() - OAUTH_STATE_TTL
+    en_attente = [s for s in session.get('oauth_states', [])
+                  if isinstance(s, list) and len(s) == 2
+                  and isinstance(s[0], str) and isinstance(s[1], (int, float))]
+
+    for i, (state, pose_a) in enumerate(en_attente):
+        if pose_a > limite and secrets.compare_digest(
+                state.encode('utf-8', 'surrogatepass'), recu_b):
+            # Retiré : un rejeu du même state ne repassera pas.
+            del en_attente[i]
+            session['oauth_states'] = en_attente
+            return True
+
+    # Aucune correspondance : on garde les states en attente intacts, mais on
+    # profite du passage pour évacuer les périmés.
+    restants = [s for s in en_attente if s[1] > limite]
+    if len(restants) != len(en_attente):
+        session['oauth_states'] = restants
+    return False
+
+
 @app.route('/auth/discord/login')
 def discord_login():
     """Redirige vers Discord. Mémorise le state et l'invitation en session."""
@@ -762,7 +844,7 @@ def discord_login():
         return redirect(url_for('index'))
 
     state = secrets.token_urlsafe(24)
-    session['oauth_state'] = state
+    _deposer_state(state)
     # L'invitation transite par la session, pas par le paramètre state : elle
     # n'a pas à faire l'aller-retour par Discord ni à apparaître dans ses logs.
     invite_token = request.args.get('invite')
@@ -795,11 +877,17 @@ def discord_callback():
         return redirect(url_for('index'))
 
     state = request.args.get('state')
-    attendu = session.pop('oauth_state', None)
-    # Comparaison en temps constant, et un state à usage unique : il vient
-    # d'être retiré de la session, un rejeu échouera.
-    if not state or not attendu or not secrets.compare_digest(state, attendu):
-        flash("Requête de connexion invalide ou expirée. Réessayez.", 'danger')
+    if not _consommer_state(state):
+        # Deux causes très différentes, autrefois confondues sous le même
+        # message accusateur. Les distinguer n'est pas cosmétique : le premier
+        # cas est fréquent et bénin (lien rouvert, retour arrière, connexion
+        # déjà terminée ailleurs), le second est le seul qui mérite un regard.
+        if state:
+            flash("Cette demande de connexion a déjà servi ou a expiré. "
+                  "Relancez la connexion.", 'info')
+        else:
+            logger.warning("Callback Discord sans state (IP %s)", request.remote_addr)
+            flash("Requête de connexion invalide. Réessayez.", 'danger')
         return redirect(url_for('index'))
 
     code = request.args.get('code')
@@ -1494,6 +1582,22 @@ def admin_joueurs_fiches():
     if not _est_admin():
         flash('Accès interdit.', 'danger')
         return redirect(url_for('index'))
+
+    # Même gate que les deux autres onglets. La navbar cachait déjà le lien
+    # derrière cette permission, mais un lien caché n'est pas un accès fermé :
+    # l'URL restait ouverte, et la page s'affichait pour finir sur
+    # « Chargement impossible. » au premier appel de données -- le backend
+    # répondant 403, correctement. Le droit n'a jamais manqué ; c'est le
+    # message qui manquait.
+    #
+    # `gestion_joueurs` n'ouvre que la LECTURE depuis la scission du
+    # 2026-09-17 : chaque geste exige sa sous-permission, revérifiée champ par
+    # champ côté backend. Gater la page sur ce droit-là est donc exact -- c'est
+    # celui qui autorise à regarder.
+    if 'gestion_joueurs' not in _permissions_session():
+        flash("Vous n'avez pas accès aux fiches joueurs.", 'warning')
+        return redirect(url_for('index'))
+
     if _acces_admin_revoque():
         return _session_admin_expiree()
     return render_template('gestion_joueurs.html')

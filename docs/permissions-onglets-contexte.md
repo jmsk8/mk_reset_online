@@ -333,6 +333,56 @@ implicitement (« non testé en conditions réelles »), mais spécifiquement : 
 - les 3 routes renvoient bien un flash/redirect cohérent sur une session expirée vs un droit
   manquant (patron B.5 déjà appliqué dans le code, jamais vérifié par un test).
 
+> **✅ Largement couvert depuis le 2026-09-18.** `test_session_expiree.py` (44 assertions)
+> couvre désormais les trois routes :
+>
+> - **revalidation de session** — les six pages admin, plus le helper `_acces_admin_revoque`
+>   lui-même (il interroge bien le backend, traite 401/403, mémoïse sur `g` et non sur la
+>   session) ;
+> - **gate de permission** — `admin_tournois` et `admin_reglages` portent leur gate, et le
+>   testent **avant** de revalider la session (l'ordre inverse ferait payer un aller-retour
+>   backend pour un refus certain) ;
+> - **la distinction qui compte** — un droit manquant redirige avec un message **sans
+>   déconnecter**, là où une session expirée purge les deux jetons. Les confondre éjecterait
+>   un admin légitime à chaque page interdite.
+>
+> Vérifié en cassant volontairement le gate : deux assertions virent au rouge.
+>
+> **`admin_joueurs_fiches` a reçu son gate le 2026-09-18** (`gestion_joueurs`). La navbar
+> cachait déjà le lien, mais **un lien caché n'est pas un accès fermé** : l'URL restait
+> ouverte, la page s'affichait, et le premier appel de données finissait sur « Chargement
+> impossible. » — le backend répondant 403, correctement. Le droit n'a jamais manqué ; c'est
+> le message qui manquait. Gater sur `gestion_joueurs` est exact : depuis la scission, ce
+> droit n'ouvre que la **lecture**, et c'est bien celui qui autorise à regarder la page.
+>
+> **Le gate par bloc est couvert depuis le 2026-09-18** (19 assertions de plus, 71 au total).
+> ⚠️ **Mais la prémisse de ce §8.3 était périmée** : il désigne `admin_reglages.html` comme
+> l'exemple de double-gate à tester. C'était vrai avant le 13/09, quand le reset global
+> exigeait `chef_admin` et la configuration `gestion_config`. Depuis que le reset est
+> délégable, **les deux blocs sont sous le même droit** — la page n'est plus mixte, et le §7
+> de ce document le disait déjà (« la page n'est donc plus un exemple de double-gate »).
+>
+> La vraie page mixte est **`admin_comptes`**, et c'est elle qui est désormais verrouillée :
+>
+> - la route s'ouvre sur l'**union** des trois droits (`gestion_liaisons`, `gestion_comptes`,
+>   `gestion_invitations`), jamais sur leur intersection ;
+> - **chaque onglet et son panneau portent le même gate** — les dissocier afficherait un
+>   onglet dont le contenu n'existe pas, un clic dans le vide que rien côté serveur ne
+>   rattraperait. C'est l'invariant qui fait tenir le patron, et il est vérifié par paire ;
+> - l'onglet actif est choisi **côté JS, jamais en dur** : en dur, ce pourrait être un onglet
+>   auquel l'admin n'a pas droit ;
+> - le 4ᵉ onglet (jetons de bot) suit la même règle de paire, sur le **rang** superadmin et
+>   non sur une permission.
+>
+> `admin_reglages` est couvert autrement : on vérifie que ses blocs restent sous un droit
+> **unique**, pour qu'on ne réintroduise pas par inadvertance la frontière que ce §8.3 croit
+> encore là. `gestion_joueurs` l'est aussi — un droit par geste, et le gabarit **grise au lieu
+> de masquer** : un champ absent se lit « la fonction n'existe pas », un champ grisé se lit
+> « je n'y ai pas droit ».
+>
+> Vérifié en cassant les deux invariants : dégater un panneau, ou marquer un onglet actif en
+> dur, fait virer l'assertion correspondante au rouge.
+
 À écrire avant de considérer ce chantier clos — indépendant de 8.1 et 8.2, peut se faire en
 parallèle.
 

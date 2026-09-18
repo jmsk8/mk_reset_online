@@ -1271,6 +1271,59 @@ def delier_compte(compte_id):
     return jsonify({"status": "success", "joueur_id": joueur_id, "statut": nouveau_statut})
 
 
+# ---------------------------------------------------------------------------
+# « Jamais zero superadmin » -- la regle, appliquee partout
+# ---------------------------------------------------------------------------
+# Referme B-02 et B-03. La garde existait deja dans changer_role, mais elle
+# avait ete posee la ou on la CHERCHE : sur la route qui ecrit `role`. Or deux
+# autres chemins menent au meme resultat sans jamais toucher a cette colonne --
+# suspendre (ecrit `statut`) et supprimer (efface la ligne). C'est un angle
+# mort de repartition, pas une negligence.
+#
+# La suspension est le pire des deux, alors qu'elle parait la plus anodine :
+#
+#   - supprimer est RATTRAPABLE si DISCORD_SUPERADMIN_ID est encore renseigne,
+#     le compte n'existant plus, l'amorcage le laisse rentrer ;
+#   - suspendre ne l'est PAS : le compte existe toujours, donc l'amorcage n'est
+#     jamais consulte, et login() refuse en amont sur le statut. Seul un UPDATE
+#     SQL en production repare.
+#
+# D'ou une regle unique, et non deux gardes distinctes : un compte ne peut pas
+# se retirer a lui-meme la capacite d'administrer s'il est le dernier a la
+# detenir. Le superadmin qui veut vraiment partir LEGUE d'abord -- c'est
+# exactement le geste prevu pour ca.
+
+def _dernier_de_son_role(cur, compte_id: int, role: str) -> bool:
+    """Vrai si ce compte est le dernier a porter ce role.
+
+    Meme requete que celle de changer_role, volontairement : une divergence
+    entre les deux donnerait deux definitions du « dernier », et c'est le genre
+    d'ecart qu'on ne decouvre qu'une fois dehors.
+    """
+    cur.execute(
+        "SELECT COUNT(*) FROM comptes WHERE role = %s AND id <> %s",
+        (role, compte_id),
+    )
+    return cur.fetchone()[0] == 0
+
+
+def _refus_auto_verrouillage(cur, compte_id: int, role: str, geste: str):
+    """Renvoie une reponse 409 si ce geste laisserait le site sans superadmin.
+
+    `geste` est le verbe a afficher (« suspendre », « supprimer »). Renvoie
+    None quand il n'y a rien a empecher -- l'appelant continue.
+    """
+    if role != ROLE_SUPERADMIN or not _dernier_de_son_role(cur, compte_id, ROLE_SUPERADMIN):
+        return None
+    return jsonify({
+        "error": "Vous etes le dernier super-administrateur. Vous %s maintenant "
+                 "rendrait toute administration impossible, et il n'existe pas de "
+                 "mot de passe de secours. Leguez d'abord votre role a un autre "
+                 "compte." % geste,
+        "code": "dernier_superadmin",
+    }), 409
+
+
 @comptes_bp.route('/admin/comptes/<int:compte_id>/statut', methods=['POST'])
 @permission_required('gestion_comptes')
 @compte_cible_protegee
@@ -1283,11 +1336,26 @@ def changer_statut(compte_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT statut FROM comptes WHERE id = %s FOR UPDATE", (compte_id,))
+                cur.execute("SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE",
+                            (compte_id,))
                 row = cur.fetchone()
                 if row is None:
                     conn.rollback()
                     return jsonify({"error": "Compte introuvable"}), 404
+
+                # B-02.2 / B-03. Suspendre est fonctionnellement AUSSI FORT que
+                # retrograder -- ca ferme les sessions et interdit la
+                # reconnexion -- mais c'etait traite comme un geste mineur.
+                # `compte_cible_protegee` laisse deliberement passer
+                # l'auto-action (« fermer ses propres sessions est legitime »),
+                # ce qui est juste pour les sessions et faux pour le statut :
+                # c'est precisement par la que le superadmin se mettait dehors.
+                if nouveau == 'suspended':
+                    refus = _refus_auto_verrouillage(cur, compte_id, row[1], 'suspendre')
+                    if refus is not None:
+                        conn.rollback()
+                        return refus
+
                 cur.execute(
                     "UPDATE comptes SET statut = %s, updated_at = now() WHERE id = %s",
                     (nouveau, compte_id),
@@ -1996,6 +2064,25 @@ def supprimer_mon_compte():
         with get_db_connection() as conn:
             try:
                 with conn.cursor() as cur:
+                    # B-02.1. Cette route etait decoree @player_required SEUL :
+                    # elle ne lisait jamais `role`. Un superadmin pouvait donc
+                    # supprimer son propre compte et laisser le site sans
+                    # aucune administration possible.
+                    #
+                    # Le verrou est pris avant toute ecriture : sans FOR UPDATE,
+                    # deux superadmins se supprimant simultanement compteraient
+                    # chacun l'autre comme « restant » et passeraient tous deux.
+                    cur.execute("SELECT role FROM comptes WHERE id = %s FOR UPDATE",
+                                (compte_id,))
+                    row = cur.fetchone()
+                    if row is None:
+                        conn.rollback()
+                        return jsonify({"error": "Compte introuvable"}), 404
+                    refus = _refus_auto_verrouillage(cur, compte_id, row[0], 'supprimer')
+                    if refus is not None:
+                        conn.rollback()
+                        return refus
+
                     # L'audit AVANT la suppression : la ligne reference le compte,
                     # et acteur_compte_id est en ON DELETE SET NULL. On y consigne
                     # de quoi rejouer la suppression apres une restauration de

@@ -10,6 +10,10 @@ from flask import Flask
 
 def monter(plan, joueur_id=9, role='player'):
     plan = list(plan) + [
+        # DELETE /me relit le role du titulaire sous verrou avant toute
+        # ecriture : c'est la garde « jamais zero superadmin » (B-02.1). Un
+        # 'player' la traverse sans meme declencher de COUNT.
+        (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", (role,)),
         (r"FROM sessions_joueurs s JOIN comptes c",
          ligne_session(joueur_id=joueur_id, role=role)),
     ]

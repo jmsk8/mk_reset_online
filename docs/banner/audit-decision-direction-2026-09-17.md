@@ -258,14 +258,26 @@ braquage — et c'est ce qui rend le système cohérent.
 
 | # | Constat | Gravité | Statut |
 |---|---|---|---|
-| **D-1** | `cfg.ai.crossDodgeMargin` n'existe pas : le banc de scénario rend `NaN` | 🟠 | **prouvé** |
-| **D-2** | Le commentaire de `vision.threatLane` cite la même clé morte | 🔵 | prouvé |
+| **D-1** | ~~`cfg.ai.crossDodgeMargin` n'existe pas : le banc rend `NaN`~~ | ✅ **corrigé 2026-09-18** | **prouvé** |
+| **D-2** | ~~Le commentaire de `vision.threatLane` cite la même clé morte~~ | ✅ **corrigé 2026-09-18** | prouvé |
 | **D-3** | `heldThreatType` corrige un défaut que `disabledItems` masque | 🟡 | lecture |
 | **D-4** | Le `giveWay` ne vérifie pas que la rouge vise **bien lui** | 🟡 | lecture |
 | **D-5** | L'attention est un goulot non mesuré : voir devant **coûte** l'arrière | 🟡 | lecture |
 | **D-6** | `missChance` étalonné sur l'agilité de référence — à confirmer au banc | 🔵 | lecture |
 
-### D-1 — le banc de scénario est cassé 🟠 *(prouvé)*
+### D-1 — le banc de scénario est cassé 🟠 *(prouvé)* — ✅ CORRIGÉ le 2026-09-18
+
+> **Résolu.** `tools/scenario.js` lit désormais `cfg.vision.place.margin.item`, où la clé a
+> migré — `src/config/ai.js` le documentait déjà sur place. D-2 est corrigé dans le même
+> geste (le commentaire de `vision.threatLane` citait le même fantôme, avec une valeur
+> chiffrée qui n'était plus vérifiable ; elle a été retirée plutôt que recalculée à vue).
+>
+> ⚠️ **Le banc n'a pas été exécuté** : `node` n'est pas disponible dans l'environnement où
+> la correction a été écrite. La clé et son chemin ont été vérifiés dans le source, mais
+> **la table de temps de manœuvre reste à regarder tourner** avant de s'appuyer sur ses
+> chiffres. C'est un `node tools/scenario.js`.
+
+
 
 [`tools/scenario.js:40`](../../raceEngine/tools/scenario.js#L40) :
 

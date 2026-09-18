@@ -22,9 +22,14 @@ Deux états des lieux du **moteur JS**, schémas à l'appui. Ils décrivent le f
 | [audit-decision-direction-2026-09-17.md](audit-decision-direction-2026-09-17.md) | Comment un kart décide **où se placer** : attention → perception → plan → volant |
 | [audit-decision-objets-2026-09-17.md](audit-decision-objets-2026-09-17.md) | Comment un kart décide **quoi faire de son objet** : tirage → plan → changement d'avis |
 
-⚠️ **À corriger en premier** : `tools/scenario.js` utilise `cfg.ai.crossDodgeMargin`, une clé qui
-n'existe plus — la table des temps de manœuvre rend `NaN`. Tant que ce banc est en panne, aucun
-constat de ces deux audits ne peut être mesuré (cf. D-1).
+✅ **Le banc est réparé** (2026-09-18) : `tools/scenario.js` lisait `cfg.ai.crossDodgeMargin`, une
+clé qui n'existe plus, et la table des temps de manœuvre rendait `NaN`. Elle a migré vers
+`vision.place.margin.item` (cf. D-1 et D-2). **O-1 est corrigé également** — `shieldHold` ne se
+propage plus à l'objet suivant.
+
+⚠️ **Le banc n'a pas encore été regardé tourner** : `node` n'était pas disponible au moment de la
+correction. Un `node tools/scenario.js` reste à faire avant de s'appuyer sur ses chiffres, et c'est
+ce qui débloque la mesure des autres constats.
 
 ## Chantiers — en cours de construction
 

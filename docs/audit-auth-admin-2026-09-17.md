@@ -33,17 +33,53 @@ se retrouve **dehors**.
 
 | # | Constat | Gravité | Nature |
 |---|---|---|---|
-| **B-01** | Le `state` OAuth est une case unique : deux connexions parallèles s'annulent | 🔴 **haute** | Connexion |
-| **B-02** | Le superadmin peut se supprimer ou se suspendre lui-même → site sans administrateur | 🔴 **haute** | Verrouillage |
-| **B-03** | `changer_statut` n'a aucune garde « dernier superadmin », contrairement à `changer_role` | 🟠 moyenne | Hiérarchie |
-| **B-04** | La zone nginx `auth` (20 r/min) amplifie B-01 au lieu de l'amortir | 🟠 moyenne | Connexion |
-| **B-05** | Trois fichiers de tests en échec, dont deux masquent la couverture réelle | 🟠 moyenne | Tests |
+| **B-01** | ~~Le `state` OAuth est une case unique~~ | ✅ **corrigé 2026-09-17** | Connexion |
+| **B-02** | ~~Le superadmin peut se supprimer ou se suspendre lui-même~~ | ✅ **corrigé 2026-09-17** | Verrouillage |
+| **B-03** | ~~`changer_statut` n'a aucune garde « dernier superadmin »~~ | ✅ **corrigé 2026-09-17** (voir réserve) | Hiérarchie |
+| **B-04** | ~~La zone nginx `auth` (20 r/min) amplifie B-01~~ | ✅ **corrigé 2026-09-18** (40 r/min) | Connexion |
+| **B-05** | ~~Trois fichiers de tests en échec~~ | ✅ **corrigé 2026-09-18** | Tests |
 | **B-06** | `prompt=none` n'est ni commenté ni justifié, dans un fichier qui commente tout | 🟡 faible | Dette |
 | **A-01/A-02** | La durée de session reste figée sur le rôle *(rappel, non corrigé)* | 🟠 moyenne | Session |
 | **A-04/A-05/A-07** | Dette du mot de passe partagé, CGU non imposées *(rappel, non corrigé)* | 🟡 faible | Dette |
 
 **Deux constats 🔴, tous deux confirmés par exécution.** Aucun n'est une faille de confidentialité :
 ce sont des pannes de disponibilité, dont l'une explique les « bugs étranges » signalés.
+
+> ## ✅ Mise à jour du 2026-09-18 — cinq constats sur six sont refermés
+>
+> **B-01, B-02, B-03, B-04 et B-05 sont corrigés**, dans l'ordre que le §8 recommandait :
+> la cause d'abord (B-01), la mesure ensuite (B-04). Les assertions `defaut()` qui les
+> portaient sont devenues des **non-régressions**, et chaque garde a été vérifiée **en la
+> cassant volontairement** avant d'être livrée — six assertions comportementales virent au
+> rouge quand `_refus_auto_verrouillage` est neutralisée, deux quand le gate de permission
+> est retiré. Sans cette injection, rien ne prouverait qu'elles décrivent l'effet du code
+> plutôt que sa forme (leçon du §12.5 de l'audit 503).
+>
+> Suite complète : **1401 assertions, aucune rouge, aucun fichier en échec** — une première
+> depuis l'ouverture de cet audit.
+>
+> | Constat | Ce qui a été fait |
+> |---|---|
+> | **B-01** | Liste bornée de `state` en attente (5 max, TTL 15 min), consommés **seulement en cas de correspondance**. L'usage unique est préservé. Les deux messages sont enfin distingués : « déjà servi ou expiré » (fréquent, bénin) vs refus réel (journalisé). |
+> | **B-02 / B-03** | Garde unique `_refus_auto_verrouillage`, appliquée à `DELETE /me` **et** à `changer_statut`, sous `FOR UPDATE`. Réutilise la définition du « dernier » de `changer_role` plutôt que de la recopier. |
+> | **B-04** | Zone `auth` portée de 20 à **40 r/min**, après B-01 et pas avant. Volontairement modeste : un budget large masquerait la prochaine boucle d'échec. |
+> | **B-05** | Les trois fichiers réparés. Aucun ne signalait un défaut du code : tous testaient un état antérieur (avatar au CDN, demande de liaison à 3 colonnes, jointure `joueurs`). |
+>
+> **Reste ouvert : B-06** (`prompt=none` non commenté, 🟡), et une réserve assumée sur B-03 —
+> voir la fin du §3.
+>
+> ℹ️ **Un défaut antérieur trouvé en relisant la correction** (2026-09-18) : `compare_digest`
+> **lève** un `TypeError` sur deux chaînes dont l'une n'est pas ASCII. Le `state` venant d'un
+> paramètre d'URL, un simple `?state=é` produisait un **500 sur le chemin de connexion** — et
+> ce, *avant* la correction de B-01 comme après, la nouvelle version ayant hérité du geste tel
+> quel. Corrigé en comparant des octets, sans rien perdre du temps constant. Cinq assertions
+> couvrent désormais les entrées hostiles (non-ASCII, emoji, octet nul, très long, session
+> bricolée) : toutes doivent refuser en 400, jamais en 500.
+>
+> ⚠️ **Non vérifié ici, et à faire avant de conclure quoi que ce soit sur nginx** :
+> `docker compose exec nginx nginx -T | grep "zone=auth"` doit confirmer la valeur **servie**.
+> Docker n'était pas disponible dans l'environnement où la correction a été écrite. L'épisode
+> du montage par inode (§12 de l'audit 503) a déjà piégé une fois.
 
 ---
 
@@ -239,6 +275,21 @@ et interdit la reconnexion — mais elle est traitée comme un geste mineur. Un 
 rétrograder un pair (rang égal), et c'est correct ; il ne peut pas non plus le suspendre (même
 décorateur), correct aussi. Mais **personne ne l'empêche de se suspendre lui-même**, ni de suspendre
 le dernier chef_admin sans confirmation.
+
+> **✅ Corrigé le 2026-09-17, avec une réserve explicite.**
+>
+> `changer_statut` porte désormais la même garde que `DELETE /me` : l'auto-suspension du
+> **dernier superadmin** est refusée en 409 `dernier_superadmin`. La réactivation n'est pas
+> concernée — elle n'a jamais verrouillé personne, et une assertion le vérifie pour que la
+> garde ne déborde pas.
+>
+> **Ce qui n'a PAS été fait, et c'est un choix, pas un oubli** : le **dernier chef_admin** ne
+> déclenche toujours aucune confirmation à la suspension, là où `changer_role` en demande une
+> nommée (R-60). La raison : suspendre un chef_admin est **réversible par le superadmin**, qui
+> reste souverain — ce n'est donc pas un verrouillage, et c'est précisément le critère qui a
+> guidé la correction. L'assertion `defaut()` correspondante reste **volontairement verte** :
+> elle constate un comportement choisi. La lever demanderait de trancher si le filet de R-60
+> vaut aussi pour un geste réversible, ce qui n'a pas été décidé ici.
 
 ---
 

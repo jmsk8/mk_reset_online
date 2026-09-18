@@ -194,13 +194,28 @@ les mains**. Décider de se couvrir et le faire plus tard, ce n'est pas se couvr
 
 | # | Constat | Gravité | Statut |
 |---|---|---|---|
-| **O-1** | `shieldHold` n'est **jamais remis à `false`** : il se propage à l'objet suivant | 🟠 | **prouvé** |
+| **O-1** | ~~`shieldHold` n'est jamais remis à `false`~~ | ✅ **corrigé 2026-09-18** | **prouvé** |
 | **O-2** | Les trois triples sont désactivés, tout leur code dort | 🟡 | prouvé |
 | **O-3** | `findRedShellTarget` ignore l'occlusion — la rouge voit à travers tout | 🟡 | lecture |
 | **O-4** | La rouge tirée en arrière part **sans cible**, en ligne droite | 🔵 | lecture |
 | **O-5** | `getAggression` lit `state.cachedLeader` avec un repli sur soi-même | 🔵 | lecture |
 
-### O-1 — `shieldHold` survit à l'objet qui l'a justifié 🟠 *(prouvé)*
+### O-1 — `shieldHold` survit à l'objet qui l'a justifié 🟠 *(prouvé)* — ✅ CORRIGÉ le 2026-09-18
+
+> **Résolu.** `kart.shieldHold = false` dans `giveKartItem()`, **en amont des deux branches**
+> — et non dans `planItemUse()` comme la « correction naturelle » le suggérait d'abord. La
+> raison est le piège que l'audit signale lui-même deux paragraphes plus bas : `planItemUse`
+> n'est pas appelée pour les objets en orbite, la branche `spec` sortant avant. Placée là où
+> elle est, la remise à zéro couvre aussi les triples le jour où ils reviennent (O-2).
+>
+> Sans risque de déborder : `updateShield` réécrit le drapeau par un tirage propre à chaque
+> nouvel épisode de danger (`shieldAt !== dangerSince`), et la remise à zéro n'a lieu qu'à la
+> réception d'un objet.
+>
+> **Reste à mesurer**, une fois le banc regardé tourner : la proportion d'objets dont le
+> `throwTime` était repoussé sans qu'aucun tirage `keep` ait été joué pour eux.
+
+
 
 Recherche exhaustive sur `raceEngine/src/` — le drapeau n'apparaît qu'en **quatre** endroits :
 

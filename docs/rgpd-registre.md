@@ -114,13 +114,41 @@ recrée à la volée l'identité qu'on vient d'effacer.
 | **Finalité** | Sécurité et diagnostic de panne |
 | **Base légale** | Intérêt légitime |
 | **Données** | Adresse IP, URL demandée, date, user-agent |
-| **Conservation** | **À fixer et à appliquer** — 6 à 12 mois, recommandation CNIL pour les journaux de sécurité |
-| **Où** | Journaux nginx |
+| **Conservation** | **Bornée par la taille, pas par la durée** — voir ci-dessous. La durée cible (6 à 12 mois, recommandation CNIL) reste à arbitrer. |
+| **Où** | Sortie standard des conteneurs, collectée par Docker (`json-file`) |
 
 ⚠️ **Le chemin d'une invitation contient son jeton, et nginx journalise le
 chemin complet.** C'est la raison pour laquelle les jetons sont hachés en base,
 à durée courte et à usage unique : un jeton qui apparaît dans un journal devient
 inexploitable une fois consommé.
+
+### Comment la rotation est assurée — précisé le 2026-09-17
+
+**Il n'y a aucun fichier de journal à faire tourner.** Dans l'image officielle,
+nginx écrit ses deux flux sur des liens symboliques vers `stdout`/`stderr` ;
+aucune directive `access_log` ou `error_log` vers un fichier n'existe dans
+`nginx/`, et aucun volume de journaux n'est monté. `logrotate` n'aurait donc
+rien à traiter — c'est le pilote de journalisation de Docker qui borne tout.
+
+Le réglage est dans `docker-compose.yml`, ancre `x-journaux`, appliquée aux **cinq**
+services (`db`, `backend`, `frontend`, `race`, `nginx`) :
+
+| Réglage | Valeur | Effet |
+|---|---|---|
+| `max-size` | `10m` | Un fichier fermé et remplacé à 10 Mo |
+| `max-file` | `3` | Trois fichiers conservés au plus |
+
+Soit **30 Mo par service, 150 Mo au total**, plafond atteint quoi qu'il arrive. Le coût disque ne monte donc plus tout seul.
+
+⚠️ **Ce que cela ne fait pas, et qu'il faut avoir lu** : la borne est une
+**taille**, pas une durée — Docker ne sait pas expirer par âge. Sur un site peu
+fréquenté, une adresse IP peut rester bien **au-delà** de la durée annoncée ;
+sur un site chargé, elle disparaît avant. Tant que la durée cible n'est pas
+arbitrée, la conservation effective dépend du trafic.
+
+- `[ ]` **Arbitrer la durée** (6 à 12 mois) et l'annoncer dans
+  `/confidentialite`. Si elle doit être garantie et non subie, il faudra un
+  collecteur qui expire par âge — la borne de taille ne suffira pas.
 
 ## Droits et leur mise en œuvre
 
@@ -139,7 +167,9 @@ inexploitable une fois consommé.
       — fait ; `docker-compose.yml` les transmet au conteneur `frontend`, sans quoi
       elles n'atteignaient aucun processus. **Un déploiement neuf doit les remplir :
       vides, les pages légales sont incomplètes au sens de la loi.**
-- [ ] Fixer et appliquer une rotation des journaux nginx (T5).
+- [x] **Appliquer une rotation des journaux nginx (T5)** — faite le 2026-09-17 par
+      la borne Docker `json-file` (30 Mo/conteneur), voir T5. Reste à **arbitrer la
+      durée** de conservation, que cette borne ne garantit pas.
 - [ ] Faire tourner la purge (`/admin/purge-rgpd`) régulièrement — il n'y a pas
       d'ordonnanceur dans le projet, c'est un geste manuel assumé.
 - [ ] Après toute restauration de sauvegarde : rejouer les suppressions, cf.

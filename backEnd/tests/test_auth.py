@@ -17,7 +17,14 @@ check("session créée", any('INSERT INTO sessions_joueurs' in s for s in sqls))
 check("token en clair renvoyé, absent de la base",
       res['session_token'] and all(res['session_token'] not in str(p) for _, p in cur.executed))
 check("transaction validée", conn.committed)
-check("avatar depuis le CDN Discord", 'cdn.discordapp.com/avatars/' in res['compte']['avatar_url'])
+# L'avatar est RELAYE, plus lie en direct : une <img> vers cdn.discordapp.com
+# donnerait a Discord l'IP de chaque visiteur et publierait le snowflake du
+# joueur dans la source de la page. Cette assertion visait l'ancien
+# comportement ; elle verifie desormais qu'on ne revient pas en arriere.
+check("l'avatar passe par le relais, jamais par le CDN en direct",
+      res['compte']['avatar_url'] == '/avatar/moi', res['compte']['avatar_url'])
+check("le snowflake Discord ne fuit pas dans l'URL d'avatar",
+      '123456789012345678' not in res['compte']['avatar_url'])
 
 print("\n=== 2. Rejeu : le compte existe déjà (R-11, idempotence) ===")
 recharger(); install_discord()

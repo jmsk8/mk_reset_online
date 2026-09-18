@@ -21,6 +21,9 @@ partiel, qui sont lus et raisonnes, jamais executes.
 from harness import *
 from flask import Flask
 import importlib
+import os as _os
+import sys as _sys
+import time as _time
 import secrets as _secrets
 from urllib.parse import urlencode, urlparse, parse_qs
 
@@ -70,17 +73,32 @@ H = {'X-Session-Token': 'tok'}
 
 
 # ===========================================================================
-# B-01 -- Le `state` OAuth est une case unique en session.
+# B-01 -- CORRIGE le 2026-09-17. Le `state` OAuth etait une case unique.
 #
-# Reproduit le couple discord_login / discord_callback du frontend a
-# l'identique (frontEnd/frontend.py). On ne teste pas le frontend lui-meme :
-# il exige SECRET_KEY, BACKEND_URL et un backend joignable. On teste le
-# MECANISME, qui est integralement contenu dans ces deux gestes :
+# Le defaut n'etait dans aucun des deux gestes pris isolement, mais dans leur
+# combinaison sur une case unique :
 #
-#     session['oauth_state'] = state        (ecrase)
-#     attendu = session.pop('oauth_state')  (consomme, meme en cas d'echec)
+#     session['oauth_state'] = state        (ecrasait le precedent)
+#     attendu = session.pop('oauth_state')  (consommait MEME en cas d'echec)
+#
+# Remplace par une liste bornee de states en attente, consommes seulement en
+# cas de correspondance. Ces assertions sont devenues des NON-REGRESSIONS.
+#
+# Les helpers sont importes du frontend plutot que recopies : un test qui
+# reimplemente ce qu'il verifie ne verifie que lui-meme.
 # ===========================================================================
-print("\n=== B-01 : le state OAuth est une case unique ===")
+print("\n=== B-01 : plusieurs states OAuth en attente (CORRIGE 2026-09-17) ===")
+
+# Les helpers sont IMPORTES du frontend, plus recopies : une correction qui ne
+# serait pas dans le code livre doit faire echouer ce fichier. C'est la lecon
+# du §12.5 de l'audit 503 -- un test qui reimplemente ce qu'il verifie ne
+# verifie que lui-meme. Le frontend exige deux variables d'environnement pour
+# s'importer ; on les pose ici, aucune connexion n'est ouverte a l'import.
+_os.environ.setdefault('SECRET_KEY', 'audit')
+_os.environ.setdefault('BACKEND_URL', 'http://audit.invalid')
+_sys.path.insert(0, _os.path.abspath(
+    _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '..', '..', 'frontEnd')))
+_front = importlib.import_module('frontend')
 
 _app = Flask(__name__)
 _app.secret_key = 'audit'
@@ -90,17 +108,15 @@ _app.secret_key = 'audit'
 def _login():
     from flask import session, redirect
     state = _secrets.token_urlsafe(24)
-    session['oauth_state'] = state      # <-- ecrase la valeur precedente
+    _front._deposer_state(state)        # <-- le vrai helper livre
     session.permanent = True
     return redirect("https://discord.test/?" + urlencode({'state': state}))
 
 
 @_app.route('/callback')
 def _callback():
-    from flask import session, request
-    state = request.args.get('state')
-    attendu = session.pop('oauth_state', None)   # <-- consomme meme si echec
-    if not state or not attendu or not _secrets.compare_digest(state, attendu):
+    from flask import request
+    if not _front._consommer_state(request.args.get('state')):
         return "ECHEC", 400
     return "OK", 200
 
@@ -109,54 +125,95 @@ def _state_de(reponse):
     return parse_qs(urlparse(reponse.headers['Location']).query)['state'][0]
 
 
-# --- 1) Deux connexions en parallele s'annulent ---------------------------
+# --- 1) Deux connexions en parallele coexistent ---------------------------
+# C'etait le coeur de B-01.1 : le state du second onglet ecrasait celui du
+# premier, qui echouait sans que rien d'anormal n'ait eu lieu.
 cli = _app.test_client()
 s1 = _state_de(cli.get('/login'))        # onglet 1
-s2 = _state_de(cli.get('/login'))        # onglet 2 : ecrase le state du 1
+s2 = _state_de(cli.get('/login'))        # onglet 2
 r_onglet1 = cli.get('/callback?state=' + s1)
 
 check("deux connexions produisent bien deux states distincts", s1 != s2)
-defaut(B_STATE_CASE_UNIQUE,
-       "terminer dans le PREMIER onglet echoue (son state a ete ecrase)",
-       r_onglet1.status_code == 400,
-       "le state du 1er onglet est de nouveau accepte : plusieurs states en attente ?")
+check("terminer dans le PREMIER onglet fonctionne (B-01.1 corrige)",
+      r_onglet1.status_code == 200)
+check("le SECOND onglet fonctionne aussi, independamment",
+      cli.get('/callback?state=' + s2).status_code == 200)
 
-# Le dernier state, lui, fonctionne : le defaut n'est pas « rien ne marche »,
-# c'est « seule la derniere tentative marche ». D'ou l'apparence d'aleatoire.
+# --- 2) Un echec n'emporte plus les tentatives valides --------------------
+# C'etait B-01.2, le plus perfide : le pop() vidait la case MEME en cas
+# d'echec, si bien qu'un echec en provoquait un second avec un state pourtant
+# bon. D'ou deux echecs d'affilee, puis un succes -- incomprehensible.
 cli = _app.test_client()
-_state_de(cli.get('/login'))
-s_dernier = _state_de(cli.get('/login'))
-check("le DERNIER state fonctionne (le defaut est selectif, pas total)",
-      cli.get('/callback?state=' + s_dernier).status_code == 200)
-
-
-# --- 2) Un echec en provoque un second ------------------------------------
-# Le pop() vide la case meme quand la comparaison echoue. Le callback suivant,
-# y compris avec un state valide, trouve alors attendu=None.
-cli = _app.test_client()
-s_perime = _state_de(cli.get('/login'))
 s_valide = _state_de(cli.get('/login'))
 
-r_premier = cli.get('/callback?state=' + s_perime)    # echoue (state ecrase)
-r_second = cli.get('/callback?state=' + s_valide)     # devrait marcher
+r_premier = cli.get('/callback?state=' + 'inconnu_' + 'x' * 16)   # echoue
+r_second = cli.get('/callback?state=' + s_valide)                 # doit marcher
 
-check("la premiere tentative echoue (state perime)", r_premier.status_code == 400)
-defaut(B_STATE_CASE_UNIQUE,
-       "un echec CONSOMME le state : la tentative suivante echoue AUSSI, "
-       "meme avec le bon state",
-       r_second.status_code == 400,
-       "le state n'est plus consomme en cas d'echec : B-01.2 corrige ?")
+check("un state inconnu est refuse", r_premier.status_code == 400)
+check("un echec ne CONSOMME rien : la tentative suivante reussit (B-01.2 corrige)",
+      r_second.status_code == 200)
 
-# Non-regression a preserver pendant la correction : quoi qu'il arrive, un
-# state rejoue ne doit JAMAIS repasser. C'est ce que le pop() protege, et la
-# correction ne doit pas l'echanger contre le confort.
+# --- 3) Usage unique : la garantie que la correction ne devait pas echanger
+# contre le confort. Un state retire de la liste ne repasse jamais.
 cli = _app.test_client()
 s = _state_de(cli.get('/login'))
 check("premier usage du state accepte", cli.get('/callback?state=' + s).status_code == 200)
-check("REJEU du meme state refuse (usage unique -- a preserver)",
+check("REJEU du meme state refuse (usage unique -- preserve)",
       cli.get('/callback?state=' + s).status_code == 400)
 check("state absent refuse", cli.get('/callback').status_code == 400)
 check("state vide refuse", cli.get('/callback?state=').status_code == 400)
+
+# --- 3bis) Entrees hostiles : un 500 sur le chemin de connexion ------------
+# `compare_digest` LEVE un TypeError sur deux chaines dont l'une n'est pas
+# ASCII. Le state venant d'un parametre d'URL, un simple `?state=e-aigu`
+# suffisait a produire un 500 -- defaut ANTERIEUR a la correction de B-01,
+# reproduit a l'identique en la portant, puis corrige le 2026-09-18 en
+# comparant des octets. Un 500 sur une page « securite » est le pire endroit
+# pour un theoreme.
+cli = _app.test_client()
+_state_de(cli.get('/login'))
+for _libelle, _q in (("non-ASCII", '%C3%A9'), ("emoji", '%F0%9F%92%A9'),
+                     ("octet nul", '%00'), ("tres long", 'x' * 5000)):
+    _r = cli.get('/callback?state=' + _q)
+    check("state %s : refuse proprement, jamais un 500" % _libelle,
+          _r.status_code == 400, _r.status_code)
+
+# Une session bricolee ne doit pas davantage faire tomber la route : horodatage
+# textuel, entree non-liste, valeur nulle.
+cli = _app.test_client()
+with cli.session_transaction() as _sess:
+    _sess['oauth_states'] = [['a', 'pas_un_nombre'], ['b', None], 'brut', 42]
+check("session corrompue (horodatage textuel) : refus propre, pas de 500",
+      cli.get('/callback?state=a').status_code == 400)
+
+
+# --- 4) Bornes : taille et duree de vie -----------------------------------
+# Sans borne de taille, un robot appelant /login en boucle ferait grossir le
+# cookie de session jusqu'au refus du navigateur.
+cli = _app.test_client()
+_vieux = [_state_de(cli.get('/login')) for _ in range(_front.OAUTH_STATES_MAX + 2)]
+check("au-dela de la borne, les states les PLUS ANCIENS sont evinces",
+      cli.get('/callback?state=' + _vieux[0]).status_code == 400)
+check("les states recents survivent a l'eviction",
+      cli.get('/callback?state=' + _vieux[-1]).status_code == 200)
+
+# Un state perime est refuse : on recule son horodatage au-dela du TTL.
+cli = _app.test_client()
+s_vieux = _state_de(cli.get('/login'))
+with cli.session_transaction() as sess:
+    sess['oauth_states'] = [[s_vieux, _time.time() - _front.OAUTH_STATE_TTL - 1]]
+check("un state plus vieux que le TTL est refuse",
+      cli.get('/callback?state=' + s_vieux).status_code == 400)
+
+# Une session corrompue (cookie bricole, format d'une version anterieure) ne
+# doit pas produire un 500 sur le chemin de connexion.
+cli = _app.test_client()
+with cli.session_transaction() as sess:
+    sess['oauth_states'] = ['pas_une_paire', None, ['trop', 'court', 'non'], 42]
+check("une liste de states corrompue est ignoree, sans erreur",
+      cli.get('/callback?state=nimporte').status_code == 400)
+check("et une nouvelle connexion repart proprement apres corruption",
+      cli.get('/callback?state=' + _state_de(cli.get('/login'))).status_code == 200)
 
 
 # ===========================================================================
@@ -168,25 +225,56 @@ check("state vide refuse", cli.get('/callback?state=').status_code == 400)
 # ===========================================================================
 print("\n=== B-02a : le superadmin supprime son propre compte ===")
 
+# Le DERNIER superadmin : refuse.
 cli, cur, conn = monter_comptes([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
+    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('superadmin',)),
+    (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (0,)),
+    (r"UPDATE sessions_joueurs SET last_seen_at", None),
+])
+r = cli.delete('/me', headers=H)
+sqls = [s for s, _ in cur.executed]
+
+check("DELETE /me par le DERNIER superadmin -> 409 (B-02.1 corrige)",
+      r.status_code == 409 and (r.get_json() or {}).get('code') == 'dernier_superadmin',
+      r.get_json())
+check("aucune ligne comptes n'est supprimee",
+      not any('DELETE FROM comptes' in s for s in sqls))
+check("le compte est verrouille AVANT le comptage (deux suppressions "
+      "simultanees se compteraient l'une l'autre comme restante)",
+      any('FOR UPDATE' in s for s in sqls))
+
+# Un superadmin parmi d'AUTRES : la suppression reste possible. Sans cette
+# assertion, une garde qui refuserait tout le monde passerait pour correcte.
+cli, cur, conn = monter_comptes([
+    (r"FROM sessions_joueurs s\s+JOIN comptes c",
+     ligne_session(compte_id=1, role='superadmin', statut='linked')),
+    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('superadmin',)),
+    (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (1,)),
+    (r"INSERT INTO audit_admin", None),
+    (r"DELETE FROM", None),
+    (r"UPDATE sessions_joueurs SET last_seen_at", None),
+])
+r = cli.delete('/me', headers=H)
+check("NON-REGRESSION : un superadmin PARMI D'AUTRES peut toujours se supprimer",
+      r.status_code == 200, r.get_json())
+
+# Et un simple joueur n'est jamais gene par la garde.
+cli, cur, conn = monter_comptes([
+    (r"FROM sessions_joueurs s\s+JOIN comptes c",
+     ligne_session(compte_id=1, role='player', statut='linked')),
+    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
     (r"INSERT INTO audit_admin", None),
     (r"DELETE FROM", None),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
 r = cli.delete('/me', headers=H)
 sqls = [s for s, _ in cur.executed]
-
-defaut(B_SUPERADMIN_SE_VERROUILLE,
-       "DELETE /me par le SUPERADMIN -> 200 (aucune garde de rang)",
-       r.status_code == 200,
-       "une garde refuse maintenant la suppression du dernier superadmin ?")
-defaut(B_SUPERADMIN_SE_VERROUILLE,
-       "la ligne comptes est reellement supprimee",
-       any('DELETE FROM comptes' in s for s in sqls))
-check("aucun COUNT des superadmins restants n'est effectue",
-      not any('COUNT(*)' in s and 'superadmin' in s.lower() for s in sqls))
+check("NON-REGRESSION : un joueur ordinaire supprime son compte sans entrave",
+      r.status_code == 200, r.get_json())
+check("et aucun COUNT inutile n'est fait pour un non-superadmin",
+      not any('COUNT(*)' in s for s in sqls))
 
 # Contraste : la meme protection existe pourtant ailleurs, et fonctionne.
 cli, cur, conn = monter_comptes([
@@ -215,25 +303,58 @@ print("\n=== B-02b : le superadmin se suspend lui-meme (irrattrapable) ===")
 cli, cur, conn = monter_comptes([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
-    (r"SELECT statut FROM comptes WHERE id = %s FOR UPDATE", ('linked',)),
-    (r"UPDATE comptes SET statut", None),
-    (r"DELETE FROM sessions_joueurs", None),
-    (r"INSERT INTO audit_admin", None),
+    (r"SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE",
+     ('linked', 'superadmin')),
+    (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (0,)),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
 r = cli.post('/admin/comptes/1/statut', json={'statut': 'suspended'}, headers=H)
 sqls = [s for s, _ in cur.executed]
 
-defaut(B_SUPERADMIN_SE_VERROUILLE,
-       "le superadmin peut se suspendre LUI-MEME -> 200",
-       r.status_code == 200,
-       "une garde refuse maintenant l'auto-suspension du dernier superadmin ?")
-defaut(B_SUPERADMIN_SE_VERROUILLE,
-       "ses sessions sont fermees dans la foulee : il est dehors immediatement",
-       any('DELETE FROM sessions_joueurs' in s for s in sqls))
-defaut(B_STATUT_SANS_GARDE,
-       "changer_statut ne compte JAMAIS les superadmins restants",
-       not any('COUNT(*)' in s and 'superadmin' in s.lower() for s in sqls))
+check("l'auto-suspension du DERNIER superadmin -> 409 (B-02.2 corrige)",
+      r.status_code == 409 and (r.get_json() or {}).get('code') == 'dernier_superadmin',
+      r.get_json())
+check("aucune session n'est fermee : il reste dedans",
+      not any('DELETE FROM sessions_joueurs' in s for s in sqls))
+check("aucun UPDATE du statut n'a lieu",
+      not any('UPDATE comptes SET statut' in s for s in sqls))
+check("changer_statut COMPTE desormais les superadmins restants (B-03 corrige)",
+      any('COUNT(*)' in s for s in sqls))
+
+# Le message de la garde dit « VOUS etes le dernier superadmin » : il ne vaut
+# que si la garde ne peut se declencher que sur une AUTO-action. C'est bien le
+# cas, mais ca tient a compte_cible_protegee, qui refuse l'egalite de rang --
+# un superadmin ne peut pas viser un autre superadmin (403 avant d'arriver
+# ici). Si cette regle changeait, le message deviendrait faux : un superadmin
+# lirait « vous etes le dernier » en suspendant quelqu'un d'autre.
+cli, cur, conn = monter_comptes([
+    (r"FROM sessions_joueurs s\s+JOIN comptes c",
+     ligne_session(compte_id=1, role='superadmin', statut='linked')),
+    (r"SELECT role FROM comptes WHERE id = %s", ('superadmin',)),
+])
+r = cli.post('/admin/comptes/2/statut', json={'statut': 'suspended'}, headers=H)
+check("un superadmin ne peut pas viser un AUTRE superadmin (403 avant la garde) "
+      "-- c'est ce qui rend le message « vous etes le dernier » exact",
+      r.status_code == 403 and (r.get_json() or {}).get('code') == 'cible_protegee',
+      r.get_json())
+
+# Reactiver n'a jamais verrouille personne : la garde ne doit pas s'y appliquer.
+cli, cur, conn = monter_comptes([
+    (r"FROM sessions_joueurs s\s+JOIN comptes c",
+     ligne_session(compte_id=1, role='superadmin', statut='linked')),
+    (r"SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE",
+     ('suspended', 'superadmin')),
+    (r"UPDATE comptes SET statut", None),
+    (r"INSERT INTO audit_admin", None),
+    (r"UPDATE sessions_joueurs SET last_seen_at", None),
+])
+r = cli.post('/admin/comptes/1/statut', json={'statut': 'linked'}, headers=H)
+sqls = [s for s, _ in cur.executed]
+check("NON-REGRESSION : REACTIVER un compte reste possible (la garde ne vise "
+      "que 'suspended')",
+      r.status_code == 200, r.get_json())
+check("et aucun COUNT n'est fait sur une reactivation",
+      not any('COUNT(*)' in s for s in sqls))
 
 # La raison technique : compte_cible_protegee laisse passer l'auto-action.
 # C'est un choix DELIBERE et documente (« fermer ses propres sessions est
@@ -292,17 +413,37 @@ check("NON-REGRESSION : changer_role garde le dernier chef_admin",
 check("NON-REGRESSION : changer_role refuse l'auto-modification",
       'refuse_auto_modification' in src_role)
 
-defaut(B_STATUT_SANS_GARDE, "changer_statut n'a AUCUNE garde 'dernier superadmin'",
-       'dernier_superadmin' not in src_statut)
-defaut(B_STATUT_SANS_GARDE, "changer_statut n'a AUCUNE garde 'dernier chef_admin'",
-       'dernier_chef_admin' not in src_statut)
-defaut(B_STATUT_SANS_GARDE, "changer_statut ne refuse PAS l'auto-modification",
-       'refuse_auto_modification' not in src_statut)
-
+# La garde vit dans un helper partage, pas en ligne dans chaque route : la
+# chercher par son nom dans le source de la route donnerait un vert trompeur.
+# On verifie donc qu'elle est APPELEE, et le comportement est deja prouve plus
+# haut (B-02a / B-02b) par execution.
 src_suppr = inspect.getsource(_rc.supprimer_mon_compte)
-defaut(B_SUPERADMIN_SE_VERROUILLE,
-       "supprimer_mon_compte ne consulte JAMAIS le role du titulaire",
-       "role" not in src_suppr.split('"""')[-1])
+
+check("changer_statut appelle la garde d'auto-verrouillage (B-03 corrige)",
+      '_refus_auto_verrouillage' in src_statut)
+check("supprimer_mon_compte appelle la MEME garde (B-02.1 corrige)",
+      '_refus_auto_verrouillage' in src_suppr)
+check("les deux routes consultent le role du titulaire sous verrou",
+      'FOR UPDATE' in src_suppr and 'FOR UPDATE' in src_statut)
+
+# La regle est ecrite UNE fois. Deux copies divergeraient, et on ne s'en
+# apercevrait qu'une fois dehors.
+src_garde = inspect.getsource(_rc._refus_auto_verrouillage)
+check("la garde reutilise la definition du « dernier » de changer_role",
+      '_dernier_de_son_role' in src_garde)
+check("et elle repond 409 avec le meme code que changer_role",
+      'dernier_superadmin' in src_garde and '409' in src_garde)
+
+# Ce qui reste DELIBEREMENT non couvert, pour que l'absence soit un choix lu et
+# non un oubli : le dernier chef_admin. changer_role lui demande une
+# confirmation nommee (R-60) ; suspendre ne demande rien. Le superadmin reste
+# souverain pour le reactiver, donc ce n'est pas un verrouillage -- c'est la
+# raison pour laquelle B-03 s'arrete ici.
+defaut(B_STATUT_SANS_GARDE,
+       "changer_statut ne demande TOUJOURS PAS confirmation pour le dernier "
+       "chef_admin (choix assume, pas un verrouillage)",
+       'dernier_chef_admin' not in src_statut,
+       "une confirmation a ete ajoutee ? mettre a jour B-03")
 
 
 # ===========================================================================

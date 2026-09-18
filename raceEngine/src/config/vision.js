@@ -17,7 +17,7 @@ export default {
 
         // Bande de profondeur ou un objet est tenu pour etant sur la route, donc
         // a surveiller. Plus large que le DEGAGEMENT (`hitboxes.itemVsKart.y` +
-        // `ai.crossDodgeMargin` = 7) : kart et objet bougent pendant le temps
+        // `place.margin.item`, quelques unites) : kart et objet bougent pendant le temps
         // avant impact, et une esquive doit commencer avant d'etre pile dans
         // l'axe. La resserrer au degagement rend les objets traines inevitables.
         threatLane: 12,
