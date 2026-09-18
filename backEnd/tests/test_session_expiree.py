@@ -186,6 +186,160 @@ check("et memoise sur g, jamais sur la session ni un global",
       and 'session[' not in revoque)
 
 
+print("\n=== Gate de permission : droit manquant != session expiree ===")
+# Le coeur du §8.3 de permissions-onglets-contexte.md, longtemps non teste.
+#
+# Deux refus coexistent sur ces pages et ne doivent SURTOUT pas se confondre :
+#
+#   - session expiree  -> purge des jetons + retour accueil (il faut se
+#     reconnecter) ;
+#   - droit manquant   -> message et redirection, mais AUCUNE deconnexion : la
+#     session est parfaitement valide, c'est la permission qui manque.
+#
+# Les confondre deconnecterait un admin legitime a chaque page interdite, et
+# c'est le genre de defaut qu'on prend pour « le site m'a ejecte ».
+GATES = [
+    ("admin_tournois", 'gestion_tournois'),
+    ("admin_reglages", 'gestion_config'),
+    # Ajoutee le 2026-09-18. La navbar cachait deja le lien, mais un lien cache
+    # n'est pas un acces ferme : l'URL restait ouverte et la page finissait sur
+    # « Chargement impossible. ». `gestion_joueurs` n'ouvre que la LECTURE
+    # depuis la scission -- c'est bien le droit qui autorise a REGARDER la page.
+    ("admin_joueurs_fiches", 'gestion_joueurs'),
+]
+for nom, permission in GATES:
+    corps = bloc(front, 'def %s' % nom)
+    check("%s porte un gate de permission" % nom,
+          "'%s' not in _permissions_session()" % permission in corps, nom)
+    # L'ORDRE compte : le gate doit passer AVANT la revalidation de session.
+    # Dans l'autre sens, un admin sans le droit paierait un aller-retour
+    # backend pour se voir refuser de toute facon.
+    i_gate = corps.find('_permissions_session()')
+    i_reval = corps.find('_acces_admin_revoque()')
+    check("%s teste la permission avant de revalider la session" % nom,
+          i_gate >= 0 and i_reval >= 0 and i_gate < i_reval, (i_gate, i_reval))
+    # Le refus de droit ne doit PAS purger les jetons : c'est ce qui le
+    # distingue d'une session expiree.
+    avant_reval = corps[:i_reval] if i_reval > 0 else corps
+    check("%s ne deconnecte PAS sur un simple manque de droit" % nom,
+          '_session_admin_expiree' not in avant_reval
+          and "pop('player_token'" not in avant_reval, nom)
+
+# Le gate lit les permissions de la SESSION, jamais un role en dur : depuis la
+# scission du 2026-09-13, un chef_admin porte gestion_config par construction,
+# et un `or role in (...)` reintroduirait un chemin parallele.
+# La docstring de la vue EXPLIQUE ce motif retire ; la chercher dans le source
+# brut la retrouvait dans le commentaire et faisait echouer une assertion sur du
+# code pourtant correct. On inspecte donc le corps executable seul -- meme piege
+# que la fenetre de 1200 caracteres documentee plus haut.
+reglages = bloc(front, 'def admin_reglages')
+_sans_doc = _re.sub(r'(?s)\"\"\".*?\"\"\"', '', reglages)
+_sans_doc = _re.sub(r'(?m)#.*$', '', _sans_doc)
+check("le gate ne retombe pas sur un test de role en dur",
+      'role_admin in (' not in _sans_doc and '_role_session() in' not in _sans_doc,
+      _sans_doc[:200])
+
+# Ce que le helper garantit : une session d'avant le chantier n'a pas la cle.
+# Le repli ne vaut que pour chef_admin/superadmin, dont le socle EST le
+# catalogue -- un admin repart de zero jusqu'a sa reconnexion.
+perms = bloc(front, 'def _permissions_session')
+check("_permissions_session renvoie un set, jamais None",
+      'set(' in perms and 'return set()' in perms or 'set()' in perms)
+check("et son repli ne concerne que chef_admin/superadmin",
+      'ROLE_CHEF_ADMIN' in perms or 'chef_admin' in perms)
+
+# Les TROIS onglets admin portent desormais un gate : c'est la regle, plus une
+# exception a retenir. Une quatrieme page admin qui l'oublierait se verrait ici.
+for _nom, _perm in GATES:
+    _corps = bloc(front, 'def %s' % _nom)
+    check("%s redirige vers l'accueil, sans purger la session" % _nom,
+          "url_for('index')" in _corps, _nom)
+
+# Le gate ne doit pas se substituer a la revalidation : les deux repondent a des
+# questions differentes (« a-t-il le droit ? » et « sa session vaut-elle encore
+# quelque chose ? »). Supprimer l'une en gardant l'autre laisserait un trou.
+for _nom, _ in GATES:
+    _corps = bloc(front, 'def %s' % _nom)
+    check("%s revalide TOUJOURS la session, gate ou pas" % _nom,
+          '_acces_admin_revoque()' in _corps, _nom)
+
+
+print("\n=== Gate par bloc DANS le gabarit (le second etage du double-gate) ===")
+# Le gate de route decide si la PAGE s'ouvre ; celui du gabarit decide quels
+# BLOCS s'affichent. Les deux sont necessaires et ne se remplacent pas :
+#
+#   - sans le gate de route, un admin sans aucun des droits ouvrait une page
+#     vide en tapant l'URL ;
+#   - sans les gates de bloc, il verrait les onglets des domaines qu'il n'a pas.
+#
+# Aucun des deux n'est une securite : le backend revalide chaque appel. Ils
+# decident de ce qu'on MONTRE, et un affichage qui ment fabrique des tickets.
+reglages_html = io_open(os.path.join(FRONT, 'templates', 'admin_reglages.html'))
+
+# --- admin_comptes : trois domaines dans une page -------------------------
+# C'est LA page mixte du projet. La route s'ouvre sur l'UNION des trois droits,
+# chaque onglet est gate separement. Un desaccord entre les deux niveaux donne
+# soit une page vide, soit un onglet mort.
+DOMAINES_COMPTES = ['gestion_liaisons', 'gestion_comptes', 'gestion_invitations']
+
+route_comptes = bloc(front, 'def admin_comptes')
+for _perm in DOMAINES_COMPTES:
+    check("admin_comptes : la route connait le domaine %s" % _perm,
+          "'%s'" % _perm in route_comptes, _perm)
+check("admin_comptes s'ouvre sur l'UNION des droits, pas sur leur intersection",
+      '&' in route_comptes and '_permissions_session()' in route_comptes)
+
+# L'invariant qui compte : un onglet et son panneau portent le MEME gate. Les
+# dissocier afficherait un onglet dont le contenu n'existe pas -- un clic dans
+# le vide, que rien cote serveur ne viendrait rattraper.
+for _perm in DOMAINES_COMPTES:
+    _n = admin_html.count("{% if peut('" + _perm + "') %}")
+    check("admin_comptes : %s gate l'onglet ET son panneau (%d occurrences)"
+          % (_perm, _n), _n >= 2, _n)
+
+# Le 4e onglet n'est pas une permission mais un rang : les jetons de bot sont
+# reserves au superadmin. Il doit suivre la meme regle de paire.
+_nb = admin_html.count('{% if est_superadmin %}')
+check("admin_comptes : l'onglet superadmin suit la meme regle de paire", _nb >= 2, _nb)
+
+# L'onglet actif est choisi cote JS, jamais en dur : en dur, ce pourrait etre
+# un onglet auquel l'admin n'a pas droit.
+check("admin_comptes : aucun onglet n'est marque actif en dur dans le gabarit",
+      'class="is-active"' not in admin_html and "class='is-active'" not in admin_html)
+
+# --- admin_reglages : la page n'est PLUS un double-gate -------------------
+# Le §8.3 de permissions-onglets-contexte.md la cite comme l'exemple a tester.
+# C'etait vrai avant le 2026-09-13 : le reset global exigeait alors chef_admin,
+# la configuration demandait gestion_config. Le reset est devenu delegable, les
+# deux blocs ont convergé sous le MEME droit. Le verifier evite qu'on
+# reintroduise une frontiere que la doc croit encore la.
+check("admin_reglages : les blocs sont sous un droit unique (gestion_config)",
+      reglages_html.count("{% if peut('gestion_config') " + "%}") >= 2)
+check("admin_reglages : plus aucun bloc sous une capacite de ROLE",
+      "peut('gestion_config') or role_admin" not in reglages_html
+      and "role_admin in ('chef_admin'" not in reglages_html.split('{# ')[0])
+
+# Le repli : si tous les gates sont faux, la page dirait pourquoi au lieu de
+# rester blanche. Ce cas ne doit pas arriver (la route refuse avant), mais une
+# page vide sans explication est le pire des deux.
+check("admin_reglages : une page sans aucun bloc s'explique au lieu de rester vide",
+      'n\'avez aucun droit' in reglages_html or 'aucun droit sur' in reglages_html)
+
+# --- gestion_joueurs : un droit par geste ---------------------------------
+# Autre forme du meme patron : la page s'ouvre sur gestion_joueurs (lecture),
+# et chaque CHAMP porte sa sous-permission. Le gabarit ne masque pas, il grise
+# -- un champ absent se lit « la fonction n'existe pas », un champ grise se lit
+# « je n'y ai pas droit ». La nuance est ce qui evite un ticket.
+joueurs_html = io_open(os.path.join(FRONT, 'templates', 'gestion_joueurs.html'))
+SOUS_PERMS = ['joueurs_nom', 'edition_mu_sigma', 'joueurs_couleur',
+              'joueurs_statut', 'joueurs_creation', 'joueurs_irreversible']
+for _perm in SOUS_PERMS:
+    check("gestion_joueurs : le champ sous %s est declare au gabarit" % _perm,
+          "peut('%s')" % _perm in joueurs_html, _perm)
+check("gestion_joueurs : les droits sont passes au JS, qui grise au lieu de masquer",
+      'PEUT_CHAMPS_JOUEUR' in joueurs_html)
+
+
 print("\n=== La sortie de session ne renvoie plus vers le mot de passe ===")
 # Plus aucune route backend n'accepte ce jeton : aucun usage de
 # admin_or_role_required ne subsiste, et /admin/check-token est passee en

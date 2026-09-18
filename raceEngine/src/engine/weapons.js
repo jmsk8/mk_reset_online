@@ -170,6 +170,19 @@ function giveKartItem(cfg, state, rng, now, kart, events) {
 
     kart.lastItem = itemType;
 
+    // Le drapeau de couverture appartient a l'objet qui l'a justifie, et a lui
+    // seul. Sans cette ligne il SURVIVAIT a l'objet lache : un kart qui avait
+    // decide de se couvrir avec une banane gardait shieldHold=true apres
+    // l'avoir posee, et l'objet suivant se faisait retenir sur une decision
+    // prise pour la banane -- alors qu'aucun tirage `keep` n'avait ete joue
+    // pour lui (constat O-1).
+    //
+    // Ici et non dans planItemUse(), qui remet pourtant six autres champs a
+    // zero : planItemUse n'est PAS appelee pour les objets en orbite, la
+    // branche `spec` ci-dessous sortant avant. Le faire en amont des deux
+    // branches est ce qui couvre aussi les triples le jour ou ils reviennent.
+    kart.shieldHold = false;
+
     const holdPosition = getHoldPosition(cfg, itemType);
     const spec = getOrbitSpec(cfg, itemType);
 

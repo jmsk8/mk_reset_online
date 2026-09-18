@@ -80,18 +80,26 @@ check("bio non textuelle refusée",
 
 print("\n=== Profil public : ce qui sort, et ce qui ne sort pas ===")
 cli, cur, conn, rc = monter([])
-cur.plan = [(r"FROM comptes c LEFT JOIN profils p",
+# La requete joint desormais `joueurs` (pour ecarter les fiches anonymisees),
+# d'ou le motif elargi : l'ancien s'arretait a « FROM comptes c LEFT JOIN »,
+# qui ne correspondait plus -- le curseur rendait None et le fichier cassait.
+cur.plan = [(r"FROM comptes c\s+JOIN joueurs j.*LEFT JOIN profils p",
              ('123456789012345678', 'abc', 'ma bio', '#FF0000', {'twitch': 'j_sk8', 'monsite': 'x'}))]
 pub = rc.profil_public(cur, 9)
 check("bio publiée", pub['bio'] == 'ma bio')
 check("réseau hors liste blanche filtré à l'affichage aussi", 'monsite' not in pub['reseaux'])
-check("avatar servi par le CDN Discord", pub['avatar_url'].startswith('https://cdn.discordapp.com/'))
+# L'avatar est relaye : lier le CDN en direct donnerait a Discord l'IP de
+# chaque visiteur et publierait le snowflake dans la source de la page.
+check("avatar servi par le relais, pas par le CDN en direct",
+      pub['avatar_url'] == '/avatar/joueur/9', pub['avatar_url'])
+check("le snowflake Discord n'apparait pas dans l'URL publique",
+      '123456789012345678' not in pub['avatar_url'])
 check("ni rôle ni statut dans la charge publique",
       'role' not in pub and 'statut' not in pub and 'discord_id' not in pub)
 sql = ' '.join(s for s, _ in cur.executed)
 check("seuls les comptes 'linked' sont publiés", "statut = 'linked'" in sql, sql[:150])
 
-cur.plan = [(r"FROM comptes c LEFT JOIN profils p", None)]
+cur.plan = [(r"FROM comptes c\s+JOIN joueurs j.*LEFT JOIN profils p", None)]
 check("joueur sans compte -> pas de profil", rc.profil_public(cur, 9) is None)
 
 print("\n" + "="*60)

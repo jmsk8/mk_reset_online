@@ -224,13 +224,24 @@ check("l'echange ne loggue que des codes HTTP, jamais les corps",
 print("\n=== Le state OAuth protege le callback (non-regression) ===")
 # Sans state verifie, un tiers peut faire consommer SON code a la victime et lier
 # le navigateur de celle-ci a son propre compte Discord (login CSRF).
+# Depuis la correction de B-01 (2026-09-17), la verification ne vit plus dans
+# le callback mais dans `_consommer_state` : une case unique a ete remplacee
+# par une liste bornee de states en attente. Les garanties, elles, sont les
+# memes -- et c'est elles qu'on verifie, pas l'endroit ou elles vivent.
 callback = corps_de(front, "def discord_callback(", 2500)
+# 2500 et non 1200 : la fenetre etait trop courte des qu'un commentaire
+# s'allongeait dans la fonction, et l'assertion « usage unique » virait au rouge
+# sur du code pourtant intact -- exactement le piege documente dans
+# test_session_expiree.py, qui a fini par passer a un vrai parseur.
+consommer = corps_de(front, "def _consommer_state(", 2500)
 check("le state est compare en temps constant",
-      'secrets.compare_digest' in callback)
-check("le state est a usage unique (pop, pas get)",
-      "session.pop('oauth_state'" in callback)
+      'secrets.compare_digest' in consommer)
+check("le state est a usage unique (retire de la liste une fois reconnu)",
+      'del en_attente[i]' in consommer)
 check("un state absent ou vide est refuse",
-      'not state or not attendu' in callback)
+      'if not recu:' in consommer and 'return False' in consommer)
+check("le callback delegue bien a cette verification",
+      '_consommer_state(state)' in callback)
 check("le cookie de session est HttpOnly",
       "SESSION_COOKIE_HTTPONLY'] = True" in front)
 check("le cookie est SameSite=Lax (Strict casserait le retour de Discord)",

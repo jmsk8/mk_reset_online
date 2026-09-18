@@ -64,8 +64,13 @@ check("demande déjà en cours -> 409 (pas une 500 d'index unique)",
       r.status_code == 409 and r.get_json()['code'] == 'demande_en_cours', r.get_json())
 
 print("\n=== R-07 : course à l'approbation ===")
+# La demande porte 4 colonnes depuis que la liaison peut CREER une fiche :
+# (compte_id, joueur_id, statut, nom_demande). Le 3-uplet d'avant faisait
+# echouer le depaquetage, et la route repondait « Erreur serveur » -- toute
+# cette section ne testait donc plus rien. C'est le constat B-05.
 cli, cur, conn, _ = monter([
-    (r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'pending')),
+    (r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'pending', None)),
+    (r"SELECT nom FROM joueurs WHERE id", ('Mario',)),
     (r"SELECT id FROM comptes WHERE joueur_id = %s FOR UPDATE", (77,)),  # pris entre-temps
 ])
 r = cli.post('/admin/liaisons/1/approve', headers=H)
@@ -76,12 +81,15 @@ check("verrou posé sur la fiche joueur convoitée",
       any('FROM comptes WHERE joueur_id = %s FOR UPDATE' in s for s, _ in cur.executed))
 check("transaction annulée", conn.rolledback or not conn.committed)
 
-cli, cur, conn, _ = monter([(r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'approved'))])
+cli, cur, conn, _ = monter([
+    (r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'approved', None)),
+])
 r = cli.post('/admin/liaisons/1/approve', headers=H)
 check("demande déjà traitée -> 409", r.status_code == 409 and r.get_json()['code'] == 'deja_traitee')
 
 cli, cur, conn, _ = monter([
-    (r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'pending')),
+    (r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'pending', None)),
+    (r"SELECT nom FROM joueurs WHERE id", ('Mario',)),
     (r"SELECT id FROM comptes WHERE joueur_id = %s FOR UPDATE", None),
 ])
 r = cli.post('/admin/liaisons/1/approve', headers=H)
@@ -182,7 +190,12 @@ r = cli.post('/admin/comptes/5/role', json={'role': 'root'}, headers=H)
 check("rôle inconnu -> 400", r.status_code == 400 and r.get_json()['code'] == 'role_invalide')
 
 print("\n=== Suspension : fermer les sessions, pas seulement l'étiquette ===")
-cli, cur, conn, _ = monter([(r"SELECT statut FROM comptes WHERE id", ('linked',))])
+# La cible est un 'player' : la garde « dernier superadmin » (B-02/B-03) ne la
+# concerne pas, et aucun COUNT n'est fait. C'est bien la fermeture des sessions
+# qu'on teste ici, pas le verrouillage.
+cli, cur, conn, _ = monter([
+    (r"SELECT statut, role FROM comptes WHERE id", ('linked', 'player')),
+])
 r = cli.post('/admin/comptes/5/statut', json={'statut': 'suspended'}, headers=H)
 check("suspension -> 200", r.status_code == 200)
 check("sessions du compte fermées dans la foulée",

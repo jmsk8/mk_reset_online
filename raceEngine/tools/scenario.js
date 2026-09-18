@@ -37,7 +37,11 @@ function makeRng(seed) {
 // d'appui qu'un kart au ralenti (`physics.steer.pace`).
 function steerTable() {
     const table = PH.deriveCharacterStats(cfg);
-    const trip = cfg.hitboxes.itemVsKart.y + cfg.ai.crossDodgeMargin;   // degager un objet
+    // `cfg.ai.crossDodgeMargin` n'existe plus : le degagement vit desormais
+    // dans `vision.place.margin`, avec les marges des autres corps. La clef
+    // morte rendait `undefined`, et toute cette table sortait en NaN -- le
+    // banc ne mesurait donc plus rien (constat D-1).
+    const trip = cfg.hitboxes.itemVsKart.y + cfg.vision.place.margin.item;   // degager un objet
     const dodge = (cfg.ai.dodgeIntensityMin + cfg.ai.dodgeIntensityMax) * 0.5;
 
     console.log(`\n=== temps de manoeuvre : degager ${trip} unites, profil esquive ===`);
