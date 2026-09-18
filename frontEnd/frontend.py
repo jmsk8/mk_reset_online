@@ -672,9 +672,14 @@ MENTIONS = {
     'editeur': os.environ.get('SITE_EDITEUR', '[à renseigner : nom de l’éditeur]'),
     'contact': os.environ.get('SITE_CONTACT', '[à renseigner : adresse de contact]'),
     'hebergeur': os.environ.get('SITE_HEBERGEUR', '[à renseigner : hébergeur et pays]'),
-    'retention_logs': os.environ.get(
-        'SITE_RETENTION_LOGS',
-        "le temps qu'une rotation les écrase, sur 30 Mo au maximum"),
+    # 6 mois : arbitré le 2026-09-18, borne basse de la fourchette CNIL.
+    # ⚠️ Cette valeur est ce qu'on ANNONCE. Ce qui l'impose aujourd'hui est une
+    # borne de TAILLE (30 Mo par service), pas d'âge -- un site peu fréquenté
+    # peut donc garder une ligne au-delà. Tant que T5 du registre RGPD n'a pas
+    # sa case « imposer réellement » cochée, ne pas raccourcir ce texte : il
+    # engage, et une durée annoncée qu'on ne tient pas est pire que pas de
+    # durée du tout.
+    'retention_logs': os.environ.get('SITE_RETENTION_LOGS', "6 mois au maximum"),
 }
 # ⚠️ Doit rester identique à constants.CGU_VERSION côté backend : c'est le
 # backend qui décide si le consentement doit être redemandé, le frontend ne fait
@@ -862,6 +867,24 @@ def discord_login():
         # identify seul : ni email, ni guilds.
         'scope': 'identify',
         'state': state,
+        # Évite de réafficher l'écran d'autorisation à qui a déjà accordé
+        # l'accès : sans lui, chaque connexion redemande un consentement déjà
+        # donné, ce qui use pour rien.
+        #
+        # ⚠️ Discord S'ÉCARTE ICI DE L'OIDC STANDARD, et c'est ce qu'il faut
+        # retenir. En OIDC, `prompt=none` *impose* au serveur de renvoyer une
+        # erreur plutôt que d'afficher quoi que ce soit — un utilisateur non
+        # encore autorisé se verrait donc refusé au lieu de pouvoir accepter.
+        # Chez Discord, non : sa documentation ne décrit `prompt` que pour les
+        # utilisateurs DÉJÀ autorisés, et la discussion officielle
+        # `discord-api-docs#6751` confirme que le comportement strict n'existe
+        # pas — il retombe sur l'écran de consentement.
+        #
+        # Conséquence pratique : ce paramètre est SANS DANGER pour une première
+        # connexion. Il a été soupçonné une fois d'être la cause des « bugs
+        # étranges » (le symptôme collait parfaitement), à tort — la vraie
+        # cause était le `state` en case unique, corrigé depuis. Ne pas le
+        # re-suspecter sans relire ce fil.
         'prompt': 'none',
     }
     return redirect(f"{DISCORD_AUTHORIZE_URL}?{urlencode(params)}")

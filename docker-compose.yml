@@ -1,25 +1,39 @@
 # Rotation des journaux -- T5 du registre RGPD (docs/rgpd-registre.md).
 #
-# Journaux plafonnes a 30 Mo par service : 10 Mo x 3 fichiers, sur les cinq
-# services (db, backend, frontend, race, nginx) -- 150 Mo au plus. Sans cette borne,
-# le journal d'acces nginx -- qui contient les IP des visiteurs -- vivait aussi
-# longtemps que le conteneur, et la duree annoncee dans la politique n'etait
-# imposee par rien.
+# Duree de conservation annoncee aux visiteurs : 6 MOIS (/confidentialite, via
+# SITE_RETENTION_LOGS). Les journaux d'acces contiennent des adresses IP, et le
+# chemin d'une invitation contient son jeton : ce n'est pas une donnee anodine.
 #
-# C'est bien ICI que ca se regle, et nulle part ailleurs : dans l'image
-# officielle, nginx ne tient AUCUN fichier de journal, ses deux sorties sont
-# des liens symboliques vers stdout/stderr. logrotate n'aurait rien a traiter.
+# POURQUOI journald ET PAS json-file. Le pilote json-file ne sait borner que la
+# TAILLE (10 Mo x 3 fichiers). Une borne de taille n'est pas une duree : sur un
+# site peu frequente une ligne survit bien au-dela de 6 mois, sur un site charge
+# elle disparait avant. On annoncait donc une duree que rien ne tenait --
+# et une duree annoncee qu'on ne tient pas est pire que pas de duree du tout.
+# journald, lui, expire par AGE : c'est le seul pilote qui rende l'annonce
+# exacte.
 #
-# ⚠️ La borne est une TAILLE, pas une duree -- Docker ne sait pas expirer par
-# age. Sur un site peu frequente, une IP peut donc rester bien au-dela de la
-# duree annoncee ; sur un site charge, elle disparait avant. La duree cible
-# (6 a 12 mois, recommandation CNIL) reste a arbitrer, et la garantir
-# demanderait un collecteur qui expire par age.
+# ⚠️ DEUX REGLAGES SUR L'HOTE, sans lesquels cette bascule DEGRADE la situation
+# au lieu de l'ameliorer (/etc/systemd/journald.conf, ou un fichier dans
+# /etc/systemd/journald.conf.d/) :
+#
+#     [Journal]
+#     Storage=persistent       # SINON les journaux vivent dans /run et sont
+#                              # PERDUS A CHAQUE REBOOT -- le defaut sur
+#                              # beaucoup de distributions, verifie une fois
+#                              # ici : /var/log/journal n'existait pas.
+#     MaxRetentionSec=6month   # la duree annoncee, enfin imposee
+#     SystemMaxUse=500M        # garde-fou disque, independant de l'age
+#
+# Puis : sudo systemctl restart systemd-journald && docker compose up -d
+# Verifier : journalctl -t mk-nginx -n 5   (doit sortir des lignes)
+#
+# Tant que ces reglages ne sont pas poses, NE PAS considerer T5 comme clos.
 x-journaux: &journaux
-  driver: json-file
+  driver: journald
+  # Un tag par conteneur, sinon tout arrive sous le meme nom et
+  # `journalctl -t` ne sait plus separer nginx de backend.
   options:
-    max-size: "10m"
-    max-file: "3"
+    tag: "mk-{{.Name}}"
 
 services:
   db:
@@ -124,7 +138,7 @@ services:
       - SITE_EDITEUR=${SITE_EDITEUR:-à renseigner}
       - SITE_CONTACT=${SITE_CONTACT:-à renseigner}
       - SITE_HEBERGEUR=${SITE_HEBERGEUR:-à renseigner}
-      - SITE_RETENTION_LOGS=${SITE_RETENTION_LOGS:-le temps qu'une rotation les écrase, sur 30 Mo au maximum}
+      - SITE_RETENTION_LOGS=${SITE_RETENTION_LOGS:-6 mois au maximum}
     logging: *journaux
     restart: unless-stopped
     healthcheck:
