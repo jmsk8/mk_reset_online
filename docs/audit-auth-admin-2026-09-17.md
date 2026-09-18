@@ -38,7 +38,7 @@ se retrouve **dehors**.
 | **B-03** | ~~`changer_statut` n'a aucune garde « dernier superadmin »~~ | ✅ **corrigé 2026-09-17** (voir réserve) | Hiérarchie |
 | **B-04** | ~~La zone nginx `auth` (20 r/min) amplifie B-01~~ | ✅ **corrigé 2026-09-18** (40 r/min) | Connexion |
 | **B-05** | ~~Trois fichiers de tests en échec~~ | ✅ **corrigé 2026-09-18** | Tests |
-| **B-06** | `prompt=none` n'est ni commenté ni justifié, dans un fichier qui commente tout | 🟡 faible | Dette |
+| **B-06** | ~~`prompt=none` n'est ni commenté ni justifié~~ | ✅ **corrigé 2026-09-18** | Dette |
 | **A-01/A-02** | La durée de session reste figée sur le rôle *(rappel, non corrigé)* | 🟠 moyenne | Session |
 | **A-04/A-05/A-07** | Dette du mot de passe partagé, CGU non imposées *(rappel, non corrigé)* | 🟡 faible | Dette |
 
@@ -65,8 +65,16 @@ ce sont des pannes de disponibilité, dont l'une explique les « bugs étranges 
 > | **B-04** | Zone `auth` portée de 20 à **40 r/min**, après B-01 et pas avant. Volontairement modeste : un budget large masquerait la prochaine boucle d'échec. |
 > | **B-05** | Les trois fichiers réparés. Aucun ne signalait un défaut du code : tous testaient un état antérieur (avatar au CDN, demande de liaison à 3 colonnes, jointure `joueurs`). |
 >
-> **Reste ouvert : B-06** (`prompt=none` non commenté, 🟡), et une réserve assumée sur B-03 —
-> voir la fin du §3.
+> **Les six constats sont refermés.** B-06 l'a été le 2026-09-18 : `prompt=none` porte
+> désormais le commentaire qui manquait, et il consigne surtout **l'écart de Discord avec
+> l'OIDC standard** — là où la norme impose au serveur de renvoyer une erreur plutôt que
+> d'afficher un écran, Discord retombe sur le consentement. C'est ce qui rend le paramètre
+> sans danger pour une première connexion, et c'est ce qui l'avait fait soupçonner à tort
+> d'être la cause des « bugs étranges ». Le commentaire existe pour qu'on ne le re-suspecte
+> pas une troisième fois.
+>
+> **Une réserve reste assumée sur B-03** — voir la fin du §3. **Arbitrée le 2026-09-18 :
+> pas de confirmation à la suspension du dernier chef_admin.**
 >
 > ℹ️ **Un défaut antérieur trouvé en relisant la correction** (2026-09-18) : `compare_digest`
 > **lève** un `TypeError` sur deux chaînes dont l'une n'est pas ASCII. Le `state` venant d'un
@@ -171,7 +179,8 @@ normal, fréquent) et le refus réel. Aujourd'hui les deux sont confondus.
 > documentation ne décrit `prompt` que pour les utilisateurs *déjà* autorisés, et la discussion
 > officielle `discord-api-docs#6751` confirme que le comportement strict n'existe pas — Discord
 > retombe sur l'écran de consentement. `prompt=none` n'est donc **pas** la cause, et ne doit pas
-> être présenté comme telle. Il reste le constat mineur B-06.
+> être présenté comme telle. C'était le constat mineur B-06, **refermé le 2026-09-18** :
+> le paramètre porte maintenant ce raisonnement en commentaire, sur place.
 
 ---
 
@@ -283,13 +292,17 @@ le dernier chef_admin sans confirmation.
 > concernée — elle n'a jamais verrouillé personne, et une assertion le vérifie pour que la
 > garde ne déborde pas.
 >
-> **Ce qui n'a PAS été fait, et c'est un choix, pas un oubli** : le **dernier chef_admin** ne
-> déclenche toujours aucune confirmation à la suspension, là où `changer_role` en demande une
-> nommée (R-60). La raison : suspendre un chef_admin est **réversible par le superadmin**, qui
-> reste souverain — ce n'est donc pas un verrouillage, et c'est précisément le critère qui a
-> guidé la correction. L'assertion `defaut()` correspondante reste **volontairement verte** :
-> elle constate un comportement choisi. La lever demanderait de trancher si le filet de R-60
-> vaut aussi pour un geste réversible, ce qui n'a pas été décidé ici.
+> **Ce qui n'a PAS été fait, et c'est un choix — ARBITRÉ le 2026-09-18** : le **dernier
+> chef_admin** ne déclenche aucune confirmation à la suspension, là où `changer_role` en
+> demande une nommée (R-60). La raison : suspendre un chef_admin est **réversible par le
+> superadmin**, qui reste souverain — ce n'est donc pas un verrouillage, et c'est exactement
+> le critère qui a guidé toute la correction B-02.
+>
+> Le contre-argument a été pesé et écarté : le chef_admin est le filet qui sert si le
+> superadmin perd son accès, et tomber à zéro en silence retire ce filet. Mais un filet
+> qu'on peut remettre d'un clic ne justifie pas le même garde-fou qu'une porte qui se
+> referme définitivement. **L'assertion `defaut()` correspondante reste volontairement
+> verte** : elle constate un comportement choisi, pas une dette. Ne pas la « corriger ».
 
 ---
 

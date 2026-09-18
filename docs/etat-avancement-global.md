@@ -46,7 +46,7 @@
 | **B-04** 🟠 | Zone nginx `auth` 20 → **40 r/min**, après B-01 et pas avant. |
 | **B-05** 🟠 | Les trois fichiers de tests rouges réparés — aucun ne signalait un défaut du code. |
 | **§8 schema-base-de-donnees** | La note fausse sur `compte_cible_protegee` corrigée. |
-| **T5 — rotation des journaux** | Aucun fichier à faire tourner : nginx écrit sur stdout, c'est la borne Docker qui plafonne (150 Mo). Documenté. |
+| **T5 — journaux** | Durée arbitrée (**6 mois**), annoncée dans `/confidentialite`, et pilote passé à `journald` qui expire par **âge** — `json-file` ne bornait que la taille. Reste à déployer `deploy/host/journald-mk.conf` sur l'hôte. |
 | **D-1 / D-2** 🟠🔵 | Le banc de scénario lit la bonne clé (`vision.place.margin.item`). |
 | **O-1** 🟠 | `shieldHold` remis à `false` dans `giveKartItem`, en amont des deux branches. |
 | **§8.3 — gate de permission** | 71 assertions, chantier soldé. Les **trois** onglets admin portent un gate (`admin_joueurs_fiches` n'en avait aucun), l'ordre gate/revalidation est verrouillé, la distinction droit manquant ≠ session expirée aussi, et le **gate par bloc** dans les gabarits est couvert (`admin_comptes` : onglet et panneau sous le même droit). |
@@ -55,19 +55,25 @@
 
 | # | Action | Renvoi | Pourquoi ce rang |
 |---|---|---|---|
-| 1 | **Recette manuelle de « Mes sessions actives »** | §2 | Le code est commité (`d2a543c`) mais **la recette à deux navigateurs n'a jamais été faite**, ni en http ni en https. Seul point où du code livré n'a pas été vu fonctionner. |
-| 2 | **Faire tourner le banc de scénario** (`node tools/scenario.js`) | §10 | D-1 est corrigé **sans avoir été exécuté** : `node` manquait. C'est ce qui débloque la mesure des neuf constats banner restants. |
-| 3 | **Vérifier la zone nginx servie** | §8 | `docker compose exec nginx nginx -T \| grep "zone=auth"`. Docker manquait aussi. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
-| 4 | **Arbitrer la durée de conservation des journaux** | §3 | 6 à 12 mois (CNIL). La borne Docker plafonne la taille, **pas l'âge** : la durée effective dépend du trafic. Décision, pas code. |
-| 5 | **Purge RGPD régulière** | §3 | Route existante, aucun ordonnanceur. Geste manuel assumé. |
-| 6 | **Les neuf constats banner restants** | §10 | 🟡 et 🔵. Bloqués derrière le rang 2 pour la mesure. |
-| 7 | **B-06 — commenter `prompt=none`** | §8 | 🟡 Dette de lisibilité, une ligne. |
-| 8 | **Journal `audit_admin`** | §4 | **Gagne à attendre** : les INSERT tournent déjà, les données s'accumulent. |
-| 9 | **Étape 6 auth Discord** | §1 | **Pas un choix** : bloquée par des prérequis d'exploitation. |
+| 1 | **Faire tourner le banc de scénario** (`node tools/scenario.js`) | §10 | D-1 corrigé **sans avoir été exécuté**. C'est ce qui débloque la mesure des neuf constats banner restants. |
+| 2 | **Vérifier la zone nginx servie** | §8 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
+| 3 | **Déployer `deploy/host/journald-mk.conf`** | §3 | ⚠️ Une durée de 6 mois est **annoncée aux visiteurs**. Ce fichier est ce qui la rend vraie. Sans son `Storage=persistent`, les journaux sont même **perdus à chaque redémarrage** — c'est l'état actuel de la machine. |
+| 4 | **Purge RGPD régulière** | §3 | Route existante, aucun ordonnanceur. Geste manuel assumé. |
+| 5 | **Les neuf constats banner restants** | §10 | 🟡 et 🔵. Bloqués derrière le rang 1 pour la mesure. **Mis de côté** par décision du 18/09. |
+| 6 | **Journal `audit_admin`** | §4 | ⚠️ **Avant-dernière étape décidée** (18/09). Les INSERT tournent depuis des semaines, aucun `SELECT` nulle part. |
+| 7 | **Étape 6 — couper le mot de passe admin** | §1 | ⚠️ **Dernière étape décidée** (18/09). Bloquée par trois prérequis d'exploitation qui se cochent avec le temps, pas en une session. |
 
-**Les rangs 1 à 3 sont tous des vérifications, pas du développement** — trois choses écrites mais
-jamais regardées tourner. C'est la seule dette réelle du moment, et elle demande un environnement
-(navigateur, `node`, Docker) plutôt qu'une session de code.
+**Les rangs 1 à 3 sont des gestes d'exploitation, pas du développement** — ils demandent `node`,
+Docker et un accès à l'hôte plutôt qu'une session de code. Le rang 3 est le seul qui engage
+juridiquement : une durée de 6 mois est désormais **annoncée aux visiteurs**, et seul le fichier
+journald la rend vraie.
+
+> **Ordre de fin de projet, décidé le 2026-09-18.** Les rangs 5 (constats banner) et les chantiers
+> de confort sont **mis de côté**. Les deux dernières étapes du projet sont, dans cet ordre :
+> **1) le journal `audit_admin`** (rang 6), **2) la suppression du mot de passe admin** (rang 7).
+> Cet ordre n'est pas négociable dans l'autre sens : couper le mot de passe avant d'avoir une
+> lecture de l'audit reviendrait à se priver du seul moyen de comprendre après coup ce qui s'est
+> passé sur les comptes.
 
 ⚠️ **Correction de périmètre sur le §5**, vérifiée le 2026-09-16 et toujours valable : le gate
 `gestion_config` est testé côté backend (`test_scission_permissions.py`, `test_hierarchie_routes.py`)
@@ -98,7 +104,7 @@ cases encore non cochées : deux comptes `superadmin` distincts, procédure brea
 moins une fois pour de vrai, période de recouvrement passée. Ce sont des faits d'exploitation, à
 vérifier/cocher manuellement, pas du code.
 
-### 2. "Mes sessions actives" — ✅ COMMITÉ (`d2a543c`), recette manuelle toujours à faire
+### 2. "Mes sessions actives" — ✅ CLOS (`d2a543c`, recette faite le 18/09)
 
 > **Livré et commité.** `GET` et `DELETE /auth/mes-sessions`, `resumer_appareil()`, les deux proxys
 > frontend et la section « Vos appareils connectés » dans `/mon-compte`. Tests rejoués :
@@ -110,13 +116,12 @@ vérifier/cocher manuellement, pas du code.
 > une date d'epoch), P5 (aucun `INSERT INTO audit_admin`). A1, la régression la plus grave
 > possible, est écartée : le `DELETE` porte bien `WHERE compte_id = %s` dans ses deux branches.
 
-**Ce qui reste — et c'est le seul code livré qui n'a jamais été vu fonctionner :**
+**✅ Recette faite et concluante le 2026-09-18.** Deux navigateurs, comportement conforme :
+sessions listées, « cet appareil » correctement marqué, déconnexion des autres effective.
+Ce chantier est **entièrement clos**.
 
-- `[ ]` **Recette à deux navigateurs** (§6 de la préparation). Deux sessions visibles, une seule
-  « cet appareil » ; A déconnecte les autres ; **B n'est expulsé qu'à sa requête suivante** — c'est
-  correct, et c'est précisément ce qu'on croira cassé.
-- `[ ]` **Recette en https**, une fois en ligne. Le seul point où dev (http) et prod (https)
-  peuvent diverger est le `fetch` `POST` avec `X-CSRFToken`.
+- `[ ]` Reste à **refaire la recette en https** au premier déploiement en ligne. Le seul point
+  où dev (http) et prod (https) peuvent diverger est le `fetch` `POST` avec `X-CSRFToken`.
 
 ℹ️ Un défaut préexistant a été corrigé en passant : `backend_request` **ignorait le corps des
 requêtes DELETE** (`requests.delete()` sans `json=data`). Vérifié : aucun autre appelant n'envoie de
@@ -174,6 +179,15 @@ lecture). La navbar cachait déjà le lien, mais **un lien caché n'est pas un a
 l'URL restait ouverte et la page finissait sur « Chargement impossible. ». Le gate est
 désormais **la règle sur les trois onglets**, plus une exception à retenir — une quatrième page
 admin qui l'oublierait se verrait dans les tests.
+
+✅ **Vérifié en conditions réelles le 2026-09-18** : l'accès direct à `/admin/joueurs-fiches`
+sans le droit est bien bloqué, avec le message attendu.
+
+ℹ️ À savoir pour toute recette future de ce type : un **chef_admin ou superadmin passera
+toujours** le gate, et c'est voulu. `_permissions_session()` leur rend le catalogue complet
+quand la session ne porte pas encore la clé `permissions` — leur socle *est* le catalogue.
+Tester un gate demande donc un compte `admin` sans la permission visée ; avec un rang
+supérieur, on ne teste rien.
 
 **Le gate par bloc est couvert depuis le 2026-09-18** — 71 assertions au total sur ce
 fichier. ⚠️ **En le faisant, la prémisse du §8.3 s'est révélée périmée** : il désigne
@@ -236,11 +250,12 @@ non-régressions, et chaque garde a été vérifiée **en la cassant volontairem
 | **B-03** | `changer_statut` sans garde | ✅ même garde, sous `FOR UPDATE` — *réserve ci-dessous* |
 | **B-04** | Zone nginx `auth` trop stricte | ✅ 20 → 40 r/min |
 | **B-05** | Trois fichiers de tests rouges | ✅ voir §9 |
-| **B-06** | `prompt=none` non commenté | 🟡 **ouvert**, une ligne |
+| **B-06** | `prompt=none` non commenté | ✅ commenté le 18/09, avec l'écart Discord/OIDC |
 
 **Restent ouverts :**
 
-- `[ ]` **B-06** — commenter `prompt=none`. Dette de lisibilité dans un fichier qui commente tout.
+- `[x]` **B-06** — commenté le 2026-09-18. Le commentaire consigne surtout l'**écart de
+  Discord avec l'OIDC standard**, qui avait fait soupçonner ce paramètre à tort.
 - `[ ]` **Vérifier la zone `auth` réellement servie** :
   `docker compose exec nginx nginx -T | grep "zone=auth"`. Docker n'était pas disponible au moment
   de la correction. ⚠️ `nginx.conf` est monté **comme fichier** : Docker en fige l'inode, et un

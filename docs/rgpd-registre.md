@@ -114,41 +114,64 @@ recrée à la volée l'identité qu'on vient d'effacer.
 | **Finalité** | Sécurité et diagnostic de panne |
 | **Base légale** | Intérêt légitime |
 | **Données** | Adresse IP, URL demandée, date, user-agent |
-| **Conservation** | **Bornée par la taille, pas par la durée** — voir ci-dessous. La durée cible (6 à 12 mois, recommandation CNIL) reste à arbitrer. |
-| **Où** | Sortie standard des conteneurs, collectée par Docker (`json-file`) |
+| **Conservation** | **6 mois** — arbitré le 2026-09-18. ⚠️ Annoncé, pas encore imposé par un mécanisme : voir la réserve ci-dessous. |
+| **Où** | Sortie standard des conteneurs, collectée par `journald` (étiquettes `mk-<service>`) |
 
 ⚠️ **Le chemin d'une invitation contient son jeton, et nginx journalise le
 chemin complet.** C'est la raison pour laquelle les jetons sont hachés en base,
 à durée courte et à usage unique : un jeton qui apparaît dans un journal devient
 inexploitable une fois consommé.
 
-### Comment la rotation est assurée — précisé le 2026-09-17
+### Comment la rotation est assurée — révisé le 2026-09-18
 
 **Il n'y a aucun fichier de journal à faire tourner.** Dans l'image officielle,
 nginx écrit ses deux flux sur des liens symboliques vers `stdout`/`stderr` ;
-aucune directive `access_log` ou `error_log` vers un fichier n'existe dans
-`nginx/`, et aucun volume de journaux n'est monté. `logrotate` n'aurait donc
-rien à traiter — c'est le pilote de journalisation de Docker qui borne tout.
+aucune directive `access_log` vers un fichier n'existe dans `nginx/`, et aucun
+volume de journaux n'est monté. `logrotate` n'aurait rien à traiter — c'est le
+pilote de journalisation de Docker qui collecte tout.
 
-Le réglage est dans `docker-compose.yml`, ancre `x-journaux`, appliquée aux **cinq**
-services (`db`, `backend`, `frontend`, `race`, `nginx`) :
+**Pilote : `journald`** (ancre `x-journaux` de `docker-compose.yml`, appliquée
+aux cinq services `db`, `backend`, `frontend`, `race`, `nginx`, chacun étiqueté
+`mk-<nom>`).
+
+⚠️ **Pourquoi pas `json-file`, le pilote par défaut** : il ne sait borner que la
+**taille** (10 Mo × 3 fichiers). Une borne de taille **n'est pas une durée** —
+sur un site peu fréquenté une ligne survit bien au-delà de 6 mois, sur un site
+chargé elle disparaît avant. On annonçait donc aux visiteurs une durée que rien
+ne tenait, ce qui est **pire que ne rien annoncer**. `journald` expire par
+**âge** : c'est ce qui rend l'annonce exacte.
+
+**Le réglage qui impose réellement la durée est sur l'hôte**, pas dans le dépôt :
+`deploy/host/journald-mk.conf`, à copier dans `/etc/systemd/journald.conf.d/`.
 
 | Réglage | Valeur | Effet |
 |---|---|---|
-| `max-size` | `10m` | Un fichier fermé et remplacé à 10 Mo |
-| `max-file` | `3` | Trois fichiers conservés au plus |
+| `Storage` | `persistent` | ⚠️ Sans lui, les journaux vivent dans `/run` et sont **perdus à chaque redémarrage**. C'était le cas ici — `/var/log/journal` n'existait pas. |
+| `MaxRetentionSec` | `6month` | La durée annoncée, enfin appliquée |
+| `SystemMaxUse` | `500M` | Garde-fou disque, indépendant de l'âge. Les deux bornes se cumulent, la première atteinte gagne. |
 
-Soit **30 Mo par service, 150 Mo au total**, plafond atteint quoi qu'il arrive. Le coût disque ne monte donc plus tout seul.
+**Tant que ce fichier n'est pas déployé sur l'hôte, T5 n'est pas clos** : la
+bascule vers `journald` sans `Storage=persistent` raccourcirait la conservation
+au lieu de l'allonger.
 
-⚠️ **Ce que cela ne fait pas, et qu'il faut avoir lu** : la borne est une
-**taille**, pas une durée — Docker ne sait pas expirer par âge. Sur un site peu
-fréquenté, une adresse IP peut rester bien **au-delà** de la durée annoncée ;
-sur un site chargé, elle disparaît avant. Tant que la durée cible n'est pas
-arbitrée, la conservation effective dépend du trafic.
+- `[ ]` ⚠️ **Déployer `deploy/host/journald-mk.conf` sur l'hôte** puis
+  `sudo systemctl restart systemd-journald && docker compose up -d`.
+  Vérifier : `ls -d /var/log/journal` (doit exister) et
+  `journalctl -t mk-nginx -n 5` (doit sortir des lignes).
 
-- `[ ]` **Arbitrer la durée** (6 à 12 mois) et l'annoncer dans
-  `/confidentialite`. Si elle doit être garantie et non subie, il faudra un
-  collecteur qui expire par âge — la borne de taille ne suffira pas.
+- `[x]` **Durée arbitrée : 6 mois** (2026-09-18), borne basse de la fourchette CNIL.
+- `[x]` **Annoncée dans `/confidentialite`** (2026-09-18) : « 6 mois au maximum », via
+  `SITE_RETENTION_LOGS` (`.env`, `docker-compose.yml`, défaut dans `frontend.py`). ⚠️ **Un
+  déploiement en ligne doit porter la même valeur dans son propre `.env`** — sinon la prod
+  affichera le défaut, et les deux environnements annonceront des choses différentes.
+- `[ ]` ⚠️ **L'imposer réellement.** C'est le point à ne pas laisser dormir : la borne Docker
+  plafonne la **taille**, pas l'âge. Une ligne peut donc survivre bien au-delà de 6 mois sur un
+  site peu fréquenté — c'est-à-dire **annoncer une durée qu'on ne tient pas**, ce qui est pire
+  que ne rien annoncer. Deux façons de la tenir :
+  - un `logrotate` sur l'hôte visant `/var/lib/docker/containers/*/*-json.log` avec
+    `daily` + `rotate 180` — simple, mais touche à l'arborescence de Docker ;
+  - ou un collecteur qui expire par âge (journald avec `MaxRetentionSec=6month`, via
+    `driver: journald` dans `x-journaux`) — plus propre, change le pilote de journalisation.
 
 ## Droits et leur mise en œuvre
 
@@ -167,9 +190,13 @@ arbitrée, la conservation effective dépend du trafic.
       — fait ; `docker-compose.yml` les transmet au conteneur `frontend`, sans quoi
       elles n'atteignaient aucun processus. **Un déploiement neuf doit les remplir :
       vides, les pages légales sont incomplètes au sens de la loi.**
-- [x] **Appliquer une rotation des journaux nginx (T5)** — faite le 2026-09-17 par
-      la borne Docker `json-file` (30 Mo/conteneur), voir T5. Reste à **arbitrer la
-      durée** de conservation, que cette borne ne garantit pas.
+- [x] **Durée de conservation des journaux arbitrée et annoncée (T5)** — 6 mois,
+      décidé le 2026-09-18, affiché dans `/confidentialite`. Le pilote est passé à
+      `journald`, qui expire par âge.
+- [ ] ⚠️ **Déployer `deploy/host/journald-mk.conf` sur l'hôte** — c'est ce fichier,
+      et lui seul, qui impose réellement les 6 mois annoncés. Sans lui (et surtout
+      sans son `Storage=persistent`), les journaux vivent dans `/run` et sont perdus
+      à chaque redémarrage. **Voir T5 avant de cocher.**
 - [ ] Faire tourner la purge (`/admin/purge-rgpd`) régulièrement — il n'y a pas
       d'ordonnanceur dans le projet, c'est un geste manuel assumé.
 - [ ] Après toute restauration de sauvegarde : rejouer les suppressions, cf.
