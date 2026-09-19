@@ -17,7 +17,7 @@
            de 500 caractères sans espace pousse la carte hors de l'écran.
            `anywhere` et non `break-word` : lui seul entre dans le calcul de la
            largeur minimale, sans quoi une cellule reste large. */
-        #vue-liaisons, #vue-comptes, #vue-invitations, #vue-bots {
+        #vue-liaisons, #vue-comptes, #vue-invitations, #vue-bots, #vue-logs {
             overflow-wrap: anywhere;
         }
 
@@ -57,6 +57,13 @@
                     {% if peut('gestion_invitations') %}
                         <li data-onglet="invitations"><a>Invitations</a></li>
                     {% endif %}
+                    {# Logs : le journal COMPLET, indépendamment du rôle actuel
+                       des acteurs -- il reste lisible même pour un compte qui
+                       n'est plus admin, ou qui n'existe plus. Le filtre de rang
+                       est appliqué côté backend, pas ici. #}
+                    {% if role_admin in ('chef_admin', 'superadmin') %}
+                        <li data-onglet="logs"><a>Logs</a></li>
+                    {% endif %}
                     {% if est_superadmin %}
                         <li data-onglet="bots"><a>Jetons de bot</a></li>
                     {% endif %}
@@ -71,6 +78,9 @@
             {% endif %}
             {% if peut('gestion_invitations') %}
                 <div id="vue-invitations" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
+            {% endif %}
+            {% if role_admin in ('chef_admin', 'superadmin') %}
+                <div id="vue-logs" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
             {% endif %}
             {% if est_superadmin %}
                 <div id="vue-bots" class="is-hidden"><div class="has-text-grey">Chargement…</div></div>
@@ -277,6 +287,7 @@
             else if (onglet === 'comptes') chargerComptes();
             else if (onglet === 'bots') chargerBots();
             else if (onglet === 'invitations') chargerInvitations();
+            else if (onglet === 'logs') chargerLogs();
         }
 
         // ---- Demandes de liaison ----
@@ -455,18 +466,45 @@
                         sel.appendChild(o);
                     });
                     sel.addEventListener('change', async () => {
+                        // Deux chemins depuis le 2026-09-18, et ils ne font pas
+                        // la même chose :
+                        //
+                        //   - PROMOUVOIR (admin, chef_admin) → on PROPOSE. Le
+                        //     rôle n'est posé qu'à l'acceptation, par la
+                        //     personne elle-même : ses actions seront tracées
+                        //     nominativement et sans limite de durée.
+                        //   - RÉTROGRADER (player) → inchangé, unilatéral. On
+                        //     n'a pas à accepter de PERDRE un rôle.
+                        const promotion = sel.value !== 'player';
+
                         // Le sélecteur a DÉJÀ changé d'apparence quand on arrive
                         // ici : annuler doit le remettre sur le rôle réel, sinon
                         // l'écran affirme un rôle que la base n'a pas.
                         if (!confirmer(
-                                'Changer le rôle : ' + c.role + ' → ' + sel.value + ' ?',
+                                promotion
+                                    ? 'Proposer le rôle ' + sel.value + ' ?'
+                                    : 'Changer le rôle : ' + c.role + ' → ' + sel.value + ' ?',
                                 nomDe(c),
-                                sel.value === 'player'
-                                    ? 'Ses permissions admin seront effacées.'
-                                    : null)) {
+                                promotion
+                                    ? 'Le rôle ne sera posé que si la personne accepte.'
+                                    : 'Ses permissions admin seront effacées.')) {
                             sel.value = c.role;
                             return;
                         }
+
+                        if (promotion) {
+                            const rp = await api('/admin/comptes/' + c.id + '/promotion',
+                                                 'POST', {role: sel.value});
+                            // Le sélecteur ne doit PAS rester sur le rôle
+                            // proposé : la base porte toujours l'ancien, et
+                            // l'afficher ferait croire que c'est fait.
+                            sel.value = c.role;
+                            if (rp.ok) afficher('success', 'Proposition envoyée. En attente de sa réponse.');
+                            else afficher('danger', rp.data.error || 'Échec.');
+                            chargerComptes();
+                            return;
+                        }
+
                         const corps = {role: sel.value};
                         let r = await api('/admin/comptes/' + c.id + '/role', 'POST', corps);
                         // R-60 : retomber à zéro chef_admin retire le filet qui
@@ -490,6 +528,34 @@
                     if (c.role === 'superadmin') {
                         tdR.appendChild(txt('span', 'unique', 'tag is-light ml-2'));
                     }
+                }
+
+                // Une proposition en attente est un état INTERMÉDIAIRE : le rôle
+                // affiché reste l'actuel, le badge dit ce qui est proposé. Les
+                // confondre ferait croire la promotion faite alors que la
+                // personne n'a rien accepté.
+                if (c.promotion_en_attente) {
+                    const attente = document.createElement('div');
+                    attente.className = 'mt-1';
+                    const tag = txt('span', '→ ' + c.promotion_en_attente + ' (en attente)',
+                                    'tag is-warning is-light');
+                    tag.title = 'Proposé, pas encore accepté. Le rôle ne changera '
+                              + 'que si la personne accepte.';
+                    attente.appendChild(tag);
+
+                    const annuler = document.createElement('button');
+                    annuler.className = 'button is-small is-text ml-1';
+                    annuler.textContent = 'annuler';
+                    annuler.title = 'Retirer cette proposition';
+                    annuler.addEventListener('click', async () => {
+                        if (!confirmer('Annuler la proposition de rôle ?', nomDe(c))) return;
+                        const r = await api('/admin/comptes/' + c.id + '/promotion', 'DELETE');
+                        if (r.ok) afficher('success', 'Proposition annulée.');
+                        else afficher('danger', r.data.error || 'Échec.');
+                        chargerComptes();
+                    });
+                    attente.appendChild(annuler);
+                    tdR.appendChild(attente);
                 }
                 tr.appendChild(tdR);
 
@@ -580,6 +646,29 @@
                     actions.appendChild(bPerm);
                 }
 
+                // Logs : le bouton n'apparaît QUE si la lecture est permise.
+                //
+                // La règle (arbitrée le 2026-09-19) n'est PAS celle des autres
+                // boutons de cette ligne : un chef_admin peut LIRE le journal
+                // d'un pair, alors qu'il ne peut pas AGIR sur lui. Lire n'est
+                // pas agir, et c'est entre gens de même rang que la
+                // surveillance mutuelle a du sens. Seul le superadmin reste
+                // hors de portée.
+                //
+                // Rejouée ici pour ne jamais afficher un bouton menant à un
+                // refus prévisible (§B.0), et revérifiée côté backend -- c'est
+                // là qu'elle protège.
+                //
+                // Un player peut avoir des lignes s'il a été admin par le
+                // passé : on ne masque pas son bouton, ce serait mentir.
+                const lisible = EST_SUPERADMIN
+                    || (RANGS[c.role] !== undefined && c.role !== 'superadmin');
+                if (lisible) {
+                    const bLogs = txt('button', 'Logs', 'button is-info is-light is-small');
+                    bLogs.addEventListener('click', () => ouvrirJournal(c));
+                    actions.appendChild(bLogs);
+                }
+
                 // Legs : seul le superadmin le propose, jamais sur sa propre
                 // ligne (auto-legs refusé côté backend, plan 6bis).
                 if (EST_SUPERADMIN && c.id !== MON_COMPTE_ID) {
@@ -602,6 +691,192 @@
         // cases se cochent une par une, chacune est un appel réseau, et voir la
         // ligne d'origine pendant qu'on les manipule évite de se tromper de
         // compte.
+        // -------------------------------------------------------------
+        // Journal d'audit : le volet d'une ligne
+        // -------------------------------------------------------------
+        // Même patron que `ouvrirPermissions()` : un volet déplié sous la
+        // ligne, pas une modale. Rien de neuf à inventer côté affichage.
+
+        // Les actions en clair. Une table plutôt qu'un `replace('_',' ')` :
+        // `joueurs_irreversible` deviendrait « joueurs irreversible », et
+        // `reset_global_applique` ne dirait toujours pas ce qui s'est passé.
+        const LIBELLES_ACTION = {
+            joueur_modifie: 'Fiche modifiée', joueur_cree: 'Fiche créée',
+            joueur_supprime: 'Fiche supprimée', joueur_anonymise: 'Fiche anonymisée',
+            tournoi_ajoute: 'Tournoi enregistré', tournoi_supprime: 'Tournoi supprimé',
+            tournoi_annule: 'Tournoi annulé',
+            reset_global_applique: 'Reset global', reset_global_annule: 'Reset annulé',
+            config_modifiee: 'Réglages modifiés', ligues_configurees: 'Ligues configurées',
+            role_attribue: 'Rôle attribué', role_retire: 'Rôle retiré',
+            permission_accordee: 'Permission accordée', permission_retiree: 'Permission retirée',
+            permissions_purgees: 'Permissions purgées',
+            promotion_proposee: 'Promotion proposée', promotion_refusee: 'Promotion refusée',
+            promotion_annulee: 'Promotion annulée',
+            liaison_approuvee: 'Liaison approuvée', liaison_refusee: 'Liaison refusée',
+            liaison_annulee: 'Liaison annulée',
+            statut_change: 'Statut changé', sessions_revoquees: 'Sessions fermées',
+            invitation_creee: 'Invitation créée', invitation_revoquee: 'Invitation révoquée',
+            compte_supprime: 'Compte supprimé', profil_synchro: 'Pseudo synchronisé',
+            cgu_admin_acceptee: 'Politique admin acceptée',
+            service_token_cree: 'Jeton de bot créé', service_token_revoque: 'Jeton de bot révoqué',
+            superadmin_legue: 'Superadmin légué', purge_rgpd: 'Purge RGPD',
+            recap_cree: 'Récap créé (brouillon)',
+        };
+
+        function libelleAction(a) { return LIBELLES_ACTION[a] || a; }
+
+        function dateLisible(iso) {
+            return new Date(iso).toLocaleString('fr-FR',
+                {day: '2-digit', month: '2-digit', year: 'numeric',
+                 hour: '2-digit', minute: '2-digit'});
+        }
+
+        // Résume `details` en une phrase. Le JSON brut est consultable au
+        // survol : lisible pour qui cherche, discret pour qui parcourt.
+        // Les valeurs sont affichées telles quelles, sauf mu et sigma : TrueSkill
+        // produit 43.48509823646072, que personne ne lit. On arrondit à la
+        // précision de la modale (3 décimales), la même qui sert à décider
+        // qu'un champ a changé -- sinon la ligne dirait « 43.485 → 43.486 »
+        // pour l'un et afficherait 14 décimales pour l'autre.
+        function valeurLisible(champ, v) {
+            if ((champ === 'mu' || champ === 'sigma') && typeof v === 'number') {
+                return v.toFixed(3);
+            }
+            return JSON.stringify(v);
+        }
+
+        function resumeDetails(l) {
+            const d = l.details || {};
+            // La fiche concernée d'abord : « fiche 7 modifiée » oblige sinon à
+            // aller chercher qui est le joueur 7 -- ou à le deviner, si elle a
+            // été renommée depuis.
+            const sujet = d.joueur_nom ? d.joueur_nom + ' — ' : '';
+            if (l.action === 'joueur_modifie' && d.avant && d.apres) {
+                return sujet + (d.champs || []).map(c =>
+                    c + ' : ' + valeurLisible(c, d.avant[c]) + ' → ' + valeurLisible(c, d.apres[c])
+                ).join(', ');
+            }
+            if (d.ancien && d.nouveau) return sujet + d.ancien + ' → ' + d.nouveau;
+            if (d.nom) return d.nom;
+            if (d.permission) return d.permission;
+            if (d.role_propose) return 'rôle ' + d.role_propose;
+            const cles = Object.keys(d);
+            return cles.length ? cles.length + ' détail' + (cles.length > 1 ? 's' : '') : '';
+        }
+
+        function lignesJournal(corps, lignes) {
+            lignes.forEach(l => {
+                const tr = document.createElement('tr');
+
+                const tdD = txt('td', dateLisible(l.created_at), 'is-size-7 has-text-grey');
+                tr.appendChild(tdD);
+
+                const tdA = document.createElement('td');
+                tdA.appendChild(txt('span', libelleAction(l.action), 'has-text-weight-semibold'));
+                // `score_modifie` est le drapeau qui répond à la question
+                // d'origine : repérer une modification de score parmi les
+                // renommages, sans lire chaque ligne.
+                if (l.details && l.details.score_modifie) {
+                    tdA.appendChild(txt('span', 'score', 'tag is-warning is-light ml-2'));
+                }
+                tr.appendChild(tdA);
+
+                const tdQ = document.createElement('td');
+                tdQ.appendChild(document.createTextNode(l.acteur_pseudo || '—'));
+                // Le dire explicitement : sans ça on lit un pseudo sans savoir
+                // que le compte n'existe plus.
+                if (l.acteur_supprime) {
+                    const tag = txt('span', 'compte supprimé', 'tag is-light ml-2');
+                    tag.title = 'Le compte a été supprimé ; son identité est '
+                              + 'conservée dans le journal.';
+                    tdQ.appendChild(tag);
+                }
+                tr.appendChild(tdQ);
+
+                const tdR = txt('td', resumeDetails(l), 'is-size-7');
+                if (l.details && Object.keys(l.details).length) {
+                    tdR.title = JSON.stringify(l.details, null, 2);
+                }
+                tr.appendChild(tdR);
+                corps.appendChild(tr);
+            });
+        }
+
+        async function ouvrirJournal(c) {
+            const existant = document.getElementById('panneau-journal');
+            if (existant) existant.remove();
+
+            const r = await api('/admin/comptes/' + c.id + '/audit');
+            if (!r.ok) { afficher('danger', r.data.error || 'Lecture impossible.'); return; }
+
+            const boite = document.createElement('div');
+            boite.id = 'panneau-journal';
+            // PAS de `fade-in` : elle pose opacity:0 et attend `visible`,
+            // ajoutée par gestion.js -- non chargé ici. Le panneau serait
+            // construit, inséré, et parfaitement invisible.
+            boite.className = 'card glass-card mt-5';
+            boite.style.border = '1px solid rgba(59, 130, 246, 0.35)';
+
+            const entete = document.createElement('div');
+            entete.className = 'card-header';
+            const titre = document.createElement('p');
+            titre.className = 'card-header-title';
+            titre.appendChild(icone('fa-clipboard-list', 'icon is-medium mr-2', 'has-text-info'));
+            titre.appendChild(document.createTextNode('Journal de '));
+            titre.appendChild(txt('strong', c.pseudo, 'ml-1'));
+            entete.appendChild(titre);
+            boite.appendChild(entete);
+
+            const contenu = document.createElement('div');
+            contenu.className = 'card-content';
+
+            if (!r.data.lignes.length) {
+                contenu.appendChild(txt('p', 'Aucune action enregistrée pour ce compte.',
+                                        'has-text-grey'));
+            } else {
+                const table = document.createElement('table');
+                table.className = 'table is-fullwidth is-narrow is-striped';
+                const thead = document.createElement('thead');
+                const trh = document.createElement('tr');
+                ['Date', 'Action', 'Par', 'Détail'].forEach(t =>
+                    trh.appendChild(txt('th', t, 'is-size-7')));
+                thead.appendChild(trh);
+                table.appendChild(thead);
+
+                const corps = document.createElement('tbody');
+                lignesJournal(corps, r.data.lignes);
+                table.appendChild(corps);
+                contenu.appendChild(table);
+
+                // Pagination par curseur : le bouton se supprime lui-même
+                // quand il n'y a plus rien après, plutôt que de rester grisé.
+                if (r.data.avant_id) {
+                    const plus = txt('button', 'Charger les suivantes',
+                                     'button is-small is-light');
+                    plus.addEventListener('click', async () => {
+                        plus.classList.add('is-loading');
+                        const suite = await api('/admin/comptes/' + c.id
+                                                + '/audit?avant_id=' + plus.dataset.curseur);
+                        plus.classList.remove('is-loading');
+                        if (!suite.ok) { afficher('danger', 'Lecture impossible.'); return; }
+                        lignesJournal(corps, suite.data.lignes);
+                        if (suite.data.avant_id) plus.dataset.curseur = suite.data.avant_id;
+                        else plus.remove();
+                    });
+                    plus.dataset.curseur = r.data.avant_id;
+                    contenu.appendChild(plus);
+                }
+            }
+
+            const fermer = txt('button', 'Fermer', 'button is-small is-light ml-2');
+            fermer.addEventListener('click', () => boite.remove());
+            contenu.appendChild(fermer);
+
+            boite.appendChild(contenu);
+            document.getElementById('vue-comptes').appendChild(boite);
+            boite.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        }
+
         async function ouvrirPermissions(c) {
             const existant = document.getElementById('panneau-permissions');
             if (existant) existant.remove();
@@ -1090,6 +1365,78 @@
 
         // ---- Jetons de bot ----
         const SCOPES = ['read:joueurs', 'read:classement', 'matchmaking'];
+
+        // ---- Onglet Logs : le journal complet ----
+        // Réutilise la même requête que le volet d'une ligne, sans filtre
+        // d'acteur. Les lignes restent lisibles même si le compte n'est plus
+        // admin, ou n'existe plus -- c'est tout l'intérêt de cette vue.
+        async function chargerLogs() {
+            const vue = document.getElementById('vue-logs');
+            if (!vue) return;
+            vue.innerHTML = '';
+
+            const r = await api('/admin/audit');
+            if (!r.ok) { echecChargement(vue, r); return; }
+
+            // Le téléchargement est un <a> et non un fetch : le navigateur
+            // doit écrire le fichier au fil de l'eau. Un fetch le chargerait
+            // entièrement en mémoire avant de le rendre, ce qui annulerait le
+            // streaming côté serveur.
+            const barre = document.createElement('div');
+            barre.className = 'level mb-4';
+            const gauche = document.createElement('div');
+            gauche.className = 'level-left';
+            gauche.appendChild(txt('p', 'Journal complet des actions d’administration.',
+                                   'has-text-grey is-size-7'));
+            barre.appendChild(gauche);
+
+            const droite = document.createElement('div');
+            droite.className = 'level-right';
+            const dl = document.createElement('a');
+            dl.className = 'button is-small is-info is-light';
+            dl.href = '/admin/audit/export';
+            dl.setAttribute('download', '');
+            dl.appendChild(icone('fa-download', 'icon is-small mr-1'));
+            dl.appendChild(document.createTextNode('Télécharger (CSV)'));
+            dl.title = 'Tout le journal depuis le début, ouvrable dans un tableur.';
+            droite.appendChild(dl);
+            barre.appendChild(droite);
+            vue.appendChild(barre);
+
+            if (!r.data.lignes.length) {
+                vue.appendChild(txt('p', 'Aucune action enregistrée.', 'has-text-grey'));
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = 'table is-fullwidth is-narrow is-striped is-hoverable';
+            const thead = document.createElement('thead');
+            const trh = document.createElement('tr');
+            ['Date', 'Action', 'Par', 'Détail'].forEach(t =>
+                trh.appendChild(txt('th', t, 'is-size-7')));
+            thead.appendChild(trh);
+            table.appendChild(thead);
+
+            const corps = document.createElement('tbody');
+            lignesJournal(corps, r.data.lignes);
+            table.appendChild(corps);
+            vue.appendChild(table);
+
+            if (r.data.avant_id) {
+                const plus = txt('button', 'Charger les suivantes', 'button is-small is-light');
+                plus.dataset.curseur = r.data.avant_id;
+                plus.addEventListener('click', async () => {
+                    plus.classList.add('is-loading');
+                    const suite = await api('/admin/audit?avant_id=' + plus.dataset.curseur);
+                    plus.classList.remove('is-loading');
+                    if (!suite.ok) { afficher('danger', 'Lecture impossible.'); return; }
+                    lignesJournal(corps, suite.data.lignes);
+                    if (suite.data.avant_id) plus.dataset.curseur = suite.data.avant_id;
+                    else plus.remove();
+                });
+                vue.appendChild(plus);
+            }
+        }
 
         async function chargerBots() {
             const vue = document.getElementById('vue-bots');

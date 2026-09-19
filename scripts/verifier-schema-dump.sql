@@ -22,8 +22,8 @@ DECLARE
     attendues TEXT[] := ARRAY[
         'audit_admin', 'comptes', 'global_reset_details', 'invitations',
         'liaisons_demandes', 'noms_interdits', 'notifications',
-        'permissions_admin', 'profils', 'service_tokens', 'sessions_joueurs',
-        'sessions_tournois', 'tiers'
+        'permissions_admin', 'profils', 'promotions_proposees', 'service_tokens',
+        'sessions_joueurs', 'sessions_tournois', 'tiers'
     ];
     manquantes TEXT[];
 BEGIN
@@ -89,6 +89,18 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Rattrapage incomplet : global_resets.max_sigma absente.'
             USING HINT = '2026-09-17_reset_global_plafond.sql n''a pas abouti.';
+    END IF;
+
+    -- Colonnes ajoutees sur une table PREEXISTANTE : `comptes` existe de toute
+    -- facon, seul le consentement admin manquerait. L'ecran d'acceptation
+    -- tomberait alors en 500 a chaque connexion d'un admin, sans que rien
+    -- n'ait signale l'echec ici.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'comptes' AND column_name = 'cgu_admin_accepted_at'
+    ) THEN
+        RAISE EXCEPTION 'Rattrapage incomplet : comptes.cgu_admin_accepted_at absente.'
+            USING HINT = '2026-09-18_promotions_proposees.sql n''a pas abouti.';
     END IF;
 
     RAISE NOTICE 'Schema verifie : les % tables attendues sont presentes.', array_length(attendues, 1);

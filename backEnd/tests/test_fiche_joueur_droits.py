@@ -25,9 +25,13 @@ RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 # volontairement plus de 3 decimales : c'est le cas normal d'un score calcule
 # par TrueSkill, et celui que l'arrondi du frontend met en danger.
 NOM, MU, SIGMA, IS_RANKED, COLOR = 'Alice', 50.0, 8.333333333, True, '#FF0000'
-FICHE = (NOM, MU, SIGMA, IS_RANKED, COLOR)
+# `consecutive_missed` est lu depuis le 2026-09-19, pour le JOURNAL seul : une
+# modification tracee doit dire d'ou elle part. Il ne participe pas a la
+# comparaison qui decide des droits -- seul le superadmin peut y toucher.
+ABSENCES = 2
+FICHE = (NOM, MU, SIGMA, IS_RANKED, COLOR, ABSENCES)
 
-LIRE_FICHE = (r"SELECT nom, mu, sigma, is_ranked, color FROM Joueurs", FICHE)
+LIRE_FICHE = (r"SELECT nom, mu, sigma, is_ranked, color, consecutive_missed", FICHE)
 NOM_LIBRE = (r"SELECT id FROM Joueurs WHERE nom", None)
 
 
@@ -39,8 +43,12 @@ def monter(accordees, role='admin', fiche=FICHE):
                        global_name='A', role=role)),
         (r"SELECT 1 FROM permissions_admin",
          lambda params: (1,) if params and params[1] in accordees else None),
-        (r"SELECT nom, mu, sigma, is_ranked, color FROM Joueurs", fiche),
+        (r"SELECT nom, mu, sigma, is_ranked, color, consecutive_missed", fiche),
         NOM_LIBRE,
+        # La creation renvoie l'id de la fiche posee (RETURNING) : le journal
+        # doit savoir QUELLE fiche a ete creee, pas seulement qu'il y en a eu
+        # une. Sans cette ligne, fetchone() rend None et la route tombe en 500.
+        (r"INSERT INTO Joueurs", (7,)),
     ]
     cur, conn = install_db(plan)
     recharger()
@@ -163,7 +171,7 @@ check("  et les autres champs sont intacts",
 # Le meme joueur edite deux fois de suite ne doit pas deriver : c'est ce que
 # produirait une troncature repetee.
 cli, cur, conn = monter(SOCLE | {'joueurs_nom'},
-                        fiche=('Bob', MU, SIGMA, IS_RANKED, COLOR))
+                        fiche=('Bob', MU, SIGMA, IS_RANKED, COLOR, ABSENCES))
 r = cli.put('/admin/joueurs/7', json=payload(nom='Carol'), headers=H)
 _, params = maj(cur)
 check("  une 2e edition ne le tronque pas davantage", params[2] == SIGMA, params)
@@ -186,7 +194,7 @@ check("un champ absent du payload est repris de la base",
 # is_ranked=False est le piege classique du `or` : une valeur fausse mais
 # legitime ne doit pas etre remplacee par le defaut.
 cli, cur, conn = monter(SOCLE | {'joueurs_statut'},
-                        fiche=(NOM, MU, SIGMA, False, COLOR))
+                        fiche=(NOM, MU, SIGMA, False, COLOR, ABSENCES))
 r = cli.put('/admin/joueurs/7', json=payload(is_ranked=True), headers=H)
 check("passer de non-classe a classe est bien vu comme un changement",
       r.status_code == 200 and maj(cur) is not None)
@@ -306,6 +314,30 @@ r = cli.put('/admin/joueurs/7', json=payload(consecutive_missed=3), headers=H)
 sql, _ = maj(cur) or ('', None)
 check("  le superadmin, si", 'consecutive_missed' in sql, sql)
 
+
+
+# ===========================================================================
+print("\n=== Le gabarit declare TOUS les champs de PERMISSIONS_CHAMPS_JOUEUR ===")
+# Defaut reel du 2026-09-19 : `sigma` manquait dans PEUT_CHAMPS_JOUEUR.
+# `peutChamp()` lit ce dictionnaire PAR CLEF -- une clef absente vaut
+# `undefined`, donc REFUS. Le champ sigma restait grise pour TOUT LE MONDE,
+# superadmin compris, alors que le backend l'autorisait sous
+# `edition_mu_sigma`. Rien ne le signalait : ni erreur, ni 403.
+_FRONT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'frontEnd')
+_gj = open(os.path.join(_FRONT, 'templates', 'gestion_joueurs.html'), encoding='utf-8').read()
+_bloc = _gj[_gj.index('PEUT_CHAMPS_JOUEUR'):]
+_bloc = _bloc[:_bloc.index('};')]
+
+from constants import PERMISSIONS_CHAMPS_JOUEUR
+for _champ in PERMISSIONS_CHAMPS_JOUEUR:
+    check("le gabarit declare « %s »" % _champ, _champ + ':' in _bloc, _champ)
+
+# Et chaque champ doit porter LA MEME permission que le backend, sinon
+# l'interface autorise ce que la route refuse -- ou l'inverse.
+for _champ, _perm in PERMISSIONS_CHAMPS_JOUEUR.items():
+    _ligne = [l for l in _bloc.splitlines() if l.strip().startswith(_champ + ':')]
+    check("  et sous la bonne permission (%s)" % _perm,
+          bool(_ligne) and _perm in _ligne[0], _ligne)
 
 print("\n" + "=" * 60)
 print("%d/%d assertions" % (sum(OK), len(OK)))

@@ -20,6 +20,12 @@
         <div class="container">
             <div class="columns is-centered">
                 <div class="column is-6">
+                    {# Proposition de rôle ou consentement à régulariser. Rempli en
+                       fetch, et placé AVANT la carte du compte : c'est la seule
+                       chose de cette page qui attend une décision. Enfoui plus
+                       bas, il se lirait comme une information de plus. #}
+                    <div id="bloc-promotion"></div>
+
                     <div class="card glass-card fade-in">
                         <div class="card-content">
                             <div class="media">
@@ -190,6 +196,203 @@
             zone.appendChild(n);
         })();
         {% endif %}
+
+        // -------------------------------------------------------------
+        // Promotion proposée / consentement administrateur
+        // -------------------------------------------------------------
+        // Le rôle d'admin ne s'impose pas : il s'accepte. La raison est
+        // juridique — les actions d'un admin sont tracées nominativement,
+        // conservées sans limite de durée, et survivent à la suppression du
+        // compte. La personne doit le savoir AVANT, pas le découvrir après.
+        //
+        // Deux cas distincts arrivent ici, et l'écran ne doit pas les
+        // confondre : une PROPOSITION de rôle (le compte n'est pas encore
+        // admin), ou un CONSENTEMENT manquant (admin promu avant cette
+        // mécanique, ou politique qui a changé de version).
+        (function () {
+            const zone = document.getElementById('bloc-promotion');
+            // Lue depuis le thème, pas recopiée : une couleur en dur ici
+            // divergerait le jour où le site change de bleu.
+            const ACCENT = getComputedStyle(document.documentElement)
+                .getPropertyValue('--primary-color').trim() || '#3b82f6';
+
+            // Même habillage que le reste de la page : une `glass-card`, comme
+            // la carte du compte juste en dessous. Le `message is-warning` de
+            // Bulma utilisé au premier jet jurait — jaune vif sur un fond
+            // sombre, et un cadre qui n'existe nulle part ailleurs sur le site.
+            // L'accent de couleur passe par une icône et une barre latérale,
+            // assez pour distinguer sans crier.
+            function carte(accent, icone, titre, corps, boutons) {
+                zone.innerHTML = '';
+                const art = document.createElement('div');
+                // `visible` POSÉ ICI, et pas seulement `fade-in` : la classe
+                // `.fade-in` vaut `opacity: 0`, et c'est `.visible` qui la
+                // révèle. Le balayage qui l'ajoute (plus haut dans ce fichier)
+                // ne tourne qu'au chargement de la page — un élément créé
+                // après coup, comme celui-ci, reste donc INVISIBLE dans le DOM
+                // sans la moindre erreur. Le défaut est silencieux par nature :
+                // la carte existe, elle est juste transparente.
+                art.className = 'card glass-card fade-in visible mb-4';
+                art.style.borderLeft = '3px solid ' + accent;
+
+                const contenu = document.createElement('div');
+                contenu.className = 'card-content';
+
+                const tete = document.createElement('p');
+                tete.className = 'has-text-weight-semibold mb-3';
+                const ic = document.createElement('span');
+                ic.className = 'icon';
+                ic.style.color = accent;
+                const i = document.createElement('i');
+                i.className = 'fas fa-' + icone;
+                ic.appendChild(i);
+                tete.appendChild(ic);
+                const lib = document.createElement('span');
+                lib.className = 'ml-2';
+                lib.textContent = titre;
+                tete.appendChild(lib);
+                contenu.appendChild(tete);
+
+                corps.forEach(p => contenu.appendChild(p));
+
+                if (boutons.length) {
+                    const barre = document.createElement('div');
+                    barre.className = 'buttons mt-4';
+                    boutons.forEach(b => barre.appendChild(b));
+                    contenu.appendChild(barre);
+                }
+                art.appendChild(contenu);
+                zone.appendChild(art);
+            }
+
+            function para(texte, classe) {
+                const p = document.createElement('p');
+                if (classe) p.className = classe;
+                p.textContent = texte;
+                return p;
+            }
+
+            // Ce que la personne accepte VRAIMENT, dit en clair. Une case à
+            // cocher renvoyant vers une politique que personne n'ouvre ne vaut
+            // pas consentement : les trois points qui l'engagent sont ici.
+            function consequences() {
+                const bloc = document.createElement('div');
+                bloc.className = 'content is-small mt-3';
+                const ul = document.createElement('ul');
+                [
+                    'Vos actions d’administration seront enregistrées à votre nom.',
+                    'Ce journal est conservé sans limite de durée.',
+                    'Il subsiste même si vous supprimez votre compte.',
+                ].forEach(t => {
+                    const li = document.createElement('li');
+                    li.textContent = t;
+                    ul.appendChild(li);
+                });
+                bloc.appendChild(ul);
+                const lien = document.createElement('a');
+                lien.href = '/confidentialite';
+                lien.textContent = 'Lire la politique de confidentialité';
+                bloc.appendChild(lien);
+                return bloc;
+            }
+
+            function bouton(libelle, couleur, onClick) {
+                const b = document.createElement('button');
+                b.className = 'button is-small is-' + couleur;
+                b.textContent = libelle;
+                b.addEventListener('click', () => onClick(b));
+                return b;
+            }
+
+            function echec(message) {
+                const p = para(message, 'has-text-danger mt-2');
+                zone.appendChild(p);
+            }
+
+            async function envoyer(url, corps, bouton_) {
+                bouton_.classList.add('is-loading');
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': csrf, 'Content-Type': 'application/json',
+                                  'Accept': 'application/json'},
+                        body: JSON.stringify(corps)
+                    });
+                    const d = await res.json();
+                    if (!res.ok) { echec(d.error || 'L’opération a échoué.'); return null; }
+                    return d;
+                } catch (err) {
+                    echec('Serveur injoignable.');
+                    return null;
+                } finally {
+                    bouton_.classList.remove('is-loading');
+                }
+            }
+
+            function afficherProposition(p, version) {
+                const expire = new Date(p.expire_le)
+                    .toLocaleDateString('fr-FR', {day: '2-digit', month: 'long', year: 'numeric'});
+                // `--primary-color` plutôt qu'une couleur en dur : le bloc
+                // suivra le thème si celui-ci change, comme le reste du site.
+                carte(ACCENT, 'user-shield',
+                    'Proposition : devenir ' + p.role_propose,
+                    [
+                        para('Un administrateur vous propose ce rôle. Vous pouvez '
+                             + 'l’accepter ou le refuser — refuser ne change rien '
+                             + 'à votre compte.'),
+                        para('Cette proposition expire le ' + expire + '.',
+                             'is-size-7 has-text-grey'),
+                        consequences(),
+                    ],
+                    [
+                        bouton('Accepter le rôle', 'primary', async (b) => {
+                            const d = await envoyer('/mon-compte/promotion',
+                                {accepte: true, cgu_admin_version: version}, b);
+                            // Le rôle a changé : la navbar et les onglets admin
+                            // se reconstruisent au rechargement, pas avant.
+                            if (d) window.location.reload();
+                        }),
+                        bouton('Refuser', 'light', async (b) => {
+                            if (!confirm('Refuser ce rôle ?\n\nVotre compte restera inchangé.')) return;
+                            const d = await envoyer('/mon-compte/promotion', {accepte: false}, b);
+                            if (d) window.location.reload();
+                        }),
+                    ]);
+            }
+
+            function afficherConsentement(version) {
+                carte(ACCENT, 'file-signature',
+                    'Politique administrateur à accepter',
+                    [
+                        para('Vous êtes administrateur de ce site. La politique '
+                             + 'qui encadre ce rôle doit être acceptée.'),
+                        para('Votre accès n’est pas suspendu en attendant.',
+                             'is-size-7 has-text-grey'),
+                        consequences(),
+                    ],
+                    [
+                        bouton('J’accepte', 'primary', async (b) => {
+                            const d = await envoyer('/mon-compte/cgu-admin', {version: version}, b);
+                            if (d) zone.innerHTML = '';
+                        }),
+                    ]);
+            }
+
+            (async function charger() {
+                try {
+                    const res = await fetch('/mon-compte/promotion',
+                                            {headers: {'Accept': 'application/json'}});
+                    if (!res.ok) return;          // silencieux : ce bloc est l'exception
+                    const d = await res.json();
+                    if (d.proposition) afficherProposition(d.proposition, d.cgu_admin_version);
+                    else if (d.consentement_requis) afficherConsentement(d.cgu_admin_version);
+                } catch (err) {
+                    // Pas de message d'erreur : la grande majorité des comptes
+                    // n'a rien en attente ici, et un bandeau rouge sur une page
+                    // qui n'attendait rien inquiète pour rien.
+                }
+            })();
+        })();
 
         // -------------------------------------------------------------
         // Vos appareils connectés

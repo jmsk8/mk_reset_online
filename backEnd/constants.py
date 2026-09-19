@@ -97,6 +97,23 @@ SESSION_ADMIN_LIFETIME_HOURS = 12
 
 INVITATION_LIFETIME_HOURS = 72
 
+# Duree de validite d'une proposition de promotion au rang d'admin.
+#
+# 30 jours et non 72 heures comme une invitation : une invitation s'envoie a
+# quelqu'un qu'on vient de solliciter, une promotion tombe sans prevenir sur
+# quelqu'un qui n'a rien demande. Il lui faut le temps de revenir sur le site
+# et de LIRE ce qu'il accepte -- ses actions y seront tracees nominativement et
+# sans limite de duree.
+#
+# Borne quand meme : une proposition ouverte il y a huit mois n'engage plus
+# personne, et son auteur a pu changer d'avis sans penser a l'annuler.
+PROMOTION_LIFETIME_DAYS = 30
+
+# Version de la politique « en tant qu'administrateur ». Distincte de
+# CGU_VERSION : les deux textes evoluent independamment, et melanger leurs
+# numeros rendrait impossible de demontrer QUOI a ete accepte.
+CGU_ADMIN_VERSION = "1.0"
+
 DISCORD_API_BASE = "https://discord.com/api/v10"
 DISCORD_CDN_BASE = "https://cdn.discordapp.com"
 # scope "identify" seul : ni email, ni guilds. L'appartenance au serveur, si on

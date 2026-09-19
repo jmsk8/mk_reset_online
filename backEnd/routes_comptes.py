@@ -7,7 +7,9 @@ la vigilance de l'admin, d'ou l'apercu avant validation.
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import logging
 import re
@@ -17,14 +19,16 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from flask import Blueprint, jsonify, request, g, make_response
+from flask import (Blueprint, jsonify, request, g, make_response,
+                   Response, stream_with_context)
 
 import audit
 
 from constants import (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERARCHY,
                        CGU_VERSION, PERMISSIONS_CATALOGUE, SOUS_PERMISSIONS,
                        DEFAULT_MU, DEFAULT_SIGMA, DISCORD_HTTP_TIMEOUT,
-                       AVATAR_CACHE_TTL, AVATAR_MAX_BYTES)
+                       AVATAR_CACHE_TTL, AVATAR_MAX_BYTES,
+                       PROMOTION_LIFETIME_DAYS, CGU_ADMIN_VERSION)
 from auth import (player_required, role_required, admin_or_role_required,
                  permission_required, compte_cible_protegee,
                  permissions_delegables_par, refuse_auto_modification)
@@ -569,9 +573,19 @@ def lister_comptes():
                     """SELECT c.id, c.discord_id, c.discord_username, c.discord_global_name,
                               c.discord_avatar_hash, c.joueur_id, c.statut, c.role,
                               c.created_at, c.last_login_at, c.profil_synced_at,
-                              j.nom
+                              j.nom, p.role_propose
                        FROM comptes c
                        LEFT JOIN joueurs j ON j.id = c.joueur_id
+                       -- La proposition en attente vient par JOINTURE et non par
+                       -- une seconde requete : le badge doit etre la des le
+                       -- premier rendu, sinon il apparait apres coup sur une
+                       -- ligne qu'on est peut-etre deja en train de modifier.
+                       -- Les propositions EXPIREES sont exclues ici : elles
+                       -- restent en base pour l'historique, mais n'affichent
+                       -- plus rien.
+                       LEFT JOIN promotions_proposees p
+                              ON p.compte_id = c.id AND p.statut = 'pending'
+                             AND p.expires_at > now()
                        ORDER BY c.created_at DESC"""
                 )
                 rows = cur.fetchall()
@@ -593,6 +607,9 @@ def lister_comptes():
             "profil_synced_at": r[10].isoformat() if r[10] else None,
             # Vrai seulement si le compte est lie ET que les deux noms different.
             "desynchronise": bool(nom_joueur and pseudo and nom_joueur != pseudo),
+            # Role propose et non encore accepte, ou None. Le role ci-dessus
+            # reste l'ACTUEL : les confondre ferait croire la promotion faite.
+            "promotion_en_attente": r[12],
         })
     return jsonify(comptes)
 
@@ -875,6 +892,681 @@ def changer_role(compte_id):
 # ---------------------------------------------------------------------------
 # Permissions a la carte -- accordees a un compte role=admin, une par une.
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Promotion : une proposition, pas un decret
+# ---------------------------------------------------------------------------
+# Phase 1bis de docs/audit-admin-plan.md. Le role d'admin ne s'impose plus, il
+# s'accepte -- et la raison est juridique avant d'etre courtoise.
+#
+# A partir de la phase 2, les actions d'un admin sont tracees NOMINATIVEMENT,
+# conservees sans limite de duree, et survivent a la suppression de son compte.
+# Le RGPD impose d'informer AVANT. Le consentement aux CGU, donne a la creation
+# du compte quand la personne etait `player`, ne peut pas couvrir un traitement
+# qui n'existait pas encore : un consentement ne vaut pas pour ce qu'on ne
+# pouvait pas connaitre en le donnant.
+#
+# D'ou trois etats et un seul chemin entre eux :
+#
+#   player --propose--> proposition EN ATTENTE --accepte--> admin/chef_admin
+#                                              --refuse---> player (inchange)
+#
+# Le role est pose A L'ACCEPTATION, jamais a la proposition. Un tiers ne peut
+# pas consentir a la place de quelqu'un.
+#
+# Le patron est celui de `liaisons_demandes`, deja eprouve ici : etat en
+# attente, decision, notification, index unique partiel. Les memes pieges s'y
+# appliquent -- notamment la course a l'approbation (R-07), d'ou les FOR UPDATE.
+
+def _promotion_en_attente(cur, compte_id, pour_update=False):
+    """Proposition `pending` NON EXPIREE de ce compte, ou None.
+
+    L'expiration est evaluee ICI plutot que par un balayage periodique : une
+    ligne expiree reste en base (l'historique a de la valeur) mais ne doit plus
+    rien ouvrir. Sans ce filtre, une proposition vieille de huit mois resterait
+    acceptable.
+    """
+    cur.execute(
+        """SELECT id, role_propose, propose_par, created_at, expires_at
+           FROM promotions_proposees
+           WHERE compte_id = %s AND statut = 'pending' AND expires_at > now()
+           ORDER BY id DESC LIMIT 1""" + (" FOR UPDATE" if pour_update else ""),
+        (compte_id,),
+    )
+    return cur.fetchone()
+
+
+@comptes_bp.route('/admin/comptes/<int:compte_id>/promotion', methods=['POST'])
+@role_required(ROLE_CHEF_ADMIN)
+@compte_cible_protegee
+def proposer_promotion(compte_id):
+    """Propose un role a un compte. Ne pose RIEN : la cible decide.
+
+    Reprend a l'identique les plafonds par acteur de `changer_role` -- un
+    chef_admin ne designe pas un pair, superadmin ne s'attribue pas -- parce
+    que proposer un role qu'on n'a pas le droit d'attribuer reviendrait a
+    contourner ces regles par un detour.
+    """
+    acteur = g.compte
+    corps = request.get_json(silent=True) or {}
+    role = corps.get('role')
+
+    if role not in (ROLE_ADMIN, ROLE_CHEF_ADMIN):
+        return jsonify({
+            "error": "Seuls les roles admin et chef_admin se proposent.",
+            "code": "role_non_proposable",
+        }), 400
+
+    # Meme plafond que changer_role : un chef_admin ne designe pas un pair.
+    if role == ROLE_CHEF_ADMIN and acteur['role'] != ROLE_SUPERADMIN:
+        return jsonify({
+            "error": "Seul le super-administrateur peut designer un chef d'administration.",
+            "code": "droits_insuffisants",
+        }), 403
+
+    erreur = refuse_auto_modification(_acteur_id(), compte_id)
+    if erreur is not None:
+        return erreur
+
+    try:
+        with get_db_connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    # FOR UPDATE des la lecture du compte : deux chef_admin qui
+                    # proposent simultanement doivent se serialiser ici, sinon
+                    # l'index unique partiel transforme le second en 500.
+                    cur.execute("SELECT role, statut FROM comptes WHERE id = %s FOR UPDATE",
+                                (compte_id,))
+                    row = cur.fetchone()
+                    if row is None:
+                        conn.rollback()
+                        return jsonify({"error": "Compte introuvable"}), 404
+                    role_actuel, statut = row
+
+                    if role_actuel == role:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Ce compte porte deja ce role.",
+                            "code": "role_inchange",
+                        }), 409
+
+                    # Un compte suspendu ne peut pas se connecter, donc ne
+                    # pourra jamais accepter : la proposition resterait en
+                    # attente jusqu'a expiration, en bloquant l'index unique.
+                    if statut == 'suspended':
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Ce compte est suspendu : il ne pourrait pas accepter.",
+                            "code": "compte_suspendu",
+                        }), 409
+
+                    if _promotion_en_attente(cur, compte_id, pour_update=True):
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Une proposition est deja en attente pour ce compte.",
+                            "code": "promotion_deja_en_attente",
+                        }), 409
+
+                    # Les propositions perimees encore 'pending' bloqueraient
+                    # l'index unique partiel. On les solde avant d'inserer.
+                    cur.execute(
+                        """UPDATE promotions_proposees SET statut = 'cancelled', decided_at = now()
+                           WHERE compte_id = %s AND statut = 'pending' AND expires_at <= now()""",
+                        (compte_id,),
+                    )
+
+                    cur.execute(
+                        """INSERT INTO promotions_proposees
+                               (compte_id, role_propose, propose_par, expires_at)
+                           VALUES (%s, %s, %s, now() + make_interval(days => %s))
+                           RETURNING id, expires_at""",
+                        (compte_id, role, _acteur_id(), PROMOTION_LIFETIME_DAYS),
+                    )
+                    promotion_id, expires_at = cur.fetchone()
+
+                    _audit(cur, 'promotion_proposee', 'compte', compte_id,
+                           {"role_propose": role, "promotion_id": promotion_id})
+                    notifier(
+                        cur, compte_id, 'promotion_proposee',
+                        "Proposition : devenir %s" % role,
+                        "Un administrateur vous propose ce role. Ouvrez votre compte "
+                        "pour l'accepter ou le refuser.",
+                    )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+    except Exception as e:
+        logger.error("Proposition de promotion pour %s impossible: %s", compte_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    logger.info("Promotion %s proposee au compte %s (par %s)", role, compte_id, _acteur_id())
+    return jsonify({"status": "success", "role_propose": role,
+                    "expires_at": expires_at.isoformat()})
+
+
+@comptes_bp.route('/admin/comptes/<int:compte_id>/promotion', methods=['DELETE'])
+@role_required(ROLE_CHEF_ADMIN)
+@compte_cible_protegee
+def annuler_promotion(compte_id):
+    """Retire une proposition en attente. Le proposant peut se retracter.
+
+    Sans cette route, la seule sortie d'une proposition serait que la personne
+    reponde -- et une proposition faite par erreur resterait affichee sur sa
+    ligne pendant trente jours.
+    """
+    try:
+        with get_db_connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    ligne = _promotion_en_attente(cur, compte_id, pour_update=True)
+                    if ligne is None:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Aucune proposition en attente pour ce compte.",
+                            "code": "aucune_promotion",
+                        }), 404
+
+                    cur.execute(
+                        """UPDATE promotions_proposees
+                           SET statut = 'cancelled', decided_at = now() WHERE id = %s""",
+                        (ligne[0],),
+                    )
+                    _audit(cur, 'promotion_annulee', 'compte', compte_id,
+                           {"role_propose": ligne[1], "promotion_id": ligne[0]})
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+    except Exception as e:
+        logger.error("Annulation de promotion pour %s impossible: %s", compte_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    return jsonify({"status": "success"})
+
+
+@comptes_bp.route('/me/promotion', methods=['GET'])
+@player_required
+def ma_promotion():
+    """Ce que le titulaire doit accepter, s'il y a quelque chose.
+
+    Deux choses distinctes peuvent etre en attente, et l'ecran doit savoir
+    laquelle :
+
+      - une PROPOSITION de role, pour un compte qui n'est pas encore admin ;
+      - un CONSENTEMENT manquant, pour un admin promu AVANT cette mecanique
+        (migration du 18/09) ou dont la politique a change de version.
+
+    Le second cas est une regularisation, pas une punition : l'acces n'est pas
+    bloque entre-temps, mais la phase 2 ne tracera ses actions qu'une fois le
+    consentement donne.
+    """
+    compte = g.compte
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                ligne = _promotion_en_attente(cur, compte['id'])
+                cur.execute(
+                    "SELECT cgu_admin_accepted_at, cgu_admin_version FROM comptes WHERE id = %s",
+                    (compte['id'],),
+                )
+                accepte_le, version = cur.fetchone()
+    except Exception as e:
+        logger.error("Lecture de la promotion du compte %s impossible: %s", compte['id'], e)
+        return jsonify({"error": "Service indisponible", "code": "indisponible"}), 503
+
+    consentement_requis = (
+        compte['role'] in (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN)
+        and version != CGU_ADMIN_VERSION
+    )
+
+    return jsonify({
+        "proposition": {
+            "role_propose": ligne[1],
+            "propose_le": ligne[3].isoformat(),
+            "expire_le": ligne[4].isoformat(),
+        } if ligne else None,
+        "consentement_requis": consentement_requis,
+        "cgu_admin_version": CGU_ADMIN_VERSION,
+        "cgu_admin_acceptee_le": accepte_le.isoformat() if accepte_le else None,
+    })
+
+
+@comptes_bp.route('/me/promotion', methods=['POST'])
+@player_required
+def repondre_promotion():
+    """Accepte ou refuse la proposition. C'est ICI que le role est pose.
+
+    Le corps porte `accepte` (booleen) et, en cas d'acceptation,
+    `cgu_admin_version` -- l'acceptation du role et celle de la politique sont
+    un seul geste, et refuser de les separer est deliberé : accepter le role
+    sans la politique laisserait un admin trace sans l'avoir su.
+    """
+    compte = g.compte
+    corps = request.get_json(silent=True) or {}
+    accepte = corps.get('accepte') is True
+
+    if accepte and corps.get('cgu_admin_version') != CGU_ADMIN_VERSION:
+        return jsonify({
+            "error": "La politique administrateur doit etre acceptee dans sa version courante.",
+            "code": "version_cgu_admin",
+            "attendue": CGU_ADMIN_VERSION,
+        }), 400
+
+    try:
+        with get_db_connection() as conn:
+            try:
+                with conn.cursor() as cur:
+                    # Verrou sur le COMPTE avant la proposition : meme ordre que
+                    # dans proposer_promotion, sinon deux transactions qui se
+                    # croisent s'interbloquent (R-07).
+                    cur.execute("SELECT role FROM comptes WHERE id = %s FOR UPDATE",
+                                (compte['id'],))
+                    if cur.fetchone() is None:
+                        conn.rollback()
+                        return jsonify({"error": "Compte introuvable"}), 404
+
+                    ligne = _promotion_en_attente(cur, compte['id'], pour_update=True)
+                    if ligne is None:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Aucune proposition en attente. Elle a pu expirer "
+                                     "ou etre annulee.",
+                            "code": "aucune_promotion",
+                        }), 409
+
+                    promotion_id, role, proposant = ligne[0], ligne[1], ligne[2]
+
+                    if not accepte:
+                        cur.execute(
+                            """UPDATE promotions_proposees
+                               SET statut = 'refused', decided_at = now() WHERE id = %s""",
+                            (promotion_id,),
+                        )
+                        _audit(cur, 'promotion_refusee', 'compte', compte['id'],
+                               {"role_propose": role, "promotion_id": promotion_id})
+                        # Le proposant a pu partir entre-temps : notifier()
+                        # ignore un compte_id nul, rien a verifier ici.
+                        notifier(
+                            cur, proposant, 'promotion_refusee',
+                            "Promotion refusee",
+                            "Le compte a refuse le role %s. Il reste inchange." % role,
+                        )
+                        conn.commit()
+                        logger.info("Promotion %s refusee par le compte %s", role, compte['id'])
+                        return jsonify({"status": "success", "accepte": False})
+
+                    # ACCEPTATION : le role est pose ici, et seulement ici.
+                    cur.execute(
+                        """UPDATE promotions_proposees
+                           SET statut = 'accepted', decided_at = now() WHERE id = %s""",
+                        (promotion_id,),
+                    )
+                    cur.execute(
+                        """UPDATE comptes
+                           SET role = %s, cgu_admin_accepted_at = now(),
+                               cgu_admin_version = %s, updated_at = now()
+                           WHERE id = %s""",
+                        (role, CGU_ADMIN_VERSION, compte['id']),
+                    )
+                    _audit(cur, 'role_attribue', 'compte', compte['id'],
+                           {"ancien": compte['role'], "nouveau": role,
+                            "origine": "acceptation", "promotion_id": promotion_id,
+                            "propose_par": proposant})
+                    notifier(
+                        cur, proposant, 'promotion_acceptee',
+                        "Promotion acceptee",
+                        "Le compte a accepte le role %s." % role,
+                    )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+    except Exception as e:
+        logger.error("Reponse a la promotion du compte %s impossible: %s", compte['id'], e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    logger.info("Promotion %s acceptee par le compte %s", role, compte['id'])
+    return jsonify({"status": "success", "accepte": True, "role": role})
+
+
+@comptes_bp.route('/me/cgu-admin', methods=['POST'])
+@player_required
+def accepter_cgu_admin():
+    """Consentement d'un admin DEJA en poste (regularisation).
+
+    Sert les admins promus avant cette mecanique, et le jour ou la politique
+    changera de version. Ne pose aucun role -- il est deja la.
+    """
+    compte = g.compte
+    if compte['role'] not in (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN):
+        return jsonify({
+            "error": "Ce consentement ne concerne que les administrateurs.",
+            "code": "non_concerne",
+        }), 403
+
+    if (request.get_json(silent=True) or {}).get('version') != CGU_ADMIN_VERSION:
+        return jsonify({
+            "error": "Version de politique inattendue.",
+            "code": "version_cgu_admin",
+            "attendue": CGU_ADMIN_VERSION,
+        }), 400
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE comptes SET cgu_admin_accepted_at = now(),
+                           cgu_admin_version = %s, updated_at = now()
+                       WHERE id = %s""",
+                    (CGU_ADMIN_VERSION, compte['id']),
+                )
+                _audit(cur, 'cgu_admin_acceptee', 'compte', compte['id'],
+                       {"version": CGU_ADMIN_VERSION})
+            conn.commit()
+    except Exception as e:
+        logger.error("Acceptation CGU admin du compte %s impossible: %s", compte['id'], e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    return jsonify({"status": "success", "cgu_admin_version": CGU_ADMIN_VERSION})
+
+
+
+# ---------------------------------------------------------------------------
+# Journal d'audit : la lecture
+# ---------------------------------------------------------------------------
+# Phase 3 de docs/audit-admin-plan.md. Jusqu'ici la table ne recevait que des
+# INSERT : aucun SELECT nulle part, donc un journal que personne ne pouvait
+# lire. Ecrire sans jamais relire, c'est se donner bonne conscience.
+#
+# TROIS chemins de lecture, UNE seule requete. Le volet par compte, l'onglet
+# complet et l'export sont trois vues du meme filtre : les separer en trois
+# requetes les ferait diverger, et la premiere a oublier le garde de rang
+# deviendrait le contournement de la regle.
+
+AUDIT_PAGE = 50
+AUDIT_PAGE_MAX = 200
+
+
+def _peut_lire_journal(acteur, cible_role):
+    """Qui peut lire le journal de qui. Arbitre le 2026-09-19.
+
+        superadmin  -> tout le monde
+        chef_admin  -> tout le monde SAUF le superadmin (ses pairs compris)
+        admin       -> personne (la route lui est fermee)
+        player      -> personne
+
+    ⚠️ Cette regle N'EST PAS celle de `compte_cible_protegee`, et l'ecart est
+    delibere. Ce decorateur exige un rang STRICTEMENT superieur, parce qu'il
+    protege une ACTION : suspendre un pair, lui retirer un role. Ici on ne fait
+    que LIRE, et un chef_admin qui ne verrait pas les actions de ses pairs ne
+    pourrait pas exercer la surveillance qui justifie ce journal -- c'est
+    precisement entre gens de meme rang que le controle mutuel a du sens.
+    Le §6.2 du plan proposait le rang strict ; l'arbitrage l'a elargi.
+
+    Seul le superadmin reste hors de portee : il est le sommet, personne ne le
+    surveille par ce biais.
+    """
+    if acteur['role'] == ROLE_SUPERADMIN:
+        return True
+    if acteur['role'] == ROLE_CHEF_ADMIN:
+        # Un role inconnu est traite comme superadmin : l'inconnu ne donne
+        # jamais d'acces, meme regle que partout ailleurs dans le projet.
+        return cible_role not in (ROLE_SUPERADMIN, None) and cible_role in ROLE_HIERARCHY
+    return False
+
+
+def _lire_journal(cur, acteur, compte_id=None, avant_id=None, limite=AUDIT_PAGE):
+    """Les lignes du journal visibles par cet acteur, les plus recentes d'abord.
+
+    `compte_id` restreint a un acteur precis (le volet) ; sans lui, c'est le
+    journal complet (l'onglet). `avant_id` pagine par CURSEUR et non par
+    OFFSET : un OFFSET saute des lignes des qu'une nouvelle s'insere pendant
+    la consultation -- et sur un journal qui s'ecrit en continu, ca arrive.
+
+    Le filtre de rang est applique EN SQL et non a l'affichage : rendre les
+    lignes puis les masquer les aurait fait transiter, et la pagination
+    compterait des lignes invisibles -- une page de 50 en afficherait 12.
+    """
+    conditions = []
+    params = []
+
+    # Les roles que cet acteur a le droit de lire. Un superadmin lit tout, y
+    # compris les lignes dont l'acteur a ete supprime (acteur_compte_id NULL).
+    if acteur['role'] != ROLE_SUPERADMIN:
+        roles_lisibles = [r for r in ROLE_HIERARCHY
+                          if _peut_lire_journal(acteur, r)]
+        if not roles_lisibles:
+            return []
+        # Le rang est relu EN BASE a chaque consultation, jamais pris dans
+        # details.acteur : une personne retrogradee depuis ne doit pas rester
+        # lisible au motif qu'elle etait admin au moment de l'action.
+        #
+        # ⚠️ Corollaire assume : les lignes d'un compte SUPPRIME (jointure
+        # nulle) ne sont visibles que du superadmin. Un chef_admin ne peut pas
+        # verifier le rang de quelqu'un qui n'existe plus, donc il ne le lit
+        # pas -- prudence plutot que fuite.
+        conditions.append("c.role = ANY(%s)")
+        params.append(roles_lisibles)
+
+    if compte_id is not None:
+        conditions.append("a.acteur_compte_id = %s")
+        params.append(compte_id)
+
+    if avant_id is not None:
+        conditions.append("a.id < %s")
+        params.append(avant_id)
+
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    cur.execute(
+        """SELECT a.id, a.action, a.acteur_compte_id, a.cible_type, a.cible_id,
+                  a.details, a.created_at,
+                  COALESCE(c.discord_global_name, c.discord_username)
+           FROM audit_admin a
+           LEFT JOIN comptes c ON c.id = a.acteur_compte_id
+           %s
+           ORDER BY a.id DESC
+           LIMIT %%s""" % where,
+        tuple(params) + (limite,),
+    )
+    return cur.fetchall()
+
+
+def _ligne_journal(r):
+    """Une ligne du journal, prete a afficher.
+
+    Le pseudo vient de la JOINTURE tant que le compte existe, et retombe sur
+    `details.acteur.pseudo` quand il a ete supprime -- c'est precisement ce
+    que la denormalisation du §6.3 sert a faire. Une ligne dont l'acteur a
+    disparu AVANT cette denormalisation (septembre) n'a ni l'un ni l'autre :
+    elle sort avec un acteur nul, et c'est la verite.
+    """
+    details = r[5] or {}
+    denorme = details.get('acteur') or {}
+    return {
+        "id": r[0],
+        "action": r[1],
+        "acteur_compte_id": r[2],
+        "acteur_pseudo": r[7] or denorme.get('pseudo'),
+        # Vrai quand le compte n'existe plus : l'ecran doit pouvoir le dire,
+        # sinon on lit « Jérémy » sans savoir que le compte a ete supprime.
+        "acteur_supprime": r[2] is None,
+        "acteur_role": denorme.get('role'),
+        "cible_type": r[3],
+        "cible_id": r[4],
+        # Le bloc `acteur` est retire des details affiches : il est deja
+        # remonte en colonnes ci-dessus, et le laisser ferait doublon dans
+        # chaque ligne de l'ecran.
+        "details": {k: v for k, v in details.items() if k != 'acteur'},
+        "created_at": r[6].isoformat(),
+    }
+
+
+@comptes_bp.route('/admin/comptes/<int:compte_id>/audit', methods=['GET'])
+@role_required(ROLE_CHEF_ADMIN)
+def journal_du_compte(compte_id):
+    """Les actions d'administration d'UN compte (le volet de sa ligne).
+
+    ⚠️ PAS de `compte_cible_protegee` ici, et c'est deliberé : ce decorateur
+    refuse le rang EGAL, ce qui interdirait a un chef_admin de lire le journal
+    d'un pair. Or lire n'est pas agir, et c'est entre gens de meme rang que la
+    surveillance mutuelle a du sens (arbitrage du 2026-09-19).
+
+    La regle de lecture vit donc dans `_lire_journal`, UNE SEULE FOIS, pour les
+    trois chemins. Un compte hors de portee -- le superadmin vu par un
+    chef_admin -- ressort avec une liste VIDE plutot qu'un 403 : la route ne
+    doit pas devenir un revelateur de rang pour qui la sonde.
+    """
+    try:
+        avant_id = request.args.get('avant_id', type=int)
+        limite = min(request.args.get('limite', AUDIT_PAGE, type=int), AUDIT_PAGE_MAX)
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                lignes = _lire_journal(cur, g.compte, compte_id=compte_id,
+                                       avant_id=avant_id, limite=limite)
+    except Exception as e:
+        logger.error("Lecture du journal du compte %s impossible: %s", compte_id, e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    sorties = [_ligne_journal(r) for r in lignes]
+    return jsonify({
+        "lignes": sorties,
+        # Le curseur de la page suivante, ou None. Calcule ici plutot que
+        # devine par le frontend : lui faire lire le dernier id supposerait
+        # qu'il connait l'ordre de tri.
+        "avant_id": sorties[-1]['id'] if len(sorties) == limite else None,
+    })
+
+
+@comptes_bp.route('/admin/audit', methods=['GET'])
+@role_required(ROLE_CHEF_ADMIN)
+def journal_complet():
+    """Le journal entier (l'onglet Logs), meme filtre de rang, sans cible.
+
+    Repond a « meme si le compte n'est plus admin, ou n'existe plus » : la
+    requete ne filtre pas sur le role ACTUEL de la cible d'une action, mais
+    sur celui de l'ACTEUR -- et les lignes restent la quoi qu'il arrive.
+    """
+    try:
+        avant_id = request.args.get('avant_id', type=int)
+        limite = min(request.args.get('limite', AUDIT_PAGE, type=int), AUDIT_PAGE_MAX)
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                lignes = _lire_journal(cur, g.compte, avant_id=avant_id, limite=limite)
+    except Exception as e:
+        logger.error("Lecture du journal complet impossible: %s", e)
+        return jsonify({"error": "Erreur serveur"}), 500
+
+    sorties = [_ligne_journal(r) for r in lignes]
+    return jsonify({
+        "lignes": sorties,
+        "avant_id": sorties[-1]['id'] if len(sorties) == limite else None,
+    })
+
+
+# Cellules commencant par ces caracteres : Excel et LibreOffice les
+# interpretent comme des FORMULES. Un pseudo Discord « =cmd » deviendrait donc
+# du code a l'ouverture du fichier. On prefixe d'une apostrophe, qui force le
+# texte et reste invisible a l'affichage.
+_CSV_DANGEREUX = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _cellule_csv(valeur):
+    """Rend une valeur sure pour un tableur."""
+    if valeur is None:
+        return ''
+    texte = valeur if isinstance(valeur, str) else json.dumps(valeur, ensure_ascii=False)
+    return "'" + texte if texte.startswith(_CSV_DANGEREUX) else texte
+
+
+@comptes_bp.route('/admin/audit/export', methods=['GET'])
+@role_required(ROLE_CHEF_ADMIN)
+def exporter_journal():
+    """Le journal entier en CSV, par streaming.
+
+    EN STREAMING et non materialise : ce journal ne se purge jamais (§4), donc
+    un `SELECT *` chargerait un jour toute la table en memoire et tomberait --
+    le jour ou l'on cherche justement quelque chose. On pagine en interne par
+    curseur et on rend les lignes au fil de l'eau ; la memoire reste bornee a
+    une page quelle que soit la taille du journal.
+
+    CSV et non JSON : un export de journal sert a CHERCHER -- trier par date,
+    filtrer une action, retrouver qui a touche a un joueur. Ca se fait dans un
+    tableur. `details` reste du JSON dans sa propre colonne : rien n'est perdu,
+    et les colonnes qui portent l'essentiel des recherches sont triables.
+
+    MEME filtre de rang que les deux vues : l'export ne doit jamais montrer ce
+    que l'ecran masque.
+    """
+    acteur = g.compte
+
+    def flux():
+        tampon = io.StringIO()
+        ecrivain = csv.writer(tampon, lineterminator='\n')
+
+        def vider():
+            valeur = tampon.getvalue()
+            tampon.seek(0)
+            tampon.truncate(0)
+            return valeur
+
+        # BOM UTF-8 : sans lui, Excel lit le fichier en latin-1 et rend les
+        # accents illisibles. Inoffensif pour tout le reste.
+        yield '﻿'
+        ecrivain.writerow(['id', 'date', 'action', 'acteur_id', 'acteur_pseudo',
+                           'acteur_supprime', 'cible_type', 'cible_id', 'details'])
+        yield vider()
+
+        avant_id = None
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    while True:
+                        lignes = _lire_journal(cur, acteur, avant_id=avant_id,
+                                               limite=AUDIT_PAGE_MAX)
+                        if not lignes:
+                            break
+
+                        # Le curseur doit AVANCER strictement. Sans ce garde,
+                        # une source qui rend deux fois la meme page boucle a
+                        # l'infini -- et un export qui ne se termine jamais
+                        # tient la connexion ouverte jusqu'au timeout, sans
+                        # rien dire. Constate au premier jet contre un curseur
+                        # de test qui rejoue sa reponse ; le meme blocage
+                        # viendrait d'un ORDER BY perdu.
+                        if avant_id is not None and lignes[-1][0] >= avant_id:
+                            logger.error("Export du journal : curseur bloque a %s", avant_id)
+                            break
+
+                        for r in lignes:
+                            l = _ligne_journal(r)
+                            ecrivain.writerow([
+                                l['id'], l['created_at'], l['action'],
+                                l['acteur_compte_id'] or '',
+                                _cellule_csv(l['acteur_pseudo']),
+                                'oui' if l['acteur_supprime'] else 'non',
+                                l['cible_type'] or '', l['cible_id'] or '',
+                                _cellule_csv(l['details']),
+                            ])
+                            yield vider()
+                        avant_id = lignes[-1][0]
+        except Exception as e:
+            # Le flux a deja commence : impossible de renvoyer un 500 propre.
+            # On journalise et on ferme sur une ligne qui DIT que l'export est
+            # incomplet -- un fichier tronque en silence se lirait comme un
+            # journal qui s'arrete la.
+            logger.error("Export du journal interrompu: %s", e)
+            ecrivain.writerow(['#', 'EXPORT INTERROMPU', 'fichier incomplet'])
+            yield vider()
+
+    horodatage = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')
+    return Response(
+        stream_with_context(flux()),
+        mimetype='text/csv; charset=utf-8',
+        headers={'Content-Disposition':
+                 'attachment; filename="journal-admin-%s.csv"' % horodatage},
+    )
+
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/permissions', methods=['GET'])
 @role_required(ROLE_CHEF_ADMIN)

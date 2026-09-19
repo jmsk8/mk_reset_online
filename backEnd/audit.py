@@ -17,6 +17,7 @@ recoit un curseur et ecrit dedans, pour que la ligne d'audit vive ou meure
 avec le geste qu'elle decrit. Une ligne d'audit validee alors que l'action a
 ete annulee serait pire que pas de ligne du tout.
 """
+import hashlib
 import json
 import logging
 
@@ -53,6 +54,55 @@ def acteur_courant():
     return compte['id'] if compte else None
 
 
+def _identite_acteur():
+    """De quoi reconnaitre l'acteur APRES la suppression de son compte, ou None.
+
+    C'est le §6.3 du plan, et le point dur du journal. `acteur_compte_id` est
+    en `ON DELETE SET NULL` : a la suppression d'un compte, TOUTES ses lignes
+    passent a NULL d'un coup. Elles survivent, mais deviennent anonymes -- et
+    indistinguables entre deux admins supprimes. Un journal ou « quelqu'un a
+    modifie ce score » ne prouve rien, et la conservation sans limite decidee
+    au §4 perd son objet.
+
+    On copie donc, AU MOMENT DE L'ACTION, de quoi identifier durablement :
+
+      - le pseudo, FIGE a cet instant. C'est un fait historique, pas une
+        reference a suivre : si la personne se renomme ensuite, la ligne doit
+        continuer de dire sous quel nom elle agissait.
+      - une EMPREINTE du snowflake, jamais le snowflake. Elle permet de
+        REGROUPER les actions d'un meme acteur supprime sans reconserver son
+        identifiant Discord -- meme motif que `compte_supprime` et
+        `noms_interdits`, on reste coherent avec le reste du projet.
+      - le role porte a cet instant, qui explique ce que l'action lui etait
+        permise.
+
+    `acteur_compte_id` reste la jointure tant que le compte existe ; ce bloc
+    prend le relais quand il disparait.
+
+    ⚠️ Consequence RGPD, a connaitre : le pseudo d'un admin supprime est
+    conserve SANS LIMITE, alors que la suppression efface tout le reste. C'est
+    l'obligation de rendre compte (art. 5.2) qui le justifie, et c'est annonce
+    dans la politique « en tant qu'administrateur » -- la personne l'accepte
+    avant de prendre le role.
+    """
+    if not has_request_context():
+        return None
+    compte = getattr(g, 'compte', None)
+    if not compte:
+        return None
+    return {
+        "pseudo": compte.get('discord_global_name') or compte.get('discord_username'),
+        # sha256 recalcule ici plutot qu'importe d'auth_discord : ce module
+        # ne doit dependre de RIEN (auth_discord tire db, donc psycopg2, donc
+        # une connexion). Un helper d'ecriture qui entraine la moitie du
+        # backend a sa suite devient impossible a appeler depuis un script ou
+        # un test. Deux lignes dupliquees valent mieux que ce couplage.
+        "discord_id_hash": (hashlib.sha256(compte['discord_id'].encode('utf-8')).hexdigest()
+                            if compte.get('discord_id') else None),
+        "role": compte.get('role'),
+    }
+
+
 def ecrire(cur, action, cible_type=None, cible_id=None, details=None,
            acteur_id=_AUTO):
     """Ecrit une ligne d'audit dans la transaction en cours.
@@ -69,6 +119,18 @@ def ecrire(cur, action, cible_type=None, cible_id=None, details=None,
     """
     if acteur_id is _AUTO:
         acteur_id = acteur_courant()
+
+    # L'identite denormalisee vit DANS details, sous une clef reservee. Une
+    # colonne dediee aurait demande une migration par champ ; ici le bloc peut
+    # s'enrichir sans toucher au schema, et les lignes anciennes restent
+    # lisibles (la clef est simplement absente).
+    #
+    # Ecrite meme quand `acteur_id` est surcharge : l'amorcage passe un id
+    # explicite, et son identite merite d'etre figee comme les autres.
+    identite = _identite_acteur()
+    if identite:
+        details = dict(details or {})
+        details['acteur'] = identite
 
     cur.execute(
         """INSERT INTO audit_admin (action, acteur_compte_id, cible_type, cible_id, details)
