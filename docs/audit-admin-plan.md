@@ -158,10 +158,23 @@ contournement de la règle qu'on vient d'écrire : le chemin le plus visible ser
 protégé. **Le filtre est donc appliqué dans la requête SQL**, pas à l'affichage, et l'export
 réutilise exactement la même requête — deux chemins, une seule règle.
 
-**Téléchargement** : JSON, sur le patron déjà en place pour l'export RGPD
-(`frontEnd/frontend.py`, `Response` + `Content-Disposition: attachment`) — rien de neuf à inventer.
-Format à figer en phase 3 ; JSON plutôt que CSV parce que `details` est un objet structuré qu'un
-CSV aplatirait.
+**Téléchargement** : **CSV en streaming [TRANCHÉ, 18/09]**, sur le patron déjà en place pour
+l'export RGPD (`frontEnd/frontend.py`, `Response` + `Content-Disposition: attachment`) — rien de
+neuf à inventer côté transport, seul le corps devient un générateur.
+
+> **Ceci renverse la préférence du 13/09 pour JSON, et l'objection d'alors reste valable** :
+> `details` est un objet structuré qu'un CSV aplatit. Elle est acceptée plutôt que résolue, pour
+> une raison d'usage : un export de journal sert à **chercher** — trier par date, filtrer une
+> action, retrouver qui a touché un joueur. Ça se fait dans un tableur, pas dans un fichier JSON.
+>
+> Le compromis retenu : **une colonne par champ stable** (`id`, `created_at`, `action`,
+> `acteur_compte_id`, `acteur_pseudo`, `cible_type`, `cible_id`), et `details` **sérialisé en JSON
+> dans sa propre colonne**. Rien n'est perdu — la structure reste lisible pour qui en a besoin —
+> et les six colonnes qui portent 90 % des recherches deviennent triables d'un clic.
+>
+> ⚠️ Deux pièges du CSV à ne pas manquer à l'écriture : les `details` contiennent des guillemets
+> (échappement RFC 4180), et un pseudo Discord commençant par `=`, `+` ou `@` est interprété
+> comme une **formule** par Excel et LibreOffice. Préfixer ces cellules d'une apostrophe.
 
 ### ⚠️ Ceci RÉVISE le point B du plan hiérarchie **[DÉCIDÉ, 2026-09-13]**
 
@@ -226,7 +239,46 @@ d'audit gagnent leur acteur.
 **Critère de sortie** : `grep -c "INSERT INTO audit_admin"` ne renvoie plus qu'une occurrence, celle
 du helper.
 
-### Phase 1bis — La promotion devient une proposition à accepter
+### Phase 1bis — La promotion devient une proposition à accepter — ✅ LIVRÉE le 2026-09-18
+
+> **Faite, backend et frontend.** `test_promotions.py` : **63 assertions**. Suite complète :
+> **1480 assertions, aucune rouge.**
+>
+> **Les quatre questions ouvertes du §6.5 ont été tranchées comme proposé** : expiration à
+> 30 jours (`PROMOTION_LIFETIME_DAYS`), annulation possible par le proposant, proposition
+> valide même si le proposant perd son rôle (`propose_par` en `ON DELETE SET NULL`), et une
+> seule proposition en attente par compte (index unique partiel).
+>
+> **L'invariant central, vérifié en le cassant** : `proposer_promotion` n'écrit **jamais**
+> `comptes.role`. Poser le rôle à la proposition ferait exactement ce que cette phase existe
+> pour empêcher. Trois assertions le couvrent, dans deux fichiers.
+>
+> ⚠️ **`test_bascule.py` a dû être mis à jour** : il verrouillait « exactement trois écritures
+> de `comptes.role` ». Il en compte désormais **quatre**, la quatrième étant l'acceptation.
+> Ce compteur est un garde-fou sur la seule frontière de privilège de l'application — il ne
+> doit augmenter qu'avec une raison écrite sur place.
+>
+> **Décisions de conception prises en cours de route**, toutes pour la même raison — un cas
+> non refusé explicitement remonterait en 500 depuis l'index unique, illisible pour qui le
+> déclenche :
+>
+> - proposer à un compte **suspendu** → 409. Il ne peut pas se connecter, donc ne pourra
+>   jamais accepter : la proposition resterait en attente jusqu'à expiration en bloquant
+>   l'index.
+> - proposer le rôle **déjà porté** → 409.
+> - une proposition **expirée** est soldée (`cancelled`) avant d'en insérer une nouvelle.
+> - l'expiration est évaluée **en SQL à chaque lecture**, pas par un balayage périodique : la
+>   ligne reste en base pour l'historique mais n'ouvre plus rien.
+>
+> **Ordre des verrous** : `comptes` puis `promotions_proposees`, identique dans les deux
+> routes. L'inverse ferait s'interbloquer deux transactions qui se croisent (R-07).
+>
+> **Le consentement et le rôle sont un seul geste** : accepter sans la version courante de la
+> politique renvoie 400. Les séparer laisserait un admin tracé sans l'avoir su.
+>
+> **La régularisation** (`POST /me/cgu-admin`) sert les admins promus avant cette mécanique.
+> La migration ne rétrograde personne — ce serait casser une installation qui tourne pour un
+> motif de forme — et l'accès n'est pas suspendu en attendant.
 
 **Bloquante pour la phase 2**, et c'est la seule dépendance d'ordre stricte de ce plan (§6.5).
 
@@ -257,18 +309,87 @@ conservé sans limite, et qui survit à la suppression du compte.
 indéfiniment. Les écrire avant d'avoir informé les personnes concernées, c'est créer précisément le
 problème que ce consentement doit prévenir — et ce n'est pas rattrapable après coup (§6.3).
 
-### Phase 2 — Tracer le dossier sportif
+### Phase 2 — Tracer le dossier sportif — ✅ LIVRÉE le 2026-09-19
+
+> **Faite.** Les dix gestes du §3.1 écrivent leur ligne.
+> `test_audit_dossier_sportif.py` : **56 assertions**. Suite complète : **1540, aucune rouge.**
+>
+> **Le piège technique annoncé ne s'est pas vérifié sur la route qui comptait.**
+> `api_update_joueur` relisait **déjà** l'état précédent (`courant` vs `demande`) pour décider
+> des droits champ par champ : l'avant/après était à portée de main. Mieux, son prédicat
+> `a_change()` compare **à la précision affichée** (3 décimales) — un sigma revenu arrondi de
+> la modale n'est pas une modification. Le journal **réutilise ce prédicat** au lieu de
+> recomparer : sinon on tracerait des modifications que la route ne juge pas telles, et
+> inversement.
+>
+> **Une lecture ajoutée** : `consecutive_missed` n'était pas relu. Il l'est maintenant, **pour
+> le journal seul** — il ne participe pas à la comparaison qui décide des droits, seul le
+> superadmin y touche. Tracer une modification sans dire d'où elle part ne sert à rien.
+>
+> **Trois suppressions auditées AVANT de détruire** (`api_delete_joueur`,
+> `revert_last_tournament`, `delete_tournament`) : après le `DELETE`, il ne reste rien à
+> consigner — ni le nom de la fiche, ni le nombre de participants. Une assertion vérifie
+> l'ordre pour chacune, et elle vire au rouge si on les inverse.
+>
+> **Deux actions pour `update_config`**, pas une : cette route sert `gestion_config` **et**
+> `gestion_ligues`. Les confondre rendrait impossible de filtrer « qui a touché aux ligues »
+> sans relire chaque ligne de `details`. `setup_ligues` réutilise `ligues_configurees` — même
+> domaine, même nom.
+>
+> ⚠️ **`delete_tournament` consigne `"scores_restaures": false`.** Contrairement à
+> l'annulation, elle ne restaure pas les mu/sigma (R-37). Le journal le dit, faute de pouvoir
+> le corriger dans cette phase.
+>
+> **Le gel du vocabulaire est devenu exécutable** : le test vérifie que les neuf actions
+> portent leur nom figé, que `joueur_cree` est réutilisé et non redoublé, et qu'aucun synonyme
+> concurrent n'apparaît. Vérifié en renommant une action — l'assertion mord.
 
 Les 10 actions du §3.1, avec l'**avant/après** dans `details`.
 
-Vocabulaire proposé (à figer avant de coder) :
+#### 5.2bis Vocabulaire — **[FIGÉ le 2026-09-18]**
 
-```
-joueur_modifie      joueur_cree        joueur_supprime
-tournoi_ajoute      tournoi_supprime   tournoi_annule
-reset_global        reset_global_annule
-config_modifiee     ligues_configurees
-```
+> Figé avant d'écrire la moindre ligne, parce que **renommer une action après coup laisse des
+> lignes orphelines qu'aucun filtre ne retrouve** : les anciennes gardent l'ancien nom, les
+> nouvelles portent le nouveau, et plus rien ne les réunit.
+
+**La convention, relevée dans les 20 actions déjà écrites** : `<objet>_<participe passé>`
+(`joueur_cree`, `statut_change`, `permission_accordee`, `liaison_approuvee`…). Elle a une
+conséquence pratique qu'il faut préserver : un filtre par préfixe (`joueur_%`) ramène tout le
+domaine d'un coup. C'est ce qui rend l'écran de la phase 3 utilisable sans catalogue.
+
+**Déjà en service — à RÉUTILISER, surtout pas à recréer :**
+
+| Action | Ce qu'elle trace | Où |
+|---|---|---|
+| `joueur_cree` | Fiche créée à l'approbation d'une liaison | `routes_comptes.py` |
+| `joueur_anonymise` | Anonymisation du pseudo (RGPD, irréversible) | `routes_admin.py` |
+
+⚠️ **`joueur_cree` existait déjà** alors que ce plan le listait comme nouveau. La phase 2 doit
+l'**appeler**, pas le redéfinir : deux actions homonymes traçant deux gestes différents seraient
+indémêlables une fois en base.
+
+**Nouvelles actions de la phase 2 :**
+
+| Action | Ce qu'elle trace | `cible_type` |
+|---|---|---|
+| `joueur_modifie` | Renommage, couleur, statut classé, **et mu/sigma** | `joueur` |
+| `joueur_supprime` | Suppression d'une fiche | `joueur` |
+| `tournoi_ajoute` | Enregistrement d'un tournoi | `tournoi` |
+| `tournoi_supprime` | Suppression d'un tournoi | `tournoi` |
+| `tournoi_annule` | Annulation (retour à l'état d'avant) | `tournoi` |
+| `reset_global_applique` | Reset global du sigma | `systeme` |
+| `reset_global_annule` | Annulation du reset | `systeme` |
+| `config_modifiee` | Paramètres TrueSkill | `systeme` |
+| `ligues_configurees` | Bascule ligues / mouvements inter-ligues | `systeme` |
+
+ℹ️ **Un seul écart au plan d'origine** : `reset_global` → **`reset_global_applique`**. Le nom nu
+n'est pas un participe passé et cassait la convention ; surtout, il se lisait mal à côté de
+`reset_global_annule`, où l'on n'aurait plus su si `reset_global` désignait l'application ou le
+domaine entier.
+
+**`cible_type` reste dans le vocabulaire existant** — `compte`, `joueur`, `invitation`, `systeme`
+— augmenté de `tournoi`. N'en ajouter aucun autre sans raison : c'est la colonne sur laquelle
+l'écran groupera.
 
 **Pour mu/sigma**, `details` doit porter de quoi répondre à « qui a mis ce joueur à 32.5, et quelle
 était sa valeur avant » :
@@ -292,7 +413,44 @@ simples renommages — c'est la question posée à l'origine.
 `participations`, qui ne bouge plus une fois le tournoi enregistré — le dupliquer ferait grossir la
 table sans rien apprendre.
 
-### Phase 3 — L'écran de consultation
+### Phase 3 — L'écran de consultation — ✅ LIVRÉE le 2026-09-19
+
+> **Faite, backend et frontend.** `test_audit_lecture.py` : **57 assertions**.
+> Suite complète : **1588, aucune rouge.** Le journal se lit enfin — jusqu'ici la table ne
+> recevait que des `INSERT`, et **aucun `SELECT` nulle part**.
+>
+> ⚠️ **Le §6.3 avait été oublié en phase 2, et rattrapé ici.** La dénormalisation de
+> l'acteur (`details.acteur` : pseudo figé, empreinte du snowflake, rôle porté) devait être
+> écrite *avec* la phase 2. Elle ne l'a pas été. Les lignes écrites entre-temps restent donc
+> **anonymes si leur compte est supprimé** — rien ne peut le rattraper après coup, c'est la
+> limite que le plan annonçait déjà. Le helper la pose désormais pour toute écriture suivante.
+>
+> **Une seule requête pour les trois chemins** (volet, onglet, export), comme le plan l'exige.
+> Une assertion vérifie qu'il n'existe qu'un `FROM audit_admin` dans tout le fichier : trois
+> requêtes finiraient par diverger, et la première à oublier le garde de rang deviendrait le
+> contournement de la règle.
+>
+> **Le filtre de rang est appliqué EN SQL**, pas à l'affichage. Rendre les lignes puis les
+> masquer les ferait transiter, et la pagination compterait des lignes invisibles — une page
+> de 50 en afficherait 12.
+>
+> ⚠️ **Corollaire assumé** : les lignes d'un compte **supprimé** ne sont visibles que du
+> superadmin. Un chef_admin ne peut pas vérifier le rang de quelqu'un qui n'existe plus, donc
+> il ne le lit pas — prudence plutôt que fuite.
+>
+> **Deux défauts trouvés en écrivant, tous deux par les tests :**
+>
+> - **Boucle infinie dans l'export.** Le garde anti-blocage comparait le **premier** id de la
+>   page au curseur au lieu du **dernier** : contre une source qui rejoue sa réponse, l'export
+>   ne se terminait jamais et tenait la connexion jusqu'au timeout, sans rien dire. Le même
+>   blocage viendrait d'un `ORDER BY` perdu en production.
+> - **Une seule assertion mordait** sur la règle de rang — la seule chose ici qui protège
+>   quelque chose. Révélé en neutralisant le filtre : **1 rouge sur 46**. Durci à **9**.
+>
+> **L'export CSV** streame de bout en bout (backend *et* proxy frontend), porte un BOM UTF-8
+> sans lequel Excel casse les accents, et **neutralise l'injection de formule** : un pseudo
+> Discord commençant par `=`, `+`, `-` ou `@` est exécuté par Excel et LibreOffice à
+> l'ouverture. Quatre assertions le vérifient.
 
 **Backend** — `GET /admin/comptes/<compte_id>/audit`, `@role_required(ROLE_CHEF_ADMIN)`, plus un
 garde-fou de rang sur la cible (§6.2). Pagination par curseur sur `created_at`.
@@ -308,8 +466,14 @@ menant à un 403 prévisible (§B.0 du plan hiérarchie).
 **Puis l'onglet *Logs*** (§4.2), qui réutilise la même requête sans le filtre d'acteur :
 
 - `GET /admin/audit` — journal complet, paginé, mêmes gardes de rang ;
-- `GET /admin/audit/export` — téléchargement JSON, **exactement la même requête** que la vue, pour
-  qu'aucun des deux chemins ne puisse montrer ce que l'autre masque ;
+- `GET /admin/audit/export` — téléchargement **CSV en streaming** (`stream_with_context` + curseur
+  serveur nommé), **exactement la même requête** que la vue, pour qu'aucun des deux chemins ne
+  puisse montrer ce que l'autre masque. **[TRANCHÉ, 18/09]** L'écran pagine (50 lignes), l'export
+  sort **tout depuis le début** — les deux usages sont différents et méritent chacun leur réponse.
+  ⚠️ Le streaming n'est pas une optimisation prématurée : un `SELECT *` matérialisé sur un journal
+  qui ne se purge jamais tombe **sans prévenir**, et le jour où il tombera sera précisément celui
+  où l'on cherche quelque chose. CSV et non JSON : ça s'ouvre dans un tableur, ce qui est l'usage
+  réel d'un export de journal ;
 - un 5ᵉ onglet dans `admin_comptes.html`, sur le patron des quatre existants (`data-onglet`).
 
 > Les deux routes de lecture se construisent sur une **fonction de requête unique** prenant un
@@ -608,24 +772,32 @@ passe pas inaperçu ; il fait son travail.
    du rôle actuel. Le bouton par ligne reste le chemin rapide, l'onglet le chemin exhaustif.
 2. ~~**Faut-il aussi un flux global ?**~~ **[TRANCHÉ, 13/09]** Oui — c'est l'onglet *Logs* (§4.2),
    avec téléchargement.
-3. **Faut-il tracer les lectures** (qui a consulté le journal de qui) ? Classique en audit, mais
-   ça se mord la queue si mal borné.
-4. **Le vocabulaire d'actions de la phase 2** est une proposition — à figer avant de coder, parce
-   que renommer une action après coup laisse des lignes orphelines qu'aucun filtre ne retrouve.
-5. **L'export doit-il être paginé ou complet ?** Un journal illimité finira par peser. Un export
-   « tout depuis le début » est ce qui a été demandé, mais il faudra une borne technique (streaming,
-   ou filtre de période obligatoire au-delà d'un certain volume) — à décider en phase 3, quand on
-   saura combien la table pèse réellement.
+3. ~~**Faut-il tracer les lectures** (qui a consulté le journal de qui) ?~~
+   **[TRANCHÉ, 18/09] Non.** Ça se mord la queue — consulter génère une ligne, qui sera
+   consultée — et le périmètre de lecture est déjà très étroit (chef_admin et superadmin
+   seuls, §6.2). Le bruit ajouté dépasserait le gain. À rouvrir seulement si une obligation
+   externe l'impose.
+4. ~~**Le vocabulaire d'actions de la phase 2**~~ **[FIGÉ, 18/09]** — voir §5.2bis (phase 2).
+   ⚠️ Relevé en le figeant : `joueur_cree` **existait déjà** (`routes_comptes.py`, création
+   d'une fiche à l'approbation d'une liaison), alors que ce plan le listait comme nouveau.
+   Le créer une seconde fois aurait donné deux actions homonymes traçant deux gestes
+   différents — exactement le genre de doublon qu'aucun filtre ne rattrape après coup.
+5. ~~**L'export doit-il être paginé ou complet ?**~~ **[TRANCHÉ, 18/09] Les deux, selon l'usage.**
+   L'écran pagine par curseur (50 lignes) ; le bouton « Télécharger » sort **tout depuis le
+   début** en CSV, **par streaming** (`stream_with_context` + curseur serveur), sans jamais
+   charger la table en mémoire. Le « tout depuis le début » demandé est donc tenu, sans le
+   risque de timeout d'un `SELECT *` matérialisé.
 
 ---
 
 ## 9. Ordre recommandé
 
-1. **Phase 1** — sans risque, purement soustractive, prépare tout le reste.
-2. **Phase 1bis** — le consentement au rôle d'admin. **Bloquante** : la phase 2 conserve des
-   identités sans limite de durée, informer après coup ne rattrape rien.
-3. **Phase 2** — le gros du travail, et la réponse à la demande d'origine (mu/sigma).
-4. **Phase 3** — les écrans, inutiles avant que la phase 2 ne les alimente.
+1. ~~**Phase 1**~~ — ✅ **livrée le 2026-09-18** (`backEnd/audit.py`, un seul chemin d'écriture).
+2. ~~**Phase 1bis**~~ — ✅ **livrée le 2026-09-18**. La dépendance d'ordre est donc **levée** :
+   la phase 2 peut commencer à tracer nominativement, les personnes concernées étant désormais
+   informées avant, et libres de refuser.
+3. ~~**Phase 2**~~ — ✅ **livrée le 2026-09-19**.
+4. ~~**Phase 3**~~ — ✅ **livrée le 2026-09-19**.
 5. **Phase 4** — le filet.
 
 Chaque phase est commitable séparément. Deux migrations : les colonnes de consentement (phase 1bis)

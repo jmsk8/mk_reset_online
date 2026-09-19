@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS public.audit_admin CASCADE;
 DROP TABLE IF EXISTS public.sessions_joueurs CASCADE;
 DROP TABLE IF EXISTS public.profils CASCADE;
 DROP TABLE IF EXISTS public.notifications CASCADE;
+DROP TABLE IF EXISTS public.promotions_proposees CASCADE;
 DROP TABLE IF EXISTS public.liaisons_demandes CASCADE;
 DROP TABLE IF EXISTS public.comptes CASCADE;
 DROP TABLE IF EXISTS public.invitations CASCADE;
@@ -329,6 +330,12 @@ CREATE TABLE public.comptes (
     invitation_id        integer REFERENCES public.invitations(id) ON DELETE SET NULL,
     cgu_accepted_at      timestamp with time zone,
     cgu_version          character varying(20),
+    -- Consentement DISTINCT de celui des CGU joueur : les actions d'un admin
+    -- sont tracees nominativement et conservees sans limite. Le consentement
+    -- donne a la creation du compte, quand la personne etait player, ne peut
+    -- pas couvrir un traitement qui n'existait pas encore.
+    cgu_admin_accepted_at timestamp with time zone,
+    cgu_admin_version     character varying(20),
     -- Rafraichi a chaque connexion, sans effet sur le site.
     discord_synced_at    timestamp with time zone,
     -- Derniere propagation ADMIN du pseudo vers joueurs.nom (jamais automatique).
@@ -386,6 +393,38 @@ CREATE TABLE public.liaisons_demandes (
 CREATE UNIQUE INDEX idx_liaison_pending_compte ON public.liaisons_demandes(compte_id) WHERE statut = 'pending';
 CREATE UNIQUE INDEX idx_liaison_pending_joueur ON public.liaisons_demandes(joueur_id) WHERE statut = 'pending';
 
+-- PROMOTIONS PROPOSEES -- le role d'admin ne s'impose pas, il s'accepte.
+-- Meme patron que liaisons_demandes : un etat en attente, une decision, une
+-- notification, un index unique partiel. Le role est pose a l'ACCEPTATION, par
+-- la personne elle-meme : un tiers ne peut pas consentir a sa place, et la
+-- phase 2 du journal tracera ses actions nominativement et sans limite de duree.
+CREATE TABLE public.promotions_proposees (
+    id           SERIAL PRIMARY KEY,
+    compte_id    integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
+    role_propose character varying(20) NOT NULL,
+    -- SET NULL : si le proposant part, la proposition reste valide -- elle a
+    -- ete faite par quelqu'un qui en avait le droit a ce moment-la.
+    propose_par  integer REFERENCES public.comptes(id) ON DELETE SET NULL,
+    statut       character varying(20) NOT NULL DEFAULT 'pending',
+    created_at   timestamp with time zone NOT NULL DEFAULT now(),
+    expires_at   timestamp with time zone NOT NULL,
+    decided_at   timestamp with time zone,
+    -- superadmin ne se propose pas : il se legue. player n'est pas une
+    -- promotion mais une retrogradation, qui reste unilaterale.
+    CONSTRAINT promotions_role_valide
+        CHECK (role_propose IN ('admin', 'chef_admin')),
+    CONSTRAINT promotions_statut_valide
+        CHECK (statut IN ('pending', 'accepted', 'refused', 'cancelled'))
+);
+ALTER TABLE public.promotions_proposees OWNER TO CURRENT_USER;
+
+-- Une seule proposition en attente par compte : sinon deux chef_admin peuvent
+-- proposer deux roles differents, et l'acceptation devient ambigue.
+CREATE UNIQUE INDEX idx_promotion_pending_compte
+    ON public.promotions_proposees(compte_id) WHERE statut = 'pending';
+CREATE INDEX idx_promotion_compte_statut
+    ON public.promotions_proposees(compte_id, statut);
+
 -- NOTIFICATIONS -- ce qu'un admin a decide sur le dos de quelqu'un.
 -- Texte fige a l'emission : une notification parle souvent d'une chose qui
 -- n'existe plus (la fiche supprimee, la demande refusee), et la reconstruire
@@ -441,6 +480,9 @@ CREATE TABLE public.audit_admin (
 );
 
 CREATE INDEX idx_audit_admin_created ON public.audit_admin(created_at DESC);
+-- Composite : l'ecran de consultation filtre sur l'acteur PUIS trie par date.
+-- Un index sur le seul acteur obligerait a trier a chaque page.
+CREATE INDEX idx_audit_admin_acteur ON public.audit_admin(acteur_compte_id, created_at DESC);
 
 -- NOMS_INTERDITS -- sha256(lower(nom)) des identites anonymisees, jamais le nom
 -- en clair : empeche add_tournament de recreer a la volee une fiche portant un

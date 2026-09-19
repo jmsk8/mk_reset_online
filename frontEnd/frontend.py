@@ -7,7 +7,7 @@ import time
 from urllib.parse import urlencode
 import json
 from flask import (Flask, g, render_template, request, redirect, url_for, session,
-                   flash, jsonify, Response)
+                   flash, jsonify, Response, stream_with_context)
 from datetime import timedelta, date
 from flask_wtf.csrf import CSRFProtect
 
@@ -1241,6 +1241,63 @@ def proxy_role(compte_id):
     return _proxy_admin('POST', f'/admin/comptes/{compte_id}/role', json_body=True)
 
 
+# La promotion au rang d'admin passe désormais par une proposition que la
+# personne accepte elle-même (phase 1bis du journal d'audit). Ces deux routes
+# sont côté PROPOSANT ; l'acceptation vit sous /mon-compte, avec les autres
+# gestes du titulaire.
+@app.route('/admin/comptes/<int:compte_id>/promotion', methods=['POST'])
+def proxy_proposer_promotion(compte_id):
+    return _proxy_admin('POST', f'/admin/comptes/{compte_id}/promotion', json_body=True)
+
+
+@app.route('/admin/comptes/<int:compte_id>/promotion', methods=['DELETE'])
+def proxy_annuler_promotion(compte_id):
+    return _proxy_admin('DELETE', f'/admin/comptes/{compte_id}/promotion')
+
+
+# Journal d'audit (phase 3). Trois proxys pour trois vues du meme filtre :
+# le volet d'une ligne, l'onglet complet, et l'export.
+@app.route('/admin/comptes/<int:compte_id>/audit')
+def proxy_journal_compte(compte_id):
+    qs = request.query_string.decode()
+    return _proxy_admin('GET', '/admin/comptes/%d/audit%s'
+                        % (compte_id, ('?' + qs) if qs else ''))
+
+
+@app.route('/admin/audit')
+def proxy_journal_complet():
+    qs = request.query_string.decode()
+    return _proxy_admin('GET', '/admin/audit' + (('?' + qs) if qs else ''))
+
+
+@app.route('/admin/audit/export')
+def proxy_journal_export():
+    """Relaie le CSV EN STREAMING, sans le matérialiser.
+
+    Contrairement aux autres proxys, celui-ci ne passe pas par
+    `backend_request` : cette fonction lit `response.json()`, ce qui chargerait
+    tout le fichier en mémoire côté frontend — exactement ce que le streaming
+    backend sert à éviter. On relaie le flux tel quel.
+    """
+    headers = admin_headers()
+    if headers is None:
+        return jsonify({'error': 'Non autorisé'}), 401
+    try:
+        amont = requests.get(f"{BACKEND_URL}/admin/audit/export",
+                             headers=headers, stream=True, timeout=120)
+    except Exception as e:
+        logger.error("Export du journal injoignable : %s", e)
+        return jsonify({'error': 'Service indisponible'}), 503
+    if amont.status_code != 200:
+        return jsonify({'error': 'Export refusé'}), amont.status_code
+    return Response(
+        stream_with_context(amont.iter_content(chunk_size=8192)),
+        mimetype=amont.headers.get('Content-Type', 'text/csv'),
+        headers={'Content-Disposition':
+                 amont.headers.get('Content-Disposition', 'attachment')},
+    )
+
+
 @app.route('/admin/comptes/<int:compte_id>/permissions', methods=['GET'])
 def proxy_permissions(compte_id):
     return _proxy_admin('GET', f'/admin/comptes/{compte_id}/permissions')
@@ -1384,6 +1441,57 @@ def proxy_cgu():
     if status == 200 and isinstance(session.get('compte'), dict):
         session['compte']['cgu_a_accepter'] = False
         session.modified = True
+    return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+
+
+@app.route('/mon-compte/promotion')
+def ma_promotion():
+    """Ce que le titulaire doit accepter : proposition de rôle, ou consentement.
+
+    Chargée en fetch depuis /mon-compte, comme la liste des appareils : la page
+    fait déjà plusieurs appels, et ce bloc n'existe que pour une minorité de
+    comptes.
+    """
+    headers = player_headers()
+    if headers is None:
+        return jsonify({'error': 'Non autorisé'}), 401
+    data, status = backend_request('GET', '/me/promotion', headers=headers)
+    return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+
+
+@app.route('/mon-compte/promotion', methods=['POST'])
+def repondre_promotion():
+    """Accepte ou refuse le rôle proposé.
+
+    En cas d'acceptation, le rôle change en base : la copie figée dans le
+    cookie (`session['compte']`) devient fausse, et la navbar montrerait encore
+    un player. On la purge plutôt que de la corriger à la main — la prochaine
+    requête la reconstruira depuis le backend, qui fait autorité.
+    """
+    headers = player_headers()
+    if headers is None:
+        return jsonify({'error': 'Non autorisé'}), 401
+
+    corps = request.get_json(silent=True) or {}
+    data, status = backend_request('POST', '/me/promotion', data={
+        'accepte': corps.get('accepte') is True,
+        'cgu_admin_version': corps.get('cgu_admin_version'),
+    }, headers=headers)
+
+    if status == 200 and isinstance(data, dict) and data.get('accepte'):
+        session.pop('compte', None)
+    return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+
+
+@app.route('/mon-compte/cgu-admin', methods=['POST'])
+def accepter_cgu_admin():
+    """Régularisation d'un admin déjà en poste. Ne change aucun rôle."""
+    headers = player_headers()
+    if headers is None:
+        return jsonify({'error': 'Non autorisé'}), 401
+    data, status = backend_request('POST', '/me/cgu-admin', data={
+        'version': (request.get_json(silent=True) or {}).get('version'),
+    }, headers=headers)
     return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
 
 

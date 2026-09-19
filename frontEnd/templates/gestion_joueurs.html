@@ -244,6 +244,13 @@
         const PEUT_CHAMPS_JOUEUR = {
             nom:          {{ 'true' if peut('joueurs_nom') else 'false' }},
             mu:           {{ 'true' if peut('edition_mu_sigma') else 'false' }},
+            {# `sigma` DOIT être déclaré, même s'il partage la permission de `mu` :
+               `peutChamp()` lit ce dictionnaire par clef, et une clef absente vaut
+               `undefined`, donc REFUS. Le champ sigma restait grisé pour tout le
+               monde -- superadmin compris -- alors que le backend, lui, l'autorisait
+               sous `edition_mu_sigma`. Ne pas déduire une clef d'une autre ici :
+               le mapping doit refléter PERMISSIONS_CHAMPS_JOUEUR à l'identique. #}
+            sigma:        {{ 'true' if peut('edition_mu_sigma') else 'false' }},
             color:        {{ 'true' if peut('joueurs_couleur') else 'false' }},
             is_ranked:    {{ 'true' if peut('joueurs_statut') else 'false' }},
             creation:     {{ 'true' if peut('joueurs_creation') else 'false' }},

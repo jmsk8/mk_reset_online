@@ -256,6 +256,15 @@ def apply_global_reset():
                     for joueur_id, old_sigma, new_sigma in lignes
                 ])
 
+                # Le detail par joueur vit deja dans global_reset_details : le
+                # dupliquer ici ferait grossir le journal sans rien apprendre.
+                # On garde ce qui identifie le GESTE et permet de le retrouver.
+                audit.ecrire(cur, 'reset_global_applique', 'systeme', reset_id, {
+                    "valeur": val, "max_sigma": max_sigma,
+                    "date_cible": str(target_date),
+                    "joueurs_touches": len(lignes),
+                })
+
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -318,6 +327,11 @@ def revert_global_reset():
                     # detail par joueur, mais il etait uniforme et sans plafond.
                     cur.execute("UPDATE Joueurs SET sigma = sigma - %s", (val,))
 
+                # AVANT le DELETE : la ligne disparait, et avec elle la seule
+                # trace de ce qui avait ete applique.
+                audit.ecrire(cur, 'reset_global_annule', 'systeme', reset_id, {
+                    "valeur_annulee": float(val), "date_du_reset": str(reset_date),
+                })
                 cur.execute("DELETE FROM global_resets WHERE id = %s", (reset_id,))
             conn.commit()
             recalculate_tiers()
@@ -484,6 +498,24 @@ def update_config():
                         UPDATE Joueurs
                         SET is_ranked = (COALESCE(consecutive_missed, 0) < %s)
                     """, (unranked_threshold,))
+
+                # DEUX actions distinctes et non une seule : cette route sert
+                # deux domaines sous deux permissions differentes
+                # (gestion_config et gestion_ligues). Les confondre dans le
+                # journal rendrait impossible de filtrer « qui a touche aux
+                # ligues » sans relire chaque ligne de details.
+                CLES_LIGUE = {'league_mode_enabled', 'inter_league_moves'}
+                ligue = {k: v for k, v in configs if k in CLES_LIGUE}
+                ts = {k: v for k, v in configs if k not in CLES_LIGUE}
+                if ts:
+                    audit.ecrire(cur, 'config_modifiee', 'systeme', None, {
+                        "cles": ts,
+                        # Le declassement touche TOUS les joueurs d'un coup :
+                        # le signaler evite de croire a un reglage anodin.
+                        "declassement_rejoue": unranked_threshold is not None,
+                    })
+                if ligue:
+                    audit.ecrire(cur, 'ligues_configurees', 'systeme', None, {"cles": ligue})
 
             conn.commit()
             recalculate_tiers()
@@ -894,7 +926,8 @@ def api_update_joueur(id):
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT nom, mu, sigma, is_ranked, color FROM Joueurs WHERE id=%s",
+                    "SELECT nom, mu, sigma, is_ranked, color, consecutive_missed"
+                    " FROM Joueurs WHERE id=%s",
                     (id,))
                 actuel = cur.fetchone()
         if actuel is None:
@@ -905,6 +938,11 @@ def api_update_joueur(id):
         # non numerique sorte en 400 avant toute verification de droit.
         courant = {"nom": actuel[0], "mu": float(actuel[1]), "sigma": float(actuel[2]),
                    "is_ranked": bool(actuel[3]), "color": actuel[4] or '#FFFFFF'}
+        # Hors de `courant` : ce champ n'est pas editable par le formulaire
+        # (seul le superadmin y touche), donc il n'a rien a faire dans la
+        # comparaison qui decide des droits. Il est lu pour le JOURNAL seul --
+        # tracer une modification sans dire d'ou elle part ne sert a rien.
+        actuel_absences = actuel[5]
         demande = dict(courant)
         if 'nom' in data:
             demande['nom'] = data['nom']
@@ -990,6 +1028,42 @@ def api_update_joueur(id):
                         "UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s, is_ranked=%s,"
                         " color=%s WHERE id=%s",
                         (nom, mu, sigma, is_ranked, color, id))
+
+                # C'est la trace qui repond a la question d'origine : « qui a
+                # mis ce joueur a 32.5, et quelle etait sa valeur avant ».
+                #
+                # `a_change()` fait deja tout le travail : il compare A LA
+                # PRECISION AFFICHEE, donc un sigma revenu inchange de la modale
+                # (8.333333333 -> 8.333) n'est PAS compte comme une
+                # modification. Reutiliser ce predicat plutot que de recomparer
+                # ici evite que le journal et la verification de droits ne
+                # divergent -- sinon on tracerait des modifications que la
+                # route n'a pas jugees telles, et inversement.
+                champs = [c for c in PERMISSIONS_CHAMPS_JOUEUR if a_change(c)]
+                if modifier_absences and consecutive_missed != actuel_absences:
+                    champs.append('consecutive_missed')
+                if champs:
+                    avant = {c: courant[c] for c in champs if c in courant}
+                    apres = {c: demande[c] for c in champs if c in demande}
+                    if 'consecutive_missed' in champs:
+                        avant['consecutive_missed'] = actuel_absences
+                        apres['consecutive_missed'] = consecutive_missed
+                    audit.ecrire(cur, 'joueur_modifie', 'joueur', id, {
+                        # Le nom de la fiche, FIGE a l'instant de l'action.
+                        # Sans lui, la ligne dit « fiche 7 modifiee » et il faut
+                        # aller chercher qui est le joueur 7 -- ou le deviner,
+                        # si la fiche a ete renommee ou supprimee depuis. C'est
+                        # le meme motif que la denormalisation de l'acteur.
+                        #
+                        # `courant` et non `demande` : on nomme la fiche telle
+                        # qu'elle etait AVANT, sinon un renommage afficherait le
+                        # nouveau nom pour une ligne qui raconte le changement.
+                        "joueur_nom": courant['nom'],
+                        "avant": avant, "apres": apres, "champs": champs,
+                        # Le drapeau qui permet de filtrer d'un coup d'oeil les
+                        # modifications de SCORE parmi les simples renommages.
+                        "score_modifie": bool({'mu', 'sigma'} & set(champs)),
+                    })
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -1080,6 +1154,14 @@ def api_delete_joueur(id):
                     compte_delie = {"id": compte_id, "pseudo": pseudo,
                                     "statut": nouveau_statut}
 
+                # AVANT le DELETE : la ligne d'audit doit etre ecrite tant que
+                # la fiche existe encore, et le nom consigne ici est la SEULE
+                # trace qui en restera -- la suppression emporte tout le reste
+                # par CASCADE.
+                audit.ecrire(cur, 'joueur_supprime', 'joueur', id, {
+                    "nom": row[0],
+                    "compte_delie": compte_delie['id'] if compte_delie else None,
+                })
                 cur.execute("DELETE FROM Joueurs WHERE id=%s", (id,))
             conn.commit()
             recalculate_tiers()
@@ -1206,9 +1288,22 @@ def api_add_joueur():
 
                 cur.execute(
                     """INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked, consecutive_missed, color)
-                       VALUES (%s, %s, %s, 'U', true, 0, %s)""",
+                       VALUES (%s, %s, %s, 'U', true, 0, %s) RETURNING id""",
                     (nom, mu, sigma, color)
                 )
+                joueur_id = cur.fetchone()[0]
+                # `joueur_cree` EXISTE DEJA (routes_comptes.py, creation a
+                # l'approbation d'une liaison) : on le reutilise. Une seconde
+                # action homonyme tracant le meme geste par un autre chemin
+                # serait indemelable une fois en base.
+                audit.ecrire(cur, 'joueur_cree', 'joueur', joueur_id, {
+                    "nom": nom, "mu": mu, "sigma": sigma, "color": color,
+                    "origine": "formulaire",
+                    # Un depart hors defaut est le geste qui exige
+                    # `edition_mu_sigma` : le distinguer ici evite de relire
+                    # les constantes pour comprendre la ligne.
+                    "score_impose": abs(mu - DEFAULT_MU) > 1e-9 or abs(sigma - DEFAULT_SIGMA) > 1e-9,
+                })
             conn.commit()
 
             recalculate_tiers()
@@ -1308,10 +1403,22 @@ def admin_saisons():
                         cur.execute(
                             """INSERT INTO saisons (nom, slug, date_debut, date_fin, config_awards, is_active,
                                victory_condition, is_yearly, is_league_recap, ip_version)
-                               VALUES (%s, %s, %s, %s, %s, false, %s, %s, true, %s)""",
+                               VALUES (%s, %s, %s, %s, %s, false, %s, %s, true, %s) RETURNING id""",
                             (nom, slug, d_debut, d_fin, config_json, victory_cond, is_yearly, ip_version)
                         )
+                        saison_id = cur.fetchone()[0]
 
+                        # `recap_cree` et non `saison_creee` : le brouillon EST
+                        # le recap, et c'est sous ce nom que l'ecran le designe.
+                        # Suit la convention <objet>_<participe> du §5.2bis.
+                        audit.ecrire(cur, 'recap_cree', 'saison', saison_id, {
+                            "nom": nom, "slug": slug,
+                            "type": "ligue_unifie",
+                            "periode": "%s -> %s" % (d_debut, d_fin),
+                            # Un brouillon ne publie rien : le distinguer evite
+                            # de lire la ligne comme une publication.
+                            "brouillon": True,
+                        })
                         conn.commit()
                         return jsonify({
                             "status": "success",
@@ -1327,6 +1434,13 @@ def admin_saisons():
                             (nom, slug, d_debut, d_fin, config_json, victory_cond, is_yearly,
                              include_league_stats, include_league_moves, ip_version)
                         )
+                        saison_id = cur.fetchone()[0]
+                        audit.ecrire(cur, 'recap_cree', 'saison', saison_id, {
+                            "nom": nom, "slug": slug,
+                            "type": "standard",
+                            "periode": "%s -> %s" % (d_debut, d_fin),
+                            "brouillon": True,
+                        })
                         conn.commit()
                         return jsonify({"status": "success"})
         except Exception as e:
@@ -1995,6 +2109,16 @@ def add_tournament():
                     % len(joueurs_data),
                 )
 
+                # En RESUME : le detail des scores vit deja dans
+                # `participations`, qui ne bouge plus une fois le tournoi
+                # enregistre. Le dupliquer ferait grossir le journal sans rien
+                # apprendre de plus.
+                audit.ecrire(cur, 'tournoi_ajoute', 'tournoi', tournoi_id, {
+                    "date": str(date_tournoi),
+                    "nb_joueurs": len(joueurs_data),
+                    "session_id": session_id,
+                })
+
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -2213,6 +2337,12 @@ def revert_last_tournament():
                 threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
                 annuler_absences(cur, [jid for jid, _, _ in participants], threshold)
 
+                # AVANT les DELETE : apres, il ne reste rien a consigner --
+                # ni la date, ni le nombre de participants.
+                audit.ecrire(cur, 'tournoi_annule', 'tournoi', tid, {
+                    "date": str(tdate), "nb_participants": len(participants),
+                    "session_id": tsession,
+                })
                 cur.execute("DELETE FROM ghost_log WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Participations WHERE tournoi_id = %s", (tid,))
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (tid,))
@@ -2261,6 +2391,15 @@ def delete_tournament(id):
                 parts = [r[0] for r in cur.fetchall()]
                 annuler_absences(cur, parts, threshold)
 
+                # AVANT le DELETE, meme raison qu'a l'annulation.
+                # ⚠️ Cette route est signalee dangereuse par R-37 : contrairement
+                # a l'annulation, elle NE RESTAURE PAS les mu/sigma. Le journal
+                # le consigne, faute de pouvoir le corriger ici.
+                audit.ecrire(cur, 'tournoi_supprime', 'tournoi', id, {
+                    "date": str(tdate), "nb_participants": len(parts),
+                    "session_id": tsession,
+                    "scores_restaures": False,
+                })
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (id,))
                 if tdate is not None:
                     drop_grille_snapshot_if_orphan(cur, tdate)
@@ -2334,6 +2473,16 @@ def setup_ligues():
                     cur.execute(f"UPDATE Joueurs SET ligue_id = NULL WHERE id NOT IN ({placeholders})", tuple(all_assigned_players))
                 else:
                     cur.execute("UPDATE Joueurs SET ligue_id = NULL")
+
+                # Meme action que les clefs de mode ligue d'update_config :
+                # c'est le meme domaine, sous la meme permission. Deux noms
+                # pour un domaine obligeraient a connaitre les deux pour le
+                # filtrer.
+                audit.ecrire(cur, 'ligues_configurees', 'systeme', None, {
+                    "nb_ligues": len(ligues_data),
+                    "ligues_supprimees": len(ids_to_remove),
+                    "joueurs_affectes": len(all_assigned_players),
+                })
 
             conn.commit()
             return jsonify({"status": "success", "message": "Configuration des ligues sauvegardée"})

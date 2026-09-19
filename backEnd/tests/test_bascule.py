@@ -116,17 +116,37 @@ print("\n=== R-38 / R-40 : qui écrit comptes.role ===")
 # Deja couvert cote route en phase 2 ; on verifie ici que rien n'a ouvert un
 # chemin d'ecriture du role en dehors des deux routes prevues.
 #
-# Trois ecritures attendues, pas une : changer_role (qui ne pose jamais
-# superadmin) et les DEUX UPDATE du legs, qui retrograde l'ancien avant de
-# promouvoir le nouveau dans la meme transaction. Exception deliberee et etroite
-# a R-40, expliquee en hierarchie-admin-plan.md 6bis.1 -- les deux routes ne
-# doivent PAS etre fusionnees : la garde du dernier superadmin de changer_role
-# refuserait justement la retrogradation par laquelle le legs commence.
+# QUATRE ecritures attendues, pas une. Chacune existe pour une raison que la
+# fusionner ferait perdre :
+#
+#   1. `changer_role` -- attribution et RETROGRADATION, qui reste unilaterale :
+#      on n'a pas a accepter de perdre un role. Ne pose jamais superadmin.
+#   2. et 3. les DEUX UPDATE du legs, qui retrograde l'ancien superadmin avant
+#      de promouvoir le nouveau dans la meme transaction. Exception deliberee a
+#      R-40 (hierarchie-admin-plan.md 6bis.1) : fusionner avec changer_role
+#      echouerait, sa garde du dernier superadmin refusant justement la
+#      retrogradation par laquelle le legs commence.
+#   4. `repondre_promotion` -- l'ACCEPTATION d'une promotion (phase 1bis du
+#      journal d'audit, 2026-09-18). C'est le seul endroit ou une PROMOTION
+#      vers admin/chef_admin pose desormais le role, et c'est la personne
+#      elle-meme qui le declenche : un tiers ne peut pas consentir a sa place,
+#      alors que ses actions seront tracees nominativement et sans limite.
+#
+# Ce compteur est un garde-fou : il doit augmenter UNIQUEMENT avec une raison
+# ecrite ici. Une cinquieme ecriture sans justification est une porte derobee
+# sur la seule frontiere de privilege de l'application.
 comptes_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
                                 'routes_comptes.py'), encoding='utf-8').read()
 ecritures = comptes_src.count("SET role")
-check("exactement trois écritures de comptes.role (changer_role + legs)",
-      ecritures == 3, ecritures)
+check("exactement quatre écritures de comptes.role (changer_role + legs + acceptation)",
+      ecritures == 4, ecritures)
+# La promotion ne doit PAS pouvoir poser le rôle : seule l'acceptation le fait.
+# Sans cette assertion, réintroduire un `SET role` dans proposer_promotion
+# passerait inaperçu — le compteur resterait à quatre.
+_proposer = comptes_src[comptes_src.index('def proposer_promotion'):
+                        comptes_src.index('def annuler_promotion')]
+check("proposer_promotion n'écrit JAMAIS le rôle : elle propose, elle ne pose pas",
+      'SET role' not in _proposer)
 check("le legs est bien une route distincte de changer_role",
       'leguer-superadmin' in comptes_src and 'def changer_role' in comptes_src)
 admin_src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',

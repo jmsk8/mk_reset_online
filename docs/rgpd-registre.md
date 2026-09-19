@@ -173,6 +173,34 @@ au lieu de l'allonger.
   - ou un collecteur qui expire par âge (journald avec `MaxRetentionSec=6month`, via
     `driver: journald` dans `x-journaux`) — plus propre, change le pilote de journalisation.
 
+## T6 — Journal des actions d'administration (côté administrateur)
+
+| | |
+|---|---|
+| **Finalité** | Traçabilité des actions d'administration du site |
+| **Base légale** | Intérêt légitime |
+| **Données** | Identifiant du compte administrateur, action, cible, date, détails |
+| **Conservation** | **Sans limite de durée**, et **au-delà de la suppression du compte** (l'identifiant est alors détaché, `ON DELETE SET NULL`) |
+| **Où** | Table `audit_admin` |
+
+⚠️ **Distinct de la mention du §4**, qui décrit le journal du point de vue du **joueur** dont le
+pseudo peut y figurer. Celui-ci le décrit du point de vue de l'**administrateur** dont les actions
+sont tracées — deux traitements différents, et le second n'était documenté nulle part avant le
+2026-09-18.
+
+**Consentement recueilli** : le rôle d'administrateur ne s'impose plus, il se **propose**
+(`promotions_proposees`). La personne l'accepte ou le refuse, et l'acceptation enregistre
+`cgu_admin_accepted_at` + `cgu_admin_version` — la version et pas seulement la date, pour pouvoir
+démontrer **quoi** a été accepté.
+
+Le consentement aux CGU donné à la création du compte ne pouvait pas couvrir ce traitement : il a
+été donné quand la personne était `player`, pour un traitement qui n'existait pas encore.
+
+- `[x]` Section « Si vous êtes administrateur » dans `/confidentialite` (2026-09-18).
+- `[ ]` ⚠️ **Les administrateurs déjà en poste** n'ont pas de consentement enregistré : la
+  migration ne rétrograde personne. L'écran le leur demande à leur prochaine connexion, sans
+  bloquer leur accès. À vérifier une fois en ligne que chacun l'a bien donné.
+
 ## Droits et leur mise en œuvre
 
 | Droit | Où | Effet |
