@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/css/styles.css">
     <link rel="stylesheet" href="../static/css/dark-mode.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
@@ -27,6 +28,17 @@
         .player-list-container {
             max-height: 400px;
             overflow-y: auto;
+        }
+
+        /* Joueur non classe ou inactif : presente en retrait, pas masque. Il
+           reste selectionnable — c'est un ordre de priorite, pas un filtre.
+           L'opacite se leve au survol pour que la cible reste franche. */
+        .player-item.joueur-secondaire {
+            opacity: 0.6;
+        }
+
+        .player-item.joueur-secondaire:hover {
+            opacity: 1;
         }
     </style>
 </head>
@@ -429,11 +441,39 @@
                 })
                 .catch(err => console.error(err));
 
+            /* Rang d'affichage d'un joueur dans le vivier.
+
+               Trois groupes, du plus courant au plus rare : on compose un
+               tournoi avec des joueurs classes et actifs, les autres sont la
+               par exception. Les faire remonter obligeait a passer devant eux
+               a chaque fois.
+
+               `tier` et `is_ranked` disent deux choses differentes :
+                 - tier 'U'        -> pas encore de rang (sigma trop haut)
+                 - is_ranked false -> trop de tournois manques d'affilee
+               Un joueur classe peut donc etre inactif, d'ou deux criteres et
+               non un seul. L'inactivite prime : c'est elle qui rend la
+               presence du joueur douteuse. */
+            function rangAffichage(player) {
+                if (player.is_ranked === false) return 2;              // inactifs
+                if (!player.tier || player.tier.toUpperCase() === 'U') return 1;  // unranked
+                return 0;                                              // classes actifs
+            }
+
             function renderPool() {
                 const filterText = searchInput.value.toLowerCase();
                 poolContainer.innerHTML = '';
-                
-                availablePlayers.forEach(player => {
+
+                /* Tri stable : a groupe egal, l'ordre du backend est conserve
+                   (score_trueskill decroissant). `slice()` pour ne pas
+                   reordonner availablePlayers, que d'autres fonctions lisent. */
+                const joueursTries = availablePlayers.slice().sort(
+                    (a, b) => rangAffichage(a) - rangAffichage(b)
+                );
+
+                let groupePrecedent = null;
+
+                joueursTries.forEach(player => {
                     const nom = player.nom;
                     const ligueId = player.ligue_id;
 
@@ -443,14 +483,31 @@
                         if (ligueId !== currentLeagueId) return;
                     }
 
+                    /* Un intitule a chaque changement de groupe : sans lui,
+                       rien ne dit pourquoi un joueur se retrouve en bas. */
+                    const groupe = rangAffichage(player);
+                    if (groupe !== groupePrecedent) {
+                        if (groupe > 0) {
+                            const titre = document.createElement('p');
+                            titre.className = 'heading has-text-grey mt-3 mb-1 px-2';
+                            titre.textContent = groupe === 1 ? 'Non classés' : 'Inactifs';
+                            poolContainer.appendChild(titre);
+                        }
+                        groupePrecedent = groupe;
+                    }
+
                     const div = document.createElement('div');
                     div.className = 'player-item has-text-light';
+                    if (groupe > 0) div.classList.add('joueur-secondaire');
                     div.innerHTML = `<i class="fas fa-user mr-2"></i> ${escapeHtml(nom)}`;
                     div.onclick = () => selectPlayer(nom);
                     poolContainer.appendChild(div);
                 });
 
-                if (poolContainer.children.length === 0) {
+                // On compte les joueurs, pas les intitules de groupe : sans
+                // ce selecteur, un en-tete suffirait a faire croire que le
+                // vivier n'est pas vide.
+                if (poolContainer.querySelectorAll('.player-item').length === 0) {
                     poolContainer.innerHTML = '<p class="has-text-grey has-text-centered is-size-7 mt-2">Aucun joueur correspondant (vérifiez la ligue)</p>';
                 }
             }

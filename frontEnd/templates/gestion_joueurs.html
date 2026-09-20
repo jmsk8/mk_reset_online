@@ -8,11 +8,44 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/css/styles.css">
     <link rel="stylesheet" href="../static/css/dark-mode.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
     <link rel="stylesheet" href="../static/css/animations.css">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <style>
+        /* En-tetes de colonnes triables.
+           L'icone est toujours presente, en retrait : elle annonce que la
+           colonne se trie. La faire apparaitre au seul survol la rendrait
+           invisible au doigt, ou il n'y a pas de survol. */
+        .th-triable {
+            cursor: pointer;
+            user-select: none;   /* un double-clic ne selectionne pas le titre */
+            white-space: nowrap;
+        }
+
+        .th-triable .icone-tri {
+            opacity: 0.35;
+            margin-left: 0.35rem;
+            font-size: 0.8em;
+            transition: opacity 0.15s ease;
+        }
+
+        .th-triable:hover .icone-tri {
+            opacity: 0.8;
+        }
+
+        /* Colonne qui gouverne le tri : sa fleche est pleine, et le titre
+           prend la teinte d'accent. */
+        .th-triable.tri-actif {
+            color: var(--primary-color, #3b82f6) !important;
+        }
+
+        .th-triable.tri-actif .icone-tri {
+            opacity: 1;
+        }
+    </style>
 </head>
 <body>
     {% include 'navbar.html' %}
@@ -104,12 +137,34 @@
                             <div class="table-container">
                                 <table class="table is-fullwidth is-hoverable" style="background-color: transparent;">
                                     <thead>
+                                        {# En-tetes triables. « Actions » ne l'est pas :
+                                           la colonne ne porte aucune donnee a comparer. #}
                                         <tr>
-                                            <th class="has-text-white has-text-centered" style="width: 60px;">Status</th>
-                                            <th class="has-text-white">Nom</th>
-                                            <th class="has-text-white">Mu</th>
-                                            <th class="has-text-white">Sigma</th>
-                                            <th class="has-text-white">Tier</th>
+                                            <th class="has-text-white has-text-centered th-triable" style="width: 60px;"
+                                                data-tri="status" onclick="trierJoueurs('status')"
+                                                title="Trier par statut">
+                                                Status <i class="icone-tri fas fa-sort"></i>
+                                            </th>
+                                            <th class="has-text-white th-triable"
+                                                data-tri="nom" onclick="trierJoueurs('nom')"
+                                                title="Trier par nom">
+                                                Nom <i class="icone-tri fas fa-sort"></i>
+                                            </th>
+                                            <th class="has-text-white th-triable"
+                                                data-tri="mu" onclick="trierJoueurs('mu')"
+                                                title="Trier par Mu">
+                                                Mu <i class="icone-tri fas fa-sort"></i>
+                                            </th>
+                                            <th class="has-text-white th-triable"
+                                                data-tri="sigma" onclick="trierJoueurs('sigma')"
+                                                title="Trier par Sigma">
+                                                Sigma <i class="icone-tri fas fa-sort"></i>
+                                            </th>
+                                            <th class="has-text-white th-triable"
+                                                data-tri="tier" onclick="trierJoueurs('tier')"
+                                                title="Trier par Tier">
+                                                Tier <i class="icone-tri fas fa-sort"></i>
+                                            </th>
                                             <th class="has-text-white has-text-right">Actions</th>
                                         </tr>
                                     </thead>

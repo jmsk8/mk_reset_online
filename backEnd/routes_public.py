@@ -1323,12 +1323,26 @@ def get_joueur_names():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT nom, ligue_id, score_trueskill FROM Joueurs ORDER BY score_trueskill DESC NULLS LAST")
+                # `tier` et `is_ranked` servent au tri du vivier de joueurs
+                # dans add_tournament : les deux notions sont distinctes et ne
+                # se deduisent pas l'une de l'autre. `tier = 'U'` dit qu'un
+                # joueur n'a pas encore de rang (sigma trop haut pour le
+                # classer) ; `is_ranked = false` dit qu'il a manque assez de
+                # tournois d'affilee pour etre considere inactif
+                # (GHOST_MISSED_THRESHOLD). Un joueur classe peut donc devenir
+                # inactif sans perdre son tier.
+                cur.execute("""
+                    SELECT nom, ligue_id, score_trueskill, tier, is_ranked
+                    FROM Joueurs
+                    ORDER BY score_trueskill DESC NULLS LAST
+                """)
                 joueurs = [
                     {
                         "nom": row[0],
                         "ligue_id": row[1],
                         "score_trueskill": round(float(row[2]), 3) if row[2] is not None else 0.0,
+                        "tier": (row[3] or 'U').strip(),
+                        "is_ranked": bool(row[4]) if row[4] is not None else True,
                     }
                     for row in cur.fetchall()
                 ]

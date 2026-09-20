@@ -33,12 +33,6 @@
             color: #e2e8f0 !important;
         }
 
-        a.navbar-item:hover, a.navbar-item:focus, a.navbar-item:active,
-        .navbar-link:hover, .navbar-link:focus, .navbar-link:active {
-            background-color: rgba(59, 130, 246, 0.2) !important; 
-            color: #ffffff !important;
-        }
-
         /* Bulma ne donne un fond aux dropdowns qu'a partir de 1024px : sous
            cette largeur, le seul fond est celui pose ici. Un translucide
            laissait voir la page defiler derriere le menu deroule. On garde
@@ -50,6 +44,67 @@
         
         .navbar-link:not(.is-arrowless)::after {
             border-color: #e2e8f0 !important;
+        }
+
+        /* Sous-menus replies par defaut.
+           Bulma ne pose `display:none` sur .navbar-dropdown qu'au-dessus de
+           1024px : en dessous il reste dans le flux, deplie en permanence, et
+           le menu s'ouvrait sur toutes les entrees a la fois. On le replie, et
+           c'est le clic sur l'en-tete qui le deroule.
+
+           `.zone-cloche` et `.zone-compte` sont exclues : elles vivent hors du
+           menu burger et ont deja leur propre mecanique d'ouverture. */
+        #navbarMenu .navbar-item.has-dropdown:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
+            display: none;
+        }
+
+        #navbarMenu .navbar-item.has-dropdown.est-ouverte:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
+            display: block;
+        }
+
+        /* Le chevron dit dans quel sens ira le prochain clic : vers le bas
+           replie, vers le haut deploye.
+
+           Bulma le masque en mobile (`.navbar-link::after{display:none}` dans
+           son bloc <=1023px) : la ou il ne servait a rien, sur un sous-menu
+           toujours ouvert, il devient le seul indice qu'il y a quelque chose
+           a deplier. On le reaffiche donc.
+
+           `display:block` reprend la valeur du mixin d'origine, que la regle
+           mobile ecrase. */
+        #navbarMenu .has-dropdown:not(.zone-cloche):not(.zone-compte) > .navbar-link:not(.is-arrowless)::after {
+            display: block;
+            transition: transform 0.2s ease;
+        }
+
+        /* La meme transformation que Bulma applique a `.has-dropdown-up` : le
+           `translate` recentre la fleche, qui pivote autour de son coin. */
+        #navbarMenu .has-dropdown.est-ouverte > .navbar-link:not(.is-arrowless)::after {
+            transform: rotate(135deg) translate(0.25em, -0.25em);
+        }
+
+        /* Retrait des entrees de sous-menu : sans lui, « Par Joueur » s'aligne
+           sur « Statistiques » et rien ne dit qu'il en depend. */
+        #navbarMenu .navbar-dropdown .navbar-item {
+            padding-left: 2.5rem !important;
+        }
+    }
+
+    /* Ecran large MAIS tactile (tablette posee, ecran de salon, PC tactile).
+       Bulma n'y prevoit que le survol, qui n'existe pas au doigt : son
+       `:focus-within` ouvrait le menu le temps d'un tap, puis le focus se
+       perdait et le menu se refermait seul. Le JS pilote donc l'ouverture au
+       clic, comme en mobile — ces deux regles sont ce qu'il actionne.
+
+       `hover: none` cible l'absence de survol, pas la taille : c'est la
+       propriete qui distingue un doigt d'une souris. */
+    @media screen and (min-width: 1024px) and (hover: none) {
+        #navbarMenu .navbar-item.has-dropdown:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
+            display: none;
+        }
+
+        #navbarMenu .navbar-item.has-dropdown.est-ouverte:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
+            display: block;
         }
     }
 
@@ -260,11 +315,6 @@
             color: #e2e8f0;
         }
         
-        .navbar-burger:hover, .navbar-burger:focus, .navbar-burger:active {
-            background-color: rgba(59, 130, 246, 0.2) !important;
-            color: white;
-        }
-
         .navbar-item.brand-item {
             font-size: 1.4rem;
             padding-left: 1rem;
@@ -377,7 +427,7 @@
             </div>
           </div>
 
-          <div class="navbar-item has-dropdown is-hoverable is-hidden-touch">
+          <div class="navbar-item has-dropdown is-hoverable zone-compte is-hidden-touch">
             <a class="navbar-link">
               {% if compte_joueur.avatar_url %}
                 <figure class="image is-24x24 mr-2">
@@ -591,6 +641,66 @@
     document.addEventListener('click', ev => {
       if (ev.target.closest('.cloche-mobile, .compte-mobile')) return;
       fermerPanneaux();
+    });
+
+    // Sous-menus du burger (Statistiques, Admin). Bulma les laisse deplies
+    // sous 1024px : le menu s'ouvrait sur toutes les entrees a la fois. Le
+    // CSS les replie, ce clic les deroule.
+    //
+    // Regles differentes de celles des panneaux ci-dessus, parce que le geste
+    // n'est pas le meme : ils vivent DANS le menu, alors plusieurs peuvent
+    // rester ouverts ensemble (on compare deux sections), et un clic ailleurs
+    // dans le menu ne les referme pas — seul un nouveau clic sur l'en-tete le
+    // fait. Fermer au clic exterieur reviendrait a refermer le burger.
+    document.querySelectorAll(
+      '#navbarMenu .navbar-item.has-dropdown:not(.zone-cloche):not(.zone-compte)'
+    ).forEach(section => {
+      const lien = section.querySelector('.navbar-link');
+      if (!lien) return;
+
+      lien.setAttribute('aria-expanded', 'false');
+      lien.addEventListener('click', ev => {
+        // Le clic pilote le menu dans deux cas : sous 1024px (pas de survol
+        // possible, le menu est replie par le CSS) et sur ecran tactile,
+        // quelle que soit la largeur.
+        //
+        // Sans le second cas, un ecran tactile large restait au regime de
+        // Bulma, qui ouvre sur `:hover`, `:focus` et `:focus-within`. Au
+        // doigt il n'y a pas de survol : le tap donnait le focus, le menu
+        // s'ouvrait, puis le focus se perdait aussitot et il se refermait
+        // tout seul. Ces en-tetes sont des <a> sans href, donc meme pas
+        // focusables de maniere fiable.
+        if (!window.matchMedia('(max-width: 1023px), (hover: none)').matches) return;
+        ev.preventDefault();
+        const ouvert = section.classList.toggle('est-ouverte');
+        lien.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
+      });
+    });
+
+    // Tactile sur ecran large : un tap hors du menu le referme. En mobile on
+    // s'en abstient (cf. plus haut : ce serait refermer le burger), mais ici
+    // le menu flotte au-dessus de la page, et le laisser ouvert masquerait ce
+    // qu'on vient de toucher.
+    document.addEventListener('click', ev => {
+      if (!window.matchMedia('(min-width: 1024px) and (hover: none)').matches) return;
+      if (ev.target.closest('#navbarMenu .navbar-item.has-dropdown')) return;
+      document.querySelectorAll('#navbarMenu .has-dropdown.est-ouverte').forEach(section => {
+        section.classList.remove('est-ouverte');
+        const lien = section.querySelector('.navbar-link');
+        if (lien) lien.setAttribute('aria-expanded', 'false');
+      });
+    });
+
+    // Refermer le burger remet ses sous-menus a plat : les rouvrir sur l'etat
+    // laisse au dernier passage donnerait un menu different a chaque ouverture.
+    document.querySelectorAll('.navbar-burger').forEach(burger => {
+      burger.addEventListener('click', () => {
+        document.querySelectorAll('#navbarMenu .has-dropdown.est-ouverte').forEach(section => {
+          section.classList.remove('est-ouverte');
+          const lien = section.querySelector('.navbar-link');
+          if (lien) lien.setAttribute('aria-expanded', 'false');
+        });
+      });
     });
 
     // Avatar Discord injoignable (lien expire, image bloquee) : sans repli,
