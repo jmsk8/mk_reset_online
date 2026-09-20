@@ -1,0 +1,51 @@
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake-4.3/Modules/CMakeDetermineSystem.cmake:12 (find_program)"
+      - "CMakeLists.txt:16 (project)"
+    mode: "program"
+    variable: "CMAKE_UNAME"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "uname"
+    candidate_directories:
+      - "/home/jmiccio/.local/bin/"
+      - "/home/jmiccio/bin/"
+      - "/app/bin/"
+      - "/usr/bin/"
+      - "/home/jmiccio/.var/app/com.visualstudio.code/data/node_modules/bin/"
+      - "/bin/"
+      - "/usr/local/bin/"
+    searched_directories:
+      - "/home/jmiccio/.local/bin/uname"
+      - "/home/jmiccio/bin/uname"
+      - "/app/bin/uname"
+    found: "/usr/bin/uname"
+    search_context:
+      ENV{PATH}:
+        - "/home/jmiccio/.local/bin"
+        - "/home/jmiccio/bin"
+        - "/app/bin"
+        - "/app/bin"
+        - "/app/bin"
+        - "/usr/bin"
+        - "/home/jmiccio/.var/app/com.visualstudio.code/data/node_modules/bin"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-4.3/Modules/CMakeDetermineSystem.cmake:212 (message)"
+      - "CMakeLists.txt:16 (project)"
+    message: |
+      The system is: Linux - 7.1.4-200.nobara.fc44.x86_64 - x86_64
+...
