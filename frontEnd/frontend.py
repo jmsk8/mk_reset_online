@@ -460,7 +460,15 @@ def recap_season(season_slug):
 
     data, status = backend_request('GET', url)
     if status != 200:
-        return render_template("recap.html", error="Saison introuvable ou erreur serveur", saison=None, view_mode=None, new_leagues_data=None)
+        # `recap.html` n'a jamais affiche la variable `error` qu'on lui passait :
+        # une saison introuvable rendait une page vide.
+        return render_template(
+            "introuvable.html",
+            titre="Ce récapitulatif n'est plus disponible",
+            message="La saison a été dépubliée ou supprimée.",
+            retour_url=url_for('recap_default'),
+            retour_libelle="Voir les récapitulatifs",
+        ), 404
 
     new_leagues_data = None
     if view_mode == 'new-leagues' and data.get('include_league_moves'):
@@ -566,8 +574,14 @@ def joueur_detail(joueur_id):
     data, status = backend_request('GET', f'/joueur/{joueur_id}')
     if status == 200:
         return _rendre_fiche_joueur(data.get('nom'), data)
-    flash("Joueur introuvable", "warning")
-    return redirect(url_for('index'))
+    return render_template(
+        "introuvable.html",
+        titre="Cette fiche joueur n'existe plus",
+        message="Elle a été supprimée ou anonymisée. Si c'était la vôtre, vous "
+                "pouvez en demander une nouvelle depuis « Mon compte ».",
+        retour_url=url_for('classement'),
+        retour_libelle="Voir le classement",
+    ), 404
 
 
 @app.route('/stats/joueur/<nom>')
@@ -630,9 +644,16 @@ def stats_tournoi_detail(tournoi_id):
     data, status = backend_request('GET', f'/stats/tournoi/{tournoi_id}')
     if status == 200:
         return render_template("stats_tournoi.html", date=data.get('date'), resultats=data.get('resultats', []))
-    else:
-        flash("Tournoi introuvable", "warning")
-        return redirect(url_for('index'))
+    # Une notification « nouveau tournoi » survit a l'annulation du tournoi :
+    # son texte est fige a l'emission. La page doit donc le dire, plutot que
+    # de rediriger vers l'accueil avec un bandeau qu'on ne lit pas.
+    return render_template(
+        "introuvable.html",
+        titre="Ce tournoi n'existe plus",
+        message="Il a été annulé ou supprimé.",
+        retour_url=url_for('stats_tournois'),
+        retour_libelle="Voir tous les tournois",
+    ), 404
 
 
 # ===========================================================================
@@ -731,6 +752,28 @@ def _maj_droits_session(corps):
     compte['role'] = corps.get('role')
     compte['permissions'] = corps.get('permissions')
     session.modified = True
+
+
+@app.errorhandler(404)
+def page_introuvable(_e):
+    """Toute URL inexistante aboutit a la meme page que les cibles disparues.
+
+    Sert d'abord les liens de notification : une URL figee a l'emission peut
+    designer une route qui n'existe plus apres un renommage, et Flask rendrait
+    sinon sa page d'erreur brute, sans navbar ni retour.
+
+    Les appels JSON gardent du JSON : la navbar et les pages d'administration
+    font tourner des `fetch()` qui parsent la reponse, et leur servir du HTML
+    les casserait sur une erreur bien plus difficile a lire qu'un 404.
+    """
+    if not _est_navigation(request.path):
+        return jsonify({'error': 'Ressource introuvable'}), 404
+    return render_template(
+        "introuvable.html",
+        titre="Page introuvable",
+        message="Cette adresse ne correspond à aucune page. Le lien est "
+                "peut-être périmé.",
+    ), 404
 
 
 @app.context_processor

@@ -53,7 +53,7 @@ SESSION_CANDIDATS_MAX = 100
 
 
 
-from routes_comptes import notifier_tous
+from routes_comptes import notifier, notifier_tous
 
 
 def _notifier_recap_publie(cur, saison_id):
@@ -62,7 +62,7 @@ def _notifier_recap_publie(cur, saison_id):
     Pas a sa creation : POST /admin/saisons cree un brouillon que /recap ne
     liste pas encore.
     """
-    cur.execute("SELECT nom FROM saisons WHERE id = %s", (saison_id,))
+    cur.execute("SELECT nom, slug FROM saisons WHERE id = %s", (saison_id,))
     row = cur.fetchone()
     if row is None:
         return
@@ -71,6 +71,7 @@ def _notifier_recap_publie(cur, saison_id):
         "Nouveau récapitulatif : %s" % row[0],
         "Le récap est en ligne, avec son classement et ses trophées. "
         "À lire dans « Récapitulatifs ».",
+        lien="/recap/%s" % row[1],
     )
 
 
@@ -1141,15 +1142,17 @@ def api_delete_joueur(id):
                          "statut": nouveau_statut,
                          "origine": "suppression_fiche"},
                     )
-                    cur.execute(
-                        """INSERT INTO notifications (compte_id, type, titre, corps)
-                           VALUES (%s, %s, %s, %s)""",
-                        (compte_id, 'fiche_supprimee',
-                         "Votre fiche joueur a été supprimée",
-                         "La fiche « %s » n'existe plus, et votre compte n'y est donc "
-                         "plus rattaché. Votre compte Discord, lui, est conservé : vous "
-                         "pouvez demander une nouvelle fiche depuis « Mon compte »."
-                         % row[0]),
+                    # Passe par le helper, comme tous les autres sites : cet
+                    # INSERT ecrit a la main etait le seul a diverger, et il
+                    # aurait fallu y reporter chaque evolution de la table.
+                    notifier(
+                        cur, compte_id, 'fiche_supprimee',
+                        "Votre fiche joueur a été supprimée",
+                        "La fiche « %s » n'existe plus, et votre compte n'y est donc "
+                        "plus rattaché. Votre compte Discord, lui, est conservé : vous "
+                        "pouvez demander une nouvelle fiche depuis « Mon compte »."
+                        % row[0],
+                        lien="/mon-compte/liaison",
                     )
                     compte_delie = {"id": compte_id, "pseudo": pseudo,
                                     "statut": nouveau_statut}
@@ -2107,6 +2110,7 @@ def add_tournament():
                     "Nouveau tournoi du %s" % date_tournoi.strftime('%d/%m/%Y'),
                     "%d joueurs y ont participé. Classement et TrueSkill sont à jour."
                     % len(joueurs_data),
+                    lien="/stats/tournoi/%d" % tournoi_id,
                 )
 
                 # En RESUME : le detail des scores vit deja dans

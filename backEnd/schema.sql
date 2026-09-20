@@ -435,6 +435,10 @@ CREATE TABLE public.notifications (
     type        character varying(40) NOT NULL,
     titre       character varying(160) NOT NULL,
     corps       text,
+    -- Fige a l'emission comme le texte, et pour la meme raison : resoudre
+    -- l'URL a l'affichage supposerait que la cible existe encore. NULL quand
+    -- la notification n'appelle aucune action.
+    lien        character varying(255),
     created_at  timestamp with time zone NOT NULL DEFAULT now(),
     lu_at       timestamp with time zone
 );

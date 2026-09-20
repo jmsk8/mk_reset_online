@@ -1,0 +1,135 @@
+{# Page servie quand la cible demandee n'existe pas ou plus.
+   Elle existe d'abord pour les notifications : leur texte est fige a
+   l'emission, donc une notification survit a ce dont elle parle. Cliquer
+   dessus apres coup doit l'expliquer, pas ejecter vers l'accueil avec un
+   bandeau qui disparait en trois secondes. #}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ titre|default("Page introuvable") }} - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    {# url_for et non « ../static/... » : un chemin relatif se resout depuis
+       l'URL de la page, et cette page-ci est servie sous des profondeurs
+       differentes. Depuis /stats/tournoi/<id>, « ../static » pointait sur
+       /stats/static/... -> 404, et la page s'affichait SANS son theme, donc
+       en blanc sur un site sombre. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <style>
+        /* Le Boo flotte : c'est un fantome, et ca occupe l'attente d'un
+           visiteur qui vient de tomber sur du vide. Respecte
+           prefers-reduced-motion, comme le reste du site. */
+        .boo-flottant {
+            width: 180px;
+            max-width: 45vw;
+            filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.55));
+            animation: booFlotte 4s ease-in-out infinite;
+        }
+        @keyframes booFlotte {
+            0%, 100% { transform: translateY(0) rotate(-2deg); }
+            50%      { transform: translateY(-16px) rotate(2deg); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .boo-flottant { animation: none; }
+        }
+
+        /* Halo froid derriere le fantome : rattache la page a la palette du
+           site (--primary-color) au lieu d'un blanc qui flotterait seul. */
+        .boo-halo {
+            display: inline-block;
+            position: relative;
+        }
+        .boo-halo::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 260px;
+            height: 260px;
+            max-width: 65vw;
+            max-height: 65vw;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle,
+                        rgba(59, 130, 246, 0.22) 0%,
+                        rgba(59, 130, 246, 0.08) 45%,
+                        transparent 70%);
+            z-index: -1;
+        }
+
+        .carte-introuvable {
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 2.5rem 1.5rem 2rem;
+            max-width: 620px;
+            margin: 0 auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+        .carte-introuvable .titre-introuvable {
+            color: var(--header-text-color);
+            margin-top: 1.5rem;
+        }
+        .carte-introuvable .message-introuvable {
+            color: var(--text-color);
+            opacity: 0.75;
+        }
+        /* Le code d'erreur est une indication technique : present pour qui le
+           cherche, mais il ne doit pas concurrencer le message. */
+        .code-erreur {
+            letter-spacing: 0.35em;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--primary-color);
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <section class="section">
+        <div class="container has-text-centered">
+            <div class="carte-introuvable">
+                <p class="code-erreur mb-4">Erreur 404</p>
+
+                <span class="boo-halo">
+                    {# alt vide : l'image est decorative, le titre juste en
+                       dessous porte deja l'information. #}
+                    <img src="{{ url_for('static', filename='img/decor/boo.png') }}"
+                         alt="" class="boo-flottant">
+                </span>
+
+                <h1 class="title is-4 titre-introuvable">
+                    {{ titre|default("Page introuvable") }}
+                </h1>
+                <p class="subtitle is-6 message-introuvable">
+                    {{ message|default("Cette page n'existe pas, ou n'existe plus.") }}
+                </p>
+
+                <div class="buttons is-centered mt-5">
+                    {% if retour_url %}
+                    <a href="{{ retour_url }}" class="button is-primary">
+                        <span class="icon"><i class="fas fa-arrow-left"></i></span>
+                        <span>{{ retour_libelle|default("Retour") }}</span>
+                    </a>
+                    {% endif %}
+                    <a href="/" class="button is-dark">
+                        <span class="icon"><i class="fas fa-house"></i></span>
+                        <span>Accueil</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+</body>
+</html>

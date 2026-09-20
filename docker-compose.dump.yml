@@ -49,6 +49,7 @@ services:
       - ./backEnd/migrations/2026-09-17_sous_permissions_fiche_joueur.sql:/docker-entrypoint-initdb.d/18_sous_permissions_fiche_joueur.sql
       - ./backEnd/migrations/2026-09-18_promotions_proposees.sql:/docker-entrypoint-initdb.d/19_promotions_proposees.sql
       - ./backEnd/migrations/2026-09-19_audit_index_acteur.sql:/docker-entrypoint-initdb.d/20_audit_index_acteur.sql
+      - ./backEnd/migrations/2026-09-20_notifications_lien.sql:/docker-entrypoint-initdb.d/21_notifications_lien.sql
 
       # Controle final : verifie que le rattrapage a bien eu lieu et ARRETE
       # l'initialisation sinon. Sans lui, une migration qui echoue laisse une

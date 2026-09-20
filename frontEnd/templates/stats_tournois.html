@@ -112,12 +112,19 @@
                                 </table>
                             </div>
 
-                            <nav class="pagination is-centered mt-4" role="navigation" aria-label="pagination">
-                                <a class="pagination-previous" disabled>Précédent</a>
-                                <a class="pagination-next">Suivant</a>
-                                <ul class="pagination-list">
-                                    <li><a class="pagination-link is-current" aria-label="Page 1" aria-current="page">1</a></li>
-                                </ul>
+                            {# Compteur : sur une page de 20 lignes, rien ne dit
+                               combien de tournois existent en tout. #}
+                            <p class="has-text-grey is-size-7 has-text-centered mt-3"
+                               id="compteurTournois"></p>
+
+                            {# Pagination construite par le JS : le nombre de
+                               pages depend des lignes reellement affichees, qui
+                               varie avec le filtre par date. #}
+                            <nav class="pagination is-centered mt-2" role="navigation"
+                                 aria-label="pagination" id="paginationTournois">
+                                <a class="pagination-previous" id="pagePrecedente">Précédent</a>
+                                <a class="pagination-next" id="pageSuivante">Suivant</a>
+                                <ul class="pagination-list" id="listePages"></ul>
                             </nav>
                         </div>
                     </div>
@@ -134,20 +141,136 @@
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => { elem.classList.add('visible'); });
             
+            /* Historique des tournois : filtre par date + pagination.
+
+               Toutes les lignes sont rendues par le serveur en une fois ; la
+               pagination se fait donc ici, sans appel reseau. Les deux
+               mecanismes sont lies : filtrer change le nombre de lignes, donc
+               le nombre de pages. Les traiter separement donnait une
+               pagination calculee sur des lignes deja masquees. */
+            const PAR_PAGE = 20;
+
             const dateSearch = document.getElementById('tournoisDateSearch');
             const btnSearchDate = document.getElementById('btnSearchDate');
-            
-            function filterTournois() {
-                const searchDate = dateSearch.value;
-                if (!searchDate) return;
-                const rows = document.querySelectorAll('.tournoi-row');
-                rows.forEach(row => {
-                    const rowDate = row.getAttribute('data-date');
-                    if (rowDate.includes(searchDate)) row.style.display = '';
-                    else row.style.display = 'none';
+            const listePages = document.getElementById('listePages');
+            const pagination = document.getElementById('paginationTournois');
+            const compteur = document.getElementById('compteurTournois');
+            const btnPrec = document.getElementById('pagePrecedente');
+            const btnSuiv = document.getElementById('pageSuivante');
+
+            const toutesLignes = Array.from(document.querySelectorAll('.tournoi-row'));
+            let lignesFiltrees = toutesLignes;
+            let pageCourante = 1;
+
+            function nbPages() {
+                return Math.max(1, Math.ceil(lignesFiltrees.length / PAR_PAGE));
+            }
+
+            /* Affiche la tranche correspondant a `pageCourante`. On masque
+               TOUTES les lignes puis on revele la tranche : repartir de l'etat
+               precedent laisserait visibles celles d'une page plus longue. */
+            function afficherPage() {
+                toutesLignes.forEach(l => { l.style.display = 'none'; });
+
+                const debut = (pageCourante - 1) * PAR_PAGE;
+                lignesFiltrees.slice(debut, debut + PAR_PAGE)
+                              .forEach(l => { l.style.display = ''; });
+
+                majCompteur(debut);
+                majPagination();
+            }
+
+            function majCompteur(debut) {
+                const total = lignesFiltrees.length;
+                if (total === 0) {
+                    compteur.textContent = 'Aucun tournoi ne correspond à cette date.';
+                    return;
+                }
+                const fin = Math.min(debut + PAR_PAGE, total);
+                compteur.textContent = 'Tournois ' + (debut + 1) + ' à ' + fin
+                                     + ' sur ' + total;
+            }
+
+            function majPagination() {
+                const pages = nbPages();
+
+                // Une seule page : la barre n'a rien a proposer.
+                pagination.style.display = pages > 1 ? '' : 'none';
+                if (pages <= 1) return;
+
+                /* `is-disabled` de Bulma ne fait que griser : il laisse
+                   passer le clic. `allerA` borne deja la page, donc rien ne
+                   casserait — mais un bouton qui reagit alors qu'il est
+                   affiche comme inerte trompe l'oeil. On coupe les evenements
+                   pour que l'apparence et le comportement concordent. */
+                [[btnPrec, pageCourante === 1],
+                 [btnSuiv, pageCourante === pages]].forEach(([bouton, inerte]) => {
+                    bouton.classList.toggle('is-disabled', inerte);
+                    bouton.style.pointerEvents = inerte ? 'none' : '';
+                    bouton.setAttribute('aria-disabled', inerte ? 'true' : 'false');
+                });
+
+                listePages.innerHTML = '';
+
+                /* Fenetre glissante autour de la page courante, avec toujours
+                   la premiere et la derniere. Lister 40 pages de suite les
+                   rendrait toutes illisibles. */
+                const aAfficher = new Set([1, pages, pageCourante,
+                                           pageCourante - 1, pageCourante + 1]);
+                let precedente = 0;
+                Array.from(aAfficher).filter(n => n >= 1 && n <= pages)
+                     .sort((a, b) => a - b)
+                     .forEach(n => {
+                    if (n - precedente > 1) {
+                        const trou = document.createElement('li');
+                        trou.innerHTML = '<span class="pagination-ellipsis">&hellip;</span>';
+                        listePages.appendChild(trou);
+                    }
+                    const li = document.createElement('li');
+                    const lien = document.createElement('a');
+                    lien.className = 'pagination-link'
+                                   + (n === pageCourante ? ' is-current' : '');
+                    lien.textContent = n;
+                    lien.setAttribute('aria-label', 'Page ' + n);
+                    if (n === pageCourante) lien.setAttribute('aria-current', 'page');
+                    lien.addEventListener('click', () => allerA(n));
+                    li.appendChild(lien);
+                    listePages.appendChild(li);
+                    precedente = n;
                 });
             }
-            if(btnSearchDate) btnSearchDate.addEventListener('click', filterTournois);
+
+            function allerA(n) {
+                pageCourante = Math.min(Math.max(1, n), nbPages());
+                afficherPage();
+                // Le haut du tableau plutot que de la page : on reste dans le
+                // contexte de l'historique.
+                document.querySelector('.table-container')
+                        .scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+
+            btnPrec.addEventListener('click', () => allerA(pageCourante - 1));
+            btnSuiv.addEventListener('click', () => allerA(pageCourante + 1));
+
+            /* Le filtre porte sur TOUS les tournois, pas seulement la page
+               affichee — sinon chercher une date reviendrait a la chercher
+               dans les vingt lignes sous les yeux. Un champ vide rend la
+               liste complete, ce que l'ancienne version ne faisait pas. */
+            function filterTournois() {
+                const searchDate = dateSearch.value;
+                lignesFiltrees = searchDate
+                    ? toutesLignes.filter(l => (l.getAttribute('data-date') || '')
+                                                .includes(searchDate))
+                    : toutesLignes;
+                pageCourante = 1;
+                afficherPage();
+            }
+
+            if (btnSearchDate) btnSearchDate.addEventListener('click', filterTournois);
+            // Vider le champ (ou choisir une autre date) rafraichit aussitot.
+            if (dateSearch) dateSearch.addEventListener('change', filterTournois);
+
+            afficherPage();
         });
     </script>
 </body>
