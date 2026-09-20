@@ -464,8 +464,8 @@ def recap_season(season_slug):
         # une saison introuvable rendait une page vide.
         return render_template(
             "introuvable.html",
-            titre="Ce récapitulatif n'est plus disponible",
-            message="La saison a été dépubliée ou supprimée.",
+            titre="Ce récapitulatif n'existe plus",
+            message="La saison a été supprimée.",
             retour_url=url_for('recap_default'),
             retour_libelle="Voir les récapitulatifs",
         ), 404

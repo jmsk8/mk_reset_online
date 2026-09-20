@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -102,6 +103,7 @@
     </style>
 </head>
 <body>
+    {% include 'decor.html' %}
     {% include 'navbar.html' %}
     
     <section class="hero is-primary is-small animated-gradient">

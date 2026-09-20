@@ -1,0 +1,214 @@
+{# ============================================================================
+   Décor de fond : champignons, étoiles et carapaces en filigrane.
+
+   À inclure juste après l'ouverture de <body>, sur toute page qui charge
+   `css/decor-mk.css` :
+
+       {% include 'decor.html' %}
+
+   Un seul exemplaire par page : les formes sont définies avec des `id`, que
+   deux inclusions rendraient ambigus.
+
+   `aria-hidden` et `role=presentation` : c'est un ornement, il n'a rien à
+   annoncer à un lecteur d'écran.
+   ========================================================================= #}
+
+<div class="decor-mk" aria-hidden="true" role="presentation"></div>
+
+    {# Les trois formes, definies une fois et reutilisees par <use>. Dans un
+       SVG de taille nulle : ce bloc ne s'affiche pas, il sert de bibliotheque. #}
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            {# Champignon : tracés repris du fichier mk-shroom.svg fourni,
+               remis à l'échelle 0-100 comme les autres formes.
+
+               Deux adaptations au décor monochrome :
+                 - les `class="contour"` du fichier d'origine ne faisaient que
+                   retracer chaque creux en trait noir ; sans couleur, elles
+                   n'ajoutent rien et sont retirées ;
+                 - le pied, blanc sur le modèle, devient une masse PLEINE. En
+                   creux il disparaît et il ne reste que le chapeau. Les yeux
+                   sont posés après lui pour s'y découper. #}
+            <g id="mk-champi">
+                <!-- chapeau -->
+                <path d="M 9.24,61.01 C 6.66,55.03 6.52,47.42 7.74,40.62 C 9.1,33.15 11.96,28.12 14.67,24.32 C 22.69,12.77 35.87,6.93 49.05,6.93 C 63.99,6.66 77.72,12.5 85.6,23.23 C 90.9,30.43 93.89,38.59 94.7,47.01 C 95.38,52.85 94.29,57.61 92.26,61.28 C 90.08,66.58 85.19,72.96 78.53,76.77 C 78.67,74.32 77.45,73.1 75,71.88 C 67.8,66.98 59.51,63.99 50.41,63.72 C 40.62,63.59 31.93,66.58 24.46,71.47 C 22.28,72.83 21.6,74.18 21.74,76.22 C 15.76,73.23 11.41,66.98 9.24,61.01 Z"/>
+                <!-- grande pastille -->
+                <circle cx="50.54" cy="31.25" r="21.33" class="decor-creux"/>
+                <!-- pastille gauche -->
+                <path d="M 14.67,24.59 C 12.77,27.85 11.14,31.25 10.05,35.46 C 8.29,42.39 7.88,50 8.97,57.2 C 9.38,59.51 9.51,60.73 9.78,61.55 C 12.36,59.1 14.27,55.71 15.08,51.63 C 16.17,46.33 16.17,40.22 15.62,35.05 C 15.22,30.71 14.95,27.31 14.67,24.59 Z" class="decor-creux"/>
+                <!-- pastille droite -->
+                <path d="M 85.6,23.91 C 87.5,27.04 89.27,30.84 90.35,35.05 C 92.12,42.12 92.53,49.59 91.58,56.52 C 91.17,59.1 90.76,60.73 90.35,61.68 C 87.91,59.1 86.14,55.84 85.46,51.77 C 84.51,46.2 84.51,40.22 85.05,35.05 C 85.33,30.84 85.6,27.04 85.6,23.91 Z" class="decor-creux"/>
+                <!-- pied -->
+                <path d="M 23.51,74.46 C 29.35,67.93 38.86,64.13 50,63.86 C 61.28,63.59 71.47,66.98 77.31,71.88 C 79.21,73.51 79.48,75.14 78.8,77.72 C 77.72,84.92 73.64,90.35 67.26,93.34 C 61.82,95.92 56.25,96.47 50.41,96.33 C 44.43,96.47 38.59,95.65 33.15,93.34 C 26.9,90.62 22.96,84.92 21.88,77.99 C 21.47,75.82 22.15,75 23.51,74.46 Z"/>
+                <!-- oeil gauche -->
+                <path d="M 41.71,68.21 C 43.48,68.21 44.16,70.38 44.16,74.46 C 44.16,78.8 43.48,83.29 41.71,83.29 C 39.95,83.29 39.13,80.84 39.13,75.95 C 39.13,71.47 39.95,68.34 41.71,68.21 Z" class="decor-creux"/>
+                <!-- oeil droit -->
+                <path d="M 60.73,68.21 C 62.5,68.21 63.18,70.38 63.18,74.46 C 63.18,78.8 62.5,83.29 60.73,83.29 C 58.97,83.29 58.15,80.84 58.15,75.95 C 58.15,71.47 58.97,68.34 60.73,68.21 Z" class="decor-creux"/>
+            </g>
+
+            {# Étoile : géométrie relevée sur l'image fournie plutôt que
+               dessinée à vue. Le rapport creux/pointe y vaut 0,57 — la version
+               précédente était à 0,40, d'où ses branches trop effilées.
+
+               Les sommets sont arrondis par des quadratiques, plus largement
+               aux pointes qu'aux creux, comme sur le modèle. Les yeux
+               reprennent leur position et leurs proportions mesurées, à peine
+               élargis : au plus petit format du décor, un ovale au rayon exact
+               disparaîtrait. #}
+            <g id="mk-etoile">
+                <path d="M48.30,5.71Q50.00,3.00 51.70,5.71L64.52,26.23Q65.79,28.27 68.12,28.85L91.59,34.70Q94.70,35.48 92.64,37.93L77.09,56.46Q75.55,58.30 75.72,60.70L77.40,84.83Q77.63,88.02 74.66,86.83L52.23,77.76Q50.00,76.86 47.77,77.76L25.34,86.83Q22.37,88.02 22.60,84.83L24.28,60.70Q24.45,58.30 22.91,56.46L7.36,37.93Q5.30,35.48 8.41,34.70L31.88,28.85Q34.21,28.27 35.48,26.23Z"/>
+                <ellipse cx="42.29" cy="49.81" rx="2.90" ry="7.99" class="decor-creux"/>
+                <ellipse cx="57.90" cy="49.81" rx="2.90" ry="7.99" class="decor-creux"/>
+            </g>
+
+            {# Carapace : tracés extraits du fichier fourni (Green Shell,
+               2D art), recadrés et remis à l'échelle 0-100 comme les deux
+               autres formes. La version dessinée à la main ne ressemblait pas
+               au modèle — coque vue de face au lieu des trois quarts.
+
+               Le vert de la coque et le crème du ventre deviennent la masse
+               pleine, le bandeau blanc et les contours noirs deviennent les
+               creux : c'est ce partage qui redonne les segments et les plis
+               avec une seule teinte. #}
+            <g id="mk-carapace">
+                <g transform="translate(-171.650,364.437) scale(0.97197,-0.97197)">
+                    <!-- coque -->
+                    <path transform="translate(218.2537,356.7669)" d="m 0,0 c -17.778,-4.046 -26.956,-23.328 -25.92,-38.361 0,0 0.518,-2.706 10.195,-2.592 14.688,0.173 43.372,18.316 51.148,20.562 5.679,1.641 7.431,1.383 7.431,1.383 0,0 -13.998,25.574 -42.854,19.008"/>
+                    <!-- bandeau -->
+                    <path transform="translate(265.4266,317.1956)" d="m 0,0 c 0,0 9.185,4.266 6.048,13.479 -2.765,8.122 -12.442,7.43 -18.317,5.702 -5.875,-1.728 -33.695,-19.871 -50.974,-20.736 -11.396,-0.57 -10.714,4.148 -10.714,4.148 0,0 -7.357,-1.216 -6.911,-8.122 0.346,-5.357 4.838,-8.294 12.268,-8.294 34.386,0 51.839,20.045 63.416,20.908 C -0.872,7.407 0,0 0,0" class="decor-creux"/>
+                    <!-- ventre -->
+                    <path transform="translate(196.4813,303.0267)" d="m 0,0 c 0,0 9.504,-19.354 34.904,-15.897 18.525,2.52 23.328,11.404 23.328,11.404 0,0 6.567,1.901 9.504,7.603 3.828,7.431 -0.348,18.118 -2.246,18.317 C 55.641,22.464 48.21,11.75 25.574,4.32 10.036,-0.78 0,0 0,0"/>
+                    <!-- contours -->
+                    <path transform="translate(266.0203,318.5599)" d="m 0,0 c -0.255,1.252 -0.624,2.563 -1.134,3.925 -0.443,1.182 -0.661,3.311 -5.425,3.311 -3.715,0 -11.456,-4.786 -12.994,-5.704 -9.888,-5.9 -27.108,-15.691 -49.972,-15.461 -14.965,0.151 -11.529,12.752 -5.959,14.253 0.018,-0.536 0.091,-0.919 0.255,-1.138 0.669,-0.891 2.014,-1.682 3.285,-1.942 24.822,-5.068 51.69,20.676 65.424,20.503 C 6.343,17.586 6.187,5.624 0,0 m -4.119,-13.392 c -5.222,-7.199 -13.669,-6.469 -18.699,-1.785 -0.825,0.768 -1.428,1.598 -1.094,0.672 0.904,-2.508 5.163,-6.379 10.384,-6.507 -0.909,-0.819 -1.847,-1.566 -2.8,-2.247 -5.252,-1.023 -13.637,1.9 -18.081,7.365 1.524,1.442 2.283,3.974 1.299,7.546 3.772,1.888 8.102,4.324 12.048,6.497 2.189,-9.881 13.149,-10.134 14.457,-3.41 0.05,0.26 0.067,0.625 -0.226,0.194 -0.233,-0.344 -0.916,-1.11 -1.502,-1.231 0.155,0.093 1.565,3.631 0.322,7.48 1.994,2.368 4.348,2.586 4.737,2.148 1.055,-1.19 4.058,-9.961 -0.845,-16.722 m -40.313,0.795 c 1.648,-4.218 5.781,-5.555 8.68,-4.207 4.218,-5.069 11.713,-8.369 17.792,-7.549 -3.735,-2.343 -7.622,-3.756 -11.047,-4.61 -8.728,-0.614 -17.96,5.399 -21.778,14.792 2.316,0.514 4.477,1.061 6.353,1.574 m 5.201,-17.688 c -1.221,-0.025 -5.146,0.013 -9.944,1.266 -3.994,1.785 -7.903,5.006 -10.272,9.165 1.186,0.701 1.963,2.248 1.739,4.358 1.913,0.303 3.809,0.661 5.628,1.045 3.793,-9.279 11.09,-14.733 19.636,-15.225 -3.48,-0.581 -6.056,-0.595 -6.787,-0.609 m -28.412,13.863 c 0.686,0.007 1.384,0.029 2.093,0.067 1.185,-2.691 2.932,-3.874 4.481,-3.916 1.626,-2.688 4.276,-5.248 6.684,-6.965 -4.672,2.011 -9.538,5.335 -13.258,10.814 m 1.805,39.865 c 0.633,-0.939 1.799,-1.996 2.94,-2.551 -0.902,-2.054 -3.303,-11.902 -3.384,-15.135 -2.155,-1.351 -4.799,-4.861 -5.261,-6.291 -0.852,0.439 -0.62,1.001 -0.686,2.123 -0.323,5.504 2.142,15.039 6.391,21.854 m 3.684,4.671 c 11.403,10.988 24.878,10.244 31.289,8.983 -3.553,-1.742 -6.521,-4.687 -8.207,-6.938 -8.678,0.314 -16.443,-3.159 -22.464,-8.079 -1.278,0.718 -2.262,1.804 -2.873,3.456 0.714,0.949 1.466,1.818 2.255,2.578 M -32.593,15.72 c 1.257,-0.232 4.573,-1.805 6.385,-3.027 -2.816,-1.449 -5.995,-3.079 -8.965,-4.581 0.637,2.34 2.054,6.326 2.58,7.608 M -58.269,-0.738 c -1.549,1.804 -4.251,4.548 -6.371,6.29 0.489,3.408 2.782,12.573 3.434,14.581 6.263,4.736 17.225,8.223 21.692,8.24 1.448,-3.356 4.115,-9.14 5.841,-12.098 -1.29,-1.411 -3.582,-6.845 -4.345,-9.593 -3.071,-1.535 -5.655,-2.786 -6.973,-3.333 -3.119,-1.294 -8.1,-3.087 -13.278,-4.087 m -7.443,5.275 c 1.05,-1.154 3.654,-4.414 4.912,-5.694 -2.98,-0.405 -5.935,-0.483 -8.554,0.013 -0.011,0.003 -0.024,0.005 -0.036,0.007 0.796,1.838 2.23,4.051 3.678,5.674 m 58.297,15.717 c -2.879,-0.316 -6.384,-1.301 -10.623,-3.37 -0.727,-0.356 -2.953,-1.504 -5.853,-2.997 -1.656,1.035 -5.395,3.086 -8.538,3.086 -0.448,2.146 -3.992,9.641 -5.191,11.916 1.39,1.53 5.906,5.63 9.906,7.405 0.063,-0.021 0.12,-0.041 0.173,-0.06 10.323,-3.642 16.65,-10.365 20.126,-15.98 M 4.021,16.653 c -0.904,0.937 -3.273,3.269 -7.962,3.662 -6.875,12.005 -17.379,16.436 -21.871,18.281 -9.676,3.974 -27.472,3.513 -38.876,-8.869 -6.028,-6.546 -9.935,-15.867 -10.705,-27.088 -9.397,-2.045 -11.97,-16.33 2.259,-18.693 0.706,-0.117 1.446,-0.204 2.212,-0.264 9.422,-16.044 26.778,-16.784 32.709,-16.623 3.048,0.083 17.927,1.094 28.293,12.459 2.573,0.835 5.24,2.725 7.759,6.188 1.11,1.527 3.182,5.985 2.491,12.198 11.075,7.908 5.046,17.343 3.691,18.749" class="decor-creux"/>
+                </g>
+            </g>
+        </defs>
+    </svg>
+
+    <script>
+    /* Decor de fond : semis aleatoire de champignons, etoiles et carapaces.
+
+       Genere en JS plutot que fige dans le HTML pour que le fond change a
+       chaque visite. Le tirage est contraint sur trois points :
+
+         - les motifs restent dans les MARGES laterales, jamais au centre ou
+           vit le contenu ;
+         - deux motifs ne se chevauchent pas (on retire un tirage qui tombe
+           trop pres d'un precedent) ;
+         - la densite suit la largeur de l'ecran : un telephone recoit moins
+           de formes qu'un grand ecran, sinon le fond devient charge. */
+    (function () {
+        const zone = document.querySelector('.decor-mk');
+        if (!zone) return;
+
+        const FORMES = ['mk-champi', 'mk-etoile', 'mk-carapace'];
+
+        function tirer(min, max) { return min + Math.random() * (max - min); }
+
+        function generer() {
+            const large = window.innerWidth;
+            const mobile = large <= 768;
+
+            /* Les motifs se posent sur TOUTE la surface, colonne de contenu
+               comprise : les cantonner aux marges laissait le centre vide et
+               le decor se lisait comme deux bordures.
+
+               Ils passent donc derriere les cartes, qui sont opaques — d'ou
+               l'opacite reduite plus bas : ce qui depasse dans les marges ne
+               doit pas non plus attirer l'oeil. */
+            const nombre = Math.round(
+                Math.min(30, Math.max(10, large * window.innerHeight / 62000)));
+            const tailleMin = mobile ? 70 : 130;
+            const tailleMax = mobile ? 120 : 260;
+
+            const poses = [];
+            zone.innerHTML = '';
+
+            /* Les formes sont distribuees a tour de role, dans un ordre
+               melange, plutot que tirees independamment : un tirage purement
+               aleatoire sort regulierement quatre carapaces d'affilee et le
+               fond parait monotone. */
+            let pioche = [];
+            function prochaineForme() {
+                if (pioche.length === 0) {
+                    pioche = FORMES.slice();
+                    for (let i = pioche.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [pioche[i], pioche[j]] = [pioche[j], pioche[i]];
+                    }
+                }
+                return pioche.pop();
+            }
+
+            /* `tentatives` borne la recherche : sans elle, une zone saturee
+               ferait tourner la boucle indefiniment. */
+            let tentatives = 0;
+            while (poses.length < nombre && tentatives < nombre * 30) {
+                tentatives++;
+
+                const taille = tirer(tailleMin, tailleMax);
+                // Converti en % de largeur pour comparer a des positions en %.
+                const rayon = (taille / large) * 100 / 2;
+
+                /* `x` est le bord gauche du motif, en %. La plage va de -4 a
+                   104 moins sa largeur : un motif peut donc mordre legerement
+                   sur les bords de l'ecran, ce qui evite une bordure vide tout
+                   autour et fait paraitre le semis infini. */
+                const x = tirer(-4, 104 - rayon * 2);
+                /* `y` est en % de la HAUTEUR : la taille du motif, elle, est en
+                   pixels. On la reconvertit avec la hauteur de la fenetre, pas
+                   avec `rayon` qui est deja un pourcentage de la largeur. */
+                const hauteurPct = taille / window.innerHeight * 100;
+                const y = tirer(-4, 104 - hauteurPct);
+
+                // Chevauchement : on compare les centres, en points de
+                // pourcentage. `* 0.55` tolere un frolement, pas un recouvrement.
+                const trop_pres = poses.some(pose => {
+                    const dx = (pose.x - x) * large / 100;
+                    const dy = (pose.y - y) * window.innerHeight / 100;
+                    return Math.hypot(dx, dy) < (pose.taille + taille) * 0.55;
+                });
+                if (trop_pres) continue;
+
+                poses.push({ x: x, y: y, taille: taille });
+
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('viewBox', '0 0 100 100');
+                svg.setAttribute('class', 'decor-forme');
+                svg.style.left = x + '%';
+                svg.style.top = y + '%';
+                svg.style.width = taille + 'px';
+                svg.style.transform = 'rotate(' + tirer(-30, 30).toFixed(1) + 'deg)';
+                /* Varier l'opacite donne de la profondeur : les formes pales
+                   paraissent plus lointaines.
+
+                   Valeurs abaissees depuis que le semis couvre tout l'ecran :
+                   au centre, les motifs ne sont plus masques par les marges
+                   vides mais par les cartes elles-memes. Ce qui depasse autour
+                   doit rester en-deca du seuil ou l'oeil s'y accroche. */
+                svg.style.opacity = tirer(mobile ? 0.16 : 0.22,
+                                          mobile ? 0.28 : 0.40).toFixed(2);
+
+                const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                use.setAttribute('href', '#' + prochaineForme());
+                svg.appendChild(use);
+                zone.appendChild(svg);
+            }
+        }
+
+        generer();
+
+        /* Un redimensionnement franc (rotation, fenetre redimensionnee) reprend
+           le semis : la densite et la taille des motifs dependent de la
+           surface disponible.
+           Temporise, sinon on regenere a chaque pixel pendant le glissement. */
+        let minuteur;
+        let derniereLargeur = window.innerWidth;
+        window.addEventListener('resize', () => {
+            if (Math.abs(window.innerWidth - derniereLargeur) < 80) return;
+            derniereLargeur = window.innerWidth;
+            clearTimeout(minuteur);
+            minuteur = setTimeout(generer, 250);
+        });
+    })();
+    </script>
