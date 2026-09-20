@@ -1,3 +1,26 @@
+{# Contenu du menu compte. Deux exemplaires existent dans le DOM (celui
+   colle au burger en mobile, celui du navbar-end en desktop) : la macro evite
+   qu'une entree ajoutee plus tard n'arrive que dans l'un des deux. #}
+{% macro entrees_compte() %}
+  <a class="navbar-item" href="/mon-compte">
+    <i class="fas fa-id-card mr-2"></i> Mon compte
+  </a>
+  {# Sans fiche rattachee, il n'y a pas de profil a montrer. #}
+  {% if compte_joueur.joueur_id %}
+    <a class="navbar-item" href="/joueur/{{ compte_joueur.joueur_id }}">
+      <i class="fas fa-id-badge mr-2"></i> Mon profil
+    </a>
+  {% else %}
+    <a class="navbar-item has-text-info" href="/mon-compte/liaison">
+      <i class="fas fa-link mr-2"></i> Me rattacher à un joueur
+    </a>
+  {% endif %}
+  <hr class="navbar-divider">
+  <a class="navbar-item" href="/logout">
+    <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
+  </a>
+{% endmacro %}
+
 <style>
     @media screen and (max-width: 1023px) {
         .navbar-menu {
@@ -16,8 +39,12 @@
             color: #ffffff !important;
         }
 
+        /* Bulma ne donne un fond aux dropdowns qu'a partir de 1024px : sous
+           cette largeur, le seul fond est celui pose ici. Un translucide
+           laissait voir la page defiler derriere le menu deroule. On garde
+           l'assombrissement voulu, mais en couleur pleine. */
         .navbar-item.has-dropdown .navbar-dropdown {
-            background-color: rgba(0, 0, 0, 0.2) !important;
+            background-color: #18212f !important;
             border: none !important;
         }
         
@@ -86,33 +113,78 @@
     @media screen and (max-width: 1023px) {
         /* Cible par le frere precedent : sans cloche (visiteur non connecte)
            la regle ne s'applique pas, le burger garde son auto et reste a
-           droite au lieu de remonter contre le logo. */
+           droite au lieu de remonter contre le logo.
+           Le burger occupe 4rem pour trois barres larges de 1rem : le reste
+           est du vide dans sa zone de clic, qui creusait un ecart avant lui.
+           On le ramene a la largeur de ses freres et l'espacement revient au
+           gap, seul a le decider pour les trois. */
         .cloche-mobile ~ .navbar-burger {
             margin-left: 0;
+            width: 2.75rem !important;
+        }
+
+        /* Un gap unique plutot que des paddings poses un par un : les trois
+           gardent le meme ecart. Sans cloche (visiteur non connecte) il ne
+           reste que le logo et le burger, que leur marge auto separe deja :
+           le gap ne change alors rien. */
+        .navbar-brand {
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        /* Seule la cloche pousse : la PP et le burger la suivent, colles.
+           Un auto sur chacun les eparpillerait a intervalles egaux. */
+        .compte-mobile {
+            margin-left: 0;
+            display: flex !important;
+            align-items: center;
+            padding: 0 !important;
+        }
+
+        /* Meme emprise pour la cloche et l'avatar : un bloc homogene demande
+           des elements de meme taille, pas seulement des ecarts egaux. */
+        .cloche-mobile > .navbar-link,
+        .compte-mobile > .navbar-link {
+            position: relative;   /* ancre la pastille du compteur */
+            height: 2.5rem;
+            width: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 !important;
+            background: transparent;
+            border-radius: 6px;
+            font-size: 0.95rem !important;
+        }
+
+        /* L'avatar porte le geste : une bordure le detache du fond sombre et
+           dit qu'il se clique, sans le chevron qu'on a retire. */
+        .compte-mobile figure.image {
+            height: 1.75rem;
+            width: 1.75rem;
+        }
+
+        .compte-mobile figure.image img {
+            height: 100%;
+            width: 100%;
+            object-fit: cover;
+            border: 1px solid rgba(226, 232, 240, 0.45);
+        }
+
+        .compte-mobile .icon {
+            height: 1.75rem;
+            width: 1.75rem;
+            font-size: 1.5rem;
         }
 
         .cloche-mobile {
             margin-left: auto;
             display: flex !important;
             align-items: center;
-            position: relative;   /* ancre la pastille du compteur */
             /* !important : la regle generique .navbar-item du bloc <=768px
                impose 1rem de padding vertical, qui decalerait la cloche par
                rapport au burger. */
             padding: 0 !important;
-        }
-
-        .cloche-mobile > .navbar-link {
-            height: 100%;
-            display: flex;
-            align-items: center;
-            /* Peu de padding a droite : le burger porte deja sa propre zone
-               de clic de 3.25rem, inutile d'en rajouter avant lui. */
-            padding: 0 0.25rem 0 0.5rem !important;
-            background: transparent;
-            /* La regle generique .navbar-link du bloc <=768px monte a 1.1rem ;
-               la cloche reste un accessoire a cote du burger, pas un pair. */
-            font-size: 0.95rem !important;
         }
 
         .cloche-mobile .icon {
@@ -128,16 +200,19 @@
             min-width: 1.1rem;
             padding: 0 0.3rem;
             margin-left: 0 !important;
-            /* Collee en haut a droite de l'icone : a cote, elle repoussait la
-               cloche vers le centre. */
+            /* En haut a droite DANS le carre du lien : posee a cote de
+               l'icone elle elargissait la cloche, debordante elle mordait sur
+               l'ecart qui la separe de la PP. */
             position: absolute;
-            top: 0.55rem;
-            right: 0;
+            top: 0.15rem;
+            right: 0.05rem;
+            pointer-events: none;   /* le clic revient a la cloche */
         }
 
         /* Sur mobile Bulma affiche les dropdowns en pleine largeur dans le
            flux : hors du menu deroulant, il faut le reposer en flottant. */
-        .cloche-mobile .navbar-dropdown {
+        .cloche-mobile .navbar-dropdown,
+        .compte-mobile .navbar-dropdown {
             display: none;
             position: fixed;
             /* fixe, pas absolu : la cloche est devenue le repere de sa
@@ -154,11 +229,19 @@
             z-index: 30;
         }
 
-        .cloche-mobile.est-ouverte .navbar-dropdown {
+        /* Trois liens : la largeur des notifications serait demesuree ici. */
+        .compte-mobile .navbar-dropdown {
+            width: auto;
+            min-width: 13rem;
+        }
+
+        .cloche-mobile.est-ouverte .navbar-dropdown,
+        .compte-mobile.est-ouverte .navbar-dropdown {
             display: block;
         }
 
-        .cloche-mobile .navbar-dropdown .navbar-item {
+        .cloche-mobile .navbar-dropdown .navbar-item,
+        .compte-mobile .navbar-dropdown .navbar-item {
             padding-top: 0.5rem !important;
             padding-bottom: 0.5rem !important;
             font-size: 0.95rem;
@@ -213,6 +296,27 @@
           </a>
           <div class="navbar-dropdown is-right liste-notifs">
             <div class="navbar-item has-text-grey">Chargement…</div>
+          </div>
+        </div>
+        {# Compte mobile : seul l'avatar, le pseudo prendrait la largeur que le
+           burger et la cloche laissent. Meme logique que la cloche, hors du
+           menu deroulant. #}
+        <div class="navbar-item has-dropdown zone-compte compte-mobile is-hidden-desktop">
+          <a class="navbar-link is-arrowless" title="{{ compte_joueur.pseudo }}"
+             aria-label="Menu du compte" aria-expanded="false">
+            {% if compte_joueur.avatar_url %}
+              <figure class="image is-32x32">
+                <img class="is-rounded" src="{{ compte_joueur.avatar_url }}"
+                     alt="" referrerpolicy="no-referrer" data-repli-avatar>
+              </figure>
+            {% else %}
+              {# Sans avatar Discord, une silhouette : un trou laisserait un
+                 bouton invisible a cote du burger. #}
+              <span class="icon"><i class="fas fa-user-circle"></i></span>
+            {% endif %}
+          </a>
+          <div class="navbar-dropdown is-right">
+            {{ entrees_compte() }}
           </div>
         </div>
       {% endif %}
@@ -273,7 +377,7 @@
             </div>
           </div>
 
-          <div class="navbar-item has-dropdown is-hoverable">
+          <div class="navbar-item has-dropdown is-hoverable is-hidden-touch">
             <a class="navbar-link">
               {% if compte_joueur.avatar_url %}
                 <figure class="image is-24x24 mr-2">
@@ -285,23 +389,7 @@
               <span>{{ compte_joueur.pseudo }}</span>
             </a>
             <div class="navbar-dropdown is-right">
-              <a class="navbar-item" href="/mon-compte">
-                <i class="fas fa-id-card mr-2"></i> Mon compte
-              </a>
-              {# Sans fiche rattachee, il n'y a pas de profil a montrer. #}
-              {% if compte_joueur.joueur_id %}
-                <a class="navbar-item" href="/joueur/{{ compte_joueur.joueur_id }}">
-                  <i class="fas fa-id-badge mr-2"></i> Mon profil
-                </a>
-              {% else %}
-                <a class="navbar-item has-text-info" href="/mon-compte/liaison">
-                  <i class="fas fa-link mr-2"></i> Me rattacher à un joueur
-                </a>
-              {% endif %}
-              <hr class="navbar-divider">
-              <a class="navbar-item" href="/logout">
-                <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
-              </a>
+              {{ entrees_compte() }}
             </div>
           </div>
         {% endif %}
@@ -475,6 +563,47 @@
       });
     }
 
+    // Cloche et avatar vivent hors du menu burger : Bulma n'ouvre leur
+    // dropdown qu'au survol, absent sur tactile. On les bascule au clic, et
+    // un seul reste ouvert a la fois — deux panneaux superposes se masquent.
+    const panneauxMobiles = document.querySelectorAll('.cloche-mobile, .compte-mobile');
+    panneauxMobiles.forEach(panneau => {
+      const lien = panneau.querySelector('.navbar-link');
+      lien.addEventListener('click', ev => {
+        ev.preventDefault();
+        const ouvrir = !panneau.classList.contains('est-ouverte');
+        fermerPanneaux();
+        if (ouvrir) {
+          panneau.classList.add('est-ouverte');
+          lien.setAttribute('aria-expanded', 'true');
+        }
+      });
+    });
+
+    function fermerPanneaux() {
+      panneauxMobiles.forEach(p => {
+        p.classList.remove('est-ouverte');
+        p.querySelector('.navbar-link').setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    // Un clic ailleurs referme : sans ca le panneau masque la page.
+    document.addEventListener('click', ev => {
+      if (ev.target.closest('.cloche-mobile, .compte-mobile')) return;
+      fermerPanneaux();
+    });
+
+    // Avatar Discord injoignable (lien expire, image bloquee) : sans repli,
+    // le bouton du compte serait invisible a cote du burger.
+    document.querySelectorAll('img[data-repli-avatar]').forEach(img => {
+      img.addEventListener('error', () => {
+        const silhouette = document.createElement('span');
+        silhouette.className = 'icon';
+        silhouette.innerHTML = '<i class="fas fa-user-circle"></i>';
+        img.closest('figure').replaceWith(silhouette);
+      });
+    });
+
     // Disparition automatique. Le compte a rebours se suspend au survol :
     // un message qui s'evapore pendant qu'on le lit est pire que rien.
     document.querySelectorAll('#messages-flash .notification').forEach(bulle => {
@@ -511,23 +640,6 @@
       const badges = document.querySelectorAll('.badge-notifs');
       const listes = document.querySelectorAll('.liste-notifs');
       if (!badges.length || !listes.length) return;
-
-      // La cloche mobile vit hors du menu burger : Bulma n'ouvre pas son
-      // dropdown au survol sur tactile, on le bascule au clic.
-      document.querySelectorAll('.cloche-mobile').forEach(cloche => {
-        const lien = cloche.querySelector('.navbar-link');
-        lien.addEventListener('click', ev => {
-          ev.preventDefault();
-          const ouvert = cloche.classList.toggle('est-ouverte');
-          lien.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
-        });
-        // Un clic ailleurs referme : sans ca le panneau masque la page.
-        document.addEventListener('click', ev => {
-          if (cloche.contains(ev.target)) return;
-          cloche.classList.remove('est-ouverte');
-          lien.setAttribute('aria-expanded', 'false');
-        });
-      });
 
       const ICONES = {
         liaison_approuvee: 'fa-circle-check has-text-success',
