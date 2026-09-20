@@ -224,26 +224,114 @@ document.addEventListener('DOMContentLoaded', () => {
 // recoit qu'un id par son onclick.
 const joueursCharges = {};
 
+/* Tri du tableau des joueurs.
+
+   `colonne` vaut null tant que l'utilisateur n'a rien demande : on affiche
+   alors la liste dans l'ordre du backend, sans la reordonner. */
+let triJoueurs = { colonne: null, ascendant: true };
+
+/* La derniere liste recue. On la garde pour pouvoir re-trier sans redemander
+   les joueurs au backend a chaque clic sur un en-tete. */
+let joueursListe = [];
+
+/* Valeur de comparaison d'un joueur pour une colonne donnee.
+
+   Chaque colonne renvoie un type homogene (nombre ou chaine), sans quoi la
+   comparaison melangerait les ordres. Les champs numeriques absents valent 0,
+   comme a l'affichage. */
+function valeurTri(player, colonne) {
+    switch (colonne) {
+        // Un booleen se trie comme 0/1 : les actifs d'un cote, les inactifs
+        // de l'autre, sans etat intermediaire.
+        case 'status': return player.is_ranked ? 1 : 0;
+        case 'nom':    return (player.nom || '').toLowerCase();
+        case 'mu':     return parseFloat(player.mu) || 0;
+        case 'sigma':  return parseFloat(player.sigma) || 0;
+        // '?' plutot que chaine vide : un tier absent se range avec les
+        // autres valeurs textuelles au lieu de remonter en tete.
+        case 'tier':   return (player.tier || '?').toUpperCase();
+        default:       return '';
+    }
+}
+
+function comparerJoueurs(a, b) {
+    const va = valeurTri(a, triJoueurs.colonne);
+    const vb = valeurTri(b, triJoueurs.colonne);
+    let ordre;
+    if (typeof va === 'string') {
+        // `localeCompare` pour que les accents se rangent comme en francais :
+        // « Élodie » doit suivre « Edgar », pas finir apres « Zoe ».
+        ordre = va.localeCompare(vb, 'fr', { sensitivity: 'base' });
+    } else {
+        ordre = va - vb;
+    }
+    return triJoueurs.ascendant ? ordre : -ordre;
+}
+
+/* Bascule le tri sur une colonne. Premier clic : croissant. Clic suivant sur
+   la meme colonne : on inverse. */
+function trierJoueurs(colonne) {
+    if (triJoueurs.colonne === colonne) {
+        triJoueurs.ascendant = !triJoueurs.ascendant;
+    } else {
+        triJoueurs = { colonne: colonne, ascendant: true };
+    }
+    majIndicateursTri();
+    afficherJoueurs();
+}
+
+/* La fleche sur l'en-tete actif. Les autres en-tetes reviennent a leur icone
+   neutre : deux fleches affichees en meme temps ne diraient plus laquelle
+   gouverne. */
+function majIndicateursTri() {
+    document.querySelectorAll('th[data-tri]').forEach(th => {
+        const icone = th.querySelector('.icone-tri');
+        if (!icone) return;
+        const actif = th.dataset.tri === triJoueurs.colonne;
+        th.classList.toggle('tri-actif', actif);
+        icone.className = 'icone-tri fas '
+            + (!actif ? 'fa-sort'
+                      : (triJoueurs.ascendant ? 'fa-sort-up' : 'fa-sort-down'));
+    });
+}
+
 async function loadPlayers() {
     const tbody = document.getElementById('playersTableBody');
     if (!tbody) return;
 
-    tbody.innerHTML = '<tr><td colspan="5" class="has-text-centered has-text-grey">Chargement en cours...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="has-text-centered has-text-grey">Chargement en cours...</td></tr>';
 
     const [res] = await Promise.all([apiCall('/admin/joueurs', 'GET'), loadTiersColorCache()]);
     tbody.innerHTML = '';
 
     if (res.error) {
-        tbody.innerHTML = `<tr><td colspan="5" class="has-text-danger has-text-centered">Erreur Backend: ${escapeHtml(res.error)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="has-text-danger has-text-centered">Erreur Backend: ${escapeHtml(res.error)}</td></tr>`;
         return;
     }
     
     if (!Array.isArray(res) || res.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="has-text-grey has-text-centered">Aucun joueur trouvé.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="has-text-grey has-text-centered">Aucun joueur trouvé.</td></tr>`;
         return;
     }
 
-    res.forEach(player => {
+    joueursListe = res;
+    afficherJoueurs();
+}
+
+/* Rend le tableau a partir de `joueursListe`. Separe du chargement : un clic
+   sur un en-tete re-trie la liste deja en memoire, sans appel reseau. */
+function afficherJoueurs() {
+    const tbody = document.getElementById('playersTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    // `slice()` : on ne reordonne pas la liste d'origine, qui garde l'ordre
+    // du backend pour le cas ou aucun tri n'est demande.
+    const liste = triJoueurs.colonne
+        ? joueursListe.slice().sort(comparerJoueurs)
+        : joueursListe;
+
+    liste.forEach(player => {
         joueursCharges[player.id] = player;
         const tr = document.createElement('tr');
         const tierBadge = getTierColor(player.tier);

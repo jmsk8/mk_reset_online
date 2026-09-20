@@ -2,11 +2,13 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - Gestion des Saisons</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../static/css/styles.css">
     <link rel="stylesheet" href="../static/css/dark-mode.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
     <link rel="stylesheet" href="../static/css/animations.css">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
@@ -132,6 +134,268 @@
             left: 3px;
             transform: rotate(-45deg);
         }
+
+        /* ------------------------------------------------------------------
+           SEUIL DU MODE TELEPHONE : 900px.
+
+           Plus large que les 768px de Bulma, parce que ce n'est pas la taille
+           de l'ecran qui decide ici mais celle du contenu : deux cartes cote
+           a cote, dont un formulaire dense, restent a l'etroit bien au-dessus
+           du seuil « tablette » standard.
+
+           Ce seuil est repete dans les trois @media ci-dessous et dans
+           `.visible-mode-tel` — les quatre doivent bouger ensemble.
+           ------------------------------------------------------------------ */
+
+        /* Boutons propres au mode telephone (le « + » et la croix).
+           `is-hidden-tablet` de Bulma ne convenait pas : il est fige a 769px,
+           et les aurait masques entre 769 et 900px, la ou on en a justement
+           besoin. */
+        .visible-mode-tel {
+            display: none;
+        }
+
+        @media screen and (max-width: 900px) {
+            .visible-mode-tel {
+                display: inline-flex;
+            }
+        }
+
+        /* ------------------------------------------------------------------
+           Telephone : la liste devient la vue principale, la creation passe
+           en modale.
+
+           Deux cartes cote a cote sur 360px donnent deux colonnes trop
+           etroites pour l'une comme pour l'autre. La liste est ce qu'on vient
+           consulter ; creer une saison est un geste ponctuel, qui a sa place
+           derriere un bouton.
+
+           Le formulaire n'est PAS duplique : c'est le meme markup, sorti du
+           flux et repositionne. Un second exemplaire aurait dedouble les
+           `id` du formulaire et casse le JS qui les lit.
+           ------------------------------------------------------------------ */
+        @media screen and (max-width: 900px) {
+            /* Replie par defaut. `display:none` plutot qu'une simple
+               transparence : les champs ne doivent etre ni tabulables ni lus
+               par un lecteur d'ecran tant que la modale est fermee. */
+            #blocNouvelleSaison {
+                display: none;
+            }
+
+            /* Ouvert : le bloc se comporte comme une modale Bulma. */
+            #blocNouvelleSaison.est-ouvert {
+                display: block;
+                position: fixed;
+                inset: 0;
+                /* Au-dessus de la navbar, que dark-mode.css pousse a 1000.
+                   Le 40 de Bulma suppose une navbar a 30 : ici elle serait
+                   passee par-dessus le haut de la modale, donc par-dessus sa
+                   croix de fermeture. */
+                z-index: 1100;
+                padding: 0;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            #blocNouvelleSaison.est-ouvert > .modal-background {
+                position: fixed;
+                inset: 0;
+                background-color: rgba(10, 10, 10, 0.86);
+                z-index: 0;   /* sous la carte, au-dessus du reste */
+            }
+
+            /* La carte flotte au-dessus du voile, avec une marge pour que le
+               voile reste cliquable sur les bords. */
+            #blocNouvelleSaison.est-ouvert > .card {
+                position: relative;
+                z-index: 1;
+                margin: 1rem;
+                /* Le formulaire est long : il defile dans la fenetre plutot
+                   que de deborder sous le pli. En colonne flex, seul le corps
+                   defile — l'en-tete reste en place, sinon la croix de
+                   fermeture disparaitrait des qu'on descend dans le
+                   formulaire. */
+                display: flex;
+                flex-direction: column;
+                max-height: calc(100vh - 2rem);
+                overflow: hidden;
+            }
+
+            #blocNouvelleSaison.est-ouvert > .card > .card-header {
+                flex-shrink: 0;
+            }
+
+            #blocNouvelleSaison.est-ouvert > .card > .card-content {
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            /* Le voile n'existe que dans ce mode : en desktop le bloc est une
+               colonne ordinaire, et un fond noir la recouvrirait. */
+            #blocNouvelleSaison > .modal-background {
+                display: none;
+            }
+
+            #blocNouvelleSaison.est-ouvert > .modal-background {
+                display: block;
+            }
+
+            /* La liste prend toute la largeur rendue disponible. `flex` en
+               plus de `width` : entre 769 et 900px Bulma met encore les
+               colonnes en ligne (son seuil a lui), et la base flex de `is-7`
+               l'aurait laissee a 58%. */
+            .column.is-7 {
+                width: 100%;
+                flex: none;
+            }
+
+            /* Le card-header est un flex en `align-items: stretch` : sans
+               marge automatique, ses boutons s'etirent sur toute la hauteur.
+               On les centre et on les decolle du bord. */
+            .card-header {
+                align-items: center;
+            }
+
+            .fermer-formulaire,
+            .bouton-ajout {
+                margin-right: 0.75rem;
+                flex-shrink: 0;   /* un titre long ne doit pas les ecraser */
+            }
+
+            /* Cible tactile confortable pour la croix : le `.delete` de Bulma
+               fait 20px par defaut, en dessous des 44px recommandes. */
+            .fermer-formulaire {
+                height: 2.5rem;
+                width: 2.5rem;
+                max-height: 2.5rem;
+                max-width: 2.5rem;
+            }
+
+            /* ---- Tableau des saisons -------------------------------------
+               Trois defauts se cumulaient sur telephone : le tableau debordait
+               de sa carte (« Actions » coupe), les dates s'enroulaient sur
+               deux lignes, et les trois boutons d'action s'empilaient a la
+               verticale faute de largeur.
+
+               `is-fullwidth` contraint le tableau a 100% de son parent : ses
+               colonnes se compriment alors jusqu'a ce que le contenu deborde.
+               On le laisse prendre la largeur qu'il lui faut et c'est le
+               `.table-container` qui defile — la page, elle, ne bouge pas. */
+            .tableau-saisons {
+                width: auto !important;
+                min-width: 100%;
+            }
+
+            /* Le conteneur porte le defilement. `touch` pour l'inertie iOS. */
+            .table-container {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            /* ---- Indice de defilement -----------------------------------
+               Un voile sombre au bord droit, qui laisse deviner que le
+               tableau continue. Il s'efface quand on atteint la fin.
+
+               Pose sur le parent fixe : sur le conteneur lui-meme, il aurait
+               defile avec le tableau et se serait promene au milieu des
+               colonnes. Le gradient part de transparent pour ne rien masquer
+               de lisible — seul le dernier centimetre s'assombrit. */
+            .zone-defilante {
+                position: relative;
+            }
+
+            .zone-defilante::after {
+                content: "";
+                position: absolute;
+                top: 0;
+                right: 0;
+                bottom: 0;
+                width: 2.5rem;
+                pointer-events: none;   /* le doigt atteint le tableau dessous */
+                background: linear-gradient(
+                    to right,
+                    rgba(15, 23, 42, 0) 0%,
+                    rgba(15, 23, 42, 0.75) 100%
+                );
+                /* Masque par defaut : le JS l'allume s'il y a vraiment de
+                   quoi defiler. Afficher d'abord puis corriger aurait fait
+                   clignoter une ombre sur un tableau vide, le temps que les
+                   saisons arrivent. */
+                opacity: 0;
+                transition: opacity 0.2s ease;
+            }
+
+            /* Il reste du tableau a droite : c'est le seul cas ou le voile
+               a quelque chose a annoncer. */
+            .zone-defilante.peut-defiler::after {
+                opacity: 1;
+            }
+
+            /* Les 1.5rem de Bulma coutent 3rem de largeur utile sur un ecran
+               de 360 : autant de moins pour le tableau. */
+            .card-content {
+                padding: 1rem 0.75rem;
+            }
+
+            /* Rien ne s'enroule : une date coupee en deux lignes fait grimper
+               la hauteur de ligne sans rien gagner en largeur. */
+            .tableau-saisons th,
+            .tableau-saisons td {
+                white-space: nowrap;
+                vertical-align: middle;
+            }
+
+            /* Seul le nom peut s'enrouler : c'est la colonne au texte libre,
+               et la seule qui gagne vraiment a passer a la ligne. */
+            .tableau-saisons td:first-child {
+                white-space: normal;
+                min-width: 11rem;
+            }
+
+            /* Les trois actions restent sur une ligne. `.buttons` de Bulma est
+               un flex qui passe a la ligne : sur une colonne etroite il
+               empilait les boutons les uns sous les autres. */
+            .tableau-saisons .buttons {
+                flex-wrap: nowrap;
+                justify-content: flex-end;
+            }
+
+            .tableau-saisons .buttons .button {
+                margin-bottom: 0;
+            }
+
+            /* Le badge de ligue passe sous le nom : colle a sa suite, il
+               imposait a la colonne la largeur « nom + badge » et cassait le
+               nom en deux lignes. */
+            .tableau-saisons .nom-saison {
+                display: block;
+            }
+
+            .tableau-saisons .badges-saison:not(:empty) {
+                display: block;
+                margin-top: 0.25rem;
+            }
+
+            /* La date tient sur une ligne, en un peu plus petit. */
+            .tableau-saisons .dates-saison {
+                white-space: nowrap;
+                font-size: 0.7rem;
+            }
+        }
+
+        /* Au-dela de 900px le bloc redevient une colonne : on neutralise tout
+           etat laisse par un passage en mode telephone (rotation de l'ecran,
+           redimensionnement), sinon la carte resterait en position fixe. */
+        @media screen and (min-width: 901px) {
+            #blocNouvelleSaison.est-ouvert {
+                position: static;
+                display: block;
+            }
+
+            #blocNouvelleSaison > .modal-background {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -142,9 +406,20 @@
             <h1 class="title has-text-white">Gestion des Saisons & Awards</h1>
 
             <div class="columns">
-                <div class="column is-5">
+                {# Sur telephone ce bloc sort du flux et devient une modale,
+                   ouverte par le bouton « + » de la liste : garder les deux
+                   cartes cote a cote sur 360px donnait deux colonnes trop
+                   etroites pour l'une comme pour l'autre. Le markup reste
+                   unique — c'est le CSS qui le repositionne. #}
+                <div class="column is-5" id="blocNouvelleSaison">
+                    <div class="modal-background" onclick="fermerFormulaireSaison()"></div>
                     <div class="card glass-card">
-                        <header class="card-header"><p class="card-header-title">Nouvelle Saison</p></header>
+                        <header class="card-header">
+                            <p class="card-header-title">Nouvelle Saison</p>
+                            <button class="delete is-large fermer-formulaire visible-mode-tel"
+                                    type="button" aria-label="Fermer la création de saison"
+                                    onclick="fermerFormulaireSaison()"></button>
+                        </header>
                         <div class="card-content">
                             <form id="createSeasonForm">
                                 <div class="field">
@@ -278,9 +553,23 @@
 
                 <div class="column is-7">
                     <div class="card glass-card">
-                        <header class="card-header"><p class="card-header-title">Saisons Existantes</p></header>
+                        <header class="card-header">
+                            <p class="card-header-title">Saisons Existantes</p>
+                            {# Visible seulement quand le formulaire est masque. #}
+                            <button class="button is-success bouton-ajout visible-mode-tel"
+                                    type="button" title="Nouvelle saison"
+                                    aria-label="Créer une nouvelle saison"
+                                    onclick="ouvrirFormulaireSaison()">
+                                <span class="icon"><i class="fas fa-plus"></i></span>
+                            </button>
+                        </header>
                         <div class="card-content">
-                            <table class="table is-fullwidth has-background-transparent has-text-light">
+                            {# Le voile de defilement se pose sur CE bloc, pas
+                               sur le conteneur : un pseudo-element ancre sur
+                               un element qui defile glisserait avec lui. #}
+                            <div class="zone-defilante">
+                            <div class="table-container">
+                            <table class="table is-fullwidth has-background-transparent has-text-light tableau-saisons">
                                 <thead>
                                     <tr>
                                         <th class="has-text-light">Nom</th>
@@ -292,6 +581,8 @@
                                 <tbody id="saisonsList">
                                 </tbody>
                             </table>
+                            </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -540,8 +831,8 @@ async function loadAwardTypes() {
             tbody.innerHTML += `
                 <tr>
                     <td>
-                        <strong class="has-text-white">${escapeHtml(s.nom)}</strong>${ligueBadge}<br>
-                        <span class="is-size-7 is-family-code has-text-grey">${escapeHtml(s.date_debut)} au ${escapeHtml(s.date_fin)}</span>
+                        <strong class="has-text-white nom-saison">${escapeHtml(s.nom)}</strong><span class="badges-saison">${ligueBadge}</span><br>
+                        <span class="is-size-7 is-family-code has-text-grey dates-saison">${escapeHtml(s.date_debut)} au ${escapeHtml(s.date_fin)}</span>
                     </td>
                     <td>${typeBadge}</td>
                     <td style="vertical-align: middle;">${statusBadge}</td>
@@ -559,6 +850,33 @@ async function loadAwardTypes() {
                 </tr>
             `;
         });
+
+        // Le tableau vient de changer de largeur : l'indice de defilement
+        // doit etre reevalue, sinon il promet un defilement qui n'existe
+        // peut-etre plus (ou l'inverse).
+        majIndiceDefilement();
+    }
+
+    /* Indice de defilement du tableau.
+
+       Le voile s'affiche quand deux conditions tiennent : le tableau est
+       plus large que son cadre, et on n'a pas encore atteint la droite.
+       Appele apres chaque remplissage, a chaque defilement et sur
+       redimensionnement. */
+    function majIndiceDefilement() {
+        const zone = document.querySelector('.zone-defilante');
+        const conteneur = zone && zone.querySelector('.table-container');
+        if (!conteneur) return;
+
+        // 1px de tolerance : les navigateurs rendent des largeurs
+        // fractionnaires, et scrollLeft n'atteint jamais exactement le max.
+        const defilable = conteneur.scrollWidth - conteneur.clientWidth > 1;
+        const auBout = conteneur.scrollLeft + conteneur.clientWidth
+                       >= conteneur.scrollWidth - 1;
+
+        // Une seule classe, posee quand il reste quelque chose a voir :
+        // ni au bout, ni trop etroit pour defiler.
+        zone.classList.toggle('peut-defiler', defilable && !auBout);
     }
 
     document.getElementById('createSeasonForm').addEventListener('submit', async (e) => {
@@ -598,6 +916,9 @@ async function loadAwardTypes() {
             document.getElementById('triggerContent').innerText = "Choisir l'objectif de saison...";
             loadAwardTypes();
             loadSaisons();
+            // Sur telephone, rester sur le formulaire masquerait la liste ou
+            // la saison vient d'apparaitre. Sans effet en desktop.
+            fermerFormulaireSaison();
             if (res.message) {
                 alert(res.message);
             }
@@ -661,6 +982,39 @@ async function loadAwardTypes() {
         document.getElementById('moveOptions').style.display = enabled ? 'block' : 'none';
         document.getElementById('noMovesNote').style.display = enabled ? 'none' : 'block';
     }
+
+    /* Formulaire « Nouvelle Saison » en modale sur telephone.
+
+       Les deux fonctions restent sans effet en desktop : la classe qu'elles
+       posent n'est lue que par la media query <=900px, ou le bloc est une
+       colonne ordinaire. Inutile donc de tester la largeur ici — le CSS
+       decide seul, et une rotation d'ecran ne laisse rien d'incoherent. */
+    function ouvrirFormulaireSaison() {
+        document.getElementById('blocNouvelleSaison').classList.add('est-ouvert');
+        // Le fond ne defile plus derriere la modale.
+        document.documentElement.classList.add('is-clipped');
+    }
+
+    function fermerFormulaireSaison() {
+        document.getElementById('blocNouvelleSaison').classList.remove('est-ouvert');
+        document.documentElement.classList.remove('is-clipped');
+    }
+
+    // Le voile suit le doigt, et se reevalue si la largeur change (rotation
+    // de l'ecran, passage en mode telephone).
+    document.addEventListener('DOMContentLoaded', () => {
+        const conteneur = document.querySelector('.zone-defilante .table-container');
+        if (conteneur) {
+            conteneur.addEventListener('scroll', majIndiceDefilement, { passive: true });
+        }
+        window.addEventListener('resize', majIndiceDefilement);
+        majIndiceDefilement();
+    });
+
+    // Echap referme, comme pour n'importe quelle modale.
+    document.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape') fermerFormulaireSaison();
+    });
 
     function closePublishModal() {
         document.getElementById('publishModal').classList.remove('is-active');

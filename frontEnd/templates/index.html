@@ -10,6 +10,7 @@
     
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/form-readability.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/banner.css') }}?v={{ app_version }}">
@@ -64,7 +65,22 @@
                 --tag-height: 1.5em;
                 --score-height: 10px;
                 --score-text: 9px;
+                /* Assez pour les trois colonnes, pas au-dela. Sur un telephone
+                   large, la carte reste lisible au lieu de s'etirer. */
+                --largeur-resultat: 26rem;
             }
+        }
+
+        /* Carte de resultat de tournoi.
+           `is-12-mobile` l'etire sur toute la largeur, mais son contenu est un
+           tableau de trois colonnes etroites (rang, nom, score) : au-dela d'une
+           certaine largeur, la ligne s'etale et l'oeil doit traverser l'ecran
+           pour relier un nom a son score. On la plafonne et on la centre — les
+           colonnes Bulma restent inchangees, seule la carte est bridee. */
+        .colonne-resultat {
+            max-width: var(--largeur-resultat, none);
+            margin-left: auto;
+            margin-right: auto;
         }
 
         .section { padding: var(--section-padding) !important; }
@@ -265,7 +281,7 @@
             <div class="columns is-multiline is-centered">
 
                 {% for tournoi_data in resultats %}
-                <div class="column is-12-mobile is-6-tablet is-4-desktop fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
+                <div class="column is-12-mobile is-6-tablet is-4-desktop colonne-resultat fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
                     
                     <div class="card glass-card rise-in mb-5" style="height: 100%; display: flex; flex-direction: column; {{ 'border-top: 4px solid ' + tournoi_data.meta.ligue_couleur if tournoi_data.meta.type == 'ligue' else '' }}">
                         

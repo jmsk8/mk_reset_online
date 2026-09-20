@@ -50,28 +50,14 @@ body, html {
     background-color: transparent !important;
 }
 
-.navbar-item:hover, 
-.navbar-link:hover, 
-.navbar-item.is-active,
-.navbar-item:focus,
-.navbar-item:active,
-.navbar-link:focus, 
-.navbar-link:active {
-    background-color: var(--primary-color) !important;
-    color: white !important;
-    background-image: none !important;
-}
+/* Le survol des entrees de navbar vit desormais dans interactions.css, qui
+   colore le texte au lieu de peindre le pave entier. */
 
 .navbar-dropdown {
     background-color: var(--secondary-background);
     border-top: 2px solid var(--primary-color);
 }
 
-.navbar-item.has-dropdown:hover .navbar-link,
-.navbar-item.has-dropdown.is-active .navbar-link {
-    background-color: var(--secondary-background) !important;
-    color: var(--primary-color) !important;
-}
 
 .navbar-divider {
     background-color: var(--border-color);

@@ -2,11 +2,13 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestion des Ligues - Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
@@ -90,6 +92,143 @@
         }
         .delete-league-btn:hover {
             opacity: 1;
+        }
+
+        /* ------------------------------------------------------------------
+           Mode telephone, seuil 900px — le meme que la page des saisons, pour
+           que les deux ecrans d'administration basculent ensemble.
+           ------------------------------------------------------------------ */
+        @media screen and (max-width: 900px) {
+            /* Les cartes de ligue sont en `is-3`, soit quatre par ligne. Bulma
+               n'applique ses largeurs qu'a partir de 769px : en dessous elles
+               s'empilent seules, mais entre 769 et 900px elles resteraient a
+               25% — quatre colonnes illisibles sur une tablette en portrait.
+               Une par ligne jusqu'a 600px, deux au-dela. */
+            #currentLeaguesDisplay .column.is-3 {
+                flex: none;
+                width: 50%;
+            }
+
+            /* Les blocs de reglage en haut de page : `is-narrow` les garde
+               cote a cote et le bouton finit par deborder. */
+            .box.glass-card .columns.is-vcentered .column.is-narrow {
+                width: 100%;
+            }
+
+            /* Le tableau des joueurs, dans chaque carte de ligue. Il a deja
+               son `.table-container` : on empeche juste les noms de s'enrouler
+               sur deux lignes, qui doublerait la hauteur des cartes. */
+            #currentLeaguesDisplay .table td {
+                white-space: nowrap;
+            }
+        }
+
+        @media screen and (max-width: 600px) {
+            #currentLeaguesDisplay .column.is-3 {
+                width: 100%;
+            }
+        }
+
+        /* ------------------------------------------------------------------
+           Edition manuelle des ligues (modale de draft), sur telephone.
+
+           Le bloc « Joueurs Disponibles » etait fige a 250px par un style
+           inline, hauteur calibree pour un grand ecran. Sur un telephone, une
+           fois l'en-tete de la modale et la barre de mode deduits, il ne
+           restait presque rien pour la zone de depot — alors que c'est elle
+           qu'on manipule.
+
+           On inverse le partage : la liste des joueurs prend la moitie de la
+           hauteur, les ligues gardent le reste et defilent. `!important` est
+           necessaire, le style inline gagnant autrement.
+           ------------------------------------------------------------------ */
+        @media screen and (max-width: 900px) {
+            /* C'est la zone qu'on manipule : elle passe en premier dans le
+               partage de la hauteur, et prend 55% de la modale.
+
+               `flex-basis` en pourcentage plutot qu'une hauteur fixe : la
+               modale fait 100vh, donc le bloc suit la taille de l'ecran au
+               lieu d'un chiffre calibre pour un seul appareil.
+
+               Les trois `!important` visent le style inline
+               (`height:250px; min-height:250px`), qui gagne autrement. */
+            .zone-joueurs-dispo {
+                height: auto !important;
+                flex: 1 1 55% !important;
+                /* Plancher : en dessous, on ne distingue plus assez de
+                   joueurs pour en choisir un. */
+                min-height: 16rem !important;
+            }
+
+            /* Les ligues cedent la place. `min-height: 0` est indispensable :
+               par defaut un enfant flex refuse de descendre sous la taille de
+               son contenu, et cette zone-ci en a beaucoup — sans lui, elle
+               garde sa hauteur naturelle et ecrase sa voisine, qui se
+               retrouve reduite a son minimum. */
+            .zone-ligues-draft {
+                flex: 1 1 45%;
+                min-height: 0;
+                overflow-y: auto;
+            }
+
+            /* La zone de depot occupe toute la hauteur qu'on vient de lui
+               donner, au lieu du plafond de 300px de la regle de base. */
+            .unassigned-column {
+                max-height: none !important;
+                min-height: 0;
+                /* 1rem de padding coute 2rem de hauteur utile sur un ecran
+                   ou elle est comptee. */
+                padding: 0.6rem !important;
+            }
+
+            /* Le titre « Joueurs Disponibles / Non assignes » tient sur deux
+               lignes au telephone et mange la zone qu'il annonce. Reduit, et
+               le compteur reste sur la meme ligne que lui. */
+            .zone-joueurs-dispo .title.is-5 {
+                font-size: 0.95rem;
+            }
+
+            .zone-joueurs-dispo .level {
+                margin-bottom: 0.35rem !important;
+            }
+
+            /* Le corps de la modale : ses 20px de padding par defaut, pris
+               deux fois, sont autant de moins pour les deux zones. */
+            #draftModal .modal-card-body {
+                padding: 0.75rem !important;
+            }
+
+            /* Les cartes de ligue dans la modale : `is-3` les mettrait a 25%
+               entre 769 et 900px. */
+            #draftContainer .column {
+                flex: none;
+                width: 100%;
+            }
+
+            /* La modale prend tout l'ecran : 95vh laissait des bords perdus
+               alors que la place manque. */
+            #draftModal .modal-card {
+                width: 100% !important;
+                height: 100vh !important;
+                max-height: 100vh;
+            }
+
+            /* Les deux boutons de la barre de mode passent sous le libelle
+               plutot que de deborder. */
+            #draftModal .level {
+                display: block;
+            }
+
+            #draftModal .level-right {
+                margin-top: 0.5rem;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+
+            #draftModal .level-right .button {
+                margin-right: 0 !important;
+            }
         }
     </style>
 </head>
@@ -191,14 +330,14 @@
                     </div>
                 </div>
 
-                <div style="flex-grow: 1; overflow-y: auto; padding-bottom: 20px;">
+                <div class="zone-ligues-draft" style="flex-grow: 1; overflow-y: auto; padding-bottom: 20px;">
                     <div class="columns is-multiline" id="draftContainer">
                         </div>
                 </div>
 
                 <div style="height: 2px; background-color: #333; margin: 10px 0;"></div>
 
-                <div style="height: 250px; min-height: 250px; display: flex; flex-direction: column;">
+                <div class="zone-joueurs-dispo" style="height: 250px; min-height: 250px; display: flex; flex-direction: column;">
                     <div class="level mb-2 is-mobile px-2">
                         <div class="level-left">
                             <h4 class="title is-5 has-text-grey-light mb-0">

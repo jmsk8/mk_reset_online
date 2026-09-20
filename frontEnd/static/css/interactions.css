@@ -1,0 +1,148 @@
+/* ============================================================================
+   Interactions de la NAVBAR : survol, focus et état actif.
+
+   RÈGLE DE LA MAISON — un survol se signale par le TEXTE, et par lui seul.
+   Un pavé qui s'allume attire l'œil sur un rectangle ; ce qu'on veut montrer,
+   c'est l'élément qu'on s'apprête à activer. Le texte prend donc la couleur
+   d'accent et AUCUN fond ne bouge, pas même un voile discret : sur une barre
+   sombre, le moindre aplat se lit encore comme un bloc allumé.
+
+   Ce fichier est la SOURCE UNIQUE du comportement au survol dans la navbar :
+   il remplace la règle de dark-mode.css qui peignait tout le pavé en bleu, et
+   neutralise celles de Bulma, qui en pose une sur chaque état interactif.
+   Pour changer l'allure de ces survols, il suffit de toucher aux variables
+   ci-dessous — aucune règle n'écrit une couleur en dur.
+
+   Portée : la navbar uniquement. Les onglets, tableaux et boutons du reste du
+   site gardent pour l'instant leurs styles d'origine.
+
+   Charger APRÈS bulma et dark-mode.css.
+
+   Sur les `!important` : ils ne sont pas décoratifs. Bulma vise les entrées de
+   menu déroulant avec `.navbar-dropdown a.navbar-item:hover`, plus spécifique
+   que nos sélecteurs, et y pose un fond clair prévu pour un thème clair. Une
+   déclaration `!important` passe devant une déclaration normale quelle que
+   soit la spécificité : c'est ce qui neutralise ce fond sans avoir à empiler
+   des sélecteurs toujours plus longs.
+   ========================================================================= */
+
+:root {
+    /* Couleur du texte survolé. Reprend l'accent du thème par défaut, mais
+       reste surchargeable. */
+    --survol-teinte: var(--primary-color, #3b82f6);
+
+    /* Teinte de l'appui, un cran plus soutenue que le survol : c'est le seul
+       moyen de distinguer le clic du simple passage maintenant qu'aucun fond
+       ne bouge. */
+    --survol-teinte-appuyee: var(--secondary-color, #2563eb);
+
+    /* Assez court pour suivre la souris : au-delà, le survol traîne derrière
+       le curseur quand on parcourt le menu vite. */
+    --survol-duree: 0.15s;
+}
+
+/* ---------------------------------------------------------------------------
+   1. Socle commun
+   Une seule transition pour toute la navbar : la différence entre deux
+   survols ne doit jamais venir du rythme.
+   ------------------------------------------------------------------------ */
+.navbar-item,
+.navbar-link,
+.navbar-burger {
+    transition: color var(--survol-duree) ease,
+                background-color var(--survol-duree) ease;
+}
+
+/* ---------------------------------------------------------------------------
+   2. Entrées de navbar — le texte prend la teinte
+   Remplace la règle de dark-mode.css qui posait `--primary-color` en fond
+   avec du texte blanc.
+   ------------------------------------------------------------------------ */
+/* `:focus` autant que `:focus-visible` : Bulma peint le fond sur `:focus`
+   tout court, y compris apres un clic souris. Si on ne neutralisait que
+   `:focus-visible`, l'onglet cliqué resterait bleu plein une fois relaché. */
+.navbar-item:hover,
+.navbar-item:focus,
+.navbar-item:focus-visible,
+.navbar-link:hover,
+.navbar-link:focus,
+.navbar-link:focus-visible,
+.navbar-item.is-active,
+.navbar-link.is-active {
+    color: var(--survol-teinte) !important;
+    /* `transparent` explicite et !important : c'est CETTE declaration qui
+       neutralise le fond de Bulma. Sans elle, le pave se peint. */
+    background-color: transparent !important;
+    background-image: none !important;
+}
+
+/* Maintien du doigt ou du clic : la teinte fonce d'un cran. Le fond reste
+   transparent — c'est la couleur du texte qui porte tout le retour. */
+.navbar-item:active,
+.navbar-link:active {
+    color: var(--survol-teinte-appuyee) !important;
+    background-color: transparent !important;
+}
+
+/* L'en-tête d'un menu déroulant ouvert n'est pas une cible : c'est le titre de
+   ce qui est déplié. Il prend la teinte comme les autres.
+
+   `:focus` ET `:focus-within` en plus de `:hover` : Bulma peint cet en-tête
+   sur les trois (`.navbar.is-dark .navbar-item.has-dropdown:focus .navbar-link`),
+   et un menu ouvert au clavier garde le focus dans le sous-menu — sans
+   `:focus-within`, le pavé restait peint tant qu'on y naviguait. */
+.navbar-item.has-dropdown:hover > .navbar-link,
+.navbar-item.has-dropdown:focus > .navbar-link,
+.navbar-item.has-dropdown:focus-within > .navbar-link,
+.navbar-item.has-dropdown.is-active > .navbar-link,
+.navbar-item.has-dropdown.est-ouverte > .navbar-link {
+    color: var(--survol-teinte) !important;
+    background-color: transparent !important;
+}
+
+/* Le logo n'est pas un onglet : il garde sa couleur au survol. */
+.navbar-brand > .brand-item:hover,
+.navbar-brand > .brand-item:focus-visible {
+    color: var(--text-color, #f1f5f9) !important;
+    background-color: transparent !important;
+}
+
+/* ---------------------------------------------------------------------------
+   3. Cibles portant une icône
+   La cloche, l'avatar et le burger n'ont pas de texte : c'est l'icône
+   elle-même qui prend la teinte, par `color`.
+   ------------------------------------------------------------------------ */
+.cloche-mobile > .navbar-link:hover,
+.cloche-mobile > .navbar-link:focus-visible,
+.compte-mobile > .navbar-link:hover,
+.compte-mobile > .navbar-link:focus-visible,
+.navbar-burger:hover,
+.navbar-burger:focus,
+.navbar-burger:focus-visible,
+.navbar-burger:active {
+    color: var(--survol-teinte) !important;
+    background-color: transparent !important;
+}
+
+/* ---------------------------------------------------------------------------
+   4. Accessibilité
+   `:focus-visible` plutôt que `:focus` : le contour n'apparaît qu'à la
+   navigation clavier, jamais après un clic souris. C'est le seul cas où
+   quelque chose d'autre que la couleur du texte apparaît — sans lui, un
+   utilisateur au clavier n'aurait aucun repère sur un lien déjà coloré.
+   ------------------------------------------------------------------------ */
+.navbar-item:focus-visible,
+.navbar-link:focus-visible,
+.navbar-burger:focus-visible {
+    outline: 2px solid var(--survol-teinte);
+    outline-offset: -2px;
+}
+
+/* Mouvement réduit : on garde le changement de couleur, on retire le fondu. */
+@media (prefers-reduced-motion: reduce) {
+    .navbar-item,
+    .navbar-link,
+    .navbar-burger {
+        transition: none;
+    }
+}
