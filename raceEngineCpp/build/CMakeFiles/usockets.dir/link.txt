@@ -1,0 +1,2 @@
+/usr/bin/ar qc libusockets.a "CMakeFiles/usockets.dir/_deps/uwebsockets-src/uSockets/src/bsd.c.o" "CMakeFiles/usockets.dir/_deps/uwebsockets-src/uSockets/src/context.c.o" "CMakeFiles/usockets.dir/_deps/uwebsockets-src/uSockets/src/loop.c.o" "CMakeFiles/usockets.dir/_deps/uwebsockets-src/uSockets/src/socket.c.o" "CMakeFiles/usockets.dir/_deps/uwebsockets-src/uSockets/src/udp.c.o" "CMakeFiles/usockets.dir/_deps/uwebsockets-src/uSockets/src/eventing/epoll_kqueue.c.o"
+/usr/bin/ranlib libusockets.a

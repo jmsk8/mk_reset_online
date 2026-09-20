@@ -77,6 +77,94 @@
         }
     }
 
+    /* Cloche mobile, collee au burger.
+       Bulma donne au burger son propre `margin-left:auto`. Tant qu'il le
+       garde, un second `auto` sur la cloche ne colle rien : deux marges auto
+       se partagent l'espace libre a parts egales, ce qui laisse la cloche au
+       milieu de la navbar. On annule donc celui du burger et la cloche reste
+       seule a pousser : elle vient alors buter contre lui. */
+    @media screen and (max-width: 1023px) {
+        /* Cible par le frere precedent : sans cloche (visiteur non connecte)
+           la regle ne s'applique pas, le burger garde son auto et reste a
+           droite au lieu de remonter contre le logo. */
+        .cloche-mobile ~ .navbar-burger {
+            margin-left: 0;
+        }
+
+        .cloche-mobile {
+            margin-left: auto;
+            display: flex !important;
+            align-items: center;
+            position: relative;   /* ancre la pastille du compteur */
+            /* !important : la regle generique .navbar-item du bloc <=768px
+               impose 1rem de padding vertical, qui decalerait la cloche par
+               rapport au burger. */
+            padding: 0 !important;
+        }
+
+        .cloche-mobile > .navbar-link {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            /* Peu de padding a droite : le burger porte deja sa propre zone
+               de clic de 3.25rem, inutile d'en rajouter avant lui. */
+            padding: 0 0.25rem 0 0.5rem !important;
+            background: transparent;
+            /* La regle generique .navbar-link du bloc <=768px monte a 1.1rem ;
+               la cloche reste un accessoire a cote du burger, pas un pair. */
+            font-size: 0.95rem !important;
+        }
+
+        .cloche-mobile .icon {
+            /* L'icone suit la taille reduite du lien plutot que le 1.5rem que
+               Bulma fixe en dur sur .icon. */
+            height: 1.5rem;
+            width: 1.5rem;
+        }
+
+        .cloche-mobile .badge-notifs {
+            font-size: 0.65rem;
+            height: 1.1rem;
+            min-width: 1.1rem;
+            padding: 0 0.3rem;
+            margin-left: 0 !important;
+            /* Collee en haut a droite de l'icone : a cote, elle repoussait la
+               cloche vers le centre. */
+            position: absolute;
+            top: 0.55rem;
+            right: 0;
+        }
+
+        /* Sur mobile Bulma affiche les dropdowns en pleine largeur dans le
+           flux : hors du menu deroulant, il faut le reposer en flottant. */
+        .cloche-mobile .navbar-dropdown {
+            display: none;
+            position: fixed;
+            /* fixe, pas absolu : la cloche est devenue le repere de sa
+               pastille, un panneau ancre sur elle ferait 2rem de large. */
+            top: 4rem;
+            right: 0.5rem;
+            left: auto;
+            width: 22rem;
+            max-width: calc(100vw - 1rem);
+            background-color: #1e293b !important;
+            border-top: 2px solid #3b82f6;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+            border-radius: 0 0 6px 6px;
+            z-index: 30;
+        }
+
+        .cloche-mobile.est-ouverte .navbar-dropdown {
+            display: block;
+        }
+
+        .cloche-mobile .navbar-dropdown .navbar-item {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
+            font-size: 0.95rem;
+        }
+    }
+
     @media screen and (max-width: 768px) {
         .navbar-brand {
             min-height: 4rem;
@@ -114,6 +202,20 @@
         <i class="fas fa-gamepad"></i>
         <strong class="ml-2">MK Reset</strong>
       </a>
+      {# Cloche mobile : hors du menu burger, collee a sa gauche. Le menu se
+         replie sur un clic ailleurs, une notification qu'il faut deplier pour
+         voir n'alerte plus personne. #}
+      {% if compte_joueur %}
+        <div class="navbar-item has-dropdown zone-cloche cloche-mobile is-hidden-desktop">
+          <a class="navbar-link is-arrowless" title="Notifications" aria-expanded="false">
+            <span class="icon"><i class="fas fa-bell"></i></span>
+            <span class="tag is-danger is-rounded ml-1 is-hidden badge-notifs">0</span>
+          </a>
+          <div class="navbar-dropdown is-right liste-notifs">
+            <div class="navbar-item has-text-grey">Chargement…</div>
+          </div>
+        </div>
+      {% endif %}
       <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarMenu">
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
@@ -161,12 +263,12 @@
         {% if compte_joueur %}
           {# Cloche des notifications, remplie par fetch apres le rendu : la
              calculer cote serveur imposerait un appel backend a chaque page. #}
-          <div class="navbar-item has-dropdown is-hoverable" id="zone-cloche">
+          <div class="navbar-item has-dropdown is-hoverable zone-cloche is-hidden-touch">
             <a class="navbar-link is-arrowless" title="Notifications">
               <span class="icon"><i class="fas fa-bell"></i></span>
-              <span class="tag is-danger is-rounded ml-1 is-hidden" id="badge-notifs">0</span>
+              <span class="tag is-danger is-rounded ml-1 is-hidden badge-notifs">0</span>
             </a>
-            <div class="navbar-dropdown is-right" id="liste-notifs" style="min-width:22rem;max-width:90vw">
+            <div class="navbar-dropdown is-right liste-notifs" style="min-width:22rem;max-width:90vw">
               <div class="navbar-item has-text-grey">Chargement…</div>
             </div>
           </div>
@@ -403,9 +505,29 @@
     // fiche et des motifs de refus saisis par des humains.
     {% if compte_joueur %}
     (async function () {
-      const badge = document.getElementById('badge-notifs');
-      const liste = document.getElementById('liste-notifs');
-      if (!badge || !liste) return;
+      // Deux cloches dans le DOM : celle du menu (desktop) et celle collee au
+      // burger (mobile). Une seule est visible a la fois, mais les deux sont
+      // remplies : un redimensionnement ne doit pas vider la cloche affichee.
+      const badges = document.querySelectorAll('.badge-notifs');
+      const listes = document.querySelectorAll('.liste-notifs');
+      if (!badges.length || !listes.length) return;
+
+      // La cloche mobile vit hors du menu burger : Bulma n'ouvre pas son
+      // dropdown au survol sur tactile, on le bascule au clic.
+      document.querySelectorAll('.cloche-mobile').forEach(cloche => {
+        const lien = cloche.querySelector('.navbar-link');
+        lien.addEventListener('click', ev => {
+          ev.preventDefault();
+          const ouvert = cloche.classList.toggle('est-ouverte');
+          lien.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
+        });
+        // Un clic ailleurs referme : sans ca le panneau masque la page.
+        document.addEventListener('click', ev => {
+          if (cloche.contains(ev.target)) return;
+          cloche.classList.remove('est-ouverte');
+          lien.setAttribute('aria-expanded', 'false');
+        });
+      });
 
       const ICONES = {
         liaison_approuvee: 'fa-circle-check has-text-success',
@@ -454,37 +576,46 @@
       } catch (e) { return; }   // navbar muette plutôt que cassée
 
       if (res.non_lues > 0) {
-        badge.textContent = res.non_lues;
-        badge.classList.remove('is-hidden');
-      }
-
-      liste.innerHTML = '';
-      if (!res.notifications || res.notifications.length === 0) {
-        const vide = document.createElement('div');
-        vide.className = 'navbar-item has-text-grey';
-        vide.textContent = 'Aucune notification.';
-        liste.appendChild(vide);
-        return;
-      }
-      res.notifications.forEach(n => liste.appendChild(ligne(n)));
-
-      if (res.non_lues > 0) {
-        liste.appendChild(document.createElement('hr')).className = 'navbar-divider';
-        const b = document.createElement('a');
-        b.className = 'navbar-item has-text-link';
-        b.textContent = 'Tout marquer comme lu';
-        b.addEventListener('click', async () => {
-          const csrf = document.querySelector('meta[name="csrf-token"]');
-          await fetch('/me/notifications/lues', {
-            method: 'POST',
-            headers: csrf ? {'X-CSRFToken': csrf.content} : {}
-          });
-          badge.classList.add('is-hidden');
-          b.remove();
-          liste.querySelectorAll('.navbar-item').forEach(i => i.classList.add('has-text-grey'));
+        badges.forEach(badge => {
+          badge.textContent = res.non_lues;
+          badge.classList.remove('is-hidden');
         });
-        liste.appendChild(b);
       }
+
+      listes.forEach(liste => {
+        liste.innerHTML = '';
+        if (!res.notifications || res.notifications.length === 0) {
+          const vide = document.createElement('div');
+          vide.className = 'navbar-item has-text-grey';
+          vide.textContent = 'Aucune notification.';
+          liste.appendChild(vide);
+          return;
+        }
+        res.notifications.forEach(n => liste.appendChild(ligne(n)));
+
+        if (res.non_lues > 0) {
+          liste.appendChild(document.createElement('hr')).className = 'navbar-divider';
+          const b = document.createElement('a');
+          b.className = 'navbar-item has-text-link';
+          b.textContent = 'Tout marquer comme lu';
+          b.addEventListener('click', async () => {
+            const csrf = document.querySelector('meta[name="csrf-token"]');
+            await fetch('/me/notifications/lues', {
+              method: 'POST',
+              headers: csrf ? {'X-CSRFToken': csrf.content} : {}
+            });
+            // Les deux cloches montrent le meme compteur : le marquage doit
+            // les eteindre ensemble, pas seulement celle qu'on a cliquee.
+            badges.forEach(badge => badge.classList.add('is-hidden'));
+            listes.forEach(l => {
+              const bouton = l.querySelector('.has-text-link');
+              if (bouton) bouton.remove();
+              l.querySelectorAll('.navbar-item').forEach(i => i.classList.add('has-text-grey'));
+            });
+          });
+          liste.appendChild(b);
+        }
+      });
     })();
     {% endif %}
 
