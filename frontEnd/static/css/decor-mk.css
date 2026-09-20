@@ -1,0 +1,71 @@
+/* ============================================================================
+   Décor de fond façon Mario Kart, commun à toutes les pages.
+
+   Trois motifs (champignon, étoile, carapace) semés en filigrane derrière le
+   contenu. Sans couleur : une seule teinte prise juste au-dessus du fond
+   (#0f172a), pour qu'ils se devinent sans jamais concurrencer la lecture.
+
+   S'utilise en incluant `decor.html` juste après l'ouverture de <body> :
+   ce fichier n'apporte que l'habillage, les formes et le semis vivent là-bas.
+
+   Charger APRÈS dark-mode.css, qui fixe le fond de page.
+   ========================================================================= */
+
+.decor-mk {
+    position: fixed;
+    inset: 0;
+    /* Derrière tout le contenu, mais AU-DESSUS du fond du body. Un z-index
+       négatif le ferait passer sous le body, qui est opaque : le décor
+       deviendrait invisible. */
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;   /* aucun clic ne s'y perd */
+}
+
+.decor-forme {
+    position: absolute;
+    /* Un cran au-dessus du fond seulement. Monter davantage le ferait lire
+       comme un élément de la page plutôt que comme une texture. */
+    fill: #1b2740;
+    opacity: 0.55;
+}
+
+/* Les détails internes (pastilles du champignon, yeux, bandeau de la
+   carapace) sont évidés plutôt que peints : ils laissent voir le fond au
+   travers, ce qui dessine la forme sans ajouter de seconde teinte. */
+.decor-creux {
+    fill: #0f172a;
+}
+
+/* ---------------------------------------------------------------------------
+   Le contenu passe devant le décor.
+
+   La liste couvre les conteneurs de premier niveau utilisés par les pages du
+   site. `body > *` aurait été plus court mais aurait aussi attrapé le décor
+   lui-même, l'écran de démarrage et les modales, chacun avec son propre
+   empilement.
+
+   La bannière de la page d'accueil en est EXCLUE à dessein : elle est déjà
+   opaque, donc elle masque le décor sans aide, et lui poser un z-index
+   créerait un contexte d'empilement qui enfermerait ses karts (z-index
+   365-500). Ils doivent pouvoir déborder de la scène — c'est tout l'objet de
+   son `overflow: visible`.
+   ------------------------------------------------------------------------ */
+body > section:not(.smk-snes-banner),
+body > footer,
+body > main,
+body > .container,
+body > .hero:not(.smk-snes-banner),
+.navbar {
+    position: relative;
+    z-index: 1;
+}
+
+/* Téléphone : motifs plus discrets. Les mêmes opacités sur 360px de large
+   donneraient un fond chargé, où les formes passeraient derrière chaque carte
+   au lieu de rester dans les marges. */
+@media screen and (max-width: 768px) {
+    .decor-forme {
+        opacity: 0.4;
+    }
+}

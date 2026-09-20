@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/css/styles.css">
     <link rel="stylesheet" href="/static/css/dark-mode.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}">
     <link rel="stylesheet" href="/static/css/animations.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
@@ -87,6 +88,7 @@
     </style>
 </head>
 <body>
+    {% include 'decor.html' %}
     {% include 'navbar.html' %}
     
     {% if profil and (profil.bio or profil.reseaux) %}

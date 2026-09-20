@@ -266,6 +266,21 @@ def apply_global_reset():
                     "joueurs_touches": len(lignes),
                 })
 
+                # Un reset remonte le sigma, donc fait bouger le classement de
+                # tout le monde sans qu'aucun tournoi n'ait ete joue. Sans
+                # annonce, on decouvre un rang different sans explication.
+                #
+                # Le nombre de joueurs touches est dans le texte : il dit si le
+                # reset a concerne tout le monde ou une poignee de retardataires.
+                notifier_tous(
+                    cur, 'reset_global',
+                    "Reset global du %s" % target_date.strftime('%d/%m/%Y'),
+                    "L'incertitude (sigma) de %d joueur(s) a été relevée de %s "
+                    "(plafond %s). Les classements en tiennent compte."
+                    % (len(lignes), val, max_sigma),
+                    lien="/classement",
+                )
+
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -333,6 +348,22 @@ def revert_global_reset():
                 audit.ecrire(cur, 'reset_global_annule', 'systeme', reset_id, {
                     "valeur_annulee": float(val), "date_du_reset": str(reset_date),
                 })
+
+                # L'annonce du reset est encore dans les cloches : la laisser
+                # sans suite decrirait un classement qui n'existe plus. Le
+                # texte est fige, on ne peut pas le corriger -- on le complete.
+                # `strftime` seulement si la colonne est bien une date : sur un
+                # reset anterieur au plafond, elle peut remonter en chaine, et
+                # une notification ne doit pas faire echouer l'annulation.
+                notifier_tous(
+                    cur, 'reset_global_annule',
+                    "Reset global annulé",
+                    "Le reset du %s a été annulé : les sigma sont revenus à leur "
+                    "valeur d'avant, et les classements avec eux."
+                    % (reset_date.strftime('%d/%m/%Y')
+                       if hasattr(reset_date, 'strftime') else reset_date),
+                    lien="/classement",
+                )
                 cur.execute("DELETE FROM global_resets WHERE id = %s", (reset_id,))
             conn.commit()
             recalculate_tiers()

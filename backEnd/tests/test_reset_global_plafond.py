@@ -19,6 +19,7 @@ Limite du banc d'essai : le curseur est scripte, le SQL n'est pas valide contre
 Postgres. Ce qui est verifie ici, c'est QUI est touche et avec quelles valeurs.
 """
 from harness import *
+from datetime import date
 from flask import Flask
 
 H = {'X-Session-Token': 'tok'}
@@ -206,6 +207,80 @@ check("revert refuse en 409 si un tournoi a eu lieu depuis",
       r.status_code == 409, r.status_code)
 check("aucune restauration n'est tentee",
       lot(lots, 'SET sigma = data.old_sigma') is None, lots)
+
+print("\n=== Le reset s'annonce : il bouge le classement sans tournoi joue ===")
+
+def notif(cur):
+    """(type, titre, corps, lien) de la notification diffusee, ou None."""
+    for sql, params in cur.executed:
+        if 'INSERT INTO notifications' in sql and params:
+            return params[-4:]
+    return None
+
+cli, cur, conn, lots = monter([
+    PAS_DE_TOURNOI_APRES,
+    (r"SELECT id, sigma FROM Joueurs WHERE sigma <", [(1, 1.8), (2, 1.0)]),
+    RESET_CREE,
+])
+r = cli.post('/api/admin/global-reset',
+             json={'value': 0.3, 'max_sigma': 2.0, 'date': '2026-09-20'}, headers=H)
+check("le reset repond 200", r.status_code == 200, r.get_data(as_text=True))
+n = notif(cur)
+check("une notification est diffusee", n is not None, [s for s, _ in cur.executed][-3:])
+check("type = reset_global", n and n[0] == 'reset_global', n)
+check("elle mene au classement", n and n[3] == '/classement', n and n[3])
+check("elle dit combien de joueurs sont touches", n and '2 joueur' in (n[2] or ''), n and n[2])
+check("diffusee a tous, sauf les suspendus",
+      any("INSERT INTO notifications" in s and "statut <> 'suspended'" in s
+          for s, _ in cur.executed),
+      [s for s, _ in cur.executed if 'notifications' in s])
+
+# Aucun joueur concerne : le reset est refuse, donc rien ne doit partir --
+# annoncer un reset qui n'a pas eu lieu serait pire que se taire.
+cli, cur, conn, lots = monter([
+    PAS_DE_TOURNOI_APRES,
+    (r"SELECT id, sigma FROM Joueurs WHERE sigma <", []),
+])
+r = cli.post('/api/admin/global-reset',
+             json={'value': 0.3, 'max_sigma': 2.0, 'date': '2026-09-20'}, headers=H)
+check("reset sans effet -> 409", r.status_code == 409, r.status_code)
+check("et aucune notification", notif(cur) is None, notif(cur))
+
+
+print("\n=== L'annulation s'annonce aussi : l'annonce du reset est deja partie ===")
+
+cli, cur, conn, lots = monter([
+    (r"SELECT id, value_applied, date FROM global_resets", (42, 0.3, date(2026, 9, 20))),
+    (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (0,)),
+    (r"SELECT joueur_id, old_sigma FROM global_reset_details", [(1, 1.8)]),
+])
+r = cli.post('/api/admin/revert-global-reset', headers=H)
+check("l'annulation repond 200", r.status_code == 200, r.get_data(as_text=True))
+n = notif(cur)
+check("type = reset_global_annule", n and n[0] == 'reset_global_annule', n)
+check("elle mene au classement", n and n[3] == '/classement', n and n[3])
+check("elle date le reset annule", n and '20/09/2026' in (n[2] or ''), n and n[2])
+
+# Un reset anterieur au plafond peut rendre sa date en chaine : la
+# notification ne doit pas faire echouer l'annulation pour autant.
+cli, cur, conn, lots = monter([
+    (r"SELECT id, value_applied, date FROM global_resets", (7, 0.3, '2026-08-01')),
+    (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (0,)),
+    (r"SELECT joueur_id, old_sigma FROM global_reset_details", []),
+])
+r = cli.post('/api/admin/revert-global-reset', headers=H)
+check("date en chaine : l'annulation passe quand meme", r.status_code == 200,
+      r.get_data(as_text=True))
+check("et la notification part", notif(cur) is not None, notif(cur))
+
+# Refus : rien ne doit partir non plus.
+cli, cur, conn, lots = monter([
+    (r"SELECT id, value_applied, date FROM global_resets", (42, 0.3, date(2026, 9, 20))),
+    (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (2,)),
+])
+cli.post('/api/admin/revert-global-reset', headers=H)
+check("annulation refusee -> aucune notification", notif(cur) is None, notif(cur))
+
 
 print("\n" + "=" * 60)
 print("%d/%d assertions" % (sum(OK), len(OK)))
