@@ -103,6 +103,18 @@ BEGIN
             USING HINT = '2026-09-18_promotions_proposees.sql n''a pas abouti.';
     END IF;
 
+    -- Meme cas : `notifications` existe depuis le 02/09, seule la colonne
+    -- `lien` manquerait. L'absence serait SILENCIEUSE a l'ecriture -- l'INSERT
+    -- tomberait en 500 au moment ou un admin approuve une liaison, c'est-a-dire
+    -- loin d'ici et sans rapport apparent avec un rattrapage de dump.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'notifications' AND column_name = 'lien'
+    ) THEN
+        RAISE EXCEPTION 'Rattrapage incomplet : notifications.lien absente.'
+            USING HINT = '2026-09-20_notifications_lien.sql n''a pas abouti.';
+    END IF;
+
     RAISE NOTICE 'Schema verifie : les % tables attendues sont presentes.', array_length(attendues, 1);
 END
 $$;

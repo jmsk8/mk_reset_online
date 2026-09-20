@@ -90,21 +90,37 @@
         }
     }
 
-    /* Ecran large MAIS tactile (tablette posee, ecran de salon, PC tactile).
-       Bulma n'y prevoit que le survol, qui n'existe pas au doigt : son
-       `:focus-within` ouvrait le menu le temps d'un tap, puis le focus se
-       perdait et le menu se refermait seul. Le JS pilote donc l'ouverture au
-       clic, comme en mobile — ces deux regles sont ce qu'il actionne.
+    /* Ecran large : les menus s'ouvrent au CLIC, jamais au survol.
+       `is-hoverable` a ete retire des quatre dropdowns pour cette raison --
+       un menu qui se deroule en passant la souris s'ouvre aussi quand on ne
+       lui demande rien, en traversant la navbar pour aller ailleurs.
 
-       `hover: none` cible l'absence de survol, pas la taille : c'est la
-       propriete qui distingue un doigt d'une souris. */
-    @media screen and (min-width: 1024px) and (hover: none) {
-        #navbarMenu .navbar-item.has-dropdown:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
+       Plus de distinction souris/tactile ici : le clic vaut pour les deux, et
+       la regle `hover: none` qui doublait ce bloc n'avait plus d'objet.
+
+       La cloche et le compte SONT inclus cette fois (pas de `:not()`) : eux
+       aussi s'ouvraient au survol sur desktop. */
+    @media screen and (min-width: 1024px) {
+        #navbarMenu .navbar-item.has-dropdown > .navbar-dropdown {
             display: none;
         }
 
-        #navbarMenu .navbar-item.has-dropdown.est-ouverte:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
+        #navbarMenu .navbar-item.has-dropdown.est-ouverte > .navbar-dropdown {
             display: block;
+        }
+
+        /* Bulma remonte le dropdown de 5px et le rend transparent tant qu'il
+           n'est pas ouvert, en comptant sur `:hover` pour l'animer. Sans
+           survol, il resterait invisible une fois deroule. */
+        #navbarMenu .navbar-item.has-dropdown.est-ouverte > .navbar-dropdown {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        /* Le chevron suit l'etat, comme en mobile. */
+        #navbarMenu .has-dropdown.est-ouverte > .navbar-link:not(.is-arrowless)::after {
+            transform: rotate(135deg) translate(0.25em, -0.25em);
         }
     }
 
@@ -326,9 +342,67 @@
             font-size: 1.1rem;
         }
     }
+
+    /* La liste des notifications defile au-dela de ~4 entrees.
+       Hors media query : la regle vaut pour les DEUX cloches, celle du
+       desktop et celle collee au burger.
+
+       21rem ~ 4 entrees : une notification empile un titre, un corps de deux
+       lignes en is-size-7 et sa date, soit environ 5.2rem avec les marges.
+       C'est une approximation assumee -- un corps plus long fait une ligne de
+       plus, et on en verra 3 ou 4 selon les textes. La valeur est la pour
+       COUPER a peu pres la, pas pour cadrer au pixel.
+
+       `min(21rem, 60vh)` : sur un ecran bas (portable en paysage, mobile) la
+       borne en rem depasserait la fenetre et le panneau sortirait de l'ecran,
+       emportant la fin de la liste hors de portee. La borne en vh reprend
+       alors la main.
+
+       Pas de `height` : une liste d'une seule notification garde sa taille
+       naturelle au lieu de reserver du vide sous elle.
+
+       `overscroll-behavior` arrete le defilement a la fin de la liste : sans
+       lui, continuer a faire tourner la molette emporte la page en dessous,
+       et on perd de vue le panneau qu'on etait en train de lire. */
+    .liste-notifs {
+        max-height: min(21rem, 60vh);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    /* Le defilement doit se voir, sinon rien ne dit qu'il y a plus bas.
+       Firefox prend `scrollbar-*`, les moteurs WebKit passent par le
+       pseudo-element -- les deux sont necessaires pour couvrir les deux. */
+    .liste-notifs {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+    }
+    .liste-notifs::-webkit-scrollbar {
+        width: 8px;
+    }
+    .liste-notifs::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .liste-notifs::-webkit-scrollbar-thumb {
+        background-color: rgba(148, 163, 184, 0.5);
+        border-radius: 4px;
+    }
+    .liste-notifs::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(148, 163, 184, 0.8);
+    }
 </style>
 
-<nav class="navbar is-dark" role="navigation" aria-label="main navigation">
+{# Le jeton CSRF vit ICI et pas dans une <meta> du <head> : la cloche est
+   servie par la navbar sur TOUTES les pages, alors que <meta name="csrf-token">
+   n'etait pose que dans une poignee de gabarits (mon_compte, admin_*...).
+   Ailleurs, le marquage « tout lu » partait sans jeton et flask-wtf le
+   rejetait en 400 : la pastille s'eteignait a l'ecran, mais rien n'etait
+   enregistre, et le compteur revenait au rechargement.
+
+   Sur le <nav> parce que la navbar s'insere dans le <body> : une <meta> y
+   serait hors spec. #}
+<nav class="navbar is-dark" role="navigation" aria-label="main navigation"
+     data-csrf="{{ csrf_token() }}">
   <div class="container">
     <div class="navbar-brand">
       <a class="navbar-item brand-item" href="/">
@@ -384,7 +458,7 @@
           <span>Classement</span>
         </a>
         
-        <div class="navbar-item has-dropdown is-hoverable">
+        <div class="navbar-item has-dropdown">
           <a class="navbar-link">
             <span class="icon"><i class="fas fa-chart-bar"></i></span>
             <span>Statistiques</span>
@@ -417,7 +491,7 @@
         {% if compte_joueur %}
           {# Cloche des notifications, remplie par fetch apres le rendu : la
              calculer cote serveur imposerait un appel backend a chaque page. #}
-          <div class="navbar-item has-dropdown is-hoverable zone-cloche is-hidden-touch">
+          <div class="navbar-item has-dropdown zone-cloche is-hidden-touch">
             <a class="navbar-link is-arrowless" title="Notifications">
               <span class="icon"><i class="fas fa-bell"></i></span>
               <span class="tag is-danger is-rounded ml-1 is-hidden badge-notifs">0</span>
@@ -427,7 +501,7 @@
             </div>
           </div>
 
-          <div class="navbar-item has-dropdown is-hoverable zone-compte is-hidden-touch">
+          <div class="navbar-item has-dropdown zone-compte is-hidden-touch">
             <a class="navbar-link">
               {% if compte_joueur.avatar_url %}
                 <figure class="image is-24x24 mr-2">
@@ -444,7 +518,7 @@
           </div>
         {% endif %}
         {% if est_admin %}
-          <div class="navbar-item has-dropdown is-hoverable">
+          <div class="navbar-item has-dropdown">
             <a class="navbar-link has-text-warning">
               <span class="icon"><i class="fas fa-user-shield"></i></span>
               <span>Admin</span>
@@ -601,6 +675,13 @@
     // de ces appels. Voir _est_navigation et docs/audit-503-zone-admin.md.
     const HEADERS_JSON = { headers: { 'Accept': 'application/json' } };
 
+    // Jeton CSRF porte par le <nav> : il est le seul element present sur
+    // toutes les pages, la <meta> du <head> ne l'etant que sur certaines.
+    // Le repli sur la <meta> sert les gabarits qui la posent deja.
+    const JETON_CSRF = document.querySelector('.navbar[data-csrf]')?.dataset.csrf
+                       || document.querySelector('meta[name="csrf-token"]')?.content
+                       || '';
+
     const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
     if ($navbarBurgers.length > 0) {
       $navbarBurgers.forEach( el => {
@@ -652,55 +733,70 @@
     // rester ouverts ensemble (on compare deux sections), et un clic ailleurs
     // dans le menu ne les referme pas — seul un nouveau clic sur l'en-tete le
     // fait. Fermer au clic exterieur reviendrait a refermer le burger.
-    document.querySelectorAll(
-      '#navbarMenu .navbar-item.has-dropdown:not(.zone-cloche):not(.zone-compte)'
-    ).forEach(section => {
+    // Les sous-menus s'ouvrent au CLIC, sur tous les ecrans. Plus de garde
+    // `hover: none` : un menu qui se deroule au survol s'ouvre aussi quand on
+    // traverse la navbar pour aller ailleurs, et c'est ce qu'on ne veut plus.
+    //
+    // La cloche et le compte du DESKTOP entrent ici aussi (`.is-hidden-touch`),
+    // parce qu'eux non plus ne doivent plus s'ouvrir au survol. Leurs jumeaux
+    // mobiles gardent leur propre mecanique, plus haut : deux panneaux
+    // superposes s'y masqueraient, donc un seul reste ouvert a la fois.
+    const sectionsMenu = document.querySelectorAll(
+      '#navbarMenu .navbar-item.has-dropdown:not(.cloche-mobile):not(.compte-mobile)'
+    );
+
+    function fermerSections(sauf) {
+      sectionsMenu.forEach(section => {
+        if (section === sauf) return;
+        section.classList.remove('est-ouverte');
+        const l = section.querySelector('.navbar-link');
+        if (l) l.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    sectionsMenu.forEach(section => {
       const lien = section.querySelector('.navbar-link');
       if (!lien) return;
 
       lien.setAttribute('aria-expanded', 'false');
       lien.addEventListener('click', ev => {
-        // Le clic pilote le menu dans deux cas : sous 1024px (pas de survol
-        // possible, le menu est replie par le CSS) et sur ecran tactile,
-        // quelle que soit la largeur.
-        //
-        // Sans le second cas, un ecran tactile large restait au regime de
-        // Bulma, qui ouvre sur `:hover`, `:focus` et `:focus-within`. Au
-        // doigt il n'y a pas de survol : le tap donnait le focus, le menu
-        // s'ouvrait, puis le focus se perdait aussitot et il se refermait
-        // tout seul. Ces en-tetes sont des <a> sans href, donc meme pas
-        // focusables de maniere fiable.
-        if (!window.matchMedia('(max-width: 1023px), (hover: none)').matches) return;
         ev.preventDefault();
         const ouvert = section.classList.toggle('est-ouverte');
         lien.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
+
+        // Sur ecran large les menus flottent cote a cote : en laisser deux
+        // ouverts les ferait se chevaucher. Dans le burger ils s'empilent
+        // dans le flux, et on peut vouloir comparer deux sections -- c'est
+        // pourquoi on ne referme les autres qu'au-dessus de 1024px.
+        if (ouvert && window.matchMedia('(min-width: 1024px)').matches) {
+          fermerSections(section);
+        }
       });
     });
 
-    // Tactile sur ecran large : un tap hors du menu le referme. En mobile on
-    // s'en abstient (cf. plus haut : ce serait refermer le burger), mais ici
-    // le menu flotte au-dessus de la page, et le laisser ouvert masquerait ce
-    // qu'on vient de toucher.
+    // Ecran large : un clic hors du menu le referme -- c'est le second geste
+    // demande, « si on reclique a cote, ca le ferme ». En mobile on s'en
+    // abstient (cf. plus haut : ce serait refermer le burger), mais ici le
+    // menu flotte au-dessus de la page et masquerait ce qu'on vient de viser.
+    //
+    // Sans distinction souris/tactile : avec l'ouverture au clic, un menu
+    // laisse ouvert le reste au survol comme au doigt.
     document.addEventListener('click', ev => {
-      if (!window.matchMedia('(min-width: 1024px) and (hover: none)').matches) return;
+      if (!window.matchMedia('(min-width: 1024px)').matches) return;
       if (ev.target.closest('#navbarMenu .navbar-item.has-dropdown')) return;
-      document.querySelectorAll('#navbarMenu .has-dropdown.est-ouverte').forEach(section => {
-        section.classList.remove('est-ouverte');
-        const lien = section.querySelector('.navbar-link');
-        if (lien) lien.setAttribute('aria-expanded', 'false');
-      });
+      fermerSections(null);
+    });
+
+    // Echap referme aussi : au clavier, le clic exterieur n'est pas un geste
+    // disponible, et le menu resterait ouvert sans moyen de le replier.
+    document.addEventListener('keydown', ev => {
+      if (ev.key === 'Escape') fermerSections(null);
     });
 
     // Refermer le burger remet ses sous-menus a plat : les rouvrir sur l'etat
     // laisse au dernier passage donnerait un menu different a chaque ouverture.
     document.querySelectorAll('.navbar-burger').forEach(burger => {
-      burger.addEventListener('click', () => {
-        document.querySelectorAll('#navbarMenu .has-dropdown.est-ouverte').forEach(section => {
-          section.classList.remove('est-ouverte');
-          const lien = section.querySelector('.navbar-link');
-          if (lien) lien.setAttribute('aria-expanded', 'false');
-        });
-      });
+      burger.addEventListener('click', () => fermerSections(null));
     });
 
     // Avatar Discord injoignable (lien expire, image bloquee) : sans repli,
@@ -752,19 +848,77 @@
       if (!badges.length || !listes.length) return;
 
       const ICONES = {
-        liaison_approuvee: 'fa-circle-check has-text-success',
-        liaison_refusee:   'fa-circle-xmark has-text-danger',
-        liaison_annulee:   'fa-link-slash has-text-warning',
-        fiche_supprimee:   'fa-trash has-text-danger',
-        tournoi_ajoute:    'fa-flag-checkered has-text-info',
-        recap_publie:      'fa-scroll has-text-warning'
+        liaison_approuvee:  'fa-circle-check has-text-success',
+        liaison_refusee:    'fa-circle-xmark has-text-danger',
+        liaison_annulee:    'fa-link-slash has-text-warning',
+        fiche_supprimee:    'fa-trash has-text-danger',
+        tournoi_ajoute:     'fa-flag-checkered has-text-info',
+        recap_publie:       'fa-scroll has-text-warning',
+        promotion_proposee: 'fa-user-shield has-text-link',
+        promotion_acceptee: 'fa-user-check has-text-success',
+        promotion_refusee:  'fa-user-xmark has-text-grey'
       };
 
+      // Solde TOUT ce que la pastille comptait, et eteint les deux cloches.
+      // Appele a l'ouverture de la cloche : ce qui vient d'etre montre a ete
+      // vu, garder la pastille allumee sur des lignes qu'on a sous les yeux
+      // n'apprend plus rien.
+      //
+      // `deja` evite de rappeler l'endpoint a chaque ouverture : le compteur
+      // est deja a zero, il n'y a plus rien a solder.
+      let deja = false;
+      async function toutMarquerLu() {
+        if (deja) return;
+        deja = true;
+        // L'affichage part en premier : la pastille doit s'eteindre au geste,
+        // pas au retour du reseau.
+        badges.forEach(badge => badge.classList.add('is-hidden'));
+        listes.forEach(l => {
+          l.querySelectorAll('.navbar-item').forEach(i => i.classList.add('has-text-grey'));
+        });
+        try {
+          const r = await fetch('/me/notifications/lues', {
+            method: 'POST',
+            headers: {'X-CSRFToken': JETON_CSRF}
+          });
+          // `fetch` ne leve PAS sur une reponse d'erreur : sans ce test, un
+          // 400 (jeton refuse) ou un 500 passait pour un succes, la pastille
+          // restait eteinte a l'ecran et le compteur revenait au rechargement.
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+        } catch (e) {
+          // Rien n'a ete enregistre : on rallume, plutot que de laisser croire
+          // que c'est lu. La pastille reviendrait de toute facon au prochain
+          // chargement -- autant etre franc tout de suite.
+          deja = false;
+          badges.forEach(badge => {
+            if (badge.textContent && badge.textContent !== '0') {
+              badge.classList.remove('is-hidden');
+            }
+          });
+        }
+      }
+
       function ligne(n) {
-        const item = document.createElement('div');
+        // Un <a> seulement si la notification mene quelque part : les accuses
+        // de reception (promotion acceptee/refusee) n'ont pas de cible, et un
+        // lien mort se signale mieux par son absence que par un clic sans effet.
+        //
+        // `lien` vient du backend, qui le construit lui-meme a l'emission --
+        // jamais d'une saisie humaine, contrairement au titre et au corps, qui
+        // restent en textContent pour cette raison. On verifie tout de meme
+        // qu'il est bien interne : un `href` absolu pose ici ouvrirait le site
+        // a une redirection si cette colonne venait un jour d'ailleurs.
+        const cliquable = typeof n.lien === 'string'
+                          && n.lien.startsWith('/') && !n.lien.startsWith('//');
+        const item = document.createElement(cliquable ? 'a' : 'div');
         item.className = 'navbar-item is-flex' + (n.lue ? ' has-text-grey' : '');
         item.style.whiteSpace = 'normal';
         item.style.alignItems = 'flex-start';
+        if (cliquable) {
+          // Pas de marquage ici : pour atteindre ce lien il a fallu ouvrir la
+          // cloche, qui a deja tout soldé.
+          item.href = n.lien;
+        }
 
         const ico = document.createElement('span');
         ico.className = 'icon mr-2 mt-1';
@@ -815,28 +969,24 @@
         }
         res.notifications.forEach(n => liste.appendChild(ligne(n)));
 
-        if (res.non_lues > 0) {
-          liste.appendChild(document.createElement('hr')).className = 'navbar-divider';
-          const b = document.createElement('a');
-          b.className = 'navbar-item has-text-link';
-          b.textContent = 'Tout marquer comme lu';
-          b.addEventListener('click', async () => {
-            const csrf = document.querySelector('meta[name="csrf-token"]');
-            await fetch('/me/notifications/lues', {
-              method: 'POST',
-              headers: csrf ? {'X-CSRFToken': csrf.content} : {}
-            });
-            // Les deux cloches montrent le meme compteur : le marquage doit
-            // les eteindre ensemble, pas seulement celle qu'on a cliquee.
-            badges.forEach(badge => badge.classList.add('is-hidden'));
-            listes.forEach(l => {
-              const bouton = l.querySelector('.has-text-link');
-              if (bouton) bouton.remove();
-              l.querySelectorAll('.navbar-item').forEach(i => i.classList.add('has-text-grey'));
-            });
-          });
-          liste.appendChild(b);
-        }
+      });
+
+      // OUVRIR la cloche vaut lecture : tout ce que la pastille comptait est
+      // sous les yeux, donc solde. Remplace le bouton « Tout marquer comme
+      // lu », qui demandait un second geste pour dire ce que l'ouverture
+      // disait deja.
+      //
+      // Les deux cloches sont cablees (desktop et mobile) : elles montrent le
+      // meme compteur, et l'une ne doit pas rester allumee quand l'autre a
+      // ete ouverte. Le declencheur est pose sur l'en-tete plutot que sur la
+      // section entiere, sinon un clic DANS la liste le redeclencherait.
+      document.querySelectorAll('.zone-cloche > .navbar-link').forEach(lien => {
+        lien.addEventListener('click', () => {
+          // Seulement a l'ouverture : sur la cloche desktop le meme clic sert
+          // aussi a refermer, et refermer n'est pas lire.
+          const section = lien.closest('.zone-cloche');
+          if (section && section.classList.contains('est-ouverte')) toutMarquerLu();
+        });
       });
     })();
     {% endif %}

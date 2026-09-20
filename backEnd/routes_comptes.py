@@ -50,18 +50,22 @@ _audit = audit.ecrire
 _acteur_id = audit.acteur_courant
 
 
-def notifier(cur, compte_id, type_notif, titre, corps=None):
+def notifier(cur, compte_id, type_notif, titre, corps=None, lien=None):
     """Depose une notification. A appeler DANS la transaction de la decision.
 
     Le texte est fige ici : une notification parle souvent d'une chose qui vient
     de disparaitre, et une jointure a l'affichage donnerait « (null) ».
+
+    `lien` suit la meme regle : c'est l'URL construite maintenant, pas un
+    identifiant qu'on re-resoudrait a l'affichage. NULL quand la notification
+    n'appelle aucune action.
     """
     if compte_id is None:
         return
     cur.execute(
-        """INSERT INTO notifications (compte_id, type, titre, corps)
-           VALUES (%s, %s, %s, %s)""",
-        (compte_id, type_notif[:40], titre[:160], corps),
+        """INSERT INTO notifications (compte_id, type, titre, corps, lien)
+           VALUES (%s, %s, %s, %s, %s)""",
+        (compte_id, type_notif[:40], titre[:160], corps, lien[:255] if lien else None),
     )
 
 
@@ -116,16 +120,16 @@ def _nom_creable(cur, nom):
 # Cote joueur : revendiquer une fiche
 # ---------------------------------------------------------------------------
 
-def notifier_tous(cur, type_notif, titre, corps=None):
+def notifier_tous(cur, type_notif, titre, corps=None, lien=None):
     """Notifie tous les comptes non suspendus. Renvoie leur nombre.
 
     Un compte suspendu ne peut plus ouvrir de session : lui deposer du
     courrier n'aurait aucun sens.
     """
     cur.execute(
-        """INSERT INTO notifications (compte_id, type, titre, corps)
-           SELECT id, %s, %s, %s FROM comptes WHERE statut <> 'suspended'""",
-        (type_notif[:40], titre[:160], corps),
+        """INSERT INTO notifications (compte_id, type, titre, corps, lien)
+           SELECT id, %s, %s, %s, %s FROM comptes WHERE statut <> 'suspended'""",
+        (type_notif[:40], titre[:160], corps, lien[:255] if lien else None),
     )
     return cur.rowcount
 
@@ -493,6 +497,7 @@ def approuver_liaison(demande_id):
                          if creation else
                          "Votre compte est désormais rattaché à la fiche « %s ».")
                         % nom_final,
+                        lien="/joueur/%d" % joueur_id,
                     )
                 conn.commit()
             except Exception:
@@ -544,6 +549,7 @@ def refuser_liaison(demande_id):
                         "Votre demande a été refusée",
                         ("Motif : " + motif) if motif
                         else "Aucun motif n'a été précisé. Contactez un administrateur.",
+                        lien="/mon-compte/liaison",
                     )
                 conn.commit()
             except Exception:
@@ -1031,6 +1037,7 @@ def proposer_promotion(compte_id):
                         "Proposition : devenir %s" % role,
                         "Un administrateur vous propose ce role. Ouvrez votre compte "
                         "pour l'accepter ou le refuser.",
+                        lien="/mon-compte#bloc-promotion",
                     )
                 conn.commit()
             except Exception:
@@ -1187,6 +1194,9 @@ def repondre_promotion():
                                {"role_propose": role, "promotion_id": promotion_id})
                         # Le proposant a pu partir entre-temps : notifier()
                         # ignore un compte_id nul, rien a verifier ici.
+                        # Sans lien, volontairement : c'est un accuse de
+                        # reception, il n'y a rien a faire dessus -- et le
+                        # proposant a pu perdre l'acces a /admin/comptes.
                         notifier(
                             cur, proposant, 'promotion_refusee',
                             "Promotion refusee",
@@ -1213,6 +1223,7 @@ def repondre_promotion():
                            {"ancien": compte['role'], "nouveau": role,
                             "origine": "acceptation", "promotion_id": promotion_id,
                             "propose_par": proposant})
+                    # Sans lien, pour la meme raison que le refus ci-dessus.
                     notifier(
                         cur, proposant, 'promotion_acceptee',
                         "Promotion acceptee",
@@ -1943,6 +1954,7 @@ def delier_compte(compte_id):
                         "Il n'est plus rattaché à la fiche « %s ». La fiche et son "
                         "historique sont intacts ; vous pouvez demander un nouveau "
                         "rattachement depuis « Mon compte »." % (ligne[0] if ligne else '?'),
+                        lien="/mon-compte/liaison",
                     )
                 conn.commit()
             except Exception:
@@ -2528,7 +2540,7 @@ def mes_notifications():
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """SELECT id, type, titre, corps, created_at, lu_at
+                    """SELECT id, type, titre, corps, created_at, lu_at, lien
                        FROM notifications WHERE compte_id = %s
                        ORDER BY created_at DESC LIMIT 30""",
                     (g.compte['id'],),
@@ -2543,6 +2555,7 @@ def mes_notifications():
         "notifications": [{
             "id": r[0], "type": r[1], "titre": r[2], "corps": r[3],
             "created_at": r[4].isoformat(), "lue": r[5] is not None,
+            "lien": r[6],
         } for r in rows],
     })
 
@@ -2565,6 +2578,7 @@ def marquer_notifications_lues():
         logger.error("Marquage des notifications impossible: %s", e)
         return jsonify({"error": "Erreur serveur"}), 500
     return jsonify({"status": "success", "marquees": marquees})
+
 
 
 @comptes_bp.route('/admin/notifications', methods=['GET'])
@@ -2666,13 +2680,14 @@ def exporter_mes_donnees():
                 } for r in cur.fetchall()]
 
                 cur.execute(
-                    """SELECT created_at, type, titre, corps, lu_at
+                    """SELECT created_at, type, titre, corps, lu_at, lien
                        FROM notifications WHERE compte_id = %s ORDER BY created_at""",
                     (compte_id,),
                 )
                 export["notifications"] = [{
                     "recue_le": r[0].isoformat(), "type": r[1], "titre": r[2],
                     "corps": r[3], "lue_le": r[4].isoformat() if r[4] else None,
+                    "lien": r[5],
                 } for r in cur.fetchall()]
 
                 export["dossier_sportif"] = None
