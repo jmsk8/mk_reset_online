@@ -37,6 +37,7 @@ ce qui débloque la mesure des autres constats.
 |---|---|
 | [moteur-cpp-plan.md](moteur-cpp-plan.md) | La conception : reprendre la simulation en C++ derrière le même protocole, front inchangé, moteur JS conservé en référence |
 | [moteur-cpp-avancement.md](moteur-cpp-avancement.md) | Ce qui tourne (M0-M5), les écarts assumés, et ce qui reste vide |
+| [moteur-rust-plan.md](moteur-rust-plan.md) | La conception : un troisième moteur en Rust, mêmes règles que le C++, même protocole, front inchangé — rien n'est codé |
 
 Le moteur C++ vit dans `raceEngineCpp/` et se choisit avec `make engine-cpp` /
 `make engine-js`. Le JS reste le défaut et la référence.

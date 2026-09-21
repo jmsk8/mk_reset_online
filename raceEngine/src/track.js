@@ -1,13 +1,15 @@
 // Lecture des circuits dessines.
 //
 // Un circuit est un dessin dans tracks/, relu au demarrage. Le format tient en
-// trois caracteres — `X` pour les bords, `x` pour la ligne, `B` pour une boite —
-// et le reste du fichier est de la prose : c'est un .md qui se lit sur GitHub.
+// quelques caracteres — `X` pour les bords, `x` pour la ligne, `B` pour une
+// boite, un carre de `P` ou de `p` pour un tuyau — et le reste du fichier est de
+// la prose : c'est un .md qui se lit sur GitHub.
 //
 //     ```track
 //     XXXXXXXXXXXXXXXX
 //                B
-//        x       B
+//        x       B   PP
+//                B   PP
 //     XXXXXXXXXXXXXXXX
 //     ```
 //
@@ -60,6 +62,59 @@ function extractBlock(text, source) {
     fail(source, 0, 'aucun bloc ```track. Un circuit se dessine entre ```track et ```.');
 }
 
+// Les cases de tuyau regroupees en pipes. Un pipe se dessine en carre de 2×2 —
+// `PP` au-dessus de `PP` pour un vert, `pp` au-dessus de `pp` pour un rouge —
+// et deux pipes peuvent se toucher.
+//
+// Le decoupage parcourt le dessin dans le sens de lecture. La premiere case
+// libre rencontree est forcement le coin haut-gauche de son pipe : toute autre
+// case du meme carre serait plus haut ou plus a gauche, donc deja lue. Le
+// decoupage est ainsi impose case apres case, et un dessin n'a qu'une lecture —
+// ou aucune, et il est refuse.
+//
+// Deux couleurs, un seul obstacle : `P` plante un tuyau vert, `p` un rouge, et
+// c'est TOUTE la difference — meme emprise, meme choc, meme place dans les
+// priorites. La couleur ne voyage que jusqu'au decor.
+function assemblePipes(inner, cells, columns, lineNo, source) {
+    const at = (row, col) => (inner[row] || '')[col] || ' ';
+    const used = new Set();
+    const key = (row, col) => row * columns + col;
+    const pipes = [];
+
+    for (const { col, row } of cells) {
+        if (used.has(key(row, col))) continue;
+
+        const ch = at(row, col);
+        const other = (ch === 'P') ? 'p' : 'P';
+
+        if (col + 1 >= columns) {
+            fail(source, lineNo(row), `pipe coupe par le bord droit en colonne ${col} : `
+                + 'un pipe ne se replie pas sur la premiere colonne. Le decaler vers la gauche.');
+        }
+
+        for (const [r, c] of [[row, col + 1], [row + 1, col], [row + 1, col + 1]]) {
+            if (at(r, c) === other) {
+                fail(source, lineNo(row), `pipe en colonne ${col} qui melange P et p : `
+                    + 'un pipe est d\'une seule couleur, PP/PP vert ou pp/pp rouge.');
+            }
+            if (at(r, c) !== ch || used.has(key(r, c))) {
+                fail(source, lineNo(row), `pipe incomplet en colonne ${col} : un pipe se `
+                    + `dessine en carre de 2×2, ${ch}${ch} au-dessus de ${ch}${ch}.`);
+            }
+        }
+
+        for (const [r, c] of [[row, col], [row, col + 1], [row + 1, col], [row + 1, col + 1]]) {
+            used.add(key(r, c));
+        }
+
+        // La case du coin haut-gauche : c'est `applyTrack` qui en fait le centre
+        // du carre, avec le reste des conversions.
+        pipes.push({ col: col, row: row, kind: (ch === 'p') ? 'red' : 'green' });
+    }
+
+    return pipes;
+}
+
 // Le dessin en coordonnees de cellules, sans notion de pixel ni de profondeur.
 // `source` ne sert qu'aux messages d'erreur.
 function parseTrack(text, source) {
@@ -101,7 +156,10 @@ function parseTrack(text, source) {
     }
 
     const boxes = [];
-    const pipes = [];
+    // Les cases de tuyau, relevees au passage et assemblees en blocs une fois
+    // le dessin entier lu : un bloc s'etale sur deux rangees, il ne se juge pas
+    // ligne par ligne.
+    const pipeCells = [];
     let finishColumn = -1;
     let finishLine = 0;
     const inner = last - first - 1;
@@ -139,25 +197,19 @@ function parseTrack(text, source) {
                 continue;
             }
 
-            // Deux couleurs, un seul obstacle : `P` plante un tuyau vert, `p` un
-            // rouge, et c'est TOUTE la difference — meme emprise, meme choc, meme
-            // place dans les priorites. La couleur ne voyage que jusqu'au decor,
-            // et n'est donc pas un element de plus a apprendre pour dessiner un
-            // circuit.
             if (ch === 'P' || ch === 'p') {
-                pipes.push({
-                    col: col,
-                    row: i - first - 1,
-                    kind: (ch === 'p') ? 'red' : 'green'
-                });
+                pipeCells.push({ col: col, row: i - first - 1 });
                 continue;
             }
 
             fail(source, lineNo(i), `caractere "${ch}" inconnu en colonne ${col}. `
                 + 'Le dessin ne connait que X (bord), x (ligne), B (boite), '
-                + 'P (pipe vert), p (pipe rouge) et l\'espace.');
+                + 'PP/PP (pipe vert), pp/pp (pipe rouge) et l\'espace.');
         }
     }
+
+    const pipes = assemblePipes(rows.slice(first + 1, last), pipeCells, columns,
+        r => lineNo(first + 1 + r), source);
 
     if (finishColumn === -1) {
         fail(source, block.offset, "aucune ligne de depart/arrivee : il manque un x.");
@@ -260,9 +312,13 @@ function applyTrack(cfg, track) {
         y: rowY(box.row)
     }));
 
+    // Un pipe couvre deux colonnes et deux rangees : il se pose au milieu du
+    // carre, entre deux rangees. Ce sont ces demi-rangees qui donnent au dessin
+    // sa finesse de placement — et le milieu exact de la piste, a condition de
+    // dessiner un nombre pair de rangees.
     const pipes = track.pipes.map(pipe => ({
-        x: pipe.col * CELL_PX,
-        y: rowY(pipe.row),
+        x: (pipe.col + 0.5) * CELL_PX,
+        y: rowY(pipe.row + 0.5),
         // Elle ne sert qu'au dessin. Rien de ce qui suit — passage le plus
         // etroit, avertissements, priorites — ne la regarde.
         kind: pipe.kind
@@ -278,7 +334,7 @@ function applyTrack(cfg, track) {
             fail(track.source, 0, `piste bouchee vers x=${Math.round(passage.x)} `
                 + `(colonne ${Math.round(passage.x / CELL_PX)}) : il ne reste que `
                 + `${passage.free.toFixed(1)} de passage libre en profondeur, il en faut `
-                + `${cfg.pipe.minPassageY}. Deplacer ou retirer un pipe (P ou p).`);
+                + `${cfg.pipe.minPassageY}. Deplacer ou retirer un pipe (bloc PP/PP ou pp/pp).`);
         }
     }
 

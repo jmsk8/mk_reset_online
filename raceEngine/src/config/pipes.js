@@ -2,10 +2,10 @@
 
 export default {
     // Le pipe : le seul element du monde de masse infinie. Il ne bouge pas, ne se
-    // detruit pas, et ne cede jamais — il se contourne. Il se dessine par un `P`
-    // dans tracks/, comme une boite par un `B` ; un `p` en pose un rouge, qui
-    // n'est que la meme chose repeinte — rien ici ne connait sa couleur, et rien
-    // ne doit.
+    // detruit pas, et ne cede jamais — il se contourne. Il se dessine dans
+    // tracks/ par un carre de quatre `P`, comme une boite par un `B` ; un carre de
+    // `p` en pose un rouge, qui n'est que la meme chose repeinte — rien ici ne
+    // connait sa couleur, et rien ne doit.
     pipe: {
         // Aucune constante ne convertit ici la profondeur en pixels, et c'est
         // voulu : le rebond travaille dans un espace normalise — chaque axe

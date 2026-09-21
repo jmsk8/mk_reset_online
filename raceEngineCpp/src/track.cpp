@@ -111,6 +111,76 @@ std::string lower(std::string s) {
     return s;
 }
 
+// Les cases de tuyau regroupees en pipes. <- assemblePipes
+//
+// Un pipe se dessine en carre de 2×2 — `PP` au-dessus de `PP` pour un vert,
+// `pp` au-dessus de `pp` pour un rouge — et deux pipes peuvent se toucher.
+//
+// Le decoupage parcourt le dessin dans le sens de lecture. La premiere case
+// libre rencontree est forcement le coin haut-gauche de son pipe : toute autre
+// case du meme carre serait plus haut ou plus a gauche, donc deja lue. Le
+// decoupage est ainsi impose case apres case, et un dessin n'a qu'une lecture —
+// ou aucune, et il est refuse.
+//
+// `cells` doit donc arriver dans le sens de lecture, ce que fait `parse_track`.
+template <typename LineNo>
+std::vector<PipeCell> assemble_pipes(const std::vector<std::string>& inner,
+                                     const std::vector<Cell>& cells, int columns,
+                                     const LineNo& line_no, const std::string& source) {
+    const auto at = [&](int row, int col) -> char {
+        if (row < 0 || row >= static_cast<int>(inner.size())) return ' ';
+        const std::string& line = inner[static_cast<size_t>(row)];
+        return (col >= 0 && col < static_cast<int>(line.size()))
+            ? line[static_cast<size_t>(col)]
+            : ' ';
+    };
+    std::vector<bool> used(inner.size() * static_cast<size_t>(columns), false);
+    const auto key = [&](int row, int col) {
+        return static_cast<size_t>(row) * static_cast<size_t>(columns) + static_cast<size_t>(col);
+    };
+
+    std::vector<PipeCell> pipes;
+
+    for (const Cell& cell : cells) {
+        const int row = cell.row;
+        const int col = cell.col;
+        if (used[key(row, col)]) continue;
+
+        const char ch = at(row, col);
+        const char other = (ch == 'P') ? 'p' : 'P';
+
+        if (col + 1 >= columns) {
+            fail(source, line_no(row), "pipe coupe par le bord droit en colonne "
+                + std::to_string(col) + " : un pipe ne se replie pas sur la premiere "
+                  "colonne. Le decaler vers la gauche.");
+        }
+
+        const int rest[3][2] = { { row, col + 1 }, { row + 1, col }, { row + 1, col + 1 } };
+        for (const auto& rc : rest) {
+            if (at(rc[0], rc[1]) == other) {
+                fail(source, line_no(row), "pipe en colonne " + std::to_string(col)
+                    + " qui melange P et p : un pipe est d'une seule couleur, PP/PP vert "
+                      "ou pp/pp rouge.");
+            }
+            if (at(rc[0], rc[1]) != ch || used[key(rc[0], rc[1])]) {
+                const std::string two(2, ch);
+                fail(source, line_no(row), "pipe incomplet en colonne " + std::to_string(col)
+                    + " : un pipe se dessine en carre de 2×2, " + two + " au-dessus de "
+                    + two + ".");
+            }
+        }
+
+        used[key(row, col)] = true;
+        for (const auto& rc : rest) used[key(rc[0], rc[1])] = true;
+
+        // La case du coin haut-gauche : c'est `apply_track` qui en fait le
+        // centre du carre, avec le reste des conversions.
+        pipes.push_back({ col, row, ch == 'p' });
+    }
+
+    return pipes;
+}
+
 } // namespace
 
 Track parse_track(const std::string& text, const std::string& source) {
@@ -158,6 +228,10 @@ Track parse_track(const std::string& text, const std::string& source) {
     }
 
     Track track;
+    // Les cases de tuyau, relevees au passage et assemblees en blocs une fois
+    // le dessin entier lu : un bloc s'etale sur deux rangees, il ne se juge pas
+    // ligne par ligne.
+    std::vector<Cell> pipeCells;
     int finishColumn = -1;
     int finishLine = 0;
 
@@ -199,15 +273,19 @@ Track parse_track(const std::string& text, const std::string& source) {
             }
 
             if (ch == 'P' || ch == 'p') {
-                track.pipes.push_back({ col, i - first - 1, ch == 'p' });
+                pipeCells.push_back({ col, i - first - 1 });
                 continue;
             }
 
             fail(source, line_no(i), std::string("caractere \"") + ch + "\" inconnu en colonne "
                 + std::to_string(col) + ". Le dessin ne connait que X (bord), x (ligne), "
-                  "B (boite), P (pipe vert), p (pipe rouge) et l'espace.");
+                  "B (boite), PP/PP (pipe vert), pp/pp (pipe rouge) et l'espace.");
         }
     }
+
+    const std::vector<std::string> inner(rows.begin() + first + 1, rows.begin() + last);
+    track.pipes = assemble_pipes(inner, pipeCells, columns,
+        [&](int r) { return line_no(first + 1 + r); }, source);
 
     if (finishColumn == -1) {
         fail(source, block.offset, "aucune ligne de depart/arrivee : il manque un x.");
@@ -292,7 +370,7 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
     // a l'ecran. Une seule rangee dessinee ne designe aucun bord : donc le
     // milieu.
     const double depth = cfg.road.maxY - cfg.road.minY;
-    const auto rowY = [&](int row) {
+    const auto rowY = [&](double row) {
         return (track.rows > 1)
             ? cfg.road.maxY - row * (depth / (track.rows - 1))
             : cfg.road.minY + depth / 2;
@@ -303,9 +381,13 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
         out.world.itemBoxes.push_back({ box.col * CELL_PX, rowY(box.row), false });
     }
 
+    // Un pipe couvre deux colonnes et deux rangees : il se pose au milieu du
+    // carre, entre deux rangees. Ce sont ces demi-rangees qui donnent au dessin
+    // sa finesse de placement — et le milieu exact de la piste, a condition de
+    // dessiner un nombre pair de rangees.
     out.world.pipes.clear();
     for (const PipeCell& pipe : track.pipes) {
-        out.world.pipes.push_back({ pipe.col * CELL_PX, rowY(pipe.row), pipe.red });
+        out.world.pipes.push_back({ (pipe.col + 0.5) * CELL_PX, rowY(pipe.row + 0.5), pipe.red });
     }
 
     // Un mur de tuyaux ne provoquerait aucune erreur a l'execution : les karts se
@@ -328,7 +410,7 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
                 + std::to_string(static_cast<long long>(std::llround(passage.x / CELL_PX)))
                 + ") : il ne reste que " + buf + " de passage libre en profondeur, il en "
                   "faut " + std::to_string(static_cast<long long>(cfg.pipe.minPassageY))
-                + ". Deplacer ou retirer un pipe (P ou p).");
+                + ". Deplacer ou retirer un pipe (bloc PP/PP ou pp/pp).");
         }
     }
 

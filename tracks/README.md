@@ -5,9 +5,11 @@ tracé, lu par le moteur de course au démarrage et traduit en vrai circuit.
 
 ```track
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-              B
      x        B
-              B
+     x                 PP
+     x        B        PP
+     x
+     x        B
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
@@ -21,8 +23,8 @@ dernière colonne touche la première : le tour boucle.
 | `X` | bord de piste — uniquement la première et la dernière ligne du dessin |
 | `x` | ligne de départ/arrivée — une seule colonne, dessinée sur autant de rangées qu'on veut |
 | `B` | boîte à objets — une par caractère |
-| `P` | pipe vert — un obstacle infranchissable, facultatif |
-| `p` | pipe rouge — le même obstacle, l'autre peinture |
+| `PP` au-dessus de `PP` | pipe vert — un obstacle infranchissable, facultatif, dessiné en carré de 2×2 |
+| `pp` au-dessus de `pp` | pipe rouge — le même obstacle, l'autre peinture |
 | espace ou `.` | bitume libre |
 
 ## L'échelle
@@ -32,19 +34,53 @@ dernière colonne touche la première : le tour boucle.
   secondes ;
 - **les rangées entre les deux bords se partagent la profondeur de la piste.**
   La rangée du haut est le fond de la piste, celle du bas le premier plan. Avec
-  quatre rangées, une boîte tombe à 35, 23,3, 11,7 ou 0 de profondeur.
+  dix rangées, une boîte tombe tous les 3,9 de profondeur, de 35 à 0.
 
 Le nombre de rangées n'est qu'une résolution de dessin : il ne change pas la
 largeur de la piste, qui reste fixée par `road.minY`/`road.maxY` dans
 [src/config/world.js](../raceEngine/src/config/world.js). Dessiner huit
-rangées donne simplement deux fois plus de finesse pour placer une boîte.
+rangées au lieu de quatre donne simplement plus de finesse pour placer une
+boîte ou un pipe.
+
+### Combien de rangées dessiner
+
+Deux choses dépendent du nombre de rangées :
+
+- **répartir les boîtes sur toute la profondeur** : il faut que (boîtes − 1)
+  divise (rangées − 1). Quatre boîtes sur dix rangées : une toutes les 3 ;
+- **poser un pipe pile au milieu (17,5)** : un pipe se centre *entre* deux
+  rangées, donc il faut un nombre **pair** de rangées.
+
+| Rangées | Pas | 3 boîtes | 4 boîtes | 5 boîtes | Pipe au milieu |
+|---|---|---|---|---|---|
+| 7 | 5,8 | toutes les 3 | toutes les 2 | — | non |
+| 9 | 4,4 | toutes les 4 | — | toutes les 2 | non |
+| **10** | 3,9 | — | **toutes les 3** | — | **oui** |
+| 13 | 2,9 | toutes les 6 | toutes les 4 | toutes les 3 | non |
+
+**Dix rangées est le réglage de référence** : les quatre boîtes tombent à 35,
+23,3, 11,7 et 0, et le couloir central existe. Chaque circuit reste libre de
+choisir le sien.
+
+La longueur, elle, ne se choisit pas : **une colonne vaut toujours 80 px**. Ajouter
+des colonnes allonge le tour, ça ne l'affine pas.
 
 ## Les pipes
 
-Un `P` plante un tuyau sur la piste. C'est le seul élément du monde de masse
-infinie : il ne bouge pas, ne se détruit pas, et ne cède jamais.
+Un carré de quatre `P` plante un tuyau sur la piste. C'est le seul élément du
+monde de masse infinie : il ne bouge pas, ne se détruit pas, et ne cède jamais.
 
-Un `p` en plante un **rouge**, et la couleur est *tout* ce qui change : même
+```
+PP      pp
+PP      pp
+vert    rouge
+```
+
+Le tuyau se pose **au centre du carré** : entre ses deux colonnes, et entre ses
+deux rangées. Le carré n'est qu'un symbole : il ne dit rien de la taille du tuyau
+en course, qui se déduit de son dessin (voir plus bas).
+
+Un carré de `p` en plante un **rouge**, et la couleur est *tout* ce qui change : même
 emprise, même choc, même place dans les priorités de l'IA, même compte dans le
 passage le plus étroit. Rien dans le moteur ne la lit — elle voyage jusqu'au
 décor et s'arrête là. Mélange les deux librement, ça ne se juge qu'à l'œil.
@@ -70,27 +106,52 @@ de la ligne où il est dessiné, soit 53 % d'une piste profonde de 35. Un seul
 tuyau laisse encore de quoi passer partout, mais deux mal placés ferment le
 circuit — et un circuit fermé est refusé au chargement, pas découvert en course.
 
-Ce qui donne, sur un dessin à **4 rangées** (profondeurs 35, 23,3, 11,7 et 0) :
+Sur un dessin à **10 rangées**, un pipe se centre à l'une de ces neuf
+profondeurs, selon la rangée du haut de son carré :
 
-| deux pipes aux rangées | profondeurs | passage | |
-|---|---|---|---|
-| 0 + 3 | 35 et 0 | 16,6 | large |
-| 0 + 1 · 2 + 3 | voisines d'un bord | 14,1 | large |
-| 0 + 2 · 1 + 3 | 35 et 11,7 · 23,3 et 0 | 4,9 | **refusé** |
-| 1 + 2 | 23,3 et 11,7 | 2,5 | **refusé** |
+| rangée du haut | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|---|
+| profondeur | 33,1 | 29,2 | 25,3 | 21,4 | **17,5** | 13,6 | 9,7 | 5,8 | 1,9 |
+
+Deux pipes sur la même colonne, repérés par la rangée du haut de leur carré :
+
+| deux pipes aux rangées | passage | |
+|---|---|---|
+| 0 + 8 | 12,7 | large — les deux bords opposés |
+| 0 + 7 · 1 + 8 | 8,8 | juste |
+| du même côté du milieu (0 à 4, ou 4 à 8) | 8,3 à 20 | large |
+| tout le reste (0 + 5, 2 + 6, 3 + 8…) | 0,5 à 5 | **refusé** |
 
 Le piège est contre-intuitif : **deux tuyaux côte à côte au milieu ne font pas une
 porte, ils font un mur.** Leurs zones bloquées fusionnent dès qu'ils sont séparés
-de moins de 18,4 en profondeur — soit plus de la moitié de la piste. À 4 rangées,
-la seule paire qui tienne est celle des deux tuyaux **du même côté**, ou celle
-des deux bords opposés.
+de moins de 18,4 en profondeur — soit plus de la moitié de la piste. La seule
+paire qui tienne est celle des deux tuyaux **du même côté**, ou celle des deux
+bords opposés.
 
 Pour une porte à deux passages, il faut *un seul* pipe au milieu — il laisse 8,3
 de chaque côté, de quoi faire passer un kart (profond de 6,3) sans confort.
 
-**Dessine 7 rangées pour placer un tuyau finement.** Les profondeurs deviennent
-35 · 29,2 · 23,3 · 17,5 · 11,7 · 5,8 · 0, et c'est là que le milieu exact — 17,5,
-la vraie porte centrale — est disponible.
+C'est la rangée du haut **4** — un carré sur les rangées 4 et 5, au milieu exact
+de dix rangées — qui donne cette porte centrale.
+
+### Pipes collés
+
+Deux carrés peuvent se toucher : `PPPP` sur deux rangées fait deux pipes côte à
+côte, `PP` sur quatre rangées deux pipes l'un au-dessus de l'autre, et un vert
+peut toucher un rouge. Le dessin se découpe dans le sens de lecture : la
+première case de pipe rencontrée est le coin haut-gauche d'un carré, et ainsi de
+suite. Un dessin n'a donc qu'une lecture possible — ou aucune, et il est refusé.
+
+```
+PPPP       PP         PPpp
+PPPP       PPPP       PPpp
+            PP
+2 pipes    2 pipes    1 vert, 1 rouge
+```
+
+Collés ne veut pas dire franchissables : deux pipes l'un au-dessus de l'autre se
+séparent de 7,8 de profondeur, et leur emprise commune ferme les trois quarts de
+la piste. Le passage le plus étroit les juge comme n'importe quels autres.
 
 `make race-tracks` affiche le passage le plus étroit d'un tracé. C'est le chiffre
 à regarder : un passage juste au-dessus du minimum se franchit, mais huit karts
@@ -106,7 +167,9 @@ bandeau CSS actuel ne sait afficher qu'une route de largeur constante.
 
 Sont refusés aussi : des bords de longueurs différentes, une ligne d'arrivée sur
 deux colonnes, un circuit sans `x` ou sans `B`, une tabulation dans le dessin,
-un tour trop court pour que la grille de départ y tienne, et **des pipes qui ne
+un pipe incomplet (un `P` seul, trois `P` en ligne, une forme en L…), un pipe
+qui mélange `P` et `p`, un pipe coupé par le bord droit du dessin, un tour trop
+court pour que la grille de départ y tienne, et **des pipes qui ne
 laissent pas 6 de passage libre**.
 
 Ce dernier refus est le plus important de tous : un circuit bouché ne planterait

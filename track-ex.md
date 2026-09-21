@@ -14,14 +14,18 @@ ressemble exactement à ce qu'elle a toujours été.
 
 ```track
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-                  x                       B                     PP                   PP           
-                  x                                             PP                   PP         
-                  x            P          B                                                    
-                  x                                                                         PP   
-                  x                       B                                                 PP     
-                  x                                             PP                PP        
-                  x                       B                     PP                PP        
+                  x                       B                     PP                   PP
+                  x                                             PP                   PP
+                  x
+                  x                       B
+                  x                                                        PP
+                  x                                                        PP
+                  x                       B
+                  x
+                  x                                             PP                pp
+                  x                       B                     PP                pp
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
 ```
 
 Repères de colonnes, pour se placer sans compter :
