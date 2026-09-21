@@ -1,7 +1,7 @@
 /* ============================================================================
    Décor de fond façon Mario Kart, commun à toutes les pages.
 
-   Trois motifs (champignon, étoile, carapace) semés en filigrane derrière le
+   Sept motifs (champignon, étoile, carapace, fleur de feu, banane, Bob-omb, éclair) semés en filigrane derrière le
    contenu. Sans couleur : une seule teinte prise juste au-dessus du fond
    (#0f172a), pour qu'ils se devinent sans jamais concurrencer la lecture.
 
@@ -13,21 +13,87 @@
 
 .decor-mk {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* Hauteur figée sur le PLUS GRAND viewport, pas `bottom: 0`. Sur
+       téléphone, la barre d'adresse se replie au défilement : avec
+       `inset: 0` le cadre rétrécissait ou s'allongeait, et les motifs placés
+       en `top: %` sautaient d'un coup en plein scroll. `100vh` en repli
+       pour les navigateurs sans unité `lvh` (même valeur sur mobile). */
+    height: 100vh;
+    height: 100lvh;
     /* Derrière tout le contenu, mais AU-DESSUS du fond du body. Un z-index
        négatif le ferait passer sous le body, qui est opaque : le décor
        deviendrait invisible. */
     z-index: 0;
     overflow: hidden;
     pointer-events: none;   /* aucun clic ne s'y perd */
+    /* Isole le décor du reste de la page : ce qui s'y passe (apparition,
+       parallaxe) ne déclenche aucun recalcul de mise en page ailleurs, et
+       le navigateur n'a pas à regarder dedans pour placer le contenu. */
+    contain: strict;
 }
 
 .decor-forme {
     position: absolute;
     /* Un cran au-dessus du fond seulement. Monter davantage le ferait lire
        comme un élément de la page plutôt que comme une texture. */
-    fill: #1b2740;
-    opacity: 0.55;
+    /* Teinte éclaircie : à #1b2740, le contraste avec le fond plafonnait à
+       1,20 même à pleine opacité — et tombait à 1,04 aux opacités du décor,
+       c'est-à-dire invisible sur un écran sombre. Ici on atteint ~1,22, dans
+       la plage où la forme se devine sans concurrencer le texte. */
+    fill: #334a73;
+
+    /* Les trois composantes du `transform` vivent dans des variables pour
+       pouvoir bouger séparément : le JS ajuste `--para` au défilement sans
+       écraser la rotation ni l'échelle de l'apparition. L'ordre compte —
+       translation d'abord, sinon la rotation ferait pivoter le déplacement. */
+    --para: 0px;
+    --pop: 0;
+    --tourne: 0deg;
+    transform: translate3d(0, var(--para), 0)
+               rotate(var(--tourne))
+               scale(var(--pop));
+
+    /* État de départ : absent. L'apparition se joue en posant `.est-apparu`,
+       ce qui laisse le motif invisible si le JS ne tourne pas — mieux qu'un
+       décor à moitié peint. */
+    opacity: 0;
+
+    /* `cubic-bezier` avec un dépassement : le motif grossit au-delà de sa
+       taille puis revient, ce qui fait le « pop ». Une courbe classique
+       donnerait un simple fondu. */
+    transition: opacity 0.5s ease-out,
+                transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Motif en place : le JS pose cette classe après un délai propre à chacun,
+   d'où l'apparition désynchronisée. L'opacité finale est portée par une
+   variable pour que le JS puisse la tirer au hasard. */
+.decor-forme.est-apparu {
+    --pop: 1;
+    opacity: var(--opacite-finale, 0.3);
+}
+
+/* Le pop terminé, le JS pose cette classe : le ressort disparaît et le
+   `transform` suit le défilement sans transition. Garder la courbe à
+   dépassement ferait vibrer les motifs à chaque cran de molette. */
+.decor-forme.pop-fini {
+    transition: opacity 0.5s ease-out;
+}
+
+/* Mouvement réduit : ni ressort ni parallaxe. Les motifs sont simplement là,
+   à leur place — le décor garde son rôle, sans rien qui bouge. */
+@media (prefers-reduced-motion: reduce) {
+    .decor-forme {
+        transition: opacity 0.3s linear;
+        --pop: 1;
+    }
+
+    .decor-forme.est-apparu {
+        transition: opacity 0.3s linear;
+    }
 }
 
 /* Les détails internes (pastilles du champignon, yeux, bandeau de la
@@ -59,13 +125,4 @@ body > .hero:not(.smk-snes-banner),
 .navbar {
     position: relative;
     z-index: 1;
-}
-
-/* Téléphone : motifs plus discrets. Les mêmes opacités sur 360px de large
-   donneraient un fond chargé, où les formes passeraient derrière chaque carte
-   au lieu de rester dans les marges. */
-@media screen and (max-width: 768px) {
-    .decor-forme {
-        opacity: 0.4;
-    }
 }

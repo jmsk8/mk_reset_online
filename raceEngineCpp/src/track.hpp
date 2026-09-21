@@ -2,8 +2,9 @@
 // <- raceEngine/src/track.js
 //
 // Un circuit est un dessin dans tracks/, relu au demarrage. Le format tient en
-// quelques caracteres — `X` bord, `x` ligne, `B` boite, `P`/`p` tuyaux — et le
-// reste du fichier est de la prose : c'est un .md qui se lit sur GitHub.
+// quelques caracteres — `X` bord, `x` ligne, `B` boite, un carre de `P`/`p` pour
+// un tuyau — et le reste du fichier est de la prose : c'est un .md qui se lit
+// sur GitHub.
 //
 // Vu de dessus, la course allant vers la droite, la derniere colonne touchant la
 // premiere. Une colonne vaut CELL_PX px de monde ; les rangees se partagent la
@@ -38,11 +39,13 @@ struct Cell {
     int row = 0;
 };
 
+// Un pipe se dessine en carre de 2×2 : `col`/`row` en designent la case du coin
+// haut-gauche, et `apply_track` le pose au centre du carre.
 struct PipeCell {
     int col = 0;
     int row = 0;
-    // Deux couleurs, un seul obstacle : `P` plante un vert, `p` un rouge, et
-    // c'est TOUTE la difference. La couleur ne voyage que jusqu'au decor.
+    // Deux couleurs, un seul obstacle : `PP/PP` plante un vert, `pp/pp` un rouge,
+    // et c'est TOUTE la difference. La couleur ne voyage que jusqu'au decor.
     bool red = false;
 };
 

@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ app_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/form-readability.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/banner.css') }}?v={{ app_version }}">
@@ -29,9 +29,19 @@
            Decide ici, dans le <head>, parce que le voile est peint par le CSS
            des la premiere image : le cacher plus tard, ce serait le montrer. */
         (function () {
+            /* `data-voile` dit au decor de fond qu'un ecran va masquer la page,
+               et qu'il doit attendre avant de se semer. Pose ICI parce que le
+               script du decor s'execute avant que le voile n'existe dans le
+               DOM : il ne peut pas le chercher lui-meme.
+
+               Mis a « oui » par defaut : si le stockage echoue, l'ecran se joue
+               (voir plus bas), et le decor doit l'attendre. */
+            document.documentElement.dataset.voile = 'oui';
             try {
                 if (sessionStorage.getItem('mkr-boot-seen')) {
                     document.documentElement.classList.add('boot-seen');
+                    // Deja vu : aucun voile, le decor peut partir tout de suite.
+                    document.documentElement.dataset.voile = 'non';
                 } else {
                     sessionStorage.setItem('mkr-boot-seen', '1');
                 }
@@ -135,6 +145,8 @@
             // Deja vu dans cet onglet : on retire le voile, aucune minuterie ne part.
             if (document.documentElement.classList.contains('boot-seen')) {
                 splash.remove();
+                // Rien ne masque la page : le decor peut se semer aussitot.
+                document.dispatchEvent(new CustomEvent('mkr:scene-visible'));
                 return;
             }
 
@@ -152,6 +164,17 @@
                 if (dismissed) return;
                 dismissed = true;
                 splash.classList.add('is-gone');
+
+                /* Le decor de fond attend ce signal pour se semer : lance des
+                   le chargement, son animation d'apparition se jouerait en
+                   entier derriere le voile (jusqu'a 4 s) et la page
+                   s'afficherait avec un fond deja en place.
+
+                   Emis a la LEVEE du voile, pas a son retrait complet : le
+                   fondu dure 1,2 s, les motifs surgissent donc pendant qu'il
+                   s'efface, et non apres un temps mort. */
+                document.dispatchEvent(new CustomEvent('mkr:scene-visible'));
+
                 // Retiré du DOM une fois le fondu fini. À tenir au-dessus de la transition
                 // de `.boot-splash` (1.2 s).
                 setTimeout(() => splash.remove(), 1400);

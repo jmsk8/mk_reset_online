@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ app_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
