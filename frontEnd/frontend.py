@@ -1362,8 +1362,16 @@ def proxy_permission(compte_id, permission):
 def proxy_leguer_superadmin(compte_id):
     # Le corps porte la confirmation forte (pseudo Discord retapé) : elle doit
     # traverser intacte, c'est elle qui distingue le geste voulu du clic.
-    return _proxy_admin('POST', f'/admin/comptes/{compte_id}/leguer-superadmin',
-                        json_body=True)
+    reponse, status = _proxy_admin('POST', f'/admin/comptes/{compte_id}/leguer-superadmin',
+                                   json_body=True)
+    # L'ancien superadmin change de rôle lui aussi : le backend a fermé ses
+    # sessions, celle-ci comprise (A-02).
+    if status == 200 and (reponse.get_json(silent=True) or {}).get('session_fermee'):
+        _session_fermee_par_changement_de_role(
+            "Rôle superadmin transmis. Changer de rôle ferme vos sessions sur tous "
+            "vos appareils : reconnectez-vous avec Discord, vous êtes désormais "
+            "chef_admin.")
+    return reponse, status
 
 
 @app.route('/admin/comptes/<int:compte_id>', methods=['DELETE'])
@@ -1511,14 +1519,30 @@ def ma_promotion():
     return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
 
 
+def _session_fermee_par_changement_de_role(message):
+    """Purge la session Discord du titulaire dont le rôle vient de changer.
+
+    Le backend ferme toutes les sessions d'un compte qui change de rôle, la
+    courante comprise (A-01/A-02) : la durée d'une session est figée à sa
+    création, sur le rôle du moment. Garder le jeton pointerait vers une session
+    détruite, et le navigateur le découvrirait par une erreur.
+
+    Le message est déposé AVANT la reconnexion Discord que la page relance : il
+    s'affiche au retour, à côté de « Connecté en tant que … ». Si la reconnexion
+    échoue, il reste juste — il ne promet pas qu'elle a eu lieu.
+    """
+    session.pop('player_token', None)
+    session.pop('compte', None)
+    flash(message, 'info')
+
+
 @app.route('/mon-compte/promotion', methods=['POST'])
 def repondre_promotion():
     """Accepte ou refuse le rôle proposé.
 
-    En cas d'acceptation, le rôle change en base : la copie figée dans le
-    cookie (`session['compte']`) devient fausse, et la navbar montrerait encore
-    un player. On la purge plutôt que de la corriger à la main — la prochaine
-    requête la reconstruira depuis le backend, qui fait autorité.
+    En cas d'acceptation, le backend ferme toutes les sessions du compte, celle
+    de cette requête comprise : c'est une session de joueur (30 jours), et un
+    admin n'en a que 12 heures. La page relance alors la connexion Discord.
     """
     headers = player_headers()
     if headers is None:
@@ -1530,8 +1554,11 @@ def repondre_promotion():
         'cgu_admin_version': corps.get('cgu_admin_version'),
     }, headers=headers)
 
-    if status == 200 and isinstance(data, dict) and data.get('accepte'):
-        session.pop('compte', None)
+    if status == 200 and isinstance(data, dict) and data.get('session_fermee'):
+        _session_fermee_par_changement_de_role(
+            "Rôle accepté. Changer de rôle ferme vos sessions sur tous vos "
+            "appareils : reconnectez-vous avec Discord pour ouvrir votre session "
+            "d'administrateur.")
     return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
 
 

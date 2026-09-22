@@ -655,6 +655,18 @@ def _appliquer_plancher(cur) -> None:
         cur.execute("UPDATE tiers SET seuil_k = NULL WHERE id = %s", (row[0],))
 
 
+def _etat_tiers(cur):
+    """La table des tiers telle qu'on la journalise, du meilleur au pire.
+
+    L'etat COMPLET avant et apres, plutot que le seul champ touche : la table
+    tient en quelques lignes, et un geste sur un tier en deplace d'autres (le
+    plancher passe au voisin, les rangs se renumerotent). C'est aussi ce qui
+    permet de tout remettre en place apres un « Reinitialiser » malheureux.
+    """
+    return [{"id": t["id"], "nom": t["nom"], "couleur": t["couleur"],
+             "seuil_k": t["seuil_k"]} for t in load_tiers(cur)]
+
+
 @admin_bp.route('/admin/tiers', methods=['GET'])
 @player_required
 def get_tiers():
@@ -697,6 +709,7 @@ def create_tier():
                 if cur.fetchone()[0] > 0:
                     return jsonify({"error": f"Un tier « {nom} » existe deja"}), 400
 
+                avant = _etat_tiers(cur)
                 apres_rang = data.get('apres_rang')
                 cur.execute("SELECT rang FROM tiers ORDER BY rang DESC LIMIT 1")
                 rang_max = cur.fetchone()
@@ -722,6 +735,8 @@ def create_tier():
                 )
                 nouvel_id = cur.fetchone()[0]
                 _appliquer_plancher(cur)
+                audit.ecrire(cur, 'tier_cree', 'systeme', nouvel_id,
+                             {"nom": nom, "avant": avant, "apres": _etat_tiers(cur)})
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -748,6 +763,7 @@ def update_tier(tier_id):
                 row = cur.fetchone()
                 if row is None:
                     return jsonify({"error": "Tier introuvable"}), 404
+                avant = _etat_tiers(cur)
 
                 champs, valeurs = [], []
                 if 'nom' in data:
@@ -789,6 +805,12 @@ def update_tier(tier_id):
 
                 valeurs.append(tier_id)
                 cur.execute(f"UPDATE tiers SET {', '.join(champs)} WHERE id = %s", valeurs)
+                apres = _etat_tiers(cur)
+                audit.ecrire(cur, 'tier_modifie', 'systeme', tier_id, {
+                    "nom": next((t["nom"] for t in apres if t["id"] == tier_id), None),
+                    "champs": [c.split(' ')[0] for c in champs],
+                    "avant": avant, "apres": apres,
+                })
                 # PAS de _appliquer_plancher() ici : le panneau envoie un PUT
                 # par tier AVANT le /reorder final, donc le tier vise peut
                 # encore etre le plancher en base alors qu'il ne le sera plus
@@ -820,12 +842,17 @@ def delete_tier(tier_id):
                 if cur.fetchone()[0] <= 1:
                     return jsonify({"error": "Impossible de supprimer le dernier tier restant"}), 400
 
+                avant = _etat_tiers(cur)
                 cur.execute("DELETE FROM tiers WHERE id = %s", (tier_id,))
                 if cur.rowcount == 0:
                     return jsonify({"error": "Tier introuvable"}), 404
 
                 _renumeroter_rangs(cur)
                 _appliquer_plancher(cur)
+                audit.ecrire(cur, 'tier_supprime', 'systeme', tier_id, {
+                    "nom": next((t["nom"] for t in avant if t["id"] == tier_id), None),
+                    "avant": avant, "apres": _etat_tiers(cur),
+                })
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -858,6 +885,7 @@ def reorder_tiers():
                     return jsonify({"error": "« ordre » doit contenir des ids entiers"}), 400
                 if ids_recus != ids_existants:
                     return jsonify({"error": "« ordre » doit contenir exactement tous les tiers existants"}), 400
+                avant = _etat_tiers(cur)
 
                 # Rang decroissant : premier de la liste = meilleur tier =
                 # rang le plus haut. Passage par des rangs temporaires
@@ -872,6 +900,11 @@ def reorder_tiers():
                     cur.execute("UPDATE tiers SET rang = %s WHERE id = %s", (n - 1 - position, int(tid)))
 
                 _appliquer_plancher(cur)
+                apres = _etat_tiers(cur)
+                audit.ecrire(cur, 'tiers_reordonnes', 'systeme', None, {
+                    "nom": " > ".join(t["nom"] for t in apres),
+                    "avant": avant, "apres": apres,
+                })
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -890,12 +923,18 @@ def reset_tiers():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # L'etat detruit est ce qui compte ici : « Reinitialiser »
+                # efface toute personnalisation, et c'est la seule trace qui
+                # permette de la reconstruire.
+                avant = _etat_tiers(cur)
                 cur.execute("DELETE FROM tiers")
                 for t in DEFAULT_TIERS:
                     cur.execute(
                         "INSERT INTO tiers (nom, couleur, seuil_k, rang) VALUES (%s, %s, %s, %s)",
                         (t["nom"], t["couleur"], t["seuil_k"], t["rang"]),
                     )
+                audit.ecrire(cur, 'tiers_reinitialises', 'systeme', None,
+                             {"avant": avant, "apres": _etat_tiers(cur)})
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
@@ -1488,13 +1527,15 @@ def delete_saison(saison_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT is_league_recap, include_league_moves FROM saisons WHERE id = %s", (saison_id,))
+                cur.execute("SELECT is_league_recap, include_league_moves, nom, slug, is_active "
+                            "FROM saisons WHERE id = %s", (saison_id,))
                 row = cur.fetchone()
                 if not row:
                     return jsonify({"error": "Saison introuvable"}), 404
 
-                is_league_recap, include_league_moves = row
+                is_league_recap, include_league_moves, nom, slug, publie = row
                 rollback_warnings = []
+                ligues_restaurees = []
 
                 if is_league_recap or include_league_moves:
                     cur.execute("""
@@ -1526,9 +1567,20 @@ def delete_saison(saison_id):
                             continue
 
                         cur.execute("UPDATE joueurs SET ligue_id = %s WHERE id = %s", (from_ligue_id, joueur_id))
+                        ligues_restaurees.append({"joueur_id": joueur_id, "ligue_id": from_ligue_id})
 
                 cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (saison_id,))
+                awards_supprimes = cur.rowcount
                 cur.execute("DELETE FROM saisons WHERE id = %s", (saison_id,))
+                # Supprimer un recap PUBLIE retire des trophees deja visibles et
+                # peut ramener des joueurs dans leur ancienne ligue : sans cette
+                # ligne, rien ne dirait plus qu'ils ont existe.
+                audit.ecrire(cur, 'recap_supprime', 'saison', saison_id, {
+                    "nom": nom, "slug": slug, "publie": bool(publie),
+                    "awards_supprimes": awards_supprimes,
+                    "ligues_restaurees": ligues_restaurees,
+                    "avertissements": rollback_warnings,
+                })
             conn.commit()
             invalidate_cache()
 
@@ -1787,6 +1839,18 @@ def save_season_awards(id):
 
                 cur.execute("UPDATE saisons SET is_active = true WHERE id = %s", (id,))
                 _notifier_recap_publie(cur, id)
+
+            # Publier distribue les trophees et peut deplacer des joueurs d'une
+            # ligue a l'autre. Les mouvements vont dans le detail : dans la
+            # branche « saison d'une ligue », ils ne sont ecrits nulle part
+            # ailleurs (pas de league_movements).
+            cur.execute("SELECT COUNT(*) FROM awards_obtenus WHERE saison_id = %s", (id,))
+            nb_awards = cur.fetchone()
+            audit.ecrire(cur, 'recap_publie', 'saison', id, {
+                "awards": nb_awards[0] if nb_awards else None,
+                "critere_mouvement": move_criterion,
+                "mouvements": movements,
+            })
 
         conn.commit()
         invalidate_cache()
@@ -2306,6 +2370,16 @@ def lier_session_tournoi(tournoi_id):
                 res = cur.fetchone()
                 seuil_declassement = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
                 corriges = annuler_penalites_de_session(cur, session_id, seuil_declassement)
+
+                # Lier deux tournois peut faire bouger le sigma de joueurs :
+                # c'est du dossier sportif, et il doit etre trace comme une
+                # modification de fiche (avant/apres, drapeau score_modifie).
+                audit.ecrire(cur, 'tournoi_lie', 'tournoi', tournoi_id, {
+                    "autre_tournoi_id": autre_tournoi_id,
+                    "session_id": session_id,
+                    "penalites_annulees": corriges,
+                    "score_modifie": bool(corriges),
+                })
             conn.commit()
             # Les sigma ont pu bouger : les tiers en dependent.
             if corriges:

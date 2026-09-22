@@ -58,12 +58,12 @@ def app_avec(plan, deco_factory):
 
 
 # ===========================================================================
-print("\n=== A-01 : la duree de session est figee sur le role AU MOMENT DE LA "
-      "CONNEXION ===")
+print("\n=== A-01 : la duree de session suit le role (CORRIGE 2026-09-22) ===")
 # create_session(role) choisit 12 h pour un privilegie et 30 j pour un joueur.
-# Le role est lu une seule fois, a la connexion. Une promotion posterieure ne
-# raccourcit donc PAS la session deja ouverte : un compte promu admin garde une
-# session de 30 jours, trente fois la duree que la regle lui destine.
+# Le role est lu une seule fois, a la connexion. Constat d'origine : une
+# promotion posterieure ne raccourcissait donc PAS la session deja ouverte, et un
+# compte promu admin gardait une session de 30 jours -- soixante fois la duree
+# que la regle lui destine.
 recharger()
 install_discord()
 cur, conn = install_db([
@@ -88,12 +88,20 @@ check("session admin ~ 12 h", 0.49 < jours(exp_admin) < 0.51, jours(exp_admin))
 check("chef_admin herite de la session courte", jours(exp_chef) < 1.0)
 check("superadmin herite de la session courte", jours(exp_super) < 1.0)
 
-# Le coeur du constat : la duree ne depend QUE du role passe a l'appel. Rien ne
-# la revisite ensuite.
-defaut(A_DUREE_SESSION_FIGEE,
-       "une session ouverte en 'player' reste longue meme apres promotion",
-       jours(exp_joueur) > 29,
-       "create_session ne lit le role qu'une fois, a la connexion")
+# CORRIGE le 2026-09-22. La duree ne depend toujours QUE du role passe a
+# l'appel, et rien ne la revisite : c'est voulu, une seule source de verite. Ce
+# qui referme A-01 est la regle qui l'accompagne -- toute ecriture de
+# comptes.role ferme les sessions du compte, et la personne se reconnecte a la
+# bonne duree. Couverture detaillee : test_sessions_changement_role.py.
+check("la duree reste figee a la creation, sur le role du moment (non-regression)",
+      jours(exp_joueur) > 29)
+_sources_back = ''.join(
+    open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', f),
+         encoding='utf-8').read()
+    for f in ('auth.py', 'auth_discord.py', 'routes_auth.py', 'routes_comptes.py'))
+check("A-01 corrige par la fermeture, JAMAIS par un recalcul d'expires_at "
+      "(une seconde source de verite sur la duree a produit le defaut)",
+      not re.search(r"UPDATE\s+sessions_joueurs\s+SET\s+expires_at", _sources_back))
 
 # Et l'expiration est ABSOLUE : aucune route ne la prolonge. C'est le bon
 # comportement, il doit le rester (c'est ce qui distingue sessions_joueurs de
@@ -105,11 +113,13 @@ check("aucune route ne prolonge expires_at (expiration absolue)",
 
 
 # ===========================================================================
-print("\n=== A-02 : changer le role d'un compte ne ferme AUCUNE de ses sessions ===")
-# Consequence directe de A-01. Un admin retrograde en player garde ses sessions
-# ouvertes ; elles ne portent plus aucun droit (le role est relu en base a chaque
-# requete, cf. A-07), mais elles gardent la duree COURTE, et surtout le chemin
-# inverse est le vrai probleme : promu, il garde une session de 30 jours.
+print("\n=== A-02 : changer le role d'un compte ferme ses sessions (CORRIGE 2026-09-22) ===")
+# Constat d'origine : un admin retrograde gardait ses sessions ouvertes (sans
+# droit de trop, le role etant relu a chaque requete), et surtout, dans l'autre
+# sens, un compte promu gardait sa session de joueur de 30 jours. Corrige dans
+# les quatre ecrivains de comptes.role ; ces assertions sont devenues des
+# NON-REGRESSIONS. Le detail, et le filet qui couvre un cinquieme ecrivain, sont
+# dans test_sessions_changement_role.py.
 source_comptes = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                    '..', 'routes_comptes.py'), encoding='utf-8').read()
 
@@ -119,19 +129,38 @@ def corps_de(source, entete, taille=6000):
     return '' if i < 0 else source[i:i + taille]
 
 
-corps_role = corps_de(source_comptes, "def changer_role(")
-check("la route de changement de role existe", bool(corps_role))
-defaut(A_PAS_DE_REVOCATION_SUR_ROLE,
-       "changer_role ne supprime aucune session",
-       'DELETE FROM sessions_joueurs' not in corps_role)
+def fonction(source, nom):
+    """Source exacte de la fonction `nom`, delimitee par ast ('' si absente).
 
-# Par contraste, les deux routes qui DOIVENT fermer les sessions le font bien.
-corps_statut = corps_de(source_comptes, "def changer_statut(")
+    corps_de() coupe a une taille fixe. C'est ce qui a failli masquer la
+    correction de A-02 : le DELETE ajoute a changer_role tombait 6741
+    caracteres apres le `def`, hors de la fenetre de 6000. L'assertion
+    defaut() serait restee VERTE sur un defaut corrige -- le signal rouge que
+    ce fichier existe pour produire ne serait jamais venu.
+    """
+    import ast
+    lignes = source.splitlines(keepends=True)
+    for n in ast.walk(ast.parse(source)):
+        if isinstance(n, ast.FunctionDef) and n.name == nom:
+            return ''.join(lignes[n.lineno - 1:n.end_lineno])
+    return ''
+
+
+corps_role = fonction(source_comptes, "changer_role")
+check("la route de changement de role existe", bool(corps_role))
+check("changer_role ferme les sessions de la cible (A-02 corrige)",
+      'DELETE FROM sessions_joueurs WHERE compte_id' in corps_role)
+check("accepter une promotion ferme les sessions du titulaire (A-01 corrige)",
+      'DELETE FROM sessions_joueurs WHERE compte_id'
+      in fonction(source_comptes, "repondre_promotion"))
+
+# Les deux routes qui fermaient deja les sessions avant la correction.
+corps_statut = fonction(source_comptes, "changer_statut")
 check("suspendre un compte ferme ses sessions (non-regression)",
       'DELETE FROM sessions_joueurs' in corps_statut)
 # L'effacement vit dans _effacer_compte depuis le 2026-09-22 (la route qui
 # l'appelle est reservee au superadmin, sur demande ecrite).
-corps_suppr = corps_de(source_comptes, "def _effacer_compte(", 8000)
+corps_suppr = fonction(source_comptes, "_effacer_compte")
 check("supprimer un compte ferme ses sessions (non-regression)",
       'DELETE FROM sessions_joueurs' in corps_suppr)
 

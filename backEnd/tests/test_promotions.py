@@ -419,10 +419,15 @@ check("les proxys de reponse sont sous /mon-compte (titulaire)",
       "'/mon-compte/promotion'" in _fp and "'/mon-compte/cgu-admin'" in _fp)
 
 # Accepter change le role en base : la copie figee dans le cookie devient
-# fausse, et la navbar continuerait d'afficher un player.
+# fausse, et la navbar continuerait d'afficher un player. Depuis A-01
+# (2026-09-22), le backend ferme en plus la session elle-meme : le proxy purge
+# le jeton ET la copie, par un helper commun avec le legs.
 _rep = _fp[_fp.index('def repondre_promotion'):_fp.index('def accepter_cgu_admin')]
+_purge = _fp[_fp.index('def _session_fermee_par_changement_de_role'):
+             _fp.index('def repondre_promotion')]
 check("accepter purge la copie de compte du cookie (sinon navbar perimee)",
-      "session.pop('compte'" in _rep)
+      "_session_fermee_par_changement_de_role(" in _rep
+      and "session.pop('compte'" in _purge)
 
 check("l'ecran d'acceptation vit dans /mon-compte",
       'bloc-promotion' in _mc and '/mon-compte/promotion' in _mc)

@@ -882,6 +882,17 @@ def changer_role(compte_id):
                         "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
                         (nouveau, compte_id),
                     )
+                    # A-01/A-02 : la duree d'une session est figee a sa creation,
+                    # sur le role du moment (create_session). Changer de rang
+                    # oblige donc a se reconnecter, dans les deux sens : promu,
+                    # le compte garderait une session de joueur (30 jours) ;
+                    # retrograde, des sessions ouvertes sur un rang qu'il n'a
+                    # plus. Les droits, eux, suivaient deja : le role est relu a
+                    # chaque requete. La cible n'est jamais l'acteur
+                    # (refuse_auto_modification) : on ne ferme pas sa propre
+                    # session ici.
+                    cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s",
+                                (compte_id,))
                     action = ('role_retire'
                               if ROLE_HIERARCHY[nouveau] < ROLE_HIERARCHY[ancien]
                               else 'role_attribue')
@@ -1233,6 +1244,14 @@ def repondre_promotion():
                            WHERE id = %s""",
                         (role, CGU_ADMIN_VERSION, compte['id']),
                     )
+                    # A-01 : TOUTES les sessions, celle-ci comprise. C'est la
+                    # session de joueur qui vient d'accepter, ouverte pour 30
+                    # jours : la garder donnerait a un admin soixante fois la
+                    # duree que la regle lui destine. La personne se reconnecte
+                    # (le frontend purge son jeton et relance Discord) et
+                    # obtient une session d'admin, avec un jeton neuf.
+                    cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s",
+                                (compte['id'],))
                     _audit(cur, 'role_attribue', 'compte', compte['id'],
                            {"ancien": compte['role'], "nouveau": role,
                             "origine": "acceptation", "promotion_id": promotion_id,
@@ -1252,7 +1271,10 @@ def repondre_promotion():
         return jsonify({"error": "Erreur serveur"}), 500
 
     logger.info("Promotion %s acceptee par le compte %s", role, compte['id'])
-    return jsonify({"status": "success", "accepte": True, "role": role})
+    # `session_fermee`, meme nom que dans DELETE /auth/mes-sessions : le jeton
+    # qui a porte cette requete n'ouvre plus rien.
+    return jsonify({"status": "success", "accepte": True, "role": role,
+                    "session_fermee": True})
 
 
 @comptes_bp.route('/me/cgu-admin', methods=['POST'])
@@ -1857,6 +1879,16 @@ def leguer_superadmin(compte_id):
                         (ROLE_SUPERADMIN, compte_id),
                     )
 
+                    # Deux roles changent, deux comptes se reconnectent (A-01/A-02,
+                    # voir changer_role). La cible surtout : si elle etait player,
+                    # elle deviendrait superadmin sur une session de 30 jours.
+                    # L'acteur aussi, session courante comprise -- meme regle,
+                    # sans exception a retenir : le frontend le reconnecte.
+                    cur.execute(
+                        "DELETE FROM sessions_joueurs WHERE compte_id IN (%s, %s)",
+                        (acteur_id, compte_id),
+                    )
+
                     # La cible quitte le role admin : meme purge qu'ailleurs (R-53).
                     if ancien_role_cible == ROLE_ADMIN:
                         cur.execute("DELETE FROM permissions_admin WHERE compte_id = %s",
@@ -1878,7 +1910,8 @@ def leguer_superadmin(compte_id):
         return jsonify({"error": "Erreur serveur"}), 500
 
     logger.warning("LEGS SUPERADMIN : %s -> %s", acteur_id, compte_id)
-    return jsonify({"status": "success", "ancien": acteur_id, "nouveau": compte_id})
+    return jsonify({"status": "success", "ancien": acteur_id, "nouveau": compte_id,
+                    "session_fermee": True})
 
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/sessions', methods=['DELETE'])
@@ -1887,8 +1920,8 @@ def leguer_superadmin(compte_id):
 def revoquer_sessions(compte_id):
     """Ferme toutes les sessions d'un compte, sur tous ses appareils.
 
-    Pour un compte compromis. Sur un retrait de role c'est une ceinture : le
-    role est relu en base a chaque requete protegee.
+    Pour un compte compromis. Un changement de role n'a plus besoin d'elle :
+    toute ecriture de comptes.role ferme deja les sessions du compte (A-01/A-02).
 
     Le decorateur accepte les deux voies d'authentification : sur
     `role_required` seul, un admin connecte par mot de passe voyait un bouton

@@ -6,6 +6,7 @@ recalculable, y toucher fausserait le classement de tout le monde sans moyen de
 le reconstruire.
 """
 from harness import *
+import re
 from flask import Flask
 
 def monter(plan, joueur_id=9, role='player'):
@@ -90,6 +91,18 @@ check("le snowflake Discord n'est PAS conservé en clair dans l'audit",
 check("une empreinte permet quand même de rejouer la suppression après restauration",
       'discord_id_hash' in str(params_audit))
 check("transaction validée", conn.committed)
+
+# §6.4 du plan d'audit : le journal survit au compte. La ligne `compte_supprime`
+# est ce qui permet de rejouer l'effacement apres une restauration (runbook §5) ;
+# la supprimer au passage rendrait la suppression irreversible... a l'envers.
+check("la suppression n'efface ni ne réécrit aucune ligne du journal",
+      not any(('audit_admin' in s_.lower()) and not s_.startswith('INSERT INTO audit_admin')
+              for s_ in sqls), [s_ for s_ in sqls if 'audit_admin' in s_.lower()])
+_schema = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'schema.sql'),
+               encoding='utf-8').read()
+check("  et le schéma détache l'acteur au lieu d'emporter ses lignes (ON DELETE SET NULL)",
+      re.search(r'acteur_compte_id integer REFERENCES public\.comptes\(id\) ON DELETE SET NULL',
+                _schema) is not None)
 
 print("\n=== Le titulaire ne supprime plus son compte lui-même ===")
 # Retirer le bouton ne suffisait pas : une route laissee en place reste
