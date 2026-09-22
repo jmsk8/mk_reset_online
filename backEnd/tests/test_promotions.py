@@ -428,7 +428,10 @@ check("l'ecran d'acceptation vit dans /mon-compte",
       'bloc-promotion' in _mc and '/mon-compte/promotion' in _mc)
 # Une case a cocher renvoyant vers une politique que personne n'ouvre ne vaut
 # pas consentement : ce qui engage doit etre lisible sur place.
-for _phrase in ('sans limite de durée', 'supprimez votre compte', 'à votre nom'):
+# « votre compte est supprimé » et non plus « vous supprimez votre compte » :
+# depuis le 2026-09-22 le titulaire ne supprime plus lui-meme, il le demande.
+# Ce que la phrase doit dire ne change pas -- le journal survit au compte.
+for _phrase in ('sans limite de durée', 'votre compte est supprimé', 'à votre nom'):
     check("l'ecran dit en clair : « %s »" % _phrase, _phrase in _mc, _phrase)
 check("et renvoie quand meme a la politique complete", '/confidentialite' in _mc)
 
@@ -463,7 +466,7 @@ check("le backend fournit ce champ a la liste des comptes",
 _conf = open(os.path.join(_FRONT, 'templates', 'confidentialite.html'), encoding='utf-8').read()
 check("la politique a une section dediee aux administrateurs",
       'Si vous êtes administrateur' in _conf)
-for _point in ('Sans limite de durée', 'subsiste si vous supprimez votre compte'):
+for _point in ('Sans limite de durée', 'subsiste si votre compte est supprimé'):
     check("elle annonce : « %s »" % _point, _point in _conf, _point)
 
 print("\n" + "=" * 60)

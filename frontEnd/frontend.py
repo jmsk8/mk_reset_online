@@ -1366,6 +1366,13 @@ def proxy_leguer_superadmin(compte_id):
                         json_body=True)
 
 
+@app.route('/admin/comptes/<int:compte_id>', methods=['DELETE'])
+def proxy_supprimer_compte(compte_id):
+    # Même contrat que le legs : la confirmation forte (pseudo Discord retapé)
+    # voyage dans le corps, et doit traverser intacte.
+    return _proxy_admin('DELETE', f'/admin/comptes/{compte_id}', json_body=True)
+
+
 @app.route('/admin/comptes/<int:compte_id>/statut', methods=['POST'])
 def proxy_statut(compte_id):
     return _proxy_admin('POST', f'/admin/comptes/{compte_id}/statut', json_body=True)
@@ -1573,8 +1580,7 @@ def fermer_mes_sessions():
         data={'inclure_courante': inclure}, headers=headers,
     )
     # La session serveur pointerait vers une session backend détruite, et le
-    # navigateur découvrirait le problème par une erreur. Même geste que
-    # supprimer_mon_compte juste en dessous.
+    # navigateur découvrirait le problème par une erreur.
     if status == 200 and isinstance(data, dict) and data.get('session_fermee'):
         session.pop('player_token', None)
         session.pop('compte', None)
@@ -1607,18 +1613,9 @@ def exporter_mes_donnees():
     )
 
 
-@app.route('/mon-compte/supprimer', methods=['POST'])
-def supprimer_mon_compte():
-    headers = player_headers()
-    if headers is None:
-        return jsonify({'error': 'Non autorisé'}), 401
-
-    data, status = backend_request('DELETE', '/me', headers=headers)
-    if status == 200:
-        # La session pointe vers un compte qui n'existe plus.
-        session.pop('player_token', None)
-        session.pop('compte', None)
-    return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+# Plus de /mon-compte/supprimer depuis le 2026-09-22 : la suppression d'un compte
+# se demande par écrit et le superadmin l'exécute (proxy_supprimer_compte). Le
+# bouton de /mon-compte n'appelle plus rien, il affiche la marche à suivre.
 
 
 @app.route('/admin/joueurs/<int:joueur_id>/anonymiser', methods=['POST'])

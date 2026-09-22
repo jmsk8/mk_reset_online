@@ -579,7 +579,15 @@ def lister_comptes():
                     """SELECT c.id, c.discord_id, c.discord_username, c.discord_global_name,
                               c.discord_avatar_hash, c.joueur_id, c.statut, c.role,
                               c.created_at, c.last_login_at, c.profil_synced_at,
-                              j.nom, p.role_propose
+                              j.nom, p.role_propose,
+                              -- Le compte a-t-il AGI au moins une fois ? C'est ce
+                              -- que montre son volet « Logs » (les actions dont
+                              -- il est l'acteur), donc ce qui decide d'afficher
+                              -- le bouton : un joueur qui n'a jamais ete admin
+                              -- n'a rien a montrer. Un EXISTS par ligne, servi
+                              -- par idx_audit_admin_acteur sans lire la table.
+                              EXISTS (SELECT 1 FROM audit_admin a
+                                      WHERE a.acteur_compte_id = c.id)
                        FROM comptes c
                        LEFT JOIN joueurs j ON j.id = c.joueur_id
                        -- La proposition en attente vient par JOINTURE et non par
@@ -616,6 +624,12 @@ def lister_comptes():
             # Role propose et non encore accepte, ou None. Le role ci-dessus
             # reste l'ACTUEL : les confondre ferait croire la promotion faite.
             "promotion_en_attente": r[12],
+            # Au moins une ligne du journal dont ce compte est l'acteur -- et
+            # que CE lecteur a le droit de lire. Passe par la meme regle que la
+            # lecture (_peut_lire_journal) : cette liste est ouverte a tout
+            # porteur de gestion_comptes, un simple admin compris, qui n'a pas
+            # a apprendre qui a agi. Pour lui, c'est toujours faux.
+            "a_un_journal": bool(r[13]) and _peut_lire_journal(g.compte, r[7]),
         })
     return jsonify(comptes)
 
@@ -2739,10 +2753,8 @@ def exporter_mes_donnees():
     return jsonify(export)
 
 
-@comptes_bp.route('/me', methods=['DELETE'])
-@player_required
-def supprimer_mon_compte():
-    """Droit a l'effacement (art. 17), niveau 1 : suppression du compte.
+def _effacer_compte(cur, compte_id, joueur_id, discord_id, origine):
+    """Droit a l'effacement (art. 17), niveau 1 : efface un compte.
 
     Detruit l'IDENTITE -- compte, profil, sessions, demandes de liaison -- et
     laisse INTACT le dossier sportif, qui appartient a une fiche joueur
@@ -2758,55 +2770,104 @@ def supprimer_mon_compte():
 
     Qui veut aller plus loin demande l'anonymisation du pseudo (niveau 2), que
     seul un administrateur peut faire.
+
+    A appeler dans une transaction, le compte deja verrouille (FOR UPDATE) et
+    les gardes deja passees : cette fonction n'arbitre rien, elle efface.
     """
-    compte_id = g.compte['id']
-    joueur_id = g.compte['joueur_id']
+    # L'audit AVANT la suppression : la ligne reference le compte, et
+    # acteur_compte_id est en ON DELETE SET NULL. On y consigne de quoi rejouer
+    # la suppression apres une restauration de sauvegarde (runbook §5), sans
+    # conserver la moindre donnee personnelle.
+    _audit(
+        cur, 'compte_supprime', 'compte', compte_id,
+        {
+             "joueur_id": joueur_id,
+             "origine": origine,
+             # Empreinte et non identifiant : permet de verifier apres
+             # restauration qu'un compte ressuscite doit etre resupprime, sans
+             # reconserver le snowflake.
+             "discord_id_hash": hash_token(discord_id),
+        },
+    )
+    # Ordre explicite plutot que de s'en remettre aux CASCADE : le jour ou une
+    # contrainte change, on veut que ce soit ce code qui decide de ce qui
+    # disparait.
+    cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte_id,))
+    cur.execute("DELETE FROM profils WHERE compte_id = %s", (compte_id,))
+    cur.execute("DELETE FROM liaisons_demandes WHERE compte_id = %s", (compte_id,))
+    cur.execute("DELETE FROM comptes WHERE id = %s", (compte_id,))
+
+
+# Il n'y a PLUS de `DELETE /me` : depuis le 2026-09-22, le titulaire ne supprime
+# plus son compte lui-meme. L'effacement direct etait juge trop dangereux --
+# irreversible, a un clic, et a la portee de quiconque tient une session ouverte
+# sur un poste partage ou vole. Le bouton de /mon-compte renvoie desormais vers
+# une demande ecrite a SITE_CONTACT, executee ici par le superadmin.
+#
+# Retirer la route et pas seulement le bouton : une route laissee en place reste
+# appelable a la main avec un jeton de joueur. L'acces direct serait cache, pas
+# ferme. test_rgpd.py verifie qu'aucune route /me n'accepte plus DELETE.
+@comptes_bp.route('/admin/comptes/<int:compte_id>', methods=['DELETE'])
+@role_required(ROLE_SUPERADMIN)
+@compte_cible_protegee
+def supprimer_compte(compte_id):
+    """Execute une demande d'effacement recue par ecrit.
+
+    Capacite de ROLE, pas permission delegable, comme la purge RGPD : un geste
+    irreversible sur l'identite d'une personne n'a pas a se distribuer. Avant de
+    l'appeler, verifier que la demande vient bien du titulaire
+    (docs/runbook-admin.md §7) -- c'est ce qui la distingue d'une demande
+    ecrite par n'importe qui au nom de n'importe qui.
+    """
+    acteur_id = _acteur_id()
+
+    # Le superadmin est unique : se supprimer laisserait le site sans
+    # administration. compte_cible_protegee laisse deliberement passer
+    # l'auto-action, d'ou ce refus explicite, comme pour le legs.
+    erreur = refuse_auto_modification(acteur_id, compte_id)
+    if erreur is not None:
+        return erreur
+
+    confirmation = (request.get_json(silent=True) or {}).get('confirmation_pseudo')
 
     try:
         with get_db_connection() as conn:
             try:
                 with conn.cursor() as cur:
-                    # B-02.1. Cette route etait decoree @player_required SEUL :
-                    # elle ne lisait jamais `role`. Un superadmin pouvait donc
-                    # supprimer son propre compte et laisser le site sans
-                    # aucune administration possible.
-                    #
-                    # Le verrou est pris avant toute ecriture : sans FOR UPDATE,
-                    # deux superadmins se supprimant simultanement compteraient
-                    # chacun l'autre comme « restant » et passeraient tous deux.
-                    cur.execute("SELECT role FROM comptes WHERE id = %s FOR UPDATE",
-                                (compte_id,))
+                    cur.execute(
+                        "SELECT role, joueur_id, discord_id, discord_username "
+                        "FROM comptes WHERE id = %s FOR UPDATE",
+                        (compte_id,),
+                    )
                     row = cur.fetchone()
                     if row is None:
                         conn.rollback()
                         return jsonify({"error": "Compte introuvable"}), 404
-                    refus = _refus_auto_verrouillage(cur, compte_id, row[0], 'supprimer')
+                    role, joueur_id, discord_id, discord_username = row
+
+                    # B-02.1 : jamais zero superadmin. Inatteignable en l'etat
+                    # -- la cible superadmin est arretee par
+                    # compte_cible_protegee, soi-meme par le refus ci-dessus --
+                    # mais c'est la seule garde qui ne depend pas de l'unicite
+                    # du role. Elle reste le jour ou il y en aura deux.
+                    refus = _refus_auto_verrouillage(cur, compte_id, role, 'supprimer')
                     if refus is not None:
                         conn.rollback()
                         return refus
 
-                    # L'audit AVANT la suppression : la ligne reference le compte,
-                    # et acteur_compte_id est en ON DELETE SET NULL. On y consigne
-                    # de quoi rejouer la suppression apres une restauration de
-                    # sauvegarde, sans conserver la moindre donnee personnelle.
-                    _audit(
-                        cur, 'compte_supprime', 'compte', compte_id,
-                        {
-                             "joueur_id": joueur_id,
-                             "origine": "self-service",
-                             # Empreinte et non identifiant : permet de verifier
-                             # apres restauration qu'un compte ressuscite doit
-                             # etre resupprime, sans reconserver le snowflake.
-                             "discord_id_hash": hash_token(g.compte['discord_id']),
-                        },
-                    )
-                    # Ordre explicite plutot que de s'en remettre aux CASCADE :
-                    # le jour ou une contrainte change, on veut que ce soit ce
-                    # code qui decide de ce qui disparait.
-                    cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte_id,))
-                    cur.execute("DELETE FROM profils WHERE compte_id = %s", (compte_id,))
-                    cur.execute("DELETE FROM liaisons_demandes WHERE compte_id = %s", (compte_id,))
-                    cur.execute("DELETE FROM comptes WHERE id = %s", (compte_id,))
+                    # Confirmation forte sur discord_username, comme le legs :
+                    # le handle stable, jamais le nom d'affichage, librement
+                    # modifiable. Un clic seul ne doit pas pouvoir effacer une
+                    # identite.
+                    if not confirmation or confirmation != discord_username:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Le pseudo saisi ne correspond pas au compte cible.",
+                            "code": "confirmation_invalide",
+                        }), 400
+
+                    _effacer_compte(cur, compte_id, joueur_id, discord_id,
+                                    origine='demande_ecrite')
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -2818,7 +2879,7 @@ def supprimer_mon_compte():
     # /stats/joueurs est en cache 5 minutes et publie les avatars : sans
     # invalidation, celui d'un compte supprime lui survivrait a l'ecran.
     invalidate_cache()
-    logger.info("Compte %s supprime a la demande de son titulaire", compte_id)
+    logger.warning("Compte %s supprime par %s, sur demande ecrite", compte_id, acteur_id)
     return jsonify({
         "status": "success",
         "dossier_sportif_conserve": joueur_id is not None,

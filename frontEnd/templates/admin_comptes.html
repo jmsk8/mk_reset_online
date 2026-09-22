@@ -107,6 +107,10 @@
     // Changer un rôle est une capacité de rôle, pas une permission déléguable :
     // elle se teste donc par le rôle, jamais par peut() (hierarchie-admin 2).
     const PEUT_CHANGER_ROLE = {{ 'true' if role_admin in ('chef_admin', 'superadmin') else 'false' }};
+    // Lire le journal est une capacité de rôle (chef_admin et plus), comme
+    // l'onglet Logs : même condition, pour qu'un admin porteur de
+    // gestion_comptes ne voie pas un bouton qui le renverrait à l'accueil.
+    const PEUT_LIRE_JOURNAL = {{ 'true' if role_admin in ('chef_admin', 'superadmin') else 'false' }};
     const PEUT_GERER_COMPTES = {{ 'true' if peut('gestion_comptes') else 'false' }};
     // Sous-permissions (enfant -> parent), servies par le backend : affichage en
     // retrait, case inactive tant que le parent manque, décochage en cascade.
@@ -662,10 +666,19 @@
                 // refus prévisible (§B.0), et revérifiée côté backend -- c'est
                 // là qu'elle protège.
                 //
-                // Un player peut avoir des lignes s'il a été admin par le
-                // passé : on ne masque pas son bouton, ce serait mentir.
-                const lisible = EST_SUPERADMIN
-                    || (RANGS[c.role] !== undefined && c.role !== 'superadmin');
+                // Deux conditions de plus depuis le 2026-09-22 :
+                //
+                // - le LECTEUR doit être chef_admin ou superadmin. Sans elle, un
+                //   admin porteur de gestion_comptes voyait le bouton partout,
+                //   et le 403 de la route le renvoyait à l'accueil ;
+                // - le compte doit avoir AGI au moins une fois
+                //   (`a_un_journal`). Le volet ne montre que ses actions : sur
+                //   un joueur qui n'a jamais été admin, il était vide. Un
+                //   ancien admin redevenu player garde, lui, son bouton --
+                //   masquer ses lignes serait mentir.
+                const lisible = PEUT_LIRE_JOURNAL && c.a_un_journal
+                    && RANGS[c.role] !== undefined
+                    && (EST_SUPERADMIN || c.role !== 'superadmin');
                 if (lisible) {
                     const bLogs = txt('button', 'Logs', 'button is-info is-light is-small');
                     bLogs.addEventListener('click', () => ouvrirJournal(c));
@@ -679,6 +692,17 @@
                                       'button is-danger is-light is-small');
                     bLegs.addEventListener('click', () => leguerSuperadmin(c));
                     actions.appendChild(bLegs);
+                }
+
+                // Suppression : seul chemin d'effacement d'un compte depuis le
+                // 2026-09-22 -- le titulaire la demande par écrit, le
+                // superadmin l'exécute ici. Jamais sur sa propre ligne (refusé
+                // côté backend : le superadmin est unique).
+                if (EST_SUPERADMIN && c.id !== MON_COMPTE_ID && c.role !== 'superadmin') {
+                    const bSuppr = txt('button', 'Supprimer le compte',
+                                       'button is-danger is-small');
+                    bSuppr.addEventListener('click', () => supprimerCompte(c));
+                    actions.appendChild(bSuppr);
                 }
 
                 tdA.appendChild(actions);
@@ -1251,6 +1275,38 @@
                 afficher('success',
                          'Rôle superadmin transmis. Vous êtes désormais chef_admin. '
                          + 'Rechargez la page pour voir vos nouveaux droits.');
+                chargerComptes();
+            } else {
+                afficher('danger', r.data.error || 'Échec.');
+            }
+        }
+
+        // ---- Suppression d'un compte, sur demande écrite ----
+        async function supprimerCompte(c) {
+            // Même double confirmation que le legs, pour la même raison : le
+            // pseudo retapé est vérifié par le backend contre discord_username.
+            // Un clic seul ne doit pas pouvoir effacer une identité.
+            if (!confirmer('Supprimer définitivement ce compte ?', nomDe(c),
+                           'À faire UNIQUEMENT sur demande écrite de son titulaire, '
+                           + 'après avoir vérifié qu\'elle vient bien de lui.\n\n'
+                           + 'Seront effacés : identité Discord, profil, sessions, '
+                           + 'demandes de rattachement.\n'
+                           + 'Seront conservés : la fiche joueur et son historique '
+                           + 'de tournois.\n\n'
+                           + 'Cette action est irréversible.')) return;
+
+            const saisi = prompt(
+                'Pour confirmer, retapez le pseudo Discord exact du compte '
+                + '(son identifiant, pas son nom affiché) :');
+            if (saisi === null) return;
+
+            const r = await api('/admin/comptes/' + c.id, 'DELETE',
+                                {confirmation_pseudo: saisi});
+            if (r.ok) {
+                afficher('success',
+                         'Compte supprimé.'
+                         + (r.data.dossier_sportif_conserve
+                            ? ' La fiche joueur et son historique sont conservés.' : ''));
                 chargerComptes();
             } else {
                 afficher('danger', r.data.error || 'Échec.');

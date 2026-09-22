@@ -109,10 +109,33 @@
                                     <span class="icon"><i class="fas fa-download"></i></span>
                                     <span>Télécharger mes données</span>
                                 </a>
-                                <button class="button is-danger is-light is-small" id="btn-supprimer">
+                                <button class="button is-danger is-light is-small" id="btn-supprimer"
+                                        aria-controls="demande-suppression" aria-expanded="false">
                                     <span class="icon"><i class="fas fa-user-slash"></i></span>
                                     <span>Supprimer mon compte</span>
                                 </button>
+                            </div>
+                            {# La suppression se demande par écrit depuis le 2026-09-22 :
+                               un effacement direct, irréversible et à un clic, était jugé
+                               trop dangereux. Le bouton reste, pour que le droit se
+                               trouve là où on le cherche ; il n'efface plus rien. #}
+                            <div id="demande-suppression" class="notification is-warning is-light mt-2 is-hidden">
+                                <p>
+                                    La suppression d'un compte se fait <strong>sur demande
+                                    écrite</strong>. Écrivez à
+                                    <a href="mailto:{{ contact }}?subject=Suppression%20de%20mon%20compte"><strong>{{ contact }}</strong></a>
+                                    en indiquant votre pseudo Discord.
+                                </p>
+                                <p class="mt-2">
+                                    Pour s'assurer que la demande vient bien de vous, nous
+                                    pourrons vous demander de la confirmer depuis ce compte
+                                    Discord. Nous y donnerons suite dans un délai d'un mois au
+                                    plus.
+                                </p>
+                                <p class="mt-2 is-size-7">
+                                    Pensez à télécharger vos données avant.
+                                    <a href="/confidentialite">Ce que la suppression efface, et ce qu'elle conserve</a>.
+                                </p>
                             </div>
                             <div id="alerte-rgpd"></div>
 
@@ -137,7 +160,7 @@
                                     n'est modifié que par un administrateur.
                                 </p>
                                 <p>
-                                    Supprimer votre compte efface votre identité Discord et votre
+                                    La suppression de votre compte efface votre identité Discord et votre
                                     profil, mais <strong>conserve votre pseudo de jeu et votre
                                     historique de tournois</strong> — les retirer fausserait le
                                     classement de tous les autres joueurs.
@@ -285,7 +308,7 @@
                 [
                     'Vos actions d’administration seront enregistrées à votre nom.',
                     'Ce journal est conservé sans limite de durée.',
-                    'Il subsiste même si vous supprimez votre compte.',
+                    'Il subsiste même si votre compte est supprimé.',
                 ].forEach(t => {
                     const li = document.createElement('li');
                     li.textContent = t;
@@ -560,31 +583,13 @@
             charger();
         })();
 
-        document.getElementById('btn-supprimer').addEventListener('click', async (e) => {
-            const btn = e.currentTarget;
-            if (!confirm(
-                "Supprimer définitivement votre compte ?\n\n"
-                + "Seront effacés : votre identité Discord, votre profil et vos sessions.\n"
-                + "Seront conservés : votre pseudo de jeu et votre historique de tournois.\n\n"
-                + "Cette action est irréversible."
-            )) return;
-            if (!confirm("Dernière confirmation : supprimer le compte ?")) return;
-
-            btn.classList.add('is-loading');
-            try {
-                const res = await fetch('/mon-compte/supprimer', {
-                    method: 'POST', headers: {'X-CSRFToken': csrf}
-                });
-                if (res.ok) { window.location.href = '/'; }
-                else {
-                    const d = await res.json();
-                    afficher('danger', d.error || 'La suppression a échoué.');
-                }
-            } catch (err) {
-                afficher('danger', 'Serveur injoignable.');
-            } finally {
-                btn.classList.remove('is-loading');
-            }
+        // N'appelle plus rien : il déplie la marche à suivre. La route
+        // d'effacement n'est plus ouverte au titulaire (supprimer_compte,
+        // backend, réservée au superadmin).
+        document.getElementById('btn-supprimer').addEventListener('click', (e) => {
+            const zone = document.getElementById('demande-suppression');
+            const ouvert = zone.classList.toggle('is-hidden') === false;
+            e.currentTarget.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
         });
     });
     </script>
