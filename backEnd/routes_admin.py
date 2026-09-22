@@ -29,6 +29,7 @@ from db import get_db_connection, ADMIN_PASSWORD_HASH
 from auth import (admin_required, admin_or_role_required, permission_required,
                   role_required, player_required, compte_a_permission)
 from cache import invalidate_cache
+from textes_ip import textes_ip, VERSIONS as IP_VERSIONS
 from utils import generate_unique_slug, extract_league_number
 from services import (
     recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
@@ -405,6 +406,9 @@ def get_config():
             "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true',
             "inter_league_moves": int(rows.get('inter_league_moves', 0)),
             "ip_version_live": rows.get('ip_version_live', IP_VERSION_DEFAULT),
+            # Les deux versions a la fois : Reglages et Saisons les proposent
+            # cote a cote dans leurs boutons radio.
+            "ip_textes": {v: textes_ip(v) for v in IP_VERSIONS},
         })
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500

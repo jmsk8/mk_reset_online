@@ -412,6 +412,22 @@ async function loadConfig() {
         poser('configIpVersionV2', isV2, 'checked');
         poser('configIpVersionV1', !isV2, 'checked');
     }
+    poserTextesIp(res.ip_textes);
+}
+
+// Noms et resumes des versions de l'IP (« v1 · IP brute »...), tires de
+// backEnd/textes_ip.py via /admin/config : ce sont les memes que ceux affiches
+// aux joueurs. textContent, jamais innerHTML.
+function poserTextesIp(textes) {
+    if (!textes) return;
+    document.querySelectorAll('[data-ip-nom]').forEach(el => {
+        const t = textes[el.dataset.ipNom];
+        if (t) el.textContent = t.nom;
+    });
+    document.querySelectorAll('[data-ip-resume]').forEach(el => {
+        const t = textes[el.dataset.ipResume];
+        if (t) el.textContent = t.resume_admin;
+    });
 }
 
 // Legende des tiers (page Fiches joueurs) : tiers dynamiques (Partie B),

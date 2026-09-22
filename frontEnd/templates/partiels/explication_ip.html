@@ -1,0 +1,72 @@
+{# Modale « Comment se calcule l'IP », partagee par le recap et le classement
+   de saison (docs/affichage-ip-plan-redaction.md §5).
+
+   Attend `ip`, le bloc du payload (backEnd/textes_ip.py) : tout le texte en
+   vient, avec la version de la page. Aucun chiffre ici.
+
+   S'ouvre par ouvrirExplicationIp() -- le badge de version, et le `?` d'un
+   recap IP. A inclure HORS de toute carte : `.fade-in.visible` et
+   `.glass-card` posent un transform / backdrop-filter, qui font d'un ancetre
+   le repere d'un `position: fixed` et enfermeraient la modale dans la carte. #}
+{% import 'partiels/cellule_ip.html' as ipm %}
+{% if ip %}
+<style>
+    .explication-ip .modal-content {
+        background: rgba(15, 23, 42, 0.95);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+        width: 560px;
+        max-width: 92%;
+    }
+    .explication-ip .content p { text-align: left; }
+    .explication-ip .legende-ip { border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 0.75rem; }
+    .badge-ip { cursor: pointer; border: none; font-weight: 600; vertical-align: middle; }
+    .badge-ip:hover { filter: brightness(1.1); }
+    @media screen and (max-width: 768px) {
+        .explication-ip .box { padding: 1rem 0.9rem; }
+    }
+</style>
+
+<div class="modal explication-ip" id="explicationIpModal" role="dialog" aria-modal="true"
+     aria-labelledby="explicationIpTitre">
+    <div class="modal-background" onclick="fermerExplicationIp()"></div>
+    <div class="modal-content">
+        <div class="box has-background-transparent">
+            <button class="delete is-large is-pulled-right" aria-label="Fermer"
+                    onclick="fermerExplicationIp()"></button>
+            <h3 class="title is-4 has-text-white mb-1" id="explicationIpTitre">
+                <i class="fas fa-info-circle mr-2"></i>Comment se calcule l'IP
+            </h3>
+            <p class="is-size-7 has-text-grey mb-4">{{ ip.ligne_version }}</p>
+
+            <div class="content has-text-light">
+                {% for p in ip.explication %}
+                <p>{% if p.titre %}<strong class="has-text-white">{{ p.titre }}</strong>{% endif %}{{ p.texte }}</p>
+                {% endfor %}
+            </div>
+
+            <p class="is-size-7 has-text-grey-light legende-ip">{{ ipm.legende_ip(ip) }}</p>
+
+            <div class="has-text-centered mt-4">
+                <button class="button is-primary is-outlined is-rounded" onclick="fermerExplicationIp()">Compris</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function ouvrirExplicationIp() {
+        const modale = document.getElementById('explicationIpModal');
+        if (modale) modale.classList.add('is-active');
+    }
+    function fermerExplicationIp() {
+        const modale = document.getElementById('explicationIpModal');
+        if (modale) modale.classList.remove('is-active');
+    }
+    document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') fermerExplicationIp();
+    });
+</script>
+{% endif %}

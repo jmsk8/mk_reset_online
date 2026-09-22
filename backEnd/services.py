@@ -911,16 +911,17 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
         if idx is not None:
             p["by_idx"][idx] = (float(score), position, old_mu)
 
+    base_poids = _gm_base_weight(ip_version)
+
     datasets = []
     for jid, p in players.items():
         data: list[float | None] = []
         points: list[dict | None] = []
-        # v1 et v2 calcules en parallele : le tooltip affiche les deux, quelle que
-        # soit la version active.
-        num_total_v1 = 0.0
-        denom_total_v1 = 0.0
-        num_total_v2 = 0.0
-        denom_total_v2 = 0.0
+        # Seule la version demandee est calculee. Le calcul parallele v1/v2
+        # nourrissait une comparaison cote a cote dans l'infobulle, retiree
+        # expres le 22/08 (e7f8482) : plus rien ne lisait l'autre version.
+        num_total = 0.0
+        denom_total = 0.0
         matchs = 0
         seen_first = False
         for idx in range(len(tournoi_ids)):
@@ -932,34 +933,30 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 matchs += 1
                 t = meta[tournoi_ids[idx]]
 
-                ratio_v1 = min(GM_MAX_RATIO_CAP, score / t["avg"]) if t["avg"] > 0 else 0.0
+                if ip_version == "v2":
+                    # avg_score exclut le joueur juge (leave-one-out), meme principe
+                    # que pour le mu : sinon son propre score amortit son propre ratio.
+                    avg_score_excl = _leave_one_out(t["sum"], t["count"], score) or t["avg"]
+                    ratio_base = min(GM_MAX_RATIO_CAP, score / avg_score_excl) if avg_score_excl > 0 else 0.0
+                    lobby_avg_mu = _leave_one_out(t["sum_mu"], t["count_mu"], own_old_mu)
+                    ref_avg_mu = _reference_mu(ref_grids.get(tournoi_dates[tournoi_ids[idx]]), jid)
+                    if ref_avg_mu is None:
+                        ref_avg_mu = _leave_one_out(period_sum_mu, period_count_mu, own_old_mu)
+                    # Plafond applique apres la correction de force du lobby, comme
+                    # dans _compute_grand_master.
+                    ratio = min(GM_MAX_RATIO_CAP, ratio_base * _force_lobby(lobby_avg_mu, ref_avg_mu))
+                else:
+                    ratio = min(GM_MAX_RATIO_CAP, score / t["avg"]) if t["avg"] > 0 else 0.0
 
-                # avg_score exclut le joueur juge (leave-one-out), meme principe que
-                # pour le mu : sinon son propre score amortit son propre ratio.
-                avg_score_excl = _leave_one_out(t["sum"], t["count"], score) or t["avg"]
-                ratio_v2_base = min(GM_MAX_RATIO_CAP, score / avg_score_excl) if avg_score_excl > 0 else 0.0
-                lobby_avg_mu = _leave_one_out(t["sum_mu"], t["count_mu"], own_old_mu)
-                ref_avg_mu = _reference_mu(ref_grids.get(tournoi_dates[tournoi_ids[idx]]), jid)
-                if ref_avg_mu is None:
-                    ref_avg_mu = _leave_one_out(period_sum_mu, period_count_mu, own_old_mu)
-                # Plafond applique apres la correction de force du lobby, comme
-                # dans _compute_grand_master.
-                ratio_v2 = min(GM_MAX_RATIO_CAP, ratio_v2_base * _force_lobby(lobby_avg_mu, ref_avg_mu))
-
-                poids_v1 = t["count"] + _gm_base_weight("v1")
-                poids_v2 = t["count"] + _gm_base_weight("v2")
-
-                num_total_v1 += ratio_v1 * poids_v1
-                denom_total_v1 += poids_v1
-                num_total_v2 += ratio_v2 * poids_v2
-                denom_total_v2 += poids_v2
+                poids = t["count"] + base_poids
+                num_total += ratio * poids
+                denom_total += poids
 
                 point_detail = {
                     "date": tournoi_dates[tournoi_ids[idx]].strftime("%d/%m/%Y"),
                     "position": int(position) if position is not None else None,
                     "score": int(score),
-                    "ip_pur_v1": round(ratio_v1 * 100, 2),
-                    "ip_pur_v2": round(ratio_v2 * 100, 2),
+                    "ip_pur": round(ratio * 100, 2),
                 }
 
             if not seen_first:
@@ -968,17 +965,11 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 continue
 
             bonus = max(0, matchs - seuil_participation) * GM_EXTRA_MATCH_BONUS
-            ip_base_v1 = (num_total_v1 / denom_total_v1) * 100 if denom_total_v1 > 0 else 0.0
-            ip_base_v2 = (num_total_v2 / denom_total_v2) * 100 if denom_total_v2 > 0 else 0.0
-            ip_total_v1 = round(min(GM_MAX_IP, ip_base_v1 + bonus), 2)
-            ip_total_v2 = round(min(GM_MAX_IP, ip_base_v2 + bonus), 2)
-            ip_total = ip_total_v2 if ip_version == "v2" else ip_total_v1
+            ip_base = (num_total / denom_total) * 100 if denom_total > 0 else 0.0
+            ip_total = round(min(GM_MAX_IP, ip_base + bonus), 2)
             data.append(ip_total)
 
             if point_detail is not None:
-                point_detail["ip_pur"] = point_detail["ip_pur_v2"] if ip_version == "v2" else point_detail["ip_pur_v1"]
-                point_detail["ip_total_v1"] = ip_total_v1
-                point_detail["ip_total_v2"] = ip_total_v2
                 point_detail["ip_total"] = ip_total
             points.append(point_detail)
 

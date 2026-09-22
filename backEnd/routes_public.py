@@ -12,6 +12,7 @@ from constants import (
 from db import get_db_connection
 from cache import get_cached, set_cached
 from routes_comptes import profil_public
+from textes_ip import bloc_ip
 from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
@@ -372,7 +373,10 @@ def get_recap(slug):
                 "position_breakdown": position_breakdown,
                 "is_league_recap": is_league_recap if is_league_recap else False,
                 "include_league_stats": include_league_stats if include_league_stats else False,
-                "include_league_moves": include_league_moves if include_league_moves else False
+                "include_league_moves": include_league_moves if include_league_moves else False,
+                # Version figee a la creation du recap, et tout ce que la page
+                # en dit (docs/affichage-ip-plan-redaction.md §8).
+                "ip": bloc_ip(ip_version, global_stats["total_tournois"], "recap"),
             }
 
             if is_league_recap or is_hybrid_league_view:
@@ -815,6 +819,9 @@ def classement_saison():
                 "nb_participants": len([p for p in stats["classement_moyenne"] if p["matchs"] > 0]),
                 "leader": leader,
             },
+            # Version du reglage en cours : la cle de cache n'a pas besoin de
+            # la porter, enregistrer les reglages vide tout le cache.
+            "ip": bloc_ip(ip_version, stats["total_tournois"], "classement"),
         }
         if is_league:
             payload["ligues_disponibles"] = ligues_disponibles
