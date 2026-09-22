@@ -31,6 +31,67 @@
             padding-left: .75rem;
             white-space: pre-wrap;   /* les retours à la ligne saisis comptent */
         }
+
+        /* Fenêtre des actions d'un compte (§13.6) : petite, et hors de toute
+           carte -- `.glass-card` ferait d'un ancêtre le repère du
+           `position: fixed` de la modale. */
+        #modale-actions .modal-background { backdrop-filter: blur(3px); }
+        #modale-actions .modal-content {
+            width: 380px;
+            max-width: 92%;
+            border-radius: 16px;
+            overflow: hidden;
+            background: linear-gradient(180deg, rgba(30, 41, 59, 0.97), rgba(15, 23, 42, 0.97));
+            border: 1px solid rgba(96, 165, 250, 0.25);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+            animation: actions-entree .18s ease-out;
+        }
+        @keyframes actions-entree {
+            from { opacity: 0; transform: translateY(8px) scale(.97); }
+            to   { opacity: 1; transform: none; }
+        }
+        #modale-actions .actions-entete {
+            display: flex; align-items: center; gap: .75rem;
+            padding: 1rem 1.25rem;
+            background: rgba(59, 130, 246, 0.12);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        #modale-actions .actions-entete figure { margin: 0 !important; flex: none; }
+        #modale-actions .actions-entete .delete { margin-left: auto; flex: none; }
+        #modale-actions .actions-nom { color: #fff; font-weight: 700; font-size: 1.05rem; line-height: 1.2; }
+        #modale-actions #modale-actions-corps { padding: .75rem 1rem 1rem; }
+        #modale-actions .actions-groupe-titre {
+            font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+            color: #94a3b8; margin: .5rem .25rem .4rem;
+        }
+        #modale-actions .actions-groupe-titre.sensible { color: #f87171; }
+        #modale-actions .actions-groupe { display: flex; flex-direction: column; gap: .3rem; }
+        /* Des lignes de menu plutôt qu'une pile de boutons colorés : la
+           couleur ne reste que sur l'icône, le danger se lit sans crier. */
+        #modale-actions .actions-groupe .button {
+            justify-content: flex-start; width: 100%; height: auto;
+            padding: .55rem .75rem; margin: 0 !important;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid transparent; border-radius: 10px;
+            color: #e2e8f0; font-size: .9rem;
+            transition: background .15s, border-color .15s, transform .15s;
+        }
+        #modale-actions .actions-groupe .button:hover,
+        #modale-actions .actions-groupe .button:focus-visible {
+            background: rgba(96, 165, 250, 0.14);
+            border-color: rgba(96, 165, 250, 0.35);
+            transform: translateX(2px);
+        }
+        #modale-actions .actions-groupe .button .icon { width: 1.75rem; margin-right: .5rem !important; }
+        #modale-actions .actions-groupe.sensible .button { color: #fecaca; }
+        #modale-actions .actions-groupe.sensible .button:hover,
+        #modale-actions .actions-groupe.sensible .button:focus-visible {
+            background: rgba(239, 68, 68, 0.14);
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+        #modale-actions .actions-separateur {
+            height: 1px; background: rgba(255, 255, 255, 0.08); margin: .75rem 0 .25rem;
+        }
     </style>
 </head>
 <body>
@@ -90,6 +151,17 @@
             {% endif %}
         </div>
     </section>
+
+    {# Actions d'un compte : une seule modale pour toute la table, remplie à
+       l'ouverture par ouvrirActions(). #}
+    <div class="modal" id="modale-actions" role="dialog" aria-modal="true"
+         aria-labelledby="modale-actions-titre">
+        <div class="modal-background" data-fermer></div>
+        <div class="modal-content">
+            <div class="actions-entete" id="modale-actions-entete"></div>
+            <div id="modale-actions-corps"></div>
+        </div>
+    </div>
 
     {% include 'footer.html' %}
     <script>
@@ -568,8 +640,11 @@
                 tr.appendChild(tdR);
 
                 const tdA = document.createElement('td');
+                // Deux groupes, affichés dans la fenêtre d'actions : les gestes
+                // courants d'abord, puis ceux qui coupent ou effacent, séparés
+                // pour qu'on ne les atteigne pas par un clic de trop.
                 const actions = document.createElement('div');
-                actions.className = 'buttons are-small';
+                const sensibles = document.createElement('div');
 
                 // Les quatre gestes ci-dessous passent tous par
                 // @compte_cible_protegee : sur une cible de rang égal ou
@@ -641,7 +716,7 @@
                         if (r.ok) { afficher('success', 'Statut mis à jour.'); chargerComptes(); }
                         else { afficher('danger', r.data.error || 'Échec.'); }
                     });
-                    actions.appendChild(bSusp);
+                    sensibles.appendChild(bSusp);
                 }
 
                 // Permissions à la carte : n'ont de sens que sur un admin. Un
@@ -692,7 +767,7 @@
                     const bLegs = txt('button', 'Léguer le superadmin',
                                       'button is-danger is-light is-small');
                     bLegs.addEventListener('click', () => leguerSuperadmin(c));
-                    actions.appendChild(bLegs);
+                    sensibles.appendChild(bLegs);
                 }
 
                 // Suppression : seul chemin d'effacement d'un compte depuis le
@@ -703,15 +778,108 @@
                     const bSuppr = txt('button', 'Supprimer le compte',
                                        'button is-danger is-small');
                     bSuppr.addEventListener('click', () => supprimerCompte(c));
-                    actions.appendChild(bSuppr);
+                    sensibles.appendChild(bSuppr);
                 }
 
-                tdA.appendChild(actions);
+                const nbActions = actions.children.length + sensibles.children.length;
+                if (nbActions) {
+                    const bOuvrir = document.createElement('button');
+                    bOuvrir.className = 'button is-small is-link is-light';
+                    bOuvrir.appendChild(icone('fa-ellipsis', 'icon is-small'));
+                    bOuvrir.appendChild(txt('span', 'Actions'));
+                    bOuvrir.appendChild(txt('span', nbActions, 'tag is-rounded is-link ml-1'));
+                    bOuvrir.addEventListener('click', () => ouvrirActions(c, actions, sensibles));
+                    tdA.appendChild(bOuvrir);
+                } else {
+                    tdA.appendChild(txt('span', '—', 'has-text-grey'));
+                }
                 tr.appendChild(tdA);
                 tbody.appendChild(tr);
             });
             table.appendChild(tbody);
             vue.appendChild(table);
+        }
+
+        // ---- Fenêtre des actions d'un compte ----
+        // Les boutons sont construits par chargerComptes(), handlers compris :
+        // on les déplace simplement dans la modale. Un clic sur l'un d'eux
+        // ferme d'abord la fenêtre (écouteur en phase de capture, donc avant
+        // le handler) : le confirm() qui suit, ou le volet déplié sous la
+        // table, ne doit pas s'afficher derrière elle.
+        const modaleActions = document.getElementById('modale-actions');
+        function fermerActions() { modaleActions.classList.remove('is-active'); }
+        modaleActions.querySelectorAll('[data-fermer]').forEach(el =>
+            el.addEventListener('click', fermerActions));
+        document.addEventListener('keydown', ev => {
+            if (ev.key === 'Escape') fermerActions();
+        });
+
+        // Icône et couleur de chaque geste, par libellé : les boutons sont
+        // construits ailleurs, on ne fait que les habiller.
+        const HABIT_ACTION = {
+            'Synchroniser le pseudo': ['fa-rotate', 'has-text-info'],
+            'Désynchroniser': ['fa-link-slash', 'has-text-warning'],
+            'Fermer les sessions': ['fa-right-from-bracket', 'has-text-grey-light'],
+            'Permissions': ['fa-key', 'has-text-link'],
+            'Logs': ['fa-clipboard-list', 'has-text-info'],
+            'Réactiver': ['fa-circle-check', 'has-text-success'],
+            'Suspendre': ['fa-ban', 'has-text-danger'],
+            'Léguer le superadmin': ['fa-crown', 'has-text-warning'],
+            'Supprimer le compte': ['fa-trash-can', 'has-text-danger'],
+        };
+
+        function habiller(b) {
+            if (b.dataset.habille) return;
+            const libelle = b.textContent;
+            const [ic, couleur] = HABIT_ACTION[libelle] || ['fa-angle-right', ''];
+            b.className = 'button';
+            b.textContent = '';
+            b.appendChild(icone(ic, 'icon', couleur));
+            b.appendChild(txt('span', libelle));
+            b.dataset.habille = '1';
+        }
+
+        function ouvrirActions(c, actions, sensibles) {
+            const entete = document.getElementById('modale-actions-entete');
+            entete.innerHTML = '';
+            entete.appendChild(avatar(c.avatar_url));
+            const bloc = document.createElement('div');
+            const nom = txt('p', nomDe(c), 'actions-nom');
+            nom.id = 'modale-actions-titre';
+            bloc.appendChild(nom);
+            const tags = document.createElement('div');
+            tags.className = 'tags mt-1 mb-0';
+            tags.appendChild(txt('span', c.role, 'tag is-link is-light is-small mb-0'));
+            tags.appendChild(txt('span', c.statut,
+                'tag is-small mb-0 ' + (c.statut === 'suspended' ? 'is-danger' : 'is-dark')));
+            bloc.appendChild(tags);
+            entete.appendChild(bloc);
+            const croix = document.createElement('button');
+            croix.className = 'delete';
+            croix.setAttribute('aria-label', 'Fermer');
+            croix.addEventListener('click', fermerActions);
+            entete.appendChild(croix);
+
+            const corps = document.getElementById('modale-actions-corps');
+            corps.innerHTML = '';
+            [[actions, 'Gestion', ''], [sensibles, 'Zone sensible', 'sensible']]
+                .forEach(([groupe, titre, classe], i) => {
+                if (!groupe.children.length) return;
+                if (i && corps.children.length) corps.appendChild(txt('div', '', 'actions-separateur'));
+                corps.appendChild(txt('p', titre, 'actions-groupe-titre ' + classe));
+                groupe.className = 'actions-groupe ' + classe;
+                Array.from(groupe.children).forEach(habiller);
+                if (!groupe.dataset.fermeture) {
+                    groupe.addEventListener('click', ev => {
+                        if (ev.target.closest('button')) fermerActions();
+                    }, true);
+                    groupe.dataset.fermeture = '1';
+                }
+                corps.appendChild(groupe);
+            });
+            modaleActions.classList.add('is-active');
+            const premier = corps.querySelector('button');
+            if (premier) premier.focus();
         }
 
         // ---- Permissions à la carte ----

@@ -643,13 +643,14 @@ commitées**), avec les 5 orientations et un portrait. À faire :
   protocole.
 - `[ ]` Préciser ce qui doit changer : apparence, placement, comportement.
 
-#### 13.6 Admin/Comptes — redesign UX onglet Compte, section Actions — à ranger
+#### 13.6 Admin/Comptes — actions d'un compte en pop-up — ✅ livré le 2026-09-22, non commité, recette à l'écran à faire
 
-**Demandé** : retravailler la partie « Actions » de l'onglet Compte sur `/admin/comptes/<id>`.
+**Demandé** : retravailler la colonne « Actions » de l'onglet **Comptes** de `/admin/comptes`.
 
-- `[ ]` Remplacer l'affichage linéaire des actions par un **bouton unique** qui ouvre une **petite fenêtre pop-up** contenant toutes les actions.
-- `[ ]` Cible : `admin_comptes.html`, onglet **Compte** (ne toucher ni Permissions, ni Sessions).
-- `[ ]` À décider : lisibilité du pop-up, boutons/icônes, ordre/hiérarchie des actions, fermeture (croix, clic dehors, etc.).
+- `[x]` Un **bouton unique** « Actions » (avec le nombre de gestes possibles) par ligne ouvre une **petite modale** (`#modale-actions`, `admin_comptes.html`) titrée au nom du compte. Ligne sans geste possible : un tiret.
+- `[x]` Deux groupes : **courants** (synchroniser, désynchroniser, fermer les sessions, permissions, logs), puis, séparés par un trait, **sensibles** (suspendre/réactiver, léguer le superadmin, supprimer).
+- `[x]` Fermeture : croix, clic sur le fond, Échap — et automatiquement au clic d'une action, avant son `confirm()` ou le volet déplié.
+- `[x]` Les règles d'affichage de chaque bouton sont inchangées (mêmes conditions, mêmes handlers : les boutons sont seulement déplacés). Onglets liaisons, invitations, logs, bots non touchés. Les 10 fichiers de tests qui lisent ce gabarit restent verts.
 
 #### 13.7 Bannière mobile — authentification Discord hors burger — à ranger
 
