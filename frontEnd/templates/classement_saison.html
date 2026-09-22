@@ -74,6 +74,9 @@
     {% set classement = saison.classement_ip or [] %}
     {% set evo = saison.ip_evolution or {} %}
     {% set stats = saison.recap_stats or {} %}
+    {# Version du reglage en cours, textes et seuils : backEnd/textes_ip.py. #}
+    {% set ip = saison.ip %}
+    {% import 'partiels/cellule_ip.html' as ipm %}
     {% set ns = namespace(ip_leader=None) %}
     {% for j in classement %}
         {% if j.is_eligible_gm and j.score_gm is not none and (ns.ip_leader is none or j.score_gm > ns.ip_leader) %}
@@ -127,7 +130,8 @@
             <div class="card glass-card fade-in mb-6">
                 <header class="card-header">
                     <p class="card-header-title is-centered has-text-warning">
-                        <i class="fas fa-list-ol mr-2"></i> Classement de saison (IP)
+                        <i class="fas fa-list-ol mr-2"></i> Classement de saison
+                        {{ ipm.badge_ip(ip) }}
                     </p>
                 </header>
                 <div class="card-content p-0">
@@ -149,10 +153,10 @@
                                     <th class="has-text-centered sortable" onclick="sortSaisonTable('vic', this)" title="Nombre de victoires (1ère place)">
                                         Vict. <i class="fas fa-sort"></i>
                                     </th>
-                                    <th class="has-text-right sortable active-sort" onclick="sortSaisonTable('ip', this)" title="Indice de Performance">
+                                    <th class="has-text-right sortable active-sort" onclick="sortSaisonTable('ip', this)" title="{{ ip.infobulle_colonne if ip else 'Indice de Performance' }}">
                                         IP <i class="fas fa-sort-down"></i>
                                     </th>
-                                    <th class="has-text-right gap-col" title="Écart d'IP avec le leader du championnat">
+                                    <th class="has-text-right gap-col" title="Écart d'IP avec le leader">
                                         Écart
                                     </th>
                                 </tr>
@@ -176,29 +180,7 @@
                                     <td class="has-text-centered" data-val="{{ j.victoires }}">
                                         {{ j.victoires }}
                                     </td>
-                                    <td class="has-text-right"
-                                        data-val="{{ j.score_gm if j.score_gm is not none else -1 }}"
-                                        data-eligible="{{ 'true' if j.is_eligible_gm else 'false' }}">
-                                        {% if j.score_gm is not none %}
-                                            {% if j.is_eligible_gm == false %}
-                                                <span class="has-text-danger" style="opacity: 0.9;" title="Participation insuffisante">
-                                                    {{ '%0.2f'|format(j.score_gm|float) }}
-                                                </span>
-                                            {% else %}
-                                                {% if j.score_gm >= 115 %}
-                                                    <span class="has-text-warning has-text-weight-bold">★ {{ '%0.2f'|format(j.score_gm|float) }}</span>
-                                                {% elif j.score_gm >= 105 %}
-                                                    <span class="has-text-success has-text-weight-bold">{{ '%0.2f'|format(j.score_gm|float) }}</span>
-                                                {% elif j.score_gm >= 95 %}
-                                                    <span class="has-text-white">{{ '%0.2f'|format(j.score_gm|float) }}</span>
-                                                {% else %}
-                                                    <span class="has-text-white" style="opacity: 0.6;">{{ '%0.2f'|format(j.score_gm|float) }}</span>
-                                                {% endif %}
-                                            {% endif %}
-                                        {% else %}
-                                            <span class="has-text-grey-light">-</span>
-                                        {% endif %}
-                                    </td>
+                                    {{ ipm.cellule_ip(j, ip) }}
                                     <td class="has-text-right gap-col">
                                         {% if j.is_eligible_gm and j.score_gm is not none and ns.ip_leader is not none %}
                                             {% set gap = j.score_gm - ns.ip_leader %}
@@ -216,12 +198,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <div class="px-3 pb-2">
-                        <p class="is-size-7 has-text-grey-light mt-2 has-text-right">
-                            <i class="fas fa-info-circle mr-1"></i>
-                            Les indices en <span class="has-text-danger">rouge</span> indiquent que le joueur n'a pas encore atteint le nombre de participations requis pour un IP fiable.
-                        </p>
-                    </div>
+                    {{ ipm.notes_tableau_ip(ip) }}
                 </div>
             </div>
 
@@ -245,6 +222,8 @@
 
         </div>
     </div>
+
+    {% include 'partiels/explication_ip.html' %}
 
     <script>
         const saisonSortDirections = { 'moy': true, 'total': true, 'part': true, 'vic': true, 'ip': true };
@@ -405,7 +384,7 @@
                                     if (d.position != null) lines.push(`Position : ${d.position}`);
                                     lines.push(`Points : ${d.score}`);
                                     lines.push(`IP du tournoi : ${d.ip_pur}`);
-                                    lines.push(`IP total : ${d.ip_total}`);
+                                    lines.push(`IP après ce tournoi : ${d.ip_total}`);
                                     return lines;
                                 }
                             }

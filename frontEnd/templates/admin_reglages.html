@@ -30,6 +30,8 @@
         .legend-val { font-size: 0.75rem; opacity: 0.7; margin-left: 6px; }
         #tierChartArea { cursor: default; }
         #tierChartArea.dragging-handle { cursor: ew-resize; }
+        /* Versions de l'IP : une par ligne, leur resume dessous. */
+        .choix-ip { display: block; margin: 0 0 0.6rem 0 !important; }
         @media (max-width: 768px) {
             .chart-container-wrapper { flex-direction: column; height: auto; }
             .chart-legend { width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; max-height: 130px; display: flex; flex-wrap: wrap; }
@@ -104,21 +106,27 @@
 
                                     <div class="column is-12">
                                         <div class="box has-background-dark" style="border: 1px solid #22c55e;">
-                                            <label class="label has-text-white mb-3">Indice de Performance (IP) du classement de saison en cours</label>
+                                            <label class="label has-text-white mb-3">Version de l'IP — classement de la saison en cours</label>
+                                            {# Noms et resumes remplis depuis /admin/config (ip_textes) :
+                                               les memes que ceux du public et de la page Saisons. #}
                                             <div class="field">
                                                 <div class="control">
-                                                    <label class="radio has-text-white mr-4">
+                                                    <label class="radio has-text-white choix-ip">
                                                         <input type="radio" name="ipVersionLive" value="v1" id="configIpVersionV1">
-                                                        <span class="tag is-light ml-1">v1</span> perf brut
+                                                        <span class="tag is-light ml-1">v1</span>
+                                                        <strong class="has-text-white" data-ip-nom="v1"></strong>
+                                                        <span class="is-block is-size-7 has-text-grey-light ml-5" data-ip-resume="v1"></span>
                                                     </label>
-                                                    <label class="radio has-text-white">
+                                                    <label class="radio has-text-white choix-ip">
                                                         <input type="radio" name="ipVersionLive" value="v2" id="configIpVersionV2">
-                                                        <span class="tag is-success is-light ml-1">v2</span> applique une force de lobby à la perf du joueur
+                                                        <span class="tag is-success is-light ml-1">v2</span>
+                                                        <strong class="has-text-white" data-ip-nom="v2"></strong>
+                                                        <span class="is-block is-size-7 has-text-grey-light ml-5" data-ip-resume="v2"></span>
                                                     </label>
                                                 </div>
                                             </div>
                                             <p class="has-text-grey-light is-size-7 is-italic mt-2">
-                                                Pilote uniquement le classement de saison en cours. Les récaps déjà générés ne bougent pas.
+                                                S'applique tout de suite au classement de la saison en cours. Chaque récap garde la version choisie à sa création.
                                             </p>
                                         </div>
                                     </div>

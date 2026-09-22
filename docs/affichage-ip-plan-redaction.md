@@ -1,12 +1,17 @@
 # IP v1 / v2 — plan de rédaction, page par page
 
-> **État : proposition du 21/09/2026, rien implémenté, rien commité**
-> ([[user-handles-commits]]). Ce document dit **quoi écrire, sur quelle page, à quel endroit
-> et dans quel cas**. L'analyse (calcul exact de v1 / v2, inventaire, défauts, phases
-> techniques) est dans [`affichage-ip-inventaire.md`](affichage-ip-inventaire.md).
+> **État : ✅ clos le 22/09/2026**, affichage validé par l'utilisateur. Décisions du §9
+> tranchées, phases 1 à 4 faites **sauf** les branches `grand_master`, qui attendent deux
+> requêtes sur la prod (§10) — reliquat sans effet visible.
 >
-> **Pour reprendre** : trancher les décisions du §9, puis suivre la liste d'avancement du §10
-> dans l'ordre.
+> Ce document dit **quoi écrire, sur quelle page, à quel endroit et dans quel cas**.
+> L'analyse (calcul exact de v1 / v2, inventaire, défauts, phases techniques) est dans
+> [`affichage-ip-inventaire.md`](affichage-ip-inventaire.md).
+>
+> **Où vit le texte désormais** : `backEnd/textes_ip.py` (seule source, chiffres calculés
+> depuis les constantes), `frontEnd/templates/partiels/cellule_ip.html` (cellule, légende,
+> badge) et `partiels/explication_ip.html` (modale). Filets : `test_textes_ip.py` (44
+> assertions) et `test_affichage_ip.py` (90).
 
 ---
 
@@ -274,43 +279,68 @@ format français (`0,3`, pas `0.3`).
 
 ---
 
-## 9. Décisions à prendre
+## 9. Décisions — ✅ tranchées le 2026-09-22
 
-1. **Noms** : « IP brute » (v1) / « IP ajustée » (v2) ?
-2. **Séparateur décimal** : les tableaux affichent `112.35`, les textes `0,3`. On accepte le
-   mélange, ou on passe les tableaux à la virgule (plus large que ce chantier : touche toutes
-   les colonnes numériques) ?
-3. **Calcul v1 / v2 en parallèle** dans `compute_ip_evolution` : le supprimer (proposé), ou le
-   garder pour un futur écran admin de comparaison ?
-4. **Bonus quand le minimum n'est pas un entier** : l'expliquer (proposé, texte du §5) plutôt
-   qu'arrondir le seuil, ce qui changerait les classements ?
-5. **Bornes ×0,5 / ×2** : ne pas les montrer aux joueurs (proposé) ?
+Les cinq propositions ont été retenues telles quelles :
+
+1. **Noms** : « IP brute » (v1) / « IP ajustée » (v2).
+2. **Séparateur décimal** : le mélange est accepté — virgule dans les textes, point dans les
+   tableaux et les graphiques. Passer les tableaux à la virgule sortirait du chantier (le tri,
+   lui, n'en souffrirait pas : il lit `data-val`).
+3. **Calcul v1 / v2 en parallèle** : supprimé. `compute_ip_evolution` ne calcule que la
+   version demandée ; sortie vérifiée identique à l'ancienne sur un jeu de 43 points, en v1
+   comme en v2.
+4. **Bonus quand le minimum n'est pas un entier** : expliqué (§5), aucun calcul ne change.
+5. **Bornes ×0,5 / ×2** : non montrées aux joueurs.
+
+Écarts assumés par rapport aux textes du §3 au §7, relevés en implémentant :
+
+- **Poids d'un lobby de 12 face à un lobby de 4** : calculé, donc « 1,9 fois » en v1 et non
+  « deux fois » ; « 1,4 fois » en v2.
+- **Ligne sous le tableau du classement** : « pas encore assez de tournois joués (N minimum sur
+  M pour l'instant) […] le minimum augmente **au fil des** tournois » — « à chaque nouveau
+  tournoi » était faux : 40 % de M n'augmente pas à chaque tournoi.
+- **N** vaut `ceil(M × 0,4)`, la même expression que le test d'éligibilité : vérifié de 1 à 40
+  tournois, N joués classe et N − 1 ne classe pas.
+- **Aides admin** (§6 et §7.1) : restées dans les gabarits, elles ne citent aucun chiffre ni
+  aucune version. Les **noms et résumés** des versions, eux, viennent de `/admin/config`.
 
 ---
 
 ## 10. Avancement
 
-**Phase 1 — Textes côté back**
-- [ ] `backEnd/textes_ip.py` : textes des §5, §6 et §7, construits à partir des constantes
-- [ ] Constantes des seuils 95 / 105 / 115 dans `constants.py`
-- [ ] Tests : changer une constante change le texte ; les textes v1 et v2 diffèrent
+**Phase 1 — Textes côté back** ✅ 22/09
+- [x] `backEnd/textes_ip.py` : textes des §5, §6 et §7, construits à partir des constantes.
+  ⚠️ Nouveau module : ajouté aux montages du backend dans `docker-compose.yml`, sans quoi il
+  resterait figé après le build.
+- [x] Constantes des seuils 95 / 105 / 115 dans `constants.py` (`IP_SEUIL_*`)
+- [x] Tests : changer une constante change le texte ; les textes v1 et v2 diffèrent
+  (`test_textes_ip.py`)
 
-**Phase 2 — Payloads**
-- [ ] Bloc `ip` dans le payload du récap
-- [ ] Bloc `ip` dans le payload du classement de saison
-- [ ] Textes des deux versions dans `/admin/config`
+**Phase 2 — Payloads** ✅ 22/09
+- [x] Bloc `ip` dans le payload du récap (version **du récap**)
+- [x] Bloc `ip` dans le payload du classement de saison (version **du réglage**)
+- [x] Textes des deux versions dans `/admin/config` (`ip_textes`)
 
-**Phase 3 — Pages**
-- [ ] Partiel `partiels/explication_ip.html` (§5)
-- [ ] Macro `partiels/cellule_ip.html` (seuils lus dans le payload)
-- [ ] Récap : badge, légende, ligne sur le rouge, podium, libellés des graphiques (§3)
-- [ ] Classement : badge, modale, légende, ligne sur le rouge, libellés (§4)
-- [ ] Admin Réglages (§6)
-- [ ] Admin Saisons : formulaire, liste, publication (§7)
-- [ ] Vérifier sur mobile : récap v1, récap v2, récap Stakhanov, classement en cours
+**Phase 3 — Pages** ✅ 22/09, sauf la recette mobile
+- [x] Partiel `partiels/explication_ip.html` (§5) — hors de toute carte : `.fade-in.visible`
+  pose un `transform` qui enfermerait la modale
+- [x] Macro `partiels/cellule_ip.html` (seuils lus dans le payload ; sans bloc `ip`, la
+  valeur s'affiche sans couleur au lieu de planter)
+- [x] Récap : badge, légende, ligne sur le rouge, podium, libellés des graphiques (§3)
+- [x] Classement : badge, modale, légende, ligne sur le rouge, libellés (§4)
+- [x] Admin Réglages (§6)
+- [x] Admin Saisons : formulaire, liste, publication (§7)
+- [x] Rendu réel vérifié le 22/09 (app frontend, backend simulé) : récap IP v1, IP v2,
+  Stakhanov et classement en cours rendent en 200 avec la bonne version
+- [x] Affichage validé par l'utilisateur le 22/09
 
 **Phase 4 — Nettoyage** (détail : `affichage-ip-inventaire.md` §8)
-- [ ] Calcul parallèle v1 / v2 et commentaire faux `services.py:912`
-- [ ] Clés `rulesDescriptions['Indice de Performance']` et `['grand_master']`
-- [ ] Garde `Indicateur de Performance`
-- [ ] Branches `grand_master`, **après vérification en prod**
+- [x] Calcul parallèle v1 / v2 et commentaire faux de `compute_ip_evolution`
+- [x] Clés `rulesDescriptions['Indice de Performance']` et `['grand_master']`
+- [x] Garde `Indicateur de Performance`
+- [ ] Branches `grand_master`, **après vérification en prod**. Deux requêtes à lancer :
+  `SELECT DISTINCT victory_condition FROM saisons;` et
+  `SELECT code FROM types_awards WHERE code = 'grand_master';`. Si aucune ne renvoie
+  `grand_master`, retirer les branches de `services.py` (`_determine_winners`),
+  `recap.html` (`is_ip`) et `routes_admin.py` (`code != 'grand_master'`).

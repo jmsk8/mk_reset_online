@@ -1,0 +1,83 @@
+{# Affichage d'une valeur d'IP : cellule du tableau et legende des couleurs.
+
+   Partage par recap.html et classement_saison.html, qui en portaient deux
+   copies. Les seuils ne sont plus ecrits ici : ils arrivent dans le bloc `ip`
+   du payload (backEnd/textes_ip.py, constantes IP_SEUIL_*), si bien que la
+   cellule et la legende ne peuvent plus diverger.
+
+   Sans bloc `ip` (backend plus ancien que le frontend, le temps d'un
+   redemarrage), la valeur s'affiche sans couleur plutot que de faire planter
+   la page. #}
+
+{% macro niveau_ip(score, seuils) -%}
+    {%- if score >= seuils.etoile %}etoile
+    {%- elif score >= seuils.bon %}bon
+    {%- elif score >= seuils.moyen %}moyen
+    {%- else %}bas{% endif -%}
+{%- endmacro %}
+
+{# Le rendu de chaque palier. La legende passe ici elle aussi : chaque palier y
+   est ecrit dans la couleur de la cellule qu'il decrit. #}
+{% macro valeur_ip(niveau, texte) -%}
+    {%- if niveau == 'etoile' -%}
+        <span class="has-text-warning has-text-weight-bold">★ {{ texte }}</span>
+    {%- elif niveau == 'bon' -%}
+        <span class="has-text-success has-text-weight-bold">{{ texte }}</span>
+    {%- elif niveau == 'moyen' -%}
+        <span class="has-text-white">{{ texte }}</span>
+    {%- else -%}
+        <span class="has-text-white" style="opacity: 0.6;">{{ texte }}</span>
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro cellule_ip(j, ip) %}
+<td class="has-text-right"
+    data-val="{{ j.score_gm if j.score_gm is not none else -1 }}"
+    data-eligible="{{ 'true' if j.is_eligible_gm else 'false' }}">
+    {% if j.score_gm is not none %}
+        {% set texte = '%0.2f'|format(j.score_gm|float) %}
+        {% if j.is_eligible_gm == false %}
+            {# Pas de `title` : invisible au doigt. La ligne sous le tableau
+               dit ce que veut dire le rouge. #}
+            <span class="has-text-danger" style="opacity: 0.9;">{{ texte }}</span>
+        {% elif ip and ip.seuils %}
+            {{ valeur_ip(niveau_ip(j.score_gm, ip.seuils), texte) }}
+        {% else %}
+            <span class="has-text-white">{{ texte }}</span>
+        {% endif %}
+    {% else %}
+        <span class="has-text-grey-light">-</span>
+    {% endif %}
+</td>
+{% endmacro %}
+
+{% macro legende_ip(ip) -%}
+    {%- for palier in ip.legende -%}
+        {{ valeur_ip(palier.niveau, palier.libelle) }} : {{ palier.sens }}
+        {%- if not loop.last %} <span class="has-text-grey">·</span> {% endif -%}
+    {%- endfor -%}
+{%- endmacro %}
+
+{# Sous le tableau : la legende, puis ce que veut dire le rouge. Visible sans
+   survol, donc aussi sur mobile. #}
+{% macro notes_tableau_ip(ip) %}
+{% if ip %}
+<div class="px-3 pb-2 notes-tableau-ip">
+    <p class="is-size-7 has-text-grey-light mt-2 has-text-right">{{ legende_ip(ip) }}</p>
+    <p class="is-size-7 has-text-grey-light mt-1 has-text-right">
+        <i class="fas fa-info-circle mr-1"></i>En <span class="has-text-danger">rouge</span> : {{ ip.note_rouge }}
+    </p>
+</div>
+{% endif %}
+{% endmacro %}
+
+{# Badge de version, a cote du titre du tableau. Un vrai bouton : il se
+   declenche au doigt comme au clavier, contrairement a une infobulle. #}
+{% macro badge_ip(ip) %}
+{% if ip %}
+<button type="button" class="tag is-info is-light badge-ip ml-2" aria-haspopup="dialog"
+        onclick="ouvrirExplicationIp()" title="Comment se calcule l'IP">
+    {{ ip.badge }}<i class="fas fa-info-circle ml-1" aria-hidden="true"></i>
+</button>
+{% endif %}
+{% endmacro %}

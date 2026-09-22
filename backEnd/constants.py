@@ -80,6 +80,12 @@ IP_VERSION_DEFAULT = "v1"
 IP_V2_REF_REQUIRE_TIER = True     # exclut les joueurs sans tier (tier = 'U')
 IP_V2_REF_REQUIRE_RANKED = True   # exclut les joueurs inactifs (is_ranked = false)
 
+# Seuils des couleurs de la cellule IP (recap et classement de saison), et de
+# la legende qui les explique. Affichage seul : aucun calcul n'en depend.
+IP_SEUIL_ETOILE = 115
+IP_SEUIL_BON = 105
+IP_SEUIL_MOYEN = 95
+
 TOKEN_LIFETIME_MINUTES = 60
 
 CACHE_TTL_SECONDS = 300

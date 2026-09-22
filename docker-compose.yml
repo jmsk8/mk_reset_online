@@ -88,6 +88,7 @@ services:
       - ./backEnd/routes_auth.py:/app/routes_auth.py
       - ./backEnd/routes_comptes.py:/app/routes_comptes.py
       - ./backEnd/routes_bot.py:/app/routes_bot.py
+      - ./backEnd/textes_ip.py:/app/textes_ip.py
 
     environment:
       - PYTHONUNBUFFERED=1

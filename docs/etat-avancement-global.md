@@ -11,9 +11,10 @@
 > §8.3, rotation des journaux), audit croisé docs ↔ code, chantier performance/503, « Mes
 > sessions actives », intégration des trois audits qui manquaient à cet inventaire.
 >
-> **État de la suite de tests, relancée le 2026-09-22 : 1795 assertions, 34 fichiers, aucune
-> rouge** (1647 le matin ; l'écart vient de la suppression de compte sur demande écrite, §13.1,
-> de la phase 4 d'`audit_admin`, §4, et de A-01/A-02, §8). Il y en
+> **État de la suite de tests, relancée le 2026-09-22 au soir : 1929 assertions, 36 fichiers,
+> aucune rouge** (1795 dans l'après-midi : l'écart vient des deux fichiers de l'affichage de
+> l'IP, §13.2 ; 1647 le matin : suppression de compte sur demande écrite, §13.1, phase 4
+> d'`audit_admin`, §4, et A-01/A-02, §8). Il y en
 > avait 1401 le 18/09 ; l'écart vient surtout du journal `audit_admin`. Le 18/09
 > était déjà une première — trois fichiers étaient rouges en permanence depuis des semaines, ce
 > qui neutralisait le dispositif d'audit du projet (une ligne rouge `[B-xx]` est une bonne
@@ -83,7 +84,7 @@
 | 4 | **« Supprimer mon compte » : passer par une demande par mail** — ✅ livré le 22/09, non commité | §13.1 | Demandé le 22/09 : l'effacement direct est jugé trop dangereux. Garder le bouton, mais qu'il affiche un message invitant à écrire à `SITE_CONTACT`. ⚠️ **Fermer aussi `DELETE /me` côté backend**, sinon l'accès direct reste ouvert à qui l'appelle sans passer par la page. La demande reçue sera traitée par une **route réservée au `superadmin`** (décidé le 22/09), à créer : aucune n'existe aujourd'hui. |
 | 5 | **Phase 4 d'`audit_admin`** — ✅ **livrée le 22/09, non commitée** : le journal est terminé | §4 | Le filet (`test_audit_inventaire.py`) a trouvé en arrivant **neuf routes admin qui écrivaient sans trace**, dont la liaison de tournois qui modifie le sigma. Toutes corrigées. **L'avant-dernière étape décidée le 18/09 est donc close** : reste la coupure du mot de passe (rang 9). |
 | 6 | **A-01 / A-02 — sessions figées sur le rôle** — ✅ clos le 22/09 (`12d35dc`) | §8 | Était le dernier 🟠 ouvert. Une promotion laissait à un admin une session de 30 jours au lieu de 12 h, une rétrogradation ne fermait aucune session. Désormais **changer de rôle oblige à se reconnecter**, dans les deux sens. Recette faite en conditions réelles, acceptation et rétrogradation (§8). |
-| 7 | **Définitions de l'IP v1 / v2 sur le site** | §13.2 | Demandé le 22/09. Texte visible par **tous** les joueurs, et aujourd'hui pas propre. Le plan existe déjà, page par page ([affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md)) : trancher ses 5 décisions (§9), puis dérouler ses 4 phases (§10). |
+| 7 | **Définitions de l'IP v1 / v2 sur le site** — ✅ **clos le 22/09** | §13.2 | Les 5 décisions tranchées (propositions retenues), les 4 phases déroulées : un seul module de textes (`textes_ip.py`), badge de version et modale d'explication sur le récap et le classement, légende des couleurs, admin aligné. Validé à l'écran par l'utilisateur. Seul reliquat, sans effet visible : les branches `grand_master`, suspendues à deux requêtes sur la prod. |
 | 8 | **Prérequis de l'étape 6** | §1 | Deux comptes `superadmin` distincts, break-glass exécuté pour de vrai, période de recouvrement. Des décisions et du temps, pas du code : à lancer tôt, justement parce qu'ils ne se cochent pas en une session. |
 | 9 | **Étape 6 — couper le mot de passe admin** | §1 | ⚠️ **Dernière étape décidée** (18/09). Referme A-04/A-05 du même geste. Un seul commit isolé, pour pouvoir le `revert`. |
 | 10 | **Bannière d'automne** | §13.3 | Demandé le 22/09. L'automne affiche la bannière d'été depuis ce matin, en intérim. Travail daté : la saison s'arrête le 21/12, chaque semaine de retard en est une de moins à l'écran. |
@@ -429,7 +430,7 @@ de **tous** les chantiers.
 | Décor Mario Kart en fond de toutes les pages | ✅ commité les 20 et 21/09 (`638db0b`, `d2a2f1f`, avec les pipes 2×2). Retouches du 21/09 **non commitées**. Pistes d'optimisation encore ouvertes | [decor-perf-notes.md](decor-perf-notes.md) §3 |
 | Alertes (ouïe) des karts du bandeau | ✅ livré et mesuré le 21/09, **non commité** (`raceEngine/src/engine/alerts.js`, banc `make race-alerts`) | [banner/alertes.md](banner/alertes.md) |
 | Bannière d'accueil en automne | 🟡 **intérim** du 22/09, non commité : l'automne affiche la bannière d'été (`get_banner_season()`, `frontEnd/frontend.py`), faute de style `autumn`. La vraie bannière est au rang 10 | §13.3 |
-| Affichage IP v1/v2 | 📋 plan de rédaction seul (21/09), rien implémenté — rang 7. Ne pas réafficher v1 et v2 côte à côte : retiré exprès le 22/08 | [affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md) |
+| Affichage IP v1/v2 | ✅ clos le 22/09 — rang 7. Reliquat : `grand_master` (vérification en prod). Ne pas réafficher v1 et v2 côte à côte : retiré exprès le 22/08 | [affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md) |
 | Moteur de course en Rust | 📋 conception seule (21/09), rien codé | [banner/moteur-rust-plan.md](banner/moteur-rust-plan.md) |
 
 ### 12. Déploiement et publication
@@ -557,16 +558,35 @@ L'effacement direct est jugé trop dangereux.
 - ⚠️ **Le point sensible s'est déplacé** : ce n'est plus le bouton, c'est le mail. N'importe qui
   peut écrire « supprimez le compte de X » ; seule l'étape 1 du runbook §7 l'arrête.
 
-#### 13.2 Définitions de l'IP v1 / v2 — rang 7
+#### 13.2 Définitions de l'IP v1 / v2 — rang 7 — ✅ CLOS le 2026-09-22
 
-**Demandé** : les définitions affichées sur le site ne sont pas propres. Le travail est **déjà
-préparé** : [affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md) dit quoi écrire,
-page par page (récap, classement de saison, modale d'explication, admin Réglages et Saisons),
-et [affichage-ip-inventaire.md](affichage-ip-inventaire.md) porte l'analyse.
+**Demandé** : les définitions affichées sur le site ne sont pas propres. Détail et suivi dans
+[affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md) §9-§10, analyse dans
+[affichage-ip-inventaire.md](affichage-ip-inventaire.md).
 
-- `[ ]` Trancher les 5 décisions du §9 du plan (noms « IP brute » / « IP ajustée », virgule
-  décimale, calcul parallèle v1/v2, bonus au minimum non entier, bornes ×0,5 / ×2).
-- `[ ]` Dérouler les 4 phases du §10 : textes côté back, payloads, pages, nettoyage.
+- `[x]` **Les 5 décisions** (§9 du plan) : les propositions sont toutes retenues — « IP brute »
+  / « IP ajustée », virgule dans les textes et point dans les tableaux, calcul parallèle
+  supprimé, bonus au minimum non entier expliqué plutôt qu'arrondi, bornes ×0,5 / ×2 tues.
+- `[x]` **Phase 1** : `backEnd/textes_ip.py`, seule source des textes, chiffres calculés depuis
+  les constantes ; seuils 95/105/115 devenus `IP_SEUIL_*`. ⚠️ Nouveau module **monté** dans
+  `docker-compose.yml`, comme les autres.
+- `[x]` **Phase 2** : bloc `ip` dans le payload du récap (version du récap) et du classement
+  (version du réglage), `ip_textes` dans `/admin/config`.
+- `[x]` **Phase 3** : badge de version cliquable et modale partagée (récap, Stakhanov compris,
+  et classement), légende des couleurs et ligne du rouge sous chaque tableau, podium en « IP »,
+  libellés des graphiques ; Réglages et Saisons au même vocabulaire, version dans la liste des
+  récaps et dans la fenêtre de publication.
+- `[x]` **Phase 4**, sauf `grand_master` : `compute_ip_evolution` ne calcule plus que la
+  version demandée (sortie vérifiée identique), anciennes explications en dur et garde
+  `Indicateur de Performance` retirées.
+- `[x]` **Tests** : `test_textes_ip.py` (44) et `test_affichage_ip.py` (90), dont un rendu réel
+  des partiels et du classement de saison. Quatre gardes cassées volontairement (« 40 % »
+  recopié, version par défaut dans le récap, seuil ★ exclusif, clé v1 réintroduite) : chacune
+  fait virer une assertion au rouge.
+- `[x]` **Recette** : affichage validé par l'utilisateur le 22/09, chantier clos.
+- `[ ]` **Branches `grand_master`** : lancer sur la prod
+  `SELECT DISTINCT victory_condition FROM saisons;` et
+  `SELECT code FROM types_awards WHERE code = 'grand_master';` avant de les retirer.
 - ⚠️ Ne pas réafficher v1 et v2 côte à côte : c'est retiré exprès depuis le 22/08.
 
 #### 13.3 Bannière d'automne — rang 10
@@ -630,6 +650,32 @@ commitées**), avec les 5 orientations et un portrait. À faire :
 - `[ ]` Remplacer l'affichage linéaire des actions par un **bouton unique** qui ouvre une **petite fenêtre pop-up** contenant toutes les actions.
 - `[ ]` Cible : `admin_comptes.html`, onglet **Compte** (ne toucher ni Permissions, ni Sessions).
 - `[ ]` À décider : lisibilité du pop-up, boutons/icônes, ordre/hiérarchie des actions, fermeture (croix, clic dehors, etc.).
+
+#### 13.7 Bannière mobile — authentification Discord hors burger — à ranger
+
+**Demandé** : en mode téléphone (mobile), enlever le lien d'authentification Discord du menu burger et le placer **à côté dans un rond**, exactement comme il s'affiche quand on est connecté.
+
+- `[ ]` Cible : `frontEnd/static/js/banner/config.js` et CSS de la bannière (mobile breakpoint).
+- `[ ]` Le rond doit avoir **la même apparence** que celui affiché en état connecté (bouton de compte).
+- `[ ]` Vérifier que le burger ne contient plus de lien Discord après cette modification.
+
+#### 13.8 Notification d'acceptation de promotion — préciser avec le pseudo — à ranger
+
+**Demandé** : la notification d'acceptation de promotion est trop vague. Elle affiche actuellement : « Le compte a accepté le rôle chef_admin. »
+
+- `[ ]` Ajouter le **pseudo Discord** du compte qui a accepté : « **[pseudo]** a accepté le rôle chef_admin. »
+- `[ ]` Cible : génération de la notification et son contenu dans `backEnd/` (vérifier où elle est composée).
+- `[ ]` Appliquer la même amélioration à toute notification concernant une acceptation de promotion ou un changement de rôle si applicable.
+
+#### 13.9 Graphiques : rendre zoomable (comme sur Maps) — à ranger
+
+**Demandé** : les graphiques doivent supporter le **zoom** et le **pan**, comme sur une carte (style Google Maps).
+
+- `[ ]` Scroll (roulette souris ou trackpad) pour **zoomer in/out**.
+- `[ ]` **Drag** (clic-glisser) pour **panner** la vue.
+- `[ ]` Cible : tous les graphiques/charts du site (à identifier : bannière, classements, stats admin, etc.).
+- `[ ]` Vérifier la compatibilité mobile (pinch-zoom sur tactile).
+- `[ ]` À décider : comportement sur double-clic (reset zoom ?).
 
 ## Note obsolète — ✅ corrigée le 2026-09-18
 

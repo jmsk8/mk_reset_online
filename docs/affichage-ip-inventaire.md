@@ -6,6 +6,11 @@
 > réorganisé autour d'une idée : **v1 et v2 doivent se distinguer partout où l'IP s'affiche.**
 > Rien n'est commité — l'utilisateur fait ses commits lui-même ([[user-handles-commits]]).
 >
+> **✅ Plan livré et clos le 22/09/2026** : phases 1 à 4, sauf les branches `grand_master`
+> (vérification en prod). Les numéros de ligne ci-dessous
+> sont ceux d'**avant** la livraison. Défauts corrigés : n°1 à 16 et 19 ; n°17 et 18 en
+> partie (reste `grand_master`, suspendu à la prod) ; n°20 traité pour l'IP seulement.
+>
 > **Textes à écrire, page par page, et suivi d'avancement** :
 > [`affichage-ip-plan-redaction.md`](affichage-ip-plan-redaction.md). Ce document-ci garde
 > l'analyse : calcul, inventaire, défauts, phases techniques.

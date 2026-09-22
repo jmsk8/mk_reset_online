@@ -397,6 +397,8 @@
                 display: none;
             }
         }
+        /* Versions de l'IP : une par ligne, leur resume dessous. */
+        .choix-ip { display: block; margin: 0 0 0.6rem 0 !important; }
     </style>
 </head>
 <body>
@@ -461,21 +463,25 @@
                                 </div>
 
                                 <div class="field mt-4 type-selector">
-                                    <label class="label mb-3">Version de l'IP</label>
+                                    <label class="label mb-3">Version de l'IP de ce récap</label>
+                                    {# Noms et resumes remplis depuis /admin/config (ip_textes),
+                                       comme la page Reglages. #}
                                     <div class="control">
-                                        <label class="radio has-text-white mr-4">
+                                        <label class="radio has-text-white choix-ip">
                                             <input type="radio" name="ipVersionCreate" value="v1" id="ipVersionV1Radio">
                                             <span class="tag is-light ml-1">v1</span>
-                                            Formule actuelle
+                                            <strong class="has-text-white" data-ip-nom="v1"></strong>
+                                            <span class="is-block is-size-7 has-text-grey-light ml-5" data-ip-resume="v1"></span>
                                         </label>
-                                        <label class="radio has-text-white mt-2">
+                                        <label class="radio has-text-white choix-ip">
                                             <input type="radio" name="ipVersionCreate" value="v2" id="ipVersionV2Radio">
                                             <span class="tag is-success is-light ml-1">v2</span>
-                                            Corrige le déséquilibre entre lobbies d'une même session
+                                            <strong class="has-text-white" data-ip-nom="v2"></strong>
+                                            <span class="is-block is-size-7 has-text-grey-light ml-5" data-ip-resume="v2"></span>
                                         </label>
                                     </div>
                                     <p class="help has-text-grey mt-2">
-                                        Figée définitivement pour ce récap à sa création (n'affecte jamais les récaps déjà générés).
+                                        Pré-cochée sur la version du classement en cours. Ce récap gardera cette version, même si le réglage change ensuite. Ses chiffres, eux, suivent les tournois de la période : corriger un tournoi les met à jour.
                                     </p>
                                 </div>
 
@@ -626,7 +632,7 @@
                             <div class="control">
                                 <label class="radio has-text-white">
                                     <input type="radio" name="moveCriterion" value="ip" checked>
-                                    Indice de Performance (classement de la saison)
+                                    Indice de Performance de ce récap <span id="publishIpBadge"></span>
                                 </label><br>
                                 <label class="radio has-text-white mt-2">
                                     <input type="radio" name="moveCriterion" value="trueskill">
@@ -736,7 +742,7 @@ async function loadAwardTypes() {
             customOptionsContainer.appendChild(perfDiv);
 
             types.forEach(type => {
-                if (type.nom === "Indice de Performance" || type.nom === "Indicateur de Performance") return;
+                if (type.nom === "Indice de Performance") return;
 
                 let iconDisplay = '';
                 if (type.emoji && type.emoji.endsWith('.png')) {
@@ -808,6 +814,10 @@ async function loadAwardTypes() {
             let typeBadge = s.is_yearly
                 ? '<span class="tag is-warning is-light">Annuel</span>'
                 : '<span class="tag is-info is-light">Saison</span>';
+            const ipVersion = s.ip_version === 'v2' ? 'v2' : 'v1';
+            const ipNom = textesIp && textesIp[ipVersion] ? textesIp[ipVersion].nom : '';
+            typeBadge += ` <span class="tag ${ipVersion === 'v2' ? 'is-success' : 'is-light'} is-light"`
+                + ` title="${escapeHtml(ipNom)}">IP ${ipVersion}</span>`;
 
             let ligueBadge = '';
             if (s.is_league_recap) {
@@ -826,7 +836,7 @@ async function loadAwardTypes() {
             const escapedLigueNom = s.ligue_nom ? escapeHtml(s.ligue_nom).replace(/'/g, "\\'") : null;
             let publishBtn = s.is_active
                 ? ''
-                : `<button onclick="saveAwards(${s.id}, ${s.is_league_recap ? 'true' : 'false'}, ${s.ligue_id || 'null'}, ${escapedLigueNom ? "'" + escapedLigueNom + "'" : 'null'}, ${s.include_league_moves ? 'true' : 'false'})" class="button is-primary is-outlined" title="Publier">
+                : `<button onclick="saveAwards(${s.id}, ${s.is_league_recap ? 'true' : 'false'}, ${s.ligue_id || 'null'}, ${escapedLigueNom ? "'" + escapedLigueNom + "'" : 'null'}, ${s.include_league_moves ? 'true' : 'false'}, '${ipVersion}')" class="button is-primary is-outlined" title="Publier">
                      <i class="fas fa-rocket"></i>&nbsp;Publier
                    </button>`;
 
@@ -939,7 +949,7 @@ async function loadAwardTypes() {
     let currentIsLeagueRecap = false;
     let currentIncludeLeagueMoves = false;
 
-    async function saveAwards(id, isLeagueRecap = false, ligueId = null, ligueNom = null, includeLeagueMoves = false) {
+    async function saveAwards(id, isLeagueRecap = false, ligueId = null, ligueNom = null, includeLeagueMoves = false, ipVersion = 'v1') {
         const config = await api('/admin/config', 'GET');
         currentIsLeagueRecap = isLeagueRecap;
         currentIncludeLeagueMoves = includeLeagueMoves;
@@ -950,6 +960,11 @@ async function loadAwardTypes() {
 
         leagueModeEnabled = config.league_mode_enabled;
         interLeagueMovesCount = config.inter_league_moves || 0;
+        // Les mouvements sont calcules avec la version du recap, pas celle du
+        // reglage en cours (routes_admin, publication) : on nomme la bonne.
+        const textesPublication = config.ip_textes && config.ip_textes[ipVersion];
+        document.getElementById('publishIpBadge').textContent =
+            textesPublication ? `(${textesPublication.badge})` : `(${ipVersion})`;
         currentPublishSaisonId = id;
         currentSaisonLigueId = ligueId;
         const descEl = document.getElementById('publishDescription');
@@ -1089,17 +1104,36 @@ async function loadAwardTypes() {
         r.addEventListener('change', checkLeagueTournaments);
     });
 
+    // Noms des versions de l'IP (backEnd/textes_ip.py, via /admin/config) :
+    // boutons radio du formulaire et infobulle du badge de la liste.
+    let textesIp = null;
+
+    function poserTextesIp(textes) {
+        if (!textes) return;
+        document.querySelectorAll('[data-ip-nom]').forEach(el => {
+            const t = textes[el.dataset.ipNom];
+            if (t) el.textContent = t.nom;
+        });
+        document.querySelectorAll('[data-ip-resume]').forEach(el => {
+            const t = textes[el.dataset.ipResume];
+            if (t) el.textContent = t.resume_admin;
+        });
+    }
+
     async function prefillIpVersionDefault() {
         const config = await api('/admin/config', 'GET');
         const isV2 = config && config.ip_version_live === 'v2';
         document.getElementById('ipVersionV2Radio').checked = isV2;
         document.getElementById('ipVersionV1Radio').checked = !isV2;
+        textesIp = (config && config.ip_textes) || null;
+        poserTextesIp(textesIp);
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
         loadAwardTypes();
+        // La liste nomme la version de chaque recap : elle attend les textes.
+        await prefillIpVersionDefault();
         loadSaisons();
-        prefillIpVersionDefault();
     });
     </script>
 </body>
