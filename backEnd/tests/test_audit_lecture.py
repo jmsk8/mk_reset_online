@@ -279,8 +279,19 @@ print("\n=== Une seule requete pour les trois chemins ===")
 RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _src = open(os.path.join(RACINE, 'routes_comptes.py'), encoding='utf-8').read()
 
-check("il n'existe qu'un seul SELECT sur audit_admin",
-      _src.count('FROM audit_admin') == 1, _src.count('FROM audit_admin'))
+# Une seule requete LIT des lignes du journal. La seconde occurrence tolérée
+# est le test d'EXISTENCE de lister_comptes (2026-09-22), qui ne rend qu'un
+# booleen et passe par _peut_lire_journal : nommee ici pour que toute autre
+# lecture continue de faire rougir ce test.
+_existence = 'EXISTS (SELECT 1 FROM audit_admin a'
+check("il n'existe qu'un seul SELECT qui lit audit_admin",
+      _src.count('FROM audit_admin') - _src.count(_existence) == 1,
+      (_src.count('FROM audit_admin'), _src.count(_existence)))
+_liste = _src[_src.index('def lister_comptes'):_src.index('def _verifier_sync')]
+check("  le seul autre est le test d'existence de la liste des comptes",
+      _src.count(_existence) == 1 and _existence in _liste)
+check("  et il passe par la meme regle de rang que la lecture",
+      '_peut_lire_journal(g.compte' in _liste)
 for _fn in ('def journal_du_compte', 'def journal_complet', 'def exporter_journal'):
     _corps = _src[_src.index(_fn):]
     _corps = _corps[:_corps.index('\n@comptes_bp') if '\n@comptes_bp' in _corps else len(_corps)]
@@ -318,6 +329,42 @@ check("un admin, meme tout-permissions, reste refuse",
       cli.get('/admin/audit', headers=H).status_code == 403)
 
 
+print("\n=== La liste des comptes dit qui a un journal ===")
+# Le volet d'une ligne montre les actions dont le compte est l'ACTEUR. Un joueur
+# qui n'a jamais ete admin n'en a pas : sans cette information, son bouton Logs
+# ouvrait un volet vide (constat du 2026-09-22).
+from datetime import datetime as _dt, timezone as _tz
+_cree = _dt(2026, 9, 1, tzinfo=_tz.utc)
+def _ligne_compte(id_, role, a_un_journal):
+    return (id_, 'snow%d' % id_, 'handle%d' % id_, 'Nom %d' % id_, 'h', None,
+            'linked', role, _cree, None, None, None, None, a_un_journal)
+cli, cur, conn = monter([
+    (r"FROM comptes c\s+LEFT JOIN joueurs j",
+     [_ligne_compte(2, 'player', False), _ligne_compte(3, 'player', True)]),
+])
+r = cli.get('/admin/comptes', headers=H)
+_d = {c['id']: c for c in (r.get_json() or [])}
+check("liste des comptes -> 200", r.status_code == 200, r.get_json())
+check("un joueur qui n'a jamais agi : a_un_journal faux",
+      _d.get(2, {}).get('a_un_journal') is False, _d.get(2))
+check("un ancien admin redevenu joueur : a_un_journal vrai",
+      _d.get(3, {}).get('a_un_journal') is True, _d.get(3))
+_sql = ' '.join(s_ for s_, _ in cur.executed if 'FROM comptes c' in s_)
+
+# La liste est ouverte a tout porteur de gestion_comptes. Un admin simple ne
+# lit aucun journal : il n'a pas non plus a savoir qui en a un.
+cli, cur2, conn2 = monter([
+    (r"FROM comptes c\s+LEFT JOIN joueurs j", [_ligne_compte(3, 'player', True)]),
+    (r"FROM permissions_admin", [('gestion_comptes',)]),
+], role='admin')
+r = cli.get('/admin/comptes', headers=H)
+_d2 = {c['id']: c for c in (r.get_json() or [])} if r.status_code == 200 else {}
+check("un admin simple voit la liste, mais a_un_journal y est toujours faux",
+      r.status_code == 200 and _d2.get(3, {}).get('a_un_journal') is False,
+      (r.status_code, r.get_json()))
+check("  calculé sur l'ACTEUR, comme le volet",
+      'EXISTS' in _sql and 'a.acteur_compte_id = c.id' in _sql, _sql[-200:])
+
 print("\n=== Cablage frontend ===")
 _FRONT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'frontEnd')
 _fp = open(os.path.join(_FRONT, 'frontend.py'), encoding='utf-8').read()
@@ -348,6 +395,15 @@ check("le bouton Logs est gate, pas affiche a tous",
 # bouton sur un pair alors que la route le lui rendrait.
 check("  et il exclut le superadmin, pas les pairs",
       "c.role !== 'superadmin'" in _ac)
+_lis = _ac[_ac.find('const lisible'):]
+_lis = _lis[:_lis.find(';')]
+# La route est @role_required(ROLE_CHEF_ADMIN) : un admin porteur de
+# gestion_comptes voyait le bouton, et le 403 le renvoyait a l'accueil.
+check("  seulement pour un lecteur chef_admin ou superadmin",
+      'PEUT_LIRE_JOURNAL' in _lis
+      and "const PEUT_LIRE_JOURNAL = {{ 'true' if role_admin in ('chef_admin', 'superadmin')" in _ac,
+      _lis)
+check("  et seulement sur un compte qui a un journal", 'c.a_un_journal' in _lis, _lis)
 check("l'onglet Logs existe, sous chef_admin/superadmin",
       "data-onglet=\"logs\"" in _ac and "role_admin in ('chef_admin', 'superadmin')" in _ac)
 # Meme invariant que les quatre autres onglets : onglet et panneau sous la

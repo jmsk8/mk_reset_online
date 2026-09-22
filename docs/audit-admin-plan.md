@@ -492,7 +492,7 @@ menant à un 403 prévisible (§B.0 du plan hiérarchie).
 > |---|---|
 > | Test « route d'écriture admin sans audit » | ❌ **absent** — c'est le cœur de la phase |
 > | Gardes de rang à la lecture, trois chemins | ✅ `test_audit_lecture.py` (règle en SQL, volet, requête unique pour les trois chemins) |
-> | Pas de bouton pour un `player` | ✅ `test_audit_lecture.py` (`player` → 403, bouton sous gate) |
+> | Pas de bouton pour un `player` | ✅ **précisé le 2026-09-22** : pas de bouton sur un compte qui n'a **jamais agi** (`a_un_journal`, calculé sur l'acteur comme le volet) — un ancien admin redevenu `player` garde le sien. Et plus de bouton pour un lecteur `admin` : la route est `chef_admin`+, et son 403 le renvoyait à l'accueil. `test_audit_lecture.py` |
 > | La suppression de compte n'efface aucune ligne | ❌ `test_rgpd.py` vérifie l'audit écrit **avant** la suppression, pas l'absence de `DELETE` ; garanti par le schéma (`ON DELETE SET NULL`), non verrouillé |
 > | L'acteur reste identifiable après suppression | ✅ `test_audit_lecture.py` |
 > | Vocabulaire fermé (R-64) | 🟡 les neuf actions de la phase 2 sont figées (`test_audit_dossier_sportif.py`) ; aucune liste fermée de **toutes** les actions |

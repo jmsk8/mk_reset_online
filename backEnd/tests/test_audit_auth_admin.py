@@ -219,61 +219,51 @@ check("et une nouvelle connexion repart proprement apres corruption",
 # ===========================================================================
 # B-02a -- Le superadmin peut supprimer son propre compte.
 #
-# DELETE /me est decoree @player_required SEUL : elle ne lit jamais le role.
-# Resultat : plus aucun superadmin en base, donc plus aucune attribution de
-# role, plus de legs, plus de jetons de bot, plus de purge RGPD.
+# DELETE /me etait decoree @player_required SEUL : elle ne lisait jamais le
+# role. Resultat : plus aucun superadmin en base, donc plus aucune attribution
+# de role, plus de legs, plus de jetons de bot, plus de purge RGPD. Corrige le
+# 2026-09-17 par _refus_auto_verrouillage.
+#
+# Depuis le 2026-09-22, DELETE /me n'existe plus : la suppression se demande par
+# ecrit et le superadmin l'execute (DELETE /admin/comptes/<id>). Le chemin
+# d'origine a disparu, le risque demeure sous une autre forme -- le superadmin
+# est desormais le SEUL a pouvoir supprimer, y compris lui-meme en theorie.
 # ===========================================================================
 print("\n=== B-02a : le superadmin supprime son propre compte ===")
 
-# Le DERNIER superadmin : refuse.
-cli, cur, conn = monter_comptes([
-    (r"FROM sessions_joueurs s\s+JOIN comptes c",
-     ligne_session(compte_id=1, role='superadmin', statut='linked')),
-    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('superadmin',)),
-    (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (0,)),
-    (r"UPDATE sessions_joueurs SET last_seen_at", None),
-])
-r = cli.delete('/me', headers=H)
-sqls = [s for s, _ in cur.executed]
+def _plan_suppression(role_cible, compte_cible):
+    return [
+        (r"FROM sessions_joueurs s\s+JOIN comptes c",
+         ligne_session(compte_id=1, role='superadmin', statut='linked')),
+        (r"SELECT role, joueur_id, discord_id, discord_username FROM comptes WHERE id = %s FOR UPDATE",
+         (role_cible, None, '123456789012345678', 'toto')),
+        (r"SELECT role FROM comptes WHERE id = %s", (role_cible,)),
+        (r"INSERT INTO audit_admin", None),
+        (r"DELETE FROM", None),
+        (r"UPDATE sessions_joueurs SET last_seen_at", None),
+    ]
 
-check("DELETE /me par le DERNIER superadmin -> 409 (B-02.1 corrige)",
-      r.status_code == 409 and (r.get_json() or {}).get('code') == 'dernier_superadmin',
+# Le superadmin sur SA propre ligne : refuse, avant meme la base.
+cli, cur, conn = monter_comptes(_plan_suppression('superadmin', 1))
+r = cli.delete('/admin/comptes/1', json={'confirmation_pseudo': 'toto'}, headers=H)
+sqls = [s for s, _ in cur.executed]
+check("le superadmin ne peut pas supprimer son propre compte -> 403 (B-02.1)",
+      r.status_code == 403 and (r.get_json() or {}).get('code') == 'auto_modification',
       r.get_json())
 check("aucune ligne comptes n'est supprimee",
       not any('DELETE FROM comptes' in s for s in sqls))
-check("le compte est verrouille AVANT le comptage (deux suppressions "
-      "simultanees se compteraient l'une l'autre comme restante)",
-      any('FOR UPDATE' in s for s in sqls))
 
-# Un superadmin parmi d'AUTRES : la suppression reste possible. Sans cette
+check("l'ancien chemin DELETE /me n'existe plus",
+      cli.delete('/me', headers=H).status_code in (404, 405))
+
+# NON-REGRESSION : le superadmin supprime bien le compte d'un joueur. Sans cette
 # assertion, une garde qui refuserait tout le monde passerait pour correcte.
-cli, cur, conn = monter_comptes([
-    (r"FROM sessions_joueurs s\s+JOIN comptes c",
-     ligne_session(compte_id=1, role='superadmin', statut='linked')),
-    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('superadmin',)),
-    (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (1,)),
-    (r"INSERT INTO audit_admin", None),
-    (r"DELETE FROM", None),
-    (r"UPDATE sessions_joueurs SET last_seen_at", None),
-])
-r = cli.delete('/me', headers=H)
-check("NON-REGRESSION : un superadmin PARMI D'AUTRES peut toujours se supprimer",
-      r.status_code == 200, r.get_json())
-
-# Et un simple joueur n'est jamais gene par la garde.
-cli, cur, conn = monter_comptes([
-    (r"FROM sessions_joueurs s\s+JOIN comptes c",
-     ligne_session(compte_id=1, role='player', statut='linked')),
-    (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
-    (r"INSERT INTO audit_admin", None),
-    (r"DELETE FROM", None),
-    (r"UPDATE sessions_joueurs SET last_seen_at", None),
-])
-r = cli.delete('/me', headers=H)
+cli, cur, conn = monter_comptes(_plan_suppression('player', 42))
+r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': 'toto'}, headers=H)
 sqls = [s for s, _ in cur.executed]
-check("NON-REGRESSION : un joueur ordinaire supprime son compte sans entrave",
+check("NON-REGRESSION : le superadmin supprime le compte d'un joueur",
       r.status_code == 200, r.get_json())
-check("et aucun COUNT inutile n'est fait pour un non-superadmin",
+check("et aucun COUNT inutile n'est fait pour une cible non superadmin",
       not any('COUNT(*)' in s for s in sqls))
 
 # Contraste : la meme protection existe pourtant ailleurs, et fonctionne.
@@ -417,11 +407,14 @@ check("NON-REGRESSION : changer_role refuse l'auto-modification",
 # chercher par son nom dans le source de la route donnerait un vert trompeur.
 # On verifie donc qu'elle est APPELEE, et le comportement est deja prouve plus
 # haut (B-02a / B-02b) par execution.
-src_suppr = inspect.getsource(_rc.supprimer_mon_compte)
+#
+# supprimer_compte (depuis le 2026-09-22) remplace supprimer_mon_compte : la
+# garde y reste, bien qu'inatteignable tant que le superadmin est unique.
+src_suppr = inspect.getsource(_rc.supprimer_compte)
 
 check("changer_statut appelle la garde d'auto-verrouillage (B-03 corrige)",
       '_refus_auto_verrouillage' in src_statut)
-check("supprimer_mon_compte appelle la MEME garde (B-02.1 corrige)",
+check("supprimer_compte appelle la MEME garde (B-02.1 corrige)",
       '_refus_auto_verrouillage' in src_suppr)
 check("les deux routes consultent le role du titulaire sous verrou",
       'FOR UPDATE' in src_suppr and 'FOR UPDATE' in src_statut)

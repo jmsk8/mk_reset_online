@@ -11,8 +11,9 @@
 > §8.3, rotation des journaux), audit croisé docs ↔ code, chantier performance/503, « Mes
 > sessions actives », intégration des trois audits qui manquaient à cet inventaire.
 >
-> **État de la suite de tests, relancée le 2026-09-22 : 1647 assertions, 32 fichiers, aucune
-> rouge.** Il y en avait 1401 le 18/09 ; l'écart vient surtout du journal `audit_admin`. Le 18/09
+> **État de la suite de tests, relancée le 2026-09-22 : 1676 assertions, 32 fichiers, aucune
+> rouge** (1647 le matin, avant la suppression de compte sur demande écrite, §13.1). Il y en
+> avait 1401 le 18/09 ; l'écart vient surtout du journal `audit_admin`. Le 18/09
 > était déjà une première — trois fichiers étaient rouges en permanence depuis des semaines, ce
 > qui neutralisait le dispositif d'audit du projet (une ligne rouge `[B-xx]` est une bonne
 > nouvelle, encore faut-il qu'elle se voie).
@@ -76,8 +77,8 @@
 |---|---|---|---|
 | 1 | **Déployer `deploy/host/journald-mk.conf`** | §3 | 🔴 La seule promesse faite aux visiteurs qui n'est **pas tenue aujourd'hui** : `/confidentialite` annonce 6 mois de conservation, et ce fichier est ce qui la rend vraie. Sans son `Storage=persistent`, les journaux sont même **perdus à chaque redémarrage**. Rien à coder : un fichier à poser sur l'hôte. |
 | 2 | **Prochain déploiement : emporter trois migrations** | §12 | 🟠 `2026-09-18_promotions_proposees`, `2026-09-19_audit_index_acteur`, `2026-09-20_notifications_lien`. Le code depuis `025af10` lit les tables et colonnes qu'elles créent : le déployer sans elles casse la gestion des comptes et les notifications. Puis `make re-front` **et** `make re-back`, et la recette https de « Mes sessions actives » (§2). Préalable : établir quelles migrations la prod a déjà reçues (voir l'en-tête). |
-| 3 | **Vérifier la zone nginx servie** | §8 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. Deux minutes — mais si l'ancien 20 r/min est encore servi, ce sont des connexions en 503. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
-| 4 | **« Supprimer mon compte » : passer par une demande par mail** | §13.1 | Demandé le 22/09 : l'effacement direct est jugé trop dangereux. Garder le bouton, mais qu'il affiche un message invitant à écrire à `SITE_CONTACT`. ⚠️ **Fermer aussi `DELETE /me` côté backend**, sinon l'accès direct reste ouvert à qui l'appelle sans passer par la page. La demande reçue sera traitée par une **route réservée au `superadmin`** (décidé le 22/09), à créer : aucune n'existe aujourd'hui. |
+| 3 | **Vérifier la zone nginx servie** — ✅ poste de dev (22/09), **serveur à faire** | §8, §12.1 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. Deux minutes — mais si l'ancien 20 r/min est encore servi, ce sont des connexions en 503. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
+| 4 | **« Supprimer mon compte » : passer par une demande par mail** — ✅ livré le 22/09, non commité | §13.1 | Demandé le 22/09 : l'effacement direct est jugé trop dangereux. Garder le bouton, mais qu'il affiche un message invitant à écrire à `SITE_CONTACT`. ⚠️ **Fermer aussi `DELETE /me` côté backend**, sinon l'accès direct reste ouvert à qui l'appelle sans passer par la page. La demande reçue sera traitée par une **route réservée au `superadmin`** (décidé le 22/09), à créer : aucune n'existe aujourd'hui. |
 | 5 | **Phase 4 d'`audit_admin`** | §4 | ⚠️ **Avant-dernière étape décidée** (18/09), dont il ne reste que ce filet. Le test manquant est celui qui empêche le trou de se reformer : une route d'écriture admin ajoutée demain sans ligne d'audit ne ferait rougir **aucun** test. |
 | 6 | **A-01 / A-02 — sessions figées sur le rôle** | §8 | 🟠, le seul orange encore ouvert. Une promotion laisse à un admin une session de 30 jours au lieu de 12 h ; une rétrogradation ne ferme aucune session. **La phase 1bis l'a rendu systématique** : on devient admin en acceptant depuis sa session de joueur, donc longue — `repondre_promotion` ne touche pas aux sessions. |
 | 7 | **Définitions de l'IP v1 / v2 sur le site** | §13.2 | Demandé le 22/09. Texte visible par **tous** les joueurs, et aujourd'hui pas propre. Le plan existe déjà, page par page ([affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md)) : trancher ses 5 décisions (§9), puis dérouler ses 4 phases (§10). |
@@ -201,6 +202,12 @@ supprimé** — rien ne peut le rattraper après coup.
   contre laquelle vérifier chaque appel à `audit.ecrire()`.
 - `[x]` Gardes de rang sur les trois chemins (volet, onglet, export), refus pour un `player`,
   acteur identifiable après suppression — couverts par `test_audit_lecture.py`.
+- `[x]` **Bouton « Logs » corrigé le 2026-09-22** (non commité), deux défauts : il s'affichait
+  sur **tous** les joueurs, alors que le volet ne montre que les actions dont le compte est
+  l'acteur — vide pour qui n'a jamais été admin ; et il s'affichait à un simple `admin`
+  porteur de `gestion_comptes`, que le 403 de la route renvoyait à l'accueil. Désormais : lecteur
+  `chef_admin`+, et compte ayant au moins une ligne (`a_un_journal`, filtré par
+  `_peut_lire_journal`). 72 assertions dans `test_audit_lecture.py`.
 
 ### 5. Tests des 3 routes d'onglets admin (§8.3) — ✅ SOLDÉ le 2026-09-18
 
@@ -423,42 +430,105 @@ séquence à rejouer en prod.
   journal des actions, les promotions, les notifications, « Mes sessions actives » ni les
   sessions de tournois.
 
+#### 12.1 Passage sur le serveur — notes du 2026-09-22
+
+**Où tourne quoi.** Le poste de développement (192.168.1.65) fait tourner **sa propre pile
+Docker** : c'est elle qui répond sur `http://127.0.0.1/`. Le **serveur** est une autre machine,
+et les rangs 1 à 3 s'y jouent à la main. VS Code tourne en **Flatpak** : depuis son terminal, ni
+Docker, ni `/etc/systemd`, ni les journaux de l'hôte ne sont visibles — rien de ce qui suit ne
+peut se vérifier depuis l'éditeur.
+
+⚠️ **À vérifier sur le poste de dev** : son `.env` porte `DISCORD_REDIRECT_URI=http://192.168.1.20`,
+qui **ne répond pas** au 22/09 — le poste est en `.65`. Si l'adresse a changé (DHCP), la
+connexion Discord de la pile de dev renvoie vers une machine absente. Le `redirect_uri` doit
+aussi correspondre, au caractère près, à celui déclaré dans le portail Discord.
+
+**Règle transversale : ne pas faire de `git pull` sur le serveur pour un geste isolé.** Le
+backend monte ses `.py` depuis le dépôt (`docker-compose.yml`) : un pull change le code **sur
+le disque**, et le premier redémarrage d'un conteneur — un `up -d`, un reboot, un crash — le
+fait tourner **sans ses migrations**. Pour poser un seul fichier, le copier (`scp`). Le pull
+appartient au déploiement complet du rang 2, avec les migrations.
+
+**Rang 1 — journald**, procédure complète en tête de `deploy/host/journald-mk.conf` :
+
+1. Relevés, en lecture seule : `systemctl --version | head -1`, `ls -d /var/log/journal`, et
+   `docker inspect --format '{{.Name}} {{.HostConfig.LogConfig.Type}}' $(docker ps -q)`.
+2. `scp deploy/host/journald-mk.conf <serveur>:/tmp/`, puis sur le serveur : `sudo mkdir -p
+   /etc/systemd/journald.conf.d`, `sudo cp`, `sudo systemctl restart systemd-journald`,
+   `sudo journalctl --flush`.
+3. **Si les conteneurs sont déjà sur `journald`** : c'est fini. **S'ils sont sur `json-file`** :
+   ne **pas** lancer `docker compose up -d` maintenant — la bascule des conteneurs part avec le
+   rang 2.
+4. Vérifier l'effet : `systemd-analyze cat-config systemd/journald.conf | tail -5`,
+   `ls -d /var/log/journal`, puis `journalctl -t mk-nginx -n 5` une fois les conteneurs sur
+   journald.
+5. Reporter le résultat ici et dans [rgpd-registre.md](rgpd-registre.md) (T5).
+
+**Rang 3 — zone nginx `auth`**, à faire **sur le serveur et sur le poste de dev** : même piège
+aux deux endroits. La valeur `40r/m` est entrée avec `ad2bf6b` (18/09).
+
+1. Ce que dit le fichier : `grep "limit_req_zone.*zone=auth" nginx/nginx.conf`.
+2. Ce que nginx **sert** : `docker compose exec nginx nginx -T 2>/dev/null | grep "limit_req_zone.*zone=auth"`.
+3. Lecture :
+
+   | Fichier | Servi | Diagnostic | Geste |
+   |---|---|---|---|
+   | `40r/m` | `40r/m` | ✅ en place | cocher |
+   | `40r/m` | `20r/m` | le piège de l'inode (§6) | `docker compose up -d --force-recreate nginx` puis refaire l'étape 2. Sans risque : ne recrée **que** nginx, qui ne dépend d'aucune migration |
+   | `20r/m` | `20r/m` | le dépôt du serveur est antérieur à `ad2bf6b` (18/09) | rien d'isolé : la correction part avec le rang 2. Ne **pas** monter le taux à la main : `ad2bf6b` apporte **aussi** B-01 (`frontend.py`), et l'audit veut B-04 **après** B-01, jamais avant — relâcher le limiteur sans la cause corrigée ne ferait que laisser passer plus d'échecs |
+
+- `[ ]` Rang 1 fait sur le serveur — résultat des relevés :
+- `[ ]` Rang 3 vérifié sur le serveur — valeur servie :
+- `[x]` Rang 3 vérifié sur le poste de dev — le 2026-09-22 : fichier **et** valeur servie à
+  `rate=40r/m`, pas de décalage d'inode.
+
 ### 13. Demandes du 2026-09-22
 
 Cinq demandes ajoutées à la liste par l'utilisateur, relevées dans le code le jour même pour
 que chacune puisse se reprendre sans refaire l'état des lieux.
 
-#### 13.1 « Supprimer mon compte » → demande par mail — rang 4
+#### 13.1 « Supprimer mon compte » → demande par mail — ✅ LIVRÉ le 2026-09-22, non commité
 
 **Demandé** : garder le bouton, mais qu'il mène à un message invitant à écrire à `SITE_CONTACT`.
 L'effacement direct est jugé trop dangereux.
 
-**Ce qui existe** : le bouton `#btn-supprimer` de `frontEnd/templates/mon_compte.html` appelle
-`POST /mon-compte/supprimer` (`frontend.py`), qui relaie vers `DELETE /me`
-(`supprimer_mon_compte`, `backEnd/routes_comptes.py`). L'effacement est immédiat.
+**Livré :**
 
-**Ce que le changement implique**, au-delà du bouton :
+- `[x]` **`DELETE /me` et son proxy `/mon-compte/supprimer` sont retirés** — la route, pas
+  seulement le bouton : laissée en place, elle restait appelable à la main avec un jeton de
+  joueur. Le bouton de `/mon-compte` est gardé et déplie la marche à suivre : écrire à
+  `SITE_CONTACT` avec son pseudo Discord, confirmation possible depuis ce compte, réponse sous
+  un mois.
+- `[x]` **`DELETE /admin/comptes/<id>`, réservée au `superadmin`** (`supprimer_compte`,
+  `backEnd/routes_comptes.py`). Capacité de rôle, pas permission délégable. L'effacement
+  lui-même est passé dans `_effacer_compte()` **sans changement** — mêmes tables effacées,
+  dossier sportif intact, audit écrit *avant*, empreinte au lieu du snowflake. Nouveau : la
+  ligne d'audit porte `origine: demande_ecrite` et **le superadmin comme acteur** ; avant, l'acteur
+  était le titulaire, et sa ligne perdait son auteur à la suppression.
+- `[x]` **Gardes** : confirmation forte par le **handle** Discord retapé (comme le legs, jamais le
+  nom affiché), auto-suppression du superadmin refusée (403), `@compte_cible_protegee`, et la
+  garde B-02 conservée bien qu'inatteignable tant que le rôle est unique.
+- `[x]` **Admin** : bouton « Supprimer le compte » sur la ligne, pour le seul superadmin, avec
+  confirmation nommée puis handle retapé.
+- `[x]` **Textes** : `/confidentialite` §2.2, §4, §5 et §6 (demande écrite, délai d'un mois,
+  vérification d'identité) ; [rgpd-registre.md](rgpd-registre.md) (tableau des droits) ;
+  **procédure au §7 de [runbook-admin.md](runbook-admin.md)**, vérification d'identité comprise.
+- `[x]` **Tests** : `test_rgpd.py` **61 assertions** (était 33), `test_audit_auth_admin.py`
+  (B-02a réécrit sur la nouvelle route), `test_audit_auth_discord.py` (la route porte le garde de
+  rang), `test_promotions.py` (formulation). **Trois gardes cassées volontairement** — confirmation
+  retirée, rôle abaissé à `admin`, `DELETE /me` rouvert : chacune fait virer des assertions au
+  rouge.
 
-- `[ ]` **Fermer `DELETE /me` et le proxy.** Changer seulement la page laisserait l'effacement
-  appelable à la main avec un jeton de joueur : l'accès direct serait caché, pas supprimé.
-- `[ ]` **Une route réservée au `superadmin` pour supprimer un compte** — **[DÉCIDÉ le
-  2026-09-22]**, préférée à une procédure manuelle dans le runbook. Aucune route ne permet
-  aujourd'hui de supprimer le compte d'**un autre** : seul le titulaire le peut. Sans elle, un
-  mail de demande resterait sans moyen d'y répondre. Elle doit reprendre la logique de
-  `supprimer_mon_compte` **à l'identique** — ce qu'elle efface, ce qu'elle garde, l'audit écrit
-  *avant* la suppression, l'empreinte au lieu du snowflake —, plutôt qu'en réécrire une
-  seconde qui finirait par diverger. Capacité de rôle (`@role_required`), **pas** une
-  permission délégable, comme la purge RGPD.
-- `[ ]` **Mettre à jour les textes** : `confidentialite.html` promet la suppression « depuis la
-  page Mon compte, immédiatement et sans confirmation de notre part » (§5) et décrit ce qu'elle
-  efface (§6) ; [rgpd-registre.md](rgpd-registre.md) § « Droits et leur mise en œuvre » aussi.
-  ⚠️ Le droit à l'effacement reste dû : une demande par mail est recevable, mais le RGPD fixe
-  **un mois** pour y répondre (art. 12.3). La page doit le dire.
-- `[ ]` **Adapter les tests** : `test_rgpd.py` (effacement) et `test_audit_auth_admin.py` (garde
-  B-02 sur `DELETE /me`) visent la route actuelle. Ce qui compte, c'est la **garde B-02** : si
-  l'effacement passe par une route admin, le dernier `superadmin` ne doit toujours pas pouvoir
-  être supprimé.
-- Le bouton « Télécharger mes données » n'est pas concerné.
+**Restent ouverts :**
+
+- `[x]` **Version de la politique : reste à `1.0`** — décidé le 2026-09-22. Le site et sa
+  politique sont en reconstruction ; la version ne bougera pas avant la mise en ligne, même
+  après plusieurs changements de texte.
+- `[ ]` **Le handle n'est pas affiché dans la liste des comptes**, qui ne montre que le nom
+  d'usage. C'est lui qu'il faut retaper pour supprimer — et pour léguer, défaut préexistant. Le
+  runbook indique où le lire (le profil Discord de qui confirme la demande).
+- ⚠️ **Le point sensible s'est déplacé** : ce n'est plus le bouton, c'est le mail. N'importe qui
+  peut écrire « supprimez le compte de X » ; seule l'étape 1 du runbook §7 l'arrête.
 
 #### 13.2 Définitions de l'IP v1 / v2 — rang 7
 

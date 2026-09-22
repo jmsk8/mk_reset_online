@@ -163,3 +163,46 @@ une migration à moitié appliquée.
 
 Toute migration doit ensuite être reportée dans **`schema.sql`**, sans quoi une réinstallation
 propre repartira d'un schéma incomplet.
+
+## 7. Traiter une demande de suppression de compte
+
+Depuis le 2026-09-22, un joueur ne supprime plus son compte lui-même : le bouton de
+`/mon-compte` lui indique d'écrire à `SITE_CONTACT`, et **le superadmin exécute la demande**
+depuis `/admin/comptes` → onglet Comptes → « Supprimer le compte ». C'est une capacité de rôle :
+ni un `chef_admin` ni un `admin` ne peuvent le faire, quelles que soient leurs permissions.
+
+⚠️ **Le point dangereux n'est plus le bouton, c'est le mail.** N'importe qui peut écrire
+« supprimez le compte de X ». Rien dans l'application ne vérifie que la demande vient du
+titulaire : **c'est l'étape 1 qui le fait**, et elle ne se saute pas.
+
+1. **Vérifier que la demande vient bien du titulaire.** Le site ne connaît aucune adresse
+   e-mail — il n'en récupère pas auprès de Discord —, donc l'adresse d'expédition ne prouve
+   rien. Demander une confirmation **depuis le compte Discord concerné** : par exemple, répondre
+   au mail avec un code, et attendre ce code en message privé venant de ce compte. Sans cette
+   confirmation, ne rien supprimer.
+2. **Relever le pseudo Discord technique** (le *handle*, pas le nom affiché) : c'est lui qu'il
+   faudra retaper. La liste des comptes n'affiche que le nom ; le handle se lit sur le profil
+   Discord de qui a envoyé la confirmation.
+3. **Proposer l'export avant** : « Télécharger mes données » n'est accessible qu'au titulaire,
+   et seulement tant que le compte existe.
+4. **Supprimer** : bouton « Supprimer le compte » sur sa ligne, confirmer, retaper le handle.
+   Un handle qui ne correspond pas est refusé (400), sans rien effacer.
+5. **Répondre** dans le délai d'**un mois** (RGPD, art. 12.3) : dire que c'est fait, et
+   rappeler ce qui reste — le pseudo de jeu et l'historique de tournois — ainsi que la
+   possibilité de demander l'anonymisation du pseudo.
+
+Rien d'autre à faire : la ligne d'audit `compte_supprime` (origine `demande_ecrite`, acteur =
+le superadmin) est ce qui permet de rejouer la suppression après une restauration (§5).
+
+**Cas particuliers**
+
+- **Un compte `admin` ou `chef_admin`** se supprime de la même façon. Ses permissions partent
+  avec lui ; ses lignes du journal d'administration **restent**, avec son identité figée
+  (politique de confidentialité, section administrateurs).
+- **Le compte du superadmin lui-même** : refusé (403). Le rôle est unique, le supprimer
+  laisserait le site sans administration. Léguer d'abord le rôle, puis adresser la demande au
+  nouveau superadmin.
+- **Anonymiser aussi le pseudo de jeu** est un geste distinct, sur la fiche joueur (droit
+  `joueurs_irreversible`) : la suppression du compte ne touche pas au dossier sportif.
+- **Le superadmin est seul à pouvoir supprimer.** S'il est indisponible, les demandes
+  attendent — et le délai d'un mois court quand même.

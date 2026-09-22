@@ -129,8 +129,10 @@ defaut(A_PAS_DE_REVOCATION_SUR_ROLE,
 corps_statut = corps_de(source_comptes, "def changer_statut(")
 check("suspendre un compte ferme ses sessions (non-regression)",
       'DELETE FROM sessions_joueurs' in corps_statut)
-corps_suppr = corps_de(source_comptes, "def supprimer_mon_compte(", 8000)
-check("supprimer son compte ferme ses sessions (non-regression)",
+# L'effacement vit dans _effacer_compte depuis le 2026-09-22 (la route qui
+# l'appelle est reservee au superadmin, sur demande ecrite).
+corps_suppr = corps_de(source_comptes, "def _effacer_compte(", 8000)
+check("supprimer un compte ferme ses sessions (non-regression)",
       'DELETE FROM sessions_joueurs' in corps_suppr)
 
 
@@ -532,7 +534,7 @@ print("\n=== Les 4 routes d'ecriture sur un compte portent bien le garde ===")
 # C'est la correction du 2026-09-14 : un admin porteur de gestion_comptes
 # pouvait agir sur un pair admin. Le garde doit rester pose sur les quatre.
 for route in ('synchroniser_profil', 'delier_compte', 'changer_statut',
-              'revoquer_sessions', 'changer_role'):
+              'revoquer_sessions', 'changer_role', 'supprimer_compte'):
     corps = source_comptes[:source_comptes.find("def %s(" % route)]
     dernier_bloc = corps[corps.rfind('@comptes_bp.route'):]
     check("%s est protegee par compte_cible_protegee" % route,

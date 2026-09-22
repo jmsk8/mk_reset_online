@@ -154,8 +154,11 @@ ne tenait, ce qui est **pire que ne rien annoncer**. `journald` expire par
 bascule vers `journald` sans `Storage=persistent` raccourcirait la conservation
 au lieu de l'allonger.
 
-- `[ ]` ⚠️ **Déployer `deploy/host/journald-mk.conf` sur l'hôte** puis
-  `sudo systemctl restart systemd-journald && docker compose up -d`.
+- `[ ]` ⚠️ **Déployer `deploy/host/journald-mk.conf` sur l'hôte** — la procédure complète est
+  en tête du fichier. Deux pièges relevés le 2026-09-22 : `/etc/systemd/journald.conf.d/`
+  n'existe pas par défaut (`mkdir -p` d'abord), et `docker compose up -d` recrée le backend
+  sur le code du dépôt — à ne lancer que si les conteneurs sont encore sur `json-file`, et
+  alors avec les migrations en attente.
   Vérifier : `ls -d /var/log/journal` (doit exister) et
   `journalctl -t mk-nginx -n 5` (doit sortir des lignes).
 
@@ -207,8 +210,8 @@ Le consentement aux CGU donné à la création du compte ne pouvait pas couvrir 
 |---|---|---|
 | Information | `/confidentialite`, `/mentions-legales` | — |
 | Accès et portabilité | `/mon-compte` → « Télécharger mes données » | JSON complet, **dossier sportif inclus** |
-| Rectification | sur demande à l'adresse de contact | bio, couleur, réseaux — l'écran de réglages a été retiré |
-| Effacement | `/mon-compte` → « Supprimer mon compte » | immédiat, sans validation d'un tiers |
+| Rectification | données Discord : automatique · pseudo de jeu : sur demande à l'adresse de contact | pseudo, pseudo d'affichage et avatar Discord sont resynchronisés à chaque connexion (`upsert_compte`) ; le pseudo de jeu n'est modifiable que par un administrateur. Bio, couleur et réseaux ne sont plus recueillis : aucun écran ne les saisit, et `PUT /me/profil` n'a pas de proxy |
+| Effacement | **sur demande écrite** à l'adresse de contact ; le bouton « Supprimer mon compte » de `/mon-compte` en donne la marche à suivre | exécuté par le `superadmin` (`DELETE /admin/comptes/<id>`) après vérification que la demande vient du titulaire — [runbook-admin.md](runbook-admin.md) §7. Réponse sous **un mois** (art. 12.3). Plus d'effacement direct depuis le 2026-09-22 |
 | Opposition / retrait | = suppression du compte | le consentement est retiré avec |
 | Anonymisation | sur demande à l'adresse de contact | T4 |
 
@@ -227,12 +230,13 @@ Le consentement aux CGU donné à la création du compte ne pouvait pas couvrir 
       à chaque redémarrage. **Voir T5 avant de cocher.**
 - [ ] Faire tourner la purge (`/admin/purge-rgpd`) régulièrement — il n'y a pas
       d'ordonnanceur dans le projet, c'est un geste manuel assumé.
-- [ ] **Suppression de compte sur demande par mail** (décidé le 2026-09-22) : le bouton
-      « Supprimer mon compte » renverra vers `SITE_CONTACT` au lieu d'effacer directement ;
-      la demande sera exécutée par une route réservée au `superadmin`, à créer.
-      Le droit à l'effacement reste dû : réponse sous **un mois** (art. 12.3), à écrire
-      dans `/confidentialite`, et la section « Droits et leur mise en œuvre » ci-dessus
-      à mettre à jour. Détail : §13.1 de
-      [etat-avancement-global.md](etat-avancement-global.md).
+- [x] **Suppression de compte sur demande écrite** — livré le 2026-09-22 : le bouton
+      « Supprimer mon compte » renvoie vers `SITE_CONTACT`, `DELETE /me` est retirée, et le
+      `superadmin` exécute la demande (`DELETE /admin/comptes/<id>`, pseudo Discord retapé).
+      `/confidentialite` (§5, §6) et le tableau ci-dessus sont à jour ; la procédure, avec la
+      vérification d'identité, est au §7 de [runbook-admin.md](runbook-admin.md).
+- [x] **Version de la politique : gelée à `1.0`** — décidé le 2026-09-22. Le site et sa
+      politique sont en reconstruction : le texte évolue, la version ne bouge pas avant la mise
+      en ligne de la nouvelle version. Ne pas proposer de relever `CGU_VERSION` d'ici là.
 - [ ] Après toute restauration de sauvegarde : rejouer les suppressions, cf.
       [runbook-admin.md](runbook-admin.md) §5.
