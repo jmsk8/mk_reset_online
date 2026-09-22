@@ -39,10 +39,12 @@ import { getShotDirection, heldThreatType, isAiming, isArmedForward, isTrailable
 // au tirage moyen : l'esquive tire son urgence au sort, et une fenetre
 // calee sur la moyenne laisse tomber une fois sur deux celui qui tire bas.
 // Au banc c'est tout l'ecart entre 49 % de prises et 12 %.
-function threatWindow(cfg, kart, threatY) {
+//
+// `clear` est le DEGAGEMENT propre a la menace : celui d'un objet pour presque
+// tout, mais un bill balaie plus du double (cf. `perceive`).
+function threatWindow(cfg, kart, threatY, clear) {
     const ai = cfg.ai;
-    const need = cfg.hitboxes.itemVsKart.y + cfg.vision.place.margin.item
-        - Math.abs(threatY - kart.yPercent);
+    const need = clear - Math.abs(threatY - kart.yPercent);
     if (need <= 0) return ai.threatWindowMs;
 
     // A l'arret le volant ne mord plus (`steerBite`) : le temps necessaire
@@ -64,13 +66,12 @@ function threatLeash(cfg, windowMs, rel) {
     return (reach > leash) ? reach : leash;
 }
 
-function missChance(cfg, kart, threatY, spareMs) {
+function missChance(cfg, kart, threatY, spareMs, clear) {
     const ai = cfg.ai;
     const base = ai.dodgeMissChance;
 
     // Il passe deja assez a cote pour que la hitbox le manque.
-    const need = cfg.hitboxes.itemVsKart.y + cfg.vision.place.margin.item
-        - Math.abs(threatY - kart.yPercent);
+    const need = clear - Math.abs(threatY - kart.yPercent);
     if (need <= 0) return 0;
     if (spareMs <= 0) return base;
 
@@ -150,16 +151,18 @@ function scanTake() {
             blockHalf: 0, blockMargin: 0, blockCost: 0, blockHard: false, blockReach: 0,
             solid: false, pierces: false, role: 0,
             id: 0, kartId: -1, pipeIndex: -1, ttc: 0, cost: 0, kind: '',
-            redHeld: false, approach: 0
+            redHeld: false, approach: 0, clear: 0, rel: 0
         });
     }
     const e = scanPool[scanCount++];
+    e.clear = 0;
     e.solid = false;
     e.pierces = false;
     e.role = 0;
     e.id = 0;
     e.kartId = -1;
     e.redHeld = false;
+    e.rel = 0;
     e.approach = 0;
     e.pipeIndex = -1;
     e.ttc = 0;
@@ -289,7 +292,7 @@ function judgeSlot(cfg, now, kart) {
 // Premiere perception d'une menace : le reflexe et le tirage d'inattention,
 // arretes une fois pour toutes et retenus (`vision.memorySlots`). Toute la marge
 // d'erreur d'un kart se joue ici, et elle est la meme pour les huit.
-function judgeThreat(cfg, rng, now, kart, id, y, ttc) {
+function judgeThreat(cfg, rng, now, kart, id, y, ttc, clear) {
     const ai = cfg.ai;
     const reactMs = ai.reactionBaseMs
         * randomRange(rng, ai.reactionJitterMin, ai.reactionJitterMax);
@@ -301,7 +304,7 @@ function judgeThreat(cfg, rng, now, kart, id, y, ttc) {
 
     // Ce qui restera une fois le reflexe passe, et non le delai brut avant
     // impact : c'est lui qui dit si l'esquive etait a sa portee.
-    kart.judgedIgnored[slot] = rng() < missChance(cfg, kart, y, ttc - reactMs);
+    kart.judgedIgnored[slot] = rng() < missChance(cfg, kart, y, ttc - reactMs, clear);
     return slot;
 }
 
@@ -312,35 +315,6 @@ function dangerBehind(cfg, now, kart) {
     const sight = kart.sight;
     if (now - sight.dangerAt > cfg.vision.pressureMemoryMs) return '';
     return sight.dangerKind;
-}
-
-// Une etoile ou un bill arrive derriere, et ca S'ENTEND.
-//
-// Toute la surveillance soutenue demande d'avoir DEJA vu le danger, et on ne voit
-// derriere qu'en s'etant retourne. Pour une carapace, la manquer est une vraie
-// faute de pilote. Pour une carrosserie lancee, non : elle ne reste dans la
-// portee arriere que trois secondes, quand un kart du peloton ne se retourne
-// qu'une fois toutes les onze — le plateau se faisait faucher sans qu'un seul ait
-// regarde.
-//
-// Meme limite que `seeHomingThroughCover` : ca fait tourner la tete, rien de
-// plus. Ce qu'il verra ensuite passe par le balayage ordinaire.
-function ramNoise(cfg, state, kart) {
-    if (isRamming(kart)) return false;
-
-    const karts = state.karts;
-    for (let i = 0; i < karts.length; i++) {
-        const other = karts[i];
-        if (other.id === kart.id) continue;
-        if (!isRamming(other) || !isContactActive(other)) continue;
-
-        // Derriere, et a portee de regard. Au-dela le bruit existe mais il n'y a
-        // rien a voir : se retourner ne servirait qu'a etre aveugle devant.
-        const dx = getShortestDistance(cfg, other.worldX, kart.worldX);
-        if (dx < 0 && -dx <= cfg.vision.range.back) return true;
-    }
-
-    return false;
 }
 
 // L'attention : devant, ou derriere. Le tirage suit le rang, et la CADENCE
@@ -354,12 +328,32 @@ function ramNoise(cfg, state, kart) {
 function updateGlance(cfg, rng, state, now, kart) {
     const vis = cfg.vision;
     const sight = kart.sight;
+    const alert = kart.alert;
 
     if (sight.backUntil > now) {
         sight.back = true;
+        // Il regarde deja : le sursaut n'a plus rien a lui faire faire.
+        alert.startle = false;
+
+        // Et il ne lache pas du regard ce qui arrive sur lui tant qu'il n'a
+        // pas decide de son esquive (cf. `hear`). Deux balayages d'avance
+        // suffisent : la prolongation se renouvelle a chaque pas, et tombe
+        // d'elle-meme quand le suivi cesse.
+        if (alert.watch) {
+            const hold = now + 2 * vis.scanIntervalMs;
+            if (hold > sight.backUntil) sight.backUntil = hold;
+        }
         return;
     }
     sight.back = false;
+
+    // Ce qui vient de s'entendre n'attend pas la prochaine occasion : la
+    // question se pose tout de suite (cf. `hear`). La reponse, elle, reste un
+    // tirage — sursauter n'est pas se retourner a coup sur.
+    if (alert.startle) {
+        alert.startle = false;
+        sight.nextGlance = now;
+    }
 
     if (now < sight.nextGlance) return;
 
@@ -403,11 +397,15 @@ function updateGlance(cfg, rng, state, now, kart) {
     }
 
     // La plus forte des quatre : ce qui s'entend n'a pas besoin d'avoir ete vu.
-    // Cf. `ramNoise`.
-    if (ramNoise(cfg, state, kart)) {
+    // Cf. `hear`.
+    if (alert.ram) {
         const loud = rankChance(vis.backChanceRam, state, kart);
         if (loud > chance) chance = loud;
     }
+
+    // Une bleue arrive et il est en tete : il faut voir qui le suit pour savoir
+    // s'il peut lui ceder la place (cf. `updateBlue`).
+    if (alert.blueLook && vis.alerts.blue.glance > chance) chance = vis.alerts.blue.glance;
 
     if (rng() < chance) {
         // La duree se tire au sort : a duree fixe, huit karts qui se retournent
@@ -433,10 +431,38 @@ function updateShield(cfg, rng, now, kart) {
     const held = kart.heldItem;
     if (!held) return;
 
+    const sight = kart.sight;
+
+    // UNE ROUGE LE VISE, et il le sait sans l'avoir vue (cf. `hear`). Il n'y a
+    // rien a peser : elle suit, donc ni se decaler ni la prendre de vitesse ne
+    // sert. Ce qu'il a de quoi lui opposer, il l'oppose — l'etoile ou le bill
+    // tout de suite, le reflexe est deja paye ; l'objet trainable derriere lui,
+    // et il l'y garde TANT QU'ELLE LE VISE, puis le temps ordinaire du souvenir.
+    //
+    // Le reste n'a rien a faire contre elle : un champignon ne la distance pas,
+    // elle va plus vite.
+    //
+    // L'episode de danger VU, s'il y en a un, est tranche du meme coup : sans
+    // ca, la voir pendant un coup d'oeil rejouait le tirage `keep`, et un
+    // mauvais tirage lui faisait lacher son bouclier juste avant l'impact.
+    if (kart.alert.red) {
+        if (held.type === 'star' || held.type === 'bill') {
+            if (now < kart.throwTime) kart.throwTime = now;
+        } else if (isTrailable(cfg, held.type)) {
+            kart.shieldHold = true;
+            if (held.holdPosition === 'hands' && (!kart.trailTime || kart.trailTime > now)) {
+                kart.trailTime = now;
+            }
+            kart.throwTime = now + cfg.vision.pressureMemoryMs;
+        } else {
+            return;
+        }
+        kart.shieldAt = sight.dangerSince;
+        return;
+    }
+
     const danger = dangerBehind(cfg, now, kart);
     if (!danger || danger === 'ram') return;
-
-    const sight = kart.sight;
 
     // Une etoile ou un bill ne se posent pas derriere soi : ils rendent
     // INTOUCHABLE, ce qui est la seule reponse sure contre une rouge, puisqu'elle
@@ -577,6 +603,10 @@ function perceive(cfg, state, rng, now, kart) {
     sight.redBehindY = 0;
     sight.redBehindId = 0;
     sight.redBehindCount = 0;
+    sight.rearKartDist = -1;
+    sight.rearKartY = 0;
+    sight.rearKartId = 0;
+    sight.rearKartRel = 0;
 
     scanCount = 0;
     shadowCount = 0;
@@ -762,7 +792,8 @@ function perceive(cfg, state, rng, now, kart) {
         // LAQUELLE IL REVIENT, ce que dit exactement `approach`.
         if (dx > 0 || e.approach) e.role |= SEE_BLOCK;
 
-        const itemWindow = threatWindow(cfg, kart, item.y);
+        e.clear = clear;
+        const itemWindow = threatWindow(cfg, kart, item.y, clear);
         if (ttc > 0 && ttc <= itemWindow
             && (dx < 0 ? -dx : dx) <= threatLeash(cfg, itemWindow, rel)
             && aligned) {
@@ -811,13 +842,53 @@ function perceive(cfg, state, rng, now, kart) {
             // le laisser passer (`vision.giveWay`).
             e.redHeld = !!held && held.type === 'redShell';
 
+            // Ce qu'il gagne sur nous, a l'allure REELLE des deux — freins et
+            // chocs compris, d'ou `contactSpeed` et non l'allure moteur.
+            e.rel = other.contactSpeed - kart.contactSpeed;
+
             // Etoile et bill blessent au contact, et rien dans le pilotage ne
             // s'en ecartait. L'identifiant est negatif pour ne jamais croiser
             // celui d'un objet dans la memoire des menaces.
             if (isRamming(other) && !ramming) {
                 const rel = speed - other.absoluteVelocity;
-                const ttc = (rel !== 0) ? (dx / rel) * 1000 : Infinity;
-                const aligned = Math.abs(other.yPercent - kart.yPercent) < lane;
+                let ttc = (rel !== 0) ? (dx / rel) * 1000 : Infinity;
+
+                // Le temps avant CONTACT, et non avant que les centres se
+                // croisent. Une carrosserie lancee touche des que les deux
+                // emprises se rejoignent — 60 px pour une etoile, 99 pour un bill
+                // — et a ~350 px/s de rapprochement ce sont pres de 300 ms que la
+                // fenetre d'esquive comptait en trop. Au banc, koopa voyait le
+                // bill a 900 px et ne commencait a s'ecarter qu'avec 200 ms
+                // reelles devant lui.
+                //
+                // Un objet garde la mesure au centre : son emprise est courte, et
+                // la fenetre a ete reglee dessus.
+                if (ttc > 0 && ttc !== Infinity) {
+                    const reachX = other.isBill ? cfg.bill.hitbox.x : kartReach.x;
+                    const far = (dx < 0) ? -dx : dx;
+                    ttc = (far > reachX) ? ttc * (far - reachX) / far : 1;
+                }
+
+                // UN BILL N'EST PAS UNE CARROSSERIE. Il balaie `bill.hitbox.y`
+                // de part et d'autre de son centre, plus du double d'un kart —
+                // et la vue le prenait pour un kart ordinaire : la bande qu'il
+                // ferme, la fenetre pour s'en ecarter, le degagement a couvrir,
+                // tout etait calcule sur une emprise de 5 quand il touche a 11.
+                // Un kart qui le voyait et l'esquivait « correctement » se posait
+                // encore dedans. Au banc, lance a 900 px, il prenait 94 a 100 %
+                // des karts a TOUTES les profondeurs, koopa compris.
+                //
+                // L'etoile garde ses valeurs : une carrosserie, degagee comme un
+                // objet puisque la toucher coute un tete-a-queue.
+                let ramClear = clear;
+                if (other.isBill) {
+                    e.blockHalf = cfg.bill.hitbox.y;
+                    e.blockMargin = place.margin.item;
+                    ramClear = cfg.bill.hitbox.y + place.margin.item;
+                }
+                e.clear = ramClear;
+                const aligned = Math.abs(other.yPercent - kart.yPercent)
+                    < ((ramClear > lane) ? ramClear : lane);
 
                 // Une carrosserie lancee fond sur sa proie bien plus vite qu'une
                 // carapace : le temps qu'elle entre dans la fenetre d'esquive, il
@@ -835,7 +906,7 @@ function perceive(cfg, state, rng, now, kart) {
                 // Meme fenetre taillee au besoin que pour un objet : ce qui
                 // arrive au contact ne se juge pas autrement selon que c'est une
                 // carapace ou une etoile.
-                if (ttc > 0 && ttc <= threatWindow(cfg, kart, other.yPercent)
+                if (ttc > 0 && ttc <= threatWindow(cfg, kart, other.yPercent, ramClear)
                     && aligned) {
                     e.role |= SEE_THREAT;
                     e.kind = 'spin';
@@ -892,6 +963,7 @@ function perceive(cfg, state, rng, now, kart) {
                 e.blockCost = vis.cost.spin;
                 e.blockReach = ai.trailThreatDistance;
                 e.id = held.id;
+                e.clear = clear;
 
                 // Seul celui qui revient dessus est menace : derriere un
                 // porteur plus rapide, l'objet s'eloigne.
@@ -999,6 +1071,18 @@ function perceive(cfg, state, rng, now, kart) {
                 }
             }
 
+            // Le kart le plus proche DERRIERE, qu'il faut avoir VU. Il ne sert
+            // qu'a la bleue : on ne cede la tete qu'a quelqu'un d'assez pres pour
+            // la prendre, et qui gagne du terrain — sans quoi le premier freinait
+            // devant un kart qui n'etait pas la, ou qui freinait lui-meme.
+            if (sight.scanBack && e.kartId >= 0 && e.dx < 0
+                && (sight.rearKartDist < 0 || -e.dx < sight.rearKartDist)) {
+                sight.rearKartDist = -e.dx;
+                sight.rearKartY = e.y;
+                sight.rearKartId = -1 - e.kartId;
+                sight.rearKartRel = e.rel;
+            }
+
             if (e.kartId >= 0 && e.dx > 0 && e.dx <= vis.crowd.distance) {
                 sight.crowdY[sight.crowdCount] = e.y;
                 sight.crowdCount++;
@@ -1019,7 +1103,7 @@ function perceive(cfg, state, rng, now, kart) {
                 let ready = true;
                 if (e.kind !== 'pipe') {
                     let slot = recallThreat(cfg, now, kart, e.id);
-                    if (slot < 0) slot = judgeThreat(cfg, rng, now, kart, e.id, e.y, e.ttc);
+                    if (slot < 0) slot = judgeThreat(cfg, rng, now, kart, e.id, e.y, e.ttc, e.clear);
                     ready = !kart.judgedIgnored[slot] && now >= kart.judgedReactAt[slot];
                 }
 
@@ -1147,6 +1231,25 @@ function perceive(cfg, state, rng, now, kart) {
         if (now - sight.dangerAt > vis.pressureMemoryMs) sight.dangerSince = now;
         sight.dangerAt = now;
         sight.dangerKind = dangerKind;
+    }
+
+    // Et le souvenir de celui qui SUIT, meme regle : le balayage arriere fait
+    // foi, l'autre laisse valoir le souvenir, et la distance vieillit.
+    if (sight.scanBack) {
+        if (sight.rearKartDist >= 0) {
+            sight.rearMemAt = now;
+            sight.rearMemDist = sight.rearKartDist;
+            sight.rearMemY = sight.rearKartY;
+            sight.rearMemId = sight.rearKartId;
+            sight.rearMemRel = sight.rearKartRel;
+        } else {
+            sight.rearMemAt = -Infinity;
+        }
+    } else if (now - sight.rearMemAt <= vis.pressureMemoryMs) {
+        sight.rearKartDist = sight.rearMemDist;
+        sight.rearKartY = sight.rearMemY;
+        sight.rearKartId = sight.rearMemId;
+        sight.rearKartRel = sight.rearMemRel;
     }
 
     // Et le souvenir de la ROUGE qui suit. Sans lui, le releve ne valait que

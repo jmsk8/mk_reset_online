@@ -33,8 +33,9 @@ const FLAG_FLAT = 256;    // ecrase par un kart reste grand -> sprite aplati
 // Les deux tables voyagent DANS le `hello` (`world.ai`) : le client recoit un
 // indice ET l'ordre qui lui donne son sens, puis traduit la cle en libelle.
 // Inserer un etat au milieu ne decale donc rien.
-const AI_STATES = ['cruising', 'pipe', 'dodging', 'safety', 'giveWay', 'aiming'];
+const AI_STATES = ['cruising', 'pipe', 'dodging', 'safety', 'giveWay', 'aiming', 'yieldLead'];
 const AI_DANGERS = ['', 'carrier', 'ram', 'shot'];
+const AI_ALERTS = ['', 'ram', 'red', 'blue'];
 
 function aiTuple(cfg, kart, now) {
     const sight = kart.sight;
@@ -69,6 +70,24 @@ function aiTuple(cfg, kart, now) {
     // rangeait pas. Il porte le souvenir autant que la vue — le HUD doit dire ce
     // sur quoi le kart DECIDE.
     if (sight.pressure && !sight.pressureBack) v |= 1 << 12;
+
+    // Ce qu'il ENTEND, et qu'il n'a pas besoin d'avoir vu (cf. `hear`) : la plus
+    // pressante des trois alertes. La bleue prime tant qu'il en fait quelque
+    // chose, meme une fois double — il reste en retrait de son souffle.
+    const alert = kart.alert;
+    if (alert) {
+        let heard = '';
+        if (alert.blue || alert.blueMode) heard = 'blue';
+        else if (alert.red) heard = 'red';
+        else if (alert.ram) heard = 'ram';
+        v |= AI_ALERTS.indexOf(heard) << 13;
+
+        // La bleue l'a choisi ; il garde son objet pour elle ; il suit du regard
+        // l'etoile ou le bill qui arrive.
+        if (alert.blueOnMe) v |= 1 << 15;
+        if (alert.blueMode === 'cover') v |= 1 << 16;
+        if (alert.watch) v |= 1 << 17;
+    }
 
     return v;
 }
@@ -357,7 +376,7 @@ function buildHello(cfg, state, simTime, t0, vote) {
             // Les cles du releve de decision, DANS L'ORDRE des indices envoyes
             // par `aiTuple`. Le client y lit le sens d'un indice au lieu de
             // maintenir une copie de cet ordre.
-            ai: { states: AI_STATES, dangers: AI_DANGERS },
+            ai: { states: AI_STATES, dangers: AI_DANGERS, alerts: AI_ALERTS },
 
             // Les emprises REELLES des corps, pour la carte de debug : une carte
             // qui pose des pastilles de taille fixe ne dit rien des largeurs qui

@@ -1,12 +1,14 @@
-// Le pilote. Une seule fonction, et c'est elle qui arbitre.
-// Tout le reste du moteur lui fournit des elements — ce qu'il voit, ce qu'il
-// peut, ce qu'il porte ; `updateAI` decide de l'ordre dans lequel ca compte.
+// Le pilote. C'est ici qu'on arbitre.
+// Tout le reste du moteur lui fournit des elements — ce qu'il entend, ce qu'il
+// voit, ce qu'il peut, ce qu'il porte ; `updateAI` les rassemble, `command`
+// decide de l'ordre dans lequel ca compte.
 
 import { randomRange } from './math.js';
 import { steer, steerSettle } from './driving.js';
 import { billAimDepth, getShotDirection, isAiming } from './weapons.js';
 import { pipeOutranksPlan, updatePlan } from './plans.js';
 import { perceive, updateGlance, updateShield } from './vision.js';
+import { hear, updateBlue } from './alerts.js';
 import { steerAroundPipes } from './pipes.js';
 
 // Le pilotage d'un kart pour un pas de temps. Il ne regarde pas le monde mais ce
@@ -15,7 +17,6 @@ import { steerAroundPipes } from './pipes.js';
 function updateAI(cfg, state, rng, now, kart, deltaTime) {
     if (kart.state !== 'running') return;
 
-    const ai = cfg.ai;
     const vis = cfg.vision;
 
     // Un bill ne se pilote pas : il rejoint le milieu de la piste et n'en bouge
@@ -30,13 +31,41 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
 
     const sight = kart.sight;
 
-    // L'attention d'abord : c'est elle qui decide de ce que le balayage verra.
-    // Puis le balayage, amorti (`vision.scanIntervalMs`).
+    // Ce qui s'entend, avant tout : l'attention s'en sert la premiere. Puis
+    // l'attention, qui decide de ce que le balayage verra. Puis le balayage,
+    // amorti (`vision.scanIntervalMs`).
+    hear(cfg, state, rng, now, kart);
     updateGlance(cfg, rng, state, now, kart);
     if (now - sight.at >= vis.scanIntervalMs) perceive(cfg, state, rng, now, kart);
 
+    // Ce qu'il fait de la bleue, avant le plan : c'est lui qui en porte le
+    // volant quand il cede la tete.
+    updateBlue(cfg, rng, state, now, kart);
     updatePlan(cfg, rng, now, kart);
     updateShield(cfg, rng, now, kart);
+
+    command(cfg, state, rng, now, kart, deltaTime);
+
+    // LEVER LE PIED devant la bleue, quelle que soit la manoeuvre qui tient le
+    // volant : c'est le seul geste qui fasse ceder la tete, et une esquive en
+    // chemin n'a aucune raison de l'interrompre. Pose APRES la commande, qui
+    // ecrit ses propres freins ; le plus appuye des deux l'emporte.
+    const mode = kart.alert.blueMode;
+    if (mode === 'yield' || mode === 'hang') {
+        const factor = cfg.vision.alerts.blue.brakeFactor;
+        const active = now < kart.brakeUntil && kart.brakeFactor > 0;
+        if (!active || kart.brakeFactor > factor) kart.brakeFactor = factor;
+        const until = now + 2 * cfg.vision.scanIntervalMs;
+        if (kart.brakeUntil < until) kart.brakeUntil = until;
+    }
+}
+
+// La commande : un ordre de priorite, une fois la menace designee et le plan
+// pose. La premiere manoeuvre qui s'applique tient le volant, et sort.
+function command(cfg, state, rng, now, kart, deltaTime) {
+    const ai = cfg.ai;
+    const vis = cfg.vision;
+    const sight = kart.sight;
 
     // L'esquive passe avant tout le reste, MAIS JAMAIS DEVANT UN TUYAU. C'est le
     // seul veto du pilotage : `pipeOutranksPlan` ne compare pas deux prix, il
@@ -77,9 +106,11 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
     //
     // `giveWay` passe meme sans rien a braquer : son geste principal est de LEVER
     // LE PIED. Une precaution qui n'a nulle part ou aller rend le volant plutot
-    // que de figer le kart.
+    // que de figer le kart. Ceder la tete devant une bleue est le meme geste,
+    // son frein en plus fort (pose par `updateAI`).
     if (plan.threatId
-        && (plan.kind === 'giveWay' || (plan.kind === 'safety' && !plan.idle))) {
+        && (plan.kind === 'giveWay' || plan.kind === 'yieldLead'
+            || (plan.kind === 'safety' && !plan.idle))) {
         kart.aiState = plan.kind;
 
         // Se ranger ne suffit pas a laisser passer : sans lever le pied, celui

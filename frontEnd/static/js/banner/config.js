@@ -136,8 +136,9 @@ const OFFLINE_WORLD = {
     // Repli seulement : en marche le serveur envoie ses propres tables dans son
     // `hello`, et ce sont elles qui font foi.
     ai: {
-        states: ['cruising', 'pipe', 'dodging', 'safety', 'giveWay', 'aiming'],
-        dangers: ['', 'carrier', 'ram', 'shot']
+        states: ['cruising', 'pipe', 'dodging', 'safety', 'giveWay', 'aiming', 'yieldLead'],
+        dangers: ['', 'carrier', 'ram', 'shot'],
+        alerts: ['', 'ram', 'red', 'blue']
     },
     // Demi-emprises des corps, pour la carte de debug. Repli seulement : le
     // serveur les envoie dans son `hello`, et c'est lui qui fait foi. Elles se

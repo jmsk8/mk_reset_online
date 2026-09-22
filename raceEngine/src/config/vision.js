@@ -116,7 +116,7 @@ export default {
         // Une etoile ou un bill arrive derriere. La seule des quatre qui ne
         // demande pas d'avoir deja regarde : les autres se nourrissent d'une
         // observation, or on n'observe l'arriere qu'en s'y etant tourne (cf.
-        // `ramNoise`).
+        // `hear`, l'ouie).
         //
         // Meme justification que `seeHomingThroughCover` : dans le jeu d'origine,
         // ces deux-la s'ENTENDENT. Ca fait tourner la tete, rien de plus —
@@ -124,6 +124,95 @@ export default {
         // voir l'etoile et la prendre quand meme. Meme valeur pour le dernier :
         // le bruit ne depend pas du rang.
         backChanceRam: { leader: 0.85, pack: 0.85, last: 0.85 },
+
+        // L'OUIE : ce qu'un kart sait arriver sans l'avoir vu (cf. `hear`). Elle
+        // dit QUOI et SI C'EST POUR LUI, jamais OU — la position reste a la vue,
+        // et c'est ce qui la garde de deregler le pilotage.
+        //
+        // Une alerte par objet, et chacune a son interrupteur : `enabled` a
+        // false rend exactement le comportement d'avant elle. C'est ce que
+        // compare `tools/alerts.js`, colonne par colonne.
+        alerts: {
+            // Etoile et bill. Le bruit lui-meme n'est pas ici — il existait
+            // avant l'ouie et porte `backChanceRam`. Ce qui s'y ajoute : quand
+            // l'intouchable ARRIVE, le kart se retourne tout de suite (le
+            // sursaut) et le suit du regard jusqu'a avoir decide de son
+            // esquive. Se retourner a l'instant ou le bruit commence ne sert a
+            // rien : trop tot, la tete revient devant avant qu'il arrive.
+            //
+            //   leadMs   a combien de temps du contact il se retourne. Doit
+            //            couvrir la fenetre d'esquive des lourds contre un bill,
+            //            qui depasse deux secondes — en deca, le kart le regarde
+            //            arriver sans avoir le temps d'en sortir. C'est aussi le
+            //            plafond de ce que le suivi coute en vue AVANT.
+            //   quietMs  le silence au-dela duquel un bruit est NOUVEAU. En
+            //            deca c'est le meme qui dure, et il ne fait sursauter
+            //            qu'une fois.
+            ram: { enabled: true, leadMs: 2500, quietMs: 2000 },
+
+            // La rouge qui le vise. Il ne se retourne pas — ca ne servirait a
+            // rien, elle suit — il se couvre : objet trainable derriere lui,
+            // etoile ou bill sortis tout de suite. La couverture tient tant
+            // qu'elle le vise, puis `pressureMemoryMs`.
+            //
+            //   miss  part des rouges qu'il n'entend pas venir. Meme ordre que
+            //         `ai.dodgeMissChance` : c'est de l'inattention, pas un
+            //         reglage de difficulte. Celle-la, il peut encore la voir
+            //         pendant un coup d'oeil, et y repondre comme avant.
+            red: { enabled: true, miss: 0.1 },
+
+            // La bleue. Elle ne concerne que le premier, puis sa cible (cf.
+            // `hearBlue`). Il se PROTEGE s'il le peut — champignon ou etoile en
+            // main, et c'est prioritaire — sinon il CEDE LA TETE, s'il en a le
+            // reflexe et que quelqu'un le suit d'assez pres. Seul le premier
+            // freine.
+            //
+            //   miss         part des bleues qu'il n'entend pas venir.
+            //   etaError     l'echeance qu'il entend est fausse d'autant, au
+            //                plus, tiree une fois par bleue : c'est une
+            //                impression, pas une mesure.
+            //   glance       chance de se retourner pour voir qui le suit, tant
+            //                qu'il n'a rien decide. Meme ordre que le bruit
+            //                d'une etoile.
+            //   yieldChance  part des premiers qui ont le reflexe de ceder.
+            //   yieldRange   au-dela, personne ne le doublera a temps.
+            //   closeTol     en px/s : un suiveur qui recule plus vite que ca
+            //                ne prendra pas la tete — il freine lui-meme.
+            //   brakeFactor  le frein qui fait ceder. Celui de `giveWay` (0.90)
+            //                ne rendrait que 50 px/s au suiveur : 2 s pour 100 px,
+            //                bien plus que ce qu'on a avant le verrou.
+            //   passPx       ce que le suiveur doit prendre en plus de l'ecart
+            //                pour etre devant : une longueur de kart.
+            //   slackMs      marge sur le moment de lever le pied.
+            //   maxYieldMs   au-dela, il renonce.
+            //   clearPx      ce qu'il laisse entre lui et celui qui l'a double.
+            //                Le souffle ne s'arrete pas a son rayon : son centre
+            //                est fixe, et les karts qui suivent la cible roulent
+            //                dedans pendant qu'il s'etend. Il prend tout ce qui
+            //                est a moins de ~310 px derriere elle.
+            //   hesitateMs   le champignon : ce qu'il met en plus du reflexe a le
+            //                sortir, tire entre 0 et cette valeur. Il lui reste
+            //                `blueShell.hoverMs + crashMs` (580 ms) une fois
+            //                qu'elle s'arrete au-dessus de lui, reflexe et
+            //                inattention compris. A 300, environ sept sur dix y
+            //                arrivent au banc — c'est le geste difficile. A 400,
+            //                a peine un sur deux.
+            blue: {
+                enabled: true,
+                miss: 0.1,
+                etaError: 0.25,
+                glance: 0.85,
+                yieldChance: 0.6,
+                yieldRange: 350,
+                closeTol: 20,
+                brakeFactor: 0.55,
+                passPx: 60,
+                slackMs: 400,
+                maxYieldMs: 4000,
+                clearPx: 340,
+                hesitateMs: 300
+            }
+        },
 
         // Quelqu'un qui PEUT vous atteindre sans avoir rien lance : derriere, un
         // kart qui peut tirer vers l'avant ; devant, un kart qui porte de quoi
