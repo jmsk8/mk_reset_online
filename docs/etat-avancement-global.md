@@ -56,7 +56,7 @@
 | Constat | Ce qui a été livré |
 |---|---|
 | **Banc de scénario** (ex-rang 1) | Exécuté le 2026-09-21 avec l'Electron de VS Code, `node` n'étant pas installé : la table des temps de manœuvre sort chiffrée, sans `NaN`. D-5 a été mesuré au passage (§10). |
-| **A-01 / A-02** (rang 6) | Livré le 22/09, **non commité** : toute écriture de `comptes.role` ferme les sessions du compte concerné. Les quatre écrivains la portent, dont l'acceptation d'une promotion (session courante comprise, puis reconnexion Discord relancée par la page). Filet : `test_sessions_changement_role.py` (§8). |
+| **A-01 / A-02** (rang 6) | Livré le 22/09, commité dans `12d35dc` : toute écriture de `comptes.role` ferme les sessions du compte concerné. Les quatre écrivains la portent, dont l'acceptation d'une promotion (session courante comprise, puis reconnexion Discord relancée par la page). Filet : `test_sessions_changement_role.py` (§8). |
 | **Journal `audit_admin`** (ex-rang 6) | Phases 1, 1bis, 2 et 3 livrées les 18 et 19/09 (`c0988fd`, `025af10`) : un seul chemin d'écriture, promotion soumise à acceptation, dossier sportif tracé (mu/sigma avant/après), volet « Logs » par compte, onglet Logs, export CSV. **Reste la phase 4** (§4). |
 
 ### ✅ Fait le 2026-09-18
@@ -82,7 +82,7 @@
 | 3 | **Vérifier la zone nginx servie** — ✅ poste de dev (22/09), **serveur à faire** | §8, §12.1 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. Deux minutes — mais si l'ancien 20 r/min est encore servi, ce sont des connexions en 503. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
 | 4 | **« Supprimer mon compte » : passer par une demande par mail** — ✅ livré le 22/09, non commité | §13.1 | Demandé le 22/09 : l'effacement direct est jugé trop dangereux. Garder le bouton, mais qu'il affiche un message invitant à écrire à `SITE_CONTACT`. ⚠️ **Fermer aussi `DELETE /me` côté backend**, sinon l'accès direct reste ouvert à qui l'appelle sans passer par la page. La demande reçue sera traitée par une **route réservée au `superadmin`** (décidé le 22/09), à créer : aucune n'existe aujourd'hui. |
 | 5 | **Phase 4 d'`audit_admin`** — ✅ **livrée le 22/09, non commitée** : le journal est terminé | §4 | Le filet (`test_audit_inventaire.py`) a trouvé en arrivant **neuf routes admin qui écrivaient sans trace**, dont la liaison de tournois qui modifie le sigma. Toutes corrigées. **L'avant-dernière étape décidée le 18/09 est donc close** : reste la coupure du mot de passe (rang 9). |
-| 6 | **A-01 / A-02 — sessions figées sur le rôle** — ✅ livré le 22/09, non commité | §8 | Était le dernier 🟠 ouvert. Une promotion laissait à un admin une session de 30 jours au lieu de 12 h, une rétrogradation ne fermait aucune session. Désormais **changer de rôle oblige à se reconnecter**, dans les deux sens. Reste une recette à deux navigateurs (§8). |
+| 6 | **A-01 / A-02 — sessions figées sur le rôle** — ✅ clos le 22/09 (`12d35dc`) | §8 | Était le dernier 🟠 ouvert. Une promotion laissait à un admin une session de 30 jours au lieu de 12 h, une rétrogradation ne fermait aucune session. Désormais **changer de rôle oblige à se reconnecter**, dans les deux sens. Recette faite en conditions réelles, acceptation et rétrogradation (§8). |
 | 7 | **Définitions de l'IP v1 / v2 sur le site** | §13.2 | Demandé le 22/09. Texte visible par **tous** les joueurs, et aujourd'hui pas propre. Le plan existe déjà, page par page ([affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md)) : trancher ses 5 décisions (§9), puis dérouler ses 4 phases (§10). |
 | 8 | **Prérequis de l'étape 6** | §1 | Deux comptes `superadmin` distincts, break-glass exécuté pour de vrai, période de recouvrement. Des décisions et du temps, pas du code : à lancer tôt, justement parce qu'ils ne se cochent pas en une session. |
 | 9 | **Étape 6 — couper le mot de passe admin** | §1 | ⚠️ **Dernière étape décidée** (18/09). Referme A-04/A-05 du même geste. Un seul commit isolé, pour pouvoir le `revert`. |
@@ -328,7 +328,7 @@ qui a guidé toute la correction. L'assertion reste volontairement verte, elle c
 **Rappels** portés par le même audit. Les assertions `defaut()` de A-01 et A-02 sont devenues
 des non-régressions le 2026-09-22 :
 
-- `[x]` **A-01/A-02** 🟠 — ✅ **corrigé le 2026-09-22, non commité.** Toute écriture de
+- `[x]` **A-01/A-02** 🟠 — ✅ **corrigé le 2026-09-22, commité dans `12d35dc`.** Toute écriture de
   `comptes.role` ferme les sessions du compte concerné : `changer_role` (la cible, jamais
   l'acteur), `repondre_promotion` (le titulaire, **session courante comprise** — c'est la session
   de joueur qui accepte), le legs (**les deux** comptes), l'amorçage (les anciennes sessions,
@@ -342,9 +342,11 @@ des non-régressions le 2026-09-22 :
   - ⚠️ **L'assertion `defaut()` de A-02 serait restée verte** sur le défaut corrigé : elle lisait
     6000 caractères depuis `def changer_role(`, le `DELETE` est tombé à 6741. Remplacée par une
     délimitation `ast`. Un `not in` sur une fenêtre fixe peut masquer une correction.
-  - `[ ]` **Recette à faire**, deux navigateurs : proposer un rôle à un compte joueur connecté
-    sur les deux, l'accepter sur l'un — il doit repasser par Discord et revenir admin, l'autre
-    doit être déconnecté. Puis le rétrograder : ses deux sessions doivent tomber.
+  - `[x]` **Recette de la rétrogradation — faite le 2026-09-22** : un `chef_admin` repassé
+    `player` a été déconnecté ; à la reconnexion, il était bien `player`.
+  - `[x]` **Recette de l'acceptation — faite le 2026-09-22** : compte joueur connecté sur deux
+    navigateurs, promotion acceptée sur l'un — reconnexion Discord et retour en admin, l'autre
+    déconnecté. **Chantier entièrement clos.**
 - `[ ]` **A-04/A-05** 🟡 — mot de passe partagé, `api_tokens` en clair : se referment avec
   l'étape 6 (§1).
 - `[ ]` **A-07** 🟡 — CGU affichées mais jamais imposées.
@@ -621,6 +623,14 @@ commitées**), avec les 5 orientations et un portrait. À faire :
   protocole.
 - `[ ]` Préciser ce qui doit changer : apparence, placement, comportement.
 
+#### 13.6 Admin/Comptes — redesign UX onglet Compte, section Actions — à ranger
+
+**Demandé** : retravailler la partie « Actions » de l'onglet Compte sur `/admin/comptes/<id>`.
+
+- `[ ]` Remplacer l'affichage linéaire des actions par un **bouton unique** qui ouvre une **petite fenêtre pop-up** contenant toutes les actions.
+- `[ ]` Cible : `admin_comptes.html`, onglet **Compte** (ne toucher ni Permissions, ni Sessions).
+- `[ ]` À décider : lisibilité du pop-up, boutons/icônes, ordre/hiérarchie des actions, fermeture (croix, clic dehors, etc.).
+
 ## Note obsolète — ✅ corrigée le 2026-09-18
 
 [schema-base-de-donnees.md](schema-base-de-donnees.md) §8 affirmait qu'un `admin` pouvait encore
@@ -654,8 +664,8 @@ Rien à faire ici sans nouvelle décision explicite — listés pour éviter de 
 
 ## Chantiers soldés récemment (pour mémoire, contexte)
 
-- Sessions figées sur le rôle (A-01/A-02) — ✅ 2026-09-22, non commité : changer de rôle ferme
-  les sessions du compte, filet sur tout écrivain de `comptes.role` (§8).
+- Sessions figées sur le rôle (A-01/A-02) — ✅ 2026-09-22 (`12d35dc`), recette faite :
+  changer de rôle ferme les sessions du compte, filet sur tout écrivain de `comptes.role` (§8).
 - Journal des actions admin, phases 1 à 3 — ✅ 2026-09-19 (`c0988fd`, `025af10`) : un seul
   chemin d'écriture, promotion soumise à acceptation, dossier sportif tracé, écran de
   consultation et export CSV. Phase 4 (le filet) livrée le 22/09, non commitée (§4).
