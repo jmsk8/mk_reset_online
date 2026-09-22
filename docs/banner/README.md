@@ -10,6 +10,7 @@ serveur, et tous les navigateurs la regardent.
 | [architecture.md](architecture.md) | Qu'est-ce qui tourne où, quel fichier fait quoi, comment travailler dessus |
 | [protocole.md](protocole.md) | Que s'échangent le service et le navigateur, et pourquoi |
 | [equilibrage.md](equilibrage.md) | Comment régler les statistiques des pilotes, et avec quel banc |
+| [alertes.md](alertes.md) | Ce qu'un kart **entend** sans l'avoir vu — étoile/bill, rouge, bleue — et ce qu'il en fait |
 | [../../tracks/README.md](../../tracks/README.md) | Comment dessiner un circuit |
 
 ## Audits — comment l'IA décide
@@ -27,9 +28,10 @@ clé qui n'existe plus, et la table des temps de manœuvre rendait `NaN`. Elle a
 `vision.place.margin.item` (cf. D-1 et D-2). **O-1 est corrigé également** — `shieldHold` ne se
 propage plus à l'objet suivant.
 
-⚠️ **Le banc n'a pas encore été regardé tourner** : `node` n'était pas disponible au moment de la
-correction. Un `node tools/scenario.js` reste à faire avant de s'appuyer sur ses chiffres, et c'est
-ce qui débloque la mesure des autres constats.
+✅ **Le banc a tourné** (2026-09-21) : `tools/scenario.js` sort une table de temps de manœuvre
+chiffrée, sans `NaN`. `tools/simulate.js` et le nouveau `tools/alerts.js` tournent aussi. Sans
+`node` installé, l'Electron de VS Code en tient lieu :
+`ELECTRON_RUN_AS_NODE=1 /app/extra/vscode/code tools/alerts.js` (installation Flatpak).
 
 ## Chantiers — en cours de construction
 
@@ -58,12 +60,12 @@ citent sont ceux de leur date de rédaction.
 
 ```
 raceEngine/               le service : simulation, protocole, circuits
-├── src/engine/           le moteur — 19 modules ES, graphe acyclique
+├── src/engine/           le moteur — 20 modules ES, graphe acyclique
 ├── src/config/           les réglages, en 7 fragments par domaine
 ├── src/protocol.js       le contrat serveur ↔ client
 ├── src/track.js          la lecture des circuits dessinés
 ├── src/server.js         boucle 30 Hz, diffusion 10 Hz, WebSocket
-└── tools/                quatre observateurs : ils lisent, ils n'écrivent pas
+└── tools/                cinq observateurs : ils lisent, ils n'écrivent pas
 
 frontEnd/static/js/banner/   le rendu — 22 scripts chargés dans l'ordre
 frontEnd/static/css/banner.css   la feuille de style, en un fichier

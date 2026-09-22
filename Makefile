@@ -284,6 +284,14 @@ race-sim:            ## Simule N courses et sort les stats (RACES=1000 SEED=42 C
 race-scenario:       ## Deroule les scenarios de pilotage et trace les decisions
 	$(RACE_NODE) node tools/scenario.js
 
+# Ce qu'un kart ENTEND (etoile, bill, rouge, bleue) : des situations rejouees sur
+# SEEDS graines, alertes eteintes puis allumees. Sort en erreur si un engagement
+# n'est pas tenu. CAMPAIGN=... ajoute des courses completes, pour verifier que
+# les alertes ne dereglent rien ailleurs (cf. docs/banner/alertes.md).
+race-alerts:         ## Banc des alertes, avec et sans (SEEDS=200 CAMPAIGN=400)
+	$(RACE_NODE) node tools/alerts.js --seeds $${SEEDS:-200} \
+		$(if $(CAMPAIGN),--campaign $(CAMPAIGN),)
+
 # `exec race node ...` supposait que le conteneur du moteur embarque node : c'est
 # faux des que le moteur est le binaire C++, et le test se coupait la branche sur
 # laquelle il est assis. On emprunte donc une image node et on la colle dans la
@@ -310,7 +318,7 @@ help:                ## Show this help
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
         recompter-absences \
-        race-deps race-tracks race-soak race-sim race-scenario race-spectate race-nginx \
+        race-deps race-tracks race-soak race-sim race-scenario race-alerts race-spectate race-nginx \
         engine engine-js engine-cpp \
         reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help

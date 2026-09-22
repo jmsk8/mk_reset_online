@@ -159,6 +159,11 @@ function updatePlan(cfg, rng, now, kart) {
         plan.until = now + vis.safety.holdMs;
     }
 
+    // La tete ne se cede que tant que `updateBlue` le decide, et pas une image
+    // de plus : double, choisi malgre tout ou la bleue partie, la place est
+    // rendue au reste du pilotage.
+    if (plan.kind === 'yieldLead' && kart.alert.blueMode !== 'yield') plan.until = 0;
+
     if (plan.threatId && (now >= plan.until || sight.planGone)) {
         plan.threatId = 0;
         plan.kind = '';
@@ -179,6 +184,21 @@ function updatePlan(cfg, rng, now, kart) {
         plan.until = now + sight.threatTtc + vis.holdAfterMs;
         plan.reviewAt = now + reviewDelay(cfg, rng);
         placePlan(cfg, rng, kart, plan, sight.threatTtc);
+        return;
+    }
+
+    // CEDER LA TETE devant une bleue (cf. `updateBlue`, qui decide et tient le
+    // frein). Le plan n'en porte que le volant : quitter la ligne de celui qui le
+    // suit, pour qu'il passe sans le bousculer. Meme geste que laisser passer
+    // une rouge, pour une autre raison.
+    if (!plan.threatId && kart.alert.blueMode === 'yield' && sight.rearKartDist >= 0) {
+        plan.kind = 'yieldLead';
+        plan.threatId = sight.rearKartId;
+        plan.threatY = sight.rearKartY;
+        plan.intensity = vis.giveWay.speed;
+        plan.until = kart.alert.yieldUntil;
+        plan.reviewAt = now + reviewDelay(cfg, rng);
+        placeSafety(cfg, kart, plan);
         return;
     }
 
@@ -256,7 +276,7 @@ function updatePlan(cfg, rng, now, kart) {
     plan.reviewAt = now + reviewDelay(cfg, rng);
     if (!forced && rng() >= vis.reviewChance) return;
 
-    if (plan.kind === 'safety' || plan.kind === 'giveWay') {
+    if (plan.kind === 'safety' || plan.kind === 'giveWay' || plan.kind === 'yieldLead') {
         // La ligne a quitter est celle d'un kart, et il bouge : la revision la
         // reprend telle qu'elle est maintenant.
         if (sight.pressure && sight.pressureId === plan.threatId) {
@@ -264,6 +284,9 @@ function updatePlan(cfg, rng, now, kart) {
         }
         if (sight.redBehindDist >= 0 && sight.redBehindId === plan.threatId) {
             plan.threatY = sight.redBehindY;
+        }
+        if (sight.rearKartDist >= 0 && sight.rearKartId === plan.threatId) {
+            plan.threatY = sight.rearKartY;
         }
         placeSafety(cfg, kart, plan);
         return;

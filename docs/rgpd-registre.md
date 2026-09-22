@@ -227,5 +227,12 @@ Le consentement aux CGU donné à la création du compte ne pouvait pas couvrir 
       à chaque redémarrage. **Voir T5 avant de cocher.**
 - [ ] Faire tourner la purge (`/admin/purge-rgpd`) régulièrement — il n'y a pas
       d'ordonnanceur dans le projet, c'est un geste manuel assumé.
+- [ ] **Suppression de compte sur demande par mail** (décidé le 2026-09-22) : le bouton
+      « Supprimer mon compte » renverra vers `SITE_CONTACT` au lieu d'effacer directement ;
+      la demande sera exécutée par une route réservée au `superadmin`, à créer.
+      Le droit à l'effacement reste dû : réponse sous **un mois** (art. 12.3), à écrire
+      dans `/confidentialite`, et la section « Droits et leur mise en œuvre » ci-dessus
+      à mettre à jour. Détail : §13.1 de
+      [etat-avancement-global.md](etat-avancement-global.md).
 - [ ] Après toute restauration de sauvegarde : rejouer les suppressions, cf.
       [runbook-admin.md](runbook-admin.md) §5.

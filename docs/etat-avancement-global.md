@@ -5,37 +5,56 @@
 > réellement fait (vérifié dans le code, pas seulement dans la doc) et ce qui reste en suspens,
 > classé par priorité.
 >
-> **Dernière mise à jour : 2026-09-18**, après le chantier qui a refermé B-01 à B-05, D-1, D-2,
-> O-1, le §8.3 et la rotation des journaux. Passages précédents : audit croisé docs ↔ code,
-> chantier performance/503, « Mes sessions actives », puis l'intégration des trois audits qui
-> manquaient à cet inventaire.
+> **Dernière mise à jour : 2026-09-22**, par confrontation au code de tout ce qui a bougé depuis
+> le 18/09 : journal `audit_admin` livré sauf sa phase 4, banc de scénario exécuté, et huit
+> chantiers apparus entre-temps (§11). Passages précédents : 18/09 (B-01 à B-05, D-1, D-2, O-1,
+> §8.3, rotation des journaux), audit croisé docs ↔ code, chantier performance/503, « Mes
+> sessions actives », intégration des trois audits qui manquaient à cet inventaire.
 >
-> **État de la suite de tests : 1401 assertions, aucune rouge, aucun fichier en échec.** C'est
-> une première — trois fichiers étaient rouges en permanence depuis des semaines, ce qui
-> neutralisait le dispositif d'audit du projet (une ligne rouge `[B-xx]` est une bonne
+> **État de la suite de tests, relancée le 2026-09-22 : 1647 assertions, 32 fichiers, aucune
+> rouge.** Il y en avait 1401 le 18/09 ; l'écart vient surtout du journal `audit_admin`. Le 18/09
+> était déjà une première — trois fichiers étaient rouges en permanence depuis des semaines, ce
+> qui neutralisait le dispositif d'audit du projet (une ligne rouge `[B-xx]` est une bonne
 > nouvelle, encore faut-il qu'elle se voie).
 >
-> ⚠️ **Incohérence de dates, toujours non tranchée.** Plusieurs passages de ce document et des
-> docs liées portent des dates du 18/09 pour des livrables antérieurs, alors que la date système
-> est le **2026-09-17** et que le dernier commit (`fe69c0e`, 503 nginx) date du 16/09. Le **code
-> confirme les livrables** (migrations `2026-09-17_*` présentes, tests en place) : seules les
-> dates dérivent, d'un à deux jours. À recaler si la chronologie compte — ce document ne l'a pas
-> fait faute de savoir laquelle fait foi.
+> ✅ **L'incohérence de dates signalée le 17/09 est tranchée** : les commits `ad2bf6b` et
+> `2511fd3`, qui portent ces livrables, sont datés du 18/09. C'est donc la bonne date.
+>
+> ⚠️ **L'état de la production n'est consigné nulle part, et les docs se contredisent.**
+> [auth-discord-avancement.md](auth-discord-avancement.md) dit « rien n'est déployé » (14/09) ;
+> ce document rangeait encore le déploiement parmi les chantiers non commencés. Pourtant le §7
+> note des droits réaccordés **en production** le 17/09, et
+> [audit-503-zone-admin.md](audit-503-zone-admin.md) part de 503 constatés **en production**
+> sur la zone admin. La bascule Discord y a donc vraisemblablement été déployée entre le 14 et le
+> 17/09 — mais aucune trace ne dit **quelles migrations** la prod a reçues. À confirmer et à
+> écrire au §12 : c'est un préalable au prochain déploiement (rang 2).
 >
 > À chaque reprise de chantier listé ici, mettre à jour la ligne correspondante plutôt que de
 > relire tous les docs de zéro. Quand un point est traité, le déplacer dans « Chantiers soldés »
 > avec sa date, ou le supprimer si le doc source le documente déjà correctement.
 
-## Ordre recommandé pour la prochaine maj — révisé le 2026-09-18
+## Ordre recommandé pour la prochaine maj — révisé le 2026-09-22
 
 > Cette section classe par **urgence réelle**, pas par numéro de chantier. La numérotation de
 > « Tâches en suspens » ci-dessous est un inventaire, pas une priorité : les renvois d'autres
 > docs s'y appuient, donc elle ne bouge pas.
 >
-> **Révision du 2026-09-18.** Les huit premiers rangs du classement du 17/09 ont été traités.
-> Ce qui reste n'a **aucun caractère d'urgence** : plus aucun 🔴, plus aucun blocage de
-> production, et la suite de tests est **entièrement verte pour la première fois**
-> (1401 assertions, aucun fichier en échec).
+> **Révision du 2026-09-22.** Deux rangs du 18/09 sont tombés : le banc de scénario a tourné
+> (21/09) et le journal `audit_admin` est livré sauf sa phase 4 (19/09). Deux entrées sont
+> nouvelles : le **prochain déploiement**, qui doit emporter trois migrations, et **A-01/A-02**,
+> jusqu'ici de simples « rappels » au §8. Leur rang est une recommandation du 22/09, pas une
+> décision.
+>
+> **Ajout du 2026-09-22 : cinq demandes de l'utilisateur** (rangs 4, 7, 10, 13 et 14, détail au
+> §13) — suppression de compte sur demande par mail, définitions de l'IP, bannière d'automne,
+> karts Daisy et Birdo, contrôles de la bannière. Leur rang est lui aussi une proposition.
+
+### ✅ Fait depuis le 2026-09-18
+
+| Constat | Ce qui a été livré |
+|---|---|
+| **Banc de scénario** (ex-rang 1) | Exécuté le 2026-09-21 avec l'Electron de VS Code, `node` n'étant pas installé : la table des temps de manœuvre sort chiffrée, sans `NaN`. D-5 a été mesuré au passage (§10). |
+| **Journal `audit_admin`** (ex-rang 6) | Phases 1, 1bis, 2 et 3 livrées les 18 et 19/09 (`c0988fd`, `025af10`) : un seul chemin d'écriture, promotion soumise à acceptation, dossier sportif tracé (mu/sigma avant/après), volet « Logs » par compte, onglet Logs, export CSV. **Reste la phase 4** (§4). |
 
 ### ✅ Fait le 2026-09-18
 
@@ -55,35 +74,33 @@
 
 | # | Action | Renvoi | Pourquoi ce rang |
 |---|---|---|---|
-| 1 | **Faire tourner le banc de scénario** (`node tools/scenario.js`) | §10 | D-1 corrigé **sans avoir été exécuté**. C'est ce qui débloque la mesure des neuf constats banner restants. |
-| 2 | **Vérifier la zone nginx servie** | §8 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
-| 3 | **Déployer `deploy/host/journald-mk.conf`** | §3 | ⚠️ Une durée de 6 mois est **annoncée aux visiteurs**. Ce fichier est ce qui la rend vraie. Sans son `Storage=persistent`, les journaux sont même **perdus à chaque redémarrage** — c'est l'état actuel de la machine. |
-| 4 | **Purge RGPD régulière** | §3 | Route existante, aucun ordonnanceur. Geste manuel assumé. |
-| 5 | **Les neuf constats banner restants** | §10 | 🟡 et 🔵. Bloqués derrière le rang 1 pour la mesure. **Mis de côté** par décision du 18/09. |
-| 6 | **Journal `audit_admin`** | §4 | ⚠️ **Avant-dernière étape décidée** (18/09). Les INSERT tournent depuis des semaines, aucun `SELECT` nulle part. |
-| 7 | **Étape 6 — couper le mot de passe admin** | §1 | ⚠️ **Dernière étape décidée** (18/09). Bloquée par trois prérequis d'exploitation qui se cochent avec le temps, pas en une session. |
+| 1 | **Déployer `deploy/host/journald-mk.conf`** | §3 | 🔴 La seule promesse faite aux visiteurs qui n'est **pas tenue aujourd'hui** : `/confidentialite` annonce 6 mois de conservation, et ce fichier est ce qui la rend vraie. Sans son `Storage=persistent`, les journaux sont même **perdus à chaque redémarrage**. Rien à coder : un fichier à poser sur l'hôte. |
+| 2 | **Prochain déploiement : emporter trois migrations** | §12 | 🟠 `2026-09-18_promotions_proposees`, `2026-09-19_audit_index_acteur`, `2026-09-20_notifications_lien`. Le code depuis `025af10` lit les tables et colonnes qu'elles créent : le déployer sans elles casse la gestion des comptes et les notifications. Puis `make re-front` **et** `make re-back`, et la recette https de « Mes sessions actives » (§2). Préalable : établir quelles migrations la prod a déjà reçues (voir l'en-tête). |
+| 3 | **Vérifier la zone nginx servie** | §8 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. Deux minutes — mais si l'ancien 20 r/min est encore servi, ce sont des connexions en 503. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
+| 4 | **« Supprimer mon compte » : passer par une demande par mail** | §13.1 | Demandé le 22/09 : l'effacement direct est jugé trop dangereux. Garder le bouton, mais qu'il affiche un message invitant à écrire à `SITE_CONTACT`. ⚠️ **Fermer aussi `DELETE /me` côté backend**, sinon l'accès direct reste ouvert à qui l'appelle sans passer par la page. La demande reçue sera traitée par une **route réservée au `superadmin`** (décidé le 22/09), à créer : aucune n'existe aujourd'hui. |
+| 5 | **Phase 4 d'`audit_admin`** | §4 | ⚠️ **Avant-dernière étape décidée** (18/09), dont il ne reste que ce filet. Le test manquant est celui qui empêche le trou de se reformer : une route d'écriture admin ajoutée demain sans ligne d'audit ne ferait rougir **aucun** test. |
+| 6 | **A-01 / A-02 — sessions figées sur le rôle** | §8 | 🟠, le seul orange encore ouvert. Une promotion laisse à un admin une session de 30 jours au lieu de 12 h ; une rétrogradation ne ferme aucune session. **La phase 1bis l'a rendu systématique** : on devient admin en acceptant depuis sa session de joueur, donc longue — `repondre_promotion` ne touche pas aux sessions. |
+| 7 | **Définitions de l'IP v1 / v2 sur le site** | §13.2 | Demandé le 22/09. Texte visible par **tous** les joueurs, et aujourd'hui pas propre. Le plan existe déjà, page par page ([affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md)) : trancher ses 5 décisions (§9), puis dérouler ses 4 phases (§10). |
+| 8 | **Prérequis de l'étape 6** | §1 | Deux comptes `superadmin` distincts, break-glass exécuté pour de vrai, période de recouvrement. Des décisions et du temps, pas du code : à lancer tôt, justement parce qu'ils ne se cochent pas en une session. |
+| 9 | **Étape 6 — couper le mot de passe admin** | §1 | ⚠️ **Dernière étape décidée** (18/09). Referme A-04/A-05 du même geste. Un seul commit isolé, pour pouvoir le `revert`. |
+| 10 | **Bannière d'automne** | §13.3 | Demandé le 22/09. L'automne affiche la bannière d'été depuis ce matin, en intérim. Travail daté : la saison s'arrête le 21/12, chaque semaine de retard en est une de moins à l'écran. |
+| 11 | **RGPD : purge régulière, et A-07** | §3, §8 | Purge : route existante, aucun ordonnanceur, geste manuel assumé. A-07 🟡 : le consentement CGU est affiché, jamais imposé. |
+| 12 | **CHANGELOG** | §12 | La section « Non publié » ne dit **rien** de la bascule Discord, des rôles admin, du journal, des promotions, des notifications ni des sessions de tournois. À écrire avant de publier une version. |
+| 13 | **Karts de la bannière : ménage et Daisy + Birdo** | §13.4 | Demandé le 22/09. Supprimer les PNG inutilisés, ajouter Daisy et Birdo (images déjà dans `static/img/`, non commitées). Plus qu'un ajout d'images : 10 karts au lieu de 8 dans chaque course, deux moteurs à mettre à jour, un équilibrage à refaire. |
+| 14 | **Bannière : retravailler redémarrage, pause, tour et vitesse** | §13.5 | Demandé le 22/09. Le bouton de vote de redémarrage, le bouton pause, et le cartouche tour/vitesse du kart suivi. |
+| 15 | **Les constats banner restants** | §10 | 🟡 et 🔵. **Mis de côté** par décision du 18/09 — mais le banc tourne désormais, plus rien ne bloque leur mesure. |
+| 16 | **Chantiers de confort** | §11 | Pistes de perf du décor, moteur Rust — plus les chantiers volontairement non commencés (bas du document). |
 
-**Les rangs 1 à 3 sont des gestes d'exploitation, pas du développement** — ils demandent `node`,
-Docker et un accès à l'hôte plutôt qu'une session de code. Le rang 3 est le seul qui engage
-juridiquement : une durée de 6 mois est désormais **annoncée aux visiteurs**, et seul le fichier
-journald la rend vraie.
+**Les rangs 1 à 3 se font sur l'hôte, pas dans le code** — ils demandent Docker et un accès à la
+machine plutôt qu'une session de développement. Le rang 1 est le seul qui engage juridiquement.
 
-> **Ordre de fin de projet, décidé le 2026-09-18.** Les rangs 5 (constats banner) et les chantiers
-> de confort sont **mis de côté**. Les deux dernières étapes du projet sont, dans cet ordre :
-> **1) le journal `audit_admin`** (rang 6), **2) la suppression du mot de passe admin** (rang 7).
-> Cet ordre n'est pas négociable dans l'autre sens : couper le mot de passe avant d'avoir une
-> lecture de l'audit reviendrait à se priver du seul moyen de comprendre après coup ce qui s'est
-> passé sur les comptes.
-
-⚠️ **Correction de périmètre sur le §5**, vérifiée le 2026-09-16 et toujours valable : le gate
-`gestion_config` est testé côté backend (`test_scission_permissions.py`, `test_hierarchie_routes.py`)
-et, depuis le 18/09, côté frontend (`test_session_expiree.py`) : **les trois onglets admin portent
-désormais un gate**. Le gate par bloc dans les gabarits est couvert depuis le 18/09 (voir §5) : **plus rien
-n'est découvert** sur ce chantier.
-
-ℹ️ **Précision sur le §4** : `audit_admin` reçoit des `INSERT` depuis **7 fichiers**, pas seulement
-le domaine « comptes » comme l'affirme le §4. Le constat qui compte reste vrai : **aucun `SELECT`
-nulle part**.
+> **Ordre de fin de projet, décidé le 2026-09-18.** Les constats banner et les chantiers de
+> confort sont **mis de côté**. Les deux dernières étapes du projet sont, dans cet ordre :
+> **1) le journal `audit_admin`** (rang 5, il n'en reste que la phase 4), **2) la suppression du
+> mot de passe admin** (rang 9). Cet ordre n'est pas négociable dans l'autre sens : couper le mot
+> de passe avant d'avoir une lecture de l'audit reviendrait à se priver du seul moyen de
+> comprendre après coup ce qui s'est passé sur les comptes. A-01/A-02 (rang 6) et les demandes du
+> 22/09 (§13) s'intercalent sans toucher à cet ordre : elles sont indépendantes des deux.
 
 ## Tâches en suspens, par priorité
 
@@ -100,9 +117,12 @@ active :
 - Table `api_tokens` (stockage en clair) toujours présente.
 
 **Prérequis avant de couper**, checklist §2 de [runbook-admin.md](runbook-admin.md), toutes les
-cases encore non cochées : deux comptes `superadmin` distincts, procédure break-glass exécutée au
-moins une fois pour de vrai, période de recouvrement passée. Ce sont des faits d'exploitation, à
-vérifier/cocher manuellement, pas du code.
+cases encore non cochées au 2026-09-22 : deux comptes `superadmin` distincts, procédure
+break-glass exécutée au moins une fois pour de vrai, période de recouvrement passée. Ce sont des
+faits d'exploitation, à vérifier/cocher manuellement, pas du code.
+
+**Le prérequis de code est presque levé** : l'ordre décidé le 18/09 veut le journal `audit_admin`
+avant la coupure, et il n'en reste que la phase 4 (§4).
 
 ### 2. "Mes sessions actives" — ✅ CLOS (`d2a543c`, recette faite le 18/09)
 
@@ -128,9 +148,9 @@ requêtes DELETE** (`requests.delete()` sans `json=data`). Vérifié : aucun aut
 corps en DELETE, le changement est donc sans effet ailleurs — mais `inclure_courante` serait parti
 en silence.
 
-### 3. RGPD — rotation faite, deux décisions restent
+### 3. RGPD — durée arbitrée, reste à la rendre vraie sur l'hôte
 
-[rgpd-registre.md](rgpd-registre.md), § « Ce qui reste à faire » :
+[rgpd-registre.md](rgpd-registre.md), § « Ce qui reste à faire » (à jour, il fait foi) :
 
 - `[x]` **Rotation des journaux nginx (T5)** — faite le 2026-09-18. **Il n'y avait aucun fichier à
   faire tourner** : dans l'image officielle, nginx écrit sur `stdout`/`stderr`, aucune directive
@@ -138,23 +158,49 @@ en silence.
   `logrotate` n'aurait rien eu à traiter. C'est le pilote Docker qui borne, ancre `x-journaux` de
   `docker-compose.yml` : 10 Mo × 3 fichiers × 5 services = **150 Mo au plus**. Le coût disque ne
   monte plus tout seul.
-- `[ ]` ⚠️ **Arbitrer la durée de conservation** (6 à 12 mois, recommandation CNIL). La borne
-  ci-dessus est une **taille**, pas une durée — Docker ne sait pas expirer par âge. Sur un site peu
-  fréquenté, une adresse IP peut donc rester **au-delà** de la durée annoncée ; sur un site chargé,
-  elle disparaît avant. Si la durée doit être garantie et non subie, il faudra un collecteur qui
-  expire par âge.
+- `[x]` **Durée de conservation arbitrée** — **6 mois**, décidé le 2026-09-18 et annoncé dans
+  `/confidentialite`. La borne ci-dessus était une **taille**, pas une durée : Docker ne sait pas
+  expirer par âge. D'où le passage du pilote à `journald` (`2511fd3`), qui expire par âge.
+- `[ ]` ⚠️ **Déployer `deploy/host/journald-mk.conf` sur l'hôte** — rang 1. C'est ce fichier, et
+  lui seul, qui impose les 6 mois annoncés ; sans son `Storage=persistent`, les journaux vivent
+  dans `/run` et disparaissent à chaque redémarrage.
 - `[ ]` **Purge RGPD régulière** (`POST /admin/purge-rgpd`) — la route existe, aucun ordonnanceur ne
   l'appelle ; geste manuel assumé.
 
-### 4. Journal des actions admin (`audit_admin`) — conçu, non codé
+### 4. Journal des actions admin (`audit_admin`) — ✅ phases 1 à 3 livrées, reste la phase 4
 
-[audit-admin-plan.md](audit-admin-plan.md) (plan complet, 4 phases) et
-[hierarchie-admin-avancement.md](hierarchie-admin-avancement.md) Chantier 7.
+[audit-admin-plan.md](audit-admin-plan.md) §5 porte le détail de chaque phase, et
+[hierarchie-admin-avancement.md](hierarchie-admin-avancement.md) le Chantier 7.
 
-- `audit_admin` ne reçoit des `INSERT` que sur le domaine « comptes »
-  (`backEnd/routes_admin.py`, 2 endroits).
-- Aucune route ne lit `audit_admin` (pas de bouton "Logs" par compte, pas d'onglet Logs).
-- Bloque en aval la promotion-avec-acceptation prévue au §6.5 du plan.
+- **Phase 1** (18/09, `c0988fd`) — un seul `INSERT INTO audit_admin` dans tout le backend, dans
+  `backEnd/audit.py`. Deux actions avaient perdu leur acteur et l'ont retrouvé, dont
+  `joueur_anonymise`.
+- **Phase 1bis** (18/09) — la promotion vers `admin`/`chef_admin` devient une **proposition à
+  accepter**, avec la politique « en tant qu'administrateur » ; le rôle n'est posé qu'à
+  l'acceptation. Migration `2026-09-18_promotions_proposees.sql`.
+- **Phase 2** (19/09) — le dossier sportif est tracé : mu/sigma avec avant/après, fiches,
+  tournois, reset global, configuration. Vocabulaire des actions figé le 18/09.
+- **Phase 3** (19/09, `025af10`) — le journal se lit enfin : volet « Logs » sur la ligne d'un
+  compte, onglet Logs, export CSV en streaming. Filtre de rang appliqué **en SQL** ; un
+  `chef_admin` ne lit jamais le `superadmin`. Migration `2026-09-19_audit_index_acteur.sql`.
+
+⚠️ **Limite définitive** : la dénormalisation de l'acteur (§6.3 du plan) a été oubliée en phase 2
+et rattrapée en phase 3. Les lignes écrites entre les deux restent **anonymes si leur compte est
+supprimé** — rien ne peut le rattraper après coup.
+
+**Reste — la phase 4**, vérifiée dans les tests le 2026-09-22 :
+
+- `[ ]` **Le test qui compte** : échouer si une route d'écriture admin n'écrit pas dans l'audit,
+  par analyse du source, comme `test_bascule.py` le fait pour les décorateurs. **Absent.** Sans
+  lui, la prochaine route ajoutée peut rouvrir le trou que la phase 2 vient de fermer.
+- `[ ]` **La suppression d'un compte n'efface aucune ligne d'audit.** `test_rgpd.py` vérifie que
+  l'audit est écrit *avant* la suppression, pas qu'aucune ligne ne disparaît. Le schéma le garantit
+  (`acteur_compte_id … ON DELETE SET NULL`), mais aucun test ne le verrouille.
+- `[~]` **Vocabulaire fermé (R-64).** Les neuf actions de la phase 2 sont figées par
+  `test_audit_dossier_sportif.py`, mais il n'existe aucune liste fermée de **toutes** les actions
+  contre laquelle vérifier chaque appel à `audit.ecrire()`.
+- `[x]` Gardes de rang sur les trois chemins (volet, onglet, export), refus pour un `player`,
+  acteur identifiable après suppression — couverts par `test_audit_lecture.py`.
 
 ### 5. Tests des 3 routes d'onglets admin (§8.3) — ✅ SOLDÉ le 2026-09-18
 
@@ -267,8 +313,17 @@ confirmation à la suspension, là où `changer_role` en demande une nommée (R-
 un chef_admin est **réversible par le superadmin**, donc ce n'est pas un verrouillage — le critère
 qui a guidé toute la correction. L'assertion reste volontairement verte, elle constate un choix.
 
-**Rappels non corrigés** portés par le même audit : A-01/A-02 (durée de session figée sur le rôle)
-🟠, A-04/A-05/A-07 (mot de passe partagé, `api_tokens` en clair, CGU non imposées) 🟡 — voir §1.
+**Rappels non corrigés** portés par le même audit, toujours ouverts au 2026-09-22 (les
+assertions `[A-01, defaut constate]` et `[A-02, defaut constate]` sont vertes, donc le défaut est
+toujours là) :
+
+- `[ ]` **A-01/A-02** 🟠 — durée de session figée sur le rôle, aucune session fermée au
+  changement de rôle. Classé **rang 6** le 22/09 : depuis la phase 1bis, **toute** promotion
+  passe par une acceptation depuis une session de joueur (30 jours), que `repondre_promotion`
+  laisse intacte.
+- `[ ]` **A-04/A-05** 🟡 — mot de passe partagé, `api_tokens` en clair : se referment avec
+  l'étape 6 (§1).
+- `[ ]` **A-07** 🟡 — CGU affichées mais jamais imposées.
 
 **Ce que cet audit n'a pas couvert**, pour que l'absence ne se lise pas comme un blanc-seing :
 aucun test contre un vrai Postgres (les verrous et l'index partiel sont raisonnés, pas exécutés),
@@ -290,7 +345,7 @@ Le cas `test_liaisons.py` mérite d'être retenu : un test qui **échoue bruyamm
 dangereux qu'un test qui passe sans rien vérifier. Ici il faisait les deux — rouge sur six
 assertions, et muet sur la concurrence qu'il prétendait couvrir.
 
-### 10. Moteur de course JS — le banc est réparé, la mesure reste à faire
+### 10. Moteur de course JS — le banc tourne, les constats attendent
 
 [audit-decision-direction-2026-09-17.md](banner/audit-decision-direction-2026-09-17.md) et
 [audit-decision-objets-2026-09-17.md](banner/audit-decision-objets-2026-09-17.md). Ce sont des
@@ -306,20 +361,170 @@ assertions, et muet sur la concurrence qu'il prétendait couvrir.
   et non dans `planItemUse` : cette dernière n'est pas appelée pour les objets en orbite. Placé là,
   le correctif couvre aussi les triples le jour où ils reviennent (O-2).
 
-⚠️ **Le banc n'a pas été exécuté** : `node` n'était pas disponible. La clé et son chemin sont
-vérifiés dans le source, mais **la table reste à regarder tourner** — c'est un
-`node tools/scenario.js`, et c'est ce qui débloque la mesure de tout le reste.
+✅ **Le banc a tourné le 2026-09-21** ([banner/README.md](banner/README.md)) :
+`tools/scenario.js` sort une table de temps de manœuvre chiffrée, sans `NaN`, et
+`tools/simulate.js` comme le nouveau `tools/alerts.js` tournent aussi. `node` n'étant pas
+installé, l'Electron de VS Code en tient lieu :
+`ELECTRON_RUN_AS_NODE=1 /app/extra/vscode/code tools/scenario.js`. **Plus rien ne bloque la
+mesure des constats ci-dessous** — ils restent mis de côté par la décision du 18/09.
 
-**Restent ouverts**, par gravité — tous en attente de mesure :
+**Restent ouverts**, par gravité :
 
 - `[ ]` O-3 🟡 — `findRedShellTarget` ignore l'occlusion : la rouge cible à travers les murs.
 - `[ ]` D-3 🟡 — `heldThreatType` corrige un défaut que `disabledItems` masque (rien ne l'exerce).
 - `[ ]` D-4 🟡 — le `giveWay` ne vérifie pas que la rouge vise **bien lui**.
-- `[ ]` D-5 🟡 — l'attention est un goulot non chiffré : voir devant **coûte** l'arrière.
+- `[~]` D-5 🟡 — l'attention est un goulot : voir devant **coûte** l'arrière. **Mesuré le
+  2026-09-21** (1000 courses) : le premier passe 32 % de son temps tourné vers l'arrière, le
+  peloton 17 %, le dernier 6 %. Assumé tant que le premier n'a que l'arrière à surveiller ;
+  c'est le chiffre à regarder avant de toucher au coup d'œil.
 - `[ ]` O-2 🟡 — les trois triples sont désactivés, tout leur code dort.
 - `[ ]` O-4 🔵 — la rouge tirée en arrière part **sans cible**, en ligne droite.
 - `[ ]` O-5 🔵 — `getAggression` lit `state.cachedLeader` avec un repli sur soi-même.
 - `[ ]` D-6 🔵 — l'étalonnage de `missChance`, à confirmer au banc.
+
+### 11. Chantiers apparus depuis le 2026-09-19
+
+Aucun n'était dans l'inventaire du 18/09. Ils sont listés ici pour que ce document reste la photo
+de **tous** les chantiers.
+
+| Chantier | État | Où en lire plus |
+|---|---|---|
+| Cloche de notifications et menu du compte sortis du burger | ✅ commité le 20/09 (`97fb753`, `f935f88`) | — |
+| Admin sur mobile, tri des tableaux | ✅ commité le 20/09 (`ede7a8a`) | — |
+| Notifications cliquables, page 404 dédiée | ✅ commité le 20/09 (`c48b7f7`) — ⚠️ migration `2026-09-20_notifications_lien.sql`, voir §12 | — |
+| Décor Mario Kart en fond de toutes les pages | ✅ commité les 20 et 21/09 (`638db0b`, `d2a2f1f`, avec les pipes 2×2). Retouches du 21/09 **non commitées**. Pistes d'optimisation encore ouvertes | [decor-perf-notes.md](decor-perf-notes.md) §3 |
+| Alertes (ouïe) des karts du bandeau | ✅ livré et mesuré le 21/09, **non commité** (`raceEngine/src/engine/alerts.js`, banc `make race-alerts`) | [banner/alertes.md](banner/alertes.md) |
+| Bannière d'accueil en automne | 🟡 **intérim** du 22/09, non commité : l'automne affiche la bannière d'été (`get_banner_season()`, `frontEnd/frontend.py`), faute de style `autumn`. La vraie bannière est au rang 10 | §13.3 |
+| Affichage IP v1/v2 | 📋 plan de rédaction seul (21/09), rien implémenté — rang 7. Ne pas réafficher v1 et v2 côte à côte : retiré exprès le 22/08 | [affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md) |
+| Moteur de course en Rust | 📋 conception seule (21/09), rien codé | [banner/moteur-rust-plan.md](banner/moteur-rust-plan.md) |
+
+### 12. Déploiement et publication
+
+**Migrations.** `backEnd/migrations/` en compte **18**. Le dump de prod du 14/09 était resté au
+schéma d'avant le 02/09 ; depuis, la prod a vraisemblablement reçu la bascule Discord (voir
+l'en-tête), sans trace de ce qui a été joué. Quoi qu'il en soit, les trois
+dernières sont **postérieures à tout déploiement connu** et doivent partir avec le code qui les
+lit :
+
+| Migration | Ce qu'elle crée | Ce qui casse sans elle |
+|---|---|---|
+| `2026-09-18_promotions_proposees.sql` | table `promotions_proposees`, colonnes `cgu_admin_*` sur `comptes` | la liste des comptes (jointure), les promotions |
+| `2026-09-19_audit_index_acteur.sql` | index `idx_audit_admin_acteur` | rien, mais le volet « Logs » balaie toute la table |
+| `2026-09-20_notifications_lien.sql` | colonne `notifications.lien` | la lecture **et** l'émission des notifications |
+
+Rappels du même geste : `make re-front` **et** `make re-back` (un `restart` ne suffit pas),
+`make reload-nginx` si la config a bougé, puis la **recette https** de « Mes sessions actives »
+(§2). Les répéter à blanc sur un dump avec `scripts/adapter-dump.sh` : c'est exactement la
+séquence à rejouer en prod.
+
+- `[ ]` **Établir et écrire ici quelles migrations la prod a déjà reçues.**
+- `[ ]` **Compléter le CHANGELOG.** Sa section « Non publié » ne couvre que la bannière, le reset
+  global plafonné et le chantier 503 : rien sur la bascule Discord, la hiérarchie des rôles, les permissions, le
+  journal des actions, les promotions, les notifications, « Mes sessions actives » ni les
+  sessions de tournois.
+
+### 13. Demandes du 2026-09-22
+
+Cinq demandes ajoutées à la liste par l'utilisateur, relevées dans le code le jour même pour
+que chacune puisse se reprendre sans refaire l'état des lieux.
+
+#### 13.1 « Supprimer mon compte » → demande par mail — rang 4
+
+**Demandé** : garder le bouton, mais qu'il mène à un message invitant à écrire à `SITE_CONTACT`.
+L'effacement direct est jugé trop dangereux.
+
+**Ce qui existe** : le bouton `#btn-supprimer` de `frontEnd/templates/mon_compte.html` appelle
+`POST /mon-compte/supprimer` (`frontend.py`), qui relaie vers `DELETE /me`
+(`supprimer_mon_compte`, `backEnd/routes_comptes.py`). L'effacement est immédiat.
+
+**Ce que le changement implique**, au-delà du bouton :
+
+- `[ ]` **Fermer `DELETE /me` et le proxy.** Changer seulement la page laisserait l'effacement
+  appelable à la main avec un jeton de joueur : l'accès direct serait caché, pas supprimé.
+- `[ ]` **Une route réservée au `superadmin` pour supprimer un compte** — **[DÉCIDÉ le
+  2026-09-22]**, préférée à une procédure manuelle dans le runbook. Aucune route ne permet
+  aujourd'hui de supprimer le compte d'**un autre** : seul le titulaire le peut. Sans elle, un
+  mail de demande resterait sans moyen d'y répondre. Elle doit reprendre la logique de
+  `supprimer_mon_compte` **à l'identique** — ce qu'elle efface, ce qu'elle garde, l'audit écrit
+  *avant* la suppression, l'empreinte au lieu du snowflake —, plutôt qu'en réécrire une
+  seconde qui finirait par diverger. Capacité de rôle (`@role_required`), **pas** une
+  permission délégable, comme la purge RGPD.
+- `[ ]` **Mettre à jour les textes** : `confidentialite.html` promet la suppression « depuis la
+  page Mon compte, immédiatement et sans confirmation de notre part » (§5) et décrit ce qu'elle
+  efface (§6) ; [rgpd-registre.md](rgpd-registre.md) § « Droits et leur mise en œuvre » aussi.
+  ⚠️ Le droit à l'effacement reste dû : une demande par mail est recevable, mais le RGPD fixe
+  **un mois** pour y répondre (art. 12.3). La page doit le dire.
+- `[ ]` **Adapter les tests** : `test_rgpd.py` (effacement) et `test_audit_auth_admin.py` (garde
+  B-02 sur `DELETE /me`) visent la route actuelle. Ce qui compte, c'est la **garde B-02** : si
+  l'effacement passe par une route admin, le dernier `superadmin` ne doit toujours pas pouvoir
+  être supprimé.
+- Le bouton « Télécharger mes données » n'est pas concerné.
+
+#### 13.2 Définitions de l'IP v1 / v2 — rang 7
+
+**Demandé** : les définitions affichées sur le site ne sont pas propres. Le travail est **déjà
+préparé** : [affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md) dit quoi écrire,
+page par page (récap, classement de saison, modale d'explication, admin Réglages et Saisons),
+et [affichage-ip-inventaire.md](affichage-ip-inventaire.md) porte l'analyse.
+
+- `[ ]` Trancher les 5 décisions du §9 du plan (noms « IP brute » / « IP ajustée », virgule
+  décimale, calcul parallèle v1/v2, bonus au minimum non entier, bornes ×0,5 / ×2).
+- `[ ]` Dérouler les 4 phases du §10 : textes côté back, payloads, pages, nettoyage.
+- ⚠️ Ne pas réafficher v1 et v2 côte à côte : c'est retiré exprès depuis le 22/08.
+
+#### 13.3 Bannière d'automne — rang 10
+
+**Intérim en place** depuis le 22/09 : `get_banner_season()` (`frontEnd/frontend.py`) renvoie
+`summer` en automne. Avant, `autumn` n'avait aucun style et retombait sur le fond d'hiver par
+défaut (`.layer-scrolling-bg`, `banner.css`), sans la neige.
+
+- `[ ]` L'image de fond, sur le modèle des autres saisons (`static/img/banners/`, bande de
+  3840 px répétée en X).
+- `[ ]` La règle `.hero.smk-snes-banner[data-season="autumn"]` dans `banner.css`. L'été a en plus
+  un soleil et un premier plan (`.layer-sun`, `.layer-scrolling-fg`), l'hiver sa neige
+  (`snow.js`) : à décider pour l'automne (feuilles qui tombent ?).
+- `[ ]` Remettre `return "autumn"` dans `get_banner_season()`.
+
+#### 13.4 Karts : ménage des PNG, ajout de Daisy et Birdo — rang 13
+
+**PNG inutilisés** : dans les dossiers des 8 personnages, seuls les `*-static.png` ne sont
+chargés nulle part — sept fichiers, 60 Ko en tout. ⚠️ **Garder `mario/mario-static.png`** : c'est
+le favicon de toutes les pages. Les 5 orientations `*-asset-anime/*.png` et les `*-pp.png` sont
+toutes utilisées.
+
+**Daisy et Birdo** : les images sont déjà là (`static/img/daisy/`, `static/img/birdo/`, **non
+commitées**), avec les 5 orientations et un portrait. À faire :
+
+- `[ ]` **Renommer pour suivre le modèle** que lit `config.js` (`<nom>/<nom>-asset-anime/<nom>-<dir>.png`,
+  `<nom>/<nom>-pp.png`) : le dossier `daisy- asset-anime` contient une **espace**, et le portrait
+  de Birdo s'appelle `birdo-pp2.png`. En l'état, aucune des deux ne s'afficherait.
+- `[ ]` **Client** : `resources.characters` et `resources.initials` dans
+  `frontEnd/static/js/banner/config.js`. ⚠️ Les initiales se **heurtent** : `D` est déjà DK et
+  `B` Bowser.
+- `[ ]` **Moteur JS** : les stats (`weight`, `power`, `handling`) dans
+  `raceEngine/src/config/bodies.js`, et les mesures des sprites, qui se régénèrent avec
+  `python3 scripts/sprite-metrics.py`, pas à la main.
+- `[ ]` **Moteur C++** : la table des personnages de `raceEngineCpp/src/config/config.hpp`. Le plan
+  Rust ([banner/moteur-rust-plan.md](banner/moteur-rust-plan.md)) reprendra la même liste.
+- ⚠️ **Décision à prendre : 10 karts par course, ou 8 tirés au sort parmi 10.** Aujourd'hui
+  **tous** les personnages courent à chaque course (`world.js` mélange la liste entière), et le
+  classement du bandeau a une bulle par personnage. Passer à 10 karts touche la grille de
+  départ, la densité sur la piste, la bande passante (1,3 Ko/s par spectateur mesuré à 8) et la
+  largeur du classement sur mobile. Puis refaire l'équilibrage au banc (`make race-sim`).
+
+#### 13.5 Contrôles de la bannière : redémarrage, pause, tour, vitesse — rang 14
+
+**Demandé** : retravailler ces quatre éléments. Où ils vivent :
+
+- **Redémarrage** — le bouton de vote, tout à gauche du classement (`leaderboard-vote`,
+  `frontEnd/static/js/banner/leaderboard.js`, `toggleVote()` dans `controls.js`). Le serveur
+  tient le décompte ; le client n'envoie qu'un changement d'avis.
+- **Pause** — le bouton entre la caméra et le vote (`leaderboard-pause`, `togglePause()` dans
+  `controls.js`). Il ne fige que **l'affichage local** : la course continue côté serveur.
+- **Tour et vitesse** — le cartouche du kart suivi (`focus.js`), affiché seulement quand la
+  caméra suit un kart. Les deux se **déduisent** de `totalDistance`, rien n'est ajouté au
+  protocole.
+- `[ ]` Préciser ce qui doit changer : apparence, placement, comportement.
 
 ## Note obsolète — ✅ corrigée le 2026-09-18
 
@@ -348,12 +553,16 @@ Rien à faire ici sans nouvelle décision explicite — listés pour éviter de 
 - Suppression de tournoi (`DELETE /delete-tournament/<id>`) — hors périmètre décidé explicitement
   ([onglets-admin-plan.md](onglets-admin-plan.md)).
 - Bot Discord — socle API livré, bot lui-même explicitement hors dépôt (projet à part).
-- Déploiement production (migrations non appliquées, app Discord OAuth non créée) — actions
-  opérationnelles hors code, transparentes dans
-  [auth-discord-avancement.md](auth-discord-avancement.md).
+- ~~Déploiement production~~ — **retiré de cette liste le 2026-09-22** : la prod a
+  vraisemblablement reçu la bascule Discord entre le 14 et le 17/09 (voir l'en-tête). Ce qui reste
+  à faire est suivi au §12.
 
 ## Chantiers soldés récemment (pour mémoire, contexte)
 
+- Journal des actions admin, phases 1 à 3 — ✅ 2026-09-19 (`c0988fd`, `025af10`) : un seul
+  chemin d'écriture, promotion soumise à acceptation, dossier sportif tracé, écran de
+  consultation et export CSV. La phase 4 reste ouverte (§4).
+- Banc de scénario exécuté — ✅ 2026-09-21, via l'Electron de VS Code (§10).
 - Hiérarchie à 4 rôles + permissions à la carte — ✅ 2026-09-10
 - Règle de rang générique (`compte_cible_protegee`) — ✅ 2026-09-14
 - Tiers dynamiques (remplace S/A/B/C fixes) — ✅ testé,

@@ -4,8 +4,11 @@
 > [auth-discord-plan.md](auth-discord-plan.md) ; **ce fichier-ci ne dit que ce qui est fait,
 > ce qui a été trouvé en chemin, et ce qui reste**. Les codes `R-xx` renvoient au §8 du plan.
 >
-> **Dernière mise à jour : 2026-09-13** — correctif du défaut de session expirée (§ phase 4), et
-> constat que le code a dépassé le tableau de la bascule : le mot de passe n'ouvre plus aucune route.
+> **Dernière mise à jour : 2026-09-22** — recalage de l'état du déploiement (contradictoire, voir
+> « Où on en est »), des tests et de ce qui bloque l'étape 6. Le détail des phases n'a pas bougé.
+>
+> Passage précédent : 2026-09-13, correctif du défaut de session expirée (§ phase 4), et constat
+> que le code a dépassé le tableau de la bascule : le mot de passe n'ouvre plus aucune route.
 >
 > **La couche au-dessus** — rôles admin, permissions déléguables, onglets — est suivie dans
 > [hierarchie-admin-avancement.md](hierarchie-admin-avancement.md).
@@ -25,8 +28,13 @@
 **Toutes les phases sont livrées sauf l'étape 6 de la phase 4** (suppression effective du mot
 de passe), qui attend une décision humaine.
 
-**Rien n'est déployé.** Les deux migrations n'ont pas été appliquées à la production, et
-l'application Discord n'existe pas encore. Voir « Ce qui bloque le déploiement » en bas.
+~~**Rien n'est déployé.**~~ *(vrai au 14/09, douteux depuis — relevé le 2026-09-22)* :
+[etat-avancement-global.md](etat-avancement-global.md) note des droits réaccordés **en
+production** le 17/09, et [audit-503-zone-admin.md](audit-503-zone-admin.md) part de 503
+constatés **en production** sur la zone admin. La bascule a donc vraisemblablement été déployée
+entre le 14 et le 17/09, et le `.env` porte des identifiants Discord renseignés. **Aucune trace ne
+dit quelles migrations la prod a reçues** : à établir, puis à écrire au §12 du document global.
+Voir « Ce qui bloque le déploiement » en bas.
 
 ---
 
@@ -289,6 +297,12 @@ R-38 exige trois prérequis avant de couper, et **deux ne dépendent pas du code
 Quand ce sera fait, l'étape 6 doit être **un seul commit isolé et clairement nommé** : c'est ce
 qui rend un `git revert` possible si Discord tombe durablement. Le vrai filet de sécurité est là,
 pas dans la procédure.
+
+**Un prérequis de code s'y est ajouté le 2026-09-18** : le journal des actions admin passe
+**avant** la coupure — couper le mot de passe sans pouvoir lire l'audit priverait du seul moyen de
+comprendre après coup ce qui s'est passé sur les comptes. Au 2026-09-22, il n'en reste que la
+phase 4 ([audit-admin-plan.md](audit-admin-plan.md) §5). Les trois prérequis ci-dessus sont
+toujours décochés dans [runbook-admin.md](runbook-admin.md) §2.
 
 ### Problèmes rencontrés pendant la bascule
 
@@ -610,8 +624,10 @@ régression, mais il devient piégeur maintenant que le frontend porte autant de
 
 ## Tests
 
-`backEnd/tests/run.sh` — **224 assertions**, 9 fichiers, sans Postgres ni Discord : le curseur est scripté et
-l'API Discord simulée. Seul `flask` est requis.
+`backEnd/tests/run.sh` — sans Postgres ni Discord : le curseur est scripté et l'API Discord
+simulée. Seul `flask` est requis. **224 assertions sur 9 fichiers** au moment de ce chantier ;
+**1647 sur 32 fichiers**, toutes vertes, au 2026-09-22. Le tableau ne liste que les fichiers
+propres à l'authentification.
 
 | Fichier | Couvre |
 |---|---|
@@ -642,6 +658,12 @@ la production — c'est le premier point de la liste ci-dessous.
 1. **Appliquer les migrations à la prod**, dans l'ordre chronologique de leur nom, avec un dump de
    contrôle avant/après. C'est aussi la première vraie validation du SQL.
 
+   ⚠️ **Au 2026-09-22, `backEnd/migrations/` en compte 18.** Les trois dernières
+   (`2026-09-18_promotions_proposees`, `2026-09-19_audit_index_acteur`,
+   `2026-09-20_notifications_lien`) sont postérieures à tout déploiement connu et doivent partir
+   avec le code qui les lit — détail au §12 de
+   [etat-avancement-global.md](etat-avancement-global.md).
+
    ⚠️ **Mis à jour le 2026-09-14 — il ne s'agit plus de « deux migrations » mais de 11.** Un dump
    tiré de la production le 14/09 l'a confirmé : la prod est restée au schéma d'avant le 02/09, il
    lui manque `comptes`, `sessions_joueurs`, `invitations`, `liaisons_demandes`, `profils`,
@@ -657,8 +679,9 @@ la production — c'est le premier point de la liste ci-dessous.
    **au caractère près** dans le portail développeur, sinon Discord refuse sans message utile.
 3. **Désigner un second compte `superadmin`** (R-38). C'est la seule mitigation qui demande une
    décision humaine et pas du code — et elle conditionne l'étape 6 de la phase 4.
-4. **Renseigner `SITE_EDITEUR`, `SITE_CONTACT`, `SITE_HEBERGEUR`** dans le `.env` — sans quoi
-   les pages légales sont incomplètes.
+4. ~~**Renseigner `SITE_EDITEUR`, `SITE_CONTACT`, `SITE_HEBERGEUR`** dans le `.env`~~ — ✅ fait
+   (cf. [rgpd-registre.md](rgpd-registre.md)). Un déploiement **neuf** doit toujours les remplir :
+   vides, les pages légales sont incomplètes.
 5. **Exécuter la procédure break-glass une fois** ([runbook-admin.md](runbook-admin.md) §3.1),
    pour vérifier qu'elle fonctionne avant d'en dépendre.
 

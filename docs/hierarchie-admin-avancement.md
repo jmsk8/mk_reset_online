@@ -5,8 +5,12 @@
 > fait, ce qui a été trouvé en chemin, et ce qui reste**. Les codes `R-xx` renvoient au §7 du plan
 > (numérotation continue depuis [auth-discord-plan.md](auth-discord-plan.md)).
 >
-> **Dernière mise à jour : 2026-09-14** — règle de rang générique (§ Chantier 6) : la lacune
-> `admin` → `admin` est fermée.
+> **Dernière mise à jour : 2026-09-22** — état recalé sur le code : journal des actions admin
+> livré sauf sa phase 4 (Chantier 7), tests des onglets soldés (Chantier 8), catalogue passé à
+> 15 permissions avec la fiche joueur « un droit par geste » (Chantier 9). Les sections datées
+> plus bas décrivent l'état **à leur date**.
+>
+> Passage précédent : 2026-09-14, règle de rang générique (Chantier 6).
 >
 > Documents liés : [hierarchie-admin-plan.md](hierarchie-admin-plan.md) (le modèle) ·
 > [onglets-admin-plan.md](onglets-admin-plan.md) (les 7 onglets, livré) ·
@@ -24,10 +28,12 @@
 | **4** — Scission des permissions | ✅ livré le 2026-09-13 | 9 permissions, 3 contournements fermés, 34 assertions |
 | **5** — Sous-permission RGPD | ✅ livré le 2026-09-13 | `rgpd_joueurs`, mécanique parent/enfant, 26 assertions |
 | **6** — Règle de rang générique (8.1) | ✅ livré le 2026-09-14 | lacune fermée, matrice 4×4, 149 assertions |
-| **7** — Journal des actions admin | 📋 **conçu, non codé** | [audit-admin-plan.md](audit-admin-plan.md) — 4 phases |
-| **8** — Tests des 3 routes d'onglets (8.3) | ⬜ à faire | aucun test ne couvre ces pages |
+| **7** — Journal des actions admin | 🟡 **phases 1 à 3 livrées** (18-19/09) · phase 4 à faire | [audit-admin-plan.md](audit-admin-plan.md) §5 |
+| **8** — Tests des 3 routes d'onglets (8.3) | ✅ soldé le 2026-09-18 | gate sur les trois onglets, gate par bloc, 71 assertions dans `test_session_expiree.py` |
+| **9** — Fiche joueur : un droit par geste | ✅ livré le 2026-09-17 | 6 sous-permissions de `gestion_joueurs`, `rgpd_joueurs` → `joueurs_irreversible` |
 
-**Rien n'est commité** — l'utilisateur fait ses commits lui-même.
+Tout ce qui précède est **commité** (dernier en date : `025af10`, 19/09). L'utilisateur fait ses
+commits lui-même.
 
 ---
 
@@ -50,14 +56,19 @@ Quatre rôles strictement ordonnés dans `comptes.role` :
 - **Permission déléguable** — une entrée de `PERMISSIONS_CATALOGUE`, vérifiée par
   `@permission_required(...)`, qu'un `chef_admin` ou le `superadmin` accorde à un `admin`.
 
-### Le catalogue — 10 permissions
+### Le catalogue — 15 permissions (depuis le 2026-09-17)
 
 ```
 gestion_joueurs   gestion_tournois   gestion_ligues       gestion_saisons
 gestion_liaisons  gestion_comptes    gestion_invitations
 gestion_config    gestion_matchmaking
-  └─ rgpd_joueurs   (sous-permission de gestion_joueurs)
+  └─ sous-permissions de gestion_joueurs, un droit par geste :
+     joueurs_creation  joueurs_nom  joueurs_couleur  edition_mu_sigma
+     joueurs_statut    joueurs_irreversible  (ex-rgpd_joueurs, renommée le 17/09)
 ```
+
+Depuis le 17/09, `gestion_joueurs` seul n'ouvre que la **lecture** de l'onglet Fiches joueurs.
+Détail et motif : §8.8 de [permissions-onglets-contexte.md](permissions-onglets-contexte.md).
 
 Défini dans `backEnd/constants.py`, **dupliqué** dans `frontEnd/frontend.py` — le frontend est un
 service séparé qui ne peut pas l'importer. Les deux listes doivent rester alignées, un test le
@@ -423,38 +434,38 @@ au lieu de `<=`, 8 assertions tombent, dont R-52 — qu'aucun test ne couvrait r
 
 ## Ce qui reste
 
-### 1. Journal des actions admin — conçu, non codé
+> Recalé le 2026-09-22. L'ordre de priorité transversal, tous chantiers confondus, est tenu dans
+> [etat-avancement-global.md](etat-avancement-global.md) — celui-ci ne fait que le détailler pour
+> la couche admin.
 
-[audit-admin-plan.md](audit-admin-plan.md). La table `audit_admin` existe et 16 actions y sont déjà
-tracées, **mais toutes sur le domaine des comptes** : aucune action sur le dossier sportif ne l'est
-— y compris la **modification manuelle de mu/sigma**, le reset global et la suppression de tournoi.
-Quatre écritures oublient par ailleurs `acteur_compte_id`, dont l'anonymisation d'un joueur : elles
-disent ce qui s'est passé, jamais par qui. Et aucune route ne lit cette table.
+### 1. Journal des actions admin — phases 1 à 3 livrées, reste la phase 4
 
-Décidé : consultation réservée à `chef_admin`+ (capacité de rôle) ; **deux vues** — un bouton
-« Logs » sur la ligne d'un compte, et un onglet *Logs* donnant le journal complet, téléchargeable,
-qui survit au rôle et au compte ; rétention illimitée ; tournois tracés en résumé.
+[audit-admin-plan.md](audit-admin-plan.md) §5. Livré les 18 et 19/09 : un seul chemin
+d'écriture (`backEnd/audit.py`), la **promotion devenue proposition à accepter** (le rôle n'est
+posé qu'à l'acceptation, `test_bascule.py` compte désormais **quatre** écrivains de
+`comptes.role`), le dossier sportif tracé — mu/sigma compris, avec l'avant/après —, et l'écran de
+consultation : volet « Logs » par compte, onglet Logs, export CSV.
 
-⚠️ **Deux décisions y révisent des choix antérieurs**, à ne pas « corriger » sans revalidation :
-un `chef_admin` ne peut **pas** lire les logs du `superadmin` (révise le point B du §9 du plan
-hiérarchie, qui n'excluait la lecture d'aucune vue), et **la suppression d'un compte n'efface pas
-ses lignes d'audit ni l'identité de leur auteur**.
+Les deux décisions qui révisaient des choix antérieurs sont **en place et testées** : un
+`chef_admin` ne lit pas les logs du `superadmin`, et la suppression d'un compte n'efface ni ses
+lignes d'audit ni l'identité de leur auteur.
 
-🔴 **Conséquence : la promotion devient une proposition à accepter.** Puisque les actions d'un admin
-sont conservées nominativement et sans limite de durée, la personne doit accepter le rôle **et** la
-politique « en tant qu'administrateur » — et le rôle n'est posé **qu'à l'acceptation**. En cas de
-refus, le compte reste `player` et le proposant est notifié ; tant que la réponse se fait attendre,
-un badge le signale dans la gestion des comptes. Patron à reprendre : `liaisons_demandes`, qui fait
-déjà exactement ça (état en attente, décision, notification, index unique partiel).
+**Reste la phase 4**, le filet :
 
-⚠️ Deux conséquences à connaître : **cette phase est bloquante** pour la mise en place du journal
-(informer après coup ne rattrape rien), et elle crée un **quatrième écrivain de `comptes.role`** —
-`test_bascule.py`, qui en compte exactement trois, échouera et devra être mis à jour, pas neutralisé.
+- `[ ]` un test qui échoue si une route d'écriture admin n'écrit pas dans l'audit, par analyse du
+  source — **absent**, c'est le seul qui empêche le trou de se reformer ;
+- `[ ]` un test qui verrouille qu'aucune ligne d'audit ne disparaît à la suppression d'un compte
+  (le schéma le garantit, aucun test ne le vérifie) ;
+- `[~]` une liste fermée de toutes les actions (R-64) — seules les neuf actions de la phase 2 sont
+  figées par un test.
 
-### 2. Tests des 3 routes d'onglets (§8.3)
+### 2. Sessions figées sur le rôle (A-01/A-02 de l'audit auth)
 
-Rien ne couvre `admin_tournois`, `admin_reglages` ni `admin_joueurs_fiches` : ni le gate de page,
-ni le comportement sur session expirée vs droit manquant.
+Pas un chantier de ce document à l'origine, mais il le touche directement : une promotion laisse
+une session longue (30 jours) à un admin, une rétrogradation ne ferme aucune session. **Depuis la
+phase 1bis, c'est le cas de toute promotion** — on devient admin en acceptant depuis sa session de
+joueur, et `repondre_promotion` ne touche pas aux sessions. Voir §8 de
+[etat-avancement-global.md](etat-avancement-global.md).
 
 ### 3. Hygiène git (§8.2)
 
@@ -478,10 +489,14 @@ requis.
 | `test_session_expiree.py` | la revalidation des deux voies et les gates de page |
 | `test_bascule.py` | inventaire des décorateurs par analyse du source (aucune route ouverte) |
 | `test_audit_permissions.py` | revue transverse : matrice de rang 4×4, clôture du catalogue, plafond, 503, gates |
+| `test_fiche_joueur_droits.py` | la fiche joueur « un droit par geste » : chaque champ exige sa sous-permission |
+| `test_promotions.py` | la promotion à accepter : proposer n'écrit jamais `comptes.role`, expiration, annulation, verrous |
+| `test_audit_journal.py` · `test_audit_dossier_sportif.py` · `test_audit_lecture.py` | le journal : chemin d'écriture unique, dossier sportif tracé, lecture sous règle de rang |
 
-⚠️ **Trois échecs préexistants**, hors périmètre de ces chantiers et vérifiés identiques avant/après
-chaque livraison : `test_auth` 25/26 (un cas d'avatar CDN), `test_liaisons` 30/36,
-`test_profils` (plante à l'import). À traiter un jour, sans rapport avec la hiérarchie.
+✅ **Les trois échecs préexistants** (`test_auth`, `test_liaisons`, `test_profils`) ont été
+**réparés le 2026-09-18** — aucun ne signalait un défaut du code (§9 de
+[etat-avancement-global.md](etat-avancement-global.md)). Suite complète au 2026-09-22 :
+**1647 assertions, 32 fichiers, aucune rouge.**
 
 **Limite du banc d'essai** : `FakeCursor` ne simule ni contrainte SQL, ni verrou, ni rollback réel.
 L'unicité du superadmin repose sur un index unique partiel et ne se vérifie que sur un vrai

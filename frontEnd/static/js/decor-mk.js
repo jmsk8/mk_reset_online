@@ -46,6 +46,22 @@
 
     function tirer(min, max) { return min + Math.random() * (max - min); }
 
+    /* Deplacement maximal du parallaxe, en fraction de la hauteur d'ecran
+       (voir majParallaxe). Le semis en depend aussi, d'ou sa place ici. */
+    const GLISSEMENT_MAX = 0.5;
+
+    /* Pas de parallaxe pour qui a demande moins de mouvement, ni sur
+       ecran tactile. Sur telephone, le defilement tourne sur le
+       compositeur et les evenements `scroll` arrivent en retard et par
+       paquets : le JS deplace les motifs une ou deux images apres la
+       page, ce qui se voit comme une saccade. Aucun reglage du JS ne
+       rattrape ce decalage — le decor y reste donc immobile.
+
+       Declare avant le premier semis, qui en a besoin. */
+    const mouvementReduit = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const tactile = window.matchMedia('(pointer: coarse)');
+    const sansParallaxe = () => mouvementReduit.matches || tactile.matches;
+
     function generer() {
         const large = window.innerWidth;
         const mobile = large <= 768;
@@ -57,8 +73,17 @@
            Ils passent donc derriere les cartes, qui sont opaques — d'ou
            l'opacite reduite plus bas : ce qui depasse dans les marges ne
            doit pas non plus attirer l'oeil. */
+        /* Le parallaxe fait remonter TOUS les motifs, d'une demi-hauteur
+           d'ecran une fois la butee atteinte. Semes sur l'ecran seul, ils
+           laissaient alors la moitie basse vide des qu'on descendait sur
+           une page longue. On seme donc aussi la bande situee sous
+           l'ecran : invisible au chargement, elle remonte combler le bas
+           a mesure qu'on defile. Sans parallaxe, elle ne se verrait
+           jamais : on s'en passe. */
+        const debord = sansParallaxe() ? 0 : GLISSEMENT_MAX;
         const nombre = Math.round(
-            Math.min(30, Math.max(10, large * window.innerHeight / 62000)));
+            Math.min(30, Math.max(10, large * window.innerHeight / 62000))
+            * (1 + debord));
         const tailleMin = mobile ? 70 : 130;
         const tailleMax = mobile ? 120 : 260;
 
@@ -112,9 +137,10 @@
             const x = tirer(-4, 104 - rayon * 2);
             /* `y` est en % de la HAUTEUR : la taille du motif, elle, est en
                pixels. On la reconvertit avec la hauteur de la fenetre, pas
-               avec `rayon` qui est deja un pourcentage de la largeur. */
+               avec `rayon` qui est deja un pourcentage de la largeur.
+               La plage descend sous l'ecran de `debord` (voir plus haut). */
             const hauteurPct = taille / window.innerHeight * 100;
-            const y = tirer(-4, 104 - hauteurPct);
+            const y = tirer(-4, 104 + debord * 100 - hauteurPct);
 
             // Chevauchement : on compare les centres, en points de
             // pourcentage. `* 0.55` tolere un frolement, pas un recouvrement.
@@ -234,7 +260,7 @@
 
     function majParallaxe(force) {
         const y = window.scrollY || window.pageYOffset;
-        const limite = window.innerHeight * 0.5;
+        const limite = window.innerHeight * GLISSEMENT_MAX;
         tickEnCours = false;
 
         /* Au-dela de ce defilement, meme le plan le plus lent a atteint sa
@@ -255,7 +281,8 @@
             /* Deplacement borne a une demi-hauteur d'ecran : sans cette
                limite, une page longue fait sortir tous les motifs par le
                haut et le fond se vide. Le parallaxe joue donc a fond sur
-               le premier ecran, puis se stabilise. */
+               le premier ecran, puis se stabilise. La moitie basse laissee
+               libre est tenue par la bande semee sous l'ecran (generer). */
             const glissement = Math.max(-limite, -y * facteur);
             forme.style.setProperty('--para', glissement.toFixed(1) + 'px');
         });
@@ -270,15 +297,7 @@
         requestAnimationFrame(majParallaxe);
     }
 
-    /* Pas de parallaxe pour qui a demande moins de mouvement, ni sur
-       ecran tactile. Sur telephone, le defilement tourne sur le
-       compositeur et les evenements `scroll` arrivent en retard et par
-       paquets : le JS deplace les motifs une ou deux images apres la
-       page, ce qui se voit comme une saccade. Aucun reglage du JS ne
-       rattrape ce decalage — le decor y reste donc immobile. */
-    const mouvementReduit = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const tactile = window.matchMedia('(pointer: coarse)');
-    const sansParallaxe = () => mouvementReduit.matches || tactile.matches;
+    // Voir `sansParallaxe` en tete de fichier.
     if (!sansParallaxe()) {
         window.addEventListener('scroll', auDefilement, { passive: true });
     }

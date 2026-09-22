@@ -311,7 +311,77 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
                 redMemDist: -1,
                 redMemY: 0,
                 redMemId: 0,
-                redMemCount: 0
+                redMemCount: 0,
+
+                // Le kart le plus proche DERRIERE, vu, et ce qu'il gagne sur
+                // lui en px/s. Il ne sert qu'a ceder la tete devant une bleue.
+                // Meme souvenir que la rouge, pose par le seul balayage arriere.
+                rearKartDist: -1,
+                rearKartY: 0,
+                rearKartId: 0,
+                rearKartRel: 0,
+                rearMemAt: -Infinity,
+                rearMemDist: -1,
+                rearMemY: 0,
+                rearMemId: 0,
+                rearMemRel: 0
+            },
+
+            // Ce qu'il ENTEND, et qu'il n'a pas besoin d'avoir vu : quoi arrive,
+            // et si c'est pour lui — jamais ou. Cf. `hear`.
+            alert: {
+                // Une etoile ou un bill dans le dos, a ce pas : le plus pressant,
+                // et dans combien de temps il sera au contact. La derniere fois
+                // qu'on l'a entendu borne l'episode — un seul sursaut par
+                // approche. `watch` : il le regarde venir, et ne le lache plus
+                // tant que l'esquive n'est pas decidee.
+                ram: false,
+                ramTtc: Infinity,
+                ramId: -1,
+                ramAt: -Infinity,
+                ramStartled: false,
+                watch: false,
+
+                // Un coup d'oeil a jouer tout de suite, sans attendre la
+                // prochaine occasion. Consomme par `updateGlance`.
+                startle: false,
+
+                // La rouge qui le vise, jugee a la premiere ecoute : quand le
+                // reflexe sera passe, et s'il l'a laissee filer. `red` : il la
+                // sait, et c'est tout ce que lit `updateShield`.
+                redId: 0,
+                redReactAt: 0,
+                redIgnored: false,
+                red: false,
+
+                // La bleue qui le concerne — il est en tete, ou elle l'a
+                // choisi — jugee a la premiere ecoute : reflexe, inattention,
+                // erreur d'appreciation sur l'echeance, et s'il a le reflexe de
+                // ceder la tete. Cf. `hearBlue`.
+                blueId: 0,
+                blueReactAt: 0,
+                blueIgnored: false,
+                blueBias: 1,
+                blueYield: false,
+                blueStartled: false,
+                // Ce qu'il en sait a ce pas : qu'elle arrive, dans combien de
+                // temps il CROIT qu'elle choisira sa cible, si c'est deja lui, et
+                // ou elle en est quand c'est lui.
+                blue: false,
+                blueEta: Infinity,
+                blueOnMe: false,
+                bluePhase: '',
+                blueLook: false,
+                // Ce qu'il en fait (cf. `updateBlue`) : '' rien, 'cover' il
+                // garde l'objet qui le rendra intouchable, 'yield' il leve le
+                // pied pour ceder la tete, 'hang' il reste en retrait du souffle.
+                blueMode: '',
+                blueFireAt: 0,
+                savedThrowTime: 0,
+                yieldBlueId: 0,
+                yieldTriedId: 0,
+                yieldUntil: 0,
+                hangUntil: 0
             },
 
             // Le plan d'evitement en cours. Il survit a la perte de vue :

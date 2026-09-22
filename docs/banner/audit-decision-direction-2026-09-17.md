@@ -262,7 +262,7 @@ braquage — et c'est ce qui rend le système cohérent.
 | **D-2** | ~~Le commentaire de `vision.threatLane` cite la même clé morte~~ | ✅ **corrigé 2026-09-18** | prouvé |
 | **D-3** | `heldThreatType` corrige un défaut que `disabledItems` masque | 🟡 | lecture |
 | **D-4** | Le `giveWay` ne vérifie pas que la rouge vise **bien lui** | 🟡 | lecture |
-| **D-5** | L'attention est un goulot non mesuré : voir devant **coûte** l'arrière | 🟡 | lecture |
+| **D-5** | L'attention est un goulot non mesuré : voir devant **coûte** l'arrière | 🟡 | **mesuré 2026-09-21** |
 | **D-6** | `missChance` étalonné sur l'agilité de référence — à confirmer au banc | 🔵 | lecture |
 
 ### D-1 — le banc de scénario est cassé 🟠 *(prouvé)* — ✅ CORRIGÉ le 2026-09-18
@@ -371,6 +371,13 @@ passée en vue arrière n'est mesurée nulle part**.
 
 > **À mesurer** : distribution du temps passé en `sight.back`, par rang, sur une course complète.
 > C'est une sortie que le banc `simulate.js` pourrait rendre sans toucher au moteur.
+>
+> **Mesuré le 2026-09-21** par la campagne de `tools/alerts.js` (1000 courses complètes) : le
+> premier passe **32 %** de son temps tourné vers l'arrière, le peloton **17 %**, le dernier
+> **6 %**. Les alertes ([alertes.md](alertes.md)) y ajoutent moins d'un point à chaque place.
+> Le premier est donc aveugle devant près d'un tiers du temps — assumé tant qu'il n'a que
+> l'arrière à surveiller, mais c'est le chiffre à regarder avant de monter une chance de coup
+> d'œil.
 
 ### D-6 — l'étalonnage de `missChance` 🔵
 

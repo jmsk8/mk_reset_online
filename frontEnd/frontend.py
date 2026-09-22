@@ -436,7 +436,9 @@ def get_banner_season():
     elif (6, 21) <= md < (9, 22):
         return "summer"
     elif (9, 22) <= md < (12, 21):
-        return "autumn"
+        # Pas encore de bannière d'automne : sans style dédié, `autumn`
+        # retombait sur le fond d'hiver par défaut. L'été tient l'intérim.
+        return "summer"
     else:
         return "winter"
 

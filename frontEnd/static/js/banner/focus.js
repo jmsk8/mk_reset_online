@@ -79,13 +79,22 @@ const AI_STATE_LABELS = {
     dodging: 'esquive',
     safety: 'se range',
     giveWay: 'laisse passer',
-    aiming: 'vise'
+    aiming: 'vise',
+    yieldLead: 'cede la tete'
 };
 const AI_DANGER_LABELS = {
     '': '\u2014',
     carrier: 'porteur arme',
     ram: 'etoile / bill',
     shot: 'carapace en vol'
+};
+// Ce qu'il ENTEND sans l'avoir vu : l'alerte la plus pressante (cf. `hear` cote
+// serveur). Elle se lit dans la ligne « derriere » — les trois arrivent de la.
+const AI_ALERT_LABELS = {
+    '': '',
+    ram: 'etoile / bill',
+    red: 'rouge sur lui',
+    blue: 'bleue'
 };
 
 // Traduit un indice en libelle, en passant par la cle que le serveur a nommee.
@@ -139,14 +148,21 @@ function updateAiHud() {
     const itemAhead = (v >> 10) & 1;
     const pipeAhead = (v >> 11) & 1;
     const carrierAhead = (v >> 12) & 1;
+    const heardIndex = (v >> 13) & 3;
+    const heard = aiLabel(tables.alerts || [''], AI_ALERT_LABELS, heardIndex);
+    const blueOnMe = (v >> 15) & 1;
+    const cover = (v >> 16) & 1;
+    const watch = (v >> 17) & 1;
 
     // Le regard d'abord, parce qu'il conditionne tout le reste : ce qui n'est
     // pas regarde n'est pas vu, et donc pas traite.
-    const look = back ? 'DERRIERE' : 'devant';
+    const look = (back ? 'DERRIERE' : 'devant') + (watch ? '  \u00B7  suit du regard' : '');
 
-    const rear = ((v >> 4) & 3)
-        ? danger + (twoReds ? '  \u00B7  deux rouges' : '')
-        : '\u2014';
+    // Ce qu'il a VU derriere, puis ce qu'il ENTEND arriver.
+    const rearParts = [];
+    if ((v >> 4) & 3) rearParts.push(danger + (twoReds ? '  \u00B7  deux rouges' : ''));
+    if (heardIndex) rearParts.push('entend : ' + heard + (blueOnMe ? ' (sur lui)' : ''));
+    const rear = rearParts.length ? rearParts.join('  \u00B7  ') : '\u2014';
 
     // « porteur » n'est pas un objet en vol : c'est un kart devant, dans l'axe,
     // qui tient de quoi finir derriere lui. C'est le seul danger que le releve
@@ -159,10 +175,11 @@ function updateAiHud() {
     const doing = [state];
     if (brake) doing.push('frein');
     if (shield) doing.push('bouclier');
+    if (cover) doing.push('garde son objet');
 
     aiHudEl.innerHTML =
         aiRow('regard', look, back ? 'ai-warn' : 'ai-val') +
-        aiRow('derriere', rear, ((v >> 4) & 3) ? 'ai-hot' : 'ai-off') +
+        aiRow('derriere', rear, rearParts.length ? 'ai-hot' : 'ai-off') +
         aiRow('devant', front.length ? front.join('  \u00B7  ') : '\u2014',
               front.length ? 'ai-warn' : 'ai-off') +
         aiRow('decision', doing.join('  \u00B7  '), 'ai-val');

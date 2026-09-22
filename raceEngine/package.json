@@ -11,6 +11,7 @@
     "tracks": "node tools/tracks.js",
     "simulate": "node tools/simulate.js",
     "scenario": "node tools/scenario.js",
+    "alerts": "node tools/alerts.js",
     "spectate": "node tools/spectate.js"
   },
   "engines": {

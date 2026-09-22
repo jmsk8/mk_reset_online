@@ -99,6 +99,39 @@ teinte du décor.
 - **Pas encore vérifié** : dans l'application complète (navbar, voile de la
   page d'accueil, pages admin) et sur un vrai téléphone.
 
+### 2.4 Correctif : bas d'écran vide sur les pages longues
+
+**Symptôme** : sur une page haute, en descendant, une large bande sans aucun
+motif apparaissait en bas de l'écran.
+
+**Cause** : le décor est fixe et ne couvre qu'un écran, mais la parallaxe
+fait remonter *tous* les motifs, jusqu'à la butée d'une demi-hauteur
+d'écran. Passée la butée, le semis entier est remonté de 50 % et rien n'est
+semé en dessous pour prendre le relais.
+
+**Correctif** (`decor-mk.js`) : quand la parallaxe est active, le semis
+descend sous l'écran d'une demi-hauteur (`GLISSEMENT_MAX`, partagé avec la
+butée). Cette bande est invisible au chargement et remonte combler le bas à
+mesure qu'on défile. Le nombre de motifs suit la surface semée : ×1,5, donc
+jusqu'à 45 sur grand écran. Sans parallaxe (tactile, mouvement réduit), la
+bande ne serait jamais vue : semis inchangé.
+
+**Mesuré** (vrai script dans un DOM factice sous Node, 50 tirages par cas ;
+« vide » = plus haute bande horizontale sans aucun motif) :
+
+| Écran | Défilement | Avant : visibles / vide moyen | Après : visibles / vide moyen |
+|---|---|---|---|
+| 1440×900 | 0 | 20,9 / 2 px | 22,3 / 2 px |
+| 1440×900 | 3 écrans | 15,2 / 234 px | 23,1 / 1 px |
+| 1440×900 | 10 écrans | 12,8 / 418 px | 22,7 / 0 px |
+| 2560×1300 | 10 écrans | 17,7 / 618 px | 32,5 / 1 px |
+| 390×844 tactile | — | 10 motifs, inchangé | 10 motifs, inchangé |
+
+**Coût** : ~50 % d'éléments en plus sur ordinateur, dont un tiers hors écran
+au chargement. Tant qu'on n'a pas atteint la butée, la parallaxe met donc à
+jour ~31 motifs par image au lieu de ~21 en 1440×900. **Pas encore mesuré
+dans un vrai navigateur** : voir B.2 si des saccades apparaissent.
+
 ---
 
 ## 3. Pistes restantes (par gain attendu)
@@ -148,8 +181,8 @@ teinte du décor.
    « Screenshots » et « Layers »), pas à l'intuition.
 3. **Semis en `requestIdleCallback`** : génération et animation d'apparition
    pourraient attendre que le navigateur soit libre, pour ne pas concurrencer
-   le premier affichage. À mesurer : le semis complet est déjà court (moins de
-   30 éléments).
+   le premier affichage. À mesurer : le semis complet est déjà court (au plus
+   45 éléments depuis 2.4).
 4. **Onglet caché** : les `setTimeout` d'apparition continuent de tourner.
    Négligeable aujourd'hui, à revoir si l'animation se complique.
 

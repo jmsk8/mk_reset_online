@@ -1,8 +1,12 @@
 # Journal des actions admin — conception & plan d'attaque
 
 > Document de conception, dans l'esprit de [hierarchie-admin-plan.md](hierarchie-admin-plan.md).
-> **Rien n'est codé.** Écrit après lecture de `audit_admin` en base, des 17 points d'écriture
-> existants et des routes d'administration, le 2026-09-13.
+> Écrit après lecture de `audit_admin` en base, des 17 points d'écriture existants et des routes
+> d'administration, le 2026-09-13.
+>
+> **État au 2026-09-22 : phases 1, 1bis, 2 et 3 livrées** (18 et 19/09, `c0988fd` et `025af10`),
+> **phase 4 à faire** — voir §5. Chaque phase livrée porte son compte rendu en tête de sa section ;
+> le reste du document est la conception d'origine, conservée telle quelle.
 >
 > L'avancement sera suivi dans
 > [hierarchie-admin-avancement.md](hierarchie-admin-avancement.md), ce chantier étant la suite
@@ -480,7 +484,18 @@ menant à un 403 prévisible (§B.0 du plan hiérarchie).
 > filtre d'acteur optionnel. Trois requêtes SQL séparées (volet, onglet, export) finiraient par
 > diverger, et la première à oublier le garde de rang deviendrait le contournement de la règle.
 
-### Phase 4 — Tests et documentation
+### Phase 4 — Tests et documentation — ⬜ À FAIRE
+
+> **Relevé du 2026-09-22**, en confrontant la liste ci-dessous aux tests existants :
+>
+> | Point | État |
+> |---|---|
+> | Test « route d'écriture admin sans audit » | ❌ **absent** — c'est le cœur de la phase |
+> | Gardes de rang à la lecture, trois chemins | ✅ `test_audit_lecture.py` (règle en SQL, volet, requête unique pour les trois chemins) |
+> | Pas de bouton pour un `player` | ✅ `test_audit_lecture.py` (`player` → 403, bouton sous gate) |
+> | La suppression de compte n'efface aucune ligne | ❌ `test_rgpd.py` vérifie l'audit écrit **avant** la suppression, pas l'absence de `DELETE` ; garanti par le schéma (`ON DELETE SET NULL`), non verrouillé |
+> | L'acteur reste identifiable après suppression | ✅ `test_audit_lecture.py` |
+> | Vocabulaire fermé (R-64) | 🟡 les neuf actions de la phase 2 sont figées (`test_audit_dossier_sportif.py`) ; aucune liste fermée de **toutes** les actions |
 
 Un test qui **échoue si une route d'écriture admin n'écrit pas dans l'audit**, par analyse du
 source — exactement ce que `test_bascule.py` fait pour les décorateurs. C'est ce qui empêchera le

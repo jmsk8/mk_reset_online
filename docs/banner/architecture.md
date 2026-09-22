@@ -59,7 +59,7 @@ le décor saisonnier.
 
 ## 3. Le moteur — `raceEngine/src/engine/`
 
-Dix-neuf modules ES, **graphe de dépendances acyclique**, du plus bas au plus
+Vingt modules ES, **graphe de dépendances acyclique**, du plus bas au plus
 haut niveau. Chacun ne connaît que ceux qui le précèdent dans cette liste.
 
 | Module | Rôle |
@@ -77,6 +77,7 @@ haut niveau. Chacun ne connaît que ceux qui le précèdent dans cette liste.
 | `weapons.js` | l'**usage** d'un objet : viser, lancer, traîner |
 | `plans.js` | le plan de course : la profondeur visée, et pourquoi |
 | `vision.js` | ce qu'un kart **voit**, et le jugement qu'il porte dessus |
+| `alerts.js` | ce qu'un kart **entend** sans l'avoir vu : étoile/bill, rouge qui le vise, bleue ([alertes.md](alertes.md)) |
 | `pipes.js` | collisions, rebonds et évitement des tuyaux |
 | `road.js` | le bord de piste et le contact entre karts |
 | `race.js` | grille, départ, tours, arrivée |
