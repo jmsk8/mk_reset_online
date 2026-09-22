@@ -248,6 +248,11 @@ def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
         "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
         (ROLE_SUPERADMIN, compte['id']),
     )
+    # Meme regle que toute ecriture du role (A-01/A-02, voir create_session) :
+    # les sessions ouvertes en player sur d'autres appareils garderaient sinon
+    # 30 jours de superadmin. Celle de CETTE connexion n'existe pas encore --
+    # login() la cree apres nous, a la duree du nouveau role.
+    cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte['id'],))
     # acteur_id EXPLICITE : l'amorcage se produit AVANT toute session, donc
     # g.compte n'existe pas encore. Le compte est a la fois acteur et cible --
     # c'est exactement ce qu'un amorcage est, et le journal doit le montrer.
@@ -319,6 +324,13 @@ def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tu
     """Cree une session et renvoie (token en clair, expiration).
 
     La base n'en garde que le sha256. L'expiration est absolue.
+
+    La duree est FIGEE ici, sur le role du moment, et rien ne la revisite. D'ou
+    la regle qui la tient (A-01/A-02 de docs/audit-auth-discord.md) : toute
+    ecriture de comptes.role ferme les sessions du compte concerne. Sans elle,
+    un joueur promu garderait 30 jours de session d'admin -- soixante fois les
+    12 heures que SESSION_ADMIN_LIFETIME_HOURS lui destine. Recalculer
+    expires_at a la place ferait une seconde source de verite sur la duree.
     """
     token = secrets.token_urlsafe(32)
     if role == ROLE_PLAYER:

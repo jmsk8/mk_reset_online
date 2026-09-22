@@ -11,8 +11,9 @@
 > §8.3, rotation des journaux), audit croisé docs ↔ code, chantier performance/503, « Mes
 > sessions actives », intégration des trois audits qui manquaient à cet inventaire.
 >
-> **État de la suite de tests, relancée le 2026-09-22 : 1676 assertions, 32 fichiers, aucune
-> rouge** (1647 le matin, avant la suppression de compte sur demande écrite, §13.1). Il y en
+> **État de la suite de tests, relancée le 2026-09-22 : 1795 assertions, 34 fichiers, aucune
+> rouge** (1647 le matin ; l'écart vient de la suppression de compte sur demande écrite, §13.1,
+> de la phase 4 d'`audit_admin`, §4, et de A-01/A-02, §8). Il y en
 > avait 1401 le 18/09 ; l'écart vient surtout du journal `audit_admin`. Le 18/09
 > était déjà une première — trois fichiers étaient rouges en permanence depuis des semaines, ce
 > qui neutralisait le dispositif d'audit du projet (une ligne rouge `[B-xx]` est une bonne
@@ -55,6 +56,7 @@
 | Constat | Ce qui a été livré |
 |---|---|
 | **Banc de scénario** (ex-rang 1) | Exécuté le 2026-09-21 avec l'Electron de VS Code, `node` n'étant pas installé : la table des temps de manœuvre sort chiffrée, sans `NaN`. D-5 a été mesuré au passage (§10). |
+| **A-01 / A-02** (rang 6) | Livré le 22/09, **non commité** : toute écriture de `comptes.role` ferme les sessions du compte concerné. Les quatre écrivains la portent, dont l'acceptation d'une promotion (session courante comprise, puis reconnexion Discord relancée par la page). Filet : `test_sessions_changement_role.py` (§8). |
 | **Journal `audit_admin`** (ex-rang 6) | Phases 1, 1bis, 2 et 3 livrées les 18 et 19/09 (`c0988fd`, `025af10`) : un seul chemin d'écriture, promotion soumise à acceptation, dossier sportif tracé (mu/sigma avant/après), volet « Logs » par compte, onglet Logs, export CSV. **Reste la phase 4** (§4). |
 
 ### ✅ Fait le 2026-09-18
@@ -79,8 +81,8 @@
 | 2 | **Prochain déploiement : emporter trois migrations** | §12 | 🟠 `2026-09-18_promotions_proposees`, `2026-09-19_audit_index_acteur`, `2026-09-20_notifications_lien`. Le code depuis `025af10` lit les tables et colonnes qu'elles créent : le déployer sans elles casse la gestion des comptes et les notifications. Puis `make re-front` **et** `make re-back`, et la recette https de « Mes sessions actives » (§2). Préalable : établir quelles migrations la prod a déjà reçues (voir l'en-tête). |
 | 3 | **Vérifier la zone nginx servie** — ✅ poste de dev (22/09), **serveur à faire** | §8, §12.1 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. Deux minutes — mais si l'ancien 20 r/min est encore servi, ce sont des connexions en 503. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
 | 4 | **« Supprimer mon compte » : passer par une demande par mail** — ✅ livré le 22/09, non commité | §13.1 | Demandé le 22/09 : l'effacement direct est jugé trop dangereux. Garder le bouton, mais qu'il affiche un message invitant à écrire à `SITE_CONTACT`. ⚠️ **Fermer aussi `DELETE /me` côté backend**, sinon l'accès direct reste ouvert à qui l'appelle sans passer par la page. La demande reçue sera traitée par une **route réservée au `superadmin`** (décidé le 22/09), à créer : aucune n'existe aujourd'hui. |
-| 5 | **Phase 4 d'`audit_admin`** | §4 | ⚠️ **Avant-dernière étape décidée** (18/09), dont il ne reste que ce filet. Le test manquant est celui qui empêche le trou de se reformer : une route d'écriture admin ajoutée demain sans ligne d'audit ne ferait rougir **aucun** test. |
-| 6 | **A-01 / A-02 — sessions figées sur le rôle** | §8 | 🟠, le seul orange encore ouvert. Une promotion laisse à un admin une session de 30 jours au lieu de 12 h ; une rétrogradation ne ferme aucune session. **La phase 1bis l'a rendu systématique** : on devient admin en acceptant depuis sa session de joueur, donc longue — `repondre_promotion` ne touche pas aux sessions. |
+| 5 | **Phase 4 d'`audit_admin`** — ✅ **livrée le 22/09, non commitée** : le journal est terminé | §4 | Le filet (`test_audit_inventaire.py`) a trouvé en arrivant **neuf routes admin qui écrivaient sans trace**, dont la liaison de tournois qui modifie le sigma. Toutes corrigées. **L'avant-dernière étape décidée le 18/09 est donc close** : reste la coupure du mot de passe (rang 9). |
+| 6 | **A-01 / A-02 — sessions figées sur le rôle** — ✅ livré le 22/09, non commité | §8 | Était le dernier 🟠 ouvert. Une promotion laissait à un admin une session de 30 jours au lieu de 12 h, une rétrogradation ne fermait aucune session. Désormais **changer de rôle oblige à se reconnecter**, dans les deux sens. Reste une recette à deux navigateurs (§8). |
 | 7 | **Définitions de l'IP v1 / v2 sur le site** | §13.2 | Demandé le 22/09. Texte visible par **tous** les joueurs, et aujourd'hui pas propre. Le plan existe déjà, page par page ([affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md)) : trancher ses 5 décisions (§9), puis dérouler ses 4 phases (§10). |
 | 8 | **Prérequis de l'étape 6** | §1 | Deux comptes `superadmin` distincts, break-glass exécuté pour de vrai, période de recouvrement. Des décisions et du temps, pas du code : à lancer tôt, justement parce qu'ils ne se cochent pas en une session. |
 | 9 | **Étape 6 — couper le mot de passe admin** | §1 | ⚠️ **Dernière étape décidée** (18/09). Referme A-04/A-05 du même geste. Un seul commit isolé, pour pouvoir le `revert`. |
@@ -97,11 +99,11 @@ machine plutôt qu'une session de développement. Le rang 1 est le seul qui enga
 
 > **Ordre de fin de projet, décidé le 2026-09-18.** Les constats banner et les chantiers de
 > confort sont **mis de côté**. Les deux dernières étapes du projet sont, dans cet ordre :
-> **1) le journal `audit_admin`** (rang 5, il n'en reste que la phase 4), **2) la suppression du
+> **1) le journal `audit_admin`** (rang 5, ✅ terminé le 22/09), **2) la suppression du
 > mot de passe admin** (rang 9). Cet ordre n'est pas négociable dans l'autre sens : couper le mot
 > de passe avant d'avoir une lecture de l'audit reviendrait à se priver du seul moyen de
-> comprendre après coup ce qui s'est passé sur les comptes. A-01/A-02 (rang 6) et les demandes du
-> 22/09 (§13) s'intercalent sans toucher à cet ordre : elles sont indépendantes des deux.
+> comprendre après coup ce qui s'est passé sur les comptes. A-01/A-02 (rang 6, ✅ fait le 22/09) et les
+> demandes du 22/09 (§13) s'intercalent sans toucher à cet ordre : elles sont indépendantes des deux.
 
 ## Tâches en suspens, par priorité
 
@@ -122,8 +124,9 @@ cases encore non cochées au 2026-09-22 : deux comptes `superadmin` distincts, p
 break-glass exécutée au moins une fois pour de vrai, période de recouvrement passée. Ce sont des
 faits d'exploitation, à vérifier/cocher manuellement, pas du code.
 
-**Le prérequis de code est presque levé** : l'ordre décidé le 18/09 veut le journal `audit_admin`
-avant la coupure, et il n'en reste que la phase 4 (§4).
+✅ **Le prérequis de code est levé** (22/09) : l'ordre décidé le 18/09 voulait le journal
+`audit_admin` avant la coupure, et sa phase 4 est livrée (§4). Restent les prérequis
+d'exploitation ci-dessus.
 
 ### 2. "Mes sessions actives" — ✅ CLOS (`d2a543c`, recette faite le 18/09)
 
@@ -168,7 +171,7 @@ en silence.
 - `[ ]` **Purge RGPD régulière** (`POST /admin/purge-rgpd`) — la route existe, aucun ordonnanceur ne
   l'appelle ; geste manuel assumé.
 
-### 4. Journal des actions admin (`audit_admin`) — ✅ phases 1 à 3 livrées, reste la phase 4
+### 4. Journal des actions admin (`audit_admin`) — ✅ TERMINÉ le 2026-09-22 (phase 4 non commitée)
 
 [audit-admin-plan.md](audit-admin-plan.md) §5 porte le détail de chaque phase, et
 [hierarchie-admin-avancement.md](hierarchie-admin-avancement.md) le Chantier 7.
@@ -189,17 +192,19 @@ en silence.
 et rattrapée en phase 3. Les lignes écrites entre les deux restent **anonymes si leur compte est
 supprimé** — rien ne peut le rattraper après coup.
 
-**Reste — la phase 4**, vérifiée dans les tests le 2026-09-22 :
+**Phase 4 — livrée le 2026-09-22**, détail au §5 du plan :
 
-- `[ ]` **Le test qui compte** : échouer si une route d'écriture admin n'écrit pas dans l'audit,
-  par analyse du source, comme `test_bascule.py` le fait pour les décorateurs. **Absent.** Sans
-  lui, la prochaine route ajoutée peut rouvrir le trou que la phase 2 vient de fermer.
-- `[ ]` **La suppression d'un compte n'efface aucune ligne d'audit.** `test_rgpd.py` vérifie que
-  l'audit est écrit *avant* la suppression, pas qu'aucune ligne ne disparaît. Le schéma le garantit
-  (`acteur_compte_id … ON DELETE SET NULL`), mais aucun test ne le verrouille.
-- `[~]` **Vocabulaire fermé (R-64).** Les neuf actions de la phase 2 sont figées par
-  `test_audit_dossier_sportif.py`, mais il n'existe aucune liste fermée de **toutes** les actions
-  contre laquelle vérifier chaque appel à `audit.ecrire()`.
+- `[x]` **Le filet** : `test_audit_inventaire.py` (55 assertions) rougit sur toute route
+  d'écriture admin qui n'atteint pas `audit.ecrire`, par analyse du source. ⚠️ **Il a trouvé
+  neuf trous en arrivant**, tous corrigés : `lier-session` (🔴 modifie le sigma sans trace),
+  suppression et publication d'un récap, et les cinq routes des tiers. Huit actions ajoutées.
+  Quatre exemptions closes, chacune bornée aux tables qu'elle peut toucher.
+- `[x]` **La suppression d'un compte n'efface aucune ligne d'audit** : verrouillé dans
+  `test_rgpd.py`, requêtes et schéma (`ON DELETE SET NULL`).
+- `[x]` **Vocabulaire fermé (R-64)** : `audit.ACTIONS` (42 actions) ; toute action écrite y
+  figure, et l'écran Logs a un libellé pour chacune.
+- `[x]` **Recette manuelle** sur le poste de dev le 22/09 (tier, récap publié et supprimé, onglet
+  Logs) : phase close. ⚠️ Les deux routes de récap restent sans test automatisé.
 - `[x]` Gardes de rang sur les trois chemins (volet, onglet, export), refus pour un `player`,
   acteur identifiable après suppression — couverts par `test_audit_lecture.py`.
 - `[x]` **Bouton « Logs » corrigé le 2026-09-22** (non commité), deux défauts : il s'affichait
@@ -320,17 +325,37 @@ confirmation à la suspension, là où `changer_role` en demande une nommée (R-
 un chef_admin est **réversible par le superadmin**, donc ce n'est pas un verrouillage — le critère
 qui a guidé toute la correction. L'assertion reste volontairement verte, elle constate un choix.
 
-**Rappels non corrigés** portés par le même audit, toujours ouverts au 2026-09-22 (les
-assertions `[A-01, defaut constate]` et `[A-02, defaut constate]` sont vertes, donc le défaut est
-toujours là) :
+**Rappels** portés par le même audit. Les assertions `defaut()` de A-01 et A-02 sont devenues
+des non-régressions le 2026-09-22 :
 
-- `[ ]` **A-01/A-02** 🟠 — durée de session figée sur le rôle, aucune session fermée au
-  changement de rôle. Classé **rang 6** le 22/09 : depuis la phase 1bis, **toute** promotion
-  passe par une acceptation depuis une session de joueur (30 jours), que `repondre_promotion`
-  laisse intacte.
+- `[x]` **A-01/A-02** 🟠 — ✅ **corrigé le 2026-09-22, non commité.** Toute écriture de
+  `comptes.role` ferme les sessions du compte concerné : `changer_role` (la cible, jamais
+  l'acteur), `repondre_promotion` (le titulaire, **session courante comprise** — c'est la session
+  de joueur qui accepte), le legs (**les deux** comptes), l'amorçage (les anciennes sessions,
+  **avant** que `login()` crée la nouvelle). La durée reste figée dans `create_session` : pas de
+  recalcul d'`expires_at`, qui aurait fait une seconde source de vérité. Après une acceptation ou
+  un legs, la page relance la connexion Discord (`prompt=none` : sans écran pour qui a déjà
+  autorisé) avec un message qui explique ; la carte d'acceptation prévient **avant** le clic.
+  `test_sessions_changement_role.py`, **47 assertions**, dont un filet qui parcourt tout le
+  backend. Sept gardes cassées volontairement, plus un cinquième écrivain fictif : tous
+  rougissent. Détail au §A-01/A-02 de [audit-auth-discord.md](audit-auth-discord.md).
+  - ⚠️ **L'assertion `defaut()` de A-02 serait restée verte** sur le défaut corrigé : elle lisait
+    6000 caractères depuis `def changer_role(`, le `DELETE` est tombé à 6741. Remplacée par une
+    délimitation `ast`. Un `not in` sur une fenêtre fixe peut masquer une correction.
+  - `[ ]` **Recette à faire**, deux navigateurs : proposer un rôle à un compte joueur connecté
+    sur les deux, l'accepter sur l'un — il doit repasser par Discord et revenir admin, l'autre
+    doit être déconnecté. Puis le rétrograder : ses deux sessions doivent tomber.
 - `[ ]` **A-04/A-05** 🟡 — mot de passe partagé, `api_tokens` en clair : se referment avec
   l'étape 6 (§1).
 - `[ ]` **A-07** 🟡 — CGU affichées mais jamais imposées.
+- `[ ]` ⚠️ **Écart plan ↔ code, relevé le 2026-09-22, à trancher** : `changer_role` **promeut
+  encore** sans proposition si on l'appelle directement (un `chef_admin` qui poste `admin` sur
+  `/admin/comptes/<id>/role`). Seule l'interface route les promotions vers `/promotion`. Or le
+  plan de la phase 1bis (R-68, [audit-admin-plan.md](audit-admin-plan.md)) dit que
+  `changer_role` ne garde que la rétrogradation, et le consentement préalable est un argument
+  **juridique** (RGPD) — un lien caché n'est pas un accès fermé. `test_hierarchie_routes.py`
+  teste pourtant la promotion directe comme voulue (le superadmin désigne un `chef_admin` par
+  `/role`). Depuis A-01/A-02, ce chemin ferme au moins les sessions de la cible.
 
 **Ce que cet audit n'a pas couvert**, pour que l'absence ne se lise pas comme un blanc-seing :
 aucun test contre un vrai Postgres (les verrous et l'index partiel sont raisonnés, pas exécutés),
@@ -629,9 +654,11 @@ Rien à faire ici sans nouvelle décision explicite — listés pour éviter de 
 
 ## Chantiers soldés récemment (pour mémoire, contexte)
 
+- Sessions figées sur le rôle (A-01/A-02) — ✅ 2026-09-22, non commité : changer de rôle ferme
+  les sessions du compte, filet sur tout écrivain de `comptes.role` (§8).
 - Journal des actions admin, phases 1 à 3 — ✅ 2026-09-19 (`c0988fd`, `025af10`) : un seul
   chemin d'écriture, promotion soumise à acceptation, dossier sportif tracé, écran de
-  consultation et export CSV. La phase 4 reste ouverte (§4).
+  consultation et export CSV. Phase 4 (le filet) livrée le 22/09, non commitée (§4).
 - Banc de scénario exécuté — ✅ 2026-09-21, via l'Electron de VS Code (§10).
 - Hiérarchie à 4 rôles + permissions à la carte — ✅ 2026-09-10
 - Règle de rang générique (`compte_cible_protegee`) — ✅ 2026-09-14

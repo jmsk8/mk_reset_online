@@ -25,6 +25,41 @@ from flask import g, has_request_context
 
 logger = logging.getLogger(__name__)
 
+# Vocabulaire FERME des actions (R-64, docs/audit-admin-plan.md §5.2bis).
+#
+# Renommer une action apres coup laisse des lignes orphelines qu'aucun filtre ne
+# retrouve : les anciennes gardent l'ancien nom. Toute action ecrite doit donc
+# figurer ici, et l'ecran Logs doit savoir la dire en clair (LIBELLES_ACTION,
+# admin_comptes.html). test_audit_inventaire.py verifie les deux.
+#
+# Convention : <objet>_<participe passe>, pour qu'un filtre par prefixe
+# (`joueur_%`) ramene tout un domaine. Une action retiree du code RESTE ici :
+# ses lignes sont toujours en base et doivent rester lisibles.
+ACTIONS = frozenset({
+    # Comptes, roles et permissions
+    'role_attribue', 'role_retire', 'superadmin_legue',
+    'permission_accordee', 'permission_retiree', 'permissions_purgees',
+    'promotion_proposee', 'promotion_refusee', 'promotion_annulee',
+    'cgu_admin_acceptee', 'statut_change', 'sessions_revoquees',
+    'profil_synchro', 'compte_supprime',
+    # Liaisons et invitations
+    'liaison_approuvee', 'liaison_refusee', 'liaison_annulee',
+    'invitation_creee', 'invitation_revoquee',
+    'service_token_cree', 'service_token_revoque',
+    # Dossier sportif
+    'joueur_cree', 'joueur_modifie', 'joueur_supprime', 'joueur_anonymise',
+    'tournoi_ajoute', 'tournoi_supprime', 'tournoi_annule', 'tournoi_lie',
+    'reset_global_applique', 'reset_global_annule',
+    # Configuration
+    'config_modifiee', 'ligues_configurees',
+    'tier_cree', 'tier_modifie', 'tier_supprime',
+    'tiers_reordonnes', 'tiers_reinitialises',
+    # Recaps de saison
+    'recap_cree', 'recap_publie', 'recap_supprime',
+    # RGPD
+    'purge_rgpd',
+})
+
 # Sentinelle : distingue « acteur non precise, prends celui de la requete » de
 # « acteur volontairement absent » (None). Sans elle, les deux cas s'ecrivent
 # `None` et on ne peut plus exprimer le second.

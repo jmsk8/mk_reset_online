@@ -392,6 +392,21 @@ if maj:
 check("les lignes ghost_log de la session sont supprimees",
       indice(cur, 'DELETE FROM ghost_log') is not None, sqls(cur))
 
+# Le sigma est du dossier sportif : lier deux tournois qui le fait bouger doit
+# laisser une trace aussi precise qu'une modification de fiche (2026-09-22).
+import json as _json
+_audits = [p for sql, p in cur.executed if 'INSERT INTO audit_admin' in sql]
+_det = _json.loads(_audits[0][4]) if _audits and _audits[0][4] else {}
+check("la liaison écrit une ligne d'audit « tournoi_lie »",
+      bool(_audits) and _audits[0][0] == 'tournoi_lie', _audits)
+_corr = (_det.get('penalites_annulees') or [{}])[0]
+check("  avec l'avant/après du sigma du joueur corrigé",
+      _corr.get('joueur_id') == 7 and _corr.get('avant', {}).get('sigma') == 3.0
+      and abs((_corr.get('apres', {}).get('sigma') or 0) - 2.8) < 1e-9, _det)
+check("  et le drapeau score_modifie", _det.get('score_modifie') is True, _det)
+check("  dans la transaction validée, avant le commit",
+      indice(cur, 'INSERT INTO audit_admin') is not None and conn.committed)
+
 # L'ordre est essentiel : « les tournois de la session » n'existe qu'une fois
 # les deux reunis. Corriger avant la fusion ne verrait qu'un lobby.
 i_fusion = indice(cur, 'UPDATE Tournois SET session_id')

@@ -30,8 +30,8 @@ des sessions** : une session, une fois ouverte, est trop difficile à reprendre.
 
 | # | Constat | Gravité | Nature |
 |---|---|---|---|
-| **A-01** | La durée de session est figée sur le rôle **au moment de la connexion** | 🟠 moyenne | Session |
-| **A-02** | Changer le rôle d'un compte ne ferme aucune de ses sessions | 🟠 moyenne | Session |
+| **A-01** | ~~La durée de session est figée sur le rôle **au moment de la connexion**~~ | ✅ **corrigé 2026-09-22** | Session |
+| **A-02** | ~~Changer le rôle d'un compte ne ferme aucune de ses sessions~~ | ✅ **corrigé 2026-09-22** | Session |
 | **A-03** | ~~Personne ne peut voir ni fermer **ses propres** sessions~~ | ✅ **corrigé 2026-09-16** | Session |
 | **A-04** | `/admin-auth` (mot de passe partagé) est toujours ouvert | 🟡 faible | Dette |
 | **A-05** | `api_tokens` stocke le jeton **en clair**, renouvelable sans borne | 🟡 faible | Dette |
@@ -39,6 +39,7 @@ des sessions** : une session, une fois ouverte, est trop difficile à reprendre.
 | **A-07** | Le consentement CGU est affiché mais jamais **imposé** | 🟡 faible | RGPD |
 
 Aucun constat n'est 🔴. Les trois 🟠 se corrigent ensemble, et partagent une seule cause.
+**Tous trois sont refermés** : A-03 le 2026-09-16, A-01 et A-02 le 2026-09-22.
 
 ---
 
@@ -57,6 +58,43 @@ else:
 L'intention est explicite et juste : *« un compte privilégié ouvre bien plus de portes : session
 courte »*. Mais la durée est **gravée dans la ligne** au moment de l'`INSERT`, alors que le rôle,
 lui, est relu en base à chaque requête. Les deux ne sont jamais resynchronisés.
+
+### A-01 / A-02 — ✅ CORRIGÉS le 2026-09-22
+
+> **Résolu, par la recommandation n° 1 ci-dessous : une seule règle, « changer de rang oblige à
+> se reconnecter ».** Toute écriture de `comptes.role` ferme les sessions du compte concerné,
+> dans les deux sens. Il y a **quatre** écrivains, et les quatre la portent :
+>
+> | Écrivain | Sessions fermées |
+> |---|---|
+> | `changer_role` (rétrogradation, et promotion directe) | celles de la cible — jamais l'acteur, que `refuse_auto_modification` écarte |
+> | `repondre_promotion` (acceptation) | **toutes** celles du titulaire, **la courante comprise** : c'est la session de joueur (30 jours) qui vient d'accepter |
+> | `leguer_superadmin` | celles de la cible **et** de l'acteur : deux rôles changent |
+> | `promote_bootstrap_superadmin` | les anciennes, **avant** que `login()` crée la nouvelle à la bonne durée |
+>
+> La durée reste figée à la création dans `create_session` — une seule source de vérité. La
+> recalculer (`UPDATE … SET expires_at`) aurait été une seconde source de vérité, exactement ce
+> qui a produit le défaut ; un test interdit ce chemin.
+>
+> **Côté personne**, la déconnexion n'est jamais muette : la carte d'acceptation prévient
+> *avant* le clic, puis la page relance la connexion Discord (sans écran à valider pour qui a
+> déjà autorisé l'application, grâce à `prompt=none`) ; le legs fait de même pour l'ancien
+> superadmin. Un message déposé par le frontend explique la reconnexion au retour. La cible d'une
+> rétrogradation, elle, se retrouve simplement déconnectée à sa prochaine page — la confirmation
+> côté admin le dit.
+>
+> **Couverture** : `backEnd/tests/test_sessions_changement_role.py` (47 assertions), dont un
+> **filet** qui parcourt tout le backend et rougit sur toute fonction écrivant `comptes.role`
+> sans fermer de session. Chaque garde a été cassée volontairement (7 mutations, plus un
+> cinquième écrivain fictif) : toutes font virer des assertions au rouge.
+>
+> ⚠️ **Piège rencontré en corrigeant** : l'assertion `defaut()` de A-02 lisait une fenêtre fixe
+> de 6000 caractères depuis `def changer_role(`, et le `DELETE` ajouté tombait à 6741. Elle
+> serait restée **verte sur un défaut corrigé** — le rouge que ce dispositif existe pour
+> produire ne serait jamais venu. Remplacée par une délimitation `ast`. Tout `not in` sur une
+> fenêtre fixe a le même risque.
+
+Les constats d'origine, conservés pour le contexte.
 
 ### A-01 — la durée ne suit pas la promotion
 
@@ -226,7 +264,8 @@ Promu par un `chef_admin` ou le superadmin. Ne détient que les permissions qu'o
 - il ne peut **pas agir sur un pair admin** : c'est `compte_cible_protegee`, la correction du
   2026-09-14. Vérifié exhaustivement sur les 9 combinaisons de rangs.
 
-Hérite du défaut **A-01** : promu depuis `player`, il garde une session de 30 jours.
+~~Hérite du défaut **A-01** : promu depuis `player`, il garde une session de 30 jours.~~
+✅ Plus depuis le 2026-09-22 : accepter la promotion ferme ses sessions, il se reconnecte en 12 h.
 
 ### Un `chef_admin`
 
@@ -298,7 +337,9 @@ d'être une omission. Si l'intention était de bloquer, le point d'application n
 
 ## Recommandations, par ordre de valeur
 
-### 1. Aligner la durée de session sur le rôle (A-01 + A-02) — *la plus rentable*
+### 1. Aligner la durée de session sur le rôle (A-01 + A-02) — ✅ fait le 2026-09-22
+
+> Appliquée telle quelle, étendue aux quatre écrivains de `comptes.role` (voir A-01 / A-02).
 
 Un seul geste referme les deux constats. Dans `changer_role`, après l'`UPDATE` :
 
@@ -351,7 +392,8 @@ cd backEnd/tests && sh run.sh                    # suite complète
 python3 test_audit_auth_discord.py               # ce seul fichier
 ```
 
-`test_audit_auth_discord.py` contient **76 assertions, toutes vertes** au 2026-09-15. Deux
+`test_audit_auth_discord.py` contient **83 assertions, toutes vertes** au 2026-09-22 (76 au
+2026-09-15). Deux
 natures cohabitent, et c'est délibéré :
 
 - les **non-régressions** décrivent ce qui est correct et doit le rester ;

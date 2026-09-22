@@ -6,7 +6,7 @@
 > (numérotation continue depuis [auth-discord-plan.md](auth-discord-plan.md)).
 >
 > **Dernière mise à jour : 2026-09-22** — état recalé sur le code : journal des actions admin
-> livré sauf sa phase 4 (Chantier 7), tests des onglets soldés (Chantier 8), catalogue passé à
+> **terminé** (Chantier 7, phase 4 livrée le 22/09, non commitée), tests des onglets soldés (Chantier 8), catalogue passé à
 > 15 permissions avec la fiche joueur « un droit par geste » (Chantier 9). Les sections datées
 > plus bas décrivent l'état **à leur date**.
 >
@@ -28,7 +28,7 @@
 | **4** — Scission des permissions | ✅ livré le 2026-09-13 | 9 permissions, 3 contournements fermés, 34 assertions |
 | **5** — Sous-permission RGPD | ✅ livré le 2026-09-13 | `rgpd_joueurs`, mécanique parent/enfant, 26 assertions |
 | **6** — Règle de rang générique (8.1) | ✅ livré le 2026-09-14 | lacune fermée, matrice 4×4, 149 assertions |
-| **7** — Journal des actions admin | 🟡 **phases 1 à 3 livrées** (18-19/09) · phase 4 à faire | [audit-admin-plan.md](audit-admin-plan.md) §5 |
+| **7** — Journal des actions admin | ✅ **terminé** — phases 1 à 3 (18-19/09), phase 4 (22/09, non commitée) | [audit-admin-plan.md](audit-admin-plan.md) §5 |
 | **8** — Tests des 3 routes d'onglets (8.3) | ✅ soldé le 2026-09-18 | gate sur les trois onglets, gate par bloc, 71 assertions dans `test_session_expiree.py` |
 | **9** — Fiche joueur : un droit par geste | ✅ livré le 2026-09-17 | 6 sous-permissions de `gestion_joueurs`, `rgpd_joueurs` → `joueurs_irreversible` |
 
@@ -438,7 +438,7 @@ au lieu de `<=`, 8 assertions tombent, dont R-52 — qu'aucun test ne couvrait r
 > [etat-avancement-global.md](etat-avancement-global.md) — celui-ci ne fait que le détailler pour
 > la couche admin.
 
-### 1. Journal des actions admin — phases 1 à 3 livrées, reste la phase 4
+### 1. Journal des actions admin — ✅ terminé le 2026-09-22
 
 [audit-admin-plan.md](audit-admin-plan.md) §5. Livré les 18 et 19/09 : un seul chemin
 d'écriture (`backEnd/audit.py`), la **promotion devenue proposition à accepter** (le rôle n'est
@@ -450,22 +450,26 @@ Les deux décisions qui révisaient des choix antérieurs sont **en place et tes
 `chef_admin` ne lit pas les logs du `superadmin`, et la suppression d'un compte n'efface ni ses
 lignes d'audit ni l'identité de leur auteur.
 
-**Reste la phase 4**, le filet :
+**Phase 4, le filet — livrée le 22/09** (non commitée) :
 
-- `[ ]` un test qui échoue si une route d'écriture admin n'écrit pas dans l'audit, par analyse du
-  source — **absent**, c'est le seul qui empêche le trou de se reformer ;
-- `[ ]` un test qui verrouille qu'aucune ligne d'audit ne disparaît à la suppression d'un compte
-  (le schéma le garantit, aucun test ne le vérifie) ;
-- `[~]` une liste fermée de toutes les actions (R-64) — seules les neuf actions de la phase 2 sont
-  figées par un test.
+- `[x]` `test_audit_inventaire.py` échoue sur toute route d'écriture admin qui n'atteint pas
+  l'audit. Il a trouvé **neuf routes sans trace** en arrivant — liaison de tournois (sigma),
+  récaps, tiers —, toutes corrigées ;
+- `[x]` aucune ligne d'audit ne disparaît à la suppression d'un compte (`test_rgpd.py`) ;
+- `[x]` vocabulaire fermé : `audit.ACTIONS`, 42 actions, chacune avec son libellé à l'écran.
 
-### 2. Sessions figées sur le rôle (A-01/A-02 de l'audit auth)
+### 2. Sessions figées sur le rôle (A-01/A-02 de l'audit auth) — ✅ CORRIGÉ le 2026-09-22
 
-Pas un chantier de ce document à l'origine, mais il le touche directement : une promotion laisse
-une session longue (30 jours) à un admin, une rétrogradation ne ferme aucune session. **Depuis la
-phase 1bis, c'est le cas de toute promotion** — on devient admin en acceptant depuis sa session de
-joueur, et `repondre_promotion` ne touche pas aux sessions. Voir §8 de
-[etat-avancement-global.md](etat-avancement-global.md).
+Pas un chantier de ce document à l'origine, mais il le touche directement : une promotion laissait
+une session longue (30 jours) à un admin, une rétrogradation ne fermait aucune session — et depuis
+la phase 1bis, c'était le cas de **toute** promotion.
+
+**Règle livrée** : toute écriture de `comptes.role` ferme les sessions du compte concerné. Les
+quatre écrivains la portent — `changer_role` (la cible), `repondre_promotion` (le titulaire,
+session courante comprise), le legs (les deux comptes), l'amorçage (les anciennes sessions, avant
+la nouvelle). La page relance la connexion Discord après une acceptation ou un legs. Un filet dans
+`test_sessions_changement_role.py` rougit sur tout cinquième écrivain qui l'oublierait. Détail au
+§A-01/A-02 de [audit-auth-discord.md](audit-auth-discord.md).
 
 ### 3. Hygiène git (§8.2)
 
@@ -491,12 +495,13 @@ requis.
 | `test_audit_permissions.py` | revue transverse : matrice de rang 4×4, clôture du catalogue, plafond, 503, gates |
 | `test_fiche_joueur_droits.py` | la fiche joueur « un droit par geste » : chaque champ exige sa sous-permission |
 | `test_promotions.py` | la promotion à accepter : proposer n'écrit jamais `comptes.role`, expiration, annulation, verrous |
+| `test_sessions_changement_role.py` | changer de rôle ferme les sessions (A-01/A-02) : les quatre écrivains, et le filet qui attrape un cinquième |
 | `test_audit_journal.py` · `test_audit_dossier_sportif.py` · `test_audit_lecture.py` | le journal : chemin d'écriture unique, dossier sportif tracé, lecture sous règle de rang |
 
 ✅ **Les trois échecs préexistants** (`test_auth`, `test_liaisons`, `test_profils`) ont été
 **réparés le 2026-09-18** — aucun ne signalait un défaut du code (§9 de
 [etat-avancement-global.md](etat-avancement-global.md)). Suite complète au 2026-09-22 :
-**1647 assertions, 32 fichiers, aucune rouge.**
+**1795 assertions, 34 fichiers, aucune rouge.**
 
 **Limite du banc d'essai** : `FakeCursor` ne simule ni contrainte SQL, ni verrou, ni rollback réel.
 L'unicité du superadmin repose sur un index unique partiel et ne se vérifie que sur un vrai

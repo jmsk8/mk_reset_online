@@ -39,7 +39,7 @@ se retrouve **dehors**.
 | **B-04** | ~~La zone nginx `auth` (20 r/min) amplifie B-01~~ | ✅ **corrigé 2026-09-18** (40 r/min) | Connexion |
 | **B-05** | ~~Trois fichiers de tests en échec~~ | ✅ **corrigé 2026-09-18** | Tests |
 | **B-06** | ~~`prompt=none` n'est ni commenté ni justifié~~ | ✅ **corrigé 2026-09-18** | Dette |
-| **A-01/A-02** | La durée de session reste figée sur le rôle *(rappel, non corrigé)* | 🟠 moyenne | Session |
+| **A-01/A-02** | ~~La durée de session reste figée sur le rôle~~ *(rappel)* | ✅ **corrigé 2026-09-22** | Session |
 | **A-04/A-05/A-07** | Dette du mot de passe partagé, CGU non imposées *(rappel, non corrigé)* | 🟡 faible | Dette |
 
 **Deux constats 🔴, tous deux confirmés par exécution.** Aucun n'est une faille de confidentialité :
@@ -424,9 +424,11 @@ snowflake sort en chaîne, jamais en entier — le piège des 2^53 est évité e
 
 Toujours ouverts, vérifiés lors de ce passage :
 
-- **A-01 / A-02** 🟠 — la durée de session reste figée sur le rôle au moment de la connexion.
+- ~~**A-01 / A-02** 🟠 — la durée de session reste figée sur le rôle au moment de la connexion.
   `changer_role` ne contient toujours aucun `DELETE FROM sessions_joueurs` (vérifié). Un compte
-  promu garde une session de 30 jours là où la règle lui en destine 12 heures.
+  promu garde une session de 30 jours là où la règle lui en destine 12 heures.~~
+  ✅ **Corrigé le 2026-09-22** : les quatre écrivains de `comptes.role` ferment les sessions du
+  compte concerné. Détail au §A-01/A-02 de [audit-auth-discord.md](audit-auth-discord.md).
 - **A-04 / A-05** 🟡 — `/admin-auth` et `/admin/refresh-token` sont toujours exposés, `api_tokens`
   stocke encore le jeton en clair. Il ne reste **qu'un seul** `@admin_required` dans tout le
   backend, sur `/admin/refresh-token` lui-même.
@@ -466,7 +468,7 @@ au lieu de le corriger — exactement l'erreur de méthode décrite au §9 de l'
 
 ### 5. Reprendre A-01/A-02, puis trancher A-04/A-05/A-07
 
-Inchangé depuis le 15/09.
+A-01/A-02 ✅ refermés le 2026-09-22. A-04/A-05 se referment avec l'étape 6 ; A-07 reste à trancher.
 
 ---
 

@@ -369,14 +369,25 @@
                         para('Cette proposition expire le ' + expire + '.',
                              'is-size-7 has-text-grey'),
                         consequences(),
+                        // Dit AVANT le clic : être déconnecté de tous ses
+                        // appareils sans l'avoir su se lirait comme une panne.
+                        para('Accepter vous déconnecte de tous vos appareils, puis '
+                             + 'vous reconnecte ici par Discord : une session '
+                             + 'd’administrateur dure 12 heures.',
+                             'is-size-7 has-text-grey mt-2'),
                     ],
                     [
                         bouton('Accepter le rôle', 'primary', async (b) => {
                             const d = await envoyer('/mon-compte/promotion',
                                 {accepte: true, cgu_admin_version: version}, b);
-                            // Le rôle a changé : la navbar et les onglets admin
-                            // se reconstruisent au rechargement, pas avant.
-                            if (d) window.location.reload();
+                            if (!d) return;
+                            // Le backend a fermé toutes les sessions du compte,
+                            // celle-ci comprise (A-01) : elle était de joueur,
+                            // donc de 30 jours. La reconnexion Discord ouvre la
+                            // session d'admin, sans écran à valider pour qui a
+                            // déjà autorisé l'application.
+                            if (d.session_fermee) { window.location.href = '/auth/discord/login'; return; }
+                            window.location.reload();
                         }),
                         bouton('Refuser', 'light', async (b) => {
                             if (!confirm('Refuser ce rôle ?\n\nVotre compte restera inchangé.')) return;

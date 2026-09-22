@@ -556,7 +556,13 @@ def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> l
             SET sigma = %s, consecutive_missed = %s, is_ranked = %s
             WHERE id = %s
         """, (nouveau_sigma, nouveau_missed, nouveau_missed < threshold, joueur_id))
-        corriges.append(joueur_id)
+        # L'avant/apres de chaque joueur touche, et pas seulement son id : la
+        # route en fait sa ligne d'audit, et le sigma est le dossier sportif.
+        corriges.append({
+            "joueur_id": joueur_id,
+            "avant": {"sigma": sigma_actuel, "consecutive_missed": missed_actuel},
+            "apres": {"sigma": nouveau_sigma, "consecutive_missed": nouveau_missed},
+        })
 
     # Le journal doit refleter l'etat courant : ces penalites n'existent plus.
     # Toutes celles de la session partent, y compris celles d'un absent complet :

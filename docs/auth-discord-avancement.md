@@ -136,7 +136,7 @@ pouvoir répondre « ce nom est-il interdit ? » sans conserver l'identité qu'o
 | Aperçu de synchro | `GET /admin/comptes/<id>/sync-preview` | même verdict que l'écriture, sans écrire |
 | Synchroniser le pseudo | `POST /admin/comptes/<id>/sync` | **R-41** — collision insensible à la casse, `/` refusé, `invalidate_cache()`, avant/après audité |
 | Changer un rôle | `POST /admin/comptes/<id>/role` | **R-40** — seule route qui écrit `role` · **R-38** — refuse de retirer le dernier `superadmin` |
-| Fermer les sessions | `DELETE /admin/comptes/<id>/sessions` | complément au retrait de rôle (R-44) |
+| Fermer les sessions | `DELETE /admin/comptes/<id>/sessions` | compte compromis. Complément au retrait de rôle (R-44) jusqu'au 2026-09-22 : depuis, tout changement de rôle ferme les sessions lui-même (A-01/A-02) |
 | Suspendre | `POST /admin/comptes/<id>/statut` | ferme les sessions dans la foulée, sinon la suspension n'est qu'un libellé |
 
 **R-03 traité** : l'anonymisation pose `joueurs.anonymise_at` et verrouille l'empreinte de l'ancien

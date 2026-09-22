@@ -494,7 +494,8 @@
                                 nomDe(c),
                                 promotion
                                     ? 'Le rôle ne sera posé que si la personne accepte.'
-                                    : 'Ses permissions admin seront effacées.')) {
+                                    : 'Ses permissions admin seront effacées, et ses sessions '
+                                      + 'fermées sur tous ses appareils.')) {
                             sel.value = c.role;
                             return;
                         }
@@ -747,7 +748,10 @@
             cgu_admin_acceptee: 'Politique admin acceptée',
             service_token_cree: 'Jeton de bot créé', service_token_revoque: 'Jeton de bot révoqué',
             superadmin_legue: 'Superadmin légué', purge_rgpd: 'Purge RGPD',
-            recap_cree: 'Récap créé (brouillon)',
+            recap_cree: 'Récap créé (brouillon)', recap_publie: 'Récap publié',
+            recap_supprime: 'Récap supprimé', tournoi_lie: 'Tournois liés',
+            tier_cree: 'Tier créé', tier_modifie: 'Tier modifié', tier_supprime: 'Tier supprimé',
+            tiers_reordonnes: 'Tiers réordonnés', tiers_reinitialises: 'Tiers réinitialisés',
         };
 
         function libelleAction(a) { return LIBELLES_ACTION[a] || a; }
@@ -1261,7 +1265,9 @@
             const avertissement =
                 'Léguer le rôle superadmin à « ' + c.pseudo + ' » ?\n\n'
                 + 'Vous PERDREZ ce rôle et deviendrez chef_admin.\n'
-                + 'Cette action est irréversible sans l\'accord du nouveau superadmin.';
+                + 'Cette action est irréversible sans l\'accord du nouveau superadmin.\n\n'
+                + 'Vos sessions et les siennes seront fermées sur tous les appareils : '
+                + 'vous serez reconnecté par Discord.';
             if (!confirm(avertissement)) return;
 
             const saisi = prompt(
@@ -1272,10 +1278,10 @@
             const r = await api('/admin/comptes/' + c.id + '/leguer-superadmin', 'POST',
                                 {confirmation_pseudo: saisi});
             if (r.ok) {
-                afficher('success',
-                         'Rôle superadmin transmis. Vous êtes désormais chef_admin. '
-                         + 'Rechargez la page pour voir vos nouveaux droits.');
-                chargerComptes();
+                // Le backend a fermé nos sessions, celle-ci comprise (A-02) :
+                // tout appel suivant serait un 401. Le message attend au retour
+                // de Discord (déposé par le proxy).
+                window.location.href = '/auth/discord/login';
             } else {
                 afficher('danger', r.data.error || 'Échec.');
             }

@@ -4,9 +4,10 @@
 > Écrit après lecture de `audit_admin` en base, des 17 points d'écriture existants et des routes
 > d'administration, le 2026-09-13.
 >
-> **État au 2026-09-22 : phases 1, 1bis, 2 et 3 livrées** (18 et 19/09, `c0988fd` et `025af10`),
-> **phase 4 à faire** — voir §5. Chaque phase livrée porte son compte rendu en tête de sa section ;
-> le reste du document est la conception d'origine, conservée telle quelle.
+> **État au 2026-09-22 : chantier TERMINÉ.** Phases 1, 1bis, 2 et 3 livrées les 18 et 19/09
+> (`c0988fd`, `025af10`), **phase 4 livrée le 22/09** (non commitée) — voir §5. Chaque phase porte
+> son compte rendu en tête de sa section ; le reste du document est la conception d'origine,
+> conservée telle quelle.
 >
 > L'avancement sera suivi dans
 > [hierarchie-admin-avancement.md](hierarchie-admin-avancement.md), ce chantier étant la suite
@@ -484,18 +485,61 @@ menant à un 403 prévisible (§B.0 du plan hiérarchie).
 > filtre d'acteur optionnel. Trois requêtes SQL séparées (volet, onglet, export) finiraient par
 > diverger, et la première à oublier le garde de rang deviendrait le contournement de la règle.
 
-### Phase 4 — Tests et documentation — ⬜ À FAIRE
+### Phase 4 — Tests et documentation — ✅ LIVRÉE le 2026-09-22
 
-> **Relevé du 2026-09-22**, en confrontant la liste ci-dessous aux tests existants :
+> **Faite, non commitée.** `backEnd/tests/test_audit_inventaire.py` (**55 assertions**)
+> inventorie les routes par analyse du source et rougit sur toute route d'écriture admin qui
+> n'atteint pas `audit.ecrire` — directement ou via une fonction du backend, d'un module à
+> l'autre (la purge RGPD journalise dans `services.py`).
+>
+> **R-61 s'était déjà produit.** Le test, posé sur le code du jour, a trouvé **neuf routes admin
+> qui écrivaient sans trace**, toutes ajoutées ou modifiées après les phases 1 à 3 :
+>
+> | Route | Ce qu'elle faisait sans trace | Action ajoutée |
+> |---|---|---|
+> | `POST /admin/tournois/<id>/lier-session` | 🔴 **modifie le sigma** de joueurs (annulation de pénalités) — du dossier sportif, la cible même de la phase 2 | `tournoi_lie` (avant/après par joueur, `score_modifie`) |
+> | `DELETE /admin/saisons/<id>` | retire des trophées publiés, ramène des joueurs dans leur ancienne ligue | `recap_supprime` |
+> | `POST /admin/saisons/<id>/save-awards` | publie un récap : trophées, mouvements inter-ligues | `recap_publie` |
+> | Les 5 routes `/admin/tiers` | créer, modifier, supprimer, réordonner, **réinitialiser** les tiers — qui changent le tier affiché de tout le monde | `tier_cree`, `tier_modifie`, `tier_supprime`, `tiers_reordonnes`, `tiers_reinitialises` (état complet avant/après) |
+>
+> Les huit actions suivent la convention du §5.2bis ; `cible_type` reste dans le vocabulaire
+> existant (`tournoi`, `saison`, `systeme`). `annuler_penalites_de_session` renvoie désormais
+> l'avant/après de chaque joueur au lieu de son seul id.
+>
+> **Quatre exemptions, closes et bornées** (`EXEMPTEES` dans le test) : `refresh_token` (n'écrit
+> que dans `api_tokens`), `verifier_session_tournoi` et `matchmaking_admin` (POST en lecture
+> seule), `fix_db_structure` (migration idempotente, n'écrit que dans `Tournois`). Chacune porte
+> les tables qu'elle a le droit de toucher : une exemption qui se mettrait à écrire ailleurs
+> rougirait, et une exemption devenue inutile aussi.
+>
+> **Vocabulaire fermé (R-64)** : `audit.ACTIONS`, 42 actions. Le test vérifie que toute action
+> écrite y figure — y compris l'action calculée de `changer_role` — et que l'écran Logs a un
+> libellé pour **chacune**, ni plus ni moins.
+>
+> **Le filet a été éprouvé** : une trace retirée de `delete_tier`, une action retirée du
+> catalogue, un libellé retiré de l'écran — chacun fait rougir le test en nommant la route ou
+> l'action. Le test contient aussi trois routes fictives (un POST oublié, un GET qui écrit, une
+> route qui journalise via un helper) pour prouver qu'il ne passe pas à vide.
 >
 > | Point | État |
 > |---|---|
-> | Test « route d'écriture admin sans audit » | ❌ **absent** — c'est le cœur de la phase |
-> | Gardes de rang à la lecture, trois chemins | ✅ `test_audit_lecture.py` (règle en SQL, volet, requête unique pour les trois chemins) |
-> | Pas de bouton pour un `player` | ✅ **précisé le 2026-09-22** : pas de bouton sur un compte qui n'a **jamais agi** (`a_un_journal`, calculé sur l'acteur comme le volet) — un ancien admin redevenu `player` garde le sien. Et plus de bouton pour un lecteur `admin` : la route est `chef_admin`+, et son 403 le renvoyait à l'accueil. `test_audit_lecture.py` |
-> | La suppression de compte n'efface aucune ligne | ❌ `test_rgpd.py` vérifie l'audit écrit **avant** la suppression, pas l'absence de `DELETE` ; garanti par le schéma (`ON DELETE SET NULL`), non verrouillé |
+> | Test « route d'écriture admin sans audit » | ✅ `test_audit_inventaire.py` |
+> | Gardes de rang à la lecture, trois chemins | ✅ `test_audit_lecture.py` |
+> | Pas de bouton sur un compte sans journal, ni pour un lecteur `admin` | ✅ `test_audit_lecture.py` (22/09) |
+> | La suppression de compte n'efface aucune ligne | ✅ `test_rgpd.py` : aucune requête sur `audit_admin` hors l'`INSERT`, et `ON DELETE SET NULL` vérifié dans `schema.sql` |
 > | L'acteur reste identifiable après suppression | ✅ `test_audit_lecture.py` |
-> | Vocabulaire fermé (R-64) | 🟡 les neuf actions de la phase 2 sont figées (`test_audit_dossier_sportif.py`) ; aucune liste fermée de **toutes** les actions |
+> | Vocabulaire fermé (R-64) | ✅ `test_audit_inventaire.py` |
+>
+> **Limite connue** : un GET qui écrit n'est repéré que si son SQL est **dans la route
+> elle-même** ; un GET qui délègue l'écriture à un helper passerait. Aucun n'existe aujourd'hui.
+>
+> ✅ **Recette manuelle faite le 2026-09-22 sur le poste de dev**, par l'utilisateur : tier
+> modifié, récap publié puis supprimé, lignes lues dans l'onglet Logs. **Phase close.**
+> ⚠️ Reste non automatisé : `delete_saison` et `save_season_awards` ne sont exécutées par
+> **aucun** test (déjà le cas avant la phase 4) — seule cette recette couvre leurs nouvelles
+> traces. Le contenu des traces des tiers n'est vérifié que dans le source.
+
+**Conception d'origine :**
 
 Un test qui **échoue si une route d'écriture admin n'écrit pas dans l'audit**, par analyse du
 source — exactement ce que `test_bascule.py` fait pour les décorateurs. C'est ce qui empêchera le
@@ -729,7 +773,8 @@ première XSS stockée du site.
 **R-61 🟠 Une route d'écriture ajoutée plus tard oubliera son audit.**
 Même mode d'échec que R-43 et R-48 : la discipline ne tient pas toute seule.
 *Mitigation* : le test d'inventaire de la phase 4, qui échoue sur toute route d'écriture sans appel
-à `_audit()`.
+à `_audit()`. ✅ **En place le 2026-09-22** (`test_audit_inventaire.py`) — et le risque s'était
+déjà réalisé neuf fois quand il est arrivé.
 
 **R-62 🟠 Tracer l'avant/après introduit un `SELECT` supplémentaire dans des routes chaudes.**
 `api_update_joueur` et `add_tournament` sont les routes les plus utilisées de l'administration.
@@ -813,7 +858,7 @@ passe pas inaperçu ; il fait son travail.
    informées avant, et libres de refuser.
 3. ~~**Phase 2**~~ — ✅ **livrée le 2026-09-19**.
 4. ~~**Phase 3**~~ — ✅ **livrée le 2026-09-19**.
-5. **Phase 4** — le filet.
+5. ~~**Phase 4**~~ — ✅ **livrée le 2026-09-22** : le filet, et neuf trous qu'il a trouvés en arrivant.
 
 Chaque phase est commitable séparément. Deux migrations : les colonnes de consentement (phase 1bis)
 et l'index sur l'acteur (§6.1, phase 3 — la première à en avoir besoin).
