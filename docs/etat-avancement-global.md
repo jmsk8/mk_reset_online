@@ -95,7 +95,7 @@
 | 4bis | **« Supprimer mon compte » : passer par une demande par mail** — ✅ clos le 22/09 (`4472d47`) | §13.1 | `DELETE /me` retiré côté backend (pas seulement le bouton), effacement par `DELETE /admin/comptes/<id>` réservé au `superadmin`. Reste mineur : le handle n'est pas affiché dans la liste des comptes (§13.1). |
 | 5 | **Phase 4 d'`audit_admin`** — ✅ **close le 22/09** (`12d35dc`) : le journal est terminé | §4 | Le filet (`test_audit_inventaire.py`) a trouvé en arrivant **neuf routes admin qui écrivaient sans trace**, dont la liaison de tournois qui modifie le sigma. Toutes corrigées. |
 | 6 | **A-01 / A-02 — sessions figées sur le rôle** — ✅ clos le 22/09 (`12d35dc`) | §8 | Était le dernier 🟠 ouvert. Une promotion laissait à un admin une session de 30 jours au lieu de 12 h, une rétrogradation ne fermait aucune session. Désormais **changer de rôle oblige à se reconnecter**, dans les deux sens. Recette faite en conditions réelles, acceptation et rétrogradation (§8). |
-| 7 | **Définitions de l'IP v1 / v2 sur le site** — ✅ **clos le 22/09** | §13.2 | Les 5 décisions tranchées (propositions retenues), les 4 phases déroulées : un seul module de textes (`textes_ip.py`), badge de version et modale d'explication sur le récap et le classement, légende des couleurs, admin aligné. Validé à l'écran par l'utilisateur. Seul reliquat, sans effet visible : les branches `grand_master`, suspendues à deux requêtes sur la prod. |
+| 7 | **Définitions de l'IP v1 / v2 sur le site** — ✅ **clos le 22/09** | §13.2 | Les 5 décisions tranchées (propositions retenues), les 4 phases déroulées : un seul module de textes (`textes_ip.py`), badge de version et modale d'explication sur le récap et le classement, légende des couleurs, admin aligné. Validé à l'écran par l'utilisateur. Reliquat `grand_master` retiré le 23/09 : **chantier entièrement clos**. |
 | 8 | **Prérequis de l'étape 6** — ✅ tranchés le 23/09 | §1 | Le second `superadmin` est **volontairement écarté** : l'accès à la base *est* la porte de secours, et il ne couvrait qu'un des cinq scénarios de panne (raisonnement en table dans [runbook-admin.md](runbook-admin.md) §2). La période de recouvrement était vécue depuis le 13/09. ⚠️ **Reste le break-glass jamais exécuté**, passé au rang 4. |
 | 9 | **Étape 6 — couper le mot de passe admin** — ✅ **faite le 23/09** (`2053a67`) | §1 | C'était la **dernière étape décidée** du projet (18/09). A-04/A-05 refermés du même geste, 6 constats d'audit sur 7 désormais clos. ⚠️ Retour arrière en **deux** gestes (le `revert` ne recrée pas `api_tokens`), et le commit porte **aussi** le correctif nginx 502 : voir §1. |
 | 10 | **Bannière d'automne** | §13.3 | Demandé le 22/09. L'automne affiche la bannière d'été depuis ce matin, en intérim. Travail daté : la saison s'arrête le 21/12, chaque semaine de retard en est une de moins à l'écran. |
@@ -489,7 +489,7 @@ de **tous** les chantiers.
 | Décor Mario Kart en fond de toutes les pages | ✅ commité les 20 et 21/09 (`638db0b`, `d2a2f1f`, avec les pipes 2×2). Pistes d'optimisation encore ouvertes | [decor-perf-notes.md](decor-perf-notes.md) §3 |
 | Alertes (ouïe) des karts du bandeau | ✅ livré et mesuré le 21/09, commité (`c99c92a`, `raceEngine/src/engine/alerts.js`, banc `make race-alerts`) | [banner/alertes.md](banner/alertes.md) |
 | Bannière d'accueil en automne | 🟡 **intérim** du 22/09, commité : l'automne affiche la bannière d'été (`get_banner_season()`, `frontEnd/frontend.py`), faute de style `autumn`. La vraie bannière est au rang 10 | §13.3 |
-| Affichage IP v1/v2 | ✅ clos le 22/09 — rang 7. Reliquat : `grand_master` (vérification en prod). Ne pas réafficher v1 et v2 côte à côte : retiré exprès le 22/08 | [affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md) |
+| Affichage IP v1/v2 | ✅ clos le 22/09 — rang 7, reliquat `grand_master` retiré le 23/09. Ne pas réafficher v1 et v2 côte à côte : retiré exprès le 22/08 | [affichage-ip-plan-redaction.md](affichage-ip-plan-redaction.md) |
 | Moteur de course en Rust | 📋 conception seule (21/09), rien codé | [banner/moteur-rust-plan.md](banner/moteur-rust-plan.md) |
 
 ### 12. Déploiement et publication
@@ -644,9 +644,7 @@ L'effacement direct est jugé trop dangereux.
   recopié, version par défaut dans le récap, seuil ★ exclusif, clé v1 réintroduite) : chacune
   fait virer une assertion au rouge.
 - `[x]` **Recette** : affichage validé par l'utilisateur le 22/09, chantier clos.
-- `[ ]` **Branches `grand_master`** : lancer sur la prod
-  `SELECT DISTINCT victory_condition FROM saisons;` et
-  `SELECT code FROM types_awards WHERE code = 'grand_master';` avant de les retirer.
+- `[x]` **Branches `grand_master` — retirées le 2026-09-23** (`services.py`, `recap.html`, `routes_admin.py`), après vérification sur les 14 dumps de prod : aucune occurrence. La clé interne `candidates['grand_master']` reste (c'est le classement IP). `test_affichage_ip.py` **93 assertions** (était 90). Détail et `UPDATE` de secours au plan, phase 4.
 - ⚠️ Ne pas réafficher v1 et v2 côte à côte : c'est retiré exprès depuis le 22/08.
 
 #### 13.3 Bannière d'automne — rang 10

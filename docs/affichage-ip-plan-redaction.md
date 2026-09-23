@@ -1,8 +1,8 @@
 # IP v1 / v2 — plan de rédaction, page par page
 
 > **État : ✅ clos le 22/09/2026**, affichage validé par l'utilisateur. Décisions du §9
-> tranchées, phases 1 à 4 faites **sauf** les branches `grand_master`, qui attendent deux
-> requêtes sur la prod (§10) — reliquat sans effet visible.
+> tranchées, phases 1 à 4 faites. Le dernier reliquat, les branches `grand_master`, est retiré
+> le 23/09 après vérification sur les dumps de prod (§10) : **plus rien en attente**.
 >
 > Ce document dit **quoi écrire, sur quelle page, à quel endroit et dans quel cas**.
 > L'analyse (calcul exact de v1 / v2, inventaire, défauts, phases techniques) est dans
@@ -339,7 +339,12 @@ Les cinq propositions ont été retenues telles quelles :
 - [x] Calcul parallèle v1 / v2 et commentaire faux de `compute_ip_evolution`
 - [x] Clés `rulesDescriptions['Indice de Performance']` et `['grand_master']`
 - [x] Garde `Indicateur de Performance`
-- [ ] Branches `grand_master`, **après vérification en prod**. Deux requêtes à lancer :
+- [x] Branches `grand_master` — **retirées le 2026-09-23**. Vérification faite sur les **14 dumps
+  de prod** de `dumps/` (08/07 → 15/09) plutôt qu'en prod : aucune occurrence, ni en saison ni
+  en award, et le formulaire des saisons ne peut pas en créer. La clé **interne**
+  `candidates['grand_master']` (le classement IP) est gardée, ce n'est pas un reliquat. Si une
+  saison `grand_master` apparaissait malgré tout : `UPDATE saisons SET victory_condition =
+  'Indice de Performance' WHERE victory_condition = 'grand_master';`. Requêtes d'origine : Deux requêtes à lancer :
   `SELECT DISTINCT victory_condition FROM saisons;` et
   `SELECT code FROM types_awards WHERE code = 'grand_master';`. Si aucune ne renvoie
   `grand_master`, retirer les branches de `services.py` (`_determine_winners`),

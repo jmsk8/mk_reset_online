@@ -386,7 +386,7 @@
        (backEnd/textes_ip.py) : version du recap, textes, seuils. #}
     {% import 'partiels/cellule_ip.html' as ipm %}
     {% set ip = saison.ip if saison else none %}
-    {% set is_ip = saison and saison.victory_condition in ('Indice de Performance', 'grand_master') %}
+    {% set is_ip = saison and saison.victory_condition == 'Indice de Performance' %}
     {% include 'decor.html' %}
     {% include 'navbar.html' %}
 

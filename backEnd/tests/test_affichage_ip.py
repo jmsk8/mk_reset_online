@@ -292,6 +292,21 @@ check("Saisons : plus de garde « Indicateur de Performance »",
       'Indicateur de Performance' not in saisons_admin)
 
 
+print("\n=== Condition de victoire IP : un seul nom depuis le 2026-09-23 ===")
+# L'ancien synonyme 'grand_master' de saisons.victory_condition est retire
+# (absent de tous les dumps de prod). La cle INTERNE candidates['grand_master']
+# reste : c'est le classement IP, et c'est elle qui doit continuer a servir.
+_cands = {'grand_master': [{'id': 1, 'nom': 'A', 'final_score': 110, 'eligible': True},
+                           {'id': 2, 'nom': 'B', 'final_score': 90, 'eligible': False}]}
+_top, _ = services._determine_winners(_cands, 'Indice de Performance', [], 10)
+check("'Indice de Performance' lit le classement IP, eligibles seuls",
+      [c['id'] for c in _top] == [1], _top)
+_src = open(os.path.join(os.path.dirname(services.__file__), 'services.py'), encoding='utf-8').read()
+check("plus de branche vic_cond == 'grand_master'",
+      "vic_cond == 'grand_master'" not in _src)
+check("recap : is_ip ne teste plus que 'Indice de Performance'",
+      "victory_condition == 'Indice de Performance' %}" in recap and "'grand_master')" not in recap)
+
 print("\n" + "=" * 60)
 print("%d/%d assertions" % (sum(OK), len(OK)))
 sys.exit(0 if all(OK) else 1)
