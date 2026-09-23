@@ -680,6 +680,7 @@ export {
     activateItem,
     billAimDepth,
     destroyOrbitItem,
+    getAggression,
     getHoldPosition,
     getOrbitItemPosition,
     getShotDirection,

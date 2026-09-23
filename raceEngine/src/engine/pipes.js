@@ -164,7 +164,9 @@ function advanceProjectile(cfg, state, item, deltaTime, now) {
             if (!insidePipe(spec.hitbox, pdx, item.y - pipe.y)) continue;
 
             // La rouge se brise dessus : elle n'a qu'une trajectoire, celle
-            // de sa cible, et rien a faire d'un rebond.
+            // de sa cible, et rien a faire d'un rebond. En chasse, elle le
+            // contourne d'abord (`redShellAimY`) ; elle n'arrive ici que sans
+            // cible, ou quand aucun passage n'etait ouvert.
             if (item.type === 'redShell') {
                 spendItem(cfg, item, now);
                 return;
@@ -179,6 +181,80 @@ function advanceProjectile(cfg, state, item, deltaTime, now) {
             }
         }
     }
+}
+
+// La profondeur que vise une ROUGE en chasse : celle de sa cible, sauf si un
+// tuyau se dresse sur le chemin. Elle le contourne alors, puis reprend sa cible.
+//
+// Elle foncait droit sur la profondeur de sa cible sans regarder le decor, et se
+// brisait sur le premier tuyau pose entre les deux (cf. `advanceProjectile`) :
+// une tete chercheuse que n'importe quel mur arretait. Contourner un obstacle
+// FIXE est la moindre des choses pour elle ; le reste du temps, rien ne change.
+//
+// Le trajet se PREDIT, il ne se suppose pas droit : la rouge rejoint sa cible
+// par une loi exponentielle (`redShellTrackingSpeed`), et c'est la profondeur
+// qu'elle aura au droit du tuyau qui dit s'il la gene. Elle le contourne du cote
+// ou elle allait deja — le choix ne bascule donc pas d'un pas a l'autre — et
+// essaie l'autre si ce cote est ferme, par le bord de piste ou par un second
+// tuyau. Fermes tous les deux : elle garde sa cible, et le tuyau la brisera.
+function redShellAimY(cfg, state, item, target) {
+    const targetY = target.yPercent;
+    const pipes = state.pipes;
+    if (!pipes.length) return targetY;
+
+    const spec = cfg.pipe;
+    const box = spec.hitbox;
+    const clear = box.y * (1 + spec.redShell.margin);
+    const dir = item.vx >= 0 ? 1 : -1;
+    const speed = Math.abs(item.vx);
+    if (!(speed > 0)) return targetY;
+
+    // La cible avant le tuyau : elle la touchera avant d'y arriver.
+    const targetAhead = getShortestDistance(cfg, target.worldX, item.worldX) * dir;
+    const rate = cfg.speeds.redShellTrackingSpeed;
+
+    let block = null;
+    let blockAhead = Infinity;
+    let blockY = 0;
+    for (let p = 0; p < pipes.length; p++) {
+        const pipe = pipes[p];
+        const ahead = getShortestDistance(cfg, pipe.worldX, item.worldX) * dir;
+
+        // Deja depasse, ou trop loin pour qu'il y ait a en decider.
+        if (ahead <= -box.x || ahead > spec.redShell.look) continue;
+        if (targetAhead > 0 && targetAhead < ahead - box.x) continue;
+
+        const t = (ahead > 0 ? ahead : 0) / speed;
+        const y = targetY + (item.y - targetY) * Math.exp(-rate * t);
+        if (Math.abs(y - pipe.y) >= clear) continue;
+
+        if (ahead < blockAhead) {
+            block = pipe;
+            blockAhead = ahead;
+            blockY = y;
+        }
+    }
+    if (!block) return targetY;
+
+    // Le cote ou elle va deja ; pile dans l'axe, celui de sa cible.
+    let side = (blockY > block.y) ? 1 : (blockY < block.y) ? -1 : 0;
+    if (side === 0) side = (targetY >= block.y) ? 1 : -1;
+
+    for (let tries = 0; tries < 2; tries++, side = -side) {
+        const y = block.y + side * clear;
+        if (y < cfg.road.minY || y > cfg.road.maxY) continue;
+
+        // Un second tuyau a la meme hauteur de piste ferme ce passage.
+        let shut = false;
+        for (let p = 0; p < pipes.length; p++) {
+            const other = pipes[p];
+            if (other === block) continue;
+            if (Math.abs(getShortestDistance(cfg, other.worldX, block.worldX)) >= 2 * box.x) continue;
+            if (Math.abs(other.y - y) < clear) { shut = true; break; }
+        }
+        if (!shut) return y;
+    }
+    return targetY;
 }
 
 // De quel cote un kart plaque contre un tuyau doit s'ecarter. Le cote ou il
@@ -461,5 +537,6 @@ function steerAroundPipes(cfg, state, rng, now, kart, deltaTime) {
 export {
     advanceProjectile,
     collideKartWithPipes,
+    redShellAimY,
     steerAroundPipes,
 };

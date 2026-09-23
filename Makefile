@@ -307,6 +307,11 @@ race-alerts:         ## Banc des alertes, avec et sans (SEEDS=200 CAMPAIGN=400)
 race-attention:      ## Banc de l'attention, D-5 et D-6 (RACES=300 SEEDS=1000)
 	$(RACE_NODE) node tools/attention.js --races $${RACES:-300} --seeds $${SEEDS:-1000}
 
+# La rouge tiree sur une cible avec un tuyau entre les deux : elle doit le
+# contourner (O-3, cf. docs/banner/audit-decision-objets-2026-09-17.md).
+race-redshell:       ## Banc de la rouge face aux tuyaux (SEEDS=300)
+	$(RACE_NODE) node tools/redshell.js --seeds $${SEEDS:-300}
+
 # `exec race node ...` supposait que le conteneur du moteur embarque node : c'est
 # faux des que le moteur est le binaire C++, et le test se coupait la branche sur
 # laquelle il est assis. On emprunte donc une image node et on la colle dans la
@@ -333,7 +338,7 @@ help:                ## Show this help
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
         recompter-absences \
-        race-deps race-tracks race-soak race-sim race-scenario race-alerts race-attention race-spectate race-nginx \
+        race-deps race-tracks race-soak race-sim race-scenario race-alerts race-attention race-redshell race-spectate race-nginx \
         engine engine-js engine-cpp \
         reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help

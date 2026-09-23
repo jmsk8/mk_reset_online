@@ -42,7 +42,7 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
     // volant quand il cede la tete.
     updateBlue(cfg, rng, state, now, kart);
     updatePlan(cfg, rng, now, kart);
-    updateShield(cfg, rng, now, kart);
+    updateShield(cfg, rng, state, now, kart);
 
     command(cfg, state, rng, now, kart, deltaTime);
 

@@ -9,7 +9,7 @@ import { steerCap, steerDelay, steerReach } from './steering.js';
 import { isContactActive, isRamming } from './bodies.js';
 import { referenceAgility } from './stats.js';
 import { steerSettle } from './driving.js';
-import { getShotDirection, heldThreatType, isAiming, isArmedForward, isTrailable, rankChance } from './weapons.js';
+import { getAggression, getShotDirection, heldThreatType, isAiming, isArmedForward, isTrailable, rankChance } from './weapons.js';
 
 // Probabilite qu'un kart ne voie pas venir la menace. La difficulte se
 // mesure en distance : ce qu'il peut couvrir avant l'impact, rapporte a ce
@@ -426,7 +426,7 @@ function updateGlance(cfg, rng, state, now, kart) {
 //
 // Contre une etoile ou un bill, rien : ce qu'il faut leur opposer c'est de la
 // place, et c'est l'esquive qui s'en charge.
-function updateShield(cfg, rng, now, kart) {
+function updateShield(cfg, rng, state, now, kart) {
     const ai = cfg.ai;
     const held = kart.heldItem;
     if (!held) return;
@@ -497,18 +497,36 @@ function updateShield(cfg, rng, now, kart) {
 
         // Une carapace deja partie ne se discute presque plus : le bouclier est
         // la seule chose qui la mange. Un porteur laisse encore le choix de le
-        // prendre de vitesse.
-        const keep = (danger === 'shot') ? ai.shield.shot : ai.shield.carrier;
+        // prendre de vitesse — ou de lui tirer dessus le premier.
+        //
+        // Ce choix-la suit l'AGRESSIVITE, comme la trainee a la reception
+        // (`planItemUse`, meme `trailRatio`) : un kart mal place a plus a gagner
+        // a toucher qu'a se couvrir. Le premier, a zero, garde son bouclier comme
+        // avant.
+        let keep = ai.shield.shot;
+        if (danger !== 'shot') {
+            const aggression = getAggression(cfg, state, kart);
+            keep = ai.shield.carrier * (1 - aggression * (1 - ai.aggression.trailRatio));
+        }
         kart.shieldHold = rng() < keep;
 
         if (!kart.shieldHold) {
             // Il s'en sert plutot que de s'en couvrir, le plus souvent vers le
             // danger — c'est la qu'il y a quelqu'un a toucher.
+            let back = false;
             if (rng() < ai.shield.backThrow) {
                 kart.shotDirection = -1;
                 kart.shotAsLeader = (kart.rank === 1);
+                back = true;
             }
-            kart.throwTime = now;
+
+            // Contre une carapace en vol, tout de suite. Contre un PORTEUR, le
+            // temps de viser : lancee a l'aveugle vers l'arriere, elle partait
+            // dans sa ligne a lui sans qu'il ait regarde ou il etait. Le coup
+            // d'oeil de visee (`aimGlanceGain`) et le releve font le reste.
+            kart.throwTime = (back && danger !== 'shot' && isAiming(cfg, kart))
+                ? now + ai.aimLeadMs
+                : now;
         } else if (held.holdPosition === 'hands'
                    && (!kart.trailTime || kart.trailTime > now)) {
             // TOUT DE SUITE, et pas seulement s'il n'avait rien prevu : un kart
@@ -595,6 +613,7 @@ function perceive(cfg, state, rng, now, kart) {
     sight.pressureY = 0;
     sight.pressureId = 0;
     sight.pressureBack = false;
+    sight.pressureDist = 0;
     sight.spanCount = 0;
     sight.hiddenCount = 0;
     sight.scanRange = range;
@@ -1163,6 +1182,7 @@ function perceive(cfg, state, rng, now, kart) {
                 sight.pressure = true;
                 sight.pressureY = e.y;
                 sight.pressureId = -1 - e.kartId;
+                sight.pressureDist = e.look;
 
                 // De quel COTE. Un seul releve porte les deux formes du danger
                 // latent — le balayage ne regarde qu'un cote a la fois — mais ce
@@ -1274,6 +1294,25 @@ function perceive(cfg, state, rng, now, kart) {
         sight.redBehindY = sight.redMemY;
         sight.redBehindId = sight.redMemId;
         sight.redBehindCount = sight.redMemCount;
+    }
+
+    // Et le souvenir du PORTEUR qui suit. Le danger latent n'en avait que devant :
+    // revenu de son coup d'oeil, le kart savait qu'on pouvait lui tirer dessus
+    // (`dangerAt`) mais plus QUI ni OU, et la precaution ne se tirait que dos
+    // tourne — 689 decisions sur 689 au banc (D-5, `tools/attention.js`).
+    //
+    // Pose ici et non plus bas : pendant un balayage arriere, `pressure` ne peut
+    // encore designer qu'un porteur de DERRIERE. Le souvenir du porteur de devant
+    // vient l'y remplacer ensuite, et le masquerait.
+    if (sight.scanBack) {
+        if (sight.pressure) {
+            sight.carrierAt = now;
+            sight.carrierY = sight.pressureY;
+            sight.carrierId = sight.pressureId;
+            sight.carrierDist = sight.pressureDist;
+        } else {
+            sight.carrierAt = -Infinity;
+        }
     }
 
     // Les ombres, recopiees pour l'observateur seul : sans elles la carte ne peut
