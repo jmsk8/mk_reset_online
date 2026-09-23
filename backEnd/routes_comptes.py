@@ -1222,10 +1222,15 @@ def repondre_promotion():
                         # Sans lien, volontairement : c'est un accuse de
                         # reception, il n'y a rien a faire dessus -- et le
                         # proposant a pu perdre l'acces a /admin/comptes.
+                        # Le pseudo est fige ici comme le reste du texte : le
+                        # proposant peut recevoir plusieurs reponses, et « le
+                        # compte » ne lui disait pas laquelle il lisait.
                         notifier(
                             cur, proposant, 'promotion_refusee',
-                            "Promotion refusee",
-                            "Le compte a refuse le role %s. Il reste inchange." % role,
+                            "Promotion refusée",
+                            "%s a refusé le rôle %s. Son rôle reste inchangé."
+                            % (_pseudo(compte['discord_username'],
+                                       compte['discord_global_name']), role),
                         )
                         conn.commit()
                         logger.info("Promotion %s refusee par le compte %s", role, compte['id'])
@@ -1259,8 +1264,10 @@ def repondre_promotion():
                     # Sans lien, pour la meme raison que le refus ci-dessus.
                     notifier(
                         cur, proposant, 'promotion_acceptee',
-                        "Promotion acceptee",
-                        "Le compte a accepte le role %s." % role,
+                        "Promotion acceptée",
+                        "%s a accepté le rôle %s."
+                        % (_pseudo(compte['discord_username'],
+                                   compte['discord_global_name']), role),
                     )
                 conn.commit()
             except Exception:

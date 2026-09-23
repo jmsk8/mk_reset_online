@@ -118,6 +118,43 @@ check("type = promotion_acceptee", n and n[0] == 'promotion_acceptee', n)
 check("lien NULL", n and n[3] is None, n and n[3])
 
 
+print("\n=== Les accuses de reception nomment le compte qui repond ===")
+# « Le compte a accepte » ne disait pas LEQUEL : un proposant qui a plusieurs
+# propositions en cours ne pouvait pas savoir qui avait repondu.
+check("acceptation : pseudo dans le corps", n and n[2].startswith('Admin a accepté'),
+      n and n[2])
+check("acceptation : role dans le corps", n and 'le rôle admin' in n[2], n and n[2])
+
+cli, cur, conn = monter([
+    (r"SELECT role FROM comptes WHERE id", ('player',)),
+    (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
+], role='player', compte_id=5)
+r = cli.post('/me/promotion', json={'accepte': False}, headers=H)
+n = notif_inseree(cur)
+check("refus : pseudo dans le corps", n and n[2].startswith('Admin a refusé'), n and n[2])
+
+# Vieux compte sans global_name : repli sur le handle, jamais « None a accepte ».
+plan = [
+    (r"SELECT role FROM comptes WHERE id", ('player',)),
+    (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
+    (r"FROM sessions_joueurs s JOIN comptes c",
+     ligne_session(compte_id=5, discord_id='111', username='vieuxcompte',
+                   global_name=None, role='player')),
+]
+cur, conn = install_db(plan)
+recharger()
+import auth, routes_comptes
+importlib.reload(auth)
+importlib.reload(routes_comptes)
+app = Flask(__name__)
+app.register_blueprint(routes_comptes.comptes_bp)
+r = app.test_client().post('/me/promotion',
+                           json={'accepte': True, 'cgu_admin_version': '1.0'}, headers=H)
+n = notif_inseree(cur)
+check("sans global_name : repli sur le handle",
+      n and n[2].startswith('vieuxcompte a accepté'), n and n[2])
+
+
 print("\n=== Deliement -> redemander un rattachement ===")
 cli, cur, conn = monter([
     (r"SELECT joueur_id, statut FROM comptes WHERE id", (9, 'linked')),
