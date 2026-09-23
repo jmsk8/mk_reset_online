@@ -12,7 +12,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ app_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/chart_zoom.js') }}?v={{ app_version }}"></script>
 
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
@@ -349,6 +350,9 @@
                 distChartInstance.update('none');
             }
 
+            // Bulle affichee, a recaler quand la loupe zoome ou deplace le graphique.
+            let bulleActive = null;
+
             function showMiniTooltip(idx, p) {
                 if (!distChartInstance) return;
                 const meta = distChartInstance.getDatasetMeta(1);
@@ -356,15 +360,19 @@
                 const el = document.getElementById('chartTooltip');
                 if (point && el) {
                     el.innerHTML = `<strong>${escapeHtml(p.nom || p.name)}</strong><br>${(p.x).toFixed(3)} pts TS<br>Top ${p.top_percent || p.percentile}%`;
-                    el.style.left = point.x + 'px';
-                    el.style.top = (point.y - 10) + 'px';
+                    // Point du graphique -> position dans la vue, loupe comprise.
+                    const pos = ChartZoom.versVue(distChartInstance, point.x, point.y);
+                    el.style.left = pos.x + 'px';
+                    el.style.top = (pos.y - 10) + 'px';
                     el.style.opacity = 1;
+                    bulleActive = { idx, p };
                 }
             }
 
             function hideTooltip() {
                 const el = document.getElementById('chartTooltip');
                 if (el) el.style.opacity = 0;
+                bulleActive = null;
             }
 
             distDataRaw.players.forEach((p, index) => {
@@ -506,6 +514,9 @@
                         y: { display: false }
                     }
                 }
+            });
+            ChartZoom.brancher(distChartInstance, {
+                surChangement: () => { if (bulleActive) showMiniTooltip(bulleActive.idx, bulleActive.p); }
             });
             {% endif %}
         });

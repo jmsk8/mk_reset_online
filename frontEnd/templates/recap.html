@@ -11,7 +11,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ app_version }}">
     <link rel="stylesheet" href="/static/css/animations.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/chart_zoom.js') }}?v={{ app_version }}"></script>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
@@ -1110,6 +1111,9 @@
             distChartInstance.update('none'); 
         }
 
+        // Bulle affichee, a recaler quand la loupe zoome ou deplace le graphique.
+        let bulleActive = null;
+
         function showMiniTooltip(index, playerObj) {
             const chart = distChartInstance;
             if (!chart) return;
@@ -1119,16 +1123,24 @@
             const tooltipEl = document.getElementById('chartTooltip');
 
             if (point && tooltipEl) {
-                tooltipEl.innerHTML = `<strong>${escapeHtml(playerObj.nom)}</strong><br>${escapeHtml(playerObj.x.toFixed(3))} pts TS<br>Top ${escapeHtml(playerObj.top_percent)}%`;
-                tooltipEl.style.left = point.x + 'px';
-                tooltipEl.style.top = (point.y - 10) + 'px';
+                // Appele depuis la legende (nom, top_percent) comme depuis un
+                // point du graphique (name, percentile).
+                const nom = playerObj.nom || playerObj.name;
+                const top = playerObj.top_percent != null ? playerObj.top_percent : playerObj.percentile;
+                tooltipEl.innerHTML = `<strong>${escapeHtml(nom)}</strong><br>${escapeHtml(playerObj.x.toFixed(3))} pts TS<br>Top ${escapeHtml(top)}%`;
+                // Point du graphique -> position dans la vue, loupe comprise.
+                const pos = ChartZoom.versVue(chart, point.x, point.y);
+                tooltipEl.style.left = pos.x + 'px';
+                tooltipEl.style.top = (pos.y - 10) + 'px';
                 tooltipEl.style.opacity = 1;
+                bulleActive = { index, playerObj };
             }
         }
 
         function hideTooltip() {
             const tooltipEl = document.getElementById('chartTooltip');
             if (tooltipEl) tooltipEl.style.opacity = 0;
+            bulleActive = null;
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -1234,6 +1246,7 @@
                         }
                     }
                 });
+                ChartZoom.brancher(evoChartInstance);
             })();
             {% endif %}
 
@@ -1332,6 +1345,7 @@
                         }
                     }
                 });
+                ChartZoom.brancher(ipChart);
             })();
             {% endif %}
 
@@ -1454,6 +1468,7 @@
                         }
                     }
                 });
+                ChartZoom.brancher(ipPureChart);
             })();
             {% endif %}
 
@@ -1562,6 +1577,7 @@
                         }
                     }
                 });
+                ChartZoom.brancher(posChart);
             })();
             {% endif %}
 
@@ -1671,6 +1687,9 @@
                         y: { display: false } 
                     } 
                 } 
+            });
+            ChartZoom.brancher(distChartInstance, {
+                surChangement: () => { if (bulleActive) showMiniTooltip(bulleActive.index, bulleActive.playerObj); }
             });
             {% endif %}
         });
