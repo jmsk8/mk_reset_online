@@ -6,7 +6,7 @@ import { randomRange } from './math.js';
 import { getShortestDistance } from './geometry.js';
 import { isRamming, shrunkReachX, shrunkReachY } from './bodies.js';
 import { getBillSpeed } from './stats.js';
-import { getDistanceToLeader } from './standings.js';
+import { getDistanceToLeader, getRaceStage } from './standings.js';
 import { getOrbitSpec, rollItem } from './items.js';
 import { spinDuration } from './effects.js';
 
@@ -58,9 +58,13 @@ function isArmedForward(cfg, kart) {
 // tours de la fin a le temps de voir venir.
 function getAggression(cfg, state, kart) {
     const spec = cfg.ai.aggression;
-    const total = state.karts.length;
 
-    const rankTerm = (total > 1) ? (kart.rank - 1) / (total - 1) : 0;
+    // Sur le nombre de places a prendre, comme toutes les regles de place
+    // (`rankedCount`, cf. `updateRanks`) : un plateau ampute doit rendre les
+    // memes extremes qu'un plateau complet. Il comptait tous les karts, grille
+    // comprise.
+    const places = state.rankedCount;
+    const rankTerm = (places > 1) ? Math.min(kart.rank - 1, places - 1) / (places - 1) : 0;
 
     const dist = getDistanceToLeader(state, kart);
     const distTerm = (spec.distanceRef > 0)
@@ -68,11 +72,10 @@ function getAggression(cfg, state, kart) {
         : 0;
 
     // Lue sur le premier : c'est lui qui decide du temps qu'il reste aux autres.
-    const pace = state.cachedLeader || kart;
-    const progress = (pace.finishDistance > 0)
-        ? Math.min(Math.max(pace.totalDistance / pace.finishDistance, 0), 1)
-        : 0;
-    const raceTerm = spec.startRatio + (1 - spec.startRatio) * progress;
+    // La meme mesure que la distribution d'objets (`getRaceStage`) — elle etait
+    // recopiee ici avec un repli a elle, sur le kart lui-meme, la ou l'originale
+    // rend 0. Deux sources pour une grandeur finissent par diverger.
+    const raceTerm = spec.startRatio + (1 - spec.startRatio) * getRaceStage(state);
 
     return Math.sqrt(rankTerm * distTerm) * raceTerm;
 }
