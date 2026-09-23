@@ -126,10 +126,12 @@
     background-color: transparent !important;
 }
 
-/* Le rond de connexion garde son bleu Discord : c'est son anneau qui prend
+/* La pilule de connexion garde son bleu Discord : c'est son anneau qui prend
    la teinte de survol, l'icône blanche ne changerait rien sur ce fond. */
-.connexion-mobile:hover .rond-discord,
-.connexion-mobile:focus-visible .rond-discord {
+.connexion-mobile:hover .pilule-discord,
+.connexion-mobile:focus-visible .pilule-discord,
+a.pilule-discord:hover,
+a.pilule-discord:focus-visible {
     border-color: var(--survol-teinte);
     box-shadow: 0 0 0 1px var(--survol-teinte);
 }

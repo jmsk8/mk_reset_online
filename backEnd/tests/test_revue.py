@@ -40,12 +40,14 @@ def _rendre_navbar(compte):
     menu = html[html.index('id="navbarMenu"'):html.index('</nav>')]
     return brand, menu
 _brand, _menu = _rendre_navbar(None)
-check("visiteur : rond de connexion a cote du burger",
+check("visiteur : pilule de connexion a cote du burger",
       _re.search(r'class="navbar-item connexion-mobile is-hidden-desktop" href="/auth/discord/login"',
                  _brand) is not None)
-_bouton = _re.search(r'<div class="navbar-item([^"]*)">\s*<a class="button is-link is-light" '
+check("visiteur : la pilule dit ce qu'elle fait, pas seulement « Discord »",
+      _re.search(r'connexion-mobile.*?<span>Connexion</span>', _brand, _re.S) is not None)
+_bouton = _re.search(r'<div class="navbar-item([^"]*)">\s*<a class="pilule-discord" '
                      r'href="/auth/discord/login"', _menu)
-check("visiteur : le bouton du menu existe toujours (bureau)", _bouton is not None)
+check("visiteur : la pilule du menu existe toujours (bureau)", _bouton is not None)
 check("visiteur : ... mais masque sur mobile, donc absent du burger",
       _bouton is not None and 'is-hidden-touch' in _bouton.group(1),
       _bouton and _bouton.group(1))

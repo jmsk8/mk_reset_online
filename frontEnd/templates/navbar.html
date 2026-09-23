@@ -181,6 +181,29 @@
        se partagent l'espace libre a parts egales, ce qui laisse la cloche au
        milieu de la navbar. On annule donc celui du burger et la cloche reste
        seule a pousser : elle vient alors buter contre lui. */
+    /* Pilule de connexion Discord, mobile (navbar-brand) et bureau (navbar-end) :
+       une seule apparence pour le meme geste. Le bleu Discord et le logo disent
+       ou l'on va, le mot dit ce qu'on y fait. */
+    .pilule-discord {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        height: 2rem;
+        padding: 0 0.9rem 0 0.7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(226, 232, 240, 0.45);
+        background-color: #5865f2;
+        color: #fff !important;
+        font-size: 0.9rem;
+        font-weight: 600;
+        white-space: nowrap;
+        transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .pilule-discord .fab {
+        font-size: 1.05rem;
+    }
+
     @media screen and (max-width: 1023px) {
         /* Cible par le frere precedent : sans cloche (visiteur non connecte)
            la regle ne s'applique pas, le burger garde son auto et reste a
@@ -195,30 +218,24 @@
             width: 2.75rem !important;
         }
 
-        /* Visiteur : le rond de connexion tient la place de la cloche (il
-           pousse) et de l'avatar (meme emprise, meme bordure). */
+        /* Visiteur : la pilule de connexion tient la place de la cloche (elle
+           pousse) et de l'avatar (meme hauteur, meme bordure). Largeur libre :
+           c'est le mot qui la fixe. */
         .connexion-mobile {
             margin-left: auto;
             display: flex !important;
             align-items: center;
-            justify-content: center;
             height: 2.5rem;
-            width: 2.5rem;
             padding: 0 !important;
             background: transparent;
         }
 
-        .connexion-mobile .rond-discord {
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        /* La pilule elle-meme est commune (hors media query) : ici, sa seule
+           taille mobile, calee sur l'avatar de compte-mobile. */
+        .connexion-mobile .pilule-discord {
             height: 1.75rem;
-            width: 1.75rem;
-            border-radius: 50%;
-            border: 1px solid rgba(226, 232, 240, 0.45);
-            background-color: #5865f2;   /* le bleu de Discord : dit ou l'on va */
-            color: #fff;
-            font-size: 1rem;
+            padding: 0 0.7rem 0 0.55rem;
+            font-size: 0.85rem;
         }
 
         /* Un gap unique plutot que des paddings poses un par un : les trois
@@ -471,15 +488,16 @@
           </div>
         </div>
       {% endif %}
-      {# Connexion mobile : hors du burger, dans un rond a la place exacte de
-         l'avatar une fois connecte. Replie dans le menu, le seul geste utile
+      {# Connexion mobile : hors du burger, dans une pilule a la place de
+         l'avatar une fois connecte -- meme hauteur, meme bordure. Le logo
+         seul disait « Discord » mais pas « se connecter » : le mot est la. Replie dans le menu, le seul geste utile
          a un visiteur demandait deux taps, et rien ne disait qu'il existait.
          Memes conditions que le bouton de bureau (navbar-end), qui passe
          lui en is-hidden-touch : un seul des deux est visible a la fois. #}
       {% if not compte_joueur and discord_configure %}
         <a class="navbar-item connexion-mobile is-hidden-desktop" href="/auth/discord/login"
            title="Se connecter avec Discord" aria-label="Se connecter avec Discord">
-          <span class="rond-discord"><i class="fab fa-discord"></i></span>
+          <span class="pilule-discord"><i class="fab fa-discord"></i><span>Connexion</span></span>
         </a>
       {% endif %}
       <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarMenu">
@@ -645,11 +663,11 @@
            créer un compte exige toujours une invitation valide, refusée côté
            backend. #}
         {% if not compte_joueur and discord_configure %}
-          {# is-hidden-touch : sur mobile, c'est le rond de la navbar-brand. #}
-          <div class="navbar-item is-hidden-touch">
-            <a class="button is-link is-light" href="/auth/discord/login">
-              <span class="icon"><i class="fab fa-discord"></i></span>
-              <span>Se connecter</span>
+          {# is-hidden-touch : sur mobile, c'est la pilule de la navbar-brand.
+             Meme pilule ici, en un peu plus grand : la barre a la place. #}
+          <div class="navbar-item connexion-bureau is-hidden-touch">
+            <a class="pilule-discord" href="/auth/discord/login" title="Se connecter avec Discord">
+              <i class="fab fa-discord"></i><span>Se connecter</span>
             </a>
           </div>
         {% endif %}
