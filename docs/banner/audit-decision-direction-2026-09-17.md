@@ -384,8 +384,9 @@ passée en vue arrière n'est mesurée nulle part**.
 > garder un bouclier. Mais **pas pour se ranger hors de la ligne d'un porteur derrière**
 > (0 % : seul le porteur de devant a un souvenir, `frontAt`). Et 6 % des touches par
 > l'arrière frappent un kart qui savait, parce que le souvenir d'une carapace en vol n'en
-> garde pas la position. Détail au §10 de
-> [etat-avancement-global.md](../etat-avancement-global.md).
+> garde pas la position. ✅ **Corrigé le même jour** : le porteur qui suit a son souvenir
+> (`carrierAt`) et trois réponses tirées au sort (le laisser passer, se ranger, lui tirer
+> dessus). Détail au §10 de [etat-avancement-global.md](../etat-avancement-global.md).
 
 ### D-6 — l'étalonnage de `missChance` 🔵
 

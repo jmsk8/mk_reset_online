@@ -20,7 +20,10 @@ export default {
         //   shot       une carapace deja lancee. Le bouclier est la seule chose
         //              qui la mange, il n'y a plus le temps d'autre chose.
         //   carrier    quelqu'un qui en porte une : reste la possibilite de le
-        //              prendre de vitesse, donc un vrai choix.
+        //              prendre de vitesse, donc un vrai choix. C'est la valeur
+        //              du premier ; l'agressivite l'abaisse jusqu'a
+        //              `aggression.trailRatio` fois, et ce qui n'est pas garde
+        //              lui est renvoye, vise (cf. `updateShield`).
         //   backThrow  s'il s'en sert plutot que de s'en couvrir, la part qui
         //              part vers le danger.
         //   panic      etoile ou bill ne se trainent pas, ils rendent

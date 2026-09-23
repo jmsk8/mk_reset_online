@@ -230,6 +230,56 @@ function updatePlan(cfg, rng, now, kart) {
         }
     }
 
+    // LE PORTEUR DANS LE DOS, de memoire (cf. `carrierAt`). Il decide sur ce
+    // dont il se SOUVIENT, pas sur ce qu'il voit : la precaution ne se tirait
+    // que pendant un coup d'oeil, et revenu devant il n'en faisait plus rien.
+    //
+    // Trois reponses, aucune certaine, tirees a chaque echeance tant que le
+    // souvenir tient :
+    //
+    //   le laisser passer   s'il est pres : lever le pied et se ranger, pour
+    //                       sortir de sa ligne de tir par l'avant. Pas avec de
+    //                       quoi riposter en main, comme devant une rouge — le
+    //                       geste que le porteur de ROUGE declenchait deja seul.
+    //   se ranger           quitter sa ligne, la precaution ordinaire.
+    //   le viser            c'est `updateShield` : garder l'objet en bouclier,
+    //                       ou le lui renvoyer.
+    //
+    // Passe AVANT la precaution de devant : un porteur derriere peut tirer, celui
+    // de devant ne peut que laisser tomber.
+    if (!plan.threatId && now - sight.carrierAt <= vis.pressureMemoryMs
+        && now >= kart.safetyRetryBackAt) {
+        const spec = vis.carrierBehind;
+        kart.safetyRetryBackAt = now + vis.safety.retryMs;
+
+        // Celui qui tient une ROUGE a deja son tirage, juste au-dessus et a sa
+        // cadence : le laisser passer ici le compterait deux fois.
+        const armed = kart.heldItem && isTrailable(cfg, kart.heldItem.type);
+        const red = sight.redBehindDist >= 0 && sight.redBehindId === sight.carrierId;
+        if (!armed && !red && sight.carrierDist <= spec.passRange
+            && rng() < spec.passChance) {
+            plan.kind = 'giveWay';
+            plan.threatId = sight.carrierId;
+            plan.threatY = sight.carrierY;
+            plan.intensity = vis.giveWay.speed;
+            plan.until = now + vis.giveWay.holdMs;
+            plan.reviewAt = now + reviewDelay(cfg, rng);
+            placeSafety(cfg, kart, plan);
+            return;
+        }
+
+        if (rng() < vis.safety.chance) {
+            plan.kind = 'safety';
+            plan.threatId = sight.carrierId;
+            plan.threatY = sight.carrierY;
+            plan.intensity = vis.safety.speed;
+            plan.until = now + vis.safety.holdMs;
+            plan.reviewAt = now + reviewDelay(cfg, rng);
+            placeSafety(cfg, kart, plan);
+            return;
+        }
+    }
+
     // La decision de securite, prise faute de mieux a faire : un danger reel
     // occupe deja le plan.
     //
@@ -237,15 +287,14 @@ function updatePlan(cfg, rng, now, kart) {
     // s'ecarter a tous les coups rendrait le jeu d'objets inoffensif, ne jamais
     // le faire laisserait les karts colles derriere une verte.
     //
-    // Une echeance PAR COTE, et il en fallait deux : un seul compteur faisait que
-    // les deux formes du danger latent se volaient leurs tirages.
-    const pressBack = sight.pressureBack;
-    const retryAt = pressBack ? kart.safetyRetryBackAt : kart.safetyRetryFrontAt;
-
-    if (!plan.threatId && sight.pressure && now >= retryAt) {
+    // Elle ne vaut plus que pour le porteur de DEVANT : celui de derriere passe
+    // par son souvenir, juste au-dessus. D'ou une echeance par cote, et il en
+    // fallait deux : un seul compteur faisait que les deux formes du danger
+    // latent se volaient leurs tirages.
+    if (!plan.threatId && sight.pressure && !sight.pressureBack
+        && now >= kart.safetyRetryFrontAt) {
         const safety = vis.safety;
-        if (pressBack) kart.safetyRetryBackAt = now + safety.retryMs;
-        else kart.safetyRetryFrontAt = now + safety.retryMs;
+        kart.safetyRetryFrontAt = now + safety.retryMs;
 
         if (rng() < safety.chance) {
             plan.kind = 'safety';

@@ -32,6 +32,10 @@ propage plus à l'objet suivant.
 chiffrée, sans `NaN`. `tools/simulate.js` et le nouveau `tools/alerts.js` tournent aussi. Sans
 `node` installé, l'Electron de VS Code en tient lieu :
 `ELECTRON_RUN_AS_NODE=1 /app/extra/vscode/code tools/alerts.js` (installation Flatpak).
+Depuis le 2026-09-23, deux bancs de plus : `tools/attention.js` (`make race-attention`,
+ce qu'un kart fait de ce qu'il a vu derrière, D-5, et son tirage d'inattention par
+gabarit, D-6) et `tools/redshell.js` (`make race-redshell`, la rouge face à un tuyau,
+O-3).
 
 ## Chantiers — en cours de construction
 
@@ -65,7 +69,7 @@ raceEngine/               le service : simulation, protocole, circuits
 ├── src/protocol.js       le contrat serveur ↔ client
 ├── src/track.js          la lecture des circuits dessinés
 ├── src/server.js         boucle 30 Hz, diffusion 10 Hz, WebSocket
-└── tools/                cinq observateurs : ils lisent, ils n'écrivent pas
+└── tools/                sept observateurs : ils lisent, ils n'écrivent pas
 
 frontEnd/static/js/banner/   le rendu — 22 scripts chargés dans l'ordre
 frontEnd/static/css/banner.css   la feuille de style, en un fichier

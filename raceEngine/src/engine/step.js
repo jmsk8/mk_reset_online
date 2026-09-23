@@ -12,7 +12,7 @@ import { updateCamera } from './camera.js';
 import { spendItem } from './items.js';
 import { spinDuration, updateBill, updateBlueBlast, updateBlueShell, updateStorm } from './effects.js';
 import { activateItem, destroyOrbitItem, getOrbitItemPosition, giveKartItem, redShellTargetScore, updateOrbitItems } from './weapons.js';
-import { advanceProjectile, collideKartWithPipes } from './pipes.js';
+import { advanceProjectile, collideKartWithPipes, redShellAimY } from './pipes.js';
 import { clampKartToRoad, resolveKartContacts } from './road.js';
 import { updateRace } from './race.js';
 import { updateAI } from './ai.js';
@@ -547,7 +547,8 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             if (item.type === 'redShell' && item.targetKartId !== null) {
                 const target = state.kartsById[item.targetKartId];
                 if (target && (target.state === 'running' || target.state === 'hit')) {
-                    const diffY = target.yPercent - item.y;
+                    // La profondeur de sa cible, ou le detour d'un tuyau.
+                    const diffY = redShellAimY(cfg, state, item, target) - item.y;
                     item.vy = diffY * cfg.speeds.redShellTrackingSpeed;
                 } else {
                     // Cible de repli cherchee dans le sens de deplacement.

@@ -313,7 +313,7 @@ La même correction n'a pas été portée ici. Deux lectures possibles, et je ne
 > attendu d'elle, en revanche, n'existe pas** : elle devrait contourner un obstacle fixe
 > comme un pipe et foncer droit sur sa cible sinon. Aujourd'hui elle vise la profondeur de sa
 > cible sans regarder le décor, et se brise sur le premier pipe (`advanceProjectile`).
-> C'est un chantier à ouvrir.
+> ✅ **Livré le même jour** : `redShellAimY` (`pipes.js`), banc `make race-redshell`.
 
 ### O-4 — la rouge arrière part aveugle 🔵
 

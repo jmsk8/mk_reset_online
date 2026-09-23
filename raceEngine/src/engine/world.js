@@ -270,6 +270,17 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
                 // le dos qui peut tirer, ou un porteur devant qui peut
                 // lacher. Meme perception, deux decisions.
                 pressureBack: false,
+                // Et a quelle distance, dans le sens du regard.
+                pressureDist: 0,
+
+                // Le porteur qui NOUS SUIT, et depuis quand : l'autre moitie
+                // du danger latent, qui n'avait pas de souvenir. Seul un
+                // balayage ARRIERE le pose ou le leve ; la distance et la
+                // profondeur vieillissent ensuite, et c'est assume.
+                carrierAt: -Infinity,
+                carrierY: 0,
+                carrierId: 0,
+                carrierDist: 0,
 
                 // Le porteur qu'on SUIT, et depuis quand. Meme souvenir
                 // date que `dangerAt` plus bas, meme peremption, pour la

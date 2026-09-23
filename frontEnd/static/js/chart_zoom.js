@@ -9,7 +9,12 @@
 //     defiler la page, un bandeau rappelle alors le geste ;
 //   - pincement a deux doigts : zoom ;
 //   - une fois zoome, glisser (souris ou doigt) : deplacement ;
-//   - double-clic ou bouton ⟲ (visible une fois zoome) : retour.
+//   - double-clic (souris) ou bouton ⟲ (visible une fois zoome) : retour.
+//     Au doigt, le double-tap est ignore : il tombe trop facilement en
+//     touchant deux points de suite.
+// Communs a tous les graphiques branches : zone de toucher des points
+// elargie au doigt et suivant leur grossissement, bulle d'info orientee vers
+// la partie visible.
 //
 // Usage, apres la creation du graphique :
 //   ChartZoom.brancher(chart);
@@ -34,8 +39,9 @@
 //      c'est instantane, mais traits, points et textes grossissent avec ;
 //   2. 200 ms apres, Chart.js redessine le graphique a la taille zoomee
 //      (canvas plus grand que son parent, qui coupe ce qui depasse). Traits,
-//      points, textes et bulles d'info retrouvent leur taille normale, seules
-//      les distances s'etirent. Le transform ne garde que le deplacement.
+//      textes et bulles d'info retrouvent leur taille normale, les points
+//      grossissent un peu (EXPOSANT_POINTS), les distances s'etirent. Le
+//      transform ne garde que le deplacement.
 // Le parent doit etre en position relative et avoir une hauteur propre (le
 // canvas zoome passe en absolu et ne la porte plus) ; ses autres enfants,
 // poses en absolu, ne sont pas agrandis.
@@ -53,6 +59,18 @@
     // Un clic qui suit de moins de ce delai la fin d'un glisser en est le
     // relachement, pas un vrai clic.
     const DELAI_CLIC_APRES_GLISSER_MS = 300;
+    // Les points grossissent moins vite que le zoom : rayon x zoom^0,5, soit
+    // x1,4 a x2 et x2 a x4. A taille fixe ils paraissaient minuscules une
+    // fois les distances etirees ; au zoom plein ils empataient la courbe.
+    const EXPOSANT_POINTS = 0.5;
+    // Zone de toucher d'un point, en plus de son rayon (hitRadius de
+    // Chart.js, 1 par defaut) : les points des courbes font 2 a 3 px de rayon,
+    // impossibles a viser au doigt. Une fois zoome, elle suit aussi le
+    // grossissement des points (rayon type de RAYON_TYPE_PX).
+    const MARGE_TOUCHER_DOIGT_PX = 12;
+    const MARGE_TOUCHER_SOURIS_PX = 1;
+    const RAYON_TYPE_PX = 5;
+    const auDoigt = () => !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 
     let stylesInjectes = false;
 
@@ -136,9 +154,50 @@
             const z = chart.$chartZoom;
             if (!z || z.echelle() === 1) return;
             chart.ctx.restore();
+        },
+        // Grossissement des points, le temps du dessin seulement : les options
+        // d'origine sont remises juste apres. Le code des pages (surbrillance,
+        // rayons par point) et le calcul des survols n'y voient rien.
+        beforeDatasetDraw(chart, args) {
+            const z = chart.$chartZoom;
+            const k = z ? Math.pow(z.zoomDessin(), EXPOSANT_POINTS) : 1;
+            if (k === 1) return;
+            for (const el of args.meta.data) {
+                const o = el.options;
+                if (!o || !o.radius) continue;
+                el.$optionsHorsLoupe = o;
+                el.options = Object.assign({}, o, { radius: o.radius * k });
+            }
+        },
+        afterDatasetDraw(chart, args) {
+            for (const el of args.meta.data) {
+                if (!el.$optionsHorsLoupe) continue;
+                el.options = el.$optionsHorsLoupe;
+                delete el.$optionsHorsLoupe;
+            }
         }
     };
-    if (window.Chart) Chart.register(pluginLoupe);
+    if (window.Chart) {
+        Chart.register(pluginLoupe);
+        // Positionneur de bulle d'info. Chart.js oriente la bulle d'apres le
+        // graphique entier ; zoome, celui-ci deborde largement de la vue et la
+        // bulle pouvait s'ouvrir hors de la partie visible (toucher un point
+        // semblait sans effet). On l'oriente vers le centre de la partie
+        // visible. Non zoome, rien ne change.
+        if (Chart.Tooltip && Chart.Tooltip.positioners) Chart.Tooltip.positioners.loupe = function (items, positionEvenement) {
+            const z = this.chart.$chartZoom;
+            const origine = (z && Chart.Tooltip.positioners[z.positionOrigine]) || Chart.Tooltip.positioners.average;
+            const pos = origine.call(this, items, positionEvenement);
+            if (!pos || !z || z.zoom() === 1) return pos;
+            const v = z.zoneVisible();
+            const quart = (v.bas - v.haut) / 4;
+            let yAlign = 'center';
+            if (pos.y < v.haut + quart) yAlign = 'top';          // bulle sous le point
+            else if (pos.y > v.bas - quart) yAlign = 'bottom';   // bulle au-dessus
+            const xAlign = pos.x <= (v.gauche + v.droite) / 2 ? 'left' : 'right';
+            return Object.assign({}, pos, { xAlign, yAlign });
+        };
+    }
 
     function brancher(chart, { glisserPermis = null, touchActionAuRepos = 'pan-x pan-y', surChangement = null } = {}) {
         if (!chart) return;
@@ -176,10 +235,30 @@
         let minuterieRedessin = null;
         const echelle = () => z / zDessin;
 
+        const tooltipOptions = chart.options.plugins && chart.options.plugins.tooltip;
         chart.$chartZoom = {
             echelle,
-            versVue: (x, y) => ({ x: tx + x * echelle(), y: ty + y * echelle() })
+            zoom: () => z,
+            zoomDessin: () => zDessin,
+            versVue: (x, y) => ({ x: tx + x * echelle(), y: ty + y * echelle() }),
+            // Partie visible, en coordonnees du graphique.
+            zoneVisible: () => {
+                const { w, h } = tailleBase(), s = echelle();
+                return { gauche: -tx / s, haut: -ty / s, droite: (w - tx) / s, bas: (h - ty) / s };
+            },
+            positionOrigine: (tooltipOptions && tooltipOptions.position) || 'average'
         };
+        if (tooltipOptions && window.Chart && Chart.Tooltip && Chart.Tooltip.positioners.loupe) {
+            tooltipOptions.position = 'loupe';
+        }
+
+        // Ecrit dans la config du graphique (jamais dans les reglages globaux
+        // de Chart.js) ; pris en compte au prochain update.
+        function majZoneToucher() {
+            const k = Math.pow(zDessin, EXPOSANT_POINTS);
+            const marge = auDoigt() ? MARGE_TOUCHER_DOIGT_PX : MARGE_TOUCHER_SOURIS_PX;
+            chart.options.elements.point.hitRadius = marge + RAYON_TYPE_PX * (k - 1);
+        }
 
         function tailleBase() {
             return zDessin === 1 ? { w: chart.width, h: chart.height } : base;
@@ -225,6 +304,7 @@
                 delete chart.options.devicePixelRatio;
                 canvas.style.position = '';
                 zDessin = 1;
+                majZoneToucher();
                 chart.resize();
             } else {
                 const W = Math.round(w * z), H = Math.round(h * z);
@@ -235,6 +315,7 @@
                 canvas.style.left = '0';
                 canvas.style.top = '0';
                 zDessin = z;
+                majZoneToucher();
                 chart.resize(W, H);
             }
 
@@ -288,8 +369,10 @@
         // Glisser et pincement, en pointer events (souris, doigt et stylet).
         const appuis = new Map();
         let glisse = false, depart = null, pince = null, finGlisser = 0;
+        let dernierPointeur = 'mouse';
 
         vue.addEventListener('pointerdown', (ev) => {
+            dernierPointeur = ev.pointerType;
             if (ev.target === bouton) return;
             if (ev.pointerType === 'mouse' && ev.button !== 0) return;
             appuis.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
@@ -361,6 +444,9 @@
 
         vue.addEventListener('dblclick', (ev) => {
             if (ev.target === bouton) return;
+            // Au doigt, deux touchers rapides sur deux points font un dblclick :
+            // il annulerait le zoom en plein usage. Le bouton ⟲ sert au retour.
+            if (dernierPointeur === 'touch') return;
             reinitialiser();
         }, ecoute);
 
@@ -375,6 +461,8 @@
         if (observateur) observateur.observe(vue);
 
         vue.style.touchAction = touchActionAuRepos;
+        majZoneToucher();
+        chart.update('none');
 
         vue.$chartZoomDetacher = () => {
             abandon.abort();

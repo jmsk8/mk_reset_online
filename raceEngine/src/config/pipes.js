@@ -66,6 +66,14 @@ export default {
         // duree de vie a une verte, qui n'en avait aucune.
         maxShellBounces: 10,
 
+        // La rouge en chasse contourne un tuyau au lieu de s'y briser (cf.
+        // `redShellAimY`). `look` : distance, en px de monde, a laquelle elle
+        // decide ; a 840 px/s, et avec son suivi, 600 lui laissent de quoi
+        // passer. `margin` : le jeu au-dela de l'emprise du tuyau, en fraction de
+        // son demi-axe de profondeur — pile au bord, un sous-pas la ferait
+        // mordre dedans.
+        redShell: { look: 600, margin: 0.25 },
+
         // Integration des projectiles par sous-pas. A 880 px/s et 45 degres, une
         // verte traverse la piste en un dixieme de seconde : en un seul pas de 33
         // ms elle avancerait de 8 unites de profondeur, soit plus que la hitbox

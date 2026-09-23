@@ -293,6 +293,23 @@ export default {
             brakeFactor: 0.90
         },
 
+        // Un PORTEUR derriere, dans l'axe, avec de quoi tirer devant lui — et le
+        // kart s'en souvient une fois revenu devant (`pressureMemoryMs`). A
+        // chaque echeance de `safety.retryMs`, tant que le souvenir tient :
+        //
+        //     `passChance` s'il est a moins de `passRange` px, le laisser passer
+        //     — le geste de `giveWay`, frein doux compris. Un kart qui se fait
+        //     doubler sort de la ligne de tir par l'avant. Jamais avec de quoi
+        //     riposter en main : c'est alors `ai.shield` qui decide.
+        //     Sinon, `safety.chance` de se ranger hors de sa ligne.
+        //
+        // Le reste du temps il ne fait rien, et c'est voulu : une precaution
+        // certaine rendrait les carapaces inoffensives.
+        carrierBehind: {
+            passRange: 300,
+            passChance: 0.30
+        },
+
         // Une decision prise ne se defait pas parce que le regard s'est porte
         // ailleurs : elle tient jusqu'a son echeance, ou jusqu'a ce que le kart
         // CONSTATE que la menace est passee. `holdAfterMs` s'ajoute au temps

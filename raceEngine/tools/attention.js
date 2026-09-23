@@ -72,9 +72,11 @@ function newAcc() {
         mem: byPlace(), memFront: byPlace(),
         // decision -> { front, back }
         acts: {
-            giveWay: { front: 0, back: 0 },
+            giveWayRed: { front: 0, back: 0 },
+            giveWayCarrier: { front: 0, back: 0 },
             safetyBack: { front: 0, back: 0 },
             shieldHold: { front: 0, back: 0 },
+            counter: { front: 0, back: 0 },
         },
         // touches par une carapace venue de derriere, par ce que le kart savait
         rearHits: { total: 0, looking: 0, dodging: 0, memory: 0, heard: 0, unaware: 0 },
@@ -89,7 +91,13 @@ function snapshotKart(k, t) {
         back: s.back,
         scanBack: s.scanBack,
         memory: t - s.dangerAt <= CFG.vision.pressureMemoryMs && s.dangerKind !== '',
+        // Le porteur qui suit, de memoire. Absent des versions du moteur qui ne
+        // le retenaient pas : on retombe alors sur le releve du balayage.
+        carrier: ('carrierAt' in s)
+            ? (t - s.carrierAt <= CFG.vision.pressureMemoryMs)
+            : (s.pressure && s.pressureBack),
         plan: k.plan.threatId !== 0 ? k.plan.kind : '',
+        threatId: k.plan.threatId,
         heard: !!(k.alert && k.alert.red),
         shieldHold: k.shieldHold,
     };
@@ -131,11 +139,31 @@ function raceRun(cfg, seed, acc) {
                 }
 
                 const side = now.scanBack ? 'back' : 'front';
-                if (now.plan === 'giveWay' && was.plan !== 'giveWay') acc.acts.giveWay[side]++;
-                if (now.plan === 'safety' && was.plan !== 'safety' && k.sight.pressureBack) {
+                // Ceder le passage : a celui qui tient une ROUGE (le geste d'origine),
+                // ou a un autre porteur (D-5). Le plan designe le kart.
+                if (now.plan === 'giveWay' && was.plan !== 'giveWay') {
+                    const other = state.kartsById[-1 - now.threatId];
+                    const red = other && other.heldItem && other.heldItem.type === 'redShell';
+                    acc.acts[red ? 'giveWayRed' : 'giveWayCarrier'][side]++;
+                }
+                if (now.plan === 'safety' && was.plan !== 'safety' && now.carrier
+                    && (k.sight.carrierId === now.threatId
+                        || (k.sight.pressureBack && k.sight.pressureId === now.threatId))) {
                     acc.acts.safetyBack[side]++;
                 }
                 if (now.shieldHold && !was.shieldHold) acc.acts.shieldHold[side]++;
+            }
+        }
+
+        // La contre-attaque : une carapace tiree vers l'ARRIERE par un kart qui
+        // se sait suivi par un porteur.
+        if (state.phase === 'racing') {
+            for (const ev of events) {
+                if (ev.type !== 'launchItem') continue;
+                const was = before.get(ev.kartId);
+                const it = state.items.find(i => i.id === ev.itemId);
+                if (!was || !it || SHELLS.indexOf(it.type) === -1 || !(it.vx < 0)) continue;
+                if (was.carrier) acc.acts.counter[was.scanBack ? 'back' : 'front']++;
             }
         }
 
@@ -183,7 +211,15 @@ function reportD5(acc) {
 
     console.log('\nDecisions sur un danger arriere, selon le sens du balayage qui les a prises :');
     console.log('                          face route   dos tourne   part sur souvenir');
-    for (const [name, v] of Object.entries(acc.acts)) {
+    const LABELS = {
+        giveWayRed: 'cede (rouge en main)',
+        giveWayCarrier: 'cede (autre porteur)',
+        safetyBack: 'se range',
+        shieldHold: 'garde son bouclier',
+        counter: 'lui tire dessus',
+    };
+    for (const [key, v] of Object.entries(acc.acts)) {
+        const name = LABELS[key];
         const n = v.front + v.back;
         console.log(`  ${name.padEnd(22)}${String(v.front).padStart(11)}${String(v.back).padStart(13)}`
             + `${pct(v.front, n).padStart(20)}`);
