@@ -277,6 +277,13 @@
         // l'impossibilite de les attraper.
         function pixelXFromEvent(evt) {
             const source = evt.touches && evt.touches.length ? evt.touches[0] : evt;
+            // Loupe (chart_zoom.js) : le canvas peut etre deplace ou agrandi par
+            // un transform CSS. Au doigt, getRelativePosition passe alors par
+            // clientX en coordonnees ecran agrandies et rate la poignee ;
+            // depuisEcran rapporte la position a la taille reelle du canvas.
+            if (window.ChartZoom) {
+                return ChartZoom.depuisEcran(chart, source.clientX, source.clientY).x;
+            }
             if (window.Chart && Chart.helpers && Chart.helpers.getRelativePosition) {
                 // API officielle : gere le ratio rendu/CSS et le devicePixelRatio.
                 return Chart.helpers.getRelativePosition(source, chart).x;
@@ -301,7 +308,9 @@
             if (!chart) return;
             const px = pixelXFromEvent(evt);
             if (draggingIdx < 0) {
-                area.style.cursor = nearestHandle(px, chart.scales.x) >= 0 ? 'ew-resize' : 'default';
+                // '' plutot que 'default' : hors poignee, le curseur de la loupe
+                // (main ouverte une fois zoome) reprend la main.
+                area.style.cursor = nearestHandle(px, chart.scales.x) >= 0 ? 'ew-resize' : '';
                 return;
             }
             const value = chart.scales.x.getValueForPixel(px);
@@ -721,6 +730,16 @@
         });
 
         attachDragHandlers(canvasEl);
+        if (window.ChartZoom) {
+            ChartZoom.brancher(chart, {
+                // Le doigt reste reserve au graphique, comme avant la loupe :
+                // attraper une poignee ne doit jamais faire defiler la page.
+                touchActionAuRepos: 'none',
+                // Un appui sur une poignee deplace le seuil, pas la vue.
+                glisserPermis: (clientX, clientY) =>
+                    nearestHandle(ChartZoom.depuisEcran(chart, clientX, clientY).x, chart.scales.x) < 0,
+            });
+        }
         renderLegend();
         renderTiersPanel();
     }

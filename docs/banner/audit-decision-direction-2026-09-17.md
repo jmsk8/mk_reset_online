@@ -378,6 +378,14 @@ passée en vue arrière n'est mesurée nulle part**.
 > Le premier est donc aveugle devant près d'un tiers du temps — assumé tant qu'il n'a que
 > l'arrière à surveiller, mais c'est le chiffre à regarder avant de monter une chance de coup
 > d'œil.
+>
+> **Vérifié le 2026-09-23** (`make race-attention`, 300 courses) : le souvenir de l'arrière
+> sert bien face à la route pour céder le passage à une rouge (46 % des décisions) et pour
+> garder un bouclier. Mais **pas pour se ranger hors de la ligne d'un porteur derrière**
+> (0 % : seul le porteur de devant a un souvenir, `frontAt`). Et 6 % des touches par
+> l'arrière frappent un kart qui savait, parce que le souvenir d'une carapace en vol n'en
+> garde pas la position. Détail au §10 de
+> [etat-avancement-global.md](../etat-avancement-global.md).
 
 ### D-6 — l'étalonnage de `missChance` 🔵
 
@@ -393,6 +401,11 @@ mais ce n'est écrit nulle part.
 
 > **À mesurer** : taux de `judgedIgnored` par personnage, à géométrie identique. S'il est
 > significativement plus bas pour les lourds, c'est un effet de bord à documenter ou à corriger.
+>
+> **Mesuré le 2026-09-23** (`make race-attention`, 1000 graines par kart). Quand la menace
+> apparaît tard (≤ 450 px), le tirage est identique pour tous. Plus loin, toad et koopa
+> gardent 2 à 6 % de ratés là où les autres tombent à 0 %. L'effet de bord existe, il est
+> petit, et reste **à trancher**.
 
 ---
 

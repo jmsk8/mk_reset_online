@@ -301,6 +301,12 @@ race-alerts:         ## Banc des alertes, avec et sans (SEEDS=200 CAMPAIGN=400)
 	$(RACE_NODE) node tools/alerts.js --seeds $${SEEDS:-200} \
 		$(if $(CAMPAIGN),--campaign $(CAMPAIGN),)
 
+# Ce qu'un kart fait de ce qu'il a vu derriere une fois revenu devant (D-5), et
+# si son tirage d'inattention depend de son gabarit (D-6). Mesure seule, ne sort
+# jamais en erreur (cf. docs/banner/audit-decision-direction-2026-09-17.md).
+race-attention:      ## Banc de l'attention, D-5 et D-6 (RACES=300 SEEDS=1000)
+	$(RACE_NODE) node tools/attention.js --races $${RACES:-300} --seeds $${SEEDS:-1000}
+
 # `exec race node ...` supposait que le conteneur du moteur embarque node : c'est
 # faux des que le moteur est le binaire C++, et le test se coupait la branche sur
 # laquelle il est assis. On emprunte donc une image node et on la colle dans la
@@ -327,7 +333,7 @@ help:                ## Show this help
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
         recompter-absences \
-        race-deps race-tracks race-soak race-sim race-scenario race-alerts race-spectate race-nginx \
+        race-deps race-tracks race-soak race-sim race-scenario race-alerts race-attention race-spectate race-nginx \
         engine engine-js engine-cpp \
         reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help

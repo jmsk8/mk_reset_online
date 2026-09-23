@@ -308,6 +308,13 @@ La même correction n'a pas été portée ici. Deux lectures possibles, et je ne
 > **À mesurer** : proportion de rouges dont la cible désignée était **masquée** pour le tireur au
 > moment du tir. `sight.hiddenIds` existe déjà et relève exactement cette information.
 
+> **Tranché le 2026-09-23 par l'utilisateur** : la lecture « défendable » est la bonne. La
+> rouge est une tête chercheuse, voir à travers les murs n'est pas grave. **Ce qui est
+> attendu d'elle, en revanche, n'existe pas** : elle devrait contourner un obstacle fixe
+> comme un pipe et foncer droit sur sa cible sinon. Aujourd'hui elle vise la profondeur de sa
+> cible sans regarder le décor, et se brise sur le premier pipe (`advanceProjectile`).
+> C'est un chantier à ouvrir.
+
 ### O-4 — la rouge arrière part aveugle 🔵
 
 ```js
@@ -335,6 +342,10 @@ Si `cachedLeader` est absent, le kart se prend **lui-même** comme référence d
 `raceTerm` devient alors celui d'un leader. L'effet est faible et le repli ne dure qu'un tick, mais
 c'est un repli **silencieux** qui change la valeur au lieu de la neutraliser. Noté pour mémoire,
 pas pour action.
+
+> **Repris le 2026-09-23** : le repli est pratiquement inatteignable. Ce qui est étrange,
+> c'est la **copie** de `getRaceStage()` (`standings.js`), qui calcule la même grandeur avec
+> un repli à 0. Piste : n'en garder qu'une. À réfléchir, rien de modifié.
 
 ---
 
@@ -411,3 +422,4 @@ qu'il a mieux à faire que de céder le passage. La condition est bien posée da
 4. **Décider pour la rouge (O-3).** Soit le ciblage passe par `kart.sight` comme la visée, soit on
    écrit pourquoi il en est dispensé. L'incohérence actuelle n'est pas documentée.
 5. **Documenter O-4** — une ligne suffit : la rouge du leader est délibérément une verte rapide.
+   ✅ **Acté le 2026-09-23** par l'utilisateur, comme O-2 (les triples dorment, c'est voulu).

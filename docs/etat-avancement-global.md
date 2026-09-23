@@ -104,7 +104,7 @@
 | 12 | **CHANGELOG** | §12 | La section « Non publié » ne dit **rien** de la bascule Discord, des rôles admin, du journal, des promotions, des notifications ni des sessions de tournois. À écrire avant de publier une version. |
 | 13 | **Karts de la bannière : ménage et Daisy + Birdo** | §13.4 | Demandé le 22/09. Supprimer les PNG inutilisés, ajouter Daisy et Birdo (images commitées dans `static/img/`, à renommer). Plus qu'un ajout d'images : 10 karts au lieu de 8 dans chaque course, deux moteurs à mettre à jour, un équilibrage à refaire. |
 | 14 | **Bannière : retravailler redémarrage, pause, tour et vitesse** | §13.5 | Demandé le 22/09. Le bouton de vote de redémarrage, le bouton pause, et le cartouche tour/vitesse du kart suivi. |
-| 15 | **Les constats banner restants** | §10 | 🟡 et 🔵. **Mis de côté** par décision du 18/09 — mais le banc tourne désormais, plus rien ne bloque leur mesure. |
+| 15 | **Les constats banner restants** | §10 | **Arbitrés le 23/09** : O-2, O-4, D-4 et O-3 (le ciblage) actés, D-3 laissé de côté, D-5 et D-6 mesurés (`make race-attention`). Restent : le souvenir du porteur arrière (D-5), O-5 à réfléchir, D-6 à trancher, et un **nouveau chantier**, la rouge qui contourne les pipes (O-3). |
 | 16 | **Chantiers de confort** | §11 | Pistes de perf du décor, moteur Rust — plus les chantiers volontairement non commencés (bas du document). |
 | — | **Demande à ranger : 13.9** (13.7 et 13.8 ✅) | §13 | Sans rang, à placer par l'utilisateur. 13.7 et 13.8 sont ✅ faites le 23/09. Proposition : 13.9 (zoom des graphiques) un petit chantier, tous les graphiques étant sur Chart.js. |
 
@@ -462,19 +462,53 @@ installé, l'Electron de VS Code en tient lieu :
 `ELECTRON_RUN_AS_NODE=1 /app/extra/vscode/code tools/scenario.js`. **Plus rien ne bloque la
 mesure des constats ci-dessous** — ils restent mis de côté par la décision du 18/09.
 
-**Restent ouverts**, par gravité :
+**Arbitrés par l'utilisateur le 2026-09-23** (mesures : `make race-attention`,
+`tools/attention.js`, 300 courses et 1000 graines par kart) :
 
-- `[ ]` O-3 🟡 — `findRedShellTarget` ignore l'occlusion : la rouge cible à travers les murs.
-- `[ ]` D-3 🟡 — `heldThreatType` corrige un défaut que `disabledItems` masque (rien ne l'exerce).
-- `[ ]` D-4 🟡 — le `giveWay` ne vérifie pas que la rouge vise **bien lui**.
-- `[~]` D-5 🟡 — l'attention est un goulot : voir devant **coûte** l'arrière. **Mesuré le
-  2026-09-21** (1000 courses) : le premier passe 32 % de son temps tourné vers l'arrière, le
-  peloton 17 %, le dernier 6 %. Assumé tant que le premier n'a que l'arrière à surveiller ;
-  c'est le chiffre à regarder avant de toucher au coup d'œil.
-- `[ ]` O-2 🟡 — les trois triples sont désactivés, tout leur code dort.
-- `[ ]` O-4 🔵 — la rouge tirée en arrière part **sans cible**, en ligne droite.
+- `[x]` O-2 🟡 — triples désactivés : **normal**, voulu.
+- `[x]` O-4 🔵 — la rouge tirée en arrière part tout droit : **normal**, voulu.
+- `[x]` D-4 🟡 — se ranger devant une rouge qui ne le vise pas : **légitime**. Être dans son
+  axe suffit à justifier l'écart, cible ou non.
+- `[x]` O-3 🟡 — la rouge qui cible à travers les murs : **pas grave**, elle est une tête
+  chercheuse. ⚠️ **Mais ce que l'utilisateur attend d'elle n'est pas dans le code** : elle
+  devrait **contourner un obstacle fixe** (un pipe) et foncer droit sur sa cible sinon. Or
+  elle vise la profondeur de sa cible sans regarder le décor (`step.js`, suivi de
+  `targetKartId`) et **se brise** sur le premier pipe de sa trajectoire (`pipes.js`,
+  `advanceProjectile`). Chantier à part : faire contourner les pipes par la rouge.
+- `[ ]` D-3 🟡 — `heldThreatType` corrige un défaut que `disabledItems` masque. **Laissé de
+  côté** pour l'instant.
+- `[~]` D-5 🟡 — **vérifié le 2026-09-23.** Le modèle voulu : le kart regarde devant ou
+  derrière, retient ce qu'il a vu derrière et agit dessus en regardant devant. Mesures :
+  - le souvenir tient : pendant qu'un danger arrière est en mémoire, le kart regarde devant
+    37 à 51 % du temps. Il n'est pas cloué vers l'arrière ;
+  - ✅ **céder le passage à une rouge** (`giveWay`) : 46 % des décisions prises face à la
+    route, sur le souvenir ;
+  - ✅ **garder son objet en bouclier** : 13 % sur le souvenir, le reste au premier regard,
+    ce qui est logique (l'épisode commence quand il la voit) ;
+  - ❌ **se ranger hors de la ligne d'un porteur derrière** (`safety`) : **0 %** sur le
+    souvenir, 689 décisions toutes prises dos tourné. Seul le porteur **de devant** a un
+    souvenir (`frontAt`, `vision.js`). Celui de derrière s'efface au retour de tête, et le
+    tirage n'a lieu que pendant un coup d'œil ;
+  - ⚠️ **6 % des touches par l'arrière** tombent sur un kart qui **savait** (souvenir frais),
+    regardait devant et n'esquivait pas. Le souvenir d'une carapace en vol ne garde que sa
+    **nature** (`dangerKind: 'shot'`), pas sa position : il fait se retourner plus souvent
+    mais ne permet pas d'esquiver. 24 % des touches arrière tombent sur un kart qui n'en
+    savait rien.
+  - Coût du regard inchangé : 33 % du temps tourné vers l'arrière pour le premier, 18 %
+    pour le peloton, 6 % pour le dernier.
 - `[ ]` O-5 🔵 — `getAggression` lit `state.cachedLeader` avec un repli sur soi-même.
-- `[ ]` D-6 🔵 — l'étalonnage de `missChance`, à confirmer au banc.
+  **À réfléchir.** Analyse du 23/09 : le repli est pratiquement inatteignable
+  (`cachedLeader` est posé dès qu'un kart roule et n'est jamais remis à `null`). L'étrange
+  est ailleurs : ces lignes **recopient** `getRaceStage()` (`standings.js`), qui calcule la
+  même progression du premier mais se replie sur **0**. Deux sources pour une même grandeur,
+  avec deux replis différents. Piste : appeler `getRaceStage(state)`.
+- `[~]` D-6 🔵 — **banc prêt et passé le 2026-09-23.** Quand une menace apparaît tard
+  (≤ 450 px), le tirage est **le même pour tous** (9,5 % à 250 px, 8,4 % à 350 px) :
+  l'étalonnage sur l'agilité de référence tient. Plus loin, les deux plus vifs (toad,
+  koopa) ouvrent leur fenêtre plus tard et gardent **2 à 6 %** de ratés là où les autres
+  sont à 0 %. L'effet de bord existe, mais il reste petit et ne touche que les deux gabarits
+  légers. **À trancher** : l'assumer et l'écrire, ou tirer l'inattention sur une fenêtre de
+  référence.
 
 ### 11. Chantiers apparus depuis le 2026-09-19
 
@@ -735,11 +769,17 @@ dans `2053a67` **sans être renommées**), avec les 5 orientations et un portrai
 
 **Demandé** : les graphiques doivent supporter le **zoom** et le **pan**, comme sur une carte (style Google Maps).
 
-- `[ ]` Scroll (roulette souris ou trackpad) pour **zoomer in/out**.
-- `[ ]` **Drag** (clic-glisser) pour **panner** la vue.
-- `[ ]` Cible : tous les graphiques sont sur **Chart.js** — `classement.html`, `classement_saison.html`, `recap.html`, `stats_joueur.html`, `admin_reglages.html` et `static/js/tier_thresholds.js`. Piste : `chartjs-plugin-zoom` (molette, glisser, pinch) sur une config commune. ⚠️ Les gabarits chargent `cdn.jsdelivr.net/npm/chart.js` **sans version** : l'épingler avant d'ajouter le plugin, qui dépend d'une version majeure.
-- `[ ]` Vérifier la compatibilité mobile (pinch-zoom sur tactile).
-- `[ ]` À décider : comportement sur double-clic (reset zoom ?).
+- `[x]` Cible : les 9 graphiques du site, tous sur **Chart.js** — `stats_joueur.html` (1), `recap.html` (5), `classement.html` (1, distribution) + `classement_saison.html` (1), `admin_reglages.html` via `static/js/tier_thresholds.js` (1).
+- `[x]` **Phase 0 — Chart.js épinglé (23/09)** : les 4 gabarits (`classement`, `recap`, `admin_reglages`, `stats_joueur`) chargent `chart.js@4.5.1/dist/chart.umd.min.js`. C'est exactement ce que servait l'URL sans version ce jour-là (sha256 identique vérifié), donc aucun changement de rendu. `classement_saison.html` est inclus dans `classement.html` et hérite du script.
+- `[~]` **Phases 1 à 4 — Loupe sur les 9 graphiques (23/09), validée sur PC pour les courbes, reste le téléphone** : [frontEnd/static/js/chart_zoom.js](../frontEnd/static/js/chart_zoom.js), `ChartZoom.brancher(chart, options)`, sans dépendance.
+  - **Principe, en deux temps** : pendant le geste, le canvas est agrandi par un `transform` CSS (instantané, mais traits et points grossissent). 200 ms après, Chart.js **redessine le graphique à la taille zoomée** (×1 à ×4, `chart.resize(W·z, H·z)`, canvas en absolu dans son parent en `overflow: hidden`) : traits, points, textes et bulles d'info gardent leur taille normale, seules les distances s'étirent, comme sur une carte. Le recalage après redessin repère le centre de la vue en fraction des échelles (`getDecimalForPixel`/`getPixelForDecimal`), la mise en page n'étant pas proportionnelle (les axes gardent leur largeur en pixels). Densité de pixels plafonnée à 12 M pixels réels par canvas (limite iOS ~16,7 M).
+  - **Pendant le geste seulement**, un plugin Chart.js global (`chartZoomLoupe`) recalcule la position souris/doigt (`beforeEvent`) et réduit la bulle d'info autour de sa pointe (`beforeTooltipDraw`).
+  - **Gestes** : Ctrl + molette ou pincement trackpad (zoom autour du curseur ; la molette seule fait défiler la page, un bandeau rappelle le geste), pincement à deux doigts, glisser une fois zoomé (souris ou doigt), double-clic ou bouton ⟲ pour revenir. Au doigt : `touch-action: pan-x pan-y` non zoomé (la page défile), `none` une fois zoomé. Un clic moins de 300 ms après un glisser est ignoré (pas d'infobulle, de modale ni d'`alert()` du reset en relâchant). Un changement de largeur (rotation, fenêtre) remet la vue complète.
+  - **Phases 1-2, courbes par tournoi** (6) : TrueSkill de `stats_joueur`, les 4 courbes de `recap`, l'IP de `classement_saison`.
+  - **Phase 3, distributions** (2, `classement` et `recap`) : la mini-bulle HTML posée sur un point passe par `ChartZoom.versVue(chart, x, y)` et se recale à chaque zoom/déplacement (`surChangement`). Corrigé au passage dans `recap` : au toucher d'un point sur mobile, la bulle recevait l'objet du graphique (`name`/`percentile`) au lieu de celui de la légende (`nom`/`top_percent`) et affichait un nom et un pourcentage vides.
+  - **Phase 4, tiers de l'admin** : `glisserPermis` réserve l'appui sur une poignée au déplacement du seuil (la vue ne bouge pas), le glisser ailleurs déplace la vue. `pixelXFromEvent` passe par `ChartZoom.depuisEcran` (juste sous transform, au doigt comme à la souris). `touchActionAuRepos: 'none'` garde le comportement d'avant au doigt. Le graphique étant recréé à chaque rechargement des tiers, un nouveau `brancher` défait le précédent (écouteurs via `AbortController`).
+  - **Abandonné le même jour** : `chartjs-plugin-zoom@2.2.0` + `hammerjs@2.0.8`. Ce plugin zoome en recalculant les axes, ce qui réarrange le graphique au lieu de l'agrandir, et sur un axe de catégories il ne se déplace que d'un tournoi entier à la fois (`panCategoryScale`), d'où un glisser saccadé. Puis la loupe par simple agrandissement d'image : traits et points grossissaient et empâtaient le graphique (constaté sur PC et téléphone).
+- `[ ]` Vérifier au navigateur le redessin à la taille zoomée (phases 1-4), puis sur un vrai téléphone (pincement, défilement de page, infobulle et mini-bulle au toucher une fois zoomé, poignées de l'admin).
 
 ## Note obsolète — ✅ corrigée le 2026-09-18
 
