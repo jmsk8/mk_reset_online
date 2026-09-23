@@ -1355,7 +1355,11 @@ def _determine_winners(candidates: dict, vic_cond: str, active_awards: list[str]
     winners_map = {}
     top_3_players = []
 
-    if vic_cond == 'grand_master' or vic_cond == 'Indice de Performance':
+    # `candidates['grand_master']` est le nom INTERNE du classement IP, pas une
+    # condition de victoire : l'ancienne valeur 'grand_master' de
+    # saisons.victory_condition a disparu (absente de tous les dumps de prod,
+    # retiree le 2026-09-23, affichage-ip-plan-redaction.md phase 4).
+    if vic_cond == 'Indice de Performance':
         raw_list = candidates.get('grand_master', [])
         top_3_players = [c for c in raw_list if c.get('eligible', False)]
     elif vic_cond == 'ez':

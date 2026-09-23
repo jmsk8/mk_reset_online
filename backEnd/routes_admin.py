@@ -1356,7 +1356,7 @@ def get_admin_award_types():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT code, nom, emoji, description FROM types_awards WHERE code NOT LIKE %s AND code != 'grand_master' ORDER BY nom ASC", ('%moai',))
+                cur.execute("SELECT code, nom, emoji, description FROM types_awards WHERE code NOT LIKE %s ORDER BY nom ASC", ('%moai',))
                 awards = [{"code": r[0], "nom": r[1], "emoji": r[2], "description": r[3]} for r in cur.fetchall()]
         return jsonify(awards)
     except Exception as e:
