@@ -116,12 +116,22 @@
 .cloche-mobile > .navbar-link:focus-visible,
 .compte-mobile > .navbar-link:hover,
 .compte-mobile > .navbar-link:focus-visible,
+.connexion-mobile:hover,
+.connexion-mobile:focus-visible,
 .navbar-burger:hover,
 .navbar-burger:focus,
 .navbar-burger:focus-visible,
 .navbar-burger:active {
     color: var(--survol-teinte) !important;
     background-color: transparent !important;
+}
+
+/* Le rond de connexion garde son bleu Discord : c'est son anneau qui prend
+   la teinte de survol, l'icône blanche ne changerait rien sur ce fond. */
+.connexion-mobile:hover .rond-discord,
+.connexion-mobile:focus-visible .rond-discord {
+    border-color: var(--survol-teinte);
+    box-shadow: 0 0 0 1px var(--survol-teinte);
 }
 
 /* ---------------------------------------------------------------------------

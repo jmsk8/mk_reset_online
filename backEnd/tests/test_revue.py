@@ -27,6 +27,33 @@ check("la navbar propose une connexion Discord", 'discord_login' in navbar or '/
 check("elle n'est proposée qu'aux visiteurs non connectés", 'not compte_joueur' in navbar)
 check("et seulement si Discord est configuré", 'discord_configure' in navbar)
 
+print("\n--- sur mobile, la connexion est hors du burger (13.7, 2026-09-23) ---")
+# Rendu reel du gabarit : c'est l'emplacement qui compte, un `in navbar`
+# passerait quel que soit le bloc ou le lien atterrit.
+import jinja2
+_env = jinja2.Environment(loader=jinja2.FileSystemLoader(os.path.join(FRONT, 'templates')))
+def _rendre_navbar(compte):
+    html = _env.get_template('navbar.html').render(
+        csrf_token=lambda: 'x', compte_joueur=compte, discord_configure=True,
+        est_admin=False, peut=lambda p: False, get_flashed_messages=lambda **k: [])
+    brand = html[html.index('class="navbar-brand"'):html.index('id="navbarMenu"')]
+    menu = html[html.index('id="navbarMenu"'):html.index('</nav>')]
+    return brand, menu
+_brand, _menu = _rendre_navbar(None)
+check("visiteur : rond de connexion a cote du burger",
+      _re.search(r'class="navbar-item connexion-mobile is-hidden-desktop" href="/auth/discord/login"',
+                 _brand) is not None)
+_bouton = _re.search(r'<div class="navbar-item([^"]*)">\s*<a class="button is-link is-light" '
+                     r'href="/auth/discord/login"', _menu)
+check("visiteur : le bouton du menu existe toujours (bureau)", _bouton is not None)
+check("visiteur : ... mais masque sur mobile, donc absent du burger",
+      _bouton is not None and 'is-hidden-touch' in _bouton.group(1),
+      _bouton and _bouton.group(1))
+_brand, _menu = _rendre_navbar({'pseudo': 'Toto', 'avatar_url': None})
+check("connecte : aucun rond de connexion", 'connexion-mobile' not in _brand)
+check("connecte : aucun lien de connexion nulle part",
+      '/auth/discord/login' not in _brand + _menu)
+
 install_db([])
 import auth_discord
 

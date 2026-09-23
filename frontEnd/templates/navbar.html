@@ -189,9 +189,36 @@
            est du vide dans sa zone de clic, qui creusait un ecart avant lui.
            On le ramene a la largeur de ses freres et l'espacement revient au
            gap, seul a le decider pour les trois. */
-        .cloche-mobile ~ .navbar-burger {
+        .cloche-mobile ~ .navbar-burger,
+        .connexion-mobile ~ .navbar-burger {
             margin-left: 0;
             width: 2.75rem !important;
+        }
+
+        /* Visiteur : le rond de connexion tient la place de la cloche (il
+           pousse) et de l'avatar (meme emprise, meme bordure). */
+        .connexion-mobile {
+            margin-left: auto;
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+            height: 2.5rem;
+            width: 2.5rem;
+            padding: 0 !important;
+            background: transparent;
+        }
+
+        .connexion-mobile .rond-discord {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 1.75rem;
+            width: 1.75rem;
+            border-radius: 50%;
+            border: 1px solid rgba(226, 232, 240, 0.45);
+            background-color: #5865f2;   /* le bleu de Discord : dit ou l'on va */
+            color: #fff;
+            font-size: 1rem;
         }
 
         /* Un gap unique plutot que des paddings poses un par un : les trois
@@ -444,6 +471,17 @@
           </div>
         </div>
       {% endif %}
+      {# Connexion mobile : hors du burger, dans un rond a la place exacte de
+         l'avatar une fois connecte. Replie dans le menu, le seul geste utile
+         a un visiteur demandait deux taps, et rien ne disait qu'il existait.
+         Memes conditions que le bouton de bureau (navbar-end), qui passe
+         lui en is-hidden-touch : un seul des deux est visible a la fois. #}
+      {% if not compte_joueur and discord_configure %}
+        <a class="navbar-item connexion-mobile is-hidden-desktop" href="/auth/discord/login"
+           title="Se connecter avec Discord" aria-label="Se connecter avec Discord">
+          <span class="rond-discord"><i class="fab fa-discord"></i></span>
+        </a>
+      {% endif %}
       <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarMenu">
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
@@ -607,7 +645,8 @@
            créer un compte exige toujours une invitation valide, refusée côté
            backend. #}
         {% if not compte_joueur and discord_configure %}
-          <div class="navbar-item">
+          {# is-hidden-touch : sur mobile, c'est le rond de la navbar-brand. #}
+          <div class="navbar-item is-hidden-touch">
             <a class="button is-link is-light" href="/auth/discord/login">
               <span class="icon"><i class="fab fa-discord"></i></span>
               <span>Se connecter</span>
