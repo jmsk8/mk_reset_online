@@ -23,6 +23,8 @@ DROP TABLE IF EXISTS public.joueurs CASCADE;
 DROP TABLE IF EXISTS public.configuration CASCADE;
 DROP TABLE IF EXISTS public.saisons CASCADE;
 DROP TABLE IF EXISTS public.types_awards CASCADE;
+-- api_tokens n'est plus creee (auth par mot de passe supprimee le 2026-09-23),
+-- mais le DROP reste : une base anterieure la porte encore.
 DROP TABLE IF EXISTS public.api_tokens CASCADE;
 DROP TABLE IF EXISTS public.ligues CASCADE;
 
@@ -214,14 +216,6 @@ CREATE TABLE public.global_reset_details (
 ALTER TABLE public.global_reset_details OWNER TO CURRENT_USER;
 CREATE INDEX idx_global_reset_details_reset
     ON public.global_reset_details(reset_id);
-
--- API TOKENS
-CREATE TABLE public.api_tokens (
-    token character varying(64) NOT NULL PRIMARY KEY,
-    created_at timestamp without time zone DEFAULT now(),
-    expires_at timestamp without time zone NOT NULL
-);
-ALTER TABLE public.api_tokens OWNER TO CURRENT_USER;
 
 -- SAISONS
 CREATE TABLE public.saisons (
@@ -456,7 +450,7 @@ CREATE TABLE public.profils (
     updated_at      timestamp with time zone NOT NULL DEFAULT now()
 );
 
--- SESSIONS_JOUEURS -- remplacante d'api_tokens : token stocke en sha256 seul,
+-- SESSIONS_JOUEURS -- remplacante de l'ancienne api_tokens : token en sha256 seul,
 -- et expiration ABSOLUE (aucune route de renouvellement).
 CREATE TABLE public.sessions_joueurs (
     token_hash    CHAR(64) PRIMARY KEY,

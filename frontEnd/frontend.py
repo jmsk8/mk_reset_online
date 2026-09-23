@@ -30,12 +30,11 @@ except KeyError as e:
     logger.error(f"❌ Variable d'environnement manquante : {e}")
     sys.exit(1)
 
-# 30 jours : la session joueur survit à la fermeture du navigateur. La session
-# admin ne dépend pas de cette durée (cf. inject_lifetime).
+# 30 jours : la session joueur survit à la fermeture du navigateur. La durée
+# réelle est celle que le backend a fixée à la connexion selon le rôle (30 jours
+# pour un joueur, 12 h pour un admin) ; ce cookie ne fait que ne pas expirer
+# avant elle.
 app.permanent_session_lifetime = timedelta(days=30)
-# Durée de vie du token admin côté backend (constants.TOKEN_LIFETIME_MINUTES).
-# Dupliquée ici faute d'un module partagé : à garder synchronisée.
-ADMIN_TOKEN_LIFETIME_MINUTES = 60
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 # NE PAS passer à 'Strict' : le retour de Discord est une navigation cross-site.
@@ -126,16 +125,15 @@ def check_session_validity():
     visite /mon-compte. Les pages admin s'ouvraient alors sur une erreur au
     chargement des données plutôt que sur une reconnexion.
 
-    UNE sonde par page, et une seule voie. Sonder les deux voies à chaque requête
-    -- appels JSON compris -- faisait payer 9 allers-retours backend (mesurés)
-    pour ouvrir une page qui n'en vaut que 4, sur 2 workers gunicorn qui bloquent
-    pendant l'attente. D'où les 503 et les « Erreur Backend » intermittents du
-    2026-09-17 (docs/audit-503-zone-admin.md).
+    UNE sonde par page. Sonder à chaque requête -- appels JSON compris --
+    faisait payer 9 allers-retours backend (mesurés) pour ouvrir une page qui
+    n'en vaut que 4, sur 2 workers gunicorn qui bloquent pendant l'attente. D'où
+    les 503 et les « Erreur Backend » intermittents du 2026-09-17
+    (docs/audit-503-zone-admin.md).
 
-    La voie Discord suffit quand elle porte le rôle : `/auth/check-session` rend
-    déjà rôle et permissions, et `admin_headers()` ne regarde `admin_token` que
-    si elle ne les porte pas. Sonder les deux revenait à vérifier un jeton dont
-    on n'allait pas se servir.
+    Depuis la suppression du mot de passe admin (2026-09-23), il n'y a plus
+    qu'une voie à sonder. Du temps des deux, la règle était déjà : ne sonder que
+    celle qu'`admin_headers()` allait réellement employer.
     """
     if not _est_navigation(request.path):
         return
@@ -151,17 +149,6 @@ def check_session_validity():
             # Sonde concluante : les vues admin n'ont plus à revérifier.
             g.session_revalidee = True
 
-    # Uniquement si la voie Discord ne couvre pas déjà l'accès admin : les deux
-    # jetons coexistent dans le même cookie pendant la bascule, mais un seul est
-    # effectivement envoyé au backend (cf. admin_headers).
-    if 'admin_token' in session and _role_session() not in ROLES_ADMIN:
-        if _sonde_session('/admin/check-token',
-                          {'X-Admin-Token': session['admin_token']}):
-            logger.warning("Token admin refusé -> déconnexion.")
-            session.pop('admin_token', None)
-            session.pop('token_start_time', None)
-        else:
-            g.session_revalidee = True
 
 
 def _acces_admin_revoque():
@@ -183,21 +170,6 @@ def _acces_admin_revoque():
         return False
     _, status = backend_request('GET', '/admin/check-token', headers=admin_headers())
     return status in (401, 403)
-
-@app.context_processor
-def inject_lifetime():
-    """Minuteur de session admin affiché dans la navbar.
-
-    Calculé depuis la durée de vie du TOKEN admin : celle du cookie vaut 30 jours
-    et afficherait « expire dans 30 jours ».
-    """
-    total_lifetime = ADMIN_TOKEN_LIFETIME_MINUTES * 60
-
-    if 'token_start_time' in session:
-        elapsed = time.time() - session['token_start_time']
-        return dict(session_lifetime=max(0, total_lifetime - elapsed))
-
-    return dict(session_lifetime=total_lifetime)
 
 # `inject_saisons` a été retiré le 2026-09-17. Ce context processor appelait
 # /saisons à CHAQUE rendu de template -- un aller-retour backend synchrone par
@@ -245,20 +217,13 @@ def backend_request(method, endpoint, data=None, params=None, headers=None, time
 def _session_admin_expiree():
     """Sortie commune quand le backend refuse la session sur une page admin.
 
-    Purge les DEUX voies : la session Discord et l'ancien jeton par mot de passe
-    peuvent coexister dans le même cookie, et n'en retirer qu'une laissait
-    l'utilisateur affiché comme connecté.
-
-    Renvoie toujours vers l'accueil, jamais vers le formulaire de mot de passe :
-    plus aucune route backend n'accepte ce jeton (aucun usage d'
-    `admin_or_role_required` ne subsiste), s'y reconnecter ne rouvrirait donc
-    rien. La suppression complète de ce chemin reste à faire en commit isolé
-    (avancement, phase 4 étape 6).
+    Renvoie vers l'accueil, et vers lui seul : il n'existe plus de formulaire de
+    connexion admin depuis la suppression du mot de passe (2026-09-23). Avant
+    elle, cette fonction y renvoyait encore, alors que s'y reconnecter ne
+    rouvrait déjà plus rien -- symptôme resté longtemps incompréhensible.
     """
     session.pop('player_token', None)
     session.pop('compte', None)
-    session.pop('admin_token', None)
-    session.pop('token_start_time', None)
     flash('Votre session a expiré. Reconnectez-vous avec Discord.', 'warning')
     return redirect(url_for('index'))
 
@@ -330,19 +295,18 @@ def _est_admin():
     Ne dit RIEN des droits réels depuis la hiérarchie à 4 rôles : un admin sans
     aucune permission ouvre la page et n'y verra que ce que le backend lui sert.
     """
-    return bool(session.get('admin_token')) or _role_session() in ROLES_ADMIN
+    return _role_session() in ROLES_ADMIN
 
 
 def admin_headers():
     """En-tête d'auth admin, construit depuis la session serveur.
 
-    Session Discord si elle porte le rôle, mot de passe sinon : le backend accepte
-    explicitement l'une OU l'autre.
+    Une seule voie depuis le 2026-09-23 : la session Discord, si elle porte le
+    rôle. `None` sinon -- le backend répondra 401, et c'est le comportement
+    voulu : un en-tête absent vaut mieux qu'un en-tête qui n'ouvre rien.
     """
     if session.get('player_token') and _role_session() in ROLES_ADMIN:
         return {'X-Session-Token': session['player_token']}
-    if session.get('admin_token'):
-        return {'X-Admin-Token': session['admin_token']}
     return None
 
 
@@ -370,20 +334,6 @@ def proxy_saisons_public():
         return jsonify(response.json())
     except Exception:
         return jsonify([])
-
-@app.route('/admin/refresh', methods=['POST'])
-def proxy_refresh():
-    # Prolonge la session par mot de passe, et elle seule : une session Discord a
-    # une expiration absolue. D'où l'en-tête explicite, surtout pas admin_headers().
-    if not session.get('admin_token'):
-        return jsonify({"error": "No token"}), 401
-    headers = {'X-Admin-Token': session['admin_token']}
-    data, status = backend_request('POST', '/admin/refresh-token', headers=headers)
-    if status == 200 and data.get("status") == "success":
-        session['admin_token'] = data.get("token")
-        session['token_start_time'] = time.time()
-        return jsonify({"status": "success"})
-    return jsonify({"error": "Failed"}), 401
 
 @app.route('/add-tournament', methods=['POST'])
 def proxy_add_tournament():
@@ -781,8 +731,6 @@ def page_introuvable(_e):
 @app.context_processor
 def inject_est_admin():
     """Expose la porte d'interface admin aux templates.
-
-    `session.admin_token` masquait le menu à un admin connecté par Discord.
 
     Trois valeurs, pas une, depuis la hiérarchie à 4 rôles :
       - `est_admin` : la page s'ouvre-t-elle ? (inchangé)
@@ -1658,36 +1606,11 @@ def proxy_purge_rgpd():
     return _proxy_admin('POST', '/admin/purge-rgpd', json_body=True)
 
 
-@app.route('/admin', methods=['GET', 'POST'])
-def admin_login():
-    if request.method == 'POST':
-        password = request.form.get('password')
-        data, status = backend_request('POST', '/admin-auth', data={"password": password})
-        if status == 200 and data.get("status") == "success":
-            session.permanent = True
-            session['admin_token'] = data.get("token")
-            session['token_start_time'] = time.time()
-            flash('Connexion réussie', 'success')
-            return redirect(url_for('admin_tournois'))
-        else:
-            flash('Mot de passe incorrect', 'danger')
-    return render_template("admin_login.html")
-
-@app.route('/admin/logout')
-def admin_logout():
-    token = session.get('admin_token')
-    if token:
-        try:
-            headers = {'X-Admin-Token': token}
-            requests.post(f"{BACKEND_URL}/admin-logout", headers=headers, timeout=2)
-        except Exception:
-            pass
-    # Pas de session.clear() : le cookie est partagé avec la session joueur,
-    # et l'admin qui se déconnecte éjecterait sa propre session Discord.
-    session.pop('admin_token', None)
-    session.pop('token_start_time', None)
-    flash('Vous avez été déconnecté', 'info')
-    return redirect(url_for('index'))
+# `/admin` (formulaire de mot de passe) et `/admin/logout` ont été supprimés le
+# 2026-09-23 avec l'étape 6 de la phase 4. L'administration n'a plus qu'une
+# entrée, `/auth/discord`, et qu'une sortie, la déconnexion Discord de
+# `/mon-compte` -- celle-ci ferme la session côté backend, ce que l'ancien
+# `/admin/logout` ne savait faire que pour le jeton par mot de passe.
 
 
 @app.route('/admin/tournois', methods=['GET', 'POST'])
@@ -1705,8 +1628,6 @@ def admin_tournois():
 
     headers = admin_headers()
     if _acces_admin_revoque():
-        # Purge les deux voies : ne retirer qu'admin_token laissait la session
-        # Discord périmée en cookie, donc l'utilisateur toujours affiché connecté.
         return _session_admin_expiree()
 
     if request.method == 'POST':
@@ -1737,8 +1658,7 @@ def admin_tournois():
             flash('Tournoi ajouté avec succès !', 'success')
             return redirect(url_for('confirmation'))
         elif status == 403:
-            flash('Session expirée.', 'danger')
-            return redirect(url_for('admin_logout'))
+            return _session_admin_expiree()
         else:
             flash('Erreur lors de l\'ajout du tournoi.', 'danger')
 

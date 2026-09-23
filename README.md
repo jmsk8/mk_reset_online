@@ -157,8 +157,12 @@ POSTGRES_USER=...
 POSTGRES_PASSWORD=...
 POSTGRES_DB=...
 SECRET_KEY=...
-ADMIN_PASSWORD_HASH=...    # Hash Bcrypt du mot de passe admin
 ```
+
+> `ADMIN_PASSWORD_HASH` n'est plus utilisée depuis le 2026-09-23 : l'administration
+> passe uniquement par Discord. La ligne peut rester dans un `.env` existant, elle
+> n'est plus lue. Voir [docs/runbook-admin.md](docs/runbook-admin.md) pour l'accès
+> de secours.
 
 Variables optionnelles, utilisées uniquement pour un déploiement en ligne :
 

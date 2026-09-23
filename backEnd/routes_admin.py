@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import math
 import json
-import uuid
 import secrets
 import hashlib
 import logging
 from typing import Any
-from datetime import datetime, timedelta
+from datetime import datetime
 
-import bcrypt
 import trueskill
 import psycopg2.extras
 from flask import Blueprint, jsonify, request, abort, g
@@ -21,13 +19,13 @@ from constants import (
     DEFAULT_TAU, DEFAULT_GHOST_PENALTY, DEFAULT_UNRANKED_THRESHOLD, DEFAULT_SIGMA_THRESHOLD,
     DEFAULT_TIERS,
     DEFAULT_GHOST_THRESHOLD_SESSIONS, DEFAULT_GHOST_INTERVAL_SESSIONS,
-    GHOST_SIGMA_CAP, TOKEN_LIFETIME_MINUTES, IP_VERSION_DEFAULT,
+    GHOST_SIGMA_CAP, IP_VERSION_DEFAULT,
     ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN,
     PERMISSIONS_CHAMPS_JOUEUR,
 )
-from db import get_db_connection, ADMIN_PASSWORD_HASH
-from auth import (admin_required, admin_or_role_required, permission_required,
-                  role_required, player_required, compte_a_permission)
+from db import get_db_connection
+from auth import (permission_required, role_required, player_required,
+                  compte_a_permission)
 from cache import invalidate_cache
 from textes_ip import textes_ip, VERSIONS as IP_VERSIONS
 from utils import generate_unique_slug, extract_league_number
@@ -76,61 +74,18 @@ def _notifier_recap_publie(cur, saison_id):
     )
 
 
-@admin_bp.route('/admin-auth', methods=['POST'])
-def admin_auth():
-    data = request.get_json()
-    password = data.get('password', '')
-    password_bytes = password.encode('utf-8')
-    try:
-        if bcrypt.checkpw(password_bytes, ADMIN_PASSWORD_HASH):
-            new_token = str(uuid.uuid4())
-            expiration = datetime.now() + timedelta(minutes=TOKEN_LIFETIME_MINUTES)
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("DELETE FROM api_tokens WHERE expires_at < NOW()")
-                    cur.execute("INSERT INTO api_tokens (token, expires_at) VALUES (%s, %s)", (new_token, expiration))
-                conn.commit()
-            return jsonify({"status": "success", "token": new_token})
-        else:
-            return jsonify({"status": "error", "message": "Identifiants invalides"}), 401
-    except Exception:
-        return jsonify({"status": "error", "message": "Erreur serveur"}), 500
-
-
-@admin_bp.route('/admin/refresh-token', methods=['POST'])
-@admin_required
-def refresh_token():
-    old_token = request.headers.get('X-Admin-Token')
-    new_token = str(uuid.uuid4())
-    expiration = datetime.now() + timedelta(minutes=TOKEN_LIFETIME_MINUTES)
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM api_tokens WHERE token = %s", (old_token,))
-                cur.execute("INSERT INTO api_tokens (token, expires_at) VALUES (%s, %s)", (new_token, expiration))
-            conn.commit()
-        return jsonify({"status": "success", "token": new_token})
-    except Exception:
-        return jsonify({"error": "Erreur serveur"}), 500
-
-
-@admin_bp.route('/admin-logout', methods=['POST'])
-def admin_logout():
-    token = request.headers.get('X-Admin-Token', None)
-    if token:
-        try:
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("DELETE FROM api_tokens WHERE token = %s", (token,))
-                conn.commit()
-        except Exception:
-            pass
-    return jsonify({"status": "success"})
-
-
 @admin_bp.route('/admin/check-token', methods=['GET'])
 @role_required(ROLE_ADMIN)
 def check_token():
+    """Sonde « cette session ouvre-t-elle encore l'administration ? ».
+
+    Son nom vient du mot de passe, pas son mecanisme : elle est passee en
+    `role_required` le 2026-09-13 et ne lit plus que la session Discord. Le plan
+    de la phase 4 la rangeait parmi les suppressions de l'etape 6 -- c'est un
+    ecart plan/code assume : elle est aujourd'hui la revalidation par page des
+    six vues admin du frontend (`_acces_admin_revoque`). La supprimer les
+    rouvrirait sur la foi du seul cookie, defaut deja rencontre le 13/09.
+    """
     return jsonify({"status": "valid"}), 200
 
 

@@ -23,6 +23,17 @@ VERIF = os.path.join(RACINE, 'scripts', 'verifier-schema-dump.sql')
 
 OK = []
 
+# Migrations de RETOUR ARRIERE : elles defont une autre migration et ne doivent
+# JAMAIS tourner sur le chemin normal. Les monter serait pire qu'un oubli --
+# 2026-09-23_restore_api_tokens.sql recreerait, deux lignes plus bas, la table
+# que 2026-09-23_drop_api_tokens.sql vient de supprimer, et le defaut ne se
+# verrait nulle part : la base serait simplement revenue en arriere en silence.
+#
+# Leur seul usage est le break-glass de runbook-admin.md 3.2b, joue a la main.
+# D'ou la convention de nom `_restore_`, verifiee plus bas dans les deux sens :
+# non montee, et effectivement absente du compose.
+INVERSES = {'2026-09-23_restore_api_tokens.sql'}
+
 
 def check(nom, cond, detail=''):
     OK.append(cond)
@@ -30,7 +41,8 @@ def check(nom, cond, detail=''):
 
 
 compose = open(COMPOSE, encoding='utf-8').read()
-sur_disque = sorted(f for f in os.listdir(MIGRATIONS) if f.endswith('.sql'))
+toutes = sorted(f for f in os.listdir(MIGRATIONS) if f.endswith('.sql'))
+sur_disque = [f for f in toutes if f not in INVERSES]
 
 # Chaque ligne « - ./backEnd/migrations/X.sql:/docker-entrypoint-initdb.d/NN_y.sql »
 montages = re.findall(
@@ -46,9 +58,25 @@ check("aucune migration oubliee dans docker-compose.dump.yml",
       not oubliees,
       "manquantes : %s" % ', '.join(oubliees))
 
-fantomes = [f for f in montees if f not in sur_disque]
+fantomes = [f for f in montees if f not in toutes]
 check("aucun montage ne pointe vers un fichier absent",
       not fantomes, fantomes)
+
+# L'inverse de l'oubli, et le plus dangereux des deux : une migration de retour
+# arriere montee annulerait celle qu'elle defait, sans aucun symptome.
+inverses_montees = [f for f in montees if f in INVERSES]
+check("aucune migration de retour arriere n'est montee",
+      not inverses_montees, inverses_montees)
+
+# La liste INVERSES ne doit pas servir a exempter une migration ordinaire d'un
+# oubli : elle ne couvre que des fichiers qui portent la convention de nom.
+check("INVERSES ne contient que des migrations `_restore_`",
+      all('_restore_' in f for f in INVERSES),
+      [f for f in INVERSES if '_restore_' not in f])
+
+check("chaque migration d'INVERSES existe bien sur le disque",
+      all(f in toutes for f in INVERSES),
+      [f for f in INVERSES if f not in toutes])
 
 check("aucune migration montee deux fois",
       len(montees) == len(set(montees)),
@@ -117,7 +145,7 @@ check("il leve une exception (sinon il n'arreterait rien)",
 # sans l'y declarer, le garde-fou devient partiellement aveugle. On verifie au
 # moins que chaque table creee par une migration y figure.
 creees = set()
-for f in sur_disque:
+for f in sur_disque:  # sans les inverses : elles recreent, elles n'ajoutent pas
     contenu = open(os.path.join(MIGRATIONS, f), encoding='utf-8').read()
     for t in re.findall(r'CREATE TABLE (?:IF NOT EXISTS )?public\.(\w+)', contenu):
         creees.add(t.lower())

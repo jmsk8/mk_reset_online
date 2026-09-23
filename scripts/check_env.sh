@@ -7,7 +7,7 @@ ENV_FILE="$ROOT_DIR/.env"
 
 # Clés sans lesquelles la stack ne démarre pas. En ajouter une ici ne réécrit
 # PAS le fichier : seule la clé manquante est demandée et ajoutée.
-REQUIRED_VARS=(POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB ADMIN_PASSWORD_HASH SECRET_KEY)
+REQUIRED_VARS=(POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB SECRET_KEY)
 
 # Clés FACULTATIVES : jamais demandées, jamais bloquantes, et elles ont le
 # droit de rester vides — le compose les interpole en `${VAR:-à renseigner}`,
@@ -38,21 +38,10 @@ missing_vars() {
   done
 }
 
-bcrypt_hash() {
-  local pwd="$1"
-  if command -v python3 >/dev/null 2>&1 && python3 -c 'import bcrypt' >/dev/null 2>&1; then
-    PWD_INPUT="$pwd" python3 - <<'PY'
-import os, bcrypt
-pw = os.environ["PWD_INPUT"].encode("utf-8")
-print(bcrypt.hashpw(pw, bcrypt.gensalt()).decode("utf-8"))
-PY
-  elif command -v htpasswd >/dev/null 2>&1; then
-    printf '%s' "$pwd" | htpasswd -niB admin 2>/dev/null | cut -d: -f2
-  else
-    err "Aucun outil bcrypt trouvé (python3+bcrypt ou htpasswd requis)."
-    exit 1
-  fi
-}
+# ADMIN_PASSWORD_HASH et son `bcrypt_hash()` ont disparu le 2026-09-23 avec
+# l'authentification par mot de passe. Un `git revert` du commit de coupure les
+# rend tels quels : ce script est alors de nouveau capable de redemander le mot
+# de passe (runbook-admin.md 3.2b).
 
 escape_for_compose() {
   printf '%s' "$1" | sed 's/\$/$$/g'
@@ -102,7 +91,7 @@ prompt_value() {
 # Demande la valeur d'une clé manquante. Ne renvoie QUE la valeur sur stdout :
 # les messages partent sur stderr, sinon ils atterrissent dans le .env.
 value_for_key() {
-  local key="$1" v
+  local key="$1"
   case "$key" in
     POSTGRES_USER)
       prompt_value 'POSTGRES_USER' 'mk_reset' ;;
@@ -112,11 +101,6 @@ value_for_key() {
       echo "  Mot de passe PostgreSQL :" >&2
       prompt_password 'POSTGRES_PASSWORD'
       printf '%s' "$PROMPT_RESULT" ;;
-    ADMIN_PASSWORD_HASH)
-      echo "  Mot de passe administrateur du site (stocké en bcrypt) :" >&2
-      prompt_password 'ADMIN_PASSWORD'
-      v="$(bcrypt_hash "$PROMPT_RESULT")"
-      printf '%s' "$(escape_for_compose "$v")" ;;
     SECRET_KEY)
       # Jamais demandée : générée, et jamais régénérée si déjà présente — une
       # rotation déconnecte toutes les sessions (R-29).

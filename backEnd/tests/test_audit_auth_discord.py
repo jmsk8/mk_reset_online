@@ -26,8 +26,10 @@ import importlib
 A_DUREE_SESSION_FIGEE = "A-01"
 A_PAS_DE_REVOCATION_SUR_ROLE = "A-02"
 A_AUCUNE_GESTION_DE_SES_SESSIONS = "A-03"
-A_ADMIN_AUTH_TOUJOURS_OUVERT = "A-04"
-A_TOKEN_ADMIN_EN_CLAIR = "A-05"
+# A-04 et A-05 ont ete REFERMES le 2026-09-23 par l'etape 6 de la phase 4 :
+# leurs assertions `defaut(...)` sont devenues des non-regressions plus bas.
+# Leurs numeros ne sont pas reattribues -- un constat referme garde le sien,
+# sans quoi l'audit deviendrait illisible d'une relecture a l'autre.
 A_PAS_DE_ROTATION_A_LA_CONNEXION = "A-06"
 
 
@@ -338,7 +340,6 @@ def _boom():
 
 
 _fake.get_db_connection = _boom
-_fake.ADMIN_PASSWORD_HASH = b'x'
 sys.modules['db'] = _fake
 import auth as _auth
 importlib.reload(_auth)
@@ -356,49 +357,45 @@ check("base injoignable -> 503, jamais 401/403 (R-28)", r.status_code == 503)
 
 
 # ===========================================================================
-print("\n=== A-04 / A-05 : l'authentification par mot de passe partage survit ===")
-# La bascule est faite cote ROUTES (plus aucun usage d'admin_or_role_required),
-# mais l'endpoint de connexion, lui, est toujours ouvert et delivre encore des
-# jetons stockes EN CLAIR dans api_tokens.
+print("\n=== A-04 / A-05 : refermes -- le mot de passe partage a disparu ===")
+# Ces assertions etaient des `defaut(...)` jusqu'au 2026-09-23 : elles
+# decrivaient un chemin d'authentification encore vivant. L'etape 6 de la
+# phase 4 l'a supprime, elles sont donc devenues des NON-REGRESSIONS -- et
+# c'est leur rougissement qui a dit qu'il fallait les convertir.
+#
+# Ce qui etait reproche a ce chemin, et qui ne peut pas revenir sans rougir
+# ici : un secret PARTAGE (aucune action n'etait imputable a une personne), un
+# jeton stocke EN CLAIR en base, et un renouvellement SANS BORNE absolue qui
+# rendait un jeton vole valable indefiniment.
 source_admin = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  '..', 'routes_admin.py'), encoding='utf-8').read()
+source_auth = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                '..', 'auth.py'), encoding='utf-8').read()
 
-check("plus aucune route metier n'accepte le mot de passe partage",
-      '@admin_or_role_required' not in source_admin
-      and '@admin_or_role_required' not in source_comptes)
+check("[A-04] l'endpoint de connexion par mot de passe n'existe plus",
+      "'/admin-auth'" not in source_admin)
+check("[A-04] son decorateur non plus, nulle part",
+      'admin_required' not in source_admin and 'admin_required' not in source_auth
+      and 'admin_required' not in source_comptes)
+check("[A-05] plus aucun jeton admin n'est ecrit en base",
+      'INSERT INTO api_tokens' not in source_admin)
+check("[A-05] plus aucune route ne prolonge un jeton",
+      "'/admin/refresh-token'" not in source_admin)
 
-defaut(A_ADMIN_AUTH_TOUJOURS_OUVERT,
-       "/admin-auth est toujours expose et delivre un jeton",
-       "'/admin-auth'" in source_admin)
-defaut(A_TOKEN_ADMIN_EN_CLAIR,
-       "api_tokens stocke le jeton EN CLAIR (pas de hash)",
-       'INSERT INTO api_tokens (token, expires_at)' in source_admin)
-defaut(A_TOKEN_ADMIN_EN_CLAIR,
-       "/admin/refresh-token prolonge indefiniment (pas d'expiration absolue)",
-       "'/admin/refresh-token'" in source_admin)
+# Le frontend en portait sa propre moitie : la porte d'INTERFACE s'ouvrait sur
+# un simple jeton en cookie, sans rien demander au backend.
+check("[A-04] _est_admin() ne connait plus que le role",
+      'admin_token' not in corps_de(front, "def _est_admin(", 900))
+check("[A-04] le formulaire /admin n'est plus servi",
+      "def admin_login(" not in front and "'/admin-auth'" not in front)
 
-# Le jeton ainsi obtenu n'ouvre plus rien d'UTILE cote backend : @admin_required
-# ne protege plus qu'une seule route, et c'est celle qui renouvelle le jeton
-# lui-meme. C'est ce qui rend le defaut moins grave qu'il n'y parait -- mais le
-# chemin reste vivant, d'ou A-04. On le prouve plutot que de l'affirmer.
-#
-# Le decorateur est pose AVANT le `def`, donc on cherche dans le bloc qui
-# precede la definition, pas dans son corps.
-avant_refresh = source_admin[:source_admin.find("def refresh_token(")]
-bloc_refresh = avant_refresh[avant_refresh.rfind('@admin_bp.route'):]
-check("le seul @admin_required restant est sur /admin/refresh-token",
-      source_admin.count('\n@admin_required') == 1
-      and '@admin_required' in bloc_refresh
-      and "'/admin/refresh-token'" in bloc_refresh)
-check("aucune route METIER ne porte @admin_required",
-      '@admin_required' not in source_comptes)
-
-# En revanche, cote FRONTEND, ce jeton ouvre encore la porte d'interface.
-check("_est_admin() accepte encore un simple admin_token",
-      "bool(session.get('admin_token'))" in corps_de(front, "def _est_admin(", 900))
-defaut(A_ADMIN_AUTH_TOUJOURS_OUVERT,
-       "le formulaire /admin (mot de passe) est toujours servi",
-       "def admin_login(" in front and "'/admin-auth'" in front)
+# Ce qui subsiste du mecanisme, et qui est SAIN : sessions_joueurs ne garde que
+# le sha256 du jeton, et son expiration est absolue. C'est la lecon des deux
+# constats, ecrite dans la remplacante.
+check("sa remplacante ne stocke que l'empreinte du jeton",
+      'hash_token(token)' in open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                               '..', 'auth_discord.py'),
+                                  encoding='utf-8').read())
 
 
 # ===========================================================================

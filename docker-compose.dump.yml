@@ -50,6 +50,12 @@ services:
       - ./backEnd/migrations/2026-09-18_promotions_proposees.sql:/docker-entrypoint-initdb.d/19_promotions_proposees.sql
       - ./backEnd/migrations/2026-09-19_audit_index_acteur.sql:/docker-entrypoint-initdb.d/20_audit_index_acteur.sql
       - ./backEnd/migrations/2026-09-20_notifications_lien.sql:/docker-entrypoint-initdb.d/21_notifications_lien.sql
+      - ./backEnd/migrations/2026-09-23_drop_api_tokens.sql:/docker-entrypoint-initdb.d/22_drop_api_tokens.sql
+
+      # 2026-09-23_restore_api_tokens.sql n'est PAS monte, et ne doit pas
+      # l'etre : c'est la migration INVERSE de la precedente, reservee au
+      # break-glass (runbook-admin.md 3.2b). Montee ici, elle recreerait juste
+      # apres la table qu'on vient de supprimer.
 
       # Controle final : verifie que le rattrapage a bien eu lieu et ARRETE
       # l'initialisation sinon. Sans lui, une migration qui echoue laisse une

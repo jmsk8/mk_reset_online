@@ -12,8 +12,7 @@ from flask import Blueprint, jsonify, request, g
 from constants import (INVITATION_LIFETIME_HOURS, CGU_VERSION, ROLE_ADMIN,
                        ROLE_CHEF_ADMIN, ROLE_HIERARCHY, PERMISSIONS_CATALOGUE,
                        permissions_effectives)
-from auth import (player_required, admin_or_role_required, permission_required,
-                  SESSION_HEADER)
+from auth import player_required, permission_required, SESSION_HEADER
 from auth_discord import (
     DiscordAuthError, login, hash_token, discord_configured, resumer_appareil,
 )
