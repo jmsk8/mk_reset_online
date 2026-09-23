@@ -104,7 +104,7 @@
 | 12 | **CHANGELOG** | §12 | La section « Non publié » ne dit **rien** de la bascule Discord, des rôles admin, du journal, des promotions, des notifications ni des sessions de tournois. À écrire avant de publier une version. |
 | 13 | **Karts de la bannière : ménage et Daisy + Birdo** | §13.4 | Demandé le 22/09. Supprimer les PNG inutilisés, ajouter Daisy et Birdo (images commitées dans `static/img/`, à renommer). Plus qu'un ajout d'images : 10 karts au lieu de 8 dans chaque course, deux moteurs à mettre à jour, un équilibrage à refaire. |
 | 14 | **Bannière : retravailler redémarrage, pause, tour et vitesse** | §13.5 | Demandé le 22/09. Le bouton de vote de redémarrage, le bouton pause, et le cartouche tour/vitesse du kart suivi. |
-| 15 | **Les constats banner restants** | §10 | **Arbitrés le 23/09** : O-2, O-4, D-4 actés, D-3 laissé de côté. **Livrés le 23/09** (non commités) : le souvenir du porteur arrière et ses trois réponses (D-5), la rouge qui contourne les pipes (O-3). Restent : O-5 à réfléchir, D-6 à trancher. |
+| 15 | **Les constats banner restants** | §10 | **Arbitrés le 23/09** : O-2, O-4, D-4 actés, D-3 laissé de côté. **Livrés le 23/09** (non commités) : le souvenir du porteur arrière et ses trois réponses (D-5), la rouge qui contourne les pipes (O-3). O-5 corrigé (sans effet sur l'équilibre). Reste : D-6 à trancher. |
 | 16 | **Chantiers de confort** | §11 | Pistes de perf du décor, moteur Rust — plus les chantiers volontairement non commencés (bas du document). |
 | — | ~~**Demande à ranger : 13.9**~~ ✅ (13.7, 13.8 et 13.9 ✅) | §13 | 13.7 et 13.8 faites le 23/09 ; 13.9 (zoom des graphiques) livrée le même jour, sans passer par un rang : les 9 graphiques du site sont zoomables. |
 
@@ -496,12 +496,18 @@ mesure des constats ci-dessous** — ils restent mis de côté par la décision 
     kart (même `trailRatio` qu'à la réception de l'objet) : inchangée pour le premier.
   - Touches par l'arrière sur un kart qui savait : 6,1 → 4,9 %. Rien d'autre ne bouge
     au-delà du bruit (alertes, simulation).
-- `[ ]` O-5 🔵 — `getAggression` lit `state.cachedLeader` avec un repli sur soi-même.
-  **À réfléchir.** Analyse du 23/09 : le repli est pratiquement inatteignable
-  (`cachedLeader` est posé dès qu'un kart roule et n'est jamais remis à `null`). L'étrange
-  est ailleurs : ces lignes **recopient** `getRaceStage()` (`standings.js`), qui calcule la
-  même progression du premier mais se replie sur **0**. Deux sources pour une même grandeur,
-  avec deux replis différents. Piste : appeler `getRaceStage(state)`.
+- `[x]` O-5 🔵 — **corrigé le 2026-09-23, sans effet sur l'équilibre.** L'agressivité
+  (de 0 à 1) combine la place, l'écart au premier et l'étape de la course, lue sur la
+  progression **du premier** (0,3 au départ, 1 à l'arrivée). Deux lignes recopiaient ce que
+  le reste du moteur calcule déjà ailleurs : l'étape (`getRaceStage`, avec un repli
+  différent) et le nombre de places (`karts.length` au lieu de `rankedCount`). Elles lisent
+  désormais les mêmes sources. Mesuré sur 300 courses (795 000 pas) : les deux cas limites
+  ne se produisent jamais, la valeur est identique à chaque pas, et la campagne des alertes
+  sort identique à l'octet. Agressivité moyenne à la réception d'un objet, au dernier tour
+  du premier : 0 pour le 1er, 0,16 / 0,31 / 0,45 du 2ᵉ au 4ᵉ, 0,94 pour le 8ᵉ ; au premier
+  tour, 0,27 au plus pour le 8ᵉ. ⚠️ **Hors périmètre, noté pour plus tard** : le dernier
+  tour est très dangereux pour le top 3, et le moteur ne le modélise pas encore (le 2ᵉ et
+  le 3ᵉ y restent peu agressifs).
 - `[~]` D-6 🔵 — **banc prêt et passé le 2026-09-23.** Quand une menace apparaît tard
   (≤ 450 px), le tirage est **le même pour tous** (9,5 % à 250 px, 8,4 % à 350 px) :
   l'étalonnage sur l'agilité de référence tient. Plus loin, les deux plus vifs (toad,

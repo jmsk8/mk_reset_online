@@ -345,7 +345,8 @@ pas pour action.
 
 > **Repris le 2026-09-23** : le repli est pratiquement inatteignable. Ce qui est étrange,
 > c'est la **copie** de `getRaceStage()` (`standings.js`), qui calcule la même grandeur avec
-> un repli à 0. Piste : n'en garder qu'une. À réfléchir, rien de modifié.
+> un repli à 0. ✅ **Corrigé le même jour** : `getAggression` lit `getRaceStage()` et
+> `rankedCount`. Valeur identique à chaque pas sur 300 courses, équilibre inchangé.
 
 ---
 
