@@ -106,7 +106,7 @@
 | 14 | **Bannière : retravailler redémarrage, pause, tour et vitesse** | §13.5 | Demandé le 22/09. Le bouton de vote de redémarrage, le bouton pause, et le cartouche tour/vitesse du kart suivi. |
 | 15 | **Les constats banner restants** | §10 | 🟡 et 🔵. **Mis de côté** par décision du 18/09 — mais le banc tourne désormais, plus rien ne bloque leur mesure. |
 | 16 | **Chantiers de confort** | §11 | Pistes de perf du décor, moteur Rust — plus les chantiers volontairement non commencés (bas du document). |
-| — | **Demandes à ranger : 13.7, 13.9** (13.8 ✅) | §13 | Sans rang, à placer par l'utilisateur. 13.8 est ✅ faite le 23/09. Proposition : 13.7 (connexion Discord hors burger) une retouche de gabarit ; 13.9 (zoom des graphiques) un petit chantier, tous les graphiques étant sur Chart.js. |
+| — | **Demande à ranger : 13.9** (13.7 et 13.8 ✅) | §13 | Sans rang, à placer par l'utilisateur. 13.7 et 13.8 sont ✅ faites le 23/09. Proposition : 13.9 (zoom des graphiques) un petit chantier, tous les graphiques étant sur Chart.js. |
 
 **Les rangs 1 à 3 se font sur l'hôte, pas dans le code** — ils demandent Docker et un accès à la
 machine plutôt qu'une session de développement. Le rang 1 est le seul qui engage juridiquement.
@@ -713,13 +713,15 @@ dans `2053a67` **sans être renommées**), avec les 5 orientations et un portrai
 - `[x]` Habillage : en-tête avatar + rôle/statut, lignes de menu à icône, groupes « Gestion » et « Zone sensible », fond flouté. Validé par l'utilisateur.
 - `[x]` Les règles d'affichage de chaque bouton sont inchangées (mêmes conditions, mêmes handlers : les boutons sont seulement déplacés). Onglets liaisons, invitations, logs, bots non touchés. Les 10 fichiers de tests qui lisent ce gabarit restent verts.
 
-#### 13.7 Bannière mobile — authentification Discord hors burger — à ranger
+#### 13.7 Navbar mobile — connexion Discord hors burger — ✅ FAIT le 2026-09-23, non commité, recette visuelle à faire
 
-**Demandé** : en mode téléphone (mobile), enlever le lien d'authentification Discord du menu burger et le placer **à côté dans un rond**, exactement comme il s'affiche quand on est connecté.
+**Demandé** : sur téléphone, sortir le lien de connexion Discord du menu burger et le placer à côté, dans un rond, comme l'avatar une fois connecté.
 
-- `[ ]` Cible : **`frontEnd/templates/navbar.html`** (bouton `/auth/discord/login`, vers la ligne 609, sous `{% if not compte_joueur and discord_configure %}`) et le CSS de la navbar au point de rupture mobile. Ce n'est pas la bannière de course (`banner/config.js`), qui n'a pas de lien de connexion.
-- `[ ]` Le rond doit avoir **la même apparence** que celui affiché en état connecté (bouton de compte).
-- `[ ]` Vérifier que le burger ne contient plus de lien Discord après cette modification.
+- `[x]` **Rond `connexion-mobile`** dans la `navbar-brand` de `frontEnd/templates/navbar.html`, visible sous 1024 px seulement (`is-hidden-desktop`) : même emprise (2,5 rem), même rond de 1,75 rem et même bordure que l'avatar de `compte-mobile`, fond bleu Discord et icône blanche. Il pousse le burger comme le fait la cloche une fois connecté.
+- `[x]` **Le bouton « Se connecter » du menu passe en `is-hidden-touch`** : il reste sur ordinateur, disparaît du burger. Mêmes conditions d'affichage pour les deux (`not compte_joueur and discord_configure`), un seul visible à la fois.
+- `[x]` Survol : l'anneau prend la teinte de survol (`interactions.css`), le fond reste bleu.
+- `[x]` Tests : `test_revue.py` **24 assertions** (était 19), sur un **rendu réel** du gabarit : le rond est dans la `navbar-brand`, le bouton du menu est masqué au tactile, rien de tout ça une fois connecté. Garde cassée volontairement (`is-hidden-touch` retiré) : une assertion vire au rouge. Suite complète : **1939 assertions, 36 fichiers, aucune rouge.**
+- `[ ]` **Recette visuelle sur téléphone** (ou mode responsive du navigateur) : alignement du rond avec le burger, à 768 px et en dessous (le burger y passe à 4 rem de haut).
 
 #### 13.8 Notification d'acceptation de promotion — préciser avec le pseudo — ✅ FAIT le 2026-09-23, non commité
 
