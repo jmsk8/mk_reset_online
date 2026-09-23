@@ -12,7 +12,6 @@ def app_avec(plan, deco_factory, casse=False):
             raise RuntimeError("base injoignable")
             yield
         fake.get_db_connection = boom
-        fake.ADMIN_PASSWORD_HASH = b'x'
         sys.modules['db'] = fake
     recharger()
     import auth, importlib; importlib.reload(auth)
@@ -50,9 +49,6 @@ r = cli.get('/protege', headers={'X-Session-Token': 'tok'})
 check("503 et non 403 quand la base tombe", r.status_code == 503, r.status_code)
 check("le frontend ne purgera donc pas la session", r.status_code not in (401, 403))
 
-cli, auth = app_avec([], lambda a: a.admin_required, casse=True)
-r = cli.get('/protege', headers={'X-Admin-Token': 'tok'})
-check("admin_required aussi : 503 et non 500", r.status_code == 503, r.status_code)
 
 print("\n=== Sessions invalides / expirées ===")
 cli, auth = app_avec([(r"FROM sessions_joueurs", None)], lambda a: a.player_required)
@@ -74,18 +70,18 @@ cli, auth = app_avec([(r"FROM sessions_joueurs s JOIN comptes c",
 r = cli.get('/protege', headers={'X-Session-Token':'x'})
 check("suspendu refusé malgré le rôle admin", r.status_code == 403 and r.get_json()['code'] == 'compte_suspendu', r.get_json())
 
-print("\n=== R-43 : décorateur de transition, un OU et pas un ET ===")
-cli, auth = app_avec(SESSION_OK('admin'), lambda a: a.admin_or_role_required)
-check("voie Discord acceptée seule",
-      cli.get('/protege', headers={'X-Session-Token':'tok'}).status_code == 200)
-
-cli, auth = app_avec([(r"SELECT expires_at FROM api_tokens", (datetime.now() + timedelta(hours=1),))],
-                     lambda a: a.admin_or_role_required)
-check("voie mot de passe acceptée seule",
-      cli.get('/protege', headers={'X-Admin-Token':'tok'}).status_code == 200)
-
-cli, auth = app_avec([], lambda a: a.admin_or_role_required)
-check("aucune des deux -> 401", cli.get('/protege').status_code == 401)
+print("\n=== Etape 6 : il n'existe plus qu'une voie d'authentification ===")
+# Ces deux decorateurs testaient la cohabitation mot de passe / Discord (R-43,
+# un OU et pas un ET). Ils ont ete supprimes le 2026-09-23 avec l'etape 6 de la
+# phase 4. Ce qui reste a verifier, c'est leur ABSENCE : un import qui survit,
+# et une route peut se retrouver protegee par un secret partage qu'on croyait
+# parti. Le `revert` du runbook 3.2b les rend tous les deux d'un coup.
+cli, auth = app_avec(SESSION_OK('admin'), lambda a: a.role_required('admin'))
+check("admin_required n'existe plus", not hasattr(auth, 'admin_required'))
+check("admin_or_role_required n'existe plus", not hasattr(auth, 'admin_or_role_required'))
+check("l'en-tete X-Admin-Token n'est plus lu nulle part dans auth.py",
+      'X-Admin-Token' not in open(os.path.join(os.path.dirname(auth.__file__), 'auth.py'),
+                                  encoding='utf-8').read())
 
 print("\n=== service_required (API bot) ===")
 BOT = lambda scopes, exp=None, rev=None: [

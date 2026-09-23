@@ -28,8 +28,7 @@ RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 FRONT = os.path.join(RACINE, '..', 'frontEnd')
 
 ECRITURES = ('POST', 'PUT', 'DELETE', 'PATCH')
-DECOS_ADMIN = ('permission_required', 'role_required', 'admin_required',
-               'admin_or_role_required')
+DECOS_ADMIN = ('permission_required', 'role_required')
 APPELS_AUDIT = ('_audit', 'ecrire')
 # Cherche dans les CHAINES du code seulement, la ou vit le SQL : sur le source
 # brut, `tampon.truncate(0)` (un tampon CSV) passait pour un TRUNCATE.
@@ -53,8 +52,10 @@ def tables_ecrites(fn):
 # ailleurs rougirait. Une entree devenue inutile aussi, pour que la liste ne
 # grossisse pas en silence.
 EXEMPTEES = {
-    'refresh_token': ("renouvelle le jeton du mot de passe partage : tenue des sessions",
-                      {'api_tokens'}),
+    # `refresh_token` a quitte cette liste le 2026-09-23 : la route a ete
+    # supprimee avec l'authentification par mot de passe. C'est ce test qui l'a
+    # signale, et c'est sa raison d'etre -- une exemption devenue inutile doit
+    # rougir, sinon la liste ne fait que grossir.
     'verifier_session_tournoi': ("POST pour porter une liste de noms ; lecture seule", set()),
     'matchmaking_admin': ("POST pour porter une liste de joueurs ; calcule des lobbies", set()),
     'fix_db_structure': ("migration de schema idempotente (colonnes de Tournois et leur "

@@ -96,7 +96,6 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
       # OAuth Discord. DISCORD_REDIRECT_URI est fixe ici et jamais construit par
       # url_for(_external=True) : Flask est derriere deux proxys sans ProxyFix
       # et produirait du http://, que Discord refuse sans message utile.

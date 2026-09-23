@@ -4,10 +4,12 @@
 > [auth-discord-plan.md](auth-discord-plan.md) ; **ce fichier-ci ne dit que ce qui est fait,
 > ce qui a été trouvé en chemin, et ce qui reste**. Les codes `R-xx` renvoient au §8 du plan.
 >
-> **Dernière mise à jour : 2026-09-22** — recalage de l'état du déploiement (contradictoire, voir
-> « Où on en est »), des tests et de ce qui bloque l'étape 6. Le détail des phases n'a pas bougé.
+> **Dernière mise à jour : 2026-09-23** — ✅ **l'étape 6 est faite : le mot de passe
+> administrateur n'existe plus.** La phase 4 est close, et avec elle le but A du plan. Non
+> commité au moment de l'écriture.
 >
-> Passage précédent : 2026-09-13, correctif du défaut de session expirée (§ phase 4), et constat
+> Passage précédent : 2026-09-22, recalage de l'état du déploiement (contradictoire, voir
+> « Où on en est »), des tests et de ce qui bloquait l'étape 6. Avant : 2026-09-13, correctif du défaut de session expirée (§ phase 4), et constat
 > que le code a dépassé le tableau de la bascule : le mot de passe n'ouvre plus aucune route.
 >
 > **La couche au-dessus** — rôles admin, permissions déléguables, onglets — est suivie dans
@@ -21,12 +23,15 @@
 | **1** — socle auth | ✅ livrée | schéma, échange OAuth, décorateurs, invitations, nginx |
 | **2** — liaison & synchro | ✅ livrée | revendication, file d'attente admin, sync pseudo, rôles |
 | **3** — profils joueur | ✅ livrée | bio, couleur, réseaux, URL canonique `/joueur/<id>` |
-| **4** — bascule admin | 🟡 partielle | étapes 1-5 et 7 faites · **étape 6 (suppression du mot de passe) bloquée** |
+| **4** — bascule admin | ✅ livrée | les 7 étapes · **étape 6 faite le 2026-09-23 : le mot de passe est supprimé** |
 | **5** — API bot | ✅ livrée | 4 routes, matchmaking remonté côté serveur, jetons révocables |
 | **6** — RGPD | ✅ livrée | consentement, export, effacement, purges, pages légales |
 
-**Toutes les phases sont livrées sauf l'étape 6 de la phase 4** (suppression effective du mot
-de passe), qui attend une décision humaine.
+**Toutes les phases sont livrées.** L'étape 6 de la phase 4, la seule qui restait, a été
+franchie le 2026-09-23 : `POST /admin-auth`, `POST /admin/refresh-token`, `POST /admin-logout`,
+les décorateurs `admin_required` et `admin_or_role_required`, `ADMIN_PASSWORD_HASH`, la page de
+connexion `/admin` et son minuteur de navbar, la table `api_tokens` — tout est parti dans un
+commit unique et révocable. **Le but A du plan est atteint : il n'existe plus de secret partagé.**
 
 ~~**Rien n'est déployé.**~~ *(vrai au 14/09, douteux depuis — relevé le 2026-09-22)* :
 [etat-avancement-global.md](etat-avancement-global.md) note des droits réaccordés **en
@@ -218,8 +223,8 @@ comptes ne s'ouvrent largement.
 
 ## Phase 4 — bascule de l'admin sur Discord
 
-La phase se découpe en 7 étapes, à faire dans l'ordre. **Six sont faites ; la sixième, celle qui
-supprime réellement le mot de passe, ne peut pas l'être sans une décision humaine.**
+La phase se découpe en 7 étapes, à faire dans l'ordre. **Les sept sont faites.** La sixième,
+celle qui supprime réellement le mot de passe, a été franchie le 2026-09-23.
 
 | # | Étape | État |
 |---|---|---|
@@ -228,12 +233,11 @@ supprime réellement le mot de passe, ne peut pas l'être sans une décision hum
 | 3 | Le frontend envoie la bonne voie | ✅ 21 en-têtes, 19 gardes, navbar |
 | 4 | Routes super-admin | ✅ livré en phase 2 |
 | 5 | Période de recouvrement | ✅ **vécue** : plus aucune route n'accepte le mot de passe (voir ci-dessous) |
-| 6 | Découplage du mot de passe | 🔴 **bloqué** — voir ci-dessous |
-| 7 | Runbook break-glass écrit **et testé** | 🟡 écrit ([runbook-admin.md](runbook-admin.md)), **pas testé** |
+| 6 | Découplage du mot de passe | ✅ **fait le 2026-09-23** — voir ci-dessous |
+| 7 | Runbook break-glass écrit **et testé** | 🟡 écrit ([runbook-admin.md](runbook-admin.md)), **toujours pas exécuté** |
 
-**Ce qui reste sur le mot de passe, volontairement** : `POST /admin/refresh-token`. Une session
-Discord n'a rien à renouveler — son expiration est absolue, c'est ce qui la distingue de l'ancien
-`api_tokens` dont le renouvellement sans borne rendait un jeton volé valable indéfiniment.
+⚠️ **L'étape 7 reste la seule case ouverte de la phase**, et c'est aujourd'hui le seul garde-fou
+qui manque : la procédure §3.1 du runbook n'a jamais été jouée pour de vrai.
 
 ### 🔴 Défaut trouvé le 2026-09-14 : le compte d'amorçage ne pouvait pas *entrer*
 
@@ -284,25 +288,45 @@ d'un autre `discord_id`, le refus sans la variable, et la symétrie des gardes.
 > attrapent désormais `Exception` pour transformer ça en assertion rouge explicite. *Même piège que
 > celui déjà consigné pour `.index()` dans un test de source.*
 
-### Ce qui bloque l'étape 6
+### ✅ L'étape 6, faite le 2026-09-23
 
-R-38 exige trois prérequis avant de couper, et **deux ne dépendent pas du code** :
+**Ce qui est parti**, dans un commit unique :
 
-1. **Au moins deux comptes `superadmin`**, sur deux comptes Discord distincts. Aucun n'existe
-   encore. C'est la seule mitigation qui demande une décision humaine.
-2. **La procédure break-glass exécutée pour de vrai au moins une fois.** Une procédure jamais
-   lancée est une intention, pas une procédure.
-3. Une période de recouvrement passée, les deux voies actives.
+| Où | Quoi |
+|---|---|
+| `routes_admin.py` | `POST /admin-auth`, `POST /admin/refresh-token`, `POST /admin-logout` |
+| `auth.py` | `admin_required`, `admin_or_role_required`, l'en-tête `X-Admin-Token` |
+| `db.py`, `check_env.sh`, `docker-compose.yml` | `ADMIN_PASSWORD_HASH` et son `bcrypt_hash()` |
+| `frontend.py` | `/admin` (le formulaire), `/admin/logout`, `/admin/refresh`, `inject_lifetime`, les branches `admin_token` de `_est_admin`, `admin_headers`, `before_request` et `_session_admin_expiree` |
+| `navbar.html` | la modale « session bientôt expirée » et son minuteur JS |
+| base | `api_tokens`, via `2026-09-23_drop_api_tokens.sql` |
 
-Quand ce sera fait, l'étape 6 doit être **un seul commit isolé et clairement nommé** : c'est ce
-qui rend un `git revert` possible si Discord tombe durablement. Le vrai filet de sécurité est là,
-pas dans la procédure.
+**Ce qui reste volontairement** : `GET /admin/check-token`. Le plan la rangeait parmi les
+suppressions de l'étape 6, mais elle est passée en `role_required(ROLE_ADMIN)` le 13/09 et ne
+porte plus du mot de passe que son nom. C'est aujourd'hui la revalidation par page des six vues
+admin (`_acces_admin_revoque`) : la supprimer les rouvrirait sur la foi du seul cookie — le
+défaut 🔴 déjà rencontré le 13/09. **Écart plan ↔ code assumé et tracé dans le code.**
 
-**Un prérequis de code s'y est ajouté le 2026-09-18** : le journal des actions admin passe
-**avant** la coupure — couper le mot de passe sans pouvoir lire l'audit priverait du seul moyen de
-comprendre après coup ce qui s'est passé sur les comptes. Au 2026-09-22, il n'en reste que la
-phase 4 ([audit-admin-plan.md](audit-admin-plan.md) §5). Les trois prérequis ci-dessus sont
-toujours décochés dans [runbook-admin.md](runbook-admin.md) §2.
+**Où en étaient les prérequis de R-38 au moment de couper** :
+
+1. **Deux comptes `superadmin` distincts** — ⚠️ **volontairement abandonné** (décision du
+   2026-09-23). L'accès à la base *est* la porte de secours ; le second compte n'en était qu'un
+   raccourci, et il ne couvrait qu'un seul des cinq scénarios de panne. Raisonnement complet,
+   scénario par scénario, et les deux points de vigilance qui le remplacent :
+   [runbook-admin.md](runbook-admin.md) §2.
+2. **Procédure break-glass exécutée pour de vrai** — ❌ **toujours pas faite.** C'est le
+   garde-fou qui manque, et il n'a pas de substitut.
+3. **Période de recouvrement** — ✅ vécue : le site était administré par Discord seul depuis le
+   13/09.
+
+**Le prérequis de code ajouté le 18/09 était levé** : le journal `audit_admin` devait précéder
+la coupure — couper sans pouvoir lire l'audit aurait privé du seul moyen de comprendre après
+coup ce qui s'est passé sur les comptes. Sa phase 4 a été livrée le 22/09.
+
+**Le commit est isolé et clairement nommé**, ce qui rend le `git revert` possible si Discord
+tombe durablement. ⚠️ Mais le `revert` seul ne suffit plus : il rend le code, pas la table.
+`2026-09-23_restore_api_tokens.sql` existe pour ça, et [runbook-admin.md](runbook-admin.md) §3.2b
+donne l'ordre des deux gestes. Le vrai filet est là, pas dans la procédure.
 
 ### Problèmes rencontrés pendant la bascule
 
@@ -329,9 +353,14 @@ pourquoi.
 `add-tournament` et `global-reset` — auraient refusé un admin Discord. Rattrapées une par une.
 
 **Leçon pour l'étape 6** : ne pas faire confiance à un `grep` sur une seule forme. Le test
-`test_bascule.py` inventorie désormais les décorateurs **par analyse du fichier source**, et
-échouera si une route se retrouve sans authentification, ou avec les deux décorateurs empilés
-(ce qui donnerait un ET là où on veut un OU).
+`test_bascule.py` inventorie les décorateurs **par analyse du fichier source**, et échoue si une
+route se retrouve sans authentification. *Suite, le 23/09* : la leçon a servi. Le fichier
+n'inventorie plus deux voies mais vérifie qu'il n'en reste qu'une — aucune route publique dans
+`routes_admin.py`, et aucun des noms du mot de passe nulle part dans le backend, **commentaires
+compris**. Une règle sans exception se relit d'un coup d'œil ; une règle qui épargne les
+commentaires oblige à distinguer code et prose, et c'est là qu'une réintroduction se cacherait
+le mieux. Le prix est de reformuler la prose, ce qui a été fait dans `auth.py` et
+`auth_discord.py`.
 
 ### ⚠️ Le code a dépassé ce tableau : le mot de passe n'ouvre plus rien
 
@@ -353,9 +382,9 @@ de passe » : `_session_admin_expiree()` y renvoyait, et s'y reconnecter ne serv
 **Corrigé a minima** : toutes les sorties de session renvoient désormais vers l'accueil avec
 « reconnectez-vous avec Discord ». Plus aucun `url_for('admin_login')` ne subsiste.
 
-**L'étape 6 reste à faire**, en commit isolé, et ses trois prérequis restent entiers : deux
-`superadmin` distincts, break-glass exécuté une fois, période de recouvrement. Le code y est prêt ;
-c'est la décision humaine qui manque toujours.
+*Suite, le 2026-09-23* : **l'étape 6 est faite.** La décision attendue est tombée — un second
+`superadmin` écarté, l'accès à la base tenant lieu de porte de secours — et `/admin-auth` a
+disparu avec le reste. Détail dans « ✅ L'étape 6, faite le 2026-09-23 » plus haut.
 
 ### 🔴 Défaut trouvé le 2026-09-13 : une session Discord expirée restait affichée comme valide
 
@@ -677,8 +706,11 @@ la production — c'est le premier point de la liste ci-dessous.
 2. **Créer l'application Discord** et renseigner `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`,
    `DISCORD_REDIRECT_URI` et `DISCORD_SUPERADMIN_ID`. Le `redirect_uri` doit être déclaré
    **au caractère près** dans le portail développeur, sinon Discord refuse sans message utile.
-3. **Désigner un second compte `superadmin`** (R-38). C'est la seule mitigation qui demande une
-   décision humaine et pas du code — et elle conditionne l'étape 6 de la phase 4.
+3. ~~**Désigner un second compte `superadmin`** (R-38)~~ — ⚠️ **écarté le 2026-09-23**, l'accès
+   à la base tenant lieu de porte de secours ([runbook-admin.md](runbook-admin.md) §2). Reste
+   souhaitable pour une raison plus modeste : **faire ouvrir une session à un second compte
+   Discord, même en simple `player`**, pour qu'une ligne existe dans `comptes`. Sans elle, le
+   break-glass passe d'un `UPDATE` à un `INSERT` à la main.
 4. ~~**Renseigner `SITE_EDITEUR`, `SITE_CONTACT`, `SITE_HEBERGEUR`** dans le `.env`~~ — ✅ fait
    (cf. [rgpd-registre.md](rgpd-registre.md)). Un déploiement **neuf** doit toujours les remplir :
    vides, les pages légales sont incomplètes.

@@ -730,9 +730,8 @@
                 .then(async res => {
                     if (res.status === 401 || res.status === 403) {
                         // Un 403 « droit manquant » ne doit PAS déconnecter :
-                        // cette branche partait sur /admin/logout, qui détruit
-                        // la session pour une permission non accordée. Voir
-                        // hierarchie-admin-plan.md, B.5.
+                        // cette branche déconnectait pour une permission non
+                        // accordée. Voir hierarchie-admin-plan.md, B.5.
                         let code = null;
                         try { code = (await res.clone().json()).code; } catch (e) {}
                         if (res.status === 403 && code === 'permission_manquante') {
@@ -740,8 +739,12 @@
                                   + "S'il vient de vous être retiré, rechargez la page.");
                             throw new Error("Droits insuffisants");
                         }
-                        alert("Session expirée. Veuillez vous reconnecter.");
-                        window.location.href = '/admin/logout';
+                        alert("Session expirée. Reconnectez-vous avec Discord.");
+                        // L'accueil, et non une page de déconnexion : celle-ci
+                        // n'existe plus, et la session est de toute façon déjà
+                        // refusée par le backend. Le before_request la purgera
+                        // du cookie à l'arrivée.
+                        window.location.href = '/';
                         throw new Error("Session expirée");
                     }
                     return res.json();

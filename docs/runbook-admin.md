@@ -1,15 +1,17 @@
 # Runbook — administration et accès de secours
 
-> Procédures d'exploitation liées à l'authentification. **À lire avant de supprimer
-> l'authentification par mot de passe** (étape 6 de la phase 4).
+> Procédures d'exploitation liées à l'authentification. **Le mot de passe
+> administrateur a été supprimé le 2026-09-23** (étape 6 de la phase 4) : ce
+> document n'est plus une préparation, c'est le mode d'emploi du seul accès de
+> secours qui reste.
 >
 > Conception : [auth-discord-plan.md](auth-discord-plan.md) · Avancement :
 > [auth-discord-avancement.md](auth-discord-avancement.md)
 
 ## 1. Pourquoi ce document existe
 
-Une fois le mot de passe administrateur supprimé, **le seul chemin d'administration passe par
-Discord**. Cinq événements, tous hors de notre contrôle, coupent alors l'accès :
+Le mot de passe administrateur supprimé, **le seul chemin d'administration passe par
+Discord**. Cinq événements, tous hors de notre contrôle, coupent cet accès :
 
 - Discord est en panne, ou son OAuth l'est ;
 - l'application OAuth est suspendue, ou `DISCORD_CLIENT_SECRET` est révoqué ;
@@ -20,16 +22,48 @@ Discord**. Cinq événements, tous hors de notre contrôle, coupent alors l'acc�
 Le code refuse ce dernier cas (`POST /admin/comptes/<id>/role` renvoie 409 sur le dernier
 `superadmin`), mais rien ne protège d'un `UPDATE` passé à la main en base.
 
-## 2. Prérequis avant de couper le mot de passe
+## 2. Ce qui remplace le mot de passe — état des garde-fous
 
-Les trois sont **obligatoires**. Aucun n'est facultatif.
+Trois prérequis avaient été posés avant la coupure (R-38). Voici où ils en sont,
+**arrêté au 2026-09-23**.
 
-- [ ] **Au moins deux comptes `superadmin`**, sur deux comptes Discord distincts, idéalement
-      avec l'authentification à deux facteurs activée côté Discord.
-- [ ] **La procédure §3 exécutée au moins une fois pour de vrai.** Une procédure jamais lancée
-      n'est pas une procédure : c'est une intention.
-- [ ] **Une période de recouvrement passée** : administrer réellement le site via Discord pendant
-      plusieurs jours, les deux voies actives, avant de retirer quoi que ce soit.
+- [x] **Période de recouvrement** — vécue dans les faits. Depuis le 2026-09-13, plus aucune
+      route métier n'acceptait le mot de passe : le site était administré uniquement par
+      Discord depuis dix jours au moment de la coupure.
+- [ ] ⚠️ **La procédure §3.1 exécutée au moins une fois pour de vrai.** Toujours pas faite, et
+      c'est désormais **le seul garde-fou qui manque vraiment**. Une procédure jamais lancée
+      n'est pas une procédure : c'est une intention. Ce qu'un essai à blanc révèle — citation
+      SQL, `POSTGRES_USER` absent du shell de l'hôte, `make db-shell` indisponible — se découvre
+      sinon un soir de panne.
+- [~] **Deux comptes `superadmin` distincts** — **volontairement abandonné**, décision du
+      2026-09-23.
+
+### Pourquoi le second `superadmin` a été écarté, et ce que ça coûte
+
+Le raisonnement retenu : **avoir la base, c'est déjà avoir la porte de secours.** Le
+break-glass du §3.1 *est* une commande SQL ; le second compte n'en est qu'un raccourci
+par l'interface. Scénario par scénario, sur les cinq du §1 :
+
+| Scénario | Un 2e `superadmin` aurait aidé ? |
+|---|---|
+| Discord ou son OAuth en panne | **Non** — il est sur Discord lui aussi |
+| Application OAuth suspendue, `DISCORD_CLIENT_SECRET` révoqué | **Non** |
+| `SECRET_KEY` tournée | **Non**, sans objet |
+| Un `UPDATE` de trop retire le dernier rôle | Non — c'est exactement ce que §3.1 répare |
+| **Compte Discord du superadmin banni, piraté ou supprimé** | **Oui** — seul cas, et l'accès base le couvre |
+
+Le risque résiduel est donc **un seul scénario**, et il se paie en minutes de SQL plutôt
+qu'en clics. Ce qui le rendrait coûteux, en revanche :
+
+1. ⚠️ **Le compte de secours doit déjà exister dans `comptes`**, donc s'être connecté au moins
+   une fois. L'amorçage par `DISCORD_SUPERADMIN_ID` se referme **définitivement** dès qu'un
+   `superadmin` existe (troisième condition de `peut_amorcer_sans_invitation`) : si le compte
+   Discord du superadmin disparaît, cette variable ne fera entrer personne. On passerait alors
+   d'un `UPDATE` (§3.1) à un `INSERT` à la main dans `comptes`, puis dans `invitations`.
+   **Faire ouvrir une session à un second compte Discord, même en simple `player`, suffit à
+   éviter ça** — et ne donne aucun privilège.
+2. **L'accès à l'hôte doit rester joignable depuis ailleurs que le poste de dev.** Sans shell
+   sur la machine, il n'y a plus aucune porte : ni mot de passe, ni SQL.
 
 ## 3. Accès de secours (*break-glass*)
 
@@ -71,15 +105,34 @@ consultable — seule l'administration est bloquée. C'est presque toujours la b
 
 **b. Réactiver temporairement le mot de passe.** Uniquement si une opération ne peut pas attendre
 (enregistrer un tournoi le soir même, par exemple). Cela suppose d'avoir **conservé le commit qui
-supprime l'authentification par mot de passe** dans l'historique, afin de pouvoir le révoquer :
+supprime l'authentification par mot de passe** dans l'historique, afin de pouvoir le révoquer.
+
+⚠️ **Le `revert` seul ne suffit pas, et c'est le piège de cette procédure.** Il rend le code,
+pas la table : la coupure du 2026-09-23 emportait aussi un `DROP TABLE api_tokens`. Un backend
+reverté sans sa table répondrait **500** à la première tentative de connexion, ce qui, un soir
+de panne Discord, ressemblerait à s'y méprendre à une panne de plus.
+
+**L'ordre compte** — la table d'abord, le code ensuite :
 
 ```sh
-git revert <commit de suppression du mot de passe>   # ne PAS forcer, garder la trace
-bash scripts/check_env.sh                            # redemande ADMIN_PASSWORD_HASH
+# 1. Rendre la table AVANT tout. Migration inverse, ecrite pour ce seul usage.
+docker compose exec -T db sh -c \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' \
+  < backEnd/migrations/2026-09-23_restore_api_tokens.sql
+
+# 2. Rendre le code. Ne PAS forcer : on garde la trace des deux mouvements.
+git revert <commit de suppression du mot de passe>
+
+# 3. Le revert rend aussi check_env.sh, qui redemande alors ADMIN_PASSWORD_HASH.
+bash scripts/check_env.sh
 make build && make up
 ```
 
-> C'est la raison pour laquelle l'étape 6 doit être **un seul commit, isolé et clairement nommé**.
+**Et le chemin du retour**, une fois Discord revenu : rejouer
+`2026-09-23_drop_api_tokens.sql` après avoir annulé le `revert`. Ne pas laisser la table
+derrière soi — c'est elle, et son stockage en clair, qui a motivé la coupure (A-05).
+
+> C'est la raison pour laquelle l'étape 6 est **un seul commit, isolé et clairement nommé**.
 > Un `revert` propre est le vrai filet de sécurité ; le reste n'est que de la procédure.
 
 ### 3.3 Compte Discord compromis

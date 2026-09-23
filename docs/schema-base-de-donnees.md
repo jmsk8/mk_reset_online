@@ -1,8 +1,12 @@
 # Schéma de la base de données
 
-> État du schéma au 16/09/2026, tel que défini par `backEnd/schema.sql` et les migrations
-> de `backEnd/migrations/` jusqu'à `2026-09-17_reset_global_plafond.sql` incluse.
-> PostgreSQL, schéma `public`, 26 tables.
+> État du schéma au 23/09/2026, tel que défini par `backEnd/schema.sql` et les migrations
+> de `backEnd/migrations/` jusqu'à `2026-09-23_drop_api_tokens.sql` incluse.
+> PostgreSQL, schéma `public`, **26 tables**.
+>
+> *Recalage du 23/09* : `api_tokens` est supprimée (bloc 4), et `promotions_proposees`
+> (migration du 18/09) manquait à l'inventaire depuis sa création — elle rejoint le bloc 2. Le
+> total ne bouge donc pas.
 
 Ce document décrit ce que contient la base et **pourquoi** elle est découpée ainsi. Pour
 la mécanique de chaque chantier, voir les plans dans `docs/` référencés en fin de section.
@@ -61,7 +65,7 @@ importante passe entre le bloc **Compétition** et le bloc **Identité** :
 ║  ██  BLOC 3 — RÉGLAGES            ║  ║  ██  BLOC 4 — ACCÈS MACHINE           ║
 ╠═══════════════════════════════════╣  ╠═══════════════════════════════════════╣
 ║   configuration   clé/valeur      ║  ║   service_tokens   bots Discord       ║
-║   tiers           → voir bloc 1   ║  ║   api_tokens       hérité, déprécié   ║
+║   tiers           → voir bloc 1   ║  ║                                       ║
 ╚═══════════════════════════════════╝  ╚═══════════════════════════════════════╝
 ```
 
@@ -83,9 +87,9 @@ Inventaire des 26 tables par bloc :
 | Bloc | Tables |
 |---|---|
 | **1. Compétition** (14) | `ligues`, `tiers`, `joueurs`, `sessions_tournois`, `tournois`, `participations`, `grille_snapshots`, `ghost_log`, `global_resets`, `global_reset_details`, `saisons`, `types_awards`, `awards_obtenus`, `league_movements` |
-| **2. Identité** (9) | `invitations`, `comptes`, `profils`, `sessions_joueurs`, `permissions_admin`, `liaisons_demandes`, `notifications`, `audit_admin`, `noms_interdits` |
+| **2. Identité** (10) | `invitations`, `comptes`, `profils`, `sessions_joueurs`, `permissions_admin`, `liaisons_demandes`, `notifications`, `audit_admin`, `noms_interdits`, `promotions_proposees` |
 | **3. Réglages** (1) | `configuration` — (`tiers` est listée au bloc 1, où elle sert) |
-| **4. Machine** (2) | `service_tokens`, `api_tokens` |
+| **4. Machine** (1) | `service_tokens` |
 
 **La règle structurante** : `comptes` + `profils` + `sessions_joueurs` décrivent une
 *personne* ; `joueurs` est un *compétiteur pseudonyme*. Supprimer un compte (droit à
@@ -498,7 +502,15 @@ comportement voulu — on sanctionne les occasions manquées, pas le temps qui p
 **`service_tokens`** — authentification machine des bots Discord : `token_hash` sha256,
 `scopes` en `text[]`, révocable, `last_used_at`.
 
-**`api_tokens`** — ancêtre de `sessions_joueurs`, conservé pour la compatibilité.
+**`api_tokens`** — ⚠️ **supprimée le 2026-09-23** (`2026-09-23_drop_api_tokens.sql`), avec
+l'authentification par mot de passe admin qu'elle servait. Elle stockait ses jetons **en clair**
+et les renouvelait sans borne absolue : les deux défauts que `sessions_joueurs` a été conçue pour
+corriger (constat A-05 de [audit-auth-discord.md](audit-auth-discord.md)).
+
+> Une base créée avant cette date la porte encore si la migration n'y a pas été jouée. Elle n'est
+> plus lue par aucun code. Sa migration inverse, `2026-09-23_restore_api_tokens.sql`, existe
+> **pour le seul break-glass** ([runbook-admin.md](runbook-admin.md) §3.2b) et n'est montée nulle
+> part sur le chemin normal.
 
 ---
 

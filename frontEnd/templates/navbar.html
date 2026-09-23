@@ -588,24 +588,17 @@
                  depuis toutes les pages admin invite au clic accidentel, et il
                  n'a de sens qu'à côté de la liste des tournois. #}
 
-              <hr class="navbar-divider">
-
-              {% if session.get('admin_token') %}
-                <a class="navbar-item" href="/admin/logout">
-                  <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
-                </a>
-              {% endif %}
+              {# Plus de « Déconnexion » ici depuis le 2026-09-23 : elle ne
+                 fermait que la session par mot de passe. La déconnexion se fait
+                 désormais depuis /mon-compte, pour tout le monde. #}
             </div>
           </div>
         {% endif %}
 
-        {# Le bouton « Admin » vers /admin a été retiré le 2026-09-13 : l'écran
-           de mot de passe qu'il ouvrait ne donne plus accès à rien — plus aucune
-           route backend n'accepte ce jeton. Il envoyait donc les visiteurs dans
-           une impasse, juste au-dessus du bouton Discord qui, lui, fonctionne.
-           La route /admin existe toujours et reste atteignable en tapant l'URL :
-           c'est le filet break-glass, à supprimer avec l'étape 6 de la phase 4
-           (docs/auth-discord-avancement.md). #}
+        {# Le bouton « Admin » vers /admin avait été retiré le 2026-09-13,
+           l'écran de mot de passe qu'il ouvrait ne donnant plus accès à rien.
+           La route elle-même a disparu le 2026-09-23 (étape 6 de la phase 4) :
+           il n'existe plus qu'une entrée, le bouton Discord ci-dessous. #}
 
         {# Retour d'un joueur déjà inscrit. Sans ce bouton, le seul chemin vers
            la connexion Discord était la page d'invitation — or l'invitation est
@@ -647,25 +640,6 @@
     </div>
   {% endif %}
 {% endwith %}
-
-{% if session.get('admin_token') %}
-<div id="session-warning-modal" class="modal">
-  <div class="modal-background"></div>
-  <div class="modal-card">
-    <header class="modal-card-head has-background-warning">
-      <p class="modal-card-title has-text-dark">⚠️ Session expirée bientôt</p>
-    </header>
-    <section class="modal-card-body has-text-dark">
-      <p>Votre session administrateur va expirer dans moins d'une minute.</p>
-      <p>Voulez-vous rester connecté ?</p>
-    </section>
-    <footer class="modal-card-foot">
-      <button class="button is-success" id="btn-extend-session">Rester connecté</button>
-      <a href="/admin/logout" class="button is-danger">Se déconnecter</a>
-    </footer>
-  </div>
-</div>
-{% endif %}
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
@@ -1011,69 +985,5 @@
     })();
     {% endif %}
 
-    const remainingSeconds = {{ session_lifetime|default(1800)|round|int }};
-    const warningBuffer = 60;
-    
-    if (document.getElementById('session-warning-modal')) {
-      const modal = document.getElementById('session-warning-modal');
-      const btnExtend = document.getElementById('btn-extend-session');
-      let logoutTimer;
-      let warningTimer;
-
-      console.log("Temps de session restant : " + remainingSeconds + " secondes");
-
-      function startTimers(secondsLeft) {
-        if (logoutTimer) clearTimeout(logoutTimer);
-        if (warningTimer) clearTimeout(warningTimer);
-
-        if (secondsLeft > 0) {
-            logoutTimer = setTimeout(() => {
-            window.location.href = '/admin/logout';
-            }, secondsLeft * 1000);
-        } else {
-            window.location.href = '/admin/logout';
-            return;
-        }
-
-        const timeBeforeWarning = (secondsLeft - warningBuffer) * 1000;
-        
-        if (timeBeforeWarning > 0) {
-          warningTimer = setTimeout(() => {
-            modal.classList.add('is-active');
-          }, timeBeforeWarning);
-        } else {
-          modal.classList.add('is-active');
-        }
-      }
-
-      startTimers(remainingSeconds);
-
-      btnExtend.addEventListener('click', () => {
-        btnExtend.classList.add('is-loading');
-        
-        const csrfToken = "{{ csrf_token() }}";
-        fetch('/admin/refresh', {
-          method: 'POST',
-          headers: {
-            'X-CSRFToken': csrfToken
-          }
-        })
-        .then(res => res.json())
-        .then(data => {
-          btnExtend.classList.remove('is-loading');
-          if (data.status === 'success') {
-            modal.classList.remove('is-active');
-            startTimers(1800); 
-            console.log("Session rafraîchie pour 30 minutes");
-          } else {
-            alert("Erreur lors du rafraîchissement. Redirection...");
-            window.location.href = '/admin/logout';
-          }
-        })
-        .catch(() => {
-          window.location.href = '/admin/logout';
-        });
-      });
-    }
   });
 </script>

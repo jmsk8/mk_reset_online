@@ -9,7 +9,7 @@ import os, re, sys, types
 from datetime import datetime, timedelta, timezone
 
 os.environ.update({
-    'POSTGRES_DB': 'x', 'POSTGRES_USER': 'x', 'ADMIN_PASSWORD_HASH': 'x',
+    'POSTGRES_DB': 'x', 'POSTGRES_USER': 'x',
     'DISCORD_CLIENT_ID': 'cid', 'DISCORD_CLIENT_SECRET': 'csec',
     'DISCORD_REDIRECT_URI': 'https://mkreset.fr/auth/discord/callback',
 })
@@ -79,7 +79,6 @@ def install_db(plan):
     def get_db_connection():
         yield conn
     fake.get_db_connection = get_db_connection
-    fake.ADMIN_PASSWORD_HASH = b'x'
     sys.modules['db'] = fake
     return cur, conn
 

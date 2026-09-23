@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(bash -n scripts/check_env.sh)",
+      "Read(//home/jmiccio/.var/app/com.visualstudio.code/**)",
+      "Read(//home/jmiccio/.config/**)"
+    ]
+  }
+}

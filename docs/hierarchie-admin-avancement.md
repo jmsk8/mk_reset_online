@@ -191,6 +191,13 @@ de l'écran de login réapparaissant. Correctif minimal appliqué : toutes les s
 renvoient vers l'accueil, et le bouton « Admin » a été retiré de la navbar (la route `/admin` reste
 atteignable en tapant l'URL, comme filet break-glass).
 
+> **Suite, le 2026-09-23 : le mot de passe a été supprimé pour de bon** (étape 6 de la phase 4).
+> Plus de `/admin-auth`, plus de `/admin/refresh-token`, plus de décorateur `admin_required`,
+> plus de route `/admin` ni de table `api_tokens`. Ce paragraphe décrit donc un état révolu, et
+> le filet break-glass n'est plus une URL à taper mais la procédure SQL de
+> [runbook-admin.md](runbook-admin.md) §3. Seule `/admin/check-token` survit, en
+> `role_required(ROLE_ADMIN)`.
+
 ⚠️ **L'étape 6 (suppression effective du mot de passe) reste à faire**, en commit isolé, et ses
 trois prérequis sont intacts : deux `superadmin` distincts, break-glass exécuté une fois, période
 de recouvrement.

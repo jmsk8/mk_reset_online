@@ -5,7 +5,7 @@ function escapeHtml(str) {
 
 async function apiCall(endpoint, method = 'GET', body = null) {
     // Pas d'en-tête d'auth : ces URL sont les routes proxy du frontend, qui
-    // injectent X-Admin-Token depuis la session serveur.
+    // injectent X-Session-Token depuis la session serveur.
     //
     // `Accept` est explicite et non décoratif : le frontend s'en sert pour
     // distinguer l'ouverture d'une PAGE d'un appel de données fait par une page

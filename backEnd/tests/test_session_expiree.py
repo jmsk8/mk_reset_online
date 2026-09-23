@@ -105,8 +105,12 @@ print("\n=== Le frontend revalide la session a l'ouverture de chaque page ===")
 avant_request = bloc(front, 'def check_session_validity')
 check("before_request surveille la session Discord",
       "session.get('player_token')" in avant_request)
-check("before_request surveille aussi l'ancien jeton admin",
-      "'admin_token' in session" in avant_request)
+# Une seule voie a surveiller depuis le 2026-09-23 : la seconde sonde, celle de
+# l'ancien jeton par mot de passe, est partie avec lui. Ce qui compte n'est plus
+# qu'elle existe mais qu'elle ait bien disparu -- une sonde vers une route
+# supprimee coûterait un aller-retour backend par page pour un 404.
+check("plus de sonde vers l'ancienne voie",
+      'admin_token' not in avant_request and 'check-token' not in avant_request)
 check("un refus purge le jeton joueur ET sa copie de compte",
       "pop('player_token'" in avant_request and "pop('compte'" in avant_request)
 
@@ -340,17 +344,22 @@ check("gestion_joueurs : les droits sont passes au JS, qui grise au lieu de masq
       'PEUT_CHAMPS_JOUEUR' in joueurs_html)
 
 
-print("\n=== La sortie de session ne renvoie plus vers le mot de passe ===")
-# Plus aucune route backend n'accepte ce jeton : aucun usage de
-# admin_or_role_required ne subsiste, et /admin/check-token est passee en
-# role_required(ROLE_ADMIN). S'y reconnecter ne rouvrirait donc rien.
+print("\n=== La sortie de session : l'ecran mot de passe n'existe plus ===")
+# Il ne s'agit plus d'eviter d'y renvoyer mais de constater qu'il n'y a plus ou
+# renvoyer : la route /admin et son gabarit sont supprimes depuis le
+# 2026-09-23. Une redirection survivante serait un 404 au pire moment, juste
+# apres une expiration de session.
 sortie = bloc(front, 'def _session_admin_expiree')
-check("elle purge les deux voies",
-      "pop('player_token'" in sortie and "pop('admin_token'" in sortie)
-check("et renvoie vers l'accueil, pas vers l'ecran mot de passe",
+check("elle purge la session Discord et sa copie de compte",
+      "pop('player_token'" in sortie and "pop('compte'" in sortie)
+check("et renvoie vers l'accueil",
       "url_for('index')" in sortie and 'admin_login' not in sortie)
 check("plus aucune redirection vers l'ecran mot de passe nulle part",
-      "url_for('admin_login')" not in front)
+      "url_for('admin_login')" not in front and "url_for('admin_logout')" not in front)
+check("la vue admin_login n'existe plus",
+      'def admin_login(' not in front and 'def admin_logout(' not in front)
+check("son gabarit non plus",
+      not os.path.exists(os.path.join(FRONT, 'templates', 'admin_login.html')))
 
 
 print("\n=== Une page deja ouverte reagit au 401 ===")

@@ -5,14 +5,19 @@
 > réellement fait (vérifié dans le code, pas seulement dans la doc) et ce qui reste en suspens,
 > classé par priorité.
 >
-> **Dernière mise à jour : 2026-09-22**, par confrontation au code de tout ce qui a bougé depuis
-> le 18/09 : journal `audit_admin` livré sauf sa phase 4, banc de scénario exécuté, et huit
-> chantiers apparus entre-temps (§11). Passages précédents : 18/09 (B-01 à B-05, D-1, D-2, O-1,
-> §8.3, rotation des journaux), audit croisé docs ↔ code, chantier performance/503, « Mes
-> sessions actives », intégration des trois audits qui manquaient à cet inventaire.
+> **Dernière mise à jour : 2026-09-23** — ✅ **la suppression du mot de passe admin est faite**
+> (§1). C'était la dernière étape décidée du projet le 18/09 ; les deux sont maintenant closes.
+> Passages précédents : 22/09 (confrontation au code de tout ce qui avait bougé depuis le 18/09 :
+> journal `audit_admin`, banc de scénario, huit chantiers apparus entre-temps, §11), 18/09
+> (B-01 à B-05, D-1, D-2, O-1, §8.3, rotation des journaux), audit croisé docs ↔ code, chantier
+> performance/503, « Mes sessions actives », intégration des trois audits qui manquaient à cet
+> inventaire.
 >
-> **État de la suite de tests, relancée le 2026-09-22 au soir : 1929 assertions, 36 fichiers,
-> aucune rouge** (1795 dans l'après-midi : l'écart vient des deux fichiers de l'affichage de
+> **État de la suite de tests, relancée le 2026-09-23 : 1930 assertions, 36 fichiers, aucune
+> rouge.** L'écart d'une seule assertion avec la veille cache un remaniement plus large : six
+> fichiers ont rougi à la coupure du mot de passe, tous pour de bonnes raisons (§1), et la
+> conversion des `defaut(...)` d'A-04/A-05 en non-régressions rend autant d'assertions qu'elle
+> en retire. La veille : **1929 assertions** (1795 dans l'après-midi : l'écart vient des deux fichiers de l'affichage de
 > l'IP, §13.2 ; 1647 le matin : suppression de compte sur demande écrite, §13.1, phase 4
 > d'`audit_admin`, §4, et A-01/A-02, §8). Il y en
 > avait 1401 le 18/09 ; l'écart vient surtout du journal `audit_admin`. Le 18/09
@@ -81,12 +86,14 @@
 | 1 | **Déployer `deploy/host/journald-mk.conf`** | §3 | 🔴 La seule promesse faite aux visiteurs qui n'est **pas tenue aujourd'hui** : `/confidentialite` annonce 6 mois de conservation, et ce fichier est ce qui la rend vraie. Sans son `Storage=persistent`, les journaux sont même **perdus à chaque redémarrage**. Rien à coder : un fichier à poser sur l'hôte. |
 | 2 | **Prochain déploiement : emporter trois migrations** | §12 | 🟠 `2026-09-18_promotions_proposees`, `2026-09-19_audit_index_acteur`, `2026-09-20_notifications_lien`. Le code depuis `025af10` lit les tables et colonnes qu'elles créent : le déployer sans elles casse la gestion des comptes et les notifications. Puis `make re-front` **et** `make re-back`, et la recette https de « Mes sessions actives » (§2). Préalable : établir quelles migrations la prod a déjà reçues (voir l'en-tête). |
 | 3 | **Vérifier la zone nginx servie** — ✅ poste de dev (22/09), **serveur à faire** | §8, §12.1 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. Deux minutes — mais si l'ancien 20 r/min est encore servi, ce sont des connexions en 503. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
-| 4 | **« Supprimer mon compte » : passer par une demande par mail** — ✅ livré le 22/09, non commité | §13.1 | Demandé le 22/09 : l'effacement direct est jugé trop dangereux. Garder le bouton, mais qu'il affiche un message invitant à écrire à `SITE_CONTACT`. ⚠️ **Fermer aussi `DELETE /me` côté backend**, sinon l'accès direct reste ouvert à qui l'appelle sans passer par la page. La demande reçue sera traitée par une **route réservée au `superadmin`** (décidé le 22/09), à créer : aucune n'existe aujourd'hui. |
+| 3bis | **Emporter le correctif nginx du 23/09** — ✅ poste de dev (23/09), **serveur à faire** | [audit-503](audit-503-zone-admin.md) §13 | 🟠 `nginx/snippets/app.conf` résout désormais les noms de services à chaque requête. Sans lui, **tout le site tombe en 502 après chaque `make re-front` / `make re-back` / `make build`** — nginx garde l'IP d'un conteneur qui n'existe plus, pendant que `docker compose ps` affiche un frontend `healthy`. Déployer avec `make reload-nginx`, qui valide par `nginx -t` **avant** de recharger, puis recetter en recréant le frontend : c'est le seul geste qui prouve le correctif. |
+| 4 | ⚠️ **Exécuter la procédure break-glass une fois pour de vrai** | §1, [runbook](runbook-admin.md) §3.1 | 🟠 **Monté au rang 4 le 23/09** : depuis la coupure du mot de passe, c'est le **seul garde-fou manquant** de l'accès d'urgence, et il n'a aucun substitut. Un `UPDATE` jamais joué se découvre un soir de panne — citation SQL, `POSTGRES_USER` absent du shell de l'hôte, `make db-shell` indisponible. Une demi-heure sur le poste de dev. |
+| 4bis | **« Supprimer mon compte » : passer par une demande par mail** — ✅ livré le 22/09, non commité | §13.1 | Demandé le 22/09 : l'effacement direct est jugé trop dangereux. Garder le bouton, mais qu'il affiche un message invitant à écrire à `SITE_CONTACT`. ⚠️ **Fermer aussi `DELETE /me` côté backend**, sinon l'accès direct reste ouvert à qui l'appelle sans passer par la page. La demande reçue sera traitée par une **route réservée au `superadmin`** (décidé le 22/09), à créer : aucune n'existe aujourd'hui. |
 | 5 | **Phase 4 d'`audit_admin`** — ✅ **livrée le 22/09, non commitée** : le journal est terminé | §4 | Le filet (`test_audit_inventaire.py`) a trouvé en arrivant **neuf routes admin qui écrivaient sans trace**, dont la liaison de tournois qui modifie le sigma. Toutes corrigées. **L'avant-dernière étape décidée le 18/09 est donc close** : reste la coupure du mot de passe (rang 9). |
 | 6 | **A-01 / A-02 — sessions figées sur le rôle** — ✅ clos le 22/09 (`12d35dc`) | §8 | Était le dernier 🟠 ouvert. Une promotion laissait à un admin une session de 30 jours au lieu de 12 h, une rétrogradation ne fermait aucune session. Désormais **changer de rôle oblige à se reconnecter**, dans les deux sens. Recette faite en conditions réelles, acceptation et rétrogradation (§8). |
 | 7 | **Définitions de l'IP v1 / v2 sur le site** — ✅ **clos le 22/09** | §13.2 | Les 5 décisions tranchées (propositions retenues), les 4 phases déroulées : un seul module de textes (`textes_ip.py`), badge de version et modale d'explication sur le récap et le classement, légende des couleurs, admin aligné. Validé à l'écran par l'utilisateur. Seul reliquat, sans effet visible : les branches `grand_master`, suspendues à deux requêtes sur la prod. |
-| 8 | **Prérequis de l'étape 6** | §1 | Deux comptes `superadmin` distincts, break-glass exécuté pour de vrai, période de recouvrement. Des décisions et du temps, pas du code : à lancer tôt, justement parce qu'ils ne se cochent pas en une session. |
-| 9 | **Étape 6 — couper le mot de passe admin** | §1 | ⚠️ **Dernière étape décidée** (18/09). Referme A-04/A-05 du même geste. Un seul commit isolé, pour pouvoir le `revert`. |
+| 8 | **Prérequis de l'étape 6** — ✅ tranchés le 23/09 | §1 | Le second `superadmin` est **volontairement écarté** : l'accès à la base *est* la porte de secours, et il ne couvrait qu'un des cinq scénarios de panne (raisonnement en table dans [runbook-admin.md](runbook-admin.md) §2). La période de recouvrement était vécue depuis le 13/09. ⚠️ **Reste le break-glass jamais exécuté**, passé au rang 4. |
+| 9 | **Étape 6 — couper le mot de passe admin** — ✅ **faite le 23/09, non commitée** | §1 | ⚠️ C'était la **dernière étape décidée** du projet (18/09). A-04/A-05 refermés du même geste, 6 constats d'audit sur 7 désormais clos. Un seul commit isolé, `revert`able — mais en **deux** gestes, le `revert` ne recréant pas `api_tokens`. |
 | 10 | **Bannière d'automne** | §13.3 | Demandé le 22/09. L'automne affiche la bannière d'été depuis ce matin, en intérim. Travail daté : la saison s'arrête le 21/12, chaque semaine de retard en est une de moins à l'écran. |
 | 11 | **RGPD : purge régulière, et A-07** | §3, §8 | Purge : route existante, aucun ordonnanceur, geste manuel assumé. A-07 🟡 : le consentement CGU est affiché, jamais imposé. |
 | 12 | **CHANGELOG** | §12 | La section « Non publié » ne dit **rien** de la bascule Discord, des rôles admin, du journal, des promotions, des notifications ni des sessions de tournois. À écrire avant de publier une version. |
@@ -98,36 +105,74 @@
 **Les rangs 1 à 3 se font sur l'hôte, pas dans le code** — ils demandent Docker et un accès à la
 machine plutôt qu'une session de développement. Le rang 1 est le seul qui engage juridiquement.
 
-> **Ordre de fin de projet, décidé le 2026-09-18.** Les constats banner et les chantiers de
-> confort sont **mis de côté**. Les deux dernières étapes du projet sont, dans cet ordre :
-> **1) le journal `audit_admin`** (rang 5, ✅ terminé le 22/09), **2) la suppression du
-> mot de passe admin** (rang 9). Cet ordre n'est pas négociable dans l'autre sens : couper le mot
-> de passe avant d'avoir une lecture de l'audit reviendrait à se priver du seul moyen de
-> comprendre après coup ce qui s'est passé sur les comptes. A-01/A-02 (rang 6, ✅ fait le 22/09) et les
-> demandes du 22/09 (§13) s'intercalent sans toucher à cet ordre : elles sont indépendantes des deux.
+> **✅ Ordre de fin de projet, décidé le 2026-09-18 — tenu et terminé.** Les deux dernières
+> étapes décidées étaient, dans cet ordre : **1) le journal `audit_admin`** (rang 5, terminé le
+> 22/09), **2) la suppression du mot de passe admin** (rang 9, faite le 23/09). L'ordre a été
+> respecté, et il n'était pas négociable dans l'autre sens : couper le mot de passe avant d'avoir
+> une lecture de l'audit aurait privé du seul moyen de comprendre après coup ce qui s'est passé
+> sur les comptes. A-01/A-02 (rang 6) et les demandes du 22/09 (§13) se sont intercalées sans
+> toucher à cet ordre.
+>
+> **Ce qui reste n'est plus du code décidé** : le rang 1 (une promesse juridique à rendre vraie),
+> les rangs 2-4 (des gestes d'exploitation sur l'hôte) et les demandes du 22/09 (§13), plus les
+> chantiers mis de côté. Les constats banner et les chantiers de confort restent **hors
+> périmètre**.
 
 ## Tâches en suspens, par priorité
 
-### 1. Auth Discord — étape 6 (suppression du mot de passe admin) non franchie
+### 1. Auth Discord — ✅ étape 6 FRANCHIE le 2026-09-23 (non commitée)
 
-Voir [auth-discord-avancement.md](auth-discord-avancement.md) Phase 4 et
-[audit-auth-discord.md](audit-auth-discord.md). Dette assumée (🟡, pas une brèche), mais toujours
-active :
+Voir [auth-discord-avancement.md](auth-discord-avancement.md) « ✅ L'étape 6 » et
+[audit-auth-discord.md](audit-auth-discord.md) « ✅ A-04 et A-05 ». **Il n'existe plus de secret
+partagé dans le projet** : le but A du plan d'auth est atteint, et la phase 4 est close.
 
-- `backEnd/routes_admin.py` — route `POST /admin-auth` toujours vivante (`bcrypt.checkpw` contre
-  `ADMIN_PASSWORD_HASH`).
-- `backEnd/db.py` — `ADMIN_PASSWORD_HASH` toujours chargée depuis l'environnement.
-- `frontEnd/frontend.py` — appelle toujours `/admin-auth`.
-- Table `api_tokens` (stockage en clair) toujours présente.
+**Ce qui est parti**, dans un commit unique et révocable :
 
-**Prérequis avant de couper**, checklist §2 de [runbook-admin.md](runbook-admin.md), toutes les
-cases encore non cochées au 2026-09-22 : deux comptes `superadmin` distincts, procédure
-break-glass exécutée au moins une fois pour de vrai, période de recouvrement passée. Ce sont des
-faits d'exploitation, à vérifier/cocher manuellement, pas du code.
+| Où | Quoi |
+|---|---|
+| `routes_admin.py` | `POST /admin-auth`, `POST /admin/refresh-token`, `POST /admin-logout` |
+| `auth.py` | `admin_required`, `admin_or_role_required`, l'en-tête `X-Admin-Token` |
+| `db.py`, `check_env.sh`, `docker-compose.yml`, `README.md` | `ADMIN_PASSWORD_HASH`, `bcrypt_hash()` |
+| `frontend.py` | `/admin` (formulaire), `/admin/logout`, `/admin/refresh`, `inject_lifetime`, les quatre branches `admin_token` |
+| `navbar.html` | la modale « session bientôt expirée » et son minuteur JS |
+| base | `api_tokens`, via `2026-09-23_drop_api_tokens.sql` |
 
-✅ **Le prérequis de code est levé** (22/09) : l'ordre décidé le 18/09 voulait le journal
-`audit_admin` avant la coupure, et sa phase 4 est livrée (§4). Restent les prérequis
-d'exploitation ci-dessus.
+**Ce qui reste volontairement** : `GET /admin/check-token`. Le plan la rangeait parmi les
+suppressions de l'étape 6 — c'est un **écart assumé**, tracé dans le code. Elle est passée en
+`role_required(ROLE_ADMIN)` le 13/09 et porte aujourd'hui la revalidation par page des six vues
+admin (`_acces_admin_revoque`). La supprimer les rouvrirait sur la foi du seul cookie : le défaut
+🔴 déjà rencontré le 13/09.
+
+**Six fichiers de tests ont rougi**, tous pour de bonnes raisons, et c'est le meilleur retour
+qu'on pouvait avoir du dispositif d'audit :
+
+- `test_audit_auth_discord.py` — les `defaut(...)` d'A-04/A-05 ont viré au rouge à la
+  correction, comme prévu, et disent où venir l'acter. Convertis en non-régressions.
+- `test_audit_inventaire.py` — a signalé une **exemption devenue inutile** (`refresh_token`
+  dans la liste des routes qui écrivent sans journaliser). Sa raison d'être exacte.
+- `test_migrations_montees.py` — ne connaissait pas la notion de **migration inverse**. Il
+  l'apprend, et verrouille au passage le vrai danger : qu'elle soit montée par mégarde sur le
+  chemin `make redump`, où elle recréerait la table deux lignes après sa suppression.
+- `test_bascule.py`, `test_decorators.py`, `test_session_expiree.py` — décrivaient la
+  cohabitation des deux voies. Réécrits pour décrire son absence.
+
+⚠️ **Le retour arrière demande deux gestes, pas un.** Un `git revert` rend le code mais **pas la
+table** : le backend reverté répondrait 500 à la première connexion. D'où
+`2026-09-23_restore_api_tokens.sql`, et l'ordre imposé au §3.2b de
+[runbook-admin.md](runbook-admin.md) — la table d'abord, le code ensuite.
+
+**Prérequis de R-38, arrêtés au 23/09** ([runbook-admin.md](runbook-admin.md) §2) :
+
+- ✅ **Période de recouvrement** — vécue : le site était administré par Discord seul depuis le 13/09.
+- ⚠️ **Deux comptes `superadmin` distincts** — **volontairement écarté.** L'accès à la base *est*
+  la porte de secours ; le second compte n'en était qu'un raccourci par l'interface, et il ne
+  couvrait qu'**un seul** des cinq scénarios de panne du runbook §1 (compte Discord du superadmin
+  perdu). Point de vigilance qui le remplace : **faire ouvrir une session à un second compte
+  Discord, même en simple `player`**, pour qu'une ligne existe dans `comptes` —
+  `DISCORD_SUPERADMIN_ID` se referme définitivement dès qu'un superadmin existe, et sans cette
+  ligne le break-glass passerait d'un `UPDATE` à un `INSERT` à la main.
+- ❌ **Break-glass exécuté pour de vrai** — **toujours pas fait**, et c'est désormais le seul
+  garde-fou manquant. Passé au rang 4 de la liste ci-dessus.
 
 ### 2. "Mes sessions actives" — ✅ CLOS (`d2a543c`, recette faite le 18/09)
 
@@ -348,8 +393,9 @@ des non-régressions le 2026-09-22 :
   - `[x]` **Recette de l'acceptation — faite le 2026-09-22** : compte joueur connecté sur deux
     navigateurs, promotion acceptée sur l'un — reconnexion Discord et retour en admin, l'autre
     déconnecté. **Chantier entièrement clos.**
-- `[ ]` **A-04/A-05** 🟡 — mot de passe partagé, `api_tokens` en clair : se referment avec
-  l'étape 6 (§1).
+- `[x]` **A-04/A-05** 🟡 — ✅ **refermés le 2026-09-23** avec l'étape 6 (§1). Mot de passe
+  partagé, `api_tokens` en clair et renouvellement sans borne : les trois ont disparu dans le
+  même commit. **Six constats d'audit sur sept sont désormais clos ; seul A-07 reste ouvert.**
 - `[ ]` **A-07** 🟡 — CGU affichées mais jamais imposées.
 - `[ ]` ⚠️ **Écart plan ↔ code, relevé le 2026-09-22, à trancher** : `changer_role` **promeut
   encore** sans proposition si on l'appelle directement (un `chef_admin` qui poste `admin` sur
@@ -643,13 +689,14 @@ commitées**), avec les 5 orientations et un portrait. À faire :
   protocole.
 - `[ ]` Préciser ce qui doit changer : apparence, placement, comportement.
 
-#### 13.6 Admin/Comptes — actions d'un compte en pop-up — ✅ livré le 2026-09-22, non commité, recette à l'écran à faire
+#### 13.6 Admin/Comptes — actions d'un compte en pop-up — ✅ CLOS le 2026-09-22, validé à l'écran
 
 **Demandé** : retravailler la colonne « Actions » de l'onglet **Comptes** de `/admin/comptes`.
 
 - `[x]` Un **bouton unique** « Actions » (avec le nombre de gestes possibles) par ligne ouvre une **petite modale** (`#modale-actions`, `admin_comptes.html`) titrée au nom du compte. Ligne sans geste possible : un tiret.
 - `[x]` Deux groupes : **courants** (synchroniser, désynchroniser, fermer les sessions, permissions, logs), puis, séparés par un trait, **sensibles** (suspendre/réactiver, léguer le superadmin, supprimer).
 - `[x]` Fermeture : croix, clic sur le fond, Échap — et automatiquement au clic d'une action, avant son `confirm()` ou le volet déplié.
+- `[x]` Habillage : en-tête avatar + rôle/statut, lignes de menu à icône, groupes « Gestion » et « Zone sensible », fond flouté. Validé par l'utilisateur.
 - `[x]` Les règles d'affichage de chaque bouton sont inchangées (mêmes conditions, mêmes handlers : les boutons sont seulement déplacés). Onglets liaisons, invitations, logs, bots non touchés. Les 10 fichiers de tests qui lisent ce gabarit restent verts.
 
 #### 13.7 Bannière mobile — authentification Discord hors burger — à ranger

@@ -514,6 +514,21 @@ Ordre **impératif**, chaque étape validée avant la suivante :
 **Critère de sortie** : `grep -rn "ADMIN_PASSWORD_HASH\|X-Admin-Token\|admin-auth"` ne renvoie
 plus rien hors CHANGELOG et migrations.
 
+> ✅ **Phase franchie le 2026-09-23.** Deux écarts avec ce qui est écrit ci-dessus, tous deux
+> assumés et tracés :
+>
+> 1. **`GET /admin/check-token` n'a PAS été supprimée.** Passée en `role_required(ROLE_ADMIN)` le
+>    13/09, elle porte depuis la revalidation par page des six vues admin. La supprimer les
+>    rouvrirait sur la foi du seul cookie.
+> 2. **Le critère de sortie s'étend aux commentaires.** `test_bascule.py` refuse ces noms
+>    *n'importe où* dans le backend, prose comprise : une règle sans exception se relit d'un coup
+>    d'œil, et c'est dans la prose qu'une réintroduction se cacherait le mieux. `docs/` et
+>    `dump.sql` restent hors périmètre, comme prévu.
+>
+> Un troisième point s'ajoute au §6 de la liste ci-dessus : le `DROP TABLE api_tokens` rend le
+> `git revert` insuffisant à lui seul. D'où `2026-09-23_restore_api_tokens.sql`
+> ([runbook-admin.md](runbook-admin.md) §3.2b).
+
 ### Phase 5 — API bot **[but C]**
 
 - Table `service_tokens` (§4.7) + `@service_required(scope=…)`

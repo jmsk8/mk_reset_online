@@ -669,7 +669,7 @@
 
     async function api(url, method, body=null) {
         // Pas d'en-tête d'auth ici : ces URL sont les routes proxy du frontend,
-        // qui ajoutent X-Admin-Token depuis la session serveur.
+        // qui ajoutent X-Session-Token depuis la session serveur.
         const opts = {
             method: method,
             // `Accept` explicite : dit au frontend que c'est un appel de

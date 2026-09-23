@@ -29,9 +29,9 @@ from constants import (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERAR
                        DEFAULT_MU, DEFAULT_SIGMA, DISCORD_HTTP_TIMEOUT,
                        AVATAR_CACHE_TTL, AVATAR_MAX_BYTES,
                        PROMOTION_LIFETIME_DAYS, CGU_ADMIN_VERSION)
-from auth import (player_required, role_required, admin_or_role_required,
-                 permission_required, compte_cible_protegee,
-                 permissions_delegables_par, refuse_auto_modification)
+from auth import (player_required, role_required, permission_required,
+                 compte_cible_protegee, permissions_delegables_par,
+                 refuse_auto_modification)
 from auth_discord import avatar_url, hash_token
 from cache import invalidate_cache
 from services import (construire_lobbies, resoudre_joueurs_matchmaking,

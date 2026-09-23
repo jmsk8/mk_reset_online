@@ -344,7 +344,7 @@ def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tu
            VALUES (%s, %s, %s, now(), %s)""",
         (hash_token(token), compte_id, expires_at, (user_agent or '')[:255] or None),
     )
-    # Menage opportuniste, sur le modele du DELETE FROM api_tokens existant.
+    # Menage opportuniste, herite de l'ancienne table de jetons admin.
     cur.execute("DELETE FROM sessions_joueurs WHERE expires_at < now()")
     return token, expires_at
 

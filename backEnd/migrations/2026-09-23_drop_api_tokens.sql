@@ -1,0 +1,22 @@
+-- Etape 6 de la phase 4 : suppression de l'authentification par mot de passe.
+--
+-- `api_tokens` portait les jetons de l'admin par mot de passe partage : UUID4
+-- stocke EN CLAIR, 30 minutes renouvelables sans borne via /admin/refresh-token
+-- (constats A-04 et A-05 de docs/audit-auth-discord.md). Plus aucune route ne
+-- la lit depuis le 2026-09-23 : /admin-auth, /admin/refresh-token,
+-- /admin-logout et le decorateur admin_required sont supprimes du code.
+--
+-- Sa remplacante est `sessions_joueurs` (2026-09-02_auth_discord.sql), qui ne
+-- garde que le sha256 du jeton et dont l'expiration est ABSOLUE.
+--
+-- ⚠️ RETOUR ARRIERE. Un `git revert` du commit de coupure rend le code mais PAS
+-- la table : /admin-auth reviendrait et tomberait en 500 au premier INSERT.
+-- La migration inverse est 2026-09-23_restore_api_tokens.sql, et le
+-- runbook-admin.md 3.2b l'a integree a la procedure break-glass. Ne pas jouer
+-- l'une sans connaitre l'autre.
+--
+-- IF EXISTS : la production n'a peut-etre jamais recu le schema qui l'a creee,
+-- et cette migration est aussi montee sur le chemin `make redump`, ou le dump
+-- peut venir de n'importe quelle epoque.
+
+DROP TABLE IF EXISTS public.api_tokens;

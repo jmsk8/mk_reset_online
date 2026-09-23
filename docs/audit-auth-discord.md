@@ -12,7 +12,7 @@
 > Les quatre rôles (`player`, `admin`, `chef_admin`, `superadmin`) ont été suivis de bout en bout.
 >
 > **Chaque constat est prouvé par exécution**, pas par lecture : voir
-> `backEnd/tests/test_audit_auth_discord.py` (76 assertions, toutes vertes).
+> `backEnd/tests/test_audit_auth_discord.py` (82 assertions au 2026-09-23, toutes vertes).
 
 ---
 
@@ -33,13 +33,17 @@ des sessions** : une session, une fois ouverte, est trop difficile à reprendre.
 | **A-01** | ~~La durée de session est figée sur le rôle **au moment de la connexion**~~ | ✅ **corrigé 2026-09-22** | Session |
 | **A-02** | ~~Changer le rôle d'un compte ne ferme aucune de ses sessions~~ | ✅ **corrigé 2026-09-22** | Session |
 | **A-03** | ~~Personne ne peut voir ni fermer **ses propres** sessions~~ | ✅ **corrigé 2026-09-16** | Session |
-| **A-04** | `/admin-auth` (mot de passe partagé) est toujours ouvert | 🟡 faible | Dette |
-| **A-05** | `api_tokens` stocke le jeton **en clair**, renouvelable sans borne | 🟡 faible | Dette |
+| **A-04** | ~~`/admin-auth` (mot de passe partagé) est toujours ouvert~~ | ✅ **corrigé 2026-09-23** | Dette |
+| **A-05** | ~~`api_tokens` stocke le jeton **en clair**, renouvelable sans borne~~ | ✅ **corrigé 2026-09-23** | Dette |
 | **A-06** | Se reconnecter n'invalide aucune session existante | 🟡 faible — **choix acté** (voir A-06) | Session |
 | **A-07** | Le consentement CGU est affiché mais jamais **imposé** | 🟡 faible | RGPD |
 
 Aucun constat n'est 🔴. Les trois 🟠 se corrigent ensemble, et partagent une seule cause.
 **Tous trois sont refermés** : A-03 le 2026-09-16, A-01 et A-02 le 2026-09-22.
+
+**Au 2026-09-23, six constats sur sept sont refermés.** A-04 et A-05 sont tombés ensemble avec
+l'étape 6 de la phase 4, comme la recommandation §3 le prévoyait. **Seul A-07 reste ouvert** —
+le consentement CGU affiché mais jamais imposé.
 
 ---
 
@@ -293,31 +297,39 @@ autre `discord_id` n'en profite jamais.
 
 ---
 
-## Constats de dette : A-04 et A-05
+## ✅ A-04 et A-05 — refermés le 2026-09-23
 
-La bascule vers l'auth Discord est **faite côté routes** : plus aucune route métier n'accepte le
-mot de passe partagé (`admin_or_role_required` n'a plus aucun usage, `@admin_required` n'en a
-plus qu'un). C'est l'étape 6 de la phase 4, restée ouverte en attente d'une décision.
+L'étape 6 de la phase 4 a supprimé le mot de passe partagé. Ce qui était constaté le
+2026-09-15, et qui n'existe plus :
 
-Ce qui subsiste :
+- **`POST /admin-auth`** était exposé sans rate limiting applicatif (seul nginx protégeait,
+  zone `admin` à 30 r/min) et délivrait encore un jeton ;
+- **`api_tokens` stockait le jeton en clair** — pas de `sha256`, contrairement à
+  `sessions_joueurs` ;
+- **`/admin/refresh-token`** le renouvelait **sans borne absolue** : précisément le défaut que
+  `sessions_joueurs` a été créée pour corriger ;
+- côté frontend, `_est_admin()` renvoyait vrai sur un simple `admin_token`, et le formulaire
+  `/admin` était toujours servi.
 
-- **`POST /admin-auth`** est toujours exposé, sans rate limiting applicatif (seul nginx protège,
-  zone `admin` à 30 r/min) et délivre encore un jeton ;
-- **`api_tokens` stocke le jeton en clair** — pas de `sha256`, contrairement à `sessions_joueurs` ;
-- **`/admin/refresh-token`** le renouvelle **sans borne absolue** : c'est précisément le défaut
-  que `sessions_joueurs` a été créée pour corriger ;
-- côté frontend, `_est_admin()` renvoie vrai sur un simple `admin_token`, et le formulaire
-  `/admin` est toujours servi.
+Les quatre sont partis dans le même commit, avec `admin_required`, `admin_or_role_required`,
+`ADMIN_PASSWORD_HASH` et une migration `DROP TABLE api_tokens`. Inventaire complet :
+[auth-discord-avancement.md](auth-discord-avancement.md), « ✅ L'étape 6 ».
 
-**Pourquoi ce n'est que 🟡 :** le jeton ainsi obtenu **n'ouvre plus aucune route métier**. Le seul
-`@admin_required` restant protège `/admin/refresh-token`, c'est-à-dire le renouvellement du jeton
-lui-même. Un attaquant qui devinerait le mot de passe obtiendrait donc un jeton capable de se
-renouveler indéfiniment… et de rien d'autre côté backend. Il verrait en revanche s'ouvrir les
-**pages** d'administration côté frontend (`_est_admin()`), qui se rempliraient d'erreurs.
+**Ce qui rendait ces constats 🟡 et non 🔴 mérite d'être gardé en mémoire**, parce que c'est le
+raisonnement qui a permis de ne pas les traiter dans l'urgence : le jeton obtenu n'ouvrait plus
+aucune route métier depuis le 13/09. Un attaquant qui aurait deviné le mot de passe aurait
+obtenu un jeton capable de se renouveler indéfiniment… et de rien d'autre côté backend. Il
+aurait en revanche vu s'ouvrir les **pages** d'administration côté frontend, qui se seraient
+remplies d'erreurs.
 
-C'est donc une **dette**, pas une brèche — mais une dette qui ressemble à une brèche, ce qui est
-la pire des dettes : le jour où quelqu'un remet `@admin_or_role_required` sur une route « pour
-dépanner », elle en redevient une.
+C'était donc une **dette**, pas une brèche — mais une dette qui ressemblait à une brèche, ce qui
+est la pire des dettes : le jour où quelqu'un aurait remis `@admin_or_role_required` sur une
+route « pour dépanner », elle en serait redevenue une. **C'est exactement ce que `test_bascule.py`
+interdit désormais**, en refusant les noms de ces décorateurs n'importe où dans le backend.
+
+**Les huit assertions `defaut(...)` qui décrivaient ces deux constats sont devenues des
+non-régressions** dans `test_audit_auth_discord.py`. Le mécanisme a fonctionné comme prévu :
+elles ont rougi à la correction, et c'est leur rougissement qui a dit où venir écrire ces lignes.
 
 ---
 
@@ -371,12 +383,12 @@ C'est ce qui rend un vol de token **rattrapable par la victime elle-même**, san
 administrateur. À faire précéder, dans l'interface, d'un mot clair : *« vous ne reconnaissez pas
 un appareil ? Déconnectez-le. »*
 
-### 3. Refermer la dette du mot de passe partagé (A-04 + A-05)
+### 3. ~~Refermer la dette du mot de passe partagé (A-04 + A-05)~~ — ✅ fait le 2026-09-23
 
-Le travail de bascule est déjà fait : plus aucune route métier n'en dépend. Il reste à supprimer
-`/admin-auth`, `/admin/refresh-token`, `admin_required`, la table `api_tokens`, le formulaire
-`/admin` et la branche `admin_token` de `_est_admin()`. En **commit isolé**, comme l'avancement le
-prévoyait, pour que le retour arrière soit trivial.
+Suivie à la lettre, en commit isolé. Une seule chose n'a pas été supprimée de la liste :
+`/admin/check-token`, passée en `role_required(ROLE_ADMIN)` dès le 13/09 et devenue la
+revalidation par page des vues admin. Le retour arrière demande en revanche **deux** gestes et
+non un — le `revert` ne recrée pas la table ([runbook-admin.md](runbook-admin.md) §3.2b).
 
 ### 4. Trancher explicitement sur les CGU (A-07)
 
@@ -392,9 +404,10 @@ cd backEnd/tests && sh run.sh                    # suite complète
 python3 test_audit_auth_discord.py               # ce seul fichier
 ```
 
-`test_audit_auth_discord.py` contient **83 assertions, toutes vertes** au 2026-09-22 (76 au
-2026-09-15). Deux
-natures cohabitent, et c'est délibéré :
+`test_audit_auth_discord.py` contient **82 assertions, toutes vertes** au 2026-09-23 (83 au
+2026-09-22, 76 au 2026-09-15 — le fichier a *perdu* une assertion en refermant A-04/A-05 : six
+`defaut(...)` sont devenues sept non-régressions, et une vérification du décorateur restant n'a
+plus d'objet). Deux natures cohabitent, et c'est délibéré :
 
 - les **non-régressions** décrivent ce qui est correct et doit le rester ;
 - les assertions `defaut(...)` décrivent le comportement **actuel, problématique**. Elles passent
@@ -403,7 +416,11 @@ natures cohabitent, et c'est délibéré :
   document de mentir en silence.
 
 Autrement dit : une ligne rouge marquée `[A-xx, defaut constate]` est une **bonne nouvelle**, et
-la consigne est d'aller mettre à jour ce fichier.
+la consigne est d'aller mettre à jour ce fichier. **Le mécanisme a servi deux fois** : le
+2026-09-22 pour A-01/A-02, le 2026-09-23 pour A-04/A-05. Dans les deux cas, c'est le rouge qui a
+dit où venir écrire.
+
+Il ne reste qu'un seul `defaut(...)` dans ce fichier, celui d'**A-06** — et celui-là décrit un **choix acté** (D5), pas une dette à refermer : s'il rougit un jour, c'est que quelqu'un aura changé la politique de rotation sans le dire ici.
 
 ### État de la suite au moment de l'audit
 

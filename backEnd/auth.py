@@ -1,11 +1,15 @@
 """Decorateurs d'authentification et d'autorisation.
 
-Deux mecanismes cohabitent pendant la bascule : `admin_required` (mot de passe
-partage, voue a disparaitre) et `role_required` (session Discord).
+Un seul mecanisme d'authentification depuis le 2026-09-23 : la session Discord,
+via `role_required`. Les deux decorateurs du mot de passe partage ont ete
+supprimes avec l'etape 6 de la phase 4, et `test_bascule.py` refuse desormais
+leurs noms n'importe ou dans le backend -- y compris dans un commentaire, pour
+que le filet reste une regle simple et non une liste d'exceptions.
 
-`admin_or_role_required` accepte les deux et loggue laquelle a servi. C'est le
-SEUL point ou la double lecture est autorisee : deux decorateurs empiles se
-comportent comme un ET alors qu'on veut un OU.
+Si le mot de passe devait revenir par un `git revert` (runbook-admin.md 3.2b),
+il revient avec eux -- et avec la regle qui allait avec : ne JAMAIS empiler deux
+decorateurs d'authentification, deux empiles se comportent comme un ET alors
+qu'on veut un OU.
 
 Deux facons d'autoriser, a ne pas confondre (docs/hierarchie-admin-plan.md 2) :
 
@@ -45,33 +49,6 @@ def _hash(token: str) -> str:
 
 def _erreur(message: str, status: int, code: str):
     return jsonify({"error": message, "code": code}), status
-
-
-def admin_required(f):
-    """[OBSOLETE] Auth par mot de passe partage. Retire a la fin de la bascule."""
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        token = request.headers.get('X-Admin-Token', None)
-        if not token:
-            return _erreur("Authentification requise", 401, 'auth_requise')
-        try:
-            with get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT expires_at FROM api_tokens WHERE token = %s", (token,))
-                    res = cur.fetchone()
-                    if not res:
-                        return _erreur("Session invalide", 403, 'session_invalide')
-                    if datetime.now() > res[0]:
-                        cur.execute("DELETE FROM api_tokens WHERE token = %s", (token,))
-                        conn.commit()
-                        return _erreur("Session expiree", 403, 'session_expiree')
-        except Exception as e:
-            # 503 et pas 500/403 : une base indisponible n'est pas une session
-            # invalide, et le frontend ne doit pas deconnecter pour autant.
-            logger.error("Verification du token admin impossible: %s", e)
-            return _erreur("Service indisponible", 503, 'indisponible')
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 def _charger_compte_session():
@@ -206,9 +183,9 @@ def permission_required(permission: str):
     delegable en entier, par construction. Les jetons de bot n'y figurent
     jamais -- capacite de role, verifiee par role_required(superadmin) direct.
 
-    Jamais construit sur admin_or_role_required : ce decorateur n'accepte que
-    l'auth Discord, jamais l'ancien mot de passe partage. Une route convertie
-    perd donc ce chemin d'auth immediatement, et c'est voulu (R-54).
+    N'accepte que l'auth Discord (R-54). C'etait deja vrai du temps ou le mot de
+    passe partage existait : aucune permission n'a jamais ete accessible par ce
+    chemin-la.
     """
     if permission not in PERMISSIONS_CATALOGUE:
         # Faute de frappe sur un litteral ecrit par un dev, pas une entree
@@ -420,26 +397,6 @@ def compte_cible_protegee(f):
                 return _erreur(message, 403, 'cible_protegee')
 
         return f(*args, **kwargs)
-    return decorated_function
-
-
-def admin_or_role_required(f):
-    """[TRANSITOIRE] Accepte l'ancien token admin OU une session de role admin.
-
-    Existe uniquement le temps de la periode de recouvrement, pour qu'aucune
-    route ne se retrouve ni ouverte ni morte pendant la bascule. Disparait avec
-    `admin_required`.
-    """
-    role_variante = role_required('admin')(f)
-    admin_variante = admin_required(f)
-
-    @functools.wraps(f)
-    def decorated_function(*args, **kwargs):
-        if request.headers.get(SESSION_HEADER):
-            logger.info("auth: session Discord sur %s", request.path)
-            return role_variante(*args, **kwargs)
-        logger.info("auth: mot de passe (obsolete) sur %s", request.path)
-        return admin_variante(*args, **kwargs)
     return decorated_function
 
 

@@ -109,6 +109,15 @@ redump: check-env check-net check-dump fclean ## Full cleanup then rebuild from 
 
 # ── Rebuild individual services ──────────────
 
+# Ces deux cibles RECREENT le conteneur, qui repart donc avec une nouvelle IP
+# sur le reseau Docker -- et nginx, lui, n'est pas recree. Jusqu'au 2026-09-23,
+# cela suffisait a mettre tout le site en 502 : nginx gardait l'ancienne IP,
+# resolue une fois pour toutes au chargement de sa config, et ecrivait a une
+# adresse vide pendant que `docker compose ps` affichait un frontend `healthy`.
+#
+# nginx/snippets/app.conf resout desormais les noms a chaque requete (variable +
+# resolver Docker), ce qui rend ces cibles sures. Ne pas revenir a un
+# `proxy_pass` litteral sans relire docs/audit-503-zone-admin.md 13.
 re-front:            ## Rebuild and restart frontend
 	$(COMPOSE) up --build -d --no-deps frontend
 

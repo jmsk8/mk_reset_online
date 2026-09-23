@@ -4,6 +4,11 @@
 > diagnostic d'origine, conservé tel quel : il avait identifié le bon mécanisme pour le 503, mais
 > pas la cause de l'intermittence, et pas le défaut qui touchait aussi les visiteurs non connectés.
 >
+> ⚠️ **Le §13 (2026-09-23, corrigé et recetté) ne parle PAS de 503 mais de 502**, et c'est tout
+> l'intérêt de l'avoir rangé ici : les deux codes se ressemblent à l'œil nu — « le site est
+> cassé » — et désignent des couches opposées. Le lire avant de rouvrir une enquête sur le
+> limiteur de débit.
+>
 > **Lire le §12 en premier** : il explique pourquoi le symptôme a survécu aux deux premières
 > vagues — la configuration corrigée n'était jamais entrée en service, et deux affirmations de ce
 > document étaient fausses. Puis le §10 (l'amplification applicative, 9 → 4 appels backend par
@@ -446,3 +451,120 @@ sur une zone vide.
 
 **Un test de garde se vérifie en cassant volontairement ce qu'il protège.** Sans cette
 injection, trois assertions de ce document auraient été fausses au lieu de deux.
+
+---
+
+## 13. Quatrième vague — un 502, et pas un 503 (2026-09-23)
+
+**Symptôme** : le site entier répond `502 Bad Gateway`. Pas une page, pas une zone : tout,
+y compris l'accueil public.
+
+### 13.1 Les deux codes ne disent pas la même chose
+
+C'est la distinction à avoir en tête avant toute autre hypothèse, parce qu'elle oriente
+l'enquête vers des couches opposées :
+
+| Code | Ce que nginx dit | Où chercher |
+|---|---|---|
+| **503** | « je refuse **volontairement** cette requête » | le limiteur de débit — tout ce document, §1 à §12 |
+| **502** | « j'ai essayé de joindre l'amont et **je n'ai eu personne** » | le réseau entre nginx et le conteneur visé |
+
+Un 503 est un service qui se protège ; un 502 est un service qui a disparu. Les onze premières
+sections de ce document ne s'appliquent **pas** à un 502.
+
+### 13.2 Le mécanisme
+
+`docker compose ps` montrait pourtant tout en bonne santé :
+
+```
+mk_reset_online-nginx-1      Up 24 minutes
+mk_reset_online-frontend-1   Up 5 minutes (healthy)
+```
+
+C'est l'**écart d'âge** qui porte le diagnostic, et rien d'autre. nginx tournait depuis avant
+que le frontend ne soit recréé.
+
+Un `proxy_pass http://frontend:5000` **littéral** est résolu une seule fois, au chargement de la
+configuration, et l'adresse IP obtenue est conservée tant que nginx tourne. Or `make re-front`,
+`make re-back` et `make build` recréent les conteneurs applicatifs — donc changent leur IP — sans
+recréer nginx : `depends_on` ne règle que l'ordre de démarrage, jamais le redémarrage d'un
+conteneur déjà en place. nginx continuait donc d'écrire à une adresse vide.
+
+### 13.3 Pourquoi c'était difficile à lire
+
+Aucun des réflexes habituels ne donnait quoi que ce soit :
+
+- **les logs du frontend étaient vierges** — et pour cause, il ne recevait rien ;
+- **les logs du backend étaient propres** — il n'était pas en cause ;
+- **`docker compose ps` disait `healthy`** — le *healthcheck* s'exécute **dans** le conteneur,
+  il ne dit rien de la joignabilité depuis nginx ;
+- **le code applicatif venait de changer** (suppression du mot de passe admin, le même jour), ce
+  qui attirait naturellement le soupçon au mauvais endroit.
+
+La seule piste exploitable était la colonne `STATUS` de `docker compose ps`, qu'on lit
+d'ordinaire pour y chercher un `Exited` — pas pour y comparer des durées.
+
+### 13.4 Le projet connaissait déjà le mécanisme, à un seul endroit
+
+`location /ws/` (le flux du banner) portait le correctif **et son explication écrite**, depuis
+que le même défaut avait rendu le banner « offline » après un `make re-race`. Mais il n'avait
+jamais été généralisé : les sept autres `proxy_pass` du fichier visaient `frontend:5000` en
+littéral.
+
+> **Un correctif local à un problème général est une bombe à retardement.** Le commentaire du
+> bloc `/ws/` décrivait *exactement* le défaut rencontré ici, six jours plus tôt — il ne
+> manquait qu'à en tirer la règle. C'est le même reproche que le §12.4 se faisait déjà : une
+> connaissance acquise et non généralisée coûte deux fois.
+
+### 13.5 Correctif structurel
+
+Les **sept** `proxy_pass` vers le frontend passent désormais par une variable, ce qui diffère la
+résolution DNS à chaque requête via le résolveur interne de Docker :
+
+```nginx
+resolver 127.0.0.11 valid=10s ipv6=off;   # déclaré une fois, en tête de app.conf
+set $front frontend:5000;
+...
+proxy_pass http://$front$request_uri;
+```
+
+Deux conséquences, écrites en tête de [`nginx/snippets/app.conf`](../nginx/snippets/app.conf)
+pour qui ajoutera un bloc plus tard :
+
+1. **`$request_uri` est obligatoire.** Passer par une variable désactive la reprise automatique
+   de l'URI ; sans lui, tout atterrirait sur « / ».
+2. **C'est ce qui rend la chose légale dans le bloc regex des fichiers statiques.** nginx refuse
+   une partie URI *littérale* dans une `location` définie par expression régulière, mais pas une
+   variable.
+
+Le contournement immédiat, `docker compose restart nginx`, reste bon à connaître pour une pile
+déjà en vol, mais n'est plus nécessaire.
+
+**✅ Recette faite le 2026-09-23, sur le poste de dev.** Dans cet ordre, parce que chaque étape
+prouve autre chose que la précédente :
+
+1. `docker compose exec nginx nginx -T` → `syntax is ok`. Prouve que la configuration du disque
+   est **valide** et que le conteneur la voit. Règle au passage la seule incertitude qui restait :
+   nginx accepte bien `proxy_pass http://$front$request_uri` dans le bloc regex des fichiers
+   statiques, là où une partie URI littérale aurait été refusée.
+2. `make reload-nginx` → la met **en service**. Étape non facultative : `nginx -T` lit le disque,
+   le processus qui sert les requêtes tourne toujours sur ce qu'il a chargé au démarrage. Le §12
+   de ce document est exactement ce piège — et il a bien failli se rejouer ici, quatre jours plus
+   tard.
+3. `make re-front` puis une requête sur l'accueil → **le site répond**, nginx ayant suivi le
+   conteneur recréé sans être redémarré. C'est le seul pas qui prouve le correctif : il reproduit
+   volontairement la panne du matin, qui donnait 502 à coup sûr.
+
+**Reste à faire sur le serveur** (cf. `docs/etat-avancement-global.md`, rang 3bis) : sans ce
+correctif déployé, la production retombera en 502 au premier `make re-front`.
+
+### 13.6 Ce que cette vague ajoute à la méthode
+
+- **Lire le code HTTP avant de formuler une hypothèse.** 502 et 503 se ressemblent pour
+  l'utilisateur et désignent des couches opposées. Une demi-heure a été perdue à soupçonner une
+  image périmée et une variable d'environnement, parce que le diagnostic était parti du
+  changement le plus récent plutôt que du symptôme.
+- **`healthy` ne veut pas dire « joignable ».** Un *healthcheck* s'exécute à l'intérieur du
+  conteneur. Il ne dit rien du chemin réseau qui y mène.
+- **Une durée est une donnée de diagnostic.** `docker compose ps` se lit d'habitude en cherchant
+  un état ; ici, seule la comparaison des âges disait quelque chose.
