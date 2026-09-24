@@ -361,16 +361,52 @@ export default {
         },
     },
 
+    // Ce que coute un coup, selon ce qui l'a porte. Trois nombres par source :
+    //
+    //     spinMs        la duree du tete-a-queue ;
+    //     keep          la part de sa vitesse que le kart GARDE : il glisse a
+    //                   `keep * vitesse au moment du coup` pendant tout le
+    //                   tete-a-queue, et repart de la. A 0, il s'arrete net et
+    //                   repart de zero ;
+    //     invincibleMs  le sursis qui suit la sortie : ni objet ni choc ne le
+    //                   remettent en toupie. L'eclair et le souffle de la bleue
+    //                   passent outre, comme avant.
+    //
+    // La vitesse retenue est bornee a la pointe du kart : un champignon en cours
+    // ne se prolonge pas dans la glissade.
+    //
+    // Les durees suivent Mario Kart 8 Deluxe (1.5 s pour une carapace, 1.0 pour
+    // un choc ou un eclair), la bleue un cran au-dessus. Le sursis aussi, tel
+    // quel : 1.5 s apres une carapace, une banane ou un eclair, 1.0 apres une
+    // etoile, 0.95 apres un bill. Il valait 3 s pour tout le monde. Ce qui separe les coups,
+    // c'est surtout `keep` : la relance coute autant que le tete-a-queue, et
+    // c'est elle qu'une banane epargne. Temps perdu par un Mario lance :
+    //
+    //     choc 1.6 s  eclair 1.7  banane 1.9  verte 3.0  rouge 3.0  bleue 3.5
+    //
+    // L'eclair y passe sous la banane, mais il rapetisse en plus le kart, ce que
+    // ce chiffre ne compte pas.
+    //
+    // `star` et `bill` sont le CHOC d'un kart intouchable, pas l'objet. Toute
+    // source absente de la table leve une erreur : un oubli ne doit pas decider
+    // en silence du prix d'un coup.
+    hits: {
+        star:       { spinMs: 1000, keep: 0.25, invincibleMs: 1000 },
+        bill:       { spinMs: 1000, keep: 0.25, invincibleMs: 950 },
+        banana:     { spinMs: 1200, keep: 0.20, invincibleMs: 1500 },
+        lightning:  { spinMs: 1000, keep: 0.20, invincibleMs: 1500 },
+        greenShell: { spinMs: 1500, keep: 0,    invincibleMs: 1500 },
+        redShell:   { spinMs: 1500, keep: 0,    invincibleMs: 1500 },
+        blueShell:  { spinMs: 2000, keep: 0,    invincibleMs: 1500 }
+    },
+
     delays: {
-        hitDecelDuration: 1500,
-        hitPauseDuration: 500,
         boxRespawn: 1000,
         itemGrant: 3000,
         bananaLife: 40000,
         // Sursis entre le contact et la disparition : le sprite s'effacait avant
         // qu'on ait vu le choc. Sans danger pendant ce delai.
         itemLingerMs: 80,
-        invincibilityAfterHit: 3000,
         throwDelayAfterHit: 1000,
         spawnMin: 150,
         spawnMax: 800

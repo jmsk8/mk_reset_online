@@ -334,7 +334,7 @@ function applyEvent(ev) {
 function getSpinFrameIndex(kart, gameNow) {
     if (kart.state !== 'hit') return 0;
 
-    const hitDuration = WORLD.hitDuration;
+    const hitDuration = kart.hitDuration || WORLD.hitDuration;
     const spinDuration = hitDuration * GAME_CONFIG.kartSpin.durationRatio;
     const elapsed = gameNow - (kart.hitEndTime - hitDuration);
     if (elapsed <= 0 || elapsed >= spinDuration) return 0;

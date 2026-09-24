@@ -112,10 +112,14 @@ function writeKart(kart, ta, tb, t) {
     // Un serveur qui ne date pas le malus (`hitEnd` absent) ne doit pas priver
     // le kart de sa toupie : on la cale alors sur l'instant ou l'etat 'hit' est
     // apparu. Approximatif pour un arrivant, juste pour tous les autres.
+    // `hitDur` (ta[13]) est la duree de CE coup, qui depend de ce qui a frappe ;
+    // un serveur qui ne l'envoie pas retombe sur la duree unique du `hello`.
     if (kart.state === 'hit') {
-        kart.hitEndTime = ta[11] || kart.hitEndTime || (getGameTime() + WORLD.hitDuration);
+        kart.hitDuration = ta[13] || kart.hitDuration || WORLD.hitDuration;
+        kart.hitEndTime = ta[11] || kart.hitEndTime || (getGameTime() + kart.hitDuration);
     } else {
         kart.hitEndTime = 0;
+        kart.hitDuration = 0;
     }
 
     kart.bumpEndTime = kart.bumped ? (ta[12] || kart.bumpEndTime || 0) : 0;

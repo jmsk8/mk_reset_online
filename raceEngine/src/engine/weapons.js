@@ -8,7 +8,7 @@ import { isRamming, shrunkReachX, shrunkReachY } from './bodies.js';
 import { getBillSpeed } from './stats.js';
 import { getDistanceToLeader, getRaceStage } from './standings.js';
 import { getOrbitSpec, rollItem } from './items.js';
-import { spinDuration } from './effects.js';
+import { spinOutKart } from './effects.js';
 
 // Tout objet simple arrive en main, y compris ceux qui peuvent ensuite etre
 // traines : en main, il n'a pas de hitbox — il ne protege de rien et ne blesse
@@ -617,12 +617,7 @@ function updateOrbitItems(cfg, state, now, deltaTime, events) {
 
                 // Une etoile ou un bill encaisse l'objet sans etre ralenti,
                 // mais le consomme quand meme : le bouclier s'use au contact.
-                if (!isRamming(victim)) {
-                    victim.state = 'hit';
-                    victim.hitEndTime = now + spinDuration(cfg);
-                    events.push({ type: 'kartHit', kartId: victim.id });
-                    if (victim.heldItem) victim.throwTime = victim.hitEndTime + cfg.delays.throwDelayAfterHit;
-                }
+                if (!isRamming(victim)) spinOutKart(cfg, now, victim, events, held.childType);
                 consumed = true;
                 break;
             }

@@ -170,7 +170,8 @@ function directorScore(kart, scan, gameNow) {
     // le moment ou il part, pas la fin de la toupie. `hitEndTime` et la duree du
     // malus donnent la fraction qu'il en reste, sans rien memoriser.
     if (kart.state === 'hit') {
-        const left = kart.hitEndTime ? (kart.hitEndTime - gameNow) / (WORLD.hitDuration || 1) : 1;
+        const left = kart.hitEndTime
+            ? (kart.hitEndTime - gameNow) / (kart.hitDuration || WORLD.hitDuration || 1) : 1;
         score += W.hit * (0.4 + 0.6 * Math.max(0, Math.min(1, left)));
     }
 

@@ -80,11 +80,12 @@ function shiftKartAlongTrack(cfg, kart, dist) {
 
 // Un intouchable fait toupiller ce qu'il percute. Deux gardes qui comptent : on
 // ne relance pas un tete-a-queue deja en cours — la passe se rejoue a chaque tick
-// tant que le contact dure — et on respecte le sursis d'apres-choc.
-function spinOnContact(cfg, now, kart, events) {
+// tant que le contact dure — et on respecte le sursis d'apres-choc. Le prix du
+// choc est celui de ce qui percute : un bill, sinon une etoile.
+function spinOnContact(cfg, now, kart, rammer, events) {
     if (kart.state !== 'running') return;
     if (kart.hitInvincibleUntil > now) return;
-    spinOutKart(cfg, now, kart, events);
+    spinOutKart(cfg, now, kart, events, rammer.isBill ? 'bill' : 'star');
 }
 
 // Resolution d'une paire. `withImpulse` n'est vrai qu'a la premiere passe ; les
@@ -132,7 +133,7 @@ function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
     const ramB = isRamming(b);
 
     // Un seul des deux est intouchable : il blesse, sa victime toupille.
-    if (ramA !== ramB) spinOnContact(cfg, now, ramA ? b : a, events);
+    if (ramA !== ramB) spinOnContact(cfg, now, ramA ? b : a, ramA ? a : b, events);
 
     const ramContact = ramA && ramB && (a.isBill || b.isBill);
     if ((ramA || ramB) && !ramContact) return;
