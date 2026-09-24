@@ -99,6 +99,10 @@ services:
       # OAuth Discord. DISCORD_REDIRECT_URI est fixe ici et jamais construit par
       # url_for(_external=True) : Flask est derriere deux proxys sans ProxyFix
       # et produirait du http://, que Discord refuse sans message utile.
+      # Plusieurs URI possibles, separees par des virgules (poste de dev :
+      # localhost, nom .local, IP) : le frontend prend celle de l'hote consulte,
+      # le backend refuse toute autre. Chacune doit etre declaree dans le
+      # portail developpeur Discord.
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET:-}
       - DISCORD_REDIRECT_URI=${DISCORD_REDIRECT_URI:-}

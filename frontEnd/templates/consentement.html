@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Politique de confidentialité - MK Reset</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ app_version }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+</head>
+<body>
+    {% include 'decor.html' %}
+    {% include 'navbar.html' %}
+
+    {# Imposée depuis le 2026-09-24 (A-07) : tant que la politique en vigueur
+       n'est pas acceptée, le backend refuse tout le reste et le frontend
+       ramène ici. D'où les trois issues, toutes accessibles sans accord :
+       accepter, emporter ses données, partir. #}
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-6">
+                    <div class="card glass-card">
+                        <div class="card-content">
+                            <h1 class="title is-4">Politique de confidentialité</h1>
+
+                            <div class="content">
+                                <p>
+                                    Pour utiliser votre compte, il faut accepter la
+                                    <a href="/confidentialite" target="_blank" rel="noopener">politique
+                                    de confidentialité</a> (version {{ cgu_version }}). Elle dit quelles
+                                    données le site garde, pourquoi, combien de temps, et comment
+                                    exercer vos droits.
+                                </p>
+                                <p class="is-size-7 has-text-grey">
+                                    Soit vous ne l'avez jamais acceptée, soit elle a changé depuis.
+                                    Le classement reste consultable sans compte.
+                                </p>
+                            </div>
+
+                            <form method="post" action="{{ url_for('consentement') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="suite" value="{{ suite }}">
+                                <button type="submit" class="button is-primary is-fullwidth">
+                                    <span class="icon"><i class="fas fa-check"></i></span>
+                                    <span>J'ai lu et j'accepte</span>
+                                </button>
+                            </form>
+
+                            <hr>
+
+                            <p class="has-text-weight-semibold">Si vous n'acceptez pas</p>
+                            <div class="buttons mt-2">
+                                <a class="button is-light is-small" href="/mon-compte/export">
+                                    <span class="icon"><i class="fas fa-download"></i></span>
+                                    <span>Télécharger mes données</span>
+                                </a>
+                                <a class="button is-light is-small" href="{{ url_for('player_logout') }}">
+                                    <span class="icon"><i class="fas fa-right-from-bracket"></i></span>
+                                    <span>Me déconnecter</span>
+                                </a>
+                            </div>
+                            <p class="is-size-7 has-text-grey">
+                                Pour faire supprimer votre compte, écrivez à
+                                <a href="mailto:{{ contact }}?subject=Suppression%20de%20mon%20compte">{{ contact }}</a>
+                                en indiquant votre pseudo Discord.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+</body>
+</html>

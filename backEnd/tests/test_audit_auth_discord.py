@@ -510,6 +510,40 @@ check("global_name tronque a 64", len(profil['global_name']) == 64)
 
 
 # ===========================================================================
+print("\n=== redirect_uri : seules celles de l'environnement partent a Discord ===")
+# DISCORD_REDIRECT_URI peut en lister plusieurs (poste de dev). Le frontend
+# choisit ; le backend n'accepte qu'une valeur de la liste.
+_uri_env = os.environ['DISCORD_REDIRECT_URI']
+os.environ['DISCORD_REDIRECT_URI'] = 'http://localhost/cb, http://192.168.1.65/cb'
+
+def _echange(redirect_uri):
+    recharger()
+    calls = install_discord()
+    install_db([])
+    import auth_discord
+    importlib.reload(auth_discord)
+    try:
+        auth_discord.exchange_code('c', redirect_uri)
+    except auth_discord.DiscordAuthError as e:
+        return e.code, calls
+    return None, calls
+
+err, calls = _echange('http://192.168.1.65/cb')
+check("une URI de la liste est transmise telle quelle a /oauth2/token",
+      err is None and calls[0][2]['data']['redirect_uri'] == 'http://192.168.1.65/cb',
+      (err, calls[:1]))
+err, calls = _echange(None)
+check("sans URI transmise, la premiere de la liste",
+      err is None and calls[0][2]['data']['redirect_uri'] == 'http://localhost/cb',
+      (err, calls[:1]))
+err, calls = _echange('http://evil.test/cb')
+check("une URI hors liste est refusee avant tout appel a Discord",
+      err == 'redirect_uri_inconnue' and not calls, (err, calls))
+os.environ['DISCORD_REDIRECT_URI'] = _uri_env
+recharger()
+
+
+# ===========================================================================
 print("\n=== Rang : la regle generique de compte_cible_protegee (non-regression) ===")
 # rang(acteur) > rang(cible) -> autorise. L'egalite refuse, entre pairs compris.
 def app_cible(role_acteur, role_cible):

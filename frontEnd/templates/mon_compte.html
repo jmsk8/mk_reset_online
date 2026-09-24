@@ -101,8 +101,6 @@
 
                             <hr>
 
-                            <div id="banniere-cgu"></div>
-
                             <p class="has-text-weight-semibold">Vos données</p>
                             <div class="buttons mt-2">
                                 <a class="button is-light is-small" href="/mon-compte/export">
@@ -137,7 +135,6 @@
                                     <a href="/confidentialite">Ce que la suppression efface, et ce qu'elle conserve</a>.
                                 </p>
                             </div>
-                            <div id="alerte-rgpd"></div>
 
                             <hr>
 
@@ -154,9 +151,9 @@
                             <div class="content is-small has-text-grey mt-4">
                                 <p>
                                     <i class="fas fa-shield-halved"></i>
-                                    Les seules données récupérées auprès de Discord sont votre
-                                    identifiant, votre pseudo et votre avatar. Ni adresse e-mail,
-                                    ni liste de serveurs. Votre pseudo affiché sur le classement
+                                    Le site récupère uniquement votre identifiant, votre pseudo et
+                                    votre avatar Discord. Il n'a accès ni à votre adresse e-mail,
+                                    ni à la liste de vos serveurs. Votre pseudo affiché sur le classement
                                     n'est modifié que par un administrateur.
                                 </p>
                                 <p>
@@ -186,42 +183,6 @@
         document.querySelectorAll('.fade-in').forEach(e => e.classList.add('visible'));
 
         const csrf = document.querySelector('meta[name="csrf-token"]').content;
-        const alerte = document.getElementById('alerte-rgpd');
-
-        function afficher(type, texte) {
-            alerte.innerHTML = '';
-            const d = document.createElement('div');
-            d.className = 'notification is-' + type + ' is-light mt-2';
-            d.textContent = texte;
-            alerte.appendChild(d);
-        }
-
-        // Consentement à redemander : compte antérieur à la politique, ou
-        // nouvelle version publiée depuis.
-        {% if moi.cgu_a_accepter %}
-        (function () {
-            const zone = document.getElementById('banniere-cgu');
-            const n = document.createElement('div');
-            n.className = 'notification is-info is-light';
-            const p = document.createElement('p');
-            p.className = 'is-size-7';
-            p.textContent = 'Merci de prendre connaissance de la politique de confidentialité.';
-            const lien = document.createElement('a');
-            lien.href = '/confidentialite'; lien.textContent = ' La lire.';
-            p.appendChild(lien);
-            const b = document.createElement('button');
-            b.className = 'button is-info is-small mt-2';
-            b.textContent = 'J’accepte';
-            b.addEventListener('click', async () => {
-                b.classList.add('is-loading');
-                const res = await fetch('/me/cgu', {method: 'POST', headers: {'X-CSRFToken': csrf}});
-                if (res.ok) { zone.innerHTML = ''; }
-                else { b.classList.remove('is-loading'); afficher('danger', 'Enregistrement impossible.'); }
-            });
-            n.appendChild(p); n.appendChild(b);
-            zone.appendChild(n);
-        })();
-        {% endif %}
 
         // -------------------------------------------------------------
         // Promotion proposée / consentement administrateur

@@ -118,8 +118,14 @@ PASSE = datetime.now(timezone.utc) - timedelta(hours=1)
 
 def ligne_session(compte_id=42, discord_id='123456789012345678', username='toto',
                   global_name='Toto', avatar='hash', joueur_id=None,
-                  statut='linked', role='player', expires_at=None, cgu_version=None):
-    """Ligne renvoyee par la jointure sessions_joueurs x comptes (auth.py)."""
+                  statut='linked', role='player', expires_at=None, cgu_version='1.0'):
+    """Ligne renvoyee par la jointure sessions_joueurs x comptes (auth.py).
+
+    `cgu_version` vaut par defaut la version courante : depuis A-07, une
+    session sans consentement est refusee (428) par tous les decorateurs, et
+    chaque test devrait sinon le preciser. Le cas « pas accepte » se teste en
+    le passant explicitement (test_cgu_imposee.py).
+    """
     return (compte_id, discord_id, username, global_name, avatar, joueur_id,
             statut, role, expires_at if expires_at is not None else FUTUR, cgu_version)
 

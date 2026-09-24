@@ -22,7 +22,10 @@ Deux facons d'autoriser, a ne pas confondre (docs/hierarchie-admin-plan.md 2) :
 
 Distinction 401/403/503 (R-28) : le frontend purge la session sur 401/403, une
 indisponibilite de la base ne doit donc jamais produire ces codes. C'est la
-raison d'etre de `_DbIndisponible` plus bas.
+raison d'etre de `_DbIndisponible` plus bas. Meme raison pour le consentement
+manquant (A-07), qui repond 428 : la session est valide, il lui manque un
+accord, et la purger renverrait la personne a Discord pour retomber sur le
+meme ecran.
 """
 
 from __future__ import annotations
@@ -35,7 +38,8 @@ from datetime import datetime, timezone
 from flask import request, jsonify, g
 
 from constants import (ROLE_HIERARCHY, ROLE_PLAYER, ROLE_ADMIN, ROLE_CHEF_ADMIN,
-                       ROLE_SUPERADMIN, PERMISSIONS_CATALOGUE, SOUS_PERMISSIONS)
+                       ROLE_SUPERADMIN, PERMISSIONS_CATALOGUE, SOUS_PERMISSIONS,
+                       CGU_VERSION)
 from db import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -51,11 +55,17 @@ def _erreur(message: str, status: int, code: str):
     return jsonify({"error": message, "code": code}), status
 
 
-def _charger_compte_session():
+def _charger_compte_session(exiger_cgu: bool = True):
     """Resout le token de session en compte. Renvoie (compte, reponse d'erreur).
 
     Le role est TOUJOURS relu en base : retirer un role doit prendre effet
     immediatement, pas au bout de 30 jours.
+
+    `exiger_cgu` impose le consentement a la politique en version courante
+    (A-07, 2026-09-24). Tous les decorateurs passent par ici : un seul point
+    d'application, et une route admin n'y echappe pas plus qu'une route joueur.
+    Seul `player_required_sans_cgu` le leve, pour la courte liste des routes
+    qui servent a accepter ou a exercer ses droits sans accepter.
 
     NE JAMAIS mettre ce role (ni les permissions) en cache dans la session pour
     epargner une requete : un droit retire resterait actif jusqu'a l'expiration
@@ -92,6 +102,14 @@ def _charger_compte_session():
                 if row[6] == 'suspended':
                     return None, _erreur("Compte suspendu", 403, 'compte_suspendu')
 
+                # Apres la suspension : un compte suspendu doit l'apprendre,
+                # pas etre invite a accepter une politique qui ne lui ouvrira
+                # rien. Et avant le last_seen_at : une session qui ne peut rien
+                # faire d'autre qu'accepter n'est pas une session « active ».
+                if exiger_cgu and row[9] != CGU_VERSION:
+                    return None, _erreur(
+                        "Politique de confidentialite a accepter", 428, 'cgu_a_accepter')
+
                 cur.execute(
                     "UPDATE sessions_joueurs SET last_seen_at = now() WHERE token_hash = %s",
                     (_hash(token),),
@@ -114,6 +132,35 @@ def player_required(f):
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
         compte, erreur = _charger_compte_session()
+        if erreur is not None:
+            return erreur
+        g.compte = compte
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def player_required_sans_cgu(f):
+    """Comme `player_required`, sans exiger le consentement (A-07).
+
+    LISTE BLANCHE, a garder courte : chaque route ici est accessible a une
+    personne qui n'a pas accepte la politique en vigueur. N'y ont leur place
+    que les routes qui servent a accepter, ou a exercer un droit qui ne peut
+    pas dependre de l'acceptation :
+
+      - /auth/check-session : la sonde du frontend, qui doit pouvoir dire
+        « consentement manquant » au lieu de refuser la session ;
+      - /me/cgu : l'acceptation elle-meme ;
+      - /me/export : le droit d'acces (art. 15) ne se negocie pas contre un
+        accord ;
+      - /avatar/moi : la navbar de la page d'acceptation.
+
+    `test_cgu_imposee.py` fige cette liste : en ajouter une doit etre un choix.
+    La deconnexion n'y figure pas parce qu'elle ne demande aucune session
+    valide (routes_auth.logout).
+    """
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        compte, erreur = _charger_compte_session(exiger_cgu=False)
         if erreur is not None:
             return erreur
         g.compte = compte

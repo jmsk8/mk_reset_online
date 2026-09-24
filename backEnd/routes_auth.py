@@ -12,7 +12,8 @@ from flask import Blueprint, jsonify, request, g
 from constants import (INVITATION_LIFETIME_HOURS, CGU_VERSION, ROLE_ADMIN,
                        ROLE_CHEF_ADMIN, ROLE_HIERARCHY, PERMISSIONS_CATALOGUE,
                        permissions_effectives)
-from auth import player_required, permission_required, SESSION_HEADER
+from auth import (player_required, player_required_sans_cgu, permission_required,
+                  SESSION_HEADER)
 from auth_discord import (
     DiscordAuthError, login, hash_token, discord_configured, resumer_appareil,
 )
@@ -110,7 +111,7 @@ def me():
 
 
 @auth_bp.route('/auth/check-session', methods=['GET'])
-@player_required
+@player_required_sans_cgu
 def check_session():
     """Sonde « ma session est-elle encore valide ? ». Miroir de /admin/check-token.
 
@@ -130,11 +131,16 @@ def check_session():
     visite sur /mon-compte seulement. La frontiere de privilege reste le
     backend, qui relit role et permissions a chaque requete protegee : cette
     liste ne sert qu'a decider ce que l'interface AFFICHE.
+
+    Sans exigence de consentement (A-07) : c'est elle qui dit au frontend
+    d'afficher la page d'acceptation. Refuser la session ici la ferait purger,
+    et la personne retomberait sur le meme ecran apres un detour par Discord.
     """
     return jsonify({
         "status": "valid",
         "role": g.compte['role'],
         "permissions": sorted(_permissions_effectives(g.compte)),
+        "cgu_a_accepter": g.compte.get('cgu_version') != CGU_VERSION,
     }), 200
 
 
