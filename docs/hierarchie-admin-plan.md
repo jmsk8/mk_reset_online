@@ -662,9 +662,13 @@ désigne un successeur. Ce n'est pas symétrique à `changer_role` — c'est une
 propre sémantique :
 
 - **Acteur** : le superadmin en cours, et lui seul (`@role_required(ROLE_SUPERADMIN)`).
-- **Cible du legs** : n'importe quel compte existant, quel que soit son rôle actuel —
-  `player`, `admin` ou `chef_admin`. Le legs promeut directement `superadmin`, sans exiger un
-  passage préalable par `chef_admin`.
+- **Cible du legs** : ~~n'importe quel compte existant, quel que soit son rôle actuel~~ —
+  **restreinte le 2026-09-23 (R-68)** à un `admin` ou `chef_admin` qui a accepté la politique
+  administrateur en version courante (409 `legs_sans_consentement` sinon). Décidé le 10/09, ce
+  point précédait le consentement du 18/09 : léguer à un `player` en faisait un superadmin tracé
+  nominativement sans qu'il ait rien accepté. Pour léguer à un player : lui proposer `admin`
+  d'abord. Toujours aucun passage obligé par `chef_admin`. L'amorçage (§6bis.0) n'est pas
+  concerné.
 - **Rôle de repli de l'ancien superadmin** : `chef_admin`, systématiquement, non configurable.
   Cohérent avec §9 (ancienne proposition A) : il redevient touchable par le nouveau superadmin, et
   garde un rôle de confiance élevé plutôt que de retomber à zéro.

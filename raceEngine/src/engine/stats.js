@@ -83,6 +83,11 @@ function deriveCharacterStats(cfg) {
 // Agilite moyenne du plateau. Sert d'etalon partout ou il faut juger une
 // situation et non un personnage — elle suit automatiquement le plateau,
 // sans constante a retoucher quand les stats bougent.
+//
+// Le plateau de REFERENCE (`bodies.referenceKarts`), et non tous les
+// personnages : meme raison que pour les corps. Un personnage ajoute, ou retire
+// du tirage, ne doit pas recaler en silence les fenetres d'attention des autres
+// (D-6 a ete mesure contre cet etalon).
 const referenceAgilityCache = new WeakMap();
 
 function referenceAgility(cfg) {
@@ -90,7 +95,8 @@ function referenceAgility(cfg) {
     if (cached !== undefined) return cached;
 
     const table = deriveCharacterStats(cfg);
-    const names = Object.keys(table);
+    const names = ((cfg.bodies && cfg.bodies.referenceKarts) || Object.keys(table))
+        .filter(name => table[name]);
     let sum = 0;
     for (let i = 0; i < names.length; i++) sum += table[names[i]].agility;
     const mean = sum / names.length;

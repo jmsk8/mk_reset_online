@@ -120,7 +120,12 @@ function updateRace(cfg, state, rng, now, deltaTime, events) {
         // ou le delai large est depasse — un kart bloque ne doit pas figer
         // le service. Dans les deux cas les retardataires sont classes dans
         // l'ordre ou ils roulent.
-        const quotaReached = state.finishOrder.length >= race.stopAtFinisher;
+        // Borne sur le plateau reel : avec moins de karts que prevu (des
+        // personnages retires du tirage, `roster`), le quota fixe ne serait
+        // jamais atteint et chaque course irait jusqu'a `maxRaceMs`. A 8 karts,
+        // rien ne change.
+        const quota = Math.min(race.stopAtFinisher, Math.max(1, state.karts.length - 1));
+        const quotaReached = state.finishOrder.length >= quota;
         const timedOut = now > state.startAt + race.maxRaceMs;
 
         if ((quotaReached || timedOut) && !state.resultsAt) {

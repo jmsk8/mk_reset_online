@@ -14,4 +14,4 @@ export { computeItemAxes, getOrbitSpec, isItemEnabled, rollItem } from './items.
 export { activateItem, destroyOrbitItem, getHoldPosition, getOrbitItemPosition, giveKartItem, removeOrbitItem, spawnLaunchedItem, updateOrbitItems } from './weapons.js';
 export { updateAI } from './ai.js';
 export { stepPhysics } from './step.js';
-export { createWorldState } from './world.js';
+export { createWorldState, pickRoster } from './world.js';

@@ -80,11 +80,22 @@ void wander(const config::Config& cfg, const WorldState& state, Kart& kart,
     if (threat) {
         // Ecarte du cote le plus degage, et TIENT : la profondeur visee ne se
         // retire pas tant que le tuyau n'est pas passe.
-        const double up = std::min(hi, threat->y + clearY + 1);
-        const double down = std::max(lo, threat->y - clearY - 1);
-        const double roomUp = hi - up;
-        const double roomDown = down - lo;
-        kart.laneY = (roomUp >= roomDown) ? up : down;
+        //
+        // Bornee par la PISTE, pas par la marge d'errance. Rognee a `lo`/`hi`,
+        // l'esquive d'un tuyau centre (y = 17.5) plafonnait a 27, soit 9.5 de
+        // degagement pour 9 a 9.7 d'emprise cumulee : le kart s'arretait a
+        // 26.4 (tolerance du volant), frottait le tuyau, etait ecarte vers la
+        // meme borne, et recommencait. Tout le peloton finissait empile la,
+        // course bloquee. Le defaut existait avant birdo et daisy ; le tirage de
+        // 8 karts parmi 10 le faisait simplement sortir plus souvent. Quand
+        // l'esquive tient dans les marges, la comparaison et la cible sont
+        // exactement celles d'avant.
+        const double up = threat->y + clearY + 1;
+        const double down = threat->y - clearY - 1;
+        const double roomUp = cfg.road.maxY - up;
+        const double roomDown = down - cfg.road.minY;
+        kart.laneY = clamp((roomUp >= roomDown) ? up : down,
+                           cfg.road.minY, cfg.road.maxY);
         kart.nextWanderAt = now + cfg.pipe.clearWanderMs;
         return;
     }

@@ -816,7 +816,11 @@ l'attente visible, c'est déjà ce qui évite le malentendu.
 `changer_role` posait seul le rôle (R-40 : « seule route qui écrit `comptes.role` »). L'acceptation
 d'une proposition devient un **second** écrivain, et R-40 ne tient plus tel quel.
 *Mitigation* : partage explicite — `changer_role` garde la rétrogradation, l'acceptation détient la
-promotion vers `admin`/`chef_admin`. À réécrire dans le plan hiérarchie plutôt qu'à laisser deux
+promotion vers `admin`/`chef_admin`.
+✅ **Tenu dans le code depuis le 2026-09-23** : jusque-là seule l'IHM routait ainsi, et un `POST`
+direct sur `/role` promouvait encore. `changer_role` refuse désormais toute montée en rang (409
+`promotion_par_proposition`), `proposer_promotion` toute descente (409 `pas_une_promotion`), et
+le legs exige une cible qui a consenti (voir §6bis du plan hiérarchie). À réécrire dans le plan hiérarchie plutôt qu'à laisser deux
 documents se contredire.
 
 ⚠️ **Un test existant échouera, et c'est normal** : `test_bascule.py` (« exactement trois écritures

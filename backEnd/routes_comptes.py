@@ -768,7 +768,12 @@ def synchroniser_profil(compte_id):
 @role_required(ROLE_CHEF_ADMIN)
 @compte_cible_protegee
 def changer_role(compte_id):
-    """Attribue ou retire un role. Ouverte au chef_admin et au superadmin.
+    """Retire un role, ou le fait descendre. Ouverte au chef_admin et au superadmin.
+
+    Ne PROMEUT jamais (R-68, docs/audit-admin-plan.md) : une montee en rang est
+    une proposition (proposer_promotion), posee a l'acceptation par la personne
+    elle-meme (repondre_promotion). Ce partage entre les deux ecrivains est ce
+    qui garantit qu'aucun admin n'est trace sans y avoir consenti.
 
     Frontiere de privilege de l'application. Le garde-fou du dernier superadmin
     separe « je me suis trompe » de « plus personne ne peut administrer le
@@ -780,10 +785,12 @@ def changer_role(compte_id):
     est ce qui porte le « jamais zero » ICI ; le legs le porte autrement, par
     son atomicite -- d'ou deux routes distinctes, a ne pas fusionner (6bis.1).
 
-    Plafond par acteur : le superadmin pose player/admin/chef_admin, un
-    chef_admin seulement player/admin -- il ne cree donc pas un pair. Il ne peut
-    pas non plus toucher une cible deja chef_admin : c'est compte_cible_protegee
-    qui l'en empeche, pas ce corps de fonction (R-56).
+    Portee par acteur : le superadmin fait descendre un chef_admin (vers admin
+    ou player) ou un admin (vers player) ; un chef_admin seulement un admin. Il
+    ne peut pas toucher une cible deja chef_admin : c'est compte_cible_protegee
+    qui l'en empeche, pas ce corps de fonction (R-56). Le refus « un chef_admin
+    ne designe pas un pair » ci-dessous est garde : il repond 403 avant toute
+    I/O, la ou le refus de promotion attend la lecture du role actuel.
     """
     acteur = g.compte
     acteur_est_superadmin = acteur['role'] == ROLE_SUPERADMIN
@@ -832,6 +839,29 @@ def changer_role(compte_id):
                     if ancien == nouveau:
                         conn.rollback()
                         return jsonify({"status": "success", "role": nouveau, "inchange": True})
+
+                    # R-68 : cette route ne fait plus que DESCENDRE. Toute
+                    # montee en rang (player -> admin, admin -> chef_admin...)
+                    # passe par une proposition que la personne accepte
+                    # (/promotion), parce que le consentement prealable a la
+                    # tracabilite nominative est une exigence RGPD, pas une
+                    # politesse : un tiers ne consent pas a la place de
+                    # quelqu'un. L'IHM routait deja ainsi, mais un lien cache
+                    # n'est pas un acces ferme -- sans ce refus, un POST a la
+                    # main promouvait sans rien demander.
+                    #
+                    # Le superadmin n'est pas concerne : il ne s'obtient ni ici
+                    # (refuse plus haut) ni par proposition, seulement par legs
+                    # ou par l'amorcage de DISCORD_SUPERADMIN_ID
+                    # (auth_discord.promote_bootstrap_superadmin), que ce refus
+                    # ne touche pas.
+                    if ROLE_HIERARCHY[nouveau] > ROLE_HIERARCHY[ancien]:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Une promotion ne s'impose pas : proposez le role, "
+                                     "la personne l'acceptera depuis son compte.",
+                            "code": "promotion_par_proposition",
+                        }), 409
 
                     # CEINTURE. Depuis la hierarchie a 4 roles, ce cas n'est plus
                     # atteignable par cette route : une cible superadmin est
@@ -1021,6 +1051,19 @@ def proposer_promotion(compte_id):
                             "code": "role_inchange",
                         }), 409
 
+                    # Pendant exact du refus de promotion de changer_role
+                    # (R-68) : descendre ne se propose pas, cela se fait par
+                    # /role. On n'a pas a accepter de PERDRE un role, et une
+                    # proposition de descente laisserait la personne garder
+                    # indefiniment un rang qu'on veut lui retirer.
+                    if ROLE_HIERARCHY[role] < ROLE_HIERARCHY[role_actuel]:
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Ce n'est pas une promotion : changez le role "
+                                     "directement.",
+                            "code": "pas_une_promotion",
+                        }), 409
+
                     # Un compte suspendu ne peut pas se connecter, donc ne
                     # pourra jamais accepter : la proposition resterait en
                     # attente jusqu'a expiration, en bloquant l'index unique.
@@ -1194,9 +1237,11 @@ def repondre_promotion():
                     # croisent s'interbloquent (R-07).
                     cur.execute("SELECT role FROM comptes WHERE id = %s FOR UPDATE",
                                 (compte['id'],))
-                    if cur.fetchone() is None:
+                    row = cur.fetchone()
+                    if row is None:
                         conn.rollback()
                         return jsonify({"error": "Compte introuvable"}), 404
+                    role_actuel = row[0]
 
                     ligne = _promotion_en_attente(cur, compte['id'], pour_update=True)
                     if ligne is None:
@@ -1261,6 +1306,20 @@ def repondre_promotion():
                            {"ancien": compte['role'], "nouveau": role,
                             "origine": "acceptation", "promotion_id": promotion_id,
                             "propose_par": proposant})
+
+                    # R-53, comme dans changer_role : un admin qui accepte
+                    # chef_admin quitte le role admin, ses permissions a la
+                    # carte tombent. Depuis que changer_role ne promeut plus
+                    # (R-68), ce chemin est le SEUL par lequel admin devient
+                    # chef_admin -- sans la purge ici, un chef_admin retrograde
+                    # plus tard en admin retrouverait des droits que personne
+                    # ne lui a redonnes. Role relu sous verrou, pas g.compte.
+                    if role_actuel == ROLE_ADMIN and role != ROLE_ADMIN:
+                        cur.execute("DELETE FROM permissions_admin WHERE compte_id = %s",
+                                    (compte['id'],))
+                        if cur.rowcount:
+                            _audit(cur, 'permissions_purgees', 'compte', compte['id'],
+                                   {"motif": "sortie_role_admin", "nouveau_role": role})
                     # Sans lien, pour la meme raison que le refus ci-dessus.
                     notifier(
                         cur, proposant, 'promotion_acceptee',
@@ -1812,7 +1871,7 @@ def retirer_permission(compte_id, permission):
 # La protection equivalente est portee par role_required(SUPERADMIN) ci-dessus
 # (seul le superadmin appelle) et par le refus d'auto-legs plus bas.
 def leguer_superadmin(compte_id):
-    """Legue le role superadmin a un autre compte, quel que soit son role.
+    """Legue le role superadmin a un admin ou chef_admin qui a consenti.
 
     SECONDE route qui ecrit comptes.role, avec changer_role -- exception
     deliberee et etroite a R-40. Ne JAMAIS fusionner les deux : la garde du
@@ -1822,6 +1881,18 @@ def leguer_superadmin(compte_id):
 
     L'ancien superadmin devient chef_admin : il redevient touchable par le
     nouveau, sans retomber a zero.
+
+    Cible restreinte depuis le 2026-09-23 (R-68). Le plan 6bis ouvrait le legs
+    a « n'importe quel compte, quel que soit son role », decide le 10/09 --
+    AVANT que le consentement a la politique administrateur existe (18/09).
+    Leguer a un player le faisait superadmin, trace nominativement, sans qu'il
+    ait rien accepte : le meme contournement que la promotion directe par
+    /role. La cible doit donc etre admin ou chef_admin (elle a accepte un role
+    d'administration) ET avoir accepte la politique en version courante. Pour
+    leguer a un player : lui proposer admin d'abord.
+
+    L'amorcage (DISCORD_SUPERADMIN_ID) n'est pas concerne : c'est la personne
+    elle-meme qui se connecte, et sa regularisation passe par /me/cgu-admin.
     """
     acteur_id = _acteur_id()
 
@@ -1839,7 +1910,8 @@ def leguer_superadmin(compte_id):
                     # deux SELECT ... FOR UPDATE dans un ordre dependant des
                     # parametres sont un interblocage en attente.
                     cur.execute(
-                        "SELECT id, role, discord_username FROM comptes WHERE id IN (%s, %s) "
+                        "SELECT id, role, discord_username, cgu_admin_version "
+                        "FROM comptes WHERE id IN (%s, %s) "
                         "ORDER BY id FOR UPDATE",
                         (min(acteur_id, compte_id), max(acteur_id, compte_id)),
                     )
@@ -1859,6 +1931,21 @@ def leguer_superadmin(compte_id):
                         return jsonify({
                             "error": "Vous n'etes plus super-administrateur.",
                             "code": "plus_superadmin",
+                        }), 409
+
+                    # Consentement de la cible, lu sous le meme verrou que son
+                    # role : entre l'affichage et le clic, elle a pu etre
+                    # retrogradee. Avant la confirmation, pour que le refus
+                    # dise le vrai blocage plutot qu'un pseudo a retaper.
+                    if (cible[1] not in (ROLE_ADMIN, ROLE_CHEF_ADMIN)
+                            or cible[3] != CGU_ADMIN_VERSION):
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Ce compte n'a pas accepte de role d'administration "
+                                     "dans la version courante de la politique. Proposez-lui "
+                                     "d'abord le role admin : le legs ne se fait qu'a un "
+                                     "compte qui a consenti.",
+                            "code": "legs_sans_consentement",
                         }), 409
 
                     # Confirmation forte sur discord_username (le handle stable),

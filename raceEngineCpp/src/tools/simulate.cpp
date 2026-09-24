@@ -111,6 +111,12 @@ int run_simulate(const config::Config& cfg, const std::vector<track::Track>& tra
         track::Track circuit = *selected[static_cast<size_t>(i) % selected.size()];
         const config::Config raceCfg = track::apply_track(cfg, circuit);
 
+        // Un grand prix neuf repart d'un tirage, comme dans le service
+        // (`advance_grand_prix`). Sans ca, depuis que chaque course aligne
+        // `kartCount` karts parmi davantage de personnages, les memes karts
+        // couraient toute la campagne et les autres jamais.
+        if (i % cfg.grandPrix.races == 0) startOrder.clear();
+
         engine::WorldState finished;
         std::string why;
         if (!simulate_one(raceCfg, rng, startOrder, finished, why)) {

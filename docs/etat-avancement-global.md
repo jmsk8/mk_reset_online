@@ -5,7 +5,11 @@
 > réellement fait (vérifié dans le code, pas seulement dans la doc) et ce qui reste en suspens,
 > classé par priorité.
 >
-> **Dernière mise à jour : 2026-09-23 (soir)** — ✅ **la suppression du mot de passe admin est
+> **Dernière mise à jour : 2026-09-23 (nuit)** — ✅ **écart R-68 fermé** (rang 10bis, §8) : plus
+> aucune route ne pose un rôle d'administration sans le consentement de la personne, l'amorçage
+> du superadmin inchangé. **1989 assertions, 36 fichiers, aucune rouge.** Non commité.
+>
+> Passage du 23/09 (soir) — ✅ **la suppression du mot de passe admin est
 > faite et commitée** (`2053a67`, §1). C'était la dernière étape décidée du projet le 18/09 ; les
 > deux sont maintenant closes. **L'arbre de travail est propre** : tout ce que ce document disait
 > « non commité » l'est désormais — phase 4 d'`audit_admin` (`12d35dc`), suppression de compte
@@ -99,12 +103,12 @@
 | 8 | **Prérequis de l'étape 6** — ✅ tranchés le 23/09 | §1 | Le second `superadmin` est **volontairement écarté** : l'accès à la base *est* la porte de secours, et il ne couvrait qu'un des cinq scénarios de panne (raisonnement en table dans [runbook-admin.md](runbook-admin.md) §2). La période de recouvrement était vécue depuis le 13/09. ⚠️ **Reste le break-glass jamais exécuté**, passé au rang 4. |
 | 9 | **Étape 6 — couper le mot de passe admin** — ✅ **faite le 23/09** (`2053a67`) | §1 | C'était la **dernière étape décidée** du projet (18/09). A-04/A-05 refermés du même geste, 6 constats d'audit sur 7 désormais clos. ⚠️ Retour arrière en **deux** gestes (le `revert` ne recrée pas `api_tokens`), et le commit porte **aussi** le correctif nginx 502 : voir §1. |
 | 10 | **Bannière d'automne** | §13.3 | Demandé le 22/09. L'automne affiche la bannière d'été depuis ce matin, en intérim. Travail daté : la saison s'arrête le 21/12, chaque semaine de retard en est une de moins à l'écran. |
-| 10bis | **Écart `changer_role` ↔ plan R-68** | §8 | 🟠 Seul point de **code** encore ouvert sur l'auth : une promotion directe par `/role` contourne le consentement préalable, argument juridique (RGPD). À trancher : fermer la route aux promotions, ou amender le plan (le superadmin qui désigne un `chef_admin`). |
+| 10bis | **Écart `changer_role` ↔ plan R-68** — ✅ **fermé le 23/09**, non commité | §8 | Tranché : les routes sont fermées, le plan n'est pas amendé. `changer_role` ne fait plus que descendre (409 `promotion_par_proposition`) ; `/promotion` refuse une descente (409 `pas_une_promotion`) ; le legs n'accepte plus qu'une cible admin/chef_admin ayant accepté la politique en version courante (409 `legs_sans_consentement`) ; l'acceptation purge les permissions à la carte d'un admin qui devient chef_admin (R-53, puisque c'est désormais le seul chemin). L'amorçage `DISCORD_SUPERADMIN_ID` est **inchangé** et verrouillé par deux assertions de `test_auth.py`. |
 | 11 | **RGPD : purge régulière, et A-07** | §3, §8 | Purge : route existante, aucun ordonnanceur, geste manuel assumé. A-07 🟡 : le consentement CGU est affiché, jamais imposé. |
 | 12 | **CHANGELOG** | §12 | La section « Non publié » ne dit **rien** de la bascule Discord, des rôles admin, du journal, des promotions, des notifications ni des sessions de tournois. À écrire avant de publier une version. |
-| 13 | **Karts de la bannière : ménage et Daisy + Birdo** | §13.4 | Demandé le 22/09. Supprimer les PNG inutilisés, ajouter Daisy et Birdo (images commitées dans `static/img/`, à renommer). Plus qu'un ajout d'images : 10 karts au lieu de 8 dans chaque course, deux moteurs à mettre à jour, un équilibrage à refaire. |
+| 13 | **Karts de la bannière : ménage et Daisy + Birdo** — ✅ Daisy et Birdo livrés le 23/09, non commité | §13.4 | 8 karts tirés au sort parmi 10 à chaque grand prix, interrupteur on/off par personnage (`roster` de `raceEngine/src/config/bodies.js`), deux moteurs à jour, banc passé. Restent la recette visuelle et le ménage des `*-static.png`. |
 | 14 | **Bannière : retravailler redémarrage, pause, tour et vitesse** | §13.5 | Demandé le 22/09. Le bouton de vote de redémarrage, le bouton pause, et le cartouche tour/vitesse du kart suivi. |
-| 15 | **Les constats banner restants** | §10 | **Arbitrés le 23/09** : O-2, O-4, D-4 actés, D-3 laissé de côté. **Livrés le 23/09** (non commités) : le souvenir du porteur arrière et ses trois réponses (D-5), la rouge qui contourne les pipes (O-3). O-5 corrigé (sans effet sur l'équilibre). Reste : D-6 à trancher. |
+| 15 | **Les constats banner restants** | §10 | **Arbitrés le 23/09** : O-2, O-4, D-4 actés, D-3 laissé de côté. **Livrés et commités le 23/09** : le souvenir du porteur arrière et ses trois réponses (D-5), la rouge qui contourne les pipes (O-3) — `248d63e`. O-5 corrigé (sans effet sur l'équilibre) — `36fecb7`. Reste : D-6 à trancher. |
 | 16 | **Chantiers de confort** | §11 | Pistes de perf du décor, moteur Rust — plus les chantiers volontairement non commencés (bas du document). |
 | — | ~~**Demande à ranger : 13.9**~~ ✅ (13.7, 13.8 et 13.9 ✅) | §13 | 13.7 et 13.8 faites le 23/09 ; 13.9 (zoom des graphiques) livrée le même jour, sans passer par un rang : les 9 graphiques du site sont zoomables. |
 
@@ -120,7 +124,7 @@ machine plutôt qu'une session de développement. Le rang 1 est le seul qui enga
 > toucher à cet ordre.
 >
 > **Ce qui reste n'est plus du code décidé** : le rang 1 (une promesse juridique à rendre vraie),
-> les rangs 2-4 (des gestes d'exploitation sur l'hôte), l'écart `changer_role` (rang 10bis) et les
+> les rangs 2-4 (des gestes d'exploitation sur l'hôte), les
 > demandes des 22 et 23/09 (§13), plus les
 > chantiers mis de côté. Les constats banner et les chantiers de confort restent **hors
 > périmètre**.
@@ -410,7 +414,12 @@ des non-régressions le 2026-09-22 :
   partagé, `api_tokens` en clair et renouvellement sans borne : les trois ont disparu dans le
   même commit. **Six constats d'audit sur sept sont désormais clos ; seul A-07 reste ouvert.**
 - `[ ]` **A-07** 🟡 — CGU affichées mais jamais imposées.
-- `[ ]` ⚠️ **Écart plan ↔ code, relevé le 2026-09-22, à trancher** : `changer_role` **promeut
+- `[x]` ✅ **Fermé le 2026-09-23** (non commité) — `changer_role` ne fait plus que descendre (409 `promotion_par_proposition`) ; `/promotion` refuse une descente (409 `pas_une_promotion`) ; le legs n'accepte plus qu'une cible admin/chef_admin ayant accepté la politique en version courante (409 `legs_sans_consentement`) ; l'acceptation purge les permissions à la carte d'un admin qui devient chef_admin (R-53, puisque c'est désormais le seul chemin). L'amorçage `DISCORD_SUPERADMIN_ID` est **inchangé** et verrouillé par deux assertions de `test_auth.py`.
+  Deux routes sautaient le consentement, pas une : le legs faisait d'un `player` un superadmin
+  sans rien lui demander (§6bis du plan hiérarchie, décidé le 10/09, **avant** le consentement
+  du 18/09). Pour léguer à un player : lui proposer `admin` d'abord. Quatre gardes cassées
+  volontairement : chacune fait rougir des assertions (13, 6, 2, 2). Constat d'origine :
+  `changer_role` **promouvait
   encore** sans proposition si on l'appelle directement (un `chef_admin` qui poste `admin` sur
   `/admin/comptes/<id>/role`). Seule l'interface route les promotions vers `/promotion`. Or le
   plan de la phase 1bis (R-68, [audit-admin-plan.md](audit-admin-plan.md)) dit que
@@ -700,32 +709,61 @@ défaut (`.layer-scrolling-bg`, `banner.css`), sans la neige.
   (`snow.js`) : à décider pour l'automne (feuilles qui tombent ?).
 - `[ ]` Remettre `return "autumn"` dans `get_banner_season()`.
 
-#### 13.4 Karts : ménage des PNG, ajout de Daisy et Birdo — rang 13
+#### 13.4 Karts : ménage des PNG, ajout de Daisy et Birdo — rang 13 — ✅ Daisy et Birdo livrés le 2026-09-23, non commité
 
-**PNG inutilisés** : dans les dossiers des 8 personnages, seuls les `*-static.png` ne sont
-chargés nulle part — sept fichiers, 60 Ko en tout. ⚠️ **Garder `mario/mario-static.png`** : c'est
-le favicon de toutes les pages. Les 5 orientations `*-asset-anime/*.png` et les `*-pp.png` sont
-toutes utilisées.
+**Décidé** : **8 karts tirés au sort parmi 10**, avec un interrupteur on/off par personnage
+dans le code.
 
-**Daisy et Birdo** : les images sont déjà là (`static/img/daisy/`, `static/img/birdo/`, commitées
-dans `2053a67` **sans être renommées**), avec les 5 orientations et un portrait. À faire :
+**Livré :**
 
-- `[ ]` **Renommer pour suivre le modèle** que lit `config.js` (`<nom>/<nom>-asset-anime/<nom>-<dir>.png`,
-  `<nom>/<nom>-pp.png`) : le dossier `daisy- asset-anime` contient une **espace**, et le portrait
-  de Birdo s'appelle `birdo-pp2.png`. En l'état, aucune des deux ne s'afficherait.
-- `[ ]` **Client** : `resources.characters` et `resources.initials` dans
-  `frontEnd/static/js/banner/config.js`. ⚠️ Les initiales se **heurtent** : `D` est déjà DK et
-  `B` Bowser.
-- `[ ]` **Moteur JS** : les stats (`weight`, `power`, `handling`) dans
-  `raceEngine/src/config/bodies.js`, et les mesures des sprites, qui se régénèrent avec
-  `python3 scripts/sprite-metrics.py`, pas à la main.
-- `[ ]` **Moteur C++** : la table des personnages de `raceEngineCpp/src/config/config.hpp`. Le plan
-  Rust ([banner/moteur-rust-plan.md](banner/moteur-rust-plan.md)) reprendra la même liste.
-- ⚠️ **Décision à prendre : 10 karts par course, ou 8 tirés au sort parmi 10.** Aujourd'hui
-  **tous** les personnages courent à chaque course (`world.js` mélange la liste entière), et le
-  classement du bandeau a une bulle par personnage. Passer à 10 karts touche la grille de
-  départ, la densité sur la piste, la bande passante (1,3 Ko/s par spectateur mesuré à 8) et la
-  largeur du classement sur mobile. Puis refaire l'équilibrage au banc (`make race-sim`).
+- `[x]` **Images renommées** sur le modèle que lit `config.js` : `daisy- asset-anime` →
+  `daisy-asset-anime`, `birdo-pp2.png` → `birdo-pp.png` (`git mv`, déjà indexé).
+- `[x]` **Interrupteurs** : bloc `roster` en tête de `raceEngine/src/config/bodies.js` —
+  `perRace: 8` et `enabled: { bowser: true, …, daisy: true }`. Passer un nom à `false` le retire
+  du tirage sans toucher à ses stats. Un personnage absent de `enabled`, ou un nom inconnu,
+  lève une erreur au démarrage. Moins d'actifs que `perRace` : la course se fait avec eux (le
+  quota d'arrivées `stopAtFinisher` est borné sur le plateau réel, sinon chaque course irait
+  jusqu'au délai maximum).
+- `[x]` **Tirage** (`pickRoster`, `raceEngine/src/engine/world.js`) : à l'**ouverture d'un grand
+  prix**, puis les mêmes 8 sur toutes ses manches — les points s'y cumulent par personnage.
+  Vérifié : 20 000 tirages, aucun invalide, chaque personnage à 80 % ± 0,7.
+- `[x]` **Stats** : Birdo **5/4/6** (Yoshi 4/5/6, un point de puissance passé au poids — son
+  sprite est presque aussi massif que celui de Bowser), Daisy **3/5/7** (Peach 3/6/6, un point
+  de puissance passé à la maniabilité). Budget 15 tenu, aucun doublon d'un personnage existant.
+- `[x]` **Mesures** des sprites régénérées par `python3 scripts/sprite-metrics.py`.
+- `[x]` **Kart de référence figé** sur les huit d'origine (`bodies.referenceKarts`) : avec
+  Birdo et Daisy dans la moyenne, la surface de référence montait de 3,4 % et **toutes** les
+  emprises en profondeur rétrécissaient d'autant. Vérifié : les emprises des 8 karts
+  d'origine sont identiques au chiffre près à HEAD. Même traitement pour l'agilité de
+  référence (`referenceAgility`, étalon de D-6).
+- `[x]` **Client** : `resources.characters` (préchargement) et `initials` (`Bi`, `Da` : `B` et
+  `D` étaient pris). Le classement compte ses cases sur le **`hello`** et non plus sur la
+  config client, qui liste 10 personnages pour 8 karts.
+- `[x]` **Bancs** : `simulate.js`, `alerts.js`, `attention.js` tirent comme la prod ;
+  `simulate.js` rapporte chaque taux aux courses **courues** (colonne `courues`) et, en
+  `CHAIN=1`, retire à chaque ouverture de grand prix.
+- `[x]` **Moteur C++** : même table (`enabled` par personnage), même référence figée, même
+  quota borné. ⚠️ **Défaut préexistant corrigé au passage** : l'esquive de tuyau de l'errance
+  était rognée à la marge d'errance et bloquait la course sur un tuyau centré — voir
+  [banner/moteur-cpp-avancement.md](banner/moteur-cpp-avancement.md) §2.2. HEAD avait le même
+  frottement ; le nouveau tirage le faisait bloquer souvent. 800 courses sans blocage.
+
+**Équilibre mesuré** (`simulate.js`, 5 000 courses, graine 42, ~4 000 courues par kart, bruit
+± 0,5 point) : Daisy **12,5 %** de victoires (attendu 12,5), Birdo **11,3 %** (`--`, place
+moyenne 4,69). Pour situer : Yoshi faisait 11,6 % sur HEAD à 8, Toad et Koopa y étaient déjà
+`--`. Birdo heurte plus de tuyaux (1,45 par course contre 1,19 pour Yoshi) : c'est son sprite
+large qui coûte, pas ses stats — la variante 4/4/7 testée fait **moins** bien (10,9 %).
+
+**Reste :**
+
+- `[ ]` **Recette visuelle** du bandeau : Birdo et Daisy à l'écran, portraits dans le
+  classement (celui de Daisy fait 115×110 au lieu de 105×123 ; `object-fit: cover` le cadre
+  sans le déformer).
+- `[ ]` **PNG inutilisés** : les sept `*-static.png` (60 Ko), sauf `mario/mario-static.png`,
+  favicon de toutes les pages. Non traité, pas demandé cette fois.
+- `[ ]` Déploiement : `make re-front` (client) et redémarrage du service `race`.
+- Le plan Rust ([banner/moteur-rust-plan.md](banner/moteur-rust-plan.md)) reprendra la liste à
+  10 et l'interrupteur.
 
 #### 13.5 Contrôles de la bannière : redémarrage, pause, tour, vitesse — rang 14
 
@@ -751,7 +789,7 @@ dans `2053a67` **sans être renommées**), avec les 5 orientations et un portrai
 - `[x]` Habillage : en-tête avatar + rôle/statut, lignes de menu à icône, groupes « Gestion » et « Zone sensible », fond flouté. Validé par l'utilisateur.
 - `[x]` Les règles d'affichage de chaque bouton sont inchangées (mêmes conditions, mêmes handlers : les boutons sont seulement déplacés). Onglets liaisons, invitations, logs, bots non touchés. Les 10 fichiers de tests qui lisent ce gabarit restent verts.
 
-#### 13.7 Navbar mobile — connexion Discord hors burger — ✅ FAIT le 2026-09-23, non commité, recette visuelle à faire
+#### 13.7 Navbar mobile — connexion Discord hors burger — ✅ FAIT le 2026-09-23 (`4a38390`, `255579b`), recette visuelle à faire
 
 **Demandé** : sur téléphone, sortir le lien de connexion Discord du menu burger et le placer à côté, dans un rond, comme l'avatar une fois connecté.
 
@@ -761,7 +799,7 @@ dans `2053a67` **sans être renommées**), avec les 5 orientations et un portrai
 - `[x]` Tests : `test_revue.py` **25 assertions** (était 19), sur un **rendu réel** du gabarit : le rond est dans la `navbar-brand`, le bouton du menu est masqué au tactile, rien de tout ça une fois connecté. Remplacé le jour même par une **pilule logo + « Connexion »**, même hauteur que l'avatar : le logo seul disait « Discord », pas « se connecter ». Garde cassée volontairement (`is-hidden-touch` retiré) : une assertion vire au rouge. Suite complète : **1940 assertions, 36 fichiers, aucune rouge.**
 - `[ ]` **Recette visuelle sur téléphone** (ou mode responsive du navigateur) : alignement de la pilule avec le burger, et place sur un écran de 320 px, à 768 px et en dessous (le burger y passe à 4 rem de haut).
 
-#### 13.8 Notification d'acceptation de promotion — préciser avec le pseudo — ✅ FAIT le 2026-09-23, non commité
+#### 13.8 Notification d'acceptation de promotion — préciser avec le pseudo — ✅ FAIT le 2026-09-23 (`497584d`)
 
 **Demandé** : la notification d'acceptation de promotion était trop vague : « Le compte a accepté le rôle chef_admin. »
 

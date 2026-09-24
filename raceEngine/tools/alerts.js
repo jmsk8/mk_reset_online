@@ -58,12 +58,24 @@ function withAlerts(cfg, on) {
 
 // ── La mise en scene ────────────────────────────────────────────────────────
 
+// Les scenarios vont chercher leurs personnages par NOM, puis vident la piste :
+// il leur faut le plateau ENTIER, pas les `roster.perRace` karts que le tirage
+// de la prod aurait retenus. Sans ca, un scenario sur un personnage non tire
+// plantait sur un kart introuvable.
+function fullRoster(cfg) {
+    const names = Object.keys(cfg.roster.enabled);
+    return {
+        ...cfg,
+        roster: { perRace: names.length, enabled: Object.fromEntries(names.map(n => [n, true])) }
+    };
+}
+
 // Une course sortie du decompte, videe de son decor et de ses karts : chaque
 // scenario ne remet en piste que ceux dont il a besoin. Les tuyaux et les boites
 // partent aussi — ils decideraient a la place de ce qu'on mesure.
 function stage(cfg, seed) {
     const rng = makeRng(seed);
-    const state = PH.createWorldState(cfg, rng, 0, null, null);
+    const state = PH.createWorldState(fullRoster(cfg), rng, 0, null, null);
     let t = 0;
     while (state.phase === 'countdown') { t += DT_MS; PH.stepPhysics(cfg, state, rng, t, DT); }
 
@@ -362,7 +374,8 @@ const MAX_TICKS = Math.ceil((CFG.race.maxRaceMs + 60000) / DT_MS);
 
 function raceRun(cfg, seed) {
     const rng = makeRng(seed);
-    const grid = PH.shuffleArray(ROSTER.slice(), rng);
+    // Le tirage de la prod (`roster`) : `perRace` karts parmi les actives.
+    const grid = PH.pickRoster(cfg, rng, null);
     const state = PH.createWorldState(cfg, rng, 0, grid, null);
     let t = 0;
 
@@ -372,7 +385,8 @@ function raceRun(cfg, seed) {
         seen: { leader: 0, pack: 0, last: 0 },
         red: { touche: 0, bouclier: 0, etoile: 0, autre: 0 },
         blue: { n: 0, cible: 0, autres: 0, premier: 0 },
-        winner: null
+        winner: null,
+        grid: grid
     };
 
     const reds = new Map();    // id -> cible
@@ -461,7 +475,10 @@ function campaign(races) {
             look: { leader: 0, pack: 0, last: 0 }, seen: { leader: 0, pack: 0, last: 0 },
             red: { touche: 0, bouclier: 0, etoile: 0, autre: 0 },
             blue: { n: 0, cible: 0, autres: 0, premier: 0 },
-            wins: Object.fromEntries(ROSTER.map(n => [n, 0]))
+            wins: Object.fromEntries(ROSTER.map(n => [n, 0])),
+            // Courses courues par personnage : il n'est plus aligne a chaque
+            // course, ses victoires se rapportent a SES participations.
+            runs: Object.fromEntries(ROSTER.map(n => [n, 0]))
         };
         for (let i = 0; i < races; i++) {
             const cfg = withAlerts(RACE_CFGS[i % RACE_CFGS.length], on);
@@ -475,6 +492,7 @@ function campaign(races) {
             for (const k of Object.keys(acc.red)) acc.red[k] += r.red[k];
             for (const k of Object.keys(acc.blue)) acc.blue[k] += r.blue[k];
             if (r.winner) acc.wins[r.winner]++;
+            for (const n of r.grid) acc.runs[n]++;
         }
         return acc;
     };
@@ -497,8 +515,10 @@ function campaign(races) {
     row('  cible touchee', pct(off.blue.cible, off.blue.n || 1), pct(on.blue.cible, on.blue.n || 1));
     row('  cible autre que le 1er au lancer', pct(off.blue.premier, off.blue.n || 1), pct(on.blue.premier, on.blue.n || 1));
     row('  autres karts pris par bleue', (off.blue.autres / (off.blue.n || 1)).toFixed(2), (on.blue.autres / (on.blue.n || 1)).toFixed(2));
-    console.log('victoires');
-    for (const n of ROSTER) row(`  ${n}`, pct(off.wins[n], races), pct(on.wins[n], races));
+    console.log('victoires (par course courue)');
+    for (const n of ROSTER) {
+        row(`  ${n}`, pct(off.wins[n], off.runs[n] || 1), pct(on.wins[n], on.runs[n] || 1));
+    }
 
     return { off, on };
 }

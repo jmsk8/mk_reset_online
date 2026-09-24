@@ -169,6 +169,23 @@ check("proposer a un compte SUSPENDU -> 409 (il ne pourrait pas accepter)",
       r.status_code == 409 and (r.get_json() or {}).get('code') == 'compte_suspendu',
       r.get_json())
 
+# R-68, dans l'autre sens : descendre ne se propose pas. Un chef_admin a qui on
+# « propose » admin garderait son rang tant qu'il n'accepte pas -- c'est-a-dire
+# indefiniment s'il n'en a pas envie. La descente passe par /role.
+cli, cur, conn = monter([
+    (r"FROM sessions_joueurs s\s+JOIN comptes c",
+     ligne_session(compte_id=1, role='superadmin', statut='linked')),
+    (r"SELECT role FROM comptes WHERE id = %s", ('chef_admin',)),
+    (r"SELECT role, statut FROM comptes WHERE id = %s FOR UPDATE", ('chef_admin', 'linked')),
+    (r"UPDATE sessions_joueurs SET last_seen_at", None),
+])
+r = cli.post('/admin/comptes/2/promotion', json={'role': 'admin'}, headers=H)
+check("proposer admin a un chef_admin (une descente) -> 409 pas_une_promotion",
+      r.status_code == 409 and (r.get_json() or {}).get('code') == 'pas_une_promotion',
+      r.get_json())
+check("  aucune proposition creee",
+      not any('INSERT INTO promotions_proposees' in s for s in sqls(cur)))
+
 
 # ===========================================================================
 print("\n=== Accepter : c'est ICI, et seulement ici, que le role est pose ===")
@@ -209,6 +226,42 @@ _ordre = [i for i, s in enumerate(_s) if 'FOR UPDATE' in s]
 check("le compte est verrouille AVANT la proposition (ordre anti-interblocage)",
       len(_ordre) >= 2 and 'FROM comptes' in _s[_ordre[0]],
       [_s[i][:60] for i in _ordre])
+
+
+# R-53 a l'acceptation. Depuis R-68, accepter chef_admin est le SEUL chemin par
+# lequel un admin devient chef_admin : ses permissions a la carte doivent tomber
+# ici, comme elles tombaient dans changer_role. Sinon, retrograde plus tard en
+# admin, il retrouverait des droits que personne ne lui a redonnes.
+def _accepter(role_actuel, role_propose):
+    cli, cur, conn = monter([
+        (r"FROM sessions_joueurs s\s+JOIN comptes c",
+         ligne_session(compte_id=5, role=role_actuel, statut='linked')),
+        (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", (role_actuel,)),
+        (r"FROM promotions_proposees", (7, role_propose, 1, PASSE, FUTUR)),
+        (r"UPDATE promotions_proposees", None),
+        (r"UPDATE comptes", None),
+        (r"INSERT INTO audit_admin", None),
+        (r"INSERT INTO notifications", None),
+        (r"UPDATE sessions_joueurs SET last_seen_at", None),
+    ])
+    r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': '1.0'},
+                 headers=H)
+    return r, cur
+
+r, cur = _accepter('admin', 'chef_admin')
+_purge = [(s, p) for s, p in cur.executed if 'DELETE FROM permissions_admin' in s]
+check("un admin qui accepte chef_admin -> 200", r.status_code == 200, r.get_json())
+check("  ses permissions a la carte sont purgees (R-53), les siennes seulement",
+      len(_purge) == 1 and _purge[0][1] == (5,), _purge)
+check("  la purge est tracee",
+      any('permissions_purgees' in str(p) for s, p in cur.executed
+          if 'INSERT INTO audit_admin' in s))
+
+r, cur = _accepter('player', 'admin')
+check("un player qui accepte admin n'a rien a purger",
+      r.status_code == 200
+      and not any('DELETE FROM permissions_admin' in s for s in sqls(cur)),
+      r.get_json())
 
 
 # ===========================================================================
@@ -458,9 +511,16 @@ for _m in _re.finditer(r"className\s*=\s*[^;]*fade-in[^;]*;", _mc):
 # une retrogradation. S'il appelait /role dans les deux cas, la promotion
 # redeviendrait un decret.
 check("le selecteur de role PROPOSE au lieu de poser (promotion)",
-      "'/promotion'" in _ac and "promotion = sel.value !== 'player'" in _ac)
+      "'/promotion'" in _ac and "promotion = RANGS[sel.value] > RANGS[c.role]" in _ac)
 check("et garde le chemin direct pour la RETROGRADATION",
       "'/role'" in _ac)
+# Le bouton de legs ne s'affiche que sur une ligne admin/chef_admin (R-68) :
+# sur un player, il menerait a coup sur au refus legs_sans_consentement.
+_i_legs = _ac.find("leguerSuperadmin(c)")
+_garde_legs = _ac[max(0, _i_legs - 700):_i_legs]
+check("le bouton de legs n'est propose que sur un admin ou chef_admin",
+      _i_legs > 0 and "c.role === 'admin'" in _garde_legs
+      and "c.role === 'chef_admin'" in _garde_legs, _garde_legs[-300:])
 check("le badge « en attente » est affiche sur la ligne",
       'promotion_en_attente' in _ac)
 check("le backend fournit ce champ a la liste des comptes",

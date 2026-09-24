@@ -58,6 +58,25 @@ le tuyau est devant**. Ce n'est pas de la perception : un vrai évitement regard
 devant, mesure le temps disponible et choisit un couloir — c'est le travail de
 `choose_lane()`, qui reste vide. C'est le minimum pour qu'une course arrive au bout.
 
+**Corrigé le 2026-09-23** — l'esquive était rognée à la marge d'errance (`lo`/`hi`, 8 → 27).
+Face à un tuyau centré (y = 17,5), elle plafonnait à 27, soit 9,5 de dégagement pour 9 à 9,7
+d'emprise cumulée : le kart s'arrêtait à 26,4 (tolérance du volant), frottait le tuyau, était
+écarté vers la même borne, et recommençait. Sans contact entre karts, tout le peloton
+s'empilait là et la course bloquait. HEAD avait **le même frottement** et s'en sortait par
+chance ; le tirage de 8 karts parmi 10 (Birdo et Daisy) le faisait bloquer dès les premières
+courses d'une graine sur deux. L'esquive est désormais bornée par la **piste** : quand elle
+tient dans les marges, cible et choix du côté sont exactement ceux d'avant. 800 courses sur
+8 graines sans un blocage.
+
+### 2.1bis Le roster : 8 karts tirés parmi les personnages actifs
+
+Miroir du `roster` JS (raceEngine/src/config/bodies.js). Chaque `CharacterSpec` porte
+`enabled` ; `create_world_state` ne mélange que ceux-là, et les `kartCount` premiers courent.
+Moins de personnages actifs que de places : la course se fait avec eux. Seul `--karts`
+(développement) recycle encore au-delà du roster (`kartCountForced`). Le kart de référence
+des corps est figé sur les huit d'origine (`bodies.referenceKarts`), comme en JS. `--simulate`
+retire le tirage à chaque ouverture de grand prix, comme le service.
+
 ### 2.3 Un flag `--laps`, comme `--karts`
 
 Même esprit que le `--karts` du plan §3 : une course de 5 tours dure ~154 s, ce qui rend

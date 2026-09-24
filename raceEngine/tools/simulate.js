@@ -91,7 +91,11 @@ const seed = SEED || (Math.random() * 0xFFFFFFFF) >>> 0;
 const rng = makeRng(seed);
 
 const STATS = PH.deriveCharacterStats(CFG);
-const ROSTER = Object.keys(STATS);
+// Les personnages qui PEUVENT courir (`roster.enabled`) : ceux que le tirage de
+// la prod aligne. Chaque course en prend `roster.perRace`, si bien qu'un
+// personnage ne court pas toutes les courses — ses taux se rapportent a ses
+// propres participations (`stat[nom].races`), jamais au total.
+const ROSTER = Object.keys(STATS).filter(name => CFG.roster.enabled[name]);
 
 // En dessous de cette fraction de sa propre pointe, un kart est considere comme
 // hors rythme. Rapporte a sa pointe et non a une vitesse absolue : sinon un kart
@@ -99,7 +103,8 @@ const ROSTER = Object.keys(STATS);
 // du temps perdu. La croisiere tourne autour de 0.94, d'ou ce seuil juste en
 // dessous : il attrape l'arret et la relance, pas les creux d'elan ordinaires.
 const SLOW_RATIO = 0.90;
-const N = ROSTER.length;
+// Karts par course, donc nombre de places.
+const N = Math.min(CFG.roster.perRace, ROSTER.length);
 const LAPS = CFG.race.laps;
 
 // Types distribuables, dans l'ordre de la config. `blueShell` a son propre
@@ -395,7 +400,7 @@ function runRace(startOrder, cfg) {
 
 const stat = {};
 for (const name of ROSTER) {
-    stat[name] = { wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, bumps: 0, slowMs: 0, raceMs: 0, dist: 0, calmDist: 0, calmMs: 0,
+    stat[name] = { races: 0, wins: 0, podium: 0, last: 0, sumPos: 0, hits: 0, bumps: 0, slowMs: 0, raceMs: 0, dist: 0, calmDist: 0, calmMs: 0,
         cruiseDist: 0, cruiseMs: 0, catchMs: 0, deepMs: 0, cornerPx: 0 };
 }
 
@@ -437,12 +442,20 @@ let totalTicks = 0;
 let startOrder = null;
 const started = Date.now();
 
-if (CSV) console.log('course,' + ROSTER.map((_, i) => 'p' + (i + 1)).join(',')
+if (CSV) console.log('course,' + Array.from({ length: N }, (_, i) => 'p' + (i + 1)).join(',')
     + ',bleues,eclairs');
 
 for (let r = 0; r < RACES; r++) {
-    const grid = CHAIN && startOrder ? startOrder : PH.shuffleArray(ROSTER.slice(), rng);
-    const race = runRace(grid, RACE_CFGS[r % RACE_CFGS.length]);
+    // Le tirage de la prod : `perRace` karts parmi les actives. Enchainee, la
+    // grille reprend l'arrivee precedente A L'INTERIEUR d'un grand prix et se
+    // retire a son ouverture, comme le service — sans quoi les memes karts
+    // courraient toute la campagne.
+    const cfg = RACE_CFGS[r % RACE_CFGS.length];
+    const opensGrandPrix = r % CFG.grandPrix.races === 0;
+    const grid = CHAIN && startOrder && !opensGrandPrix
+        ? startOrder
+        : PH.pickRoster(cfg, rng, null);
+    const race = runRace(grid, cfg);
 
     if (!race) { aborted++; continue; }
     totalMs += race.ms;
@@ -460,6 +473,8 @@ for (let r = 0; r < RACES; r++) {
             lapDist[name][lap][pos - 1]++;
         }
     }
+
+    for (const name of race.grid) stat[name].races++;
 
     for (const name of ROSTER) {
         stat[name].hits += race.hits[name] || 0;
@@ -528,8 +543,15 @@ function padL(s, w) { return String(s).padStart(w); }
 const p0 = 1 / N;
 // Ecart-type attendu d'un taux de victoire si tous les karts se valaient. Sans
 // ce repere, on lit un ecart de deux points comme un desequilibre alors qu'il
-// n'est que du bruit d'echantillonnage.
-const sigma = Math.sqrt(p0 * (1 - p0) / Math.max(done, 1)) * 100;
+// n'est que du bruit d'echantillonnage. Pris sur les courses que CE kart a
+// courues : tire parmi plus de personnages qu'il n'y a de places, chacun en
+// court moins que la campagne.
+const sigmaOf = runs => Math.sqrt(p0 * (1 - p0) / Math.max(runs, 1)) * 100;
+const meanRuns = done * N / Math.max(ROSTER.length, 1);
+const sigma = sigmaOf(meanRuns);
+// Par course COURUE : diviser par `done` ferait passer une absence au tirage
+// pour une contre-performance.
+const per = (v, s) => v / Math.max(s.races, 1);
 
 const grandTotal = ITEM_TYPES.reduce((s, t) => s + itemTotal[t], 0);
 
@@ -572,15 +594,17 @@ const w = Math.max(...ROSTER.map(n => n.length), 6);
 console.log('');
 console.log(pad('kart', w) + padL('poi/pui/man', 13)
     + padL('top', 6) + padL('acc', 6) + padL('agi', 6) + padL('tenue', 8) + padL('masse', 7)
-    + padL('victoires', 12) + padL('podium', 9) + padL('dernier', 9) + padL('place moy.', 12));
-console.log('-'.repeat(w + 13 + 6 + 6 + 6 + 8 + 7 + 12 + 9 + 9 + 12));
+    + padL('victoires', 12) + padL('podium', 9) + padL('dernier', 9) + padL('place moy.', 12)
+    + padL('courues', 9));
+console.log('-'.repeat(w + 13 + 6 + 6 + 6 + 8 + 7 + 12 + 9 + 9 + 12 + 9));
 
 for (const name of rows) {
     const s = stat[name];
     const c = STATS[name];
-    const winPct = pct(s.wins, done);
+    const winPct = pct(s.wins, s.races || 1);
     // Ecart a l'attendu, en ecarts-types : au-dela de 2, ce n'est plus du bruit.
-    const z = sigma > 0 ? (winPct - 100 * p0) / sigma : 0;
+    const sig = sigmaOf(s.races);
+    const z = sig > 0 ? (winPct - 100 * p0) / sig : 0;
     const flag = Math.abs(z) >= 2 ? (z > 0 ? ' ++' : ' --') : '   ';
 
     console.log(
@@ -590,9 +614,10 @@ for (const name of rows) {
         + padL(c.agility.toFixed(2), 6) + padL(c.cornering.toFixed(2), 8)
         + padL(c.mass.toFixed(2), 7)
         + padL(winPct.toFixed(1) + ' %' + flag, 12)
-        + padL(pct(s.podium, done).toFixed(1) + ' %', 9)
-        + padL(pct(s.last, done).toFixed(1) + ' %', 9)
-        + padL((s.sumPos / done).toFixed(2), 12)
+        + padL(pct(s.podium, s.races || 1).toFixed(1) + ' %', 9)
+        + padL(pct(s.last, s.races || 1).toFixed(1) + ' %', 9)
+        + padL(per(s.sumPos, s).toFixed(2), 12)
+        + padL(s.races, 9)
     );
 }
 
@@ -621,11 +646,11 @@ for (const name of rows) {
     const calmSpeed = s.calmMs ? s.calmDist / (s.calmMs / 1000) : 0;
     console.log(pad(name, w)
         + padL(STATS[name].agility.toFixed(2), 6)
-        + padL((s.hits / done).toFixed(2), 10)
-        + padL((s.bumps / done).toFixed(2), 8)
-        + padL(Math.round(s.cornerPx / done) + ' px', 9)
+        + padL(per(s.hits, s).toFixed(2), 10)
+        + padL(per(s.bumps, s).toFixed(2), 8)
+        + padL(Math.round(per(s.cornerPx, s)) + ' px', 9)
         + padL(pct(s.cornerPx, s.dist + s.cornerPx).toFixed(2) + ' %', 9)
-        + padL((s.slowMs / done / 1000).toFixed(1) + ' s', 13)
+        + padL((per(s.slowMs, s) / 1000).toFixed(1) + ' s', 13)
         + padL(pct(s.slowMs, s.raceMs).toFixed(1) + ' %', 16)
         + padL(Math.round(meanSpeed), 11)
         + padL(pct(meanSpeed, STATS[name].topSpeed).toFixed(1) + ' %', 10)
@@ -675,8 +700,8 @@ for (const name of rows) {
         + padL(STATS[name].acceleration.toFixed(2), 6)
         + padL(Math.round(cruiseSpeed), 11)
         + padL(pct(cruiseSpeed, STATS[name].topSpeed).toFixed(1) + ' %', 10)
-        + padL((s.catchMs / done / 1000).toFixed(1) + ' s', 12)
-        + padL((s.deepMs / done / 1000).toFixed(1) + ' s', 14)
+        + padL((per(s.catchMs, s) / 1000).toFixed(1) + ' s', 12)
+        + padL((per(s.deepMs, s) / 1000).toFixed(1) + ' s', 14)
         + padL(Math.round(calmSpeed), 13));
 }
 console.log('');
@@ -698,7 +723,8 @@ console.log(cruiseSpread < 1
       + ' l\'acceleration\n  agit sur la vitesse et pas seulement sur la relance.');
 
 console.log(`attendu si tous egaux : ${(100 * p0).toFixed(1)} % de victoires, place moyenne ${((N + 1) / 2).toFixed(2)}`);
-console.log(`bruit d'echantillonnage a ${done} courses : +/- ${sigma.toFixed(1)} point (1 ecart-type)`);
+console.log(`bruit d'echantillonnage a ${Math.round(meanRuns)} courses courues par kart `
+    + `(${N} places, ${ROSTER.length} personnages) : +/- ${sigma.toFixed(1)} point (1 ecart-type)`);
 console.log('  ++ / -- signale un ecart d\'au moins 2 ecarts-types, soit ce qui ne s\'explique plus par le hasard');
 
 // La repartition des places a l'arrivee n'est pas reprise ici : elle figure en
@@ -729,7 +755,7 @@ console.log('Repartition des places, tour par tour (%)');
 for (let lap = 1; lap <= LAPS; lap++) {
     console.log('');
     console.log(`  fin du tour ${lap}` + (lap === LAPS ? ' (arrivee)' : ''));
-    console.log('  ' + pad('kart', w) + ROSTER.map((_, i) => padL('P' + (i + 1), 7)).join(''));
+    console.log('  ' + pad('kart', w) + Array.from({ length: N }, (_, i) => padL('P' + (i + 1), 7)).join(''));
     console.log('  ' + '-'.repeat(w + 7 * N));
     for (const name of rows) {
         const tot = lapCount[name][lap] || 1;

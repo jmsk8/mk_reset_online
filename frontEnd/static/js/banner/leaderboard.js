@@ -46,8 +46,21 @@ function initLeaderboard() {
     renderPause();
     renderVote();
 
-    const totalKarts = GAME_CONFIG.resources.characters.length;
-    for (let i = 0; i < totalKarts; i++) {
+    setLeaderboardSlots(worldState.karts.length);
+}
+
+// Une case par kart EN COURSE, pas par personnage connu : le serveur en aligne
+// `roster.perRace` parmi davantage (raceEngine/src/config/bodies.js). Compter
+// `GAME_CONFIG.resources.characters` poserait des cases vides a gauche du
+// classement. Rappelee a chaque `hello`, elle ne refait rien si le nombre n'a
+// pas change.
+function setLeaderboardSlots(count) {
+    if (!leaderboardState.container) return;
+    if (leaderboardState.slots.length === count) return;
+
+    for (const slot of leaderboardState.slots) slot.remove();
+    leaderboardState.slots = [];
+    for (let i = 0; i < count; i++) {
         const slot = document.createElement('div');
         slot.className = 'leaderboard-slot';
         slot.dataset.slotIndex = i;

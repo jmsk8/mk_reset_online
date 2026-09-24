@@ -3,7 +3,13 @@
 ## Contexte
 
 Jeu de course de karts, 8 personnages, moteur physique partagé entre le front et
-le service de course. Chaque perso répartit **15 points** entre trois axes —
+le service de course.
+
+> **Depuis le 2026-09-23 : 10 personnages, 8 par course** (Birdo et Daisy, tirage à
+> l'ouverture de chaque grand prix, interrupteurs `roster.enabled` dans
+> `raceEngine/src/config/bodies.js`). Le banc tire comme la prod et rapporte chaque taux aux
+> courses que le kart a **courues** (colonne `courues`), plus au total. Le bruit se lit donc
+> sur ~80 % des courses de la campagne. Ce qui suit décrit la mission d'origine, à 8. Chaque perso répartit **15 points** entre trois axes —
 `weight` / `power` / `handling`, chacun dans [0, 10] — qui sont convertis en
 statistiques dérivées (pointe, accélération, agilité, masse).
 

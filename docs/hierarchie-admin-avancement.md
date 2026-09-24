@@ -133,6 +133,8 @@ aux templates, panneau de permissions par compte dans `admin_comptes.html`.
   y compris pour lui. Deux routes distinctes pour préserver l'atomicité (6bis.1 du plan).
 - **R-53** — `changer_role` purge `permissions_admin` dès qu'un compte quitte le rôle `admin` :
   sans ça, un compte rétrogradé puis re-promu récupérerait silencieusement ses anciens droits.
+  Depuis le 2026-09-23 (R-68, `changer_role` ne promeut plus), `repondre_promotion` porte la même
+  purge : accepter `chef_admin` est devenu le seul chemin d'`admin` vers `chef_admin`.
 
 ---
 

@@ -8,9 +8,56 @@ import { laneY } from './driving.js';
 import { shadowCount, shadowFrom, shadowHi, shadowLo, shadowTo } from './vision.js';
 import { countdownDuration } from './race.js';
 
-// `startOrder` est l'ordre d'arrivee de la course precedente : le vainqueur
-// repart en pole. Absent, la grille est tiree au sort. `grandPrix` reporte le
-// bloc en cours ({ round, points }) ; absent, la course ouvre un bloc neuf.
+// Les personnages de la course, dans l'ordre de la grille.
+//
+// `startOrder` est l'ordre d'arrivee de la manche precedente : il est repris tel
+// quel, ce qui garde les MEMES karts sur tout un grand prix — les points s'y
+// cumulent par personnage. Absent ou devenu invalide (un personnage retire du
+// tirage entre-temps, une taille de plateau changee), on tire au sort
+// `roster.perRace` karts parmi les personnages actives : c'est ce qui ouvre un
+// grand prix. Un seul melange fait les deux, le choix des karts et la grille.
+function pickRoster(cfg, rng, startOrder) {
+    const spec = cfg.roster;
+    const known = Object.keys(deriveCharacterStats(cfg));
+
+    // L'interrupteur doit couvrir exactement les personnages en config. Un
+    // personnage ajoute sans y figurer ne serait jamais tire, sans que rien ne
+    // dise pourquoi ; un nom inconnu y serait une faute de frappe.
+    if (!spec || !spec.enabled) {
+        throw new Error('cfg.roster.enabled manquant : raceEngine/src/config/bodies.js');
+    }
+    for (const name of known) {
+        if (typeof spec.enabled[name] !== 'boolean') {
+            throw new Error(`roster.enabled : ${name} n'y figure pas (true ou false)`);
+        }
+    }
+    for (const name of Object.keys(spec.enabled)) {
+        if (!known.includes(name)) {
+            throw new Error(`roster.enabled : ${name} n'est pas dans kartStats.characters`);
+        }
+    }
+    if (!Number.isInteger(spec.perRace) || spec.perRace < 1) {
+        throw new Error(`roster.perRace vaut ${spec.perRace} : un entier >= 1 est attendu`);
+    }
+
+    const enabled = known.filter(name => spec.enabled[name]);
+    if (!enabled.length) {
+        throw new Error('roster.enabled : aucun personnage actif, pas de course possible');
+    }
+    const size = Math.min(spec.perRace, enabled.length);
+
+    const keeps = startOrder
+        && startOrder.length === size
+        && new Set(startOrder).size === size
+        && startOrder.every(name => spec.enabled[name] === true);
+    if (keeps) return startOrder.slice();
+
+    return shuffleArray(enabled, rng).slice(0, size);
+}
+
+// `startOrder` et `grandPrix` : voir `pickRoster` pour le premier. `grandPrix`
+// reporte le bloc en cours ({ round, points }) ; absent, la course ouvre un bloc
+// neuf.
 function createWorldState(cfg, rng, now, startOrder, grandPrix) {
     const roadHeight = cfg.road.maxY - cfg.road.minY;
     const race = cfg.race;
@@ -48,10 +95,7 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
     }));
 
     const statsTable = deriveCharacterStats(cfg);
-    const roster = Object.keys(statsTable);
-    const names = (startOrder && startOrder.length === roster.length)
-        ? startOrder.slice()
-        : shuffleArray(roster, rng);
+    const names = pickRoster(cfg, rng, startOrder);
 
     const karts = [];
     const kartsById = {};
@@ -519,4 +563,5 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
 
 export {
     createWorldState,
+    pickRoster,
 };
