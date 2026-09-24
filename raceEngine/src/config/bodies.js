@@ -7,14 +7,14 @@ export function deriveBodies(cfg) {
     const names = Object.keys(b.sprite.kart);
 
     // Un personnage non mesure roulerait a la taille moyenne du plateau sans que
-    // rien ne le dise. `px` est verifie a part : oublie, la profondeur vaudrait
-    // NaN, et une comparaison contre NaN est toujours fausse — le kart
+    // rien ne le dise. `wheels` est verifie a part : oublie, la profondeur
+    // vaudrait NaN, et une comparaison contre NaN est toujours fausse — le kart
     // traverserait tout le monde sans qu'aucune erreur ne soit levee.
     for (const n of Object.keys(cfg.kartStats.characters)) {
         const sprite = b.sprite.kart[n];
-        if (!sprite || !(sprite.w > 0) || !(sprite.px > 0)) {
+        if (!sprite || !(sprite.w > 0) || !(sprite.wheels > 0)) {
             throw new Error(`bodies.sprite.kart : ${n} n'a pas de mesure `
-                + 'complete (w, h, px). Relancer '
+                + 'complete (w, h, wheels). Relancer '
                 + '`python3 scripts/sprite-metrics.py` et recopier le bloc.');
         }
     }
@@ -31,29 +31,32 @@ export function deriveBodies(cfg) {
         }
     }
     let sumW = 0;
-    let sumPx = 0;
+    let sumWheels = 0;
     for (const n of refNames) {
         sumW += b.sprite.kart[n].w;
-        sumPx += b.sprite.kart[n].px;
+        sumWheels += b.sprite.kart[n].wheels;
     }
     const refW = sumW / refNames.length;
-    const refPx = sumPx / refNames.length;
+    const refWheels = sumWheels / refNames.length;
 
     // Combien de px de demi-emprise vaut un px de sprite. Facteur unique, karts
     // compris : deux corps dessines a la meme echelle touchent a la meme echelle.
     const perPx = (b.kartDraw * b.fill * 0.5) / refW;
 
     // La profondeur du kart de REFERENCE, et de lui seul — dernier endroit ou
-    // `flatten` sert. Les autres s'en ecartent au prorata de leur surface,
-    // pas de leur longueur.
+    // `flatten` sert. Les autres s'en ecartent au prorata de leur largeur roue a
+    // roue, pas de leur longueur.
     const refHalfY = (refW * perPx) / (b.flatten * b.depthPx);
 
-    const bodyOf = (w, px) => ({
+    const bodyOf = (w, wheels) => ({
         // La LONGUEUR : la largeur du fichier, a l'echelle du monde.
         x: w * perPx,
-        // La LARGEUR : la surface dessinee, rapportee a celle du corps moyen.
-        // C'est le volume qui parle, pas l'encombrement.
-        y: refHalfY * (px / refPx),
+        // La LARGEUR : l'ecart roue a roue, rapporte a celui du corps moyen.
+        // C'est le KART qui touche, pas son pilote. La surface dessinee, qui
+        // tenait ce role, comptait la hauteur et la carrure du personnage — et
+        // la taille deux fois, une surface suivant le carre de l'echelle :
+        // bowser sortait 1.5 fois plus large que luigi, pour 1.12 roue a roue.
+        y: refHalfY * (wheels / refWheels),
         // Ce que le DESSIN doit faire de plus ou de moins que le kart de
         // reference. Sans unite : le client le multiplie par sa propre largeur,
         // qui vaut moins sur mobile.
@@ -64,11 +67,11 @@ export function deriveBodies(cfg) {
     });
 
     b.refSpriteW = refW;
-    b.refSpritePx = refPx;
-    b.ref = bodyOf(refW, refPx);
+    b.refSpriteWheels = refWheels;
+    b.ref = bodyOf(refW, refWheels);
     b.kart = {};
     for (const n of names) {
-        b.kart[n] = bodyOf(b.sprite.kart[n].w, b.sprite.kart[n].px);
+        b.kart[n] = bodyOf(b.sprite.kart[n].w, b.sprite.kart[n].wheels);
     }
 
     // Le tuyau passe par la meme regle, a une reserve pres : sa longueur DESSINEE
@@ -191,7 +194,7 @@ export default {
         // chaque dixieme vaut ~0.05 s aux deux bouts. Au-dela de ~1.5, les lourds
         // deviennent injouables depuis les tuyaux, qui les remettent a l'arret
         // plusieurs fois par tour.
-        massDragAccel: 1.75,
+        massDragAccel: 1.0,
 
         // Garde-fou contre une combinaison de stats absurde, pas un reglage : il
         // ne doit jamais mordre sur le plateau en place, sinon il ecrete en
@@ -269,17 +272,30 @@ export default {
         speedPerWeight: 35,
         speedPerPower: 10,
 
+        // Calees sur Mario Kart 8 Deluxe, chaque personnage sur le meme kart
+        // (docs/banner/equilibrage.md). Poids -> weight, acceleration ->
+        // power, maniabilite -> handling ; la vitesse de pointe n'a pas d'axe,
+        // elle descend du poids, comme dans MK8D ou elle le suit de pres.
+        // Bowser et Koopa bornent l'enveloppe et ne bougent pas : les autres
+        // s'y placent au plus pres de leurs valeurs MK8D.
+        //
+        // L'ordre des cles est celui du tirage du roster : le changer change
+        // les grilles a graine egale, et fausse toute comparaison au banc.
         characters: {
             bowser: { weight: 9, power: 5, handling: 1 },
-            dk:     { weight: 8, power: 5, handling: 2 },
+            // Plus pres de Mario que de Bowser dans MK8D (poids 4 contre 3.8
+            // et 4.5).
+            dk:     { weight: 7, power: 5, handling: 3 },
             mario:  { weight: 5, power: 5, handling: 5 },
-            // Yoshi a un point de poids pres, pris sur la puissance : son
-            // sprite est presque aussi massif que celui de bowser.
-            birdo:  { weight: 5, power: 4, handling: 6 },
-            luigi:  { weight: 4, power: 6, handling: 5 },
+            // Yoshi, Birdo et Peach ont les memes stats dans MK8D.
+            birdo:  { weight: 4, power: 5, handling: 6 },
+            // Le poids et l'acceleration de Mario, un cran de maniabilite en
+            // plus : le budget le prend sur la puissance.
+            luigi:  { weight: 5, power: 4, handling: 6 },
             yoshi:  { weight: 4, power: 5, handling: 6 },
-            peach:  { weight: 3, power: 6, handling: 6 },
-            // Peach a un point pres, de la puissance vers la maniabilite.
+            peach:  { weight: 4, power: 5, handling: 6 },
+            // Un peu plus legere que Peach dans MK8D : le point de poids
+            // passe en maniabilite.
             daisy:  { weight: 3, power: 5, handling: 7 },
             toad:   { weight: 2, power: 5, handling: 8 },
             koopa:  { weight: 2, power: 4, handling: 9 }
@@ -292,30 +308,40 @@ export default {
         // Les mesures des fichiers. Rien ne se recopie a la main : `python3
         // scripts/sprite-metrics.py` relit les PNG et reimprime ce bloc tel quel.
         //
+        // La TAILLE d'un kart ne se regle pas ici mais dans son fichier :
+        // `python3 scripts/resize-karts.py` repart des originaux
+        // (assets-src/karts/) et les met a leur gabarit MK8D — bowser et dk
+        // plus grands, birdo, toad et koopa plus petits, les autres tels
+        // quels. Le bloc ci-dessous mesure le resultat : l'emprise decrit
+        // toujours ce qui est dessine.
+        //
         // `w` / `h` sont le cadre. Les sprites etant detoures au plus juste, la
         // largeur du fichier EST la longueur du kart.
         //
-        // `px` est la SURFACE DESSINEE, alpha non nul. C'est elle qui porte la
-        // PROFONDEUR : le cadre dit ou s'arrete le dessin, la surface ce qu'il y
-        // a dedans — un bowser qui remplit 76 % de son cadre n'est pas une peach
-        // qui en remplit 61 %. Ce sont des PNG a palette, la transparence vit
-        // dans le chunk tRNS : d'ou le script.
+        // `wheels` est la largeur ROUE A ROUE, lue sur le sprite de DOS : la
+        // rangee la plus large de la bande des roues. C'est elle qui porte la
+        // PROFONDEUR — ce qui touche, c'est le kart, pas son pilote. Ni la
+        // hauteur de birdo, ni la carrure de bowser, ni les bras de dk n'elargissent
+        // la voie qu'un kart occupe. La plupart sont des PNG a palette, dont la
+        // transparence vit dans le chunk tRNS : d'ou le script.
         //
-        // La pose de course (`side-right`) et elle seule — les autres
-        // orientations ne se voient que pendant le tete-a-queue, ou plus rien ne
-        // touche. `h` ne sert qu'au tuyau, dont la hauteur est imposee.
+        // `w` et `h` sont pris sur la pose de course (`side-right`), `wheels` sur
+        // le dos (`back`) : c'est la seule vue ou l'ecart roue a roue se lit.
+        // Les autres orientations ne se voient que pendant le tete-a-queue, ou
+        // plus rien ne touche. `h` ne sert qu'au tuyau, dont la hauteur est
+        // imposee.
         sprite: {
             kart: {
-                bowser: { w: 111, h: 124, px: 10451 },
-                dk:     { w: 119, h: 124, px: 10497 },
-                mario:  { w: 112, h: 119, px:  8718 },
-                birdo:  { w: 112, h: 144, px: 10229 },
-                luigi:  { w: 111, h: 123, px:  8511 },
-                yoshi:  { w: 119, h: 122, px:  9655 },
-                peach:  { w: 112, h: 124, px:  8425 },
-                daisy:  { w: 112, h: 128, px:  8222 },
-                toad:   { w: 110, h: 120, px:  8278 },
-                koopa:  { w: 110, h: 114, px:  7395 }
+                bowser: { w: 123, h: 137, wheels: 124 },
+                dk:     { w: 123, h: 128, wheels: 117 },
+                mario:  { w: 112, h: 119, wheels: 112 },
+                birdo:  { w: 106, h: 137, wheels: 106 },
+                luigi:  { w: 111, h: 123, wheels: 111 },
+                yoshi:  { w: 119, h: 122, wheels: 112 },
+                peach:  { w: 112, h: 124, wheels: 112 },
+                daisy:  { w: 112, h: 128, wheels: 112 },
+                toad:   { w:  95, h: 103, wheels:  96 },
+                koopa:  { w:  95, h:  98, wheels:  95 }
             },
             pipe: { w: 95, h: 124 }
         },
@@ -324,9 +350,9 @@ export default {
         // plateau d'origine, pour deux raisons :
         //
         //   - ajouter un personnage ne doit pas redimensionner les autres. Avec
-        //     birdo et daisy dans la moyenne, la surface de reference montait
-        //     de 3.4 % et toutes les emprises en profondeur retrecissaient
-        //     d'autant — un reequilibrage deguise en ajout ;
+        //     birdo et daisy dans la moyenne, la mesure de reference bougeait,
+        //     et toutes les emprises avec elle — un reequilibrage deguise en
+        //     ajout ;
         //   - l'interrupteur de `roster.enabled` ne doit pas non plus : il
         //     choisit qui court, pas la taille des corps.
         //
@@ -378,10 +404,9 @@ export default {
         // du kart de REFERENCE, donc celle autour de laquelle tout le plateau se
         // distribue.
         //
-        // Ce qui ecarte les karts les uns des autres est leur surface dessinee,
-        // pas lui : par l'aplatissement seul, bowser et peach auraient la meme
-        // largeur a 1 % pres ; par la surface, bowser est 24 % plus profond, ce
-        // qui est ce qu'on voit a l'ecran.
+        // Ce qui ecarte les karts les uns des autres est leur ecart roue a roue
+        // (`wheels`), pas lui : bowser roule sur une voie 11 % plus large que
+        // peach, et c'est ce que son sprite de dos montre.
         //
         // 3.33 : 1 est la valeur d'origine du jeu. Le tuyau n'y passe plus du
         // tout (il est rond), et c'est ce qui dit ce que `flatten` est vraiment :

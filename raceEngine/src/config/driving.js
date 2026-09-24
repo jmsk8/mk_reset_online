@@ -251,20 +251,27 @@ export default {
         //
         //       base bande bruit / course chevauchement
         //       0.44 87.7-100 % 4.6 px/s 39 px/s
-        //       0.70 93.4-100 % 2.5 px/s 9 px/s ← livre
+        //       0.70 93.4-100 % 2.5 px/s 9 px/s
         //       0.78 95.2-100 % 1.8 px/s aucun
+        //       0.80 95.6-100 % 1.6 px/s -3 px/s ← livre
         //
-        // Le plateau entier tient dans 5.1 % de pointe : une bande plus large
+        // Le plateau entier tient dans 5.2 % de pointe : une bande plus large
         // couvre les fiches d'un bruit plus large qu'elles.
         //
-        // 0.78 EST LA LIMITE A NE PAS FRANCHIR. Au-dela, le pire moment de bowser
-        // reste plus rapide que le meilleur de koopa : plus aucun depassement ne
-        // peut naitre de la croisiere, et le peloton devient une procession.
+        // 0.78 est la limite ou la croisiere cesse de rebattre TOUT le plateau :
+        // au-dela, le pire moment de bowser reste plus rapide que le meilleur de
+        // koopa, et aucun depassement entre eux ne peut plus naitre de la
+        // croisiere. 0.80 la franchit sciemment, pour que la pointe decide plus
+        // et le hasard moins : seuls bowser/toad et bowser/koopa sont fermes,
+        // tous les autres duels restent ouverts. Ce qui les rouvre passe
+        // desormais par les relances et les objets. Les suivants tombent vite —
+        // bowser/daisy au-dela de 0.815, dk/koopa de 0.838 — et le peloton
+        // tournerait a la procession.
         //
         // `weightGain` releve ce plancher a proportion du poids. A 0 il ne fait
         // rien, et c'est voulu. Il ne sait que RELEVER, et les reprises apres
         // incident ne le lisent pas.
-        momentumFloor: { base: 0.70, weightGain: 0 },
+        momentumFloor: { base: 0.80, weightGain: 0 },
         momentumChangeSpeed: 0.25,
         momentumDriftMin: 3000,
         momentumDriftMax: 7000,

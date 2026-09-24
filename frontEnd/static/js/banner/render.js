@@ -208,9 +208,13 @@ function renderState(gameNow, screenWidth, frameMs) {
                     // c'est montrer une banane a cote de celle qui touche.
                     let hx, hy;
                     if (inHands) {
+                        // L'ecart est cale sur le kart de reference : il suit
+                        // la taille du sprite, sinon l'objet flotte au-dessus
+                        // d'un koopa et s'enfonce dans un bowser.
                         const hOffset = getHandsItemRenderOffset();
-                        hx = spriteX + hOffset.offset + (hel._halfW || 0);
-                        hy = hOffset.yShift;
+                        const s = kartDrawScale(kart);
+                        hx = spriteX + hOffset.offset * s + (hel._halfW || 0);
+                        hy = hOffset.yShift * s;
                     } else {
                         hx = rx + heldBehindX;
                         hy = 0;
