@@ -5,7 +5,12 @@
 > réellement fait (vérifié dans le code, pas seulement dans la doc) et ce qui reste en suspens,
 > classé par priorité.
 >
-> **Dernière mise à jour : 2026-09-23 (nuit)** — ✅ **écart R-68 fermé** (rang 10bis, §8) : plus
+> **Passage du 2026-09-24** — ✅ **karts calés sur MK8D** (§13.10) : stats de 4 personnages,
+> tailles réglées dans les PNG (`scripts/resize-karts.py`), largeur d'emprise roue à roue,
+> `massDragAccel` 1,0 et plancher du momentum 0,80. Moteur JS seul, écarts C++ listés. Non
+> commité.
+>
+> **Mise à jour précédente : 2026-09-23 (nuit)** — ✅ **écart R-68 fermé** (rang 10bis, §8) : plus
 > aucune route ne pose un rôle d'administration sans le consentement de la personne, l'amorçage
 > du superadmin inchangé. **1989 assertions, 36 fichiers, aucune rouge.** Non commité.
 >
@@ -107,6 +112,7 @@
 | 11 | **RGPD : purge régulière, et A-07** | §3, §8 | Purge : route existante, aucun ordonnanceur, geste manuel assumé. A-07 🟡 : le consentement CGU est affiché, jamais imposé. |
 | 12 | **CHANGELOG** | §12 | La section « Non publié » ne dit **rien** de la bascule Discord, des rôles admin, du journal, des promotions, des notifications ni des sessions de tournois. À écrire avant de publier une version. |
 | 13 | **Karts de la bannière : ménage et Daisy + Birdo** — ✅ Daisy et Birdo livrés le 23/09, non commité | §13.4 | 8 karts tirés au sort parmi 10 à chaque grand prix, interrupteur on/off par personnage (`roster` de `raceEngine/src/config/bodies.js`), deux moteurs à jour, banc passé. Restent la recette visuelle et le ménage des `*-static.png`. |
+| 13bis | **Karts calés sur MK8D : stats, tailles, emprises** — ✅ livré le 24/09 (JS), non commité | §13.10 | Tailles réglées dans les PNG, emprise large de roue à roue, accélération et croisière recalées. Restent le banc multi-graines, le report C++ (§7 de `banner/moteur-cpp-avancement.md`) et les vignettes de Birdo et Daisy. |
 | 14 | **Bannière : retravailler redémarrage, pause, tour et vitesse** | §13.5 | Demandé le 22/09. Le bouton de vote de redémarrage, le bouton pause, et le cartouche tour/vitesse du kart suivi. |
 | 15 | **Les constats banner restants** | §10 | **Arbitrés le 23/09** : O-2, O-4, D-4 actés, D-3 laissé de côté. **Livrés et commités le 23/09** : le souvenir du porteur arrière et ses trois réponses (D-5), la rouge qui contourne les pipes (O-3) — `248d63e`. O-5 corrigé (sans effet sur l'équilibre) — `36fecb7`. Reste : D-6 à trancher. |
 | 16 | **Chantiers de confort** | §11 | Pistes de perf du décor, moteur Rust — plus les chantiers volontairement non commencés (bas du document). |
@@ -826,6 +832,35 @@ large qui coûte, pas ses stats — la variante 4/4/7 testée fait **moins** bie
   - **Toucher les points au téléphone (23/09)**, commun aux 9 graphiques via `brancher` : (1) zone de toucher élargie — `elements.point.hitRadius` du graphique porté à 12 px au doigt (`pointer: coarse`, 1 px à la souris comme le défaut de Chart.js) plus le grossissement des points une fois zoomé ; les points des courbes (2-3 px de rayon) étaient impossibles à viser. Écrit dans la config du graphique, jamais dans les réglages globaux ; un `pointHitRadius` posé par la page (courbe des distributions, 0) garde la priorité. (2) Bulle d'info orientée vers le centre de la partie visible (positionneur `loupe`, qui délègue au positionneur d'origine) : Chart.js l'orientait d'après le graphique entier et, zoomé, elle s'ouvrait souvent hors de la vue. (3) Double-tap ignoré au doigt : deux touchers rapides sur deux points annulaient le zoom ; le bouton ⟲ sert au retour.
 - `[x]` Validé au navigateur par l'utilisateur le 23/09, sur PC et au téléphone (retours intégrés : bulles d'info à taille normale, traits et points qui empâtaient, points trop petits, points impossibles à toucher une fois zoomé).
 - **Hors périmètre, non décidé** : l'action au toucher d'un point reste propre à chaque graphique (bulle d'info sur les courbes, bulle au nom du joueur en plus sur les distributions, `alert()` sur un reset de la fiche joueur). À uniformiser seulement sur demande.
+
+#### 13.10 Karts calés sur Mario Kart 8 Deluxe — ✅ livré le 2026-09-24 côté JS, non commité
+
+**Demandé** : rapprocher stats et tailles des karts de mesures MK8D (poids, maniabilité,
+accélération, vitesse, largeur et hauteur à l'écran), **sans changer le système de stats ni la
+loi des emprises**, et en réglant la taille **dans les PNG**, pas par un facteur dans le code.
+Détail complet et chiffres : [banner/equilibrage.md](banner/equilibrage.md), « Calage MK8D ».
+
+- `[x]` **Stats** : DK 7/5/3, Luigi 5/4/6, Birdo et Peach 4/5/6 (identiques à Yoshi).
+- `[x]` **Tailles** : originaux dans `assets-src/karts/`, `scripts/resize-karts.py` (table
+  `FACTEUR`, plus proche voisin) — Bowser ×1,109, DK ×1,033, Birdo ×0,95, Toad et Koopa ×0,86,
+  les autres inchangés. 25 PNG régénérés.
+- `[x]` **Emprise** : la largeur se mesure **roue à roue** sur le sprite de dos (`wheels` dans
+  `bodies.sprite`, `sprite-metrics.py`) au lieu de la surface du profil, qui faisait Bowser
+  ×1,51 plus large que Luigi. La longueur reste la largeur du profil.
+- `[x]` **Réglages** : `massDragAccel` 1,75 → 1,0 (écart d'accélération Koopa/Bowser de 83 % à
+  38 %, MK8D 33 %) ; `momentumFloor.base` 0,70 → 0,80 (croisière 95,6-100 % de la pointe,
+  franchit sciemment la limite de 0,78 pour Bowser/Toad et Bowser/Koopa).
+- `[x]` **Client** : l'objet tenu en main suit l'échelle du kart (`render.js`).
+- `[x]` **Banc** (1000 courses, graine 2814382103) : victoires 10,6 à 15,4 %, places moyennes
+  4,32 à 4,66 ; les lourds ne jouent plus à quitte ou double (Bowser dernier 15,3 % des courses
+  contre 19,6 % au départ).
+- `[ ]` **Banc multi-graines et par circuit** avant de figer les réglages.
+- `[ ]` **Moteur C++** : rien n'est porté. Liste complète en §7 de
+  [banner/moteur-cpp-avancement.md](banner/moteur-cpp-avancement.md) ; tant qu'elle n'est pas
+  vide, `make engine-cpp` fait courir l'ancien jeu.
+- `[ ]` **Longueur d'emprise au châssis** (la langue de Yoshi l'allonge encore), à discuter.
+- `[ ]` **Vignettes** de Birdo et Daisy au format des autres (déjà noté au §13.4).
+- `[ ]` Déploiement : redémarrage du service `race` et `make re-front` (PNG et `render.js`).
 
 ## Note obsolète — ✅ corrigée le 2026-09-18
 

@@ -103,8 +103,11 @@ fragment ne connaît pas les autres. Les seules valeurs calculées sont posées 
 fin par `deriveBodies`, qui a besoin de l'objet entier.
 
 Les emprises ne se règlent pas une par une : on règle la **loi**, et chaque corps
-en reçoit sa part, à partir de la taille réelle de son sprite. Les mesures se
-reprennent avec `python3 scripts/sprite-metrics.py`.
+en reçoit sa part, à partir de la taille réelle de son sprite — longueur sur le
+profil, largeur roue à roue sur le dos. Les mesures se reprennent avec
+`python3 scripts/sprite-metrics.py`. La taille d'un kart se change dans son PNG,
+jamais dans le code : `python3 scripts/resize-karts.py` repart des originaux
+(`assets-src/karts/`) — voir [equilibrage.md](equilibrage.md), « Calage MK8D ».
 
 ---
 

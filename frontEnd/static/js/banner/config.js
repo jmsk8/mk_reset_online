@@ -15,7 +15,7 @@ const LIGHTNING_SVG =
 const LIGHTNING_SRC = 'data:image/svg+xml,' + encodeURIComponent(LIGHTNING_SVG);
 
 const GAME_CONFIG = {
-    debugMode: false,
+    debugMode: true,
 
     resources: {
         // TOUS les personnages que le serveur peut aligner, pour precharger

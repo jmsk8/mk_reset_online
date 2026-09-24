@@ -152,3 +152,92 @@ Le terrain de jeu, dans l'ordre où il se laisse écrire :
 3. **`vision.cpp`** puis **`driving.cpp::choose_lane`** — la perception, puis la décision.
    C'est là que l'errance de §2.2 disparaît au profit d'un vrai choix de couloir.
 4. **`weapons.cpp`**, **`plans.cpp`** — l'usage des objets et la visée.
+
+---
+
+## 7. À reporter depuis le JS
+
+Changements faits côté JS pendant que le C++ est mis de côté. Tant que cette liste n'est
+pas vide, `make engine-cpp` fait courir les anciennes valeurs : le C++ n'est plus le même
+jeu que le JS.
+
+### 7.1 Stats calées sur MK8D (2026-09-24)
+
+`raceEngine/src/config/bodies.js`, `kartStats.characters` →
+`raceEngineCpp/src/config/config.hpp`, `characters` (colonnes weight / power / handling).
+L'ordre des lignes ne change pas.
+
+| Personnage | Avant | Après |
+|---|---|---|
+| dk | 8 / 5 / 2 | 7 / 5 / 3 |
+| birdo | 5 / 4 / 6 | 4 / 5 / 6 |
+| luigi | 4 / 6 / 5 | 5 / 4 / 6 |
+| peach | 3 / 6 / 6 | 4 / 5 / 6 |
+
+### 7.2 Sprites redimensionnés au gabarit MK8D (2026-09-24)
+
+Les PNG de course de bowser, dk, birdo, toad et koopa ont été redimensionnés par
+`scripts/resize-karts.py` (originaux dans `assets-src/karts/`). Le C++ ne lit pas les
+PNG : il porte leurs mesures en dur. À reporter dans `raceEngineCpp/src/config/config.hpp`,
+`characters`, colonnes w / h / px — les autres personnages ne changent pas.
+
+| Personnage | Avant | Après |
+|---|---|---|
+| bowser | 111 / 124 / 10451 | 123 / 137 / 12821 |
+| dk | 119 / 124 / 10497 | 129 / 135 / 12386 |
+| birdo | 112 / 144 / 10229 | 106 / 137 / 9183 |
+| toad | 110 / 120 / 8278 | 95 / 103 / 6113 |
+| koopa | 110 / 114 / 7395 | 95 / 98 / 5495 |
+
+La référence (`referenceKarts`, moyenne des 8 d'origine) se recalcule d'elle-même : les
+karts moyens passent de ×0,99 à ×1,00 sans que leur fichier change. Rien d'autre à porter —
+le placement de l'objet tenu en main (`render.js`) est côté client, commun aux deux moteurs.
+
+### 7.3 Profondeur de l'emprise : l'écart roue à roue remplace la surface (2026-09-24)
+
+La profondeur d'un kart ne se tire plus de la surface dessinée de son profil (`px`), qui
+comptait la hauteur et la carrure du pilote — et la taille deux fois, une surface suivant
+le carré de l'échelle : bowser sortait ×1,51 plus large que luigi. Elle se tire de
+l'écart ROUE À ROUE, lu sur `<perso>-back.png` (rangée la plus large des 20 % du bas,
+`WHEELS_BAND` de `scripts/sprite-metrics.py`) : ×1,12, comme MK8D.
+
+À reporter :
+
+- `config.hpp`, `CharacterSpec` : la colonne `spritePx` devient `spriteWheels`, et la table
+  `characters` prend les valeurs `wheels` de `bodies.sprite.kart` (la colonne px
+  disparaît) ;
+- `config.cpp`, calcul des corps (l. 22-97) : `ref.px` → moyenne des `wheels` du plateau de
+  référence, `body.y = refHalfY * (wheels / ref.wheels)`, message d'erreur « (w, h,
+  wheels) », `refSpritePx` → `refSpriteWheels`.
+
+| Personnage | w | h | wheels |
+|---|---|---|---|
+| bowser | 123 | 137 | 124 |
+| dk | 123 | 128 | 117 |
+| mario | 112 | 119 | 112 |
+| birdo | 106 | 137 | 106 |
+| luigi | 111 | 123 | 111 |
+| yoshi | 119 | 122 | 112 |
+| peach | 112 | 124 | 112 |
+| daisy | 112 | 128 | 112 |
+| toad | 95 | 103 | 96 |
+| koopa | 95 | 98 | 95 |
+
+Cette table remplace les colonnes w / h / px du §7.2.
+
+### 7.4 Plancher du momentum relevé à 0,80 (2026-09-24)
+
+`raceEngine/src/config/driving.js`, `speeds.momentumFloor.base` : 0,70 → 0,80. À reporter
+dans `raceEngineCpp/src/config/config.hpp`, `momentumFloorBase` (l. 67). La croisière va
+désormais de 95,6 à 100 % de la pointe (au lieu de 93,4 à 100 %).
+
+### 7.5 `massDragAccel` à 1,0 (2026-09-24)
+
+`raceEngine/src/config/bodies.js`, `kartStats.massDragAccel` : 1,75 → 1,0. À reporter dans
+`raceEngineCpp/src/config/config.hpp` (champ du même nom). L'écart d'accélération
+koopa/bowser passe de +83 % à +38 % (MK8D : +33 %).
+
+### 7.6 DK réduit de 5 % (2026-09-24)
+
+Facteur de `scripts/resize-karts.py` : 10,0 / 9,2 → 10,0 / 9,2 × 0,95. Ses mesures (w 123,
+h 128, wheels 117) sont déjà dans la table du §7.3.

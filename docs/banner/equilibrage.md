@@ -1,5 +1,146 @@
 # Mission : rendre les trois axes de statistiques réellement concurrents
 
+> **État actuel : voir « Calage MK8D (2026-09-24) » juste en dessous.** Le reste du fichier
+> est la mission d'origine, gardée pour son historique : son « modèle actuel » et ses mesures
+> datent d'avant ce calage.
+
+## Calage MK8D (2026-09-24)
+
+Stats, tailles et emprises recalées sur des mesures de Mario Kart 8 Deluxe, chaque
+personnage sur le même kart. Le système de stats (3 axes, budget 15) et la loi des emprises
+(`deriveBodies`) sont conservés : seuls leurs entrées et quatre réglages ont bougé. Le moteur
+C++ n'a pas suivi : chaque écart est listé dans
+[moteur-cpp-avancement.md](moteur-cpp-avancement.md) §7.
+
+### La source
+
+| | Poids | Maniab. | Accél. | Vitesse | L (cm) | H (cm) |
+|---|---|---|---|---|---|---|
+| Bowser | 4,5 | 2,5 | 3 | 4,8 | 10,2 | 13,5 |
+| DK | 4 | 3 | 3,2 | 4,5 | 10 | 11,4 |
+| Mario | 3,8 | 3,5 | 3,5 | 4 | 9,2 | 9,3 |
+| Luigi | 3,8 | 3,8 | 3,5 | 4 | 9,2 | 9,9 |
+| Yoshi, Peach | 3,2 | 3,8 | 3,8 | 3,8 | 9,2 | 10,2 / 9 |
+| Birdo | 3,2 | 3,8 | 3,8 | 3,8 | 9,2 | 10,2 (crâne) / 11,8 (nœud) |
+| Daisy | 3 | 3,8 | 3,8 | 3,8 | 9,2 | 8,5 |
+| Toad | 2,8 | 4,2 | 4 | 3,2 | 7,7 | 8,1 |
+| Koopa | 2,5 | 4,5 | 4 | 3 | 7,2 | 8,3 |
+
+Barres sur 6 ; L et H mesurés à l'écran (27 pouces), vue de derrière. Les barres donnent un
+**ordre** et des écarts relatifs, pas des grandeurs physiques : un écart de 37 % en barre de
+vitesse n'est pas 37 % de pointe dans le jeu.
+
+### Les stats — `kartStats.characters`
+
+Quatre personnages changent, placés au plus près de leurs valeurs MK8D dans l'enveloppe
+existante (bowser et koopa la bornent et ne bougent pas) :
+
+| | Avant | Après | Pourquoi |
+|---|---|---|---|
+| DK | 8/5/2 | **7/5/3** | plus près de Mario que de Bowser |
+| Luigi | 4/6/5 | **5/4/6** | le poids de Mario, un cran de maniabilité en plus |
+| Birdo | 5/4/6 | **4/5/6** | identique à Yoshi et Peach |
+| Peach | 3/6/6 | **4/5/6** | identique à Yoshi et Birdo |
+
+L'ordre des clés est celui du tirage du roster : le changer change les grilles à graine
+égale.
+
+### Les tailles — dans les PNG, jamais dans le code
+
+La taille d'un kart se règle dans son **fichier** : le moteur mesure les PNG
+(`scripts/sprite-metrics.py`) et en tire l'emprise, qui décrit donc toujours ce qui est
+dessiné.
+
+- `assets-src/karts/<perso>/` : les originaux, jamais modifiés.
+- `scripts/resize-karts.py` : table `FACTEUR`, redimensionnement au **plus proche voisin**
+  (palette et bords francs conservés) vers `frontEnd/static/img/`. Relançable : il repart
+  toujours des originaux.
+
+| | Facteur | Origine |
+|---|---|---|
+| Bowser | 10,2 / 9,2 = ×1,109 | L MK8D |
+| DK | 10,0 / 9,2 × 0,95 = ×1,033 | L MK8D, −5 % à l'œil |
+| Birdo | ×0,95 | à l'œil (les mesures le donnaient juste) |
+| Toad, Koopa | ×0,86 | calage largeur + hauteur (L seule donnait 0,837 et 0,783) |
+| Les autres | ×1 | gabarit de référence, fichier recopié tel quel |
+
+Tous les sprites SNES partagent le même châssis (112 px de large au ras des roues) : c'est
+lui que le facteur met à l'échelle. Toad et Koopa font partie des karts de référence : les
+retoucher déplace légèrement l'échelle de tous les autres.
+
+Pour changer une taille : modifier `FACTEUR`, relancer `resize-karts.py` puis
+`sprite-metrics.py`, recopier le bloc imprimé dans `bodies.sprite`.
+
+### Les emprises — `deriveBodies`
+
+- **Longueur** : largeur du sprite de profil (`side-right`), inchangé.
+- **Largeur** : écart **roue à roue**, lu sur le sprite de dos (`back`, rangée la plus large
+  des 20 % du bas). Elle se tirait de la **surface** du profil, qui comptait la hauteur et la
+  carrure du pilote, et la taille deux fois (une surface suit le carré de l'échelle) : Bowser
+  sortait ×1,51 plus large que Luigi, pour ×1,12 roue à roue et ×1,11 en MK8D. Ce qui touche,
+  c'est le kart. Le sprite de face a été écarté : DK y lève les bras, 9 px de trop.
+
+| | Longueur | Largeur (unités) | Largeur (px PC) |
+|---|---|---|---|
+| Bowser | 82,9 | 7,05 | 25,4 |
+| DK | 82,9 | 6,66 | 24,0 |
+| Yoshi | 80,2 | 6,37 | 22,9 |
+| Mario, Peach, Daisy | 75,5 | 6,37 | 22,9 |
+| Luigi | 74,8 | 6,31 | 22,7 |
+| Birdo | 71,5 | 6,03 | 21,7 |
+| Toad | 64,0 | 5,46 | 19,7 |
+| Koopa | 64,0 | 5,40 | 19,5 |
+| *Référence* | *75,0* | *6,25* | *22,5* |
+
+Le client suit sans rien recopier : l'écart de l'objet tenu en main est maintenant mis à
+l'échelle du kart (`render.js`), il flottait au-dessus des petits.
+
+### Deux réglages
+
+- **`massDragAccel` 1,75 → 1,0** (`bodies.js`). L'accélération de Koopa dépassait celle de
+  Bowser de 83 %, pour 33 % en MK8D ; à 1,0 : 38 %. Sur un départ arrêté, en ligne droite,
+  Bowser recolle Koopa en **12 s au lieu de 20** (un tour dure ~18 s). C'est ce qui décidait de
+  la course des lourds : arrêtés au premier tour, ils ne revenaient plus.
+- **`momentumFloor.base` 0,70 → 0,80** (`driving.js`). La croisière va de 95,6 à 100 % de la
+  pointe : la pointe décide plus, le hasard moins. Franchit sciemment la limite de 0,78 :
+  Bowser/Toad et Bowser/Koopa ne peuvent plus se dépasser en croisière seule (le commentaire
+  de la config donne les seuils suivants). Effet sur l'équilibre non séparable du bruit sur
+  une seule graine.
+
+### Résultats — 1000 courses, graine 2814382103
+
+| | Victoires avant → après | Place moy. avant → après | Tuyaux / course après |
+|---|---|---|---|
+| Mario | 15,3 ++ → 15,4 ++ | 4,41 → 4,32 | 1,00 |
+| Bowser | 14,8 → 14,3 | 4,79 → 4,66 | 1,38 |
+| DK | 15,1 ++ → 13,9 | 4,69 → 4,46 | 1,10 |
+| Peach | 11,5 → 13,3 | 4,34 → 4,47 | 1,05 |
+| Yoshi | 13,2 → 13,1 | 4,41 → 4,48 | 1,06 |
+| Luigi | 11,6 → 11,5 | 4,36 → 4,61 | 1,01 |
+| Toad | 11,3 → 11,2 | 4,37 → 4,55 | 0,62 |
+| Daisy | 11,4 → 11,0 | 4,37 → 4,51 | 0,91 |
+| Birdo | 10,7 → 10,6 | 4,79 → 4,51 | 0,86 |
+| Koopa | 10,0 -- → 10,6 | 4,46 → 4,44 | 0,48 |
+
+Le résultat ne tient pas dans les victoires seules, qui bougent peu, mais dans la **forme** :
+les lourds ne jouent plus à quitte ou double (Bowser dernier dans 19,6 % des courses au
+départ, jusqu'à 23,9 % une fois agrandi, 15,3 % à la fin — ses chocs de tuyau, doublés par
+l'agrandissement, sont revenus à leur niveau de départ avec la largeur roue à roue) et les
+places moyennes se resserrent (4,32 à 4,66, contre 4,14 à 4,82 au milieu du chantier). Le « ++ » de
+Mario est du bruit : ni ses stats ni sa taille n'ont bougé, et d'une campagne à l'autre un
+kart varie de 2 à 4 points sans cause.
+
+### Reste
+
+- Banc **multi-graines**, et **par circuit** (1 à 5 tuyaux) : le bruit d'une graine ne
+  départage pas le milieu du plateau.
+- **Longueur au châssis** : la langue de Yoshi allonge encore son emprise (80,2 contre 75,5).
+  Délicat : la longueur fixe aussi l'échelle de dessin, et un pilote qui déborde d'un seul
+  côté décentrerait l'emprise.
+- **Moteur C++** : §7 de [moteur-cpp-avancement.md](moteur-cpp-avancement.md).
+- **Vignettes** de Birdo et Daisy (`-pp.png`) : grain plus fin que les autres (5 px au lieu
+  de 8), celle de Daisy en 115×110 au lieu de 105×123.
+
 ## Contexte
 
 Jeu de course de karts, 8 personnages, moteur physique partagé entre le front et
@@ -41,7 +182,7 @@ réglages sans que le hasard s'en mêle. Sans `SEED`, une graine est tirée et
 affichée. Autres options : `CHAIN=1` (vainqueur en pole, comme en prod),
 `CSV=1`, `TRACK=<nom>`.
 
-## Le modèle actuel
+## Le modèle au moment de la mission
 
 ```js
 norm.X       = raw.X / 10
