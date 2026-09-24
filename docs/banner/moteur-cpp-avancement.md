@@ -241,3 +241,42 @@ koopa/bowser passe de +83 % à +38 % (MK8D : +33 %).
 
 Facteur de `scripts/resize-karts.py` : 10,0 / 9,2 → 10,0 / 9,2 × 0,95. Ses mesures (w 123,
 h 128, wheels 117) sont déjà dans la table du §7.3.
+
+### 7.7 Le coût d'un coup dépend de ce qui frappe (2026-09-24)
+
+`delays.hitDecelDuration` et `hitPauseDuration` (1,5 s de glissade + 0,5 s d'arrêt, pour
+tous les coups, relance à zéro) sont remplacés par la table `hits` de
+`raceEngine/src/config/driving.js` : par source, `spinMs` (durée du tête-à-queue) et `keep`
+(part de la vitesse au moment du coup, bornée à la pointe, gardée pendant la glissade et à
+la sortie ; 0 = arrêt net, relance de zéro).
+
+| Source | spinMs | keep | invincibleMs |
+|---|---|---|---|
+| star | 1000 | 0,25 | 1000 |
+| bill | 1000 | 0,25 | 950 |
+| banana | 1200 | 0,20 | 1500 |
+| lightning | 1000 | 0,20 | 1500 |
+| greenShell, redShell | 1500 | 0 | 1500 |
+| blueShell (souffle) | 2000 | 0 | 1500 |
+
+`invincibleMs` remplace `delays.invincibilityAfterHit` (3000 pour tous) : le sursis
+d'après coup, posé à la sortie du tête-à-queue (`hitInvincibleUntil = now +
+hitInvincibleMs`).
+
+À reporter :
+
+- config : la table, et la suppression des trois délais (`hitDecelDuration`,
+  `hitPauseDuration`, `invincibilityAfterHit`) ;
+- `spinOutKart(…, source)` : pose `hitDuration`, `hitEndTime`, `hitKeepSpeed`,
+  `hitInvincibleMs`, et un
+  événement `kartHit` avec `source`. En JS, les trois copies du tête-à-queue (objet traîné,
+  objet au sol ou lancé, orbite) passent désormais toutes par lui ;
+- sources : éclair `lightning`, souffle de la bleue `blueShell`, contact d'un intouchable
+  `bill` si le percuteur est un bill sinon `star`, objet traîné ou au sol : son `type`,
+  orbite : son `childType` ;
+- phase `hit` de `step` : vitesse de glissade = `hitKeepSpeed` (plus de courbe de
+  décélération ni d'arrêt en fin de toupie), et `absoluteVelocity = hitKeepSpeed` à la
+  sortie ;
+- protocole : 14ᵉ champ du tuple kart, `hitDur` (durée du coup en cours), et
+  `hello.hitDuration` = la plus longue de la table. Le client retombe sur `hello.hitDuration`
+  si `hitDur` manque : un serveur C++ non porté reste lisible.

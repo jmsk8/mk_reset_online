@@ -84,7 +84,7 @@ function strikeAll(cfg, state, now, events) {
 
         // Un kart deja en toupie n'en repart pas pour un tour : il encaisse
         // le rapetissement, pas un second malus par-dessus le premier.
-        if (kart.state === 'running') spinOutKart(cfg, now, kart, events);
+        if (kart.state === 'running') spinOutKart(cfg, now, kart, events, 'lightning');
 
         events.push({ type: 'lightningHit', kartId: kart.id });
     }
@@ -166,22 +166,40 @@ function crushKart(cfg, now, kart, events) {
     if (!wasFlat) events.push({ type: 'kartCrushed', kartId: kart.id });
 }
 
-// Duree d'un tete-a-queue. La MEME pour tout le monde, et c'est un choix : une
-// toupie n'est plus du pilotage, rien la-dedans ne peut tourner mieux ou moins
-// bien. Ce qu'un personnage a de propre se joue a la relance.
+// Ce que coute un coup : `hits[source]` de la config. La duree et la vitesse
+// gardee dependent de ce qui a frappe, jamais de qui l'encaisse — une toupie
+// n'est plus du pilotage. Ce qu'un personnage a de propre se joue a la relance.
 //
 // L'indexer sur la masse a ete essaye et retire : `mass` ne depend que du poids,
 // ce qui elargissait la fenetre du poids en croyant ouvrir celle du handling.
-function spinDuration(cfg) {
-    return cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration;
+function hitSpec(cfg, source) {
+    const spec = cfg.hits[source];
+    if (!spec) throw new Error(`hits : aucune entree pour la source « ${source} »`);
+    // Un champ oublie ne leverait rien : NaN fausse toutes les comparaisons, et
+    // le kart sortirait sans sursis ou ne sortirait jamais.
+    for (const field of ['spinMs', 'keep', 'invincibleMs']) {
+        if (typeof spec[field] !== 'number' || !(spec[field] >= 0)) {
+            throw new Error(`hits.${source}.${field} vaut ${spec[field]}`);
+        }
+    }
+    return spec;
 }
 
 // Le tete-a-queue lui-meme, sans aucune condition : c'est a l'appelant de
 // decider qui l'encaisse. Chaque source a ses propres immunites.
-function spinOutKart(cfg, now, kart, events) {
+//
+// Tous les coups passent par ici, et c'est ce qui les garde coherents : duree,
+// vitesse gardee, date du tir differe et evenement ne s'ecrivent qu'une fois.
+function spinOutKart(cfg, now, kart, events, source) {
+    const spec = hitSpec(cfg, source);
+    const speed = Math.min(Math.max(kart.absoluteVelocity, 0), kart.stats.topSpeed);
+
     kart.state = 'hit';
-    kart.hitEndTime = now + spinDuration(cfg);
-    events.push({ type: 'kartHit', kartId: kart.id });
+    kart.hitDuration = spec.spinMs;
+    kart.hitEndTime = now + spec.spinMs;
+    kart.hitKeepSpeed = speed * spec.keep;
+    kart.hitInvincibleMs = spec.invincibleMs;
+    events.push({ type: 'kartHit', kartId: kart.id, source: source });
     if (kart.heldItem) kart.throwTime = kart.hitEndTime + cfg.delays.throwDelayAfterHit;
 }
 
@@ -191,7 +209,7 @@ function blastKart(cfg, state, now, kart, events) {
     if (isRamming(kart)) return;
     if (kart.boostEndTime > now) return;
 
-    spinOutKart(cfg, now, kart, events);
+    spinOutKart(cfg, now, kart, events, 'blueShell');
 }
 
 // Un kart n'est touche que lorsque le front l'atteint, et une seule fois :
@@ -345,7 +363,6 @@ function updateBlueShell(cfg, state, now, item, deltaTime, events) {
 
 export {
     crushKart,
-    spinDuration,
     spinOutKart,
     updateBill,
     updateBlueBlast,

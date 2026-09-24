@@ -212,7 +212,7 @@ function kartFlags(kart) {
 }
 
 // [id, worldX, yPercent, totalDistance, flags, rank, heldId, heldType, heldHold,
-// orbitAngle, orbIds, hitEnd, bumpEnd]
+// orbitAngle, orbIds, hitEnd, bumpEnd, hitDur]
 //
 // `heldType` est indispensable : sans lui un arrivant verrait une banane a la
 // place d'une carapace. Pour une orbite c'est le type de l'objet ENFANT qui part,
@@ -220,7 +220,9 @@ function kartFlags(kart) {
 //
 // `hitEnd` et `bumpEnd` sont les fins de malus en temps serveur. Le tete-a-queue
 // et le recul sont des animations derivees du temps : sans ces dates, un arrivant
-// saurait qu'un kart est touche mais pas depuis quand.
+// saurait qu'un kart est touche mais pas depuis quand. `hitDur` est la duree de
+// CE tete-a-queue, qui depend de ce qui a frappe (`hits` de la config) : sans
+// elle, le client ne saurait pas ou il en est.
 function kartTuple(kart) {
     const held = kart.heldItem;
     const orbit = held && held.holdPosition === 'orbit';
@@ -238,7 +240,8 @@ function kartTuple(kart) {
         orbit ? round(held.orbitAngle, 3) : null,
         orbit ? held.orbs.map(o => o.id) : null,
         kart.state === 'hit' ? Math.round(kart.hitEndTime) : null,
-        kart.bumped ? Math.round(kart.bumpEndTime) : null
+        kart.bumped ? Math.round(kart.bumpEndTime) : null,
+        kart.state === 'hit' ? kart.hitDuration : null
     ];
 }
 
@@ -349,8 +352,9 @@ function buildHello(cfg, state, simTime, t0, vote) {
             roadMinY: cfg.road.minY,
             roadMaxY: cfg.road.maxY,
             roadPPS: cfg.speeds.roadPPS,
-            // Duree du tete-a-queue : le client en derive la frame a afficher.
-            hitDuration: cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration,
+            // Duree de repli du tete-a-queue, pour un serveur qui ne la date pas
+            // coup par coup (`hitDur` du snapshot) : la plus longue de la table.
+            hitDuration: Math.max(...Object.values(cfg.hits).map(h => h.spinMs)),
             // Geometrie des objets en orbite, pour les placer autour du kart.
             orbit: {
                 count: cfg.orbit.count,

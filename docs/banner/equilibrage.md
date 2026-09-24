@@ -107,6 +107,60 @@ l'échelle du kart (`render.js`), il flottait au-dessus des petits.
   de la config donne les seuils suivants). Effet sur l'équilibre non séparable du bruit sur
   une seule graine.
 
+### Le coût d'un coup — `hits` (`driving.js`)
+
+Tous les coups coûtaient la même chose : 1,5 s de glissade, 0,5 s d'arrêt, relance de zéro.
+Ils dépendent désormais de ce qui frappe : durée du tête-à-queue (proportions MK8D, 1 s à
+1,5 s, la bleue un cran au-dessus) et **part de sa vitesse que le kart garde** (`keep`),
+pendant la glissade et à la sortie. C'est `keep` qui fait la différence : la relance pèse
+autant que le tête-à-queue.
+
+| Source | Tête-à-queue | Garde | Sursis ensuite | Temps perdu (Mario lancé) |
+|---|---|---|---|---|
+| Choc étoile / bill | 1,0 s | 25 % | 1,0 / 0,95 s | 1,6 s |
+| Éclair | 1,0 s | 20 % | 1,5 s | 1,7 s (plus le rapetissement) |
+| Banane | 1,2 s | 20 % | 1,5 s | 1,9 s |
+| Verte, rouge | 1,5 s | 0 | 1,5 s | 3,0 s |
+| Bleue | 2,0 s | 0 | 1,5 s | 3,5 s |
+| *Avant (tous)* | *2,0 s* | *0* | *3,0 s* | *3,3 s* |
+
+Le sursis (`invincibleMs`) reprend les valeurs MK8D telles quelles. À 3 s pour tous, il
+protégeait deux fois plus longtemps : un kart touché traversait ensuite le peloton sans
+risque. L'éclair et le souffle de la bleue passent outre, comme avant.
+
+L'éclair passe sous la banane dans ce chiffre (1,0 s de toupie contre 1,2), mais il
+rapetisse en plus le kart, ce que la table ne compte pas.
+
+L'IA, elle, estime encore tout coup au même prix (`vision.cost.spin`, 2000 ms) : elle évite
+une banane comme une carapace.
+
+**C'est un réglage de ressenti, pas d'équilibre.** Une course dure 2,8 % de moins (moins de
+temps hors rythme pour tous), le sursis MK8D fait toucher plus souvent (2,6 à 3,0 fois par
+course au lieu de 2,5 à 2,8), mais l'écart lourds / légers n'en bouge pas. Deux graines
+(2814382103 et 325234882), 1000 courses chacune, bruit ±0,85 point sur la moyenne :
+
+| | Victoires (moyenne) | Écart à 12,5 |
+|---|---|---|
+| Bowser | 15,6 % | **+3,1** |
+| DK | 15,4 % | **+2,9** |
+| Luigi | 14,1 % | +1,6 |
+| Birdo | 12,4 % | −0,1 |
+| Peach | 12,3 % | −0,2 |
+| Yoshi, Toad | 11,6 % | −0,9 |
+| Mario | 11,4 % | −1,1 |
+| Daisy | 11,3 % | −1,2 |
+| Koopa | 9,4 % | **−3,1** |
+
+Garder moins de vitesse devrait pénaliser surtout les lourds, qui relancent moins bien ;
+l'éclair, passé de l'arrêt net à 20 %, joue dans l'autre sens, et les deux s'annulent. Les
+victoires suivent le poids : c'est la relance (`massDragAccel` à 1,0) et la pointe qui
+décident, plus le coût des coups.
+
+Leçon de bruit, au passage : sur une graine puis sur deux, Yoshi est sorti 3,5 points sous
+Peach, aux stats identiques, et on l'a attribué à sa langue qui allonge son emprise. Avec la
+table suivante, l'écart a disparu (11,6 contre 12,3). Deux graines ne départagent pas le
+milieu du plateau.
+
 ### Résultats — 1000 courses, graine 2814382103
 
 | | Victoires avant → après | Place moy. avant → après | Tuyaux / course après |
@@ -132,11 +186,14 @@ kart varie de 2 à 4 points sans cause.
 
 ### Reste
 
-- Banc **multi-graines**, et **par circuit** (1 à 5 tuyaux) : le bruit d'une graine ne
-  départage pas le milieu du plateau.
+- **Lourds devant, Koopa derrière** (±3 points, confirmé sur deux graines) : piste retenue,
+  `massDragAccel` vers 1,2, à trancher sur 5 graines contre 1,0 et 1,4. Puis le banc **par
+  circuit** (1 à 5 tuyaux).
+- **L'IA et le prix des coups** : lui donner la table `hits` pour qu'elle évite une
+  carapace plus volontiers qu'une banane.
 - **Longueur au châssis** : la langue de Yoshi allonge encore son emprise (80,2 contre 75,5).
   Délicat : la longueur fixe aussi l'échelle de dessin, et un pilote qui déborde d'un seul
-  côté décentrerait l'emprise.
+  côté décentrerait l'emprise. Rien au banc ne le réclame (cf. la leçon de bruit plus haut).
 - **Moteur C++** : §7 de [moteur-cpp-avancement.md](moteur-cpp-avancement.md).
 - **Vignettes** de Birdo et Daisy (`-pp.png`) : grain plus fin que les autres (5 px au lieu
   de 8), celle de Daisy en 115×110 au lieu de 105×123.

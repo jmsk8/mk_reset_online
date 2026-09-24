@@ -10,7 +10,7 @@ import { getActiveBoost, getBillSpeed, getMomentumSpeed, getNewMomentumTarget } 
 import { updateLeaderboard } from './standings.js';
 import { updateCamera } from './camera.js';
 import { spendItem } from './items.js';
-import { spinDuration, updateBill, updateBlueBlast, updateBlueShell, updateStorm } from './effects.js';
+import { spinOutKart, updateBill, updateBlueBlast, updateBlueShell, updateStorm } from './effects.js';
 import { activateItem, destroyOrbitItem, getOrbitItemPosition, giveKartItem, redShellTargetScore, updateOrbitItems } from './weapons.js';
 import { advanceProjectile, collideKartWithPipes, redShellAimY } from './pipes.js';
 import { clampKartToRoad, resolveKartContacts } from './road.js';
@@ -369,16 +369,12 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                             kart.trailTime = 0;
                             break;
                         }
+                        const trailedType = kart.heldItem.type;
                         events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: kart.heldItem.id });
                         kart.heldItem = null;
                         kart.trailTime = 0;
 
-                        victim.state = 'hit';
-                        victim.hitEndTime = now + spinDuration(cfg);
-                        events.push({ type: 'kartHit', kartId: victim.id });
-                        if (victim.heldItem) {
-                            victim.throwTime = victim.hitEndTime + cfg.delays.throwDelayAfterHit;
-                        }
+                        spinOutKart(cfg, now, victim, events, trailedType);
                         break;
                     }
                 }
@@ -395,12 +391,10 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             if (kart.heldItem && now > kart.throwTime) activateItem(cfg, state, rng, now, kart, events);
 
         } else if (kart.state === 'hit') {
-            const totalHitTime = spinDuration(cfg);
-            const hitStart = kart.hitEndTime - totalHitTime;
-            const elapsed = now - hitStart;
-            const decelDuration = totalHitTime * cfg.delays.hitDecelDuration
-                / (cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration);
-
+            // La glissade : la toupie file a la vitesse que son coup lui a
+            // laissee (`hits[source].keep`, cf. `spinOutKart`). A zero elle
+            // s'arrete net — carapaces et bleue.
+            //
             // Un tuyau arrete aussi une toupie : elle glisse, mais pas a travers
             // le decor. `pipeBlocked` porte ce contact tant que les deux se
             // touchent, la ou `bumpEndTime` compte un choc unique reserve aux
@@ -410,10 +404,8 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             // s'y ajoute, borne a l'arret. Se faire tamponner pendant son
             // tete-a-queue pousse donc vraiment.
             let hitSpeed = 0;
-            if (elapsed < decelDuration && now >= kart.bumpEndTime && !kart.pipeBlocked) {
-                const decelProgress = elapsed / decelDuration;
-                const hitSpeedFactor = 0.3 * Math.max(0, 1.0 - decelProgress * decelProgress);
-                hitSpeed = cfg.speeds.roadPPS * hitSpeedFactor;
+            if (kart.hitKeepSpeed > 0 && now >= kart.bumpEndTime && !kart.pipeBlocked) {
+                hitSpeed = kart.hitKeepSpeed;
                 kart.stopped = false;
             } else {
                 kart.stopped = true;
@@ -447,7 +439,10 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             if (now > kart.hitEndTime) {
                 kart.state = 'running';
                 kart.stopped = false;
-                kart.absoluteVelocity = 0;
+                // Il repart de ce que son coup lui a laisse : de zero apres une
+                // carapace, en glissant apres une banane.
+                kart.absoluteVelocity = kart.hitKeepSpeed;
+                kart.hitKeepSpeed = 0;
 
                 // Et le lateral avec : `vy` n'etait pas integre pendant le
                 // tete-a-queue mais pas remis a zero non plus, si bien que le
@@ -464,7 +459,8 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 // n'y a plus rien a rendre a la fin d'un objet qui aurait
                 // survecu.
                 kart.preBoostMomentum = -1;
-                kart.hitInvincibleUntil = now + cfg.delays.invincibilityAfterHit;
+                // Le sursis depend lui aussi de ce qui a frappe (`hits`).
+                kart.hitInvincibleUntil = now + kart.hitInvincibleMs;
             }
         }
     }
@@ -672,10 +668,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             if (dk < shrunkReachX(cfg, body, kart, now)
                 && crossedDepth(item, kart.yPercent, shrunkReachY(cfg, body, kart, now))) {
                 if (kart.state === 'running' && kart.hitInvincibleUntil <= now) {
-                    kart.state = 'hit';
-                    kart.hitEndTime = now + spinDuration(cfg);
-                    events.push({ type: 'kartHit', kartId: kart.id });
-                    if (kart.heldItem) kart.throwTime = kart.hitEndTime + cfg.delays.throwDelayAfterHit;
+                    spinOutKart(cfg, now, kart, events, item.type);
                 }
                 spendItem(cfg, item, now);
                 break;

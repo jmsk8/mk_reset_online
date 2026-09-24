@@ -334,7 +334,8 @@ export default {
         // menace qui reste en vue repousse l'echeance de son plan jusqu'a
         // l'impact.
         //
-        //     spin delays.hitDecelDuration + delays.hitPauseDuration
+        //     spin le pire coup de `hits` (bleue, 2 s) : l'IA ne distingue pas
+        //           encore une banane d'une carapace
         //     pipe pipe.bumpMs + pipe.recoilMs, plus 90 px de recul
         //     kart une bousculade : elle deplace sans stopper, et le corps peut
         //           s'ecarter seul — d'ou le prix le plus bas des trois corps.

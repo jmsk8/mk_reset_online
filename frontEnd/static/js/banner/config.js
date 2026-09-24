@@ -100,7 +100,8 @@ const GAME_CONFIG = {
         // Taille du souffle : voir WORLD.blastRadius, transmis par le serveur.
     },
     // Tête-à-queue joué pendant l'état 'hit'. La durée du malus n'est pas
-    // configurable ici : elle reste delays.hitDecelDuration + hitPauseDuration.
+    // configurable ici : elle dépend de ce qui a frappé (`hits` côté serveur) et
+    // arrive avec chaque kart touché.
     // durationRatio ne règle que la vitesse de la toupie, en la jouant sur une
     // fraction de ce malus ; le kart tient ensuite side-right jusqu'au départ.
     // Baisser = plus rapide (0.8 = 2 tours en 1600 ms, soit 100 ms/frame).

@@ -851,10 +851,20 @@ Détail complet et chiffres : [banner/equilibrage.md](banner/equilibrage.md), «
   38 %, MK8D 33 %) ; `momentumFloor.base` 0,70 → 0,80 (croisière 95,6-100 % de la pointe,
   franchit sciemment la limite de 0,78 pour Bowser/Toad et Bowser/Koopa).
 - `[x]` **Client** : l'objet tenu en main suit l'échelle du kart (`render.js`).
+- `[x]` **Coût d'un coup par objet** : table `hits` (`driving.js`), durée du tête-à-queue,
+  vitesse gardée et sursis d'invincibilité (MK8D, 0,95 à 1,5 s au lieu de 3 s) par source (choc étoile/bill < éclair < banane < verte = rouge < bleue). Tous
+  les coups passent par `spinOutKart` ; le client reçoit la durée de chaque coup (`hitDur`,
+  14ᵉ champ du tuple kart).
 - `[x]` **Banc** (1000 courses, graine 2814382103) : victoires 10,6 à 15,4 %, places moyennes
   4,32 à 4,66 ; les lourds ne jouent plus à quitte ou double (Bowser dernier 15,3 % des courses
   contre 19,6 % au départ).
-- `[ ]` **Banc multi-graines et par circuit** avant de figer les réglages.
+- `[x]` **Banc sur deux graines** (2814382103, 325234882), tout en place : les victoires
+  suivent le poids — Bowser et DK ~+3 points, Koopa ~−3, le reste dans le bruit. Le coût des
+  coups est un réglage de ressenti, il ne déplace pas cet écart.
+- `[ ]` **Rééquilibrer lourds / légers** : `massDragAccel` vers 1,2, à trancher sur 5 graines
+  contre 1,0 et 1,4 ; puis le banc par circuit.
+- `[ ]` **L'IA et le prix des coups** : `vision.cost.spin` vaut 2000 ms pour tout coup, elle
+  évite une banane comme une carapace.
 - `[ ]` **Moteur C++** : rien n'est porté. Liste complète en §7 de
   [banner/moteur-cpp-avancement.md](banner/moteur-cpp-avancement.md) ; tant qu'elle n'est pas
   vide, `make engine-cpp` fait courir l'ancien jeu.

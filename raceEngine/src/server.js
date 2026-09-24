@@ -93,7 +93,7 @@ const REPORT_INTERVAL_MS = 5000;
 
 // Un kart en course dont la distance ne bouge pas pendant ce delai est
 // considere comme bloque. Large : un kart percute reste immobile le temps du
-// malus (hitDecelDuration + hitPauseDuration = 2 s).
+// malus (au plus 2 s, `hits` de la config).
 const STUCK_TIMEOUT_MS = 10000;
 
 const args = process.argv.slice(2);

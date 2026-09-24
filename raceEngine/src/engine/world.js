@@ -156,6 +156,11 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
             aiState: 'cruising',
 
             hitEndTime: 0,
+            // Duree, vitesse gardee et sursis du dernier coup (`hits` de la
+            // config).
+            hitDuration: 0,
+            hitKeepSpeed: 0,
+            hitInvincibleMs: 0,
 
             // Choc contre un pipe. `bumpEndTime` porte l'arret net,
             // `bumpRecoilLeft` ce qu'il reste a reculer. Le sursis est
