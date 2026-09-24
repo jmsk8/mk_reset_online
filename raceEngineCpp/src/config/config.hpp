@@ -159,7 +159,6 @@ struct RaceCfg {
     double countdownHoldMs = 3000;
     double lightIntervalMs = 1500;
     double goSignMs = 5000;
-    double finalSignMs = 6000;
 
     // Le drapeau ne sort qu'a l'approche REELLE de la ligne, pas des le
     // repositionnement de la camera : la camera se gare deux tours avant la fin

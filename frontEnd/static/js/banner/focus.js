@@ -2,8 +2,10 @@
 //
 // Tout ce que le spectateur obtient en cliquant sur une bulle du classement.
 
-// Le cartouche du kart suivi : tour et vitesse, seulement quand la camera suit
-// quelqu'un — c'est une lecture de son tableau de bord.
+// Le cartouche du kart suivi : son tour, seulement quand la camera suit
+// quelqu'un — c'est une lecture de son tableau de bord. La vitesse s'y ajoute en
+// mode debug seulement : c'est un instrument de reglage, une allure en px/s ne
+// dit rien au spectateur.
 //
 // Les deux se DEDUISENT de `totalDistance`, seule chose transmise. La vitesse
 // parce que ce qui interesse un spectateur n'est pas la consigne du moteur mais
@@ -56,7 +58,8 @@ function updateFocusHud(frameMs) {
     }
 
     const lap = Math.min(WORLD.laps || 1, Math.floor(kart.totalDistance / WORLD.width) + 1);
-    const text = `TOUR ${lap}/${WORLD.laps || 1} \u00B7 ${Math.round(focusHudSpeed)} px/s`;
+    let text = `TOUR ${lap}/${WORLD.laps || 1}`;
+    if (GAME_CONFIG.debugMode) text += ` \u00B7 ${Math.round(focusHudSpeed)} px/s`;
 
     // Le DOM n'est touche que quand le texte change vraiment : a 60 images par
     // seconde, la vitesse arrondie ne bouge pas a chaque frame.
@@ -218,8 +221,8 @@ function updateFocusMarks() {
         // peut pas savoir si la vue bougera toute seule.
         cameraBtn.classList.toggle('is-auto', raceDirector.auto);
         cameraBtn.title = raceDirector.auto
-            ? 'Realisation automatique — cliquer pour rester sur la vue d\'ensemble'
-            : 'Vue d\'ensemble — cliquer pour la realisation automatique';
+            ? 'Realisation automatique'
+            : 'Revenir a la realisation automatique';
     }
 
     for (const id in ppEls) {
@@ -241,11 +244,15 @@ function onLeaderboardClick(event) {
         return;
     }
 
-    // Le bouton camera bascule la realisation automatique. Son etat de repos —
-    // la vue d'ensemble — est exactement celui que la realisation occupe entre
-    // deux plans : couper l'automatique, c'est donc s'y arreter.
+    // Le bouton camera REMET la realisation automatique, il ne la bascule
+    // pas : un clic de trop ne doit jamais la couper. C'etait le cas quand il
+    // servait d'interrupteur — cliquer « pour revenir en auto » alors qu'elle
+    // tournait deja la coupait, et la vue restait fixe. En auto, un clic ne
+    // fait donc rien : il ne doit pas non plus ramener au plan large un plan
+    // en cours. La vue fixe reste accessible en debug (`bannerDebug.realise(false)`).
     if (target.classList.contains('leaderboard-camera')) {
-        raceDirector.setAuto(!raceDirector.auto);
+        if (raceDirector.auto) return;
+        raceDirector.setAuto(true);
         setFocus(null);
         return;
     }

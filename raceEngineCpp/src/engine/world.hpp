@@ -131,6 +131,8 @@ struct Kart {
     KartState state = KartState::Grid;
     int rank = 1;
     int lapCount = 0;
+    // Dans sa zone de dernier tour (race.cpp) : part en FLAG_FINAL_LAP.
+    bool finalLapSign = false;
     bool finished = false;
     int finishRank = 0;
     AiState aiState = AiState::Cruising;

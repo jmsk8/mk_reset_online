@@ -15,7 +15,7 @@ const LIGHTNING_SVG =
 const LIGHTNING_SRC = 'data:image/svg+xml,' + encodeURIComponent(LIGHTNING_SVG);
 
 const GAME_CONFIG = {
-    debugMode: true,
+    debugMode: false,
 
     resources: {
         // TOUS les personnages que le serveur peut aligner, pour precharger
@@ -41,7 +41,9 @@ const GAME_CONFIG = {
             shroom: 'static/img/items/shroom/shroom.png',
             star: 'static/img/items/star/star.png',
             lightning: LIGHTNING_SRC,
-            bill: (frame) => `static/img/items/bill-ball/${frame}.png`
+            bill: (frame) => `static/img/items/bill-ball/${frame}.png`,
+            // Colorisees par scripts/colorize-positions.py, 1 a 8.
+            position: (n) => `static/img/pos/${n}.png`
         }
     },
     rendering: {

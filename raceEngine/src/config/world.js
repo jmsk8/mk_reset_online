@@ -76,10 +76,6 @@ export default {
         // quinze secondes.
         goSignMs: 5000,
 
-        // Lakitu etant ancre sur la ligne, le panneau n'est vu que si la camera
-        // passe devant pendant ce delai.
-        finalSignMs: 6000,
-
         // La course s'arrete des que ce nombre de karts a franchi la ligne : les
         // retardataires sont classes d'office dans l'ordre ou ils roulent.
         // Attendre le dernier ne montrait qu'un kart seul en piste.
