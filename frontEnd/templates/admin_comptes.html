@@ -509,7 +509,14 @@
                 tdAv.appendChild(avatar(c.avatar_url));
                 tr.appendChild(tdAv);
 
-                tr.appendChild(txt('td', c.pseudo));
+                // Nom affiché, et en dessous le handle : c'est lui que le legs et
+                // la suppression font retaper, il doit se lire sur la ligne.
+                const tdD = txt('td', c.pseudo);
+                if (c.handle) {
+                    tdD.appendChild(document.createElement('br'));
+                    tdD.appendChild(txt('span', '@' + c.handle, 'is-size-7 has-text-grey'));
+                }
+                tr.appendChild(tdD);
 
                 const tdJ = document.createElement('td');
                 if (c.joueur_nom) {
@@ -1448,8 +1455,8 @@
             if (!confirm(avertissement)) return;
 
             const saisi = prompt(
-                'Pour confirmer, retapez le pseudo Discord exact du compte cible '
-                + '(son identifiant, pas son nom affiché) :');
+                'Pour confirmer, retapez l\'identifiant Discord du compte cible, '
+                + 'affiché sous son nom : @' + c.handle);
             if (saisi === null) return;
 
             const r = await api('/admin/comptes/' + c.id + '/leguer-superadmin', 'POST',
@@ -1479,8 +1486,8 @@
                            + 'Cette action est irréversible.')) return;
 
             const saisi = prompt(
-                'Pour confirmer, retapez le pseudo Discord exact du compte '
-                + '(son identifiant, pas son nom affiché) :');
+                'Pour confirmer, retapez l\'identifiant Discord du compte, '
+                + 'affiché sous son nom : @' + c.handle);
             if (saisi === null) return;
 
             const r = await api('/admin/comptes/' + c.id, 'DELETE',

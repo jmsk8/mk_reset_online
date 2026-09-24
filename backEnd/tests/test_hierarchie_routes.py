@@ -346,6 +346,28 @@ cli, cur, conn = monter([
 r = cli.post('/admin/comptes/5/leguer-superadmin', json={}, headers=H)
 check("confirmation absente -> 400", r.status_code == 400, r.get_json())
 
+# Le handle tel que la liste l'affiche (« @vraipseudo »), recopie avec une
+# espace ou une majuscule, confirme : meme regle que la suppression de compte.
+cli, cur, conn = monter([
+    DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),
+], role='superadmin')
+r = cli.post('/admin/comptes/5/leguer-superadmin',
+             json={'confirmation_pseudo': ' @VraiPseudo '}, headers=H)
+check("handle recopié avec @, espaces et majuscules -> 200",
+      r.status_code == 200, r.get_json())
+
+# Un prefixe du handle, ou une valeur qui n'est pas du texte : refuse, sans 500.
+for _saisie in ('vraipseud', 42):
+    cli, cur, conn = monter([
+        DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),
+    ], role='superadmin')
+    r = cli.post('/admin/comptes/5/leguer-superadmin',
+                 json={'confirmation_pseudo': _saisie}, headers=H)
+    check("confirmation %r -> 400 confirmation_invalide" % (_saisie,),
+          r.status_code == 400 and r.get_json()['code'] == 'confirmation_invalide'
+          and not any('UPDATE comptes SET role' in s for s in sql_de(cur)),
+          (r.status_code, r.get_json()))
+
 # Course : l'acteur n'est plus superadmin au moment du verrou.
 cli, cur, conn = monter([
     DEUX_LIGNES((1, 'chef_admin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),

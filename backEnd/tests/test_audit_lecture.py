@@ -349,6 +349,11 @@ check("un joueur qui n'a jamais agi : a_un_journal faux",
       _d.get(2, {}).get('a_un_journal') is False, _d.get(2))
 check("un ancien admin redevenu joueur : a_un_journal vrai",
       _d.get(3, {}).get('a_un_journal') is True, _d.get(3))
+# Le legs et la suppression font retaper le handle : la liste doit le donner,
+# distinct du nom affiche (constat §13.1 du 2026-09-22).
+check("la liste donne le handle, à côté du nom affiché",
+      _d.get(2, {}).get('handle') == 'handle2' and _d.get(2, {}).get('pseudo') == 'Nom 2',
+      _d.get(2))
 _sql = ' '.join(s_ for s_, _ in cur.executed if 'FROM comptes c' in s_)
 
 # La liste est ouverte a tout porteur de gestion_comptes. Un admin simple ne
