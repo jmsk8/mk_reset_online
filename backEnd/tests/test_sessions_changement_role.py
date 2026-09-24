@@ -131,13 +131,25 @@ check("fermees dans la transaction du changement de role, apres l'UPDATE",
       bool(f) and bool(_maj) and f[0][0] > _maj[0] and conn.committed,
       (f, _maj, conn.committed))
 
-# Promotion directe (le superadmin designe un chef_admin) : c'est A-01 vu de
-# changer_role, qui promeut encore sans proposition.
-cli, cur, conn = monter([CIBLE('admin')])
-r = cli.post('/admin/comptes/5/role', json={'role': 'chef_admin'}, headers=H)
-check("promotion directe -> 200", r.status_code == 200, r.get_json())
+# Retrogradation chef_admin -> admin : l'autre sens de A-02, sur le seul chemin
+# qui reste a changer_role depuis R-68 (la promotion directe y est refusee, et
+# c'est l'acceptation, section 2b, qui ferme les sessions du promu).
+cli, cur, conn = monter([
+    CIBLE('chef_admin'),
+    (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (2,)),
+])
+r = cli.post('/admin/comptes/5/role', json={'role': 'admin'}, headers=H)
+check("chef_admin -> admin -> 200", r.status_code == 200, r.get_json())
 check("  les sessions de la cible sont fermees aussi",
       [p for _, p in fermetures(cur)] == [(5,)], fermetures(cur))
+
+# Promotion directe refusee (R-68) : rien n'est ecrit, donc rien n'est ferme.
+cli, cur, conn = monter([CIBLE('admin')])
+r = cli.post('/admin/comptes/5/role', json={'role': 'chef_admin'}, headers=H)
+check("promotion directe refusee -> 409 promotion_par_proposition",
+      r.status_code == 409 and (r.get_json() or {}).get('code') == 'promotion_par_proposition',
+      r.get_json())
+check("  aucune session fermee", not fermetures(cur), fermetures(cur))
 
 # Ce qui ne change aucun role ne ferme rien.
 cli, cur, conn = monter([CIBLE('player')])
@@ -211,11 +223,13 @@ check("  aucune session fermee", not fermetures(cur), fermetures(cur))
 print("\n=== 2c. Legs : deux roles changent, deux comptes se reconnectent ===")
 # ===========================================================================
 DEUX_LIGNES = lambda acteur, cible: (
-    r"SELECT id, role, discord_username FROM comptes WHERE id IN", [acteur, cible])
+    r"SELECT id, role, discord_username, cgu_admin_version\s+FROM comptes WHERE id IN",
+    [acteur, cible])
 
-# Cible player : sans la fermeture, elle deviendrait superadmin sur une session
-# de 30 jours -- le pire cas de A-01.
-cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef'), (5, 'player', 'vraipseudo'))])
+# Cible admin : sans la fermeture, elle deviendrait superadmin sur une session
+# d'admin ouverte avant le legs. (Une cible player n'est plus leguable, R-68.)
+cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'),
+                                     (5, 'admin', 'vraipseudo', '1.0'))])
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'vraipseudo'}, headers=H)
 f = fermetures(cur)
@@ -230,7 +244,8 @@ check("  apres les deux ecritures du role, dans la meme transaction",
 check("la reponse dit que la session de l'acteur est fermee",
       d.get('session_fermee') is True, d)
 
-cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef'), (5, 'player', 'vraipseudo'))])
+cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'),
+                                     (5, 'admin', 'vraipseudo', '1.0'))])
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'Nom Affiche'}, headers=H)
 check("legs refuse (pseudo faux) -> 400", r.status_code == 400, r.get_json())
@@ -311,7 +326,7 @@ check("le legs previent de la reconnexion avant le clic",
       'reconnecté par Discord' in _legs)
 check("et relance la connexion Discord une fois fait",
       "'/auth/discord/login'" in _legs)
-_selecteur = entre(_ac, "const promotion = sel.value !== 'player'", "const corps = {role: sel.value}")
+_selecteur = entre(_ac, "const promotion = RANGS[sel.value] > RANGS[c.role]", "const corps = {role: sel.value}")
 check("la retrogradation previent que les sessions de la cible seront fermees",
       'sessions' in _selecteur)
 

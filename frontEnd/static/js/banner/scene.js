@@ -188,6 +188,7 @@ function buildWorldFromHello(hello) {
 
     worldState.kartsById = {};
     for (const kart of worldState.karts) worldState.kartsById[kart.id] = kart;
+    setLeaderboardSlots(worldState.karts.length);
 
     worldState.itemBoxes = hello.boxes.map(box => ({ worldX: box.x, y: box.y, active: true }));
     // Un circuit sans obstacle n'envoie pas de liste : elle vaut alors vide.

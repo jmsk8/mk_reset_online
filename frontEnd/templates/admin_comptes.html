@@ -552,9 +552,14 @@
                         //     rôle n'est posé qu'à l'acceptation, par la
                         //     personne elle-même : ses actions seront tracées
                         //     nominativement et sans limite de durée.
-                        //   - RÉTROGRADER (player) → inchangé, unilatéral. On
-                        //     n'a pas à accepter de PERDRE un rôle.
-                        const promotion = sel.value !== 'player';
+                        //   - RÉTROGRADER → inchangé, unilatéral. On n'a pas à
+                        //     accepter de PERDRE un rôle.
+                        //
+                        // Comparer les RANGS, pas « est-ce player » : un
+                        // chef_admin ramené à admin descend. Le backend refuse
+                        // désormais chaque chemin dans le mauvais sens
+                        // (promotion_par_proposition, pas_une_promotion).
+                        const promotion = RANGS[sel.value] > RANGS[c.role];
 
                         // Le sélecteur a DÉJÀ changé d'apparence quand on arrive
                         // ici : annuler doit le remettre sur le rôle réel, sinon
@@ -762,8 +767,12 @@
                 }
 
                 // Legs : seul le superadmin le propose, jamais sur sa propre
-                // ligne (auto-legs refusé côté backend, plan 6bis).
-                if (EST_SUPERADMIN && c.id !== MON_COMPTE_ID) {
+                // ligne (auto-legs refusé côté backend, plan 6bis), et
+                // seulement vers un admin ou chef_admin : la cible doit avoir
+                // consenti à un rôle d'administration (R-68). Le backend
+                // vérifie en plus la version de la politique acceptée.
+                if (EST_SUPERADMIN && c.id !== MON_COMPTE_ID
+                        && (c.role === 'admin' || c.role === 'chef_admin')) {
                     const bLegs = txt('button', 'Léguer le superadmin',
                                       'button is-danger is-light is-small');
                     bLegs.addEventListener('click', () => leguerSuperadmin(c));

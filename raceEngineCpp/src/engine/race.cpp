@@ -142,8 +142,13 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
         // large est depasse — un kart bloque ne doit pas figer le service. Dans
         // les deux cas les retardataires sont classes dans l'ordre ou ils
         // roulent.
+        //
+        // Quota borne sur le plateau reel, comme en JS : avec moins de karts
+        // que prevu, le quota fixe ne serait jamais atteint.
+        const int quota = std::min(race.stopAtFinisher,
+                                   std::max(1, static_cast<int>(state.karts.size()) - 1));
         const bool quotaReached =
-            static_cast<int>(state.finishOrder.size()) >= race.stopAtFinisher;
+            static_cast<int>(state.finishOrder.size()) >= quota;
         const bool timedOut = now > state.startAt + race.maxRaceMs;
 
         if ((quotaReached || timedOut) && state.resultsAt == 0) {

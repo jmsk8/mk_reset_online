@@ -18,8 +18,14 @@ const GAME_CONFIG = {
     debugMode: false,
 
     resources: {
-        characters: ['mario', 'luigi', 'peach', 'toad', 'yoshi', 'bowser', 'dk', 'koopa'],
-        initials: { 'mario': 'M', 'luigi': 'L', 'peach': 'P', 'toad': 'T', 'yoshi': 'Y', 'bowser': 'B', 'dk': 'D', 'koopa': 'K' },
+        // TOUS les personnages que le serveur peut aligner, pour precharger
+        // leurs images. Ce n'est pas la grille : le service `race` tire les
+        // karts de chaque grand prix parmi ceux-ci (`roster` de
+        // raceEngine/src/config/bodies.js) et les envoie dans son `hello`.
+        characters: ['mario', 'luigi', 'peach', 'daisy', 'toad', 'yoshi', 'birdo', 'bowser', 'dk', 'koopa'],
+        // Carte de debug seulement. Deux lettres la ou l'initiale est prise :
+        // B est bowser, D est dk.
+        initials: { 'mario': 'M', 'luigi': 'L', 'peach': 'P', 'daisy': 'Da', 'toad': 'T', 'yoshi': 'Y', 'birdo': 'Bi', 'bowser': 'B', 'dk': 'D', 'koopa': 'K' },
         // Les 5 orientations disponibles en asset. Les 3 manquantes pour un 360
         // complet (sud-ouest, ouest, nord-ouest) sont obtenues en miroir.
         kartDirections: ['side-right', 'front-right', 'front', 'back-right', 'back'],

@@ -19,23 +19,32 @@ export function deriveBodies(cfg) {
         }
     }
 
-    // Le sprite de REFERENCE : la moyenne du plateau, sur les deux mesures. Seul
-    // choix qui laisse les valeurs d'avant intactes au centre.
+    // Le sprite de REFERENCE : la moyenne du plateau d'origine
+    // (`referenceKarts`), sur les deux mesures. Seul choix qui laisse les
+    // valeurs d'avant intactes au centre — et qui les y laisse quand un
+    // personnage arrive ou qu'on en retire un du tirage.
+    const refNames = b.referenceKarts;
+    for (const n of refNames) {
+        if (!b.sprite.kart[n]) {
+            throw new Error(`bodies.referenceKarts : ${n} n'a pas de mesure `
+                + 'dans bodies.sprite.kart.');
+        }
+    }
     let sumW = 0;
     let sumPx = 0;
-    for (const n of names) {
+    for (const n of refNames) {
         sumW += b.sprite.kart[n].w;
         sumPx += b.sprite.kart[n].px;
     }
-    const refW = sumW / names.length;
-    const refPx = sumPx / names.length;
+    const refW = sumW / refNames.length;
+    const refPx = sumPx / refNames.length;
 
     // Combien de px de demi-emprise vaut un px de sprite. Facteur unique, karts
     // compris : deux corps dessines a la meme echelle touchent a la meme echelle.
     const perPx = (b.kartDraw * b.fill * 0.5) / refW;
 
     // La profondeur du kart de REFERENCE, et de lui seul — dernier endroit ou
-    // `flatten` sert. Les sept autres s'en ecartent au prorata de leur surface,
+    // `flatten` sert. Les autres s'en ecartent au prorata de leur surface,
     // pas de leur longueur.
     const refHalfY = (refW * perPx) / (b.flatten * b.depthPx);
 
@@ -109,6 +118,39 @@ export function deriveBodies(cfg) {
 }
 
 export default {
+    // QUI COURT. Chaque course aligne `perRace` karts, tires au sort parmi les
+    // personnages a `true` ; passer un nom a `false` le retire du tirage sans
+    // toucher a ses stats ni a ses mesures.
+    //
+    // Le tirage se fait a l'OUVERTURE d'un grand prix, et les memes karts
+    // courent toutes ses manches : les points s'y cumulent par personnage, un
+    // kart qui changerait en cours de bloc n'aurait pas de classement general.
+    // Les manches suivantes reprennent l'ordre d'arrivee de la precedente,
+    // comme avant (`createWorldState`, `pickRoster`).
+    //
+    // Moins de personnages actives que `perRace` : la course se fait avec ceux
+    // qui le sont. Tout personnage de `kartStats.characters` doit figurer ici,
+    // et reciproquement — un oubli leve une erreur au demarrage plutot que de
+    // decider en silence.
+    //
+    // Le moteur C++ porte le meme interrupteur (`enabled` de
+    // raceEngineCpp/src/config/config.hpp) et le meme nombre (`kartCount`).
+    roster: {
+        perRace: 8,
+        enabled: {
+            bowser: true,
+            dk:     true,
+            mario:  true,
+            birdo:  true,
+            luigi:  true,
+            yoshi:  true,
+            peach:  true,
+            daisy:  true,
+            toad:   true,
+            koopa:  true
+        }
+    },
+
     kartStats: {
         budget: 15,
         minPoints: 0,
@@ -231,9 +273,14 @@ export default {
             bowser: { weight: 9, power: 5, handling: 1 },
             dk:     { weight: 8, power: 5, handling: 2 },
             mario:  { weight: 5, power: 5, handling: 5 },
+            // Yoshi a un point de poids pres, pris sur la puissance : son
+            // sprite est presque aussi massif que celui de bowser.
+            birdo:  { weight: 5, power: 4, handling: 6 },
             luigi:  { weight: 4, power: 6, handling: 5 },
             yoshi:  { weight: 4, power: 5, handling: 6 },
             peach:  { weight: 3, power: 6, handling: 6 },
+            // Peach a un point pres, de la puissance vers la maniabilite.
+            daisy:  { weight: 3, power: 5, handling: 7 },
             toad:   { weight: 2, power: 5, handling: 8 },
             koopa:  { weight: 2, power: 4, handling: 9 }
         }
@@ -262,14 +309,30 @@ export default {
                 bowser: { w: 111, h: 124, px: 10451 },
                 dk:     { w: 119, h: 124, px: 10497 },
                 mario:  { w: 112, h: 119, px:  8718 },
+                birdo:  { w: 112, h: 144, px: 10229 },
                 luigi:  { w: 111, h: 123, px:  8511 },
                 yoshi:  { w: 119, h: 122, px:  9655 },
                 peach:  { w: 112, h: 124, px:  8425 },
+                daisy:  { w: 112, h: 128, px:  8222 },
                 toad:   { w: 110, h: 120, px:  8278 },
                 koopa:  { w: 110, h: 114, px:  7395 }
             },
             pipe: { w: 95, h: 124 }
         },
+
+        // Les karts dont la MOYENNE fait le kart de reference. Figee sur le
+        // plateau d'origine, pour deux raisons :
+        //
+        //   - ajouter un personnage ne doit pas redimensionner les autres. Avec
+        //     birdo et daisy dans la moyenne, la surface de reference montait
+        //     de 3.4 % et toutes les emprises en profondeur retrecissaient
+        //     d'autant — un reequilibrage deguise en ajout ;
+        //   - l'interrupteur de `roster.enabled` ne doit pas non plus : il
+        //     choisit qui court, pas la taille des corps.
+        //
+        // Un nouveau personnage se mesure donc CONTRE ce plateau, sans le
+        // deplacer.
+        referenceKarts: ['bowser', 'dk', 'mario', 'luigi', 'yoshi', 'peach', 'toad', 'koopa'],
 
         // Longueur DESSINEE du kart de reference, en px de monde. Meme valeur que
         // `GAME_CONFIG.rendering.kartWidth.pc` cote client, et meme kart : le

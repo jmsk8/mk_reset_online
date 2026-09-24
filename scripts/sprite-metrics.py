@@ -27,7 +27,12 @@ IMG = os.path.join(ROOT, 'frontEnd', 'static', 'img')
 
 # L'ordre est celui de la configuration : celui de kartStats.characters, du
 # plus lourd au plus leger. La sortie se colle telle quelle.
-KARTS = ['bowser', 'dk', 'mario', 'luigi', 'yoshi', 'peach', 'toad', 'koopa']
+KARTS = ['bowser', 'dk', 'mario', 'birdo', 'luigi', 'yoshi', 'peach', 'daisy', 'toad', 'koopa']
+
+# Le plateau dont la moyenne fait le kart de reference : `bodies.referenceKarts`
+# dans raceEngine/src/config/bodies.js, fige sur les huit d'origine. Les ratios
+# imprimes plus bas sont pris contre lui, comme le fait le moteur.
+REFERENCE = ['bowser', 'dk', 'mario', 'luigi', 'yoshi', 'peach', 'toad', 'koopa']
 
 CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
 
@@ -155,9 +160,10 @@ def main():
     print('            },')
 
     # De quoi relire le tableau sans refaire les divisions de tete.
-    total = sum(k[3] for k in karts)
-    mean = total / len(karts)
-    print(f'\n// moyenne du plateau : {mean:.2f} px dessines', file=sys.stderr)
+    ref = [k for k in karts if k[0] in REFERENCE]
+    mean = sum(k[3] for k in ref) / len(ref)
+    print(f'\n// moyenne du plateau de reference ({len(ref)} karts) : '
+          f'{mean:.2f} px dessines', file=sys.stderr)
     for name, w, h, drawn in sorted(karts, key=lambda k: -k[3]):
         print(f'//   {name:7s} {w:3d} x {h:3d}  {drawn:6d} px  '
               f'{100 * drawn / (w * h):5.1f} % du cadre  '

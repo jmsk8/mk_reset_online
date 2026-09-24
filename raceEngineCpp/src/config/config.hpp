@@ -276,6 +276,13 @@ struct BodiesCfg {
     // dessinait quatre fois trop petite »).
     Extent item { 17, 5 };
 
+    // Les karts dont la moyenne fait le kart de reference, figes sur le plateau
+    // d'origine : `bodies.referenceKarts` du JS, meme raison. Un personnage
+    // ajoute, ou retire du tirage, ne redimensionne pas les autres.
+    std::vector<std::string> referenceKarts = {
+        "bowser", "dk", "mario", "luigi", "yoshi", "peach", "toad", "koopa"
+    };
+
     // Posees par `derive_bodies`.
     Extent ref;
     double refSpriteW = 0;
@@ -307,6 +314,9 @@ struct CharacterSpec {
     double spriteW = 0;
     double spriteH = 0;
     double spritePx = 0;
+    // Dans le tirage ou non : `roster.enabled` du JS. A false, le personnage
+    // garde ses stats et ses mesures mais n'est plus aligne.
+    bool enabled = true;
 };
 
 struct Range {
@@ -347,18 +357,23 @@ struct KartStatsCfg {
     double cornerPowerGain = 1.0;
     double cornerMassDrag = 5.0;
 
-    // L'ordre compte : c'est celui dans lequel les karts sont assignes, donc
-    // celui de `hello.karts[]`. Il reprend l'ordre de `Object.keys` du JS
-    // (config/bodies.js:231-238, 262-269).
+    // L'ordre compte : c'est celui du roster avant tirage. Il reprend l'ordre
+    // de `Object.keys` du JS (`kartStats.characters` et `bodies.sprite.kart`
+    // de raceEngine/src/config/bodies.js).
+    //
+    // Derniere colonne : l'interrupteur du tirage, miroir de `roster.enabled`.
+    // Chaque course aligne `kartCount` karts tires parmi les `true`.
     std::vector<CharacterSpec> characters = {
-        { "bowser", 9, 5, 1, 111, 124, 10451 },
-        { "dk",     8, 5, 2, 119, 124, 10497 },
-        { "mario",  5, 5, 5, 112, 119,  8718 },
-        { "luigi",  4, 6, 5, 111, 123,  8511 },
-        { "yoshi",  4, 5, 6, 119, 122,  9655 },
-        { "peach",  3, 6, 6, 112, 124,  8425 },
-        { "toad",   2, 5, 8, 110, 120,  8278 },
-        { "koopa",  2, 4, 9, 110, 114,  7395 }
+        { "bowser", 9, 5, 1, 111, 124, 10451, true },
+        { "dk",     8, 5, 2, 119, 124, 10497, true },
+        { "mario",  5, 5, 5, 112, 119,  8718, true },
+        { "birdo",  5, 4, 6, 112, 144, 10229, true },
+        { "luigi",  4, 6, 5, 111, 123,  8511, true },
+        { "yoshi",  4, 5, 6, 119, 122,  9655, true },
+        { "peach",  3, 6, 6, 112, 124,  8425, true },
+        { "daisy",  3, 5, 7, 112, 128,  8222, true },
+        { "toad",   2, 5, 8, 110, 120,  8278, true },
+        { "koopa",  2, 4, 9, 110, 114,  7395, true }
     };
 };
 
@@ -390,10 +405,15 @@ struct Config {
     PhysicsCfg physics;
     WanderCfg wander;
 
-    // Nombre de karts au depart. 8 par defaut ; `--karts=N` le change entre 1 et
-    // 12 pour le developpement (plan §3). Ce n'est PAS un reglage de production :
-    // docker-compose.yml ne l'expose sur aucune variable d'environnement.
+    // Nombre de karts au depart : `roster.perRace` du JS. Tires parmi les
+    // personnages actives ; s'il y en a moins, la course se fait avec eux.
+    //
+    // `--karts=N` le change entre 1 et 12 pour le developpement (plan §3), et
+    // lui seul RECYCLE les personnages au-dela du roster (`kartCountForced`).
+    // Ce n'est PAS un reglage de production : docker-compose.yml ne l'expose
+    // sur aucune variable d'environnement.
     int kartCount = 8;
+    bool kartCountForced = false;
 
     // Posees par `derive_bodies`, dans l'ordre de `kartStats.characters`.
     std::vector<KartBody> bodiesByCharacter;

@@ -92,13 +92,19 @@ WorldState create_world_state(const config::Config& cfg, Rng& rng, double now,
         throw std::runtime_error("createWorldState : aucun personnage en config");
     }
 
-    // L'ordre de la grille. Le roster de base suit l'ordre de la config ; on le
-    // reordonne selon `startOrder` quand une manche precedente l'a decide, sinon
-    // on le melange — c'est ce qui ouvre un grand prix.
+    // L'ordre de la grille. Le roster de base suit l'ordre de la config, sans
+    // les personnages retires du tirage (`enabled`, miroir de `roster.enabled`
+    // du JS) ; on le reordonne selon `startOrder` quand une manche precedente
+    // l'a decide, sinon on le melange — c'est ce qui ouvre un grand prix. Les
+    // `kartCount` premiers courent : melange, c'est le tirage ; reordonne, ce
+    // sont les karts de la manche precedente.
     std::vector<int> roster;
     roster.reserve(state.statsTable.size());
     for (size_t i = 0; i < state.statsTable.size(); i++) {
-        roster.push_back(static_cast<int>(i));
+        if (cfg.kartStats.characters[i].enabled) roster.push_back(static_cast<int>(i));
+    }
+    if (roster.empty()) {
+        throw std::runtime_error("createWorldState : aucun personnage actif (enabled)");
     }
 
     if (!startOrder.empty()) {
@@ -137,11 +143,17 @@ WorldState create_world_state(const config::Config& cfg, Rng& rng, double now,
     }
 
     const double roadHeight = cfg.road.maxY - cfg.road.minY;
-    const int rosterSize = static_cast<int>(state.statsTable.size());
+    const int rosterSize = static_cast<int>(roster.size());
 
-    state.karts.reserve(static_cast<size_t>(cfg.kartCount));
+    // Moins de personnages actives que de places : la course se fait avec eux,
+    // comme en JS. Seul `--karts` (developpement) recycle au-dela du roster.
+    const int kartCount = cfg.kartCountForced
+        ? cfg.kartCount
+        : std::min(cfg.kartCount, rosterSize);
 
-    for (int index = 0; index < cfg.kartCount; index++) {
+    state.karts.reserve(static_cast<size_t>(kartCount));
+
+    for (int index = 0; index < kartCount; index++) {
         // La grille se DEDUIT du nombre de karts, elle ne le fixe pas : la
         // config decrit une loi de grille (deux colonnes, un pas entre rangs),
         // pas un nombre de places. C'est ce qui permet `--karts=N` entre 1 et 12
@@ -164,7 +176,7 @@ WorldState create_world_state(const config::Config& cfg, Rng& rng, double now,
         //
         // A 8 karts (4 rangs), le diviseur vaut 4 et la grille est identique a
         // celle du JS, au flottant pres.
-        const int rows = (cfg.kartCount + lanes - 1) / lanes;
+        const int rows = (kartCount + lanes - 1) / lanes;
         const double slope = rows > 1
             ? grid.laneSlope * 3.0 / static_cast<double>(rows - 1)
             : 0.0;

@@ -14,25 +14,33 @@ namespace config {
 
 namespace {
 
-// Le kart de REFERENCE : la moyenne du plateau, sur les deux mesures. Seul
-// choix qui laisse les valeurs d'avant intactes au centre.
+// Le kart de REFERENCE : la moyenne du plateau d'origine (`referenceKarts`),
+// sur les deux mesures. Seul choix qui laisse les valeurs d'avant intactes au
+// centre — et qui les y laisse quand un personnage arrive ou sort du tirage.
 struct Reference {
     double w = 0;
     double px = 0;
 };
 
-Reference average_sprite(const KartStatsCfg& stats) {
+Reference average_sprite(const KartStatsCfg& stats, const BodiesCfg& b) {
     Reference ref;
-    if (stats.characters.empty()) return ref;
-
     double sumW = 0;
     double sumPx = 0;
-    for (const CharacterSpec& c : stats.characters) {
-        sumW += c.spriteW;
-        sumPx += c.spritePx;
+    for (const std::string& name : b.referenceKarts) {
+        const CharacterSpec* found = nullptr;
+        for (const CharacterSpec& c : stats.characters) {
+            if (c.name == name) { found = &c; break; }
+        }
+        if (!found) {
+            throw std::runtime_error("bodies.referenceKarts : " + name
+                + " n'est pas dans kartStats.characters.");
+        }
+        sumW += found->spriteW;
+        sumPx += found->spritePx;
     }
-    ref.w = sumW / static_cast<double>(stats.characters.size());
-    ref.px = sumPx / static_cast<double>(stats.characters.size());
+    if (b.referenceKarts.empty()) return ref;
+    ref.w = sumW / static_cast<double>(b.referenceKarts.size());
+    ref.px = sumPx / static_cast<double>(b.referenceKarts.size());
     return ref;
 }
 
@@ -53,7 +61,7 @@ void derive_bodies(Config& cfg) {
         }
     }
 
-    const Reference ref = average_sprite(cfg.kartStats);
+    const Reference ref = average_sprite(cfg.kartStats, b);
 
     // Combien de px de demi-emprise vaut un px de sprite. Facteur unique, karts
     // compris : deux corps dessines a la meme echelle touchent a la meme echelle.
@@ -129,6 +137,7 @@ bool set_kart_count(Config& cfg, int requested) {
     // recycle le roster — ce n'est pas a cette fonction de le savoir.
     if (requested < 1 || requested > 12) return false;
     cfg.kartCount = requested;
+    cfg.kartCountForced = true;
     return true;
 }
 

@@ -105,7 +105,8 @@ function snapshotKart(k, t) {
 
 function raceRun(cfg, seed, acc) {
     const rng = makeRng(seed);
-    const grid = PH.shuffleArray(ROSTER.slice(), rng);
+    // Le tirage de la prod (`roster`) : `perRace` karts parmi les actives.
+    const grid = PH.pickRoster(cfg, rng, null);
     const state = PH.createWorldState(cfg, rng, 0, grid, null);
     let t = 0;
 
@@ -254,9 +255,21 @@ function reportD5(acc) {
 
 const BANANA_ID = 9001;
 
+// Les scenarios vont chercher leurs personnages par NOM, puis vident la piste :
+// il leur faut le plateau ENTIER, pas les `roster.perRace` karts que le tirage
+// de la prod aurait retenus. Sans ca, un scenario sur un personnage non tire
+// plantait sur un kart introuvable.
+function fullRoster(cfg) {
+    const names = Object.keys(cfg.roster.enabled);
+    return {
+        ...cfg,
+        roster: { perRace: names.length, enabled: Object.fromEntries(names.map(n => [n, true])) }
+    };
+}
+
 function missCase(cfg, seed, charName, speedOf, gapPx, laneY) {
     const rng = makeRng(seed);
-    const state = PH.createWorldState(cfg, rng, 0, null, null);
+    const state = PH.createWorldState(fullRoster(cfg), rng, 0, null, null);
     let t = 0;
     while (state.phase === 'countdown') { t += DT_MS; PH.stepPhysics(cfg, state, rng, t, DT); }
 

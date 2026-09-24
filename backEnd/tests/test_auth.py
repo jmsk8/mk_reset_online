@@ -127,6 +127,14 @@ res8 = auth_discord.login('c', None, 'UA')          # AUCUNE invitation
 check("entre sans invitation", res8['compte']['role'] == 'superadmin', res8['compte']['role'])
 check("aucune invitation consommée",
       not any('UPDATE invitations SET uses' in s for s, _ in cur.executed))
+# R-68 (23/09) : les promotions passent desormais par une proposition acceptee,
+# et le legs exige une cible qui a consenti. L'amorcage doit rester HORS de ces
+# deux regles : sur une base vierge, personne ne peut proposer quoi que ce soit
+# au premier compte. S'il se mettait a exiger un consentement ou une
+# proposition, le premier deploiement serait bloque (comme le 14/09).
+check("l'amorçage ne passe ni par une proposition ni par le consentement admin",
+      not any('promotions_proposees' in s or 'cgu_admin' in s for s, _ in cur.executed),
+      [s for s, _ in cur.executed if 'promotions_proposees' in s or 'cgu_admin' in s])
 
 print("--- mais PAS si un superadmin existe déjà ---")
 # La porte doit se refermer définitivement une fois le premier superadmin en
@@ -197,6 +205,9 @@ src_promo = inspect.getsource(auth_discord.promote_bootstrap_superadmin)
 for garde in ('DISCORD_SUPERADMIN_ID', 'ROLE_SUPERADMIN'):
     check("symétrie des gardes : %s présent des deux côtés" % garde,
           garde in src_amorce and garde in src_promo)
+check("l'amorçage n'exige aucun consentement admin (R-68 ne le concerne pas)",
+      'cgu_admin' not in src_promo and 'promotions_proposees' not in src_promo
+      and 'cgu_admin' not in src_amorce)
 
 print("\n=== 7. Durée de session selon le rôle ===")
 recharger(); install_discord()
