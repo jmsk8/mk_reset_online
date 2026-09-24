@@ -133,9 +133,10 @@ n'importe quel ordre.
 | `layout.js` | profondeur, échelle, z-index, défilement des couches |
 | `assets.js` | préchargement des images, choix d'une frame |
 | `camera.js` | où le monde se trouve à l'écran |
-| `focus.js` | le kart suivi : cartouche, relevé de décision, sélection |
+| `focus.js` | le kart suivi : cartouche (tour ; vitesse en debug seul), relevé de décision (debug seul), sélection |
+| `position.js` | la place du kart suivi (1st… 8th), en haut à gauche, et sa transition |
 | `director.js` | le réalisateur : à qui la caméra s'intéresse |
-| `controls.js` | pause et vote |
+| `controls.js` | vote, et pause (debug seul) |
 | `leaderboard.js` | le classement latéral |
 | `scene.js` | bâtir, effacer, rebâtir la scène sur un `hello` |
 | `items.js` | l'objet tenu, ceux en orbite |

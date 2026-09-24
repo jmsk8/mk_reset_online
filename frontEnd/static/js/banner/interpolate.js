@@ -107,6 +107,7 @@ function writeKart(kart, ta, tb, t) {
     kart.isBill = !!(flags & 64);
     kart.bumped = !!(flags & 128);
     kart.isFlat = !!(flags & 256);
+    kart.finalLap = !!(flags & 512);
     kart.rank = ta[5];
 
     // Un serveur qui ne date pas le malus (`hitEnd` absent) ne doit pas priver

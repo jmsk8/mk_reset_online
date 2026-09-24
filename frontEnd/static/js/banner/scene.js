@@ -21,6 +21,9 @@ const LAKITU_SPRITES = [
 // Hauteur du sprite de Lakitu et sa position au-dessus de la route.
 const LAKITU_HEIGHT = { pc: 120, mobile: 82 };
 const LAKITU_BOTTOM = 32;
+// Periode du flottement de Lakitu (depart et dernier tour). Miroir de `lakituFloat` dans
+// banner.css : les deux doivent bouger ensemble.
+const LAKITU_FLOAT_MS = 1800;
 
 // Periode du damier rouge/blanc de la bordure de route, en unites monde : la
 // bande se repete tous les 80px (repeating-linear-gradient, banner.css).
@@ -50,6 +53,7 @@ function realignAnimations() {
     }
     const sunEl = worldState.sun && worldState.sun.element;
     if (sunEl) alignAnimationPhase(sunEl, 2400, '--sun-phase');
+    if (lakituEls) alignAnimationPhase(lakituEls.img, LAKITU_FLOAT_MS);
 }
 
 const boxEls = [];

@@ -27,6 +27,11 @@ function preloadImages() {
         cache(`lakitu_${group}_${frame}`, GAME_CONFIG.resources.paths.lakitu(group, frame));
     });
 
+    // Les huit places : un changement de place ne doit pas attendre son image.
+    for (let n = 1; n <= 8; n++) {
+        cache(`position_${n}`, GAME_CONFIG.resources.paths.position(n));
+    }
+
     cache('banana', GAME_CONFIG.resources.paths.banana);
     cache('shroom', GAME_CONFIG.resources.paths.shroom);
     cache('star', GAME_CONFIG.resources.paths.star);

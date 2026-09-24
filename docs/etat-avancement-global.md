@@ -11,6 +11,27 @@
 > `/consentement` : accepter, télécharger ses données ou se déconnecter. Le bandeau de
 > `/mon-compte` est retiré. **Le dernier constat d'audit ouvert est clos. 2067 assertions,
 > 37 fichiers, aucune rouge.** Non commité.
+> Même jour — ✅ **panneau « dernier tour » de Lakitu** : il ne sortait **jamais** — guetté dans
+> la seule phase `'racing'`, alors que la course passe en `'finishing'` deux tours avant la fin.
+> Désormais hors de la machine à phases (comme `leaderLap`) : il sort quand le **premier** est à
+> `flagDistance` de la ligne qui ouvre son dernier tour, et reste jusqu'à ce que le **dernier**
+> (relu à chaque pas, `lastRemaining`) l'ait passée d'autant. Premier qui prend un tour au
+> dernier : le service envoie le drapeau, mais marque chaque kart dans sa propre zone de
+> dernier tour (`finalLapSign`, bit 512 `FLAG_FINAL_LAP` des deux protocoles) ; le client montre
+> le panneau du kart **suivi par la caméra** (`lakituSignFor`, `effects.js`). Banc par le vrai
+> protocole, 240 courses : 1920 entrées en dernier tour toutes sous « final », le premier
+> toujours sous le drapeau. `finalSignMs` supprimé (un délai fixe expirait trop tôt).
+> Corrigé dans **les deux moteurs** (`race.js`, `race.cpp`), sans écart. Banc JS, 200 courses :
+> 0 anomalie, aucun kart ne passe hors panneau, ~3 s avant le premier et ~3 s après le dernier
+> (13 s en main en moyenne), 10 relais par le drapeau. Lakitu y flotte aussi. Non commité.
+> Même jour — ✅ **Lakitu flotte au départ** : animation CSS `lakituFloat` sur l'image (1,8 s,
+> 4 % de sa hauteur, sans rotation), active tant qu'il tient les feux, phase calée sur l'horloge du
+> serveur (`LAKITU_FLOAT_MS`, `scene.js`). Non commité.
+> Même jour — ✅ **place du kart suivi** (§13.12) : 1st… 8th en haut à gauche, couleurs du jeu
+> (script `colorize-positions.py`), sortie en rotation et entrée en pop. Non commité.
+> Même jour — ✅ **contrôles de la bannière** (§13.5) : pause et vitesse en mode debug
+> seulement, le tour reste affiché ; la réalisation automatique revient à chaque course et le bouton caméra ne la
+> coupe plus. ⚠️ `debugMode` est encore à `true` en dur dans `config.js`. Non commité.
 > Même jour — ✅ **retouches de la page d'invitation** : le libellé de la case « J'ai lu et
 > j'accepte… » ne change plus de couleur au survol (le `:hover` de Bulma passait le texte en gris
 > foncé sur fond sombre, le lien suivait avec 0,3 s de retard) — corrigé pour toutes les cases
@@ -139,7 +160,7 @@
 | 12 | **CHANGELOG** | §12 | La section « Non publié » ne dit **rien** de la bascule Discord, des rôles admin, du journal, des promotions, des notifications ni des sessions de tournois. À écrire avant de publier une version. |
 | 13 | **Karts de la bannière : ménage et Daisy + Birdo** — ✅ Daisy et Birdo livrés le 23/09, non commité | §13.4 | 8 karts tirés au sort parmi 10 à chaque grand prix, interrupteur on/off par personnage (`roster` de `raceEngine/src/config/bodies.js`), deux moteurs à jour, banc passé. Restent la recette visuelle et le ménage des `*-static.png`. |
 | 13bis | **Karts calés sur MK8D : stats, tailles, emprises** — ✅ livré le 24/09 (JS), non commité | §13.10 | Tailles réglées dans les PNG, emprise large de roue à roue, accélération et croisière recalées. Restent le banc multi-graines, le report C++ (§7 de `banner/moteur-cpp-avancement.md`) et les vignettes de Birdo et Daisy. |
-| 14 | **Bannière : retravailler redémarrage, pause, tour et vitesse** | §13.5 | Demandé le 22/09. Le bouton de vote de redémarrage, le bouton pause, et le cartouche tour/vitesse du kart suivi. |
+| 14 | **Bannière : pause, tour, vitesse, caméra auto** — ✅ fait le 24/09, non commité | §13.5 | Pause et vitesse réservées au mode debug, le tour reste affiché ; la réalisation automatique revient à chaque course et le bouton caméra ne la coupe plus. ⚠️ `debugMode` est encore à `true` en dur. |
 | 15 | **Les constats banner restants** | §10 | **Arbitrés le 23/09** : O-2, O-4, D-4 actés, D-3 laissé de côté. **Livrés et commités le 23/09** : le souvenir du porteur arrière et ses trois réponses (D-5), la rouge qui contourne les pipes (O-3) — `248d63e`. O-5 corrigé (sans effet sur l'équilibre) — `36fecb7`. Reste : D-6 à trancher. |
 | 16 | **Chantiers de confort** | §11 | Pistes de perf du décor, moteur Rust — plus les chantiers volontairement non commencés (bas du document). |
 | — | ~~**Demande à ranger : 13.9**~~ ✅ (13.7, 13.8 et 13.9 ✅) | §13 | 13.7 et 13.8 faites le 23/09 ; 13.9 (zoom des graphiques) livrée le même jour, sans passer par un rang : les 9 graphiques du site sont zoomables. |
@@ -842,19 +863,29 @@ large qui coûte, pas ses stats — la variante 4/4/7 testée fait **moins** bie
 - Le plan Rust ([banner/moteur-rust-plan.md](banner/moteur-rust-plan.md)) reprendra la liste à
   10 et l'interrupteur.
 
-#### 13.5 Contrôles de la bannière : redémarrage, pause, tour, vitesse — rang 14
+#### 13.5 Contrôles de la bannière : pause, tour, vitesse, caméra auto — ✅ FAIT le 2026-09-24, non commité
 
-**Demandé** : retravailler ces quatre éléments. Où ils vivent :
+Précisé par l'utilisateur le 24/09, puis livré :
 
-- **Redémarrage** — le bouton de vote, tout à gauche du classement (`leaderboard-vote`,
-  `frontEnd/static/js/banner/leaderboard.js`, `toggleVote()` dans `controls.js`). Le serveur
-  tient le décompte ; le client n'envoie qu'un changement d'avis.
-- **Pause** — le bouton entre la caméra et le vote (`leaderboard-pause`, `togglePause()` dans
-  `controls.js`). Il ne fige que **l'affichage local** : la course continue côté serveur.
-- **Tour et vitesse** — le cartouche du kart suivi (`focus.js`), affiché seulement quand la
-  caméra suit un kart. Les deux se **déduisent** de `totalDistance`, rien n'est ajouté au
-  protocole.
-- `[ ]` Préciser ce qui doit changer : apparence, placement, comportement.
+- **Pause** — réservée au mode debug. Hors debug, le bouton n'est pas construit
+  (`initLeaderboard`, `leaderboard.js`) et le vote prend sa place, collé à la caméra
+  (`.leaderboard-camera + .leaderboard-vote`, `banner.css`, desktop et mobile).
+- **Tour et vitesse** — le cartouche du kart suivi (`updateFocusHud`, `focus.js`) garde le
+  tour pour tout le monde ; la vitesse (px/s) n'y est ajoutée qu'en mode debug (précisé le
+  24/09).
+- **Réalisation automatique** — deux défauts :
+  1. le bouton caméra était un **interrupteur** : cliqué alors que l'auto tournait, il la
+     coupait et laissait la vue fixe. Il ne fait plus que la **remettre** ; en auto, un clic ne
+     fait rien. La vue fixe reste accessible en debug (`bannerDebug.realise(false)`) ;
+  2. l'auto **n'était jamais remise** entre deux courses (choix écrit dans
+     `raceDirector.reset()`). Elle revient désormais à chaque course neuve, même si le
+     spectateur suivait un kart à la précédente. Seul un clic sur un kart la coupe, jusqu'à la
+     fin de la course.
+- **Redémarrage (vote)** — inchangé, rien de demandé.
+
+⚠️ `GAME_CONFIG.debugMode` est écrit en dur à `true` (`frontEnd/static/js/banner/config.js`) :
+tant qu'il y reste, la pause et le cartouche restent visibles de tous, carte de debug comprise.
+À passer à `false` avant la mise en ligne.
 
 #### 13.6 Admin/Comptes — actions d'un compte en pop-up — ✅ CLOS le 2026-09-22, validé à l'écran
 
@@ -964,6 +995,26 @@ laisser lire sa page. Ce n'était ni un bug ni une erreur de manipulation : le s
 - `[x]` Docs : [audit-auth-discord.md](audit-auth-discord.md) et
   [audit-auth-admin-2026-09-17.md](audit-auth-admin-2026-09-17.md) (B-06), CHANGELOG.
 - `[ ]` Déploiement : `make re-front`, puis une connexion pour voir l'écran s'afficher.
+
+#### 13.12 Place du kart suivi (1st… 8th) — ✅ FAIT le 2026-09-24, non commité
+
+Demandé le 24/09 : afficher la place d'un joueur en haut à gauche de la bannière, avec les
+couleurs du jeu et une transition « rotation rapide vers la droite en rétrécissant, puis pop ».
+
+- **Images** : les huit chiffres fournis en gris sont rangés dans `assets-src/positions/`
+  (originaux, jamais modifiés). `scripts/colorize-positions.py` les colorise vers
+  `frontEnd/static/img/pos/` par table de correspondance des quatre gris (contour, ombre,
+  relief, face), la face en dégradé vertical. Or pour 1, argent pour 2, bronze pour 3, orange
+  (celui du 7th) de 4 à 8 — palettes relevées sur des captures du jeu. **Une couleur se
+  retouche dans le script, puis on le relance** ; jamais en CSS.
+- **Affichage** (`position.js`) : la place du kart **suivi par la caméra**, grille comprise ;
+  masquée sur la vue d'ensemble. 64 px (42 en mobile), sous le rideau.
+- **Transition** : sortie en rotation de 140° et réduction (160 ms), entrée en pop avec rebond
+  (300 ms), via l'API Web Animations. Une rafale de dépassements ne s'empile pas : seule la
+  dernière place demandée s'affiche à la fin de la transition en cours. Sans animation si
+  l'utilisateur a demandé à réduire les animations.
+- Vérifié : planche d'aperçu des couleurs, logique de file testée sous Node (rafale
+  5→4→3→4→2 : une sortie, une entrée, sur 2). **Recette visuelle en course à faire.**
 
 ## Note obsolète — ✅ corrigée le 2026-09-18
 

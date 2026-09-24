@@ -197,7 +197,7 @@ function ensureLakituEl() {
     wrapper.appendChild(img);
     cachedContainer.appendChild(wrapper);
 
-    lakituEls = { wrapper: wrapper, img: img, key: null, height: '' };
+    lakituEls = { wrapper: wrapper, img: img, key: null, height: '', floating: false };
     return lakituEls;
 }
 
@@ -210,11 +210,24 @@ function lakituSrc(group, frame, gameNow) {
     return cached ? cached.src : GAME_CONFIG.resources.paths.lakitu(group, frame);
 }
 
+// Le panneau a montrer. Le service n'en envoie qu'un, mais la camera est propre
+// a chaque spectateur : quand le premier prend un tour au dernier, le drapeau
+// (pour le premier) et le dernier tour (pour le dernier) se chevauchent. Lakitu
+// montre alors celui du kart suivi, que le service marque (`finalLap`) tant
+// qu'il est dans sa zone de dernier tour. Sur la vue d'ensemble, qui ne suit
+// personne, le panneau du service.
+function lakituSignFor(kartId) {
+    const sign = worldState.sign;
+    const kart = kartId === null ? null : worldState.kartsById[kartId];
+    if (kart && kart.finalLap && sign && sign[0] === 'finish') return ['laps', 'final'];
+    return sign;
+}
+
 function renderLakitu(gameNow, screenWidth) {
     const els = ensureLakituEl();
     if (!els) return;
 
-    const sign = worldState.sign;
+    const sign = lakituSignFor(focusedKartId);
     if (!sign) {
         els.wrapper.style.display = 'none';
         return;
@@ -231,6 +244,19 @@ function renderLakitu(gameNow, screenWidth) {
     if (els.key !== src) {
         els.key = src;
         els.img.src = src;
+    }
+
+    // Il flotte en tenant ses feux de depart et son panneau du dernier tour ;
+    // pas avec le drapeau, qu'il agite. L'animation est en CSS, sur
+    // l'image seule : le conteneur, lui, est place ici a chaque image. Sa phase
+    // est recalee sur l'horloge du serveur a chaque fois qu'elle reprend -- une
+    // animation relancee repart de zero, et deux spectateurs le verraient sinon
+    // monter et descendre a contretemps.
+    const floating = sign[0] === 'start' || sign[0] === 'laps';
+    if (els.floating !== floating) {
+        els.floating = floating;
+        if (floating) alignAnimationPhase(els.img, LAKITU_FLOAT_MS);
+        els.wrapper.classList.toggle('is-floating', floating);
     }
 
     els.wrapper.style.display = 'block';

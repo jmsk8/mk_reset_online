@@ -42,6 +42,7 @@ void write_kart_tuple(json::Writer& w, const engine::Kart& kart) {
     if (kart.state == engine::KartState::Grid) flags |= 1;      // FLAG_GRID
     if (kart.finished) flags |= 16;                              // FLAG_FINISHED
     if (kart.bumped) flags |= 128;                               // FLAG_BUMPED
+    if (kart.finalLapSign && !kart.finished) flags |= 512;       // FLAG_FINAL_LAP
     w.integer(flags);
 
     w.integer(kart.rank);

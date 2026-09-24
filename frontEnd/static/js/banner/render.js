@@ -11,6 +11,7 @@ function renderState(gameNow, screenWidth, frameMs) {
     raceDirector.update(gameNow);
     updateRenderCamera();
     updateFocusHud(frameMs);
+    updatePositionHud();
 
     if (domDirty) {
         domDirty = false;

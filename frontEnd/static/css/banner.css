@@ -557,6 +557,23 @@
     filter: drop-shadow(3px 3px 0 rgba(0, 0, 0, 0.35));
 }
 
+/* Au départ et au dernier tour, il flotte sur son nuage : il monte et descend
+   doucement, sans pivoter. En pourcentage de sa hauteur, pour que l'amplitude suive
+   le gabarit (5 px sur ordinateur, 3 sur mobile). La période est reprise par
+   LAKITU_FLOAT_MS (scene.js), qui cale la phase sur l'horloge du serveur. */
+.lakitu.is-floating img {
+    animation: lakituFloat 1.8s ease-in-out infinite;
+}
+
+@keyframes lakituFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lakitu.is-floating img { animation: none; }
+}
+
 /* ── Classement final ─────────────────────────────────────────────────────
    Sous le rideau (z-index 700) : il reste visible jusqu'à ce que celui-ci
    tombe sur la course suivante. */
@@ -908,6 +925,41 @@
 
 .race-focus-hud.is-on {
     opacity: 0.9;
+}
+
+/* ── Place du kart suivi ──────────────────────────────────────────────────
+   En haut a gauche, comme dans le jeu. Sous le rideau (700) : elle n'a rien a
+   dire avant que la scene soit prete. Les rotations et le rebond sont joues en
+   JS (position.js), sur l'image : le conteneur ne fait que la montrer. */
+.race-position {
+    position: absolute;
+    top: 6px;
+    left: 10px;
+    z-index: 640;
+    width: 64px;
+    height: 64px;
+    pointer-events: none;
+    visibility: hidden;
+}
+
+.race-position.is-on {
+    visibility: visible;
+}
+
+.race-position img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(1px 2px 1px rgba(0, 0, 0, 0.45));
+}
+
+@media screen and (max-width: 768px) {
+    .race-position {
+        top: 4px;
+        left: 6px;
+        width: 42px;
+        height: 42px;
+    }
 }
 
 /* Releve de decision du kart suivi, sous la banniere. Il n'appartient pas a la
@@ -1445,6 +1497,12 @@
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
 }
 
+/* Hors mode debug, la pause n'est pas construite : le vote suit alors
+   directement la caméra dans le DOM, et prend sa place. */
+.leaderboard-camera + .leaderboard-vote {
+    left: -92px;
+}
+
 .leaderboard-vote svg {
     width: 21px;
     height: 21px;
@@ -1522,6 +1580,10 @@
 
     .leaderboard-vote {
         left: -96px;
+    }
+
+    .leaderboard-camera + .leaderboard-vote {
+        left: -64px;
     }
 
     .leaderboard-vote svg {

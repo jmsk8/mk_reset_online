@@ -21,19 +21,25 @@ function initLeaderboard() {
     leaderboardState.container.appendChild(camera);
     leaderboardState.cameraEl = camera;
 
-    // Pause, entre la camera et le vote. Elle porte ses deux icones d'un coup,
-    // barres et triangle : c'est le CSS qui montre celle de l'etat courant, ce
-    // qui evite de reconstruire du balisage a chaque clic.
-    const pause = document.createElement('div');
-    pause.className = 'leaderboard-pp leaderboard-pause visible';
-    pause.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-        '<g class="ico-pause"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></g>' +
-        '<g class="ico-play"><path d="M9 5l10 7-10 7z"/></g></svg>';
-    leaderboardState.container.appendChild(pause);
-    leaderboardState.pauseEl = pause;
+    // Pause, entre la camera et le vote, en mode debug seulement : figer
+    // l'image sert a lire la carte de debug, pas a regarder la course.
+    // Elle porte ses deux icones d'un coup, barres et triangle : c'est le CSS
+    // qui montre celle de l'etat courant, ce qui evite de reconstruire du
+    // balisage a chaque clic.
+    leaderboardState.pauseEl = null;
+    if (GAME_CONFIG.debugMode) {
+        const pause = document.createElement('div');
+        pause.className = 'leaderboard-pp leaderboard-pause visible';
+        pause.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+            '<g class="ico-pause"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></g>' +
+            '<g class="ico-play"><path d="M9 5l10 7-10 7z"/></g></svg>';
+        leaderboardState.container.appendChild(pause);
+        leaderboardState.pauseEl = pause;
+    }
 
-    // Vote de redemarrage, tout a gauche. Le compteur est pose par
-    // renderVote() : ici on ne construit que la coquille.
+    // Vote de redemarrage, tout a gauche. Sans la pause, il vient se coller a
+    // la camera (banner.css). Le compteur est pose par renderVote() : ici on
+    // ne construit que la coquille.
     const vote = document.createElement('div');
     vote.className = 'leaderboard-pp leaderboard-vote visible';
     vote.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +

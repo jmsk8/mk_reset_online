@@ -506,6 +506,8 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
             // un tour : il vaut moins d'une seconde.
             finishDistance: race.laps * cfg.world.width + gapToLine,
             finished: false,
+            // Dans sa zone de dernier tour (race.js) : part en FLAG_FINAL_LAP.
+            finalLapSign: false,
             finishRank: 0,
             startStallUntil: 0,
 

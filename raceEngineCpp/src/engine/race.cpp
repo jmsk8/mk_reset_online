@@ -1,6 +1,7 @@
 #include "engine/race.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <cmath>
 
 #include "engine/geometry.hpp"
@@ -74,6 +75,39 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
     if (state.phase == Phase::Racing || state.phase == Phase::Finishing) {
         const int lap = std::min(race.laps, std::max(1, leader->lapCount));
         if (lap != state.leaderLap) state.leaderLap = lap;
+
+        // Le panneau du dernier tour. Il sort quand le PREMIER approche la ligne
+        // qui ouvre ce tour -- a `flagDistance`, comme le drapeau -- et reste en
+        // main jusqu'a ce que le DERNIER l'ait passee d'autant. Le dernier est
+        // relu a chaque pas (un depassement en queue change qui ferme la
+        // marche) ; si le premier prend un tour au dernier, le drapeau le
+        // remplace avant. Borne en distance et non en duree, hors de la machine
+        // a phases : voir race.js, qui porte le raisonnement complet.
+        const double width = cfg.world.width;
+        const double leaderToLine = leader->finishDistance - leader->totalDistance - width;
+        if (!state.finalSignShown && race.laps > 1 && leaderToLine <= race.flagDistance) {
+            state.finalSignShown = true;
+            set_sign(state, "laps", 0, now, race.maxRaceMs);
+        } else if (state.signGroup == "laps") {
+            double lastRemaining = -std::numeric_limits<double>::infinity();
+            for (const Kart& kart : state.karts) {
+                if (kart.finished) continue;
+                lastRemaining = std::max(lastRemaining, kart.finishDistance - kart.totalDistance);
+            }
+            if (lastRemaining - width < -race.flagDistance) {
+                state.signGroup.clear();
+                state.signFrame = 0;
+            }
+        }
+
+        // Et pour CHAQUE kart, s'il est dans sa propre zone de dernier tour : le
+        // client montre le panneau du kart qu'il suit quand drapeau et dernier
+        // tour se chevauchent (voir race.js).
+        for (Kart& kart : state.karts) {
+            const double toLine = kart.finishDistance - kart.totalDistance - width;
+            kart.finalLapSign = state.finalSignShown && !kart.finished &&
+                toLine <= race.flagDistance && toLine >= -race.flagDistance;
+        }
     }
 
     // Le panneau s'efface tout seul.
@@ -108,13 +142,6 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
 
     if (state.phase == Phase::Racing) {
         const double remaining = leader->finishDistance - leader->totalDistance;
-
-        // Le panneau se declenche sur ce qu'il RESTE a parcourir au premier :
-        // c'est la seule mesure qui dise vraiment « il lui reste un tour ».
-        if (!state.finalSignShown && remaining <= cfg.world.width) {
-            state.finalSignShown = true;
-            set_sign(state, "laps", 0, now, race.finalSignMs);
-        }
 
         if (remaining <= race.cameraApproachDistance) {
             state.phase = Phase::Finishing;

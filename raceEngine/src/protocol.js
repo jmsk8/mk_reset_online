@@ -21,6 +21,7 @@ const FLAG_SHRUNK = 32;   // rapetisse par l'eclair -> sprite reduit
 const FLAG_BILL = 64;     // transforme en Bill Ball -> sprite remplace
 const FLAG_BUMPED = 128;  // arrete net par un pipe : arret et recul, sprite inchange
 const FLAG_FLAT = 256;    // ecrase par un kart reste grand -> sprite aplati
+const FLAG_FINAL_LAP = 512; // dans sa zone de dernier tour -> Lakitu montre « final »
 
 // Le releve de decision, pour le HUD de debug : ce que le kart VOIT et ce qu'il
 // en FAIT, en un seul entier. Rien ici ne pilote le rendu — un client qui
@@ -208,6 +209,9 @@ function kartFlags(kart) {
     if (kart.isBill) flags |= FLAG_BILL;
     if (kart.bumped) flags |= FLAG_BUMPED;
     if (kart.isFlat) flags |= FLAG_FLAT;
+    // `finished` en garde : le marqueur n'est plus recalcule apres la course,
+    // et un retardataire classe d'office le garderait sinon.
+    if (kart.finalLapSign && !kart.finished) flags |= FLAG_FINAL_LAP;
     return flags;
 }
 

@@ -31,6 +31,17 @@ function launchKarts(cfg, state, rng, now, events) {
     }
 }
 
+// Ce qu'il reste a parcourir au kart le plus en retard encore en course.
+function lastRemaining(state) {
+    let most = -Infinity;
+    for (const kart of state.karts) {
+        if (kart.finished) continue;
+        const left = remainingDistance(kart);
+        if (left > most) most = left;
+    }
+    return most;
+}
+
 function setSign(state, group, frame, now, duration) {
     state.sign = { group: group, frame: frame, until: now + duration };
 }
@@ -57,6 +68,44 @@ function updateRace(cfg, state, rng, now, deltaTime, events) {
         if (lap !== state.leaderLap) {
             state.leaderLap = lap;
             regenItemDecay(cfg, state);
+        }
+
+        // Le panneau du dernier tour. Il sort quand le PREMIER approche la
+        // ligne qui ouvre ce tour -- a `flagDistance`, comme le drapeau -- et
+        // reste en main jusqu'a ce que le DERNIER l'ait passee d'autant : chaque
+        // kart passe devant lui en entamant son dernier tour. Borne en distance
+        // et non en duree : un kart retarde a l'approche aurait vu un delai fixe
+        // expirer avant son passage.
+        //
+        // Le dernier est relu a chaque pas, pas fige a la sortie du panneau :
+        // un depassement en queue de peloton change qui ferme la marche. Et si
+        // le premier prend un tour au dernier, il arrive au drapeau avant que
+        // celui-ci n'entame son dernier tour : le drapeau remplace le panneau
+        // (setSign), qui ne revient plus.
+        //
+        // Hors de la machine a phases pour la meme raison que le compteur
+        // ci-dessus : a cet instant la course est deja en 'finishing' (la camera
+        // s'approche deux tours avant la fin). Tenu dans la seule phase
+        // 'racing', il ne sortait jamais.
+        const width = cfg.world.width;
+        if (!state.finalSignShown && race.laps > 1 &&
+            remainingDistance(leader) - width <= race.flagDistance) {
+            state.finalSignShown = true;
+            setSign(state, 'laps', 'final', now, race.maxRaceMs);
+        } else if (state.sign && state.sign.group === 'laps' &&
+                   lastRemaining(state) - width < -race.flagDistance) {
+            state.sign = null;
+        }
+
+        // Et pour CHAQUE kart, s'il est dans sa propre zone de dernier tour.
+        // Le panneau du service est unique, mais la camera est propre a chaque
+        // spectateur : quand le premier prend un tour au dernier, le drapeau
+        // (pour lui) et le dernier tour (pour le dernier) se chevauchent, et
+        // c'est au client de montrer celui du kart qu'il suit.
+        for (const kart of state.karts) {
+            const toLine = remainingDistance(kart) - width;
+            kart.finalLapSign = state.finalSignShown && !kart.finished &&
+                toLine <= race.flagDistance && toLine >= -race.flagDistance;
         }
     }
 
@@ -87,13 +136,6 @@ function updateRace(cfg, state, rng, now, deltaTime, events) {
     }
 
     if (state.phase === 'racing') {
-        // Le panneau se declenche sur ce qu'il reste a parcourir au premier :
-        // c'est la seule mesure qui dise vraiment « il lui reste un tour ».
-        if (!state.finalSignShown && remainingDistance(leader) <= cfg.world.width) {
-            state.finalSignShown = true;
-            setSign(state, 'laps', 'final', now, race.finalSignMs);
-        }
-
         if (remainingDistance(leader) <= race.cameraApproachDistance) {
             state.phase = 'finishing';
             state.cameraTarget = parkPosition(cfg, race.parkFinishOffset);

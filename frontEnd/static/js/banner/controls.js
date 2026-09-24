@@ -1,4 +1,5 @@
-// Les deux seules commandes offertes au spectateur : la pause et le vote.
+// Les commandes du classement : le vote, offert a tous, et la pause, reservee
+// au mode debug (le bouton n'existe pas sans lui, cf. initLeaderboard).
 
 // Gel de la scene. On ne coupe pas la boucle d'animation — elle continue de
 // tourner pour repartir au clic suivant — on cesse de lire le tampon et de

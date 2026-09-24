@@ -208,8 +208,9 @@ function directorScore(kart, scan, gameNow) {
 
 const raceDirector = {
     // Active par defaut : un visiteur qui ne touche a rien doit avoir la
-    // meilleure version du spectacle. Le premier clic sur un kart la coupe —
-    // c'est lui qui realise, a partir de la.
+    // meilleure version du spectacle. Seul un clic sur un kart la coupe —
+    // c'est lui qui realise, jusqu'a la fin de la course. Le bouton camera la
+    // remet, il ne l'eteint jamais.
     auto: true,
 
     // Debut de la phase de course, pour le compte a rebours du plan large.
@@ -221,13 +222,15 @@ const raceDirector = {
     leftAt: {},
 
     // Course neuve : les identifiants sont les memes mais les personnages ont
-    // change, et les compteurs repartent de zero. Le mode, lui, ne se remet pas
-    // tout seul : un spectateur qui a pris la main la garde.
+    // change, et les compteurs repartent de zero. La realisation automatique
+    // revient aussi : le kart qu'un spectateur suivait a ete retire au sort, son
+    // choix ne vaut que pour la course ou il l'a fait. Sans ca, il retrouvait
+    // la course suivante sur la vue fixe, a devoir recliquer.
     reset() {
         this.racingSince = 0;
-        this.shotSince = 0;
         this.nextEvalAt = 0;
         this.leftAt = {};
+        this.setAuto(true);
     },
 
     setAuto(on) {

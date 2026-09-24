@@ -264,8 +264,13 @@
            vient de finir et cumul du bloc. Affiché pendant la phase 'results'. #}
         <div id="race-gp" class="race-gp" aria-hidden="true"></div>
 
-        {# Cartouche du kart suivi : tour et vitesse, en bas a gauche. Vide et
-           masque tant que la camera reste sur la vue d'ensemble. #}
+        {# Place du kart suivi, en haut a gauche (1st, 2nd...). Masquee sur la
+           vue d'ensemble, qui ne suit personne. #}
+        <div id="race-position" class="race-position" aria-hidden="true"><img alt=""></div>
+
+        {# Cartouche du kart suivi, en bas a gauche : le tour, plus la vitesse en
+           mode debug. Vide et masque tant que la camera reste sur la vue
+           d'ensemble. #}
         <div id="race-focus-hud" class="race-focus-hud" aria-hidden="true"></div>
 
         <div id="race-leaderboard"></div>
@@ -445,7 +450,7 @@
        Aucune physique n'est chargée ici : le moteur vit dans raceEngine/src/engine/,
        côté serveur, et le client ne fait qu'afficher ce qu'il reçoit. #}
     {% for module in [
-        'config', 'state', 'layout', 'assets', 'camera', 'focus', 'director',
+        'config', 'state', 'layout', 'assets', 'camera', 'focus', 'position', 'director',
         'controls', 'leaderboard', 'scene', 'items', 'curtain', 'reconcile',
         'effects', 'results', 'render', 'interpolate', 'net', 'loop', 'debug',
         'snow', 'main'
