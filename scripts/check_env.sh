@@ -113,6 +113,10 @@ value_for_key() {
       prompt_password 'DISCORD_CLIENT_SECRET'
       printf '%s' "$(escape_for_compose "$PROMPT_RESULT")" ;;
     DISCORD_REDIRECT_URI)
+      # Plusieurs possibles, separees par des virgules. En dev, localhost et le
+      # nom .local ne bougent pas quand l'IP change : les preferer a l'IP.
+      echo "  Une ou plusieurs URI, separees par des virgules. Chacune doit etre" >&2
+      echo "  declaree dans le portail Discord (OAuth2 > Redirects)." >&2
       prompt_value 'DISCORD_REDIRECT_URI' 'https://mkreset.fr/auth/discord/callback' ;;
     *)
       prompt_value "$key" ;;

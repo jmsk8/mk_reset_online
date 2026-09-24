@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 DISCORD_CLIENT_ID = os.environ.get('DISCORD_CLIENT_ID', '')
 DISCORD_CLIENT_SECRET = os.environ.get('DISCORD_CLIENT_SECRET', '')
+# Une ou plusieurs URI de retour, separees par des virgules (voir
+# redirect_uris()). Le frontend choisit celle de l'hote consulte.
 DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', '')
 # Amorcage du premier superadmin : aucune IHM ne peut le creer, toute route
 # d'attribution de role exigeant d'etre deja superadmin.
@@ -61,8 +63,17 @@ class DiscordAuthError(Exception):
         self.code = code
 
 
+def redirect_uris() -> list[str]:
+    """Les URI de retour declarees, dans l'ordre de l'environnement.
+
+    Plusieurs servent au poste de dev (localhost, nom .local, IP du reseau) :
+    chacune doit aussi figurer dans le portail developpeur Discord.
+    """
+    return [u.strip() for u in DISCORD_REDIRECT_URI.split(',') if u.strip()]
+
+
 def discord_configured() -> bool:
-    return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET and DISCORD_REDIRECT_URI)
+    return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET and redirect_uris())
 
 
 def hash_token(token: str) -> str:
@@ -93,9 +104,17 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     if not discord_configured():
         raise DiscordAuthError("Authentification Discord non configuree", 503, 'non_configure')
 
-    # Toujours la valeur de l'environnement : Discord compare caractere par
-    # caractere avec le portail developpeur.
-    uri = redirect_uri or DISCORD_REDIRECT_URI
+    # Toujours une valeur de l'environnement : Discord compare caractere par
+    # caractere avec le portail developpeur. Celle que transmet le frontend
+    # n'est acceptee que si elle y figure.
+    uris = redirect_uris()
+    if redirect_uri is None:
+        uri = uris[0]
+    elif redirect_uri in uris:
+        uri = redirect_uri
+    else:
+        logger.warning("redirect_uri hors de DISCORD_REDIRECT_URI")
+        raise DiscordAuthError("Adresse de retour inconnue", 400, 'redirect_uri_inconnue')
 
     try:
         token_res = requests.post(

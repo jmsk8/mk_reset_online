@@ -29,8 +29,8 @@ from constants import (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERAR
                        DEFAULT_MU, DEFAULT_SIGMA, DISCORD_HTTP_TIMEOUT,
                        AVATAR_CACHE_TTL, AVATAR_MAX_BYTES,
                        PROMOTION_LIFETIME_DAYS, CGU_ADMIN_VERSION)
-from auth import (player_required, role_required, permission_required,
-                 compte_cible_protegee, permissions_delegables_par,
+from auth import (player_required, player_required_sans_cgu, role_required,
+                 permission_required, compte_cible_protegee, permissions_delegables_par,
                  refuse_auto_modification)
 from auth_discord import avatar_url, hash_token
 from cache import invalidate_cache
@@ -2475,7 +2475,7 @@ def avatar_joueur(joueur_id):
 
 
 @comptes_bp.route('/avatar/moi', methods=['GET'])
-@player_required
+@player_required_sans_cgu
 def avatar_moi():
     return _servir_avatar(g.compte['discord_id'], g.compte['discord_avatar_hash'])
 
@@ -2669,7 +2669,7 @@ def revoquer_service_token(token_id):
 # ---------------------------------------------------------------------------
 
 @comptes_bp.route('/me/cgu', methods=['POST'])
-@player_required
+@player_required_sans_cgu
 def accepter_cgu():
     """Enregistre l'acceptation des conditions.
 
@@ -2763,7 +2763,7 @@ def compteur_admin():
 
 
 @comptes_bp.route('/me/export', methods=['GET'])
-@player_required
+@player_required_sans_cgu
 def exporter_mes_donnees():
     """Droit d'acces et de portabilite (art. 15 et 20) : tout, en JSON.
 

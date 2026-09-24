@@ -36,14 +36,16 @@ des sessions** : une session, une fois ouverte, est trop difficile à reprendre.
 | **A-04** | ~~`/admin-auth` (mot de passe partagé) est toujours ouvert~~ | ✅ **corrigé 2026-09-23** | Dette |
 | **A-05** | ~~`api_tokens` stocke le jeton **en clair**, renouvelable sans borne~~ | ✅ **corrigé 2026-09-23** | Dette |
 | **A-06** | Se reconnecter n'invalide aucune session existante | 🟡 faible — **choix acté** (voir A-06) | Session |
-| **A-07** | Le consentement CGU est affiché mais jamais **imposé** | 🟡 faible | RGPD |
+| **A-07** | ~~Le consentement CGU est affiché mais jamais **imposé**~~ | ✅ **corrigé 2026-09-24** | RGPD |
 
 Aucun constat n'est 🔴. Les trois 🟠 se corrigent ensemble, et partagent une seule cause.
 **Tous trois sont refermés** : A-03 le 2026-09-16, A-01 et A-02 le 2026-09-22.
 
 **Au 2026-09-23, six constats sur sept sont refermés.** A-04 et A-05 sont tombés ensemble avec
-l'étape 6 de la phase 4, comme la recommandation §3 le prévoyait. **Seul A-07 reste ouvert** —
-le consentement CGU affiché mais jamais imposé.
+l'étape 6 de la phase 4, comme la recommandation §3 le prévoyait.
+
+**Au 2026-09-24, les sept sont traités** : A-07 est tranché dans le sens de l'imposition (voir
+A-07). A-06 reste un choix acté, pas un défaut ouvert.
 
 ---
 
@@ -345,6 +347,27 @@ classement entre amis, c'est défendable ; c'est un **choix**, et il mérite d'�
 d'être une omission. Si l'intention était de bloquer, le point d'application naturel est
 `player_required`, avec une liste blanche pour les routes d'acceptation et de déconnexion.
 
+### ✅ Tranché et corrigé le 2026-09-24 : le consentement est imposé
+
+- **Backend, la frontière.** `_charger_compte_session` (`auth.py`), par où passent les trois
+  décorateurs, refuse une session dont `cgu_version` n'est pas la version courante :
+  **428 `cgu_a_accepter`**. Ni 401 ni 403, que le frontend purge (R-28) : la session est
+  valide, il lui manque un accord. Le contrôle vient après l'expiration et la suspension (un
+  compte suspendu l'apprend d'abord), et avant `last_seen_at`.
+- **Liste blanche** : `player_required_sans_cgu`, sur quatre routes seulement :
+  `/auth/check-session` (la sonde doit pouvoir dire « à accepter »), `/me/cgu`
+  (l'acceptation), `/me/export` (le droit d'accès ne dépend pas de l'accord) et `/avatar/moi`
+  (la navbar). La déconnexion n'en a pas besoin : elle ne demande aucune session valide.
+- **Frontend.** La sonde de chaque page recopie `cgu_a_accepter` ; une page HTML renvoie alors
+  vers **`/consentement`** (accepter, télécharger ses données, se déconnecter, ou demander la
+  suppression par mail), puis ramène à la page demandée, par un chemin local uniquement.
+  Le retour de Discord y mène directement. Le bandeau de `/mon-compte` est retiré.
+- **Qui est concerné** : les comptes créés hors invitation (amorçage du superadmin), ceux
+  antérieurs à la politique, et tout le monde le jour où `CGU_VERSION` change. Une invitation
+  exigeait déjà la case cochée.
+- **Filet** : `test_cgu_imposee.py`, 47 assertions, dont la liste blanche figée route par route
+  (lecture `ast`). `harness.ligne_session` porte désormais la version courante par défaut.
+
 ---
 
 ## Recommandations, par ordre de valeur
@@ -390,7 +413,7 @@ Suivie à la lettre, en commit isolé. Une seule chose n'a pas été supprimée 
 revalidation par page des vues admin. Le retour arrière demande en revanche **deux** gestes et
 non un — le `revert` ne recrée pas la table ([runbook-admin.md](runbook-admin.md) §3.2b).
 
-### 4. Trancher explicitement sur les CGU (A-07)
+### 4. Trancher explicitement sur les CGU (A-07) — ✅ tranché le 2026-09-24 : on impose
 
 Soit on impose (dans `player_required`, avec liste blanche), soit on écrit dans le plan que
 l'affichage suffit. Les deux sont défendables ; l'ambiguïté ne l'est pas.

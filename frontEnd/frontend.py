@@ -4,7 +4,7 @@ import logging
 import secrets
 import requests
 import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 import json
 from flask import (Flask, g, render_template, request, redirect, url_for, session,
                    flash, jsonify, Response, stream_with_context)
@@ -148,6 +148,35 @@ def check_session_validity():
         else:
             # Sonde concluante : les vues admin n'ont plus à revérifier.
             g.session_revalidee = True
+            return _exiger_consentement()
+
+
+# Pages ouvertes à une session qui n'a pas encore accepté la politique (A-07) :
+# celles qu'il faut pouvoir lire avant d'accepter, et les issues -- accepter,
+# télécharger ses données, se déconnecter. Pendant de la liste blanche du
+# backend (`player_required_sans_cgu`), qui reste la vraie frontière.
+_PAGES_SANS_CONSENTEMENT = frozenset({
+    'consentement', 'confidentialite', 'mentions_legales', 'player_logout',
+    'exporter_mes_donnees', 'discord_login', 'discord_callback', 'static',
+})
+
+
+def _exiger_consentement():
+    """Renvoie vers la page d'acceptation si la politique en vigueur manque.
+
+    Le backend refuse déjà tout le reste (428) : sans cette redirection, la
+    personne verrait des pages vides ou des « Erreur Backend » sans comprendre
+    pourquoi. Ne vise que les pages HTML : une image ou un appel JSON n'a rien
+    à faire d'une redirection vers un formulaire.
+    """
+    compte = session.get('compte')
+    if not isinstance(compte, dict) or not compte.get('cgu_a_accepter'):
+        return None
+    if request.endpoint in _PAGES_SANS_CONSENTEMENT:
+        return None
+    if 'text/html' not in request.headers.get('Accept', ''):
+        return None
+    return redirect(url_for('consentement', suite=request.full_path.rstrip('?')))
 
 
 
@@ -615,6 +644,8 @@ def stats_tournoi_detail(tournoi_id):
 DISCORD_CLIENT_ID = os.environ.get('DISCORD_CLIENT_ID', '')
 # Toujours l'environnement, jamais url_for(_external=True) : derrière nginx puis
 # gunicorn sans ProxyFix, Flask produirait du http://.
+#
+# Une ou plusieurs URI, séparées par des virgules : voir _redirect_uri().
 DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', '')
 DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 # L'échange déclenche deux appels réseau vers Discord côté backend.
@@ -636,6 +667,34 @@ OAUTH_EXCHANGE_TIMEOUT = 20
 # de consentement, assez courte pour qu'un state oublié ne traîne pas.
 OAUTH_STATES_MAX = 5
 OAUTH_STATE_TTL = 15 * 60
+
+
+def _redirect_uris():
+    return [u.strip() for u in DISCORD_REDIRECT_URI.split(',') if u.strip()]
+
+
+def _redirect_uri():
+    """L'URI de retour déclarée pour l'hôte consulté, à défaut la première.
+
+    Le retour doit arriver sur l'hôte de départ : le cookie de session, qui
+    porte le `state`, est lié à l'hôte. Une URI unique obligeait donc à
+    naviguer sur cet hôte exact — sur le poste de dev, `127.0.0.1` ou le nom
+    `.local` échouaient en « demande expirée », et un changement d'IP (DHCP)
+    cassait tout. Avec plusieurs URI (localhost, nom `.local`, IP), chaque
+    hôte revient sur lui-même.
+
+    L'en-tête Host ne fait que choisir dans la liste : il n'y ajoute rien.
+    """
+    uris = _redirect_uris()
+    if not uris:
+        return ''
+    # `//` pour que urlparse lise l'hôte : sans port, sans crochets IPv6, en
+    # minuscules — comme `hostname` de chaque URI.
+    hote = urlparse('//' + request.host).hostname
+    for uri in uris:
+        if urlparse(uri).hostname == hote:
+            return uri
+    return uris[0]
 
 
 # Identité de l'éditeur, affichée dans les pages légales. Renseignée par
@@ -673,7 +732,7 @@ def inject_discord_configure():
     Lu depuis l'environnement : une décision d'affichage ne vaut pas un
     aller-retour vers le backend sur chaque page.
     """
-    return dict(discord_configure=bool(DISCORD_CLIENT_ID and DISCORD_REDIRECT_URI))
+    return dict(discord_configure=bool(DISCORD_CLIENT_ID and _redirect_uris()))
 
 
 def _maj_droits_session(corps):
@@ -692,17 +751,20 @@ def _maj_droits_session(corps):
     Le frontend n'est PAS une frontière de privilège : le backend relit rôle et
     permissions en base à chaque requête protégée. Une copie périmée fait voir
     un bouton de trop, jamais obtenir un droit de trop.
+
+    Recopie aussi `cgu_a_accepter` (A-07) : une nouvelle version de la
+    politique doit être présentée dès la page suivante, pas à la reconnexion.
     """
     compte = session.get('compte')
     if not isinstance(compte, dict) or not isinstance(corps, dict):
         return
     if 'role' not in corps and 'permissions' not in corps:
         return      # backend plus ancien que ce champ : on garde la copie
-    if compte.get('role') == corps.get('role') \
-            and compte.get('permissions') == corps.get('permissions'):
+    champs = ('role', 'permissions', 'cgu_a_accepter')
+    if all(compte.get(c) == corps.get(c) for c in champs):
         return      # rien de neuf : ne pas réécrire le cookie à chaque requête
-    compte['role'] = corps.get('role')
-    compte['permissions'] = corps.get('permissions')
+    for c in champs:
+        compte[c] = corps.get(c)
     session.modified = True
 
 
@@ -837,7 +899,7 @@ def _consommer_state(recu: str | None) -> bool:
 @app.route('/auth/discord/login')
 def discord_login():
     """Redirige vers Discord. Mémorise le state et l'invitation en session."""
-    if not DISCORD_CLIENT_ID or not DISCORD_REDIRECT_URI:
+    if not DISCORD_CLIENT_ID or not _redirect_uris():
         flash("La connexion Discord n'est pas configurée sur ce serveur.", 'warning')
         return redirect(url_for('index'))
 
@@ -855,7 +917,7 @@ def discord_login():
 
     params = {
         'client_id': DISCORD_CLIENT_ID,
-        'redirect_uri': DISCORD_REDIRECT_URI,
+        'redirect_uri': _redirect_uri(),
         'response_type': 'code',
         # identify seul : ni email, ni guilds.
         'scope': 'identify',
@@ -911,7 +973,8 @@ def discord_callback():
         data={
             'code': code,
             'invite_token': invite_token,
-            'redirect_uri': DISCORD_REDIRECT_URI,
+            # Même choix qu'à l'aller : Discord a renvoyé sur cet hôte-là.
+            'redirect_uri': _redirect_uri(),
             'user_agent': request.headers.get('User-Agent', '')[:255],
             'cgu_acceptee': session.pop('cgu_acceptee', False),
         },
@@ -938,6 +1001,10 @@ def discord_callback():
     session['compte'] = data.get('compte')
 
     compte = data.get('compte') or {}
+    if compte.get('cgu_a_accepter'):
+        # Compte antérieur à la politique, amorçage du superadmin, ou nouvelle
+        # version publiée depuis : rien d'autre ne s'ouvrira avant l'accord.
+        return redirect(url_for('consentement'))
     if compte.get('joueur_id'):
         flash(f"Connecté en tant que {compte.get('pseudo')}.", 'success')
         return redirect(url_for('index'))
@@ -1005,6 +1072,7 @@ def mon_compte():
         # Rafraîchies en même temps que le rôle : sans ça, un droit accordé
         # aujourd'hui n'apparaîtrait dans les menus qu'à la prochaine connexion.
         'permissions': moi.get('permissions'),
+        'cgu_a_accepter': moi.get('cgu_a_accepter'),
     }
 
     demande, _ = backend_request('GET', '/auth/ma-demande', headers=player_headers())
@@ -1434,16 +1502,50 @@ def mentions_legales():
     return render_template('mentions_legales.html')
 
 
-@app.route('/me/cgu', methods=['POST'])
-def proxy_cgu():
+def _suite_sure(suite):
+    """Chemin local où revenir après l'acceptation, sinon l'accueil.
+
+    `suite` vient de l'URL : sans ce filtre, un lien piégé ferait rebondir
+    vers un autre site juste après un clic de confiance (redirection ouverte).
+    """
+    if not suite or not suite.startswith('/') or suite.startswith('//') \
+            or '\\' in suite or suite.startswith('/consentement'):
+        return url_for('index')
+    return suite
+
+
+@app.route('/consentement', methods=['GET', 'POST'])
+def consentement():
+    """Page d'acceptation de la politique, imposée depuis le 2026-09-24 (A-07).
+
+    Jusque-là, un bandeau sur /mon-compte proposait d'accepter et rien n'était
+    bloqué. Désormais le backend refuse toute route (428) à une session dont le
+    consentement manque ou porte une version périmée ; cette page est l'endroit
+    où l'on atterrit. Trois issues : accepter, télécharger ses données (le droit
+    d'accès ne dépend pas de l'accord), ou se déconnecter.
+    """
+    suite = _suite_sure(request.values.get('suite'))
     headers = player_headers()
-    if headers is None:
-        return jsonify({'error': 'Non autorisé'}), 401
-    data, status = backend_request('POST', '/me/cgu', data={}, headers=headers)
-    if status == 200 and isinstance(session.get('compte'), dict):
-        session['compte']['cgu_a_accepter'] = False
-        session.modified = True
-    return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+    compte = session.get('compte')
+    if headers is None or not isinstance(compte, dict):
+        return redirect(url_for('index'))
+    if not compte.get('cgu_a_accepter'):
+        return redirect(suite)
+
+    if request.method == 'POST':
+        data, status = backend_request('POST', '/me/cgu', data={}, headers=headers)
+        if status == 200:
+            compte['cgu_a_accepter'] = False
+            session.modified = True
+            return redirect(suite)
+        if status in (401, 403):
+            session.pop('player_token', None)
+            session.pop('compte', None)
+            flash('Votre session a expiré. Reconnectez-vous.', 'warning')
+            return redirect(url_for('index'))
+        flash("L'enregistrement a échoué. Réessayez dans un instant.", 'danger')
+
+    return render_template('consentement.html', suite=suite)
 
 
 @app.route('/mon-compte/promotion')

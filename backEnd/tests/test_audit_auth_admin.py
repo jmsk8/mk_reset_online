@@ -240,6 +240,54 @@ check("  et toujours le seul scope identify",
 
 
 # ===========================================================================
+# Plusieurs URI de retour : chaque hote revient sur lui-meme (2026-09-24).
+#
+# Le cookie qui porte le state est lie a l'hote. Avec une URI unique, naviguer
+# sur un autre nom de la meme machine (127.0.0.1, nom .local, nouvelle IP DHCP)
+# faisait echouer la connexion en « demande expiree ».
+# ===========================================================================
+print("\n=== URI de retour : choisie selon l'hote consulte ===")
+_front.DISCORD_REDIRECT_URI = (' http://localhost/cb , http://nobara-pc.local/cb,'
+                               'http://192.168.1.65/cb,')
+
+def _uri_envoyee(hote):
+    r = _front.app.test_client().get('/auth/discord/login', base_url=f'http://{hote}')
+    return parse_qs(urlparse(r.headers.get('Location', '')).query).get('redirect_uri')
+
+check("l'hote localhost recoit l'URI localhost",
+      _uri_envoyee('localhost') == ['http://localhost/cb'], _uri_envoyee('localhost'))
+check("  le nom .local la sienne, casse et port ignores",
+      _uri_envoyee('Nobara-PC.local:80') == ['http://nobara-pc.local/cb'],
+      _uri_envoyee('Nobara-PC.local:80'))
+check("  l'IP la sienne",
+      _uri_envoyee('192.168.1.65') == ['http://192.168.1.65/cb'], _uri_envoyee('192.168.1.65'))
+check("  un hote inconnu retombe sur la premiere, jamais sur son propre nom",
+      _uri_envoyee('evil.test') == ['http://localhost/cb'], _uri_envoyee('evil.test'))
+
+# Le retour renvoie au backend l'URI de CET hote : Discord exige la meme qu'a l'aller.
+_vu = {}
+def _faux_backend(methode, chemin, data=None, **kw):
+    _vu['redirect_uri'] = (data or {}).get('redirect_uri')
+    return {'error': 'x'}, 400
+_backend_request_orig = _front.backend_request
+_front.backend_request = _faux_backend
+_cli = _front.app.test_client()
+_r = _cli.get('/auth/discord/login', base_url='http://nobara-pc.local')
+_st = parse_qs(urlparse(_r.headers['Location']).query)['state'][0]
+_cli.get(f'/auth/discord/callback?state={_st}&code=c', base_url='http://nobara-pc.local')
+_front.backend_request = _backend_request_orig
+check("le retour transmet au backend l'URI de l'hote de retour",
+      _vu.get('redirect_uri') == 'http://nobara-pc.local/cb', _vu)
+
+_front.DISCORD_REDIRECT_URI = ' , '
+check("une liste vide (virgules seules) laisse Discord non configure",
+      _front.app.test_client().get('/auth/discord/login').status_code == 302
+      and 'discord.com' not in _front.app.test_client().get('/auth/discord/login')
+                                     .headers.get('Location', ''))
+_front.DISCORD_REDIRECT_URI = 'https://site.test/cb'
+
+
+# ===========================================================================
 # B-02a -- Le superadmin peut supprimer son propre compte.
 #
 # DELETE /me etait decoree @player_required SEUL : elle ne lisait jamais le

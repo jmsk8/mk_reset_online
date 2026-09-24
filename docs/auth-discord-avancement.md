@@ -706,6 +706,8 @@ la production — c'est le premier point de la liste ci-dessous.
 2. **Créer l'application Discord** et renseigner `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`,
    `DISCORD_REDIRECT_URI` et `DISCORD_SUPERADMIN_ID`. Le `redirect_uri` doit être déclaré
    **au caractère près** dans le portail développeur, sinon Discord refuse sans message utile.
+   Plusieurs URI possibles, séparées par des virgules (depuis le 2026-09-24) : chacune doit y
+   être déclarée, et la connexion revient sur celle de l'hôte consulté.
 3. ~~**Désigner un second compte `superadmin`** (R-38)~~ — ⚠️ **écarté le 2026-09-23**, l'accès
    à la base tenant lieu de porte de secours ([runbook-admin.md](runbook-admin.md) §2). Reste
    souhaitable pour une raison plus modeste : **faire ouvrir une session à un second compte

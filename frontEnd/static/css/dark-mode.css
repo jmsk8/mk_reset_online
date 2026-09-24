@@ -137,6 +137,19 @@ body, html {
     font-weight: 600;
 }
 
+/* Cases à cocher et boutons radio : le curseur main de Bulma suffit à dire que
+   le libellé est cliquable. Son :hover passait le texte en #363636 -- gris
+   foncé sur notre fond sombre -- et le lien du libellé virait à son tour, avec
+   0,3 s de retard (transition des liens plus bas) : effet décousu, observé sur
+   la case de la politique de confidentialité (invite.html). */
+.checkbox:hover, .radio:hover {
+    color: inherit;
+}
+
+.checkbox a:hover, .radio a:hover {
+    color: #485fc7;     /* couleur des liens de Bulma, au repos */
+}
+
 .card-content {
     color: var(--text-color);
 }

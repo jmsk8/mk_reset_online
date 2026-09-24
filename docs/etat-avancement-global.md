@@ -5,7 +5,19 @@
 > réellement fait (vérifié dans le code, pas seulement dans la doc) et ce qui reste en suspens,
 > classé par priorité.
 >
-> **Passage du 2026-09-24** — ✅ **karts calés sur MK8D** (§13.10) : stats de 4 personnages,
+> **Passage du 2026-09-24** — ✅ **A-07 : le consentement à la politique est imposé** (§8) :
+> toute route refuse (428 `cgu_a_accepter`) une session sans la version courante, sauf une liste
+> blanche de quatre (sonde, acceptation, export, avatar). Le frontend mène à une page
+> `/consentement` : accepter, télécharger ses données ou se déconnecter. Le bandeau de
+> `/mon-compte` est retiré. **Le dernier constat d'audit ouvert est clos. 2067 assertions,
+> 37 fichiers, aucune rouge.** Non commité.
+> Même jour — ✅ **retouches de la page d'invitation** : le libellé de la case « J'ai lu et
+> j'accepte… » ne change plus de couleur au survol (le `:hover` de Bulma passait le texte en gris
+> foncé sur fond sombre, le lien suivait avec 0,3 s de retard) — corrigé pour toutes les cases
+> et boutons radio dans `dark-mode.css`. Le texte d'accueil dit désormais qu'un nouveau venu
+> peut créer sa fiche, et la phrase sur les données Discord est reformulée (aussi sur
+> `/mon-compte`). Non commité.
+> Même jour — ✅ **karts calés sur MK8D** (§13.10) : stats de 4 personnages,
 > tailles réglées dans les PNG (`scripts/resize-karts.py`), largeur d'emprise roue à roue,
 > `massDragAccel` 1,0 et plancher du momentum 0,80. Moteur JS seul, écarts C++ listés. Non
 > commité.
@@ -13,6 +25,10 @@
 > suppression faisaient retaper un identifiant que la page ne montrait nulle part. Comparaison
 > tolérante au `@`, aux espaces et à la casse. **2008 assertions, 36 fichiers, aucune rouge.**
 > Non commité.
+> Même jour — ✅ **plusieurs URI de retour Discord** (§12.1) : `DISCORD_REDIRECT_URI` accepte une
+> liste, chaque hôte revient sur lui-même. Point clos ; la parade au changement d'IP reste une
+> réservation DHCP dans la box. **2020 assertions, 36 fichiers, aucune
+> rouge.** Non commité.
 > Même jour — ✅ **l'écran d'autorisation Discord s'affiche à chaque connexion** : `prompt=none`
 > le sautait pour qui avait déjà autorisé le site, sans laisser voir avec quel compte on
 > entrait. Remplacé par `prompt=consent` (`frontEnd/frontend.py`), un clic de plus par
@@ -119,7 +135,7 @@
 | 9 | **Étape 6 — couper le mot de passe admin** — ✅ **faite le 23/09** (`2053a67`) | §1 | C'était la **dernière étape décidée** du projet (18/09). A-04/A-05 refermés du même geste, 6 constats d'audit sur 7 désormais clos. ⚠️ Retour arrière en **deux** gestes (le `revert` ne recrée pas `api_tokens`), et le commit porte **aussi** le correctif nginx 502 : voir §1. |
 | 10 | **Bannière d'automne** | §13.3 | Demandé le 22/09. L'automne affiche la bannière d'été depuis ce matin, en intérim. Travail daté : la saison s'arrête le 21/12, chaque semaine de retard en est une de moins à l'écran. |
 | 10bis | **Écart `changer_role` ↔ plan R-68** — ✅ **fermé le 23/09**, non commité | §8 | Tranché : les routes sont fermées, le plan n'est pas amendé. `changer_role` ne fait plus que descendre (409 `promotion_par_proposition`) ; `/promotion` refuse une descente (409 `pas_une_promotion`) ; le legs n'accepte plus qu'une cible admin/chef_admin ayant accepté la politique en version courante (409 `legs_sans_consentement`) ; l'acceptation purge les permissions à la carte d'un admin qui devient chef_admin (R-53, puisque c'est désormais le seul chemin). L'amorçage `DISCORD_SUPERADMIN_ID` est **inchangé** et verrouillé par deux assertions de `test_auth.py`. |
-| 11 | **RGPD : purge régulière, et A-07** | §3, §8 | Purge : route existante, aucun ordonnanceur, geste manuel assumé. A-07 🟡 : le consentement CGU est affiché, jamais imposé. |
+| 11 | **RGPD : purge régulière** — A-07 ✅ clos le 24/09, non commité | §3, §8 | Purge : route existante, aucun ordonnanceur, geste manuel assumé. A-07 : le consentement est désormais **imposé** (428 hors liste blanche, page `/consentement`). |
 | 12 | **CHANGELOG** | §12 | La section « Non publié » ne dit **rien** de la bascule Discord, des rôles admin, du journal, des promotions, des notifications ni des sessions de tournois. À écrire avant de publier une version. |
 | 13 | **Karts de la bannière : ménage et Daisy + Birdo** — ✅ Daisy et Birdo livrés le 23/09, non commité | §13.4 | 8 karts tirés au sort parmi 10 à chaque grand prix, interrupteur on/off par personnage (`roster` de `raceEngine/src/config/bodies.js`), deux moteurs à jour, banc passé. Restent la recette visuelle et le ménage des `*-static.png`. |
 | 13bis | **Karts calés sur MK8D : stats, tailles, emprises** — ✅ livré le 24/09 (JS), non commité | §13.10 | Tailles réglées dans les PNG, emprise large de roue à roue, accélération et croisière recalées. Restent le banc multi-graines, le report C++ (§7 de `banner/moteur-cpp-avancement.md`) et les vignettes de Birdo et Daisy. |
@@ -429,7 +445,14 @@ des non-régressions le 2026-09-22 :
 - `[x]` **A-04/A-05** 🟡 — ✅ **refermés le 2026-09-23** avec l'étape 6 (§1). Mot de passe
   partagé, `api_tokens` en clair et renouvellement sans borne : les trois ont disparu dans le
   même commit. **Six constats d'audit sur sept sont désormais clos ; seul A-07 reste ouvert.**
-- `[ ]` **A-07** 🟡 — CGU affichées mais jamais imposées.
+- `[x]` **A-07** 🟡 — ✅ **imposé le 2026-09-24**, non commité. `_charger_compte_session`
+  refuse (428 `cgu_a_accepter`, ni 401 ni 403 pour ne pas purger la session) toute session sans
+  la version courante ; `player_required_sans_cgu` ouvre quatre routes seulement
+  (`/auth/check-session`, `/me/cgu`, `/me/export`, `/avatar/moi`). Le frontend renvoie les
+  pages HTML vers `/consentement`, qui ramène ensuite à la page demandée. Filet :
+  `test_cgu_imposee.py` (47 assertions, liste blanche figée). **Les sept constats de l'audit
+  sont traités.** ⚠️ Le jour où `CGU_VERSION` changera, **tout le monde** passera par cette page
+  à sa page suivante, admins compris : c'est voulu.
 - `[x]` ✅ **Fermé le 2026-09-23** (non commité) — `changer_role` ne fait plus que descendre (409 `promotion_par_proposition`) ; `/promotion` refuse une descente (409 `pas_une_promotion`) ; le legs n'accepte plus qu'une cible admin/chef_admin ayant accepté la politique en version courante (409 `legs_sans_consentement`) ; l'acceptation purge les permissions à la carte d'un admin qui devient chef_admin (R-53, puisque c'est désormais le seul chemin). L'amorçage `DISCORD_SUPERADMIN_ID` est **inchangé** et verrouillé par deux assertions de `test_auth.py`.
   Deux routes sautaient le consentement, pas une : le legs faisait d'un `player` un superadmin
   sans rien lui demander (§6bis du plan hiérarchie, décidé le 10/09, **avant** le consentement
@@ -591,10 +614,28 @@ et les rangs 1 à 3 s'y jouent à la main. VS Code tourne en **Flatpak** : depui
 Docker, ni `/etc/systemd`, ni les journaux de l'hôte ne sont visibles — rien de ce qui suit ne
 peut se vérifier depuis l'éditeur.
 
-⚠️ **À vérifier sur le poste de dev** : son `.env` porte `DISCORD_REDIRECT_URI=http://192.168.1.20`,
-qui **ne répond pas** au 22/09 — le poste est en `.65`. Si l'adresse a changé (DHCP), la
-connexion Discord de la pile de dev renvoie vers une machine absente. Le `redirect_uri` doit
-aussi correspondre, au caractère près, à celui déclaré dans le portail Discord.
+✅ **`DISCORD_REDIRECT_URI` du poste de dev — réglé le 2026-09-24, non commité.** Le `.env`
+pointait déjà sur `.65` : la note du 22/09 (`.20`) était périmée. Le vrai défaut était la
+fragilité : une URI unique obligeait à naviguer sur cet hôte exact (le cookie qui porte le
+`state` est lié à l'hôte : `127.0.0.1` ou le nom `.local` échouaient en « demande expirée »), et
+chaque changement d'IP (DHCP) cassait la connexion.
+
+- La variable accepte désormais **plusieurs URI séparées par des virgules**. Le frontend prend
+  celle dont l'hôte est celui de la page (`_redirect_uri()`, `frontEnd/frontend.py`), à défaut
+  la première ; le backend refuse toute URI hors liste (400 `redirect_uri_inconnue`,
+  `exchange_code`). Une valeur unique se comporte comme avant : rien à changer en prod.
+- `.env` de dev : `.65`, `localhost` et `nobara-pc.local` (ce dernier ne dépend pas du DHCP et
+  sert au téléphone sur le réseau local).
+- Tests : `test_audit_auth_admin.py` 92 (était 86), `test_audit_auth_discord.py` 85 (était 82).
+  Deux gardes cassées volontairement (toujours la première URI, toute URI acceptée) : 3 et
+  1 assertions virent au rouge. **Suite complète : 2020 assertions, 36 fichiers, aucune rouge.**
+- `[x]` **Clos le 2026-09-24.** L'usage réel est l'IP, sur le PC comme sur le téléphone : elle
+  reste la première de la liste et marche comme avant, sans rien déclarer de plus. Les URI
+  `localhost` et `.local` ne servent que si l'on ouvre le site par ces noms ; les déclarer
+  alors dans le portail Discord (OAuth2 → Redirects). `localhost` ne vaut que pour le PC, et
+  les noms `.local` sont mal pris en charge sur Android.
+- ℹ️ **La vraie parade au changement d'IP est dans la box** : réserver `192.168.1.65` au poste
+  (bail DHCP statique). L'adresse du téléphone, du `.env` et du portail ne bouge alors plus.
 
 **Règle transversale : ne pas faire de `git pull` sur le serveur pour un geste isolé.** Le
 backend monte ses `.py` depuis le dépôt (`docker-compose.yml`) : un pull change le code **sur

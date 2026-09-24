@@ -435,8 +435,10 @@ Toujours ouverts, vérifiés lors de ce passage :
 - **A-04 / A-05** 🟡 — `/admin-auth` et `/admin/refresh-token` sont toujours exposés, `api_tokens`
   stocke encore le jeton en clair. Il ne reste **qu'un seul** `@admin_required` dans tout le
   backend, sur `/admin/refresh-token` lui-même.
-- **A-07** 🟡 — le consentement CGU n'est toujours pas imposé : aucune lecture de `cgu_version`
-  dans `auth.py` hors du passage de la valeur.
+- ~~**A-07** 🟡 — le consentement CGU n'est toujours pas imposé : aucune lecture de `cgu_version`
+  dans `auth.py` hors du passage de la valeur.~~ ✅ **Imposé le 2026-09-24** : 428
+  `cgu_a_accepter` sur toute route hors d'une liste blanche de quatre, page `/consentement` côté
+  frontend. Détail au §A-07 de [audit-auth-discord.md](audit-auth-discord.md).
 
 **A-03 et A-06 sont refermés** par l'écran « mes sessions » livré depuis (non commité). Les
 assertions `defaut()` correspondantes de `test_audit_auth_discord.py` doivent virer au rouge — c'est
@@ -471,7 +473,7 @@ au lieu de le corriger — exactement l'erreur de méthode décrite au §9 de l'
 
 ### 5. Reprendre A-01/A-02, puis trancher A-04/A-05/A-07
 
-A-01/A-02 ✅ refermés le 2026-09-22. A-04/A-05 se referment avec l'étape 6 ; A-07 reste à trancher.
+A-01/A-02 ✅ refermés le 2026-09-22, A-04/A-05 ✅ le 2026-09-23 avec l'étape 6, A-07 ✅ le 2026-09-24 (consentement imposé).
 
 ---
 
