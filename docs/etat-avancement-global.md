@@ -9,6 +9,16 @@
 > tailles réglées dans les PNG (`scripts/resize-karts.py`), largeur d'emprise roue à roue,
 > `massDragAccel` 1,0 et plancher du momentum 0,80. Moteur JS seul, écarts C++ listés. Non
 > commité.
+> Même jour — ✅ **handle Discord affiché dans la liste des comptes** (§13.1) : le legs et la
+> suppression faisaient retaper un identifiant que la page ne montrait nulle part. Comparaison
+> tolérante au `@`, aux espaces et à la casse. **2008 assertions, 36 fichiers, aucune rouge.**
+> Non commité.
+> Même jour — ✅ **l'écran d'autorisation Discord s'affiche à chaque connexion** : `prompt=none`
+> le sautait pour qui avait déjà autorisé le site, sans laisser voir avec quel compte on
+> entrait. Remplacé par `prompt=consent` (`frontEnd/frontend.py`), un clic de plus par
+> connexion, y compris lors de la reconnexion après une promotion ou un legs. Testé sur le
+> lien réellement produit (`test_audit_auth_admin.py`, B-06), détail au §13.11. **2011
+> assertions, 36 fichiers, aucune rouge.** Non commité.
 >
 > **Mise à jour précédente : 2026-09-23 (nuit)** — ✅ **écart R-68 fermé** (rang 10bis, §8) : plus
 > aucune route ne pose un rôle d'administration sans le consentement de la personne, l'amorçage
@@ -101,7 +111,7 @@
 | 3 | **Vérifier la zone nginx servie** — ✅ poste de dev (22/09), **serveur à faire** | §8, §12.1 | `docker compose exec nginx nginx -T \| grep "zone=auth"` doit dire `40r/m`. Deux minutes — mais si l'ancien 20 r/min est encore servi, ce sont des connexions en 503. L'épisode du montage par inode a déjà piégé une fois : **vérifier l'effet, pas le geste**. |
 | 3bis | **Emporter le correctif nginx du 23/09** (commité dans `2053a67`) — ✅ poste de dev (23/09), **serveur à faire** | [audit-503](audit-503-zone-admin.md) §13 | 🟠 `nginx/snippets/app.conf` résout désormais les noms de services à chaque requête. Sans lui, **tout le site tombe en 502 après chaque `make re-front` / `make re-back` / `make build`** — nginx garde l'IP d'un conteneur qui n'existe plus, pendant que `docker compose ps` affiche un frontend `healthy`. Déployer avec `make reload-nginx`, qui valide par `nginx -t` **avant** de recharger, puis recetter en recréant le frontend : c'est le seul geste qui prouve le correctif. |
 | 4 | ⚠️ **Exécuter la procédure break-glass une fois pour de vrai** | §1, [runbook](runbook-admin.md) §3.1 | 🟠 **Monté au rang 4 le 23/09** : depuis la coupure du mot de passe, c'est le **seul garde-fou manquant** de l'accès d'urgence, et il n'a aucun substitut. Un `UPDATE` jamais joué se découvre un soir de panne — citation SQL, `POSTGRES_USER` absent du shell de l'hôte, `make db-shell` indisponible. Une demi-heure sur le poste de dev. |
-| 4bis | **« Supprimer mon compte » : passer par une demande par mail** — ✅ clos le 22/09 (`4472d47`) | §13.1 | `DELETE /me` retiré côté backend (pas seulement le bouton), effacement par `DELETE /admin/comptes/<id>` réservé au `superadmin`. Reste mineur : le handle n'est pas affiché dans la liste des comptes (§13.1). |
+| 4bis | **« Supprimer mon compte » : passer par une demande par mail** — ✅ clos le 22/09 (`4472d47`) | §13.1 | `DELETE /me` retiré côté backend (pas seulement le bouton), effacement par `DELETE /admin/comptes/<id>` réservé au `superadmin`. Le handle manquant dans la liste des comptes est réglé le 24/09, non commité (§13.1). |
 | 5 | **Phase 4 d'`audit_admin`** — ✅ **close le 22/09** (`12d35dc`) : le journal est terminé | §4 | Le filet (`test_audit_inventaire.py`) a trouvé en arrivant **neuf routes admin qui écrivaient sans trace**, dont la liaison de tournois qui modifie le sigma. Toutes corrigées. |
 | 6 | **A-01 / A-02 — sessions figées sur le rôle** — ✅ clos le 22/09 (`12d35dc`) | §8 | Était le dernier 🟠 ouvert. Une promotion laissait à un admin une session de 30 jours au lieu de 12 h, une rétrogradation ne fermait aucune session. Désormais **changer de rôle oblige à se reconnecter**, dans les deux sens. Recette faite en conditions réelles, acceptation et rétrogradation (§8). |
 | 7 | **Définitions de l'IP v1 / v2 sur le site** — ✅ **clos le 22/09** | §13.2 | Les 5 décisions tranchées (propositions retenues), les 4 phases déroulées : un seul module de textes (`textes_ip.py`), badge de version et modale d'explication sur le récap et le classement, légende des couleurs, admin aligné. Validé à l'écran par l'utilisateur. Reliquat `grand_master` retiré le 23/09 : **chantier entièrement clos**. |
@@ -377,7 +387,7 @@ non-régressions, et chaque garde a été vérifiée **en la cassant volontairem
 | **B-03** | `changer_statut` sans garde | ✅ même garde, sous `FOR UPDATE` — *réserve ci-dessous* |
 | **B-04** | Zone nginx `auth` trop stricte | ✅ 20 → 40 r/min |
 | **B-05** | Trois fichiers de tests rouges | ✅ voir §9 |
-| **B-06** | `prompt=none` non commenté | ✅ commenté le 18/09, avec l'écart Discord/OIDC |
+| **B-06** | `prompt=none` non commenté | ✅ commenté le 18/09, avec l'écart Discord/OIDC ; remplacé le 24/09 par `prompt=consent` (écran d'autorisation à chaque connexion), verrouillé par `test_audit_auth_admin.py` |
 
 **Restent ouverts :**
 
@@ -403,8 +413,8 @@ des non-régressions le 2026-09-22 :
   de joueur qui accepte), le legs (**les deux** comptes), l'amorçage (les anciennes sessions,
   **avant** que `login()` crée la nouvelle). La durée reste figée dans `create_session` : pas de
   recalcul d'`expires_at`, qui aurait fait une seconde source de vérité. Après une acceptation ou
-  un legs, la page relance la connexion Discord (`prompt=none` : sans écran pour qui a déjà
-  autorisé) avec un message qui explique ; la carte d'acceptation prévient **avant** le clic.
+  un legs, la page relance la connexion Discord (écran d'autorisation à valider depuis le
+  24/09, `prompt=consent`) avec un message qui explique ; la carte d'acceptation prévient **avant** le clic.
   `test_sessions_changement_role.py`, **47 assertions**, dont un filet qui parcourt tout le
   backend. Sept gardes cassées volontairement, plus un cinquième écrivain fictif : tous
   rougissent. Détail au §A-01/A-02 de [audit-auth-discord.md](audit-auth-discord.md).
@@ -667,9 +677,29 @@ L'effacement direct est jugé trop dangereux.
 - `[x]` **Version de la politique : reste à `1.0`** — décidé le 2026-09-22. Le site et sa
   politique sont en reconstruction ; la version ne bougera pas avant la mise en ligne, même
   après plusieurs changements de texte.
-- `[ ]` **Le handle n'est pas affiché dans la liste des comptes**, qui ne montre que le nom
-  d'usage. C'est lui qu'il faut retaper pour supprimer — et pour léguer, défaut préexistant. Le
-  runbook indique où le lire (le profil Discord de qui confirme la demande).
+- `[x]` **Le handle est affiché dans la liste des comptes** — ✅ réglé le 2026-09-24, non
+  commité. Le défaut était plus net que « mineur » : `GET /admin/comptes` ne renvoyait que
+  `pseudo` (`global_name`, à défaut le handle), alors que le legs et la suppression font
+  retaper le handle. Retaper le nom vu à l'écran donnait un 400 sans explication, sauf sur les
+  vieux comptes sans `global_name`. Et le handle lu sur le profil Discord pouvait lui aussi
+  échouer, le site ne le mettant à jour qu'à la connexion.
+  - La route renvoie `handle` à côté de `pseudo` (inchangé). Rien de plus n'est exposé : la
+    liste donnait déjà le `discord_id`.
+  - La page l'affiche en gris sous le nom (`@toto`), et les deux fenêtres de confirmation
+    citent le handle attendu, sans préremplir la saisie.
+  - Comparaison commune `_confirmation_handle_valide()` (`backEnd/routes_comptes.py`) :
+    espaces autour, `@` en tête et casse tolérés (handles uniques sans égard à la casse), toute
+    valeur qui n'est pas du texte refusée en 400 au lieu d'un 500 possible. Le nom affiché ne
+    confirme toujours rien.
+  - Tests : `test_rgpd.py` 78 assertions (était 63), `test_hierarchie_routes.py` 114 (111),
+    `test_audit_lecture.py` 73 (72). Le nom affiché du test de refus est passé de `Toto` à
+    `Toto le Grand` : il ne différait du handle que par la casse. Trois protections cassées
+    volontairement (comparaison stricte, confirmation toujours acceptée, handle retiré de la
+    liste) : chacune fait virer des assertions au rouge. **Suite complète : 2008 assertions,
+    36 fichiers, aucune rouge.**
+  - Runbook §7 étape 2 réécrite : retrouver la ligne par le handle, et que faire s'il diffère
+    du profil Discord. CHANGELOG à jour.
+  - `[ ]` Recette à l'écran : la liste, puis une suppression sur un compte de test.
 - ⚠️ **Le point sensible s'est déplacé** : ce n'est plus le bouton, c'est le mail. N'importe qui
   peut écrire « supprimez le compte de X » ; seule l'étape 1 du runbook §7 l'arrête.
 
@@ -871,6 +901,28 @@ Détail complet et chiffres : [banner/equilibrage.md](banner/equilibrage.md), «
 - `[ ]` **Longueur d'emprise au châssis** (la langue de Yoshi l'allonge encore), à discuter.
 - `[ ]` **Vignettes** de Birdo et Daisy au format des autres (déjà noté au §13.4).
 - `[ ]` Déploiement : redémarrage du service `race` et `make re-front` (PNG et `render.js`).
+
+#### 13.11 Connexion Discord : l'écran d'autorisation ne s'affichait pas — ✅ FAIT le 2026-09-24, non commité
+
+**Constaté** : en cliquant « Se connecter », Discord renvoyait aussitôt vers le site, sans
+laisser lire sa page. Ce n'était ni un bug ni une erreur de manipulation : le site envoyait
+`prompt=none`, qui saute l'écran pour qui a déjà autorisé l'application (en place depuis
+`b0b90ef`, commenté au titre de B-06 le 18/09).
+
+**Décidé** : afficher l'écran à chaque connexion. Il dit avec quel compte Discord on entre
+(« Ce n'est pas vous ? »), ce qui compte avec plusieurs comptes ou sur un ordinateur partagé.
+
+- `[x]` `prompt=consent` dans `discord_login()` (`frontEnd/frontend.py`) : c'est le défaut de
+  Discord, écrit pour ne pas en dépendre. Le commentaire garde l'écart Discord/OIDC de B-06.
+- `[x]` Test sur le lien que la **vraie** route fabrique, pas sur la source
+  (`test_audit_auth_admin.py`, section B-06, **86 assertions**, était 83) : destination
+  `discord.com/oauth2/authorize`, `prompt=consent`, scope `identify` seul. Garde cassée
+  volontairement (retour à `none`) : une assertion vire au rouge.
+- ℹ️ **Un clic de plus aussi à la reconnexion** qui suit une acceptation de promotion ou un
+  legs (A-01/A-02). Rien ne casse : les quatre points d'entrée passent par la même route.
+- `[x]` Docs : [audit-auth-discord.md](audit-auth-discord.md) et
+  [audit-auth-admin-2026-09-17.md](audit-auth-admin-2026-09-17.md) (B-06), CHANGELOG.
+- `[ ]` Déploiement : `make re-front`, puis une connexion pour voir l'écran s'afficher.
 
 ## Note obsolète — ✅ corrigée le 2026-09-18
 

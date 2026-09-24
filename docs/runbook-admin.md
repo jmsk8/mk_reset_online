@@ -233,13 +233,17 @@ titulaire : **c'est l'étape 1 qui le fait**, et elle ne se saute pas.
    rien. Demander une confirmation **depuis le compte Discord concerné** : par exemple, répondre
    au mail avec un code, et attendre ce code en message privé venant de ce compte. Sans cette
    confirmation, ne rien supprimer.
-2. **Relever le pseudo Discord technique** (le *handle*, pas le nom affiché) : c'est lui qu'il
-   faudra retaper. La liste des comptes n'affiche que le nom ; le handle se lit sur le profil
-   Discord de qui a envoyé la confirmation.
+2. **Retrouver la bonne ligne par le handle** (l'identifiant Discord, pas le nom affiché) : la
+   liste des comptes l'affiche en gris sous le nom, `@handle`, depuis le 2026-09-24. Il doit
+   être **le même** que sur le profil Discord de qui a envoyé la confirmation : c'est ce qui
+   relie la demande à la ligne, le nom affiché étant libre et partageable. S'ils diffèrent, la
+   personne a changé de handle depuis sa dernière connexion (le site ne le met à jour qu'à ce
+   moment-là) : lui demander de se connecter une fois au site, puis recharger la liste.
 3. **Proposer l'export avant** : « Télécharger mes données » n'est accessible qu'au titulaire,
    et seulement tant que le compte existe.
-4. **Supprimer** : bouton « Supprimer le compte » sur sa ligne, confirmer, retaper le handle.
-   Un handle qui ne correspond pas est refusé (400), sans rien effacer.
+4. **Supprimer** : bouton « Supprimer le compte » sur sa ligne, confirmer, retaper le handle
+   que la fenêtre rappelle. Le `@`, les espaces autour et la casse sont tolérés ; un handle
+   qui ne correspond pas est refusé (400), sans rien effacer.
 5. **Répondre** dans le délai d'**un mois** (RGPD, art. 12.3) : dire que c'est fait, et
    rappeler ce qui reste — le pseudo de jeu et l'historique de tournois — ainsi que la
    possibilité de demander l'anonymisation du pseudo.

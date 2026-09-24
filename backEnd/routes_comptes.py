@@ -74,6 +74,24 @@ def _pseudo(username, global_name):
     return global_name or username
 
 
+def _confirmation_handle_valide(saisie, handle):
+    """La saisie designe-t-elle bien ce handle ? (legs, suppression de compte)
+
+    Toujours le handle (discord_username), jamais le nom affiche : celui-ci est
+    libre, un homonyme viderait la confirmation de son sens. Tolere ce qu'un
+    humain ajoute en recopiant ce que la liste affiche (« @toto », espaces) et
+    la casse : les handles Discord sont uniques sans egard a la casse, en
+    minuscules depuis 2023. La confirmation sert a designer la cible
+    deliberement, pas a verifier un secret : ces tolerances n'en retirent rien.
+    """
+    if not isinstance(saisie, str) or not handle:
+        return False
+    saisie = saisie.strip()
+    if saisie.startswith('@'):
+        saisie = saisie[1:].strip()
+    return bool(saisie) and saisie.lower() == handle.lower()
+
+
 def _nom_creable(cur, nom):
     """Un nom de fiche est-il utilisable ? Renvoie (nom_propre, reponse d'erreur).
 
@@ -613,6 +631,10 @@ def lister_comptes():
         nom_joueur = r[11]
         comptes.append({
             "id": r[0], "discord_id": r[1], "pseudo": pseudo,
+            # Le handle, a cote du nom affiche : c'est lui que le legs et la
+            # suppression font retaper. Sans lui, la page demandait un nom
+            # qu'elle ne montrait nulle part.
+            "handle": r[2],
             "avatar_url": "/avatar/compte/%d" % r[0],
             "joueur_id": r[5], "joueur_nom": nom_joueur,
             "statut": r[6], "role": r[7],
@@ -1952,7 +1974,7 @@ def leguer_superadmin(compte_id):
                     # jamais sur le nom d'affichage : celui-ci est librement
                     # modifiable et un homonyme rendrait la confirmation vide de
                     # sens (plan 6bis.2).
-                    if not confirmation or confirmation != cible[2]:
+                    if not _confirmation_handle_valide(confirmation, cible[2]):
                         conn.rollback()
                         return jsonify({
                             "error": "Le pseudo saisi ne correspond pas au compte cible.",
@@ -2986,7 +3008,7 @@ def supprimer_compte(compte_id):
                     # le handle stable, jamais le nom d'affichage, librement
                     # modifiable. Un clic seul ne doit pas pouvoir effacer une
                     # identite.
-                    if not confirmation or confirmation != discord_username:
+                    if not _confirmation_handle_valide(confirmation, discord_username):
                         conn.rollback()
                         return jsonify({
                             "error": "Le pseudo saisi ne correspond pas au compte cible.",

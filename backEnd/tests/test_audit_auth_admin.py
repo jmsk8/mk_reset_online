@@ -217,6 +217,29 @@ check("et une nouvelle connexion repart proprement apres corruption",
 
 
 # ===========================================================================
+# B-06 -- L'ecran d'autorisation Discord s'affiche a chaque connexion.
+#
+# Jusqu'au 2026-09-24, `prompt=none` le sautait pour qui avait deja autorise le
+# site : Discord renvoyait aussitot, sans laisser lire sa page ni voir avec quel
+# compte on entrait. Decide ce jour-la : on le montre toujours. Teste sur le
+# lien que la VRAIE route fabrique, pas sur la source.
+# ===========================================================================
+print("\n=== B-06 : l'ecran d'autorisation Discord n'est jamais saute ===")
+_front.DISCORD_CLIENT_ID, _front.DISCORD_REDIRECT_URI = 'client-test', 'https://site.test/cb'
+_front.app.config['TESTING'] = True
+_r = _front.app.test_client().get('/auth/discord/login')
+_loc = urlparse(_r.headers.get('Location', ''))
+_q = parse_qs(_loc.query)
+check("la connexion redirige vers l'autorisation Discord",
+      _r.status_code == 302 and _loc.netloc == 'discord.com'
+      and _loc.path == '/oauth2/authorize', (_r.status_code, _loc.geturl()))
+check("  avec prompt=consent : l'ecran s'affiche meme a qui a deja autorise",
+      _q.get('prompt') == ['consent'], _q.get('prompt'))
+check("  et toujours le seul scope identify",
+      _q.get('scope') == ['identify'], _q.get('scope'))
+
+
+# ===========================================================================
 # B-02a -- Le superadmin peut supprimer son propre compte.
 #
 # DELETE /me etait decoree @player_required SEUL : elle ne lisait jamais le

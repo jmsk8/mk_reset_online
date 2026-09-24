@@ -81,8 +81,8 @@ lui, est relu en base à chaque requête. Les deux ne sont jamais resynchronisé
 > qui a produit le défaut ; un test interdit ce chemin.
 >
 > **Côté personne**, la déconnexion n'est jamais muette : la carte d'acceptation prévient
-> *avant* le clic, puis la page relance la connexion Discord (sans écran à valider pour qui a
-> déjà autorisé l'application, grâce à `prompt=none`) ; le legs fait de même pour l'ancien
+> *avant* le clic, puis la page relance la connexion Discord (avec l'écran d'autorisation à
+> valider depuis le 2026-09-24 : `prompt=consent` a remplacé `prompt=none`) ; le legs fait de même pour l'ancien
 > superadmin. Un message déposé par le frontend explique la reconnexion au retour. La cible d'une
 > rétrogradation, elle, se retrouve simplement déconnectée à sa prochaine page — la confirmation
 > côté admin le dit.

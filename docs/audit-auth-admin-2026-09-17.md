@@ -181,6 +181,9 @@ normal, fréquent) et le refus réel. Aujourd'hui les deux sont confondus.
 > retombe sur l'écran de consentement. `prompt=none` n'est donc **pas** la cause, et ne doit pas
 > être présenté comme telle. C'était le constat mineur B-06, **refermé le 2026-09-18** :
 > le paramètre porte maintenant ce raisonnement en commentaire, sur place.
+> **Suite du 2026-09-24** : `prompt=none` est remplacé par `prompt=consent`, par choix
+> d'ergonomie et non pour un défaut. L'écran d'autorisation s'affiche désormais à chaque
+> connexion, pour qu'on voie avec quel compte Discord on entre.
 
 ---
 

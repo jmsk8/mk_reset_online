@@ -860,25 +860,19 @@ def discord_login():
         # identify seul : ni email, ni guilds.
         'scope': 'identify',
         'state': state,
-        # Évite de réafficher l'écran d'autorisation à qui a déjà accordé
-        # l'accès : sans lui, chaque connexion redemande un consentement déjà
-        # donné, ce qui use pour rien.
+        # L'écran d'autorisation s'affiche à CHAQUE connexion, même pour qui a
+        # déjà autorisé le site : il dit avec quel compte Discord on entre
+        # (« Ce n'est pas vous ? »), ce qui compte avec plusieurs comptes ou
+        # sur un ordinateur partagé. Décidé le 2026-09-24, au prix d'un clic
+        # de plus par connexion.
         #
-        # ⚠️ Discord S'ÉCARTE ICI DE L'OIDC STANDARD, et c'est ce qu'il faut
-        # retenir. En OIDC, `prompt=none` *impose* au serveur de renvoyer une
-        # erreur plutôt que d'afficher quoi que ce soit — un utilisateur non
-        # encore autorisé se verrait donc refusé au lieu de pouvoir accepter.
-        # Chez Discord, non : sa documentation ne décrit `prompt` que pour les
-        # utilisateurs DÉJÀ autorisés, et la discussion officielle
-        # `discord-api-docs#6751` confirme que le comportement strict n'existe
-        # pas — il retombe sur l'écran de consentement.
-        #
-        # Conséquence pratique : ce paramètre est SANS DANGER pour une première
-        # connexion. Il a été soupçonné une fois d'être la cause des « bugs
-        # étranges » (le symptôme collait parfaitement), à tort — la vraie
-        # cause était le `state` en case unique, corrigé depuis. Ne pas le
-        # re-suspecter sans relire ce fil.
-        'prompt': 'none',
+        # Jusque-là, `prompt=none` sautait l'écran pour qui avait déjà
+        # autorisé : Discord renvoyait aussitôt vers le site, sans laisser lire
+        # sa page. (Chez Discord, `none` retombe sur l'écran pour un premier
+        # consentement au lieu d'une erreur comme en OIDC : voir
+        # `discord-api-docs#6751`.) `consent` est la valeur par défaut de
+        # Discord ; l'écrire ne dépend pas de ce défaut.
+        'prompt': 'consent',
     }
     return redirect(f"{DISCORD_AUTHORIZE_URL}?{urlencode(params)}")
 

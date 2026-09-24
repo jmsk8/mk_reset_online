@@ -27,7 +27,7 @@ H = {'X-Session-Token': 'tok'}
 
 # Depuis le 2026-09-22, l'effacement d'un compte se demande par ecrit et le
 # superadmin l'execute : DELETE /admin/comptes/<id>. Acteur 1 (superadmin),
-# cible 42, dont le handle Discord est 'toto' et le nom affiche 'Toto'.
+# cible 42, dont le handle Discord est 'toto' et le nom affiche 'Toto le Grand'.
 SUPERADMIN = ligne_session(compte_id=1, role='superadmin')
 
 def monter_suppression(acteur=SUPERADMIN, role_cible='player', joueur_id=9, cible=None):
@@ -140,11 +140,32 @@ check("  et rien n'est effacé ni journalisé, transaction annulée",
       and not any('INSERT INTO audit_admin' in s for s, _ in cur.executed))
 
 # Le nom AFFICHE est librement modifiable : un homonyme viderait la
-# confirmation de son sens. Seul le handle compte.
+# confirmation de son sens. Seul le handle compte. (Jusqu'au 2026-09-24, le nom
+# affiche de ce test etait 'Toto' : il ne differait du handle que par la casse,
+# que la comparaison ignore desormais -- voir plus bas.)
 cli, cur, conn, _ = monter_suppression()
-r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': 'Toto'}, headers=H)
+r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': 'Toto le Grand'}, headers=H)
 check("le nom affiché ne vaut pas confirmation -> 400",
       r.status_code == 400 and not deletes(cur), r.get_json())
+
+# Ce que la liste affiche depuis le 2026-09-24 est « @toto » : le recopier tel
+# quel, avec une espace de copier-coller ou une majuscule, doit confirmer. Les
+# handles Discord sont uniques sans egard a la casse : rien n'est affaibli.
+for _saisie in ('@toto', '  toto  ', 'Toto', '@ TOTO '):
+    cli, cur, conn, _ = monter_suppression()
+    r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': _saisie}, headers=H)
+    check("le handle recopié %r confirme -> 200" % _saisie,
+          r.status_code == 200 and bool(deletes(cur)), r.get_json())
+
+# Ces tolerances n'ouvrent rien d'autre : un prefixe, un suffixe, un « @ » seul
+# ou une valeur qui n'est pas du texte restent refuses -- sans 500.
+for _saisie in ('tot', 'toto2', '@', '   ', 'to to', 123, ['toto'], None):
+    cli, cur, conn, _ = monter_suppression()
+    r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': _saisie}, headers=H)
+    check("la saisie %r ne confirme pas -> 400 confirmation_invalide" % (_saisie,),
+          r.status_code == 400
+          and (r.get_json() or {}).get('code') == 'confirmation_invalide'
+          and not deletes(cur), (r.status_code, r.get_json()))
 
 # Le superadmin est unique : se supprimer laisserait le site sans administration.
 cli, cur, conn, _ = monter_suppression(role_cible='superadmin')
@@ -199,6 +220,17 @@ _h = _ac[_ac.find('async function supprimerCompte('):]
 _h = _h[:_h.find('\n        }\n')]
 check("  avec confirmation nommée puis pseudo retapé",
       'confirmer(' in _h and 'prompt(' in _h and 'confirmation_pseudo' in _h)
+# Le handle retape doit se lire sur la page : sans lui, on demandait un nom
+# que la page ne montrait nulle part (constat du 2026-09-22, §13.1).
+check("  la demande de saisie cite le handle attendu",
+      "@' + c.handle" in _h[_h.find('prompt('):], _h[_h.find('prompt('):][:200])
+_lg = _ac[_ac.find('async function leguerSuperadmin('):]
+_lg = _lg[:_lg.find('\n        }\n')]
+check("  celle du legs aussi", "@' + c.handle" in _lg[_lg.find('prompt('):])
+_ch = _ac[_ac.find('async function chargerComptes('):]
+_ch = _ch[:_ch.find('\n        }\n')]
+check("la liste des comptes affiche le handle sous le nom",
+      "'@' + c.handle" in _ch and "txt('td', c.pseudo)" in _ch)
 check("le proxy de la route superadmin transmet le corps (la confirmation)",
       "_proxy_admin('DELETE', f'/admin/comptes/{compte_id}', json_body=True)" in _front_py)
 
