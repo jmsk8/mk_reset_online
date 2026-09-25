@@ -5,6 +5,9 @@
 import { getShortestDistance } from './geometry.js';
 import { isRamming } from './bodies.js';
 import { getDistanceToLeader, getRacingLeader } from './standings.js';
+// Import circulaire (weapons importe spinOutKart d'ici) : sans danger, les deux
+// ne s'appellent qu'en cours de course, jamais au chargement du module.
+import { depositHeldItem } from './weapons.js';
 
 // Un kart depossede de ce qu'il tenait. Une orbite compte autant d'elements
 // DOM que d'orbes cote client : chacun a besoin de son evenement, sinon les
@@ -54,6 +57,16 @@ function shrinkDuration(cfg, state, kart) {
     return spec.shrinkMsMax + (spec.shrinkMsMin - spec.shrinkMsMax) * mix;
 }
 
+// Ce que la foudre fait de l'objet tenu. EN MAIN, il disparait. TRAINE au sol,
+// il y reste : la foudre le fait lacher, elle ne le detruit pas. L'orbite
+// disparait comme ce qui est en main — elle tourne autour du kart, elle ne
+// repose sur rien.
+function dropOrLoseHeldItem(cfg, state, now, kart, events) {
+    const held = kart.heldItem;
+    if (held && held.holdPosition === 'behind') depositHeldItem(cfg, state, now, kart, events);
+    else loseHeldItem(kart, events);
+}
+
 // La foudre tombe sur toute la piste d'un coup : tete-a-queue, rapetissement,
 // vitesse divisee et mains vides.
 function strikeAll(cfg, state, now, events) {
@@ -80,7 +93,7 @@ function strikeAll(cfg, state, now, events) {
 
         // Avant le tete-a-queue : sinon spinOutKart reprogrammerait le tir
         // d'un objet que le kart n'a deja plus.
-        loseHeldItem(kart, events);
+        dropOrLoseHeldItem(cfg, state, now, kart, events);
 
         // Un kart deja en toupie n'en repart pas pour un tour : il encaisse
         // le rapetissement, pas un second malus par-dessus le premier.
