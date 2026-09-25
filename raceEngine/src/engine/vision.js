@@ -786,7 +786,8 @@ function perceive(cfg, state, rng, now, kart) {
         // Une rouge traque : elle arrive dans l'axe et par l'arriere, pile le cas
         // ou un kart la precede et la masque. Soumise a l'occlusion, elle serait
         // inevitable.
-        e.pierces = vis.seeHomingThroughCover && item.type === 'redShell';
+        // Posee au sol, elle ne traque plus personne.
+        e.pierces = vis.seeHomingThroughCover && item.type === 'redShell' && !item.resting;
 
         // Une seule formule pour les deux sens : `dx / rel` est positif quand
         // l'ecart se referme, que l'objet soit devant et plus lent ou derriere et

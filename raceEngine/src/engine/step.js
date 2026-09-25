@@ -539,7 +539,9 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             }
         }
 
-        if (item.type !== 'banana') {
+        // Une carapace posee (cf. depositHeldItem) ne bouge pas plus qu'une
+        // banane : ni traque, ni trajectoire, ni rebond.
+        if (item.type !== 'banana' && !item.resting) {
             if (item.type === 'redShell' && item.targetKartId !== null) {
                 const target = state.kartsById[item.targetKartId];
                 if (target && (target.state === 'running' || target.state === 'hit')) {
@@ -579,18 +581,15 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
         if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
         if (item.worldX < 0) item.worldX += cfg.world.width;
 
-        if (item.type === 'greenShell') {
-            if (now - item.lastAnimTime > cfg.itemAnim.greenShell.animSpeed) {
-                item.currentFrame = (item.currentFrame % 3) + 1;
-                item.lastAnimTime = now;
-            }
-        } else if (item.type === 'redShell') {
-            if (now - item.lastAnimTime > cfg.itemAnim.redShell.animSpeed) {
-                item.currentFrame = (item.currentFrame % 3) + 1;
-                item.lastAnimTime = now;
-            }
+        // Posee, une carapace ne tourne plus sur elle-meme : elle garde sa frame.
+        const spin = item.resting ? null : cfg.itemAnim[item.type];
+        if (spin && (item.type === 'greenShell' || item.type === 'redShell')
+            && now - item.lastAnimTime > spin.animSpeed) {
+            item.currentFrame = (item.currentFrame % 3) + 1;
+            item.lastAnimTime = now;
         }
-        if (item.type === 'banana' && now - item.createdAt > cfg.delays.bananaLife) {
+        // Tout ce qui est pose au sol vit le temps d'une banane.
+        if ((item.type === 'banana' || item.resting) && now - item.createdAt > cfg.delays.bananaLife) {
             item.isDead = true;
         }
 
@@ -607,12 +606,17 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
 
         for (let k = 0; k < kartsLen; k++) {
             const kart = state.karts[k];
-            if (item.type === 'banana' && kart.id === item.shooterId && !item.armed) continue;
-            if (item.type === 'redShell' && kart.id === item.shooterId) continue;
+            // Un piege pose epargne celui qui l'a pose tant qu'il ne s'en est pas
+            // eloigne — carapace posee comprise : le kart foudroye glisse sur
+            // sa lancee, juste devant ce qu'il vient de lacher. Une fois arme,
+            // il le touche comme n'importe qui.
+            const trap = item.type === 'banana' || item.resting;
+            if (trap && kart.id === item.shooterId && !item.armed) continue;
+            if (!trap && item.type === 'redShell' && kart.id === item.shooterId) continue;
             // Une verte epargne son lanceur — jusqu'a ce qu'un tuyau la lui
             // renvoie. Elle ne revient pas par hasard : c'est lui qui a choisi de
             // tirer de ce cote, et le mur etait visible.
-            if (item.type === 'greenShell' && kart.id === item.shooterId && !item.pipeBounced) continue;
+            if (!trap && item.type === 'greenShell' && kart.id === item.shooterId && !item.pipeBounced) continue;
             if (kart.state !== 'running' && kart.state !== 'hit') continue;
 
             if (isRamming(kart)) {

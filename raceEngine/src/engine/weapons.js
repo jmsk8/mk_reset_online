@@ -335,11 +335,19 @@ function spawnLaunchedItem(cfg, state, rng, now, kart, itemType, itemId, startX,
         }
     }
 
+    pushGroundItem(cfg, state, now, kart, itemType, itemId, startX, startY, vx, vy, targetKartId);
+    events.push({ type: 'launchItem', kartId: kart.id, itemId: itemId });
+}
+
+// L'objet en piste, tel que la boucle des objets le lit. Partage par le tir et
+// par le depot : un objet pose doit porter exactement les memes champs qu'un
+// objet lance, sinon un test de la boucle lirait un champ absent.
+function pushGroundItem(cfg, state, now, kart, itemType, itemId, startX, startY, vx, vy, targetKartId) {
     let worldX = startX;
     if (worldX < 0) worldX += cfg.world.width;
     if (worldX >= cfg.world.width) worldX -= cfg.world.width;
 
-    state.items.push({
+    const item = {
         id: itemId,
         type: itemType,
         worldX: worldX,
@@ -376,10 +384,37 @@ function spawnLaunchedItem(cfg, state, rng, now, kart, itemType, itemId, startX,
         // Un objet ne peut toucher son lanceur qu'une fois eloigne de lui.
         armed: false,
         spent: false,
-        deadAt: 0
-    });
+        deadAt: 0,
 
-    events.push({ type: 'launchItem', kartId: kart.id, itemId: itemId });
+        // Pose au sol et non lance (cf. depositHeldItem) : il ne bouge plus, ne
+        // tourne plus, et vit le temps d'une banane. Seule une carapace en a
+        // besoin — une banane est deja immobile — mais le drapeau vaut pour
+        // tout objet pose.
+        resting: false
+    };
+    state.items.push(item);
+    return item;
+}
+
+// L'objet TRAINE, depose la ou il traine : meme place que l'emprise que le
+// moteur lui testait (`heldItemBehind`), donc aucun saut ni a l'ecran ni sur la
+// carte de debug. Il reprend son id : le client reutilise son element tel quel.
+//
+// Carapace comprise, et immobile : elle n'a pas ete tiree. Elle devient un piege
+// comme une banane — l'IA la voit deja comme tel, un objet a l'arret etant un
+// obstacle fixe pour elle.
+function depositHeldItem(cfg, state, now, kart, events) {
+    const held = kart.heldItem;
+    const item = pushGroundItem(cfg, state, now, kart, held.type, held.id,
+                                kart.worldX + cfg.offsets.world.heldItemBehind,
+                                kart.yPercent, 0, 0, null);
+    item.resting = true;
+
+    // Ni `launchItem` (il n'a pas ete tire : les bancs le compteraient comme un
+    // tir) ni `removeHeldItem` (il n'a pas disparu).
+    events.push({ type: 'dropItem', kartId: kart.id, itemId: held.id });
+    kart.heldItem = null;
+    kart.trailTime = 0;
 }
 
 function activateItem(cfg, state, rng, now, kart, events) {
@@ -689,6 +724,7 @@ export {
     isTrailable,
     rankChance,
     redShellTargetScore,
+    depositHeldItem,
     removeOrbitItem,
     spawnLaunchedItem,
     updateOrbitItems,
