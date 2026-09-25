@@ -54,15 +54,16 @@ function ensureKartEl(kart) {
     const scaler = document.createElement('div');
     scaler.classList.add('kart-scaler');
 
-    // Intercalaire dédié au miroir : snesBounce occupe déjà `transform`
-    // sur l'img, on ne peut pas y empiler un scaleX(-1).
+    // Intercalaire dédié au miroir : le bill occupe déjà `transform` sur
+    // l'img (son relèvement), on ne peut pas y empiler un scaleX(-1).
     const sprite = document.createElement('div');
     sprite.classList.add('kart-sprite');
 
     const img = document.createElement('img');
     img.src = GAME_CONFIG.resources.paths.char(kart.charName);
     img.classList.add('kart-static-png');
-    // snesBounce (0,15 s en alternate = cycle de 0,3 s) et starRainbow (0,3 s).
+    // starRainbow (0,3 s). Le cahot, lui, n'est plus une animation CSS : il se
+    // calcule a chaque image (kartBounceY, render.js).
     alignAnimationPhase(img, 300);
 
     sprite.appendChild(img);
@@ -169,10 +170,9 @@ function reconcileItems() {
         const item = worldState.items[i];
         expected[item.id] = true;
 
-        // L'element a ete cree quand l'objet etait encore en main, donc avec le
-        // rebond. Une fois lance, il n'y a plus rien pour le retirer : sans
-        // cette ligne, une banane sautille au sol.
-        ensureItemEl(item.id, item.type, 'behind').classList.remove('held-item-bouncing');
+        // L'element est celui de l'objet quand il etait tenu : lance par un
+        // kart ecrase, il serait encore aplati.
+        releaseHeldItemSquash(ensureItemEl(item.id, item.type, 'behind'));
     }
 
     for (let i = 0; i < worldState.karts.length; i++) {

@@ -424,27 +424,48 @@
 }
 
 /* Porte le miroir du tête-à-queue : les orientations ouest n'existent pas en
-   asset, on retourne leur symétrique est. Élément dédié car snesBounce occupe
+   asset, on retourne leur symétrique est. Élément dédié car le bill occupe
    déjà `transform` sur l'img. */
 /* Porte le rapetissement de l'eclair, et lui seul. Element distinct de
    `.kart-sprite` parce que celui-ci s'inverse a chaque image du tete-a-queue :
    empiler l'echelle dessus ferait s'ecraser le kart a chaque changement de frame
    au lieu de se retourner net. Origine au sol, pour qu'un kart reduit reste sur
    ses roues. */
+/* L'ecrasement, en un seul endroit : le kart ET l'objet qu'il tient en main
+   s'en servent. Deux jeux de valeurs finiraient par diverger, et l'objet ne
+   tomberait plus pile sur la galette. */
+.karts-layer {
+    --flat-squash-x: 1.35;
+    --flat-squash-y: 0.28;
+    --kart-scale-ms: 220ms;
+}
+
 .kart-scaler {
     width: 100%;
     line-height: 0;
     transform: scale(var(--kart-scale, 1)) scale(var(--kart-flat-x, 1), var(--kart-flat-y, 1));
     transform-origin: bottom center;
-    transition: transform 220ms ease-out;
+    transition: transform var(--kart-scale-ms) ease-out;
 }
 
 /* Ecrase par un kart reste grand. Deuxieme facteur d'echelle et non un
    remplacement du premier : un kart peut etre petit ET aplati. Le sprite
    s'elargit un peu en meme temps — une galette, pas un kart retreci en hauteur. */
 .kart-scaler.is-flat {
-    --kart-flat-x: 1.35;
-    --kart-flat-y: 0.28;
+    --kart-flat-x: var(--flat-squash-x);
+    --kart-flat-y: var(--flat-squash-y);
+}
+
+/* L'objet tenu en main s'aplatit avec son kart, au meme rythme. Son point
+   d'appui (le bas du kart) est pose en JS, cf. squashHeldItem dans render.js.
+   La transition n'existe qu'en main : un objet qui quitte la main reprend sa
+   forme d'un coup, au lieu de se redresser en vol. */
+.held-item-hands img {
+    transition: transform var(--kart-scale-ms) ease-out;
+}
+
+.held-item-flat img {
+    transform: scale(var(--flat-squash-x), var(--flat-squash-y));
 }
 
 .kart-sprite {
@@ -460,7 +481,10 @@
     width: 100%;
     image-rendering: pixelated;
     filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4));
-    animation: snesBounce 0.15s infinite alternate ease-in-out;
+    /* Pas d'animation de cahot ici : il se calcule en JS a chaque image et se
+       pose sur le conteneur, avec la meme valeur que sur l'objet tenu en main
+       (kartBounceY, render.js). Deux animations CSS finissaient toujours par se
+       decaler. */
 }
 
 /* Le parent est retourné : l'ombre doit l'être aussi pour rester en bas à
@@ -474,19 +498,10 @@
    sprite a chaque changement — soixante fois par seconde en `linear`, quatre par
    cycle en paliers. C'est aussi le cycle de palette du jeu d'origine. */
 .kart-container-moving.star-active .kart-static-png {
-    animation: snesBounce 0.15s infinite alternate ease-in-out,
-               starRainbow 0.3s steps(1, end) infinite;
+    animation: starRainbow 0.3s steps(1, end) infinite;
 }
 
 .kart-container-moving.kart-stopped .kart-static-png {
-    animation-play-state: paused;
-}
-
-.held-item-bouncing img {
-    animation: snesBounce 0.15s infinite alternate ease-in-out;
-}
-
-.held-item-bouncing.item-stopped img {
     animation-play-state: paused;
 }
 
@@ -1007,11 +1022,6 @@
 
 @media screen and (max-width: 768px) {
     .race-status-label { display: none; }
-}
-
-@keyframes snesBounce {
-    0% { transform: translateY(0); }
-    100% { transform: translateY(-3px); }
 }
 
 
@@ -1857,7 +1867,8 @@
    Le léger relèvement n'est là que pour décoller le bill du sol : un projectile
    vole, il ne roule pas. */
 
-/* Ni rebond ni toupie : un projectile ne cahote pas. */
+/* Ni toupie ni arc-en-ciel : un projectile ne cahote pas (le cahot, lui, est
+   coupe en JS, cf. kartBounceY). */
 .kart-container-moving.kart-bill .kart-static-png {
     animation: none;
     max-width: none;

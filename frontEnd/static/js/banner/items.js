@@ -127,11 +127,6 @@ function createHeldItemElement(itemType, holdPosition) {
     img.style.width = '100%';
     img.src = visual.src;
 
-    if (holdPosition === 'hands') {
-        itemDiv.classList.add('held-item-bouncing');
-        alignAnimationPhase(img, 300);
-    }
-
     itemDiv.appendChild(img);
     cachedContainer.appendChild(itemDiv);
     return { div: itemDiv, img: img };

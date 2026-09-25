@@ -3,6 +3,66 @@
 // Une seule fonction, appelee soixante fois par seconde. Elle ne lit que
 // `worldState` et n'ecrit que dans le DOM.
 
+// Le cahot d'un kart, en px vers le haut. Deduit du seul temps de jeu, comme le
+// tete-a-queue : rien a memoriser, et tous les karts cahotent en phase.
+//
+// Il etait joue en CSS, une animation sur le kart et une autre sur l'objet
+// tenu. Deux horloges, qui se decalaient a la moindre occasion : la pause du
+// kart arrete retardait la sienne pour de bon, le bill la relancait a zero,
+// un objet cree ou repasse en main repartait de sa propre phase. Une seule
+// valeur, posee sur les deux dans la meme image, ne peut plus diverger.
+//
+// Cosinus et non sinus : le cycle part du sol, comme l'ancien `ease-in-out`
+// entre 0 et -3 px, dont il reprend la forme.
+function kartBounceY(kart, gameNow) {
+    if (kart.isBill) return 0;
+    if (kart.state === 'hit' && kart.stopped) return 0;
+    const b = GAME_CONFIG.rendering.kartBounce;
+    const phase = (gameNow % b.periodMs) / b.periodMs;
+    return b.amplitude * (1 - Math.cos(phase * 2 * Math.PI)) / 2;
+}
+
+// L'objet tenu EN MAIN s'aplatit avec son kart. Sans ca, un kart ecrase
+// laisse son objet flotter a hauteur de main, au-dessus d'une galette.
+//
+// L'echelle se pose sur l'img, pas sur l'element place, dont la `transform`
+// est reecrite a chaque image. Elle reprend le facteur, la duree et le point
+// d'appui de `.kart-scaler.is-flat` : le bas du kart, en son milieu. Sur l'img,
+// ce point se compte a partir de son coin haut-gauche. En x : du bord gauche
+// de l'objet au centre du kart. En y : sous le bas de l'img, de toute la
+// hauteur de main, plus l'interligne que l'img laisse sous elle dans son div
+// (image en ligne, posee sur la ligne de base). Il est mesure au moment de
+// l'ecrasement, et seulement la : une lecture de mise en page par ecrasement,
+// pas par image.
+//
+// La classe se pose dans la meme image que `is-flat` sur le kart
+// (reconcileShrink tourne juste avant, dans renderState) : les deux
+// transitions partent ensemble.
+function squashHeldItem(hel, kart, hOffset, s) {
+    hel.classList.add('held-item-hands');
+    const flat = !!kart.isFlat;
+    if (flat === hel.classList.contains('held-item-flat')) return;
+
+    const img = hel.firstChild;
+    if (flat && img) {
+        const gap = hel.offsetHeight - img.offsetTop - img.offsetHeight;
+        const ox = kartDrawHalfWidth(kart) - hOffset.offset * s;
+        const oy = img.offsetHeight + gap + hOffset.yShift * s;
+        img.style.transformOrigin = `${ox}px ${oy}px`;
+    }
+    // Au retour, le point d'appui reste celui de l'ecrasement : c'est autour de
+    // lui que l'objet doit se redresser.
+    hel.classList.toggle('held-item-flat', flat);
+}
+
+// Traine ou lache, l'objet n'a plus rien a aplatir. Les deux classes tombent
+// ensemble : la transition n'est portee que par `.held-item-hands`, elle ne
+// s'applique donc pas, et l'objet reprend sa forme d'un coup. Sinon une banane
+// lancee par un kart ecrase se redresserait en vol.
+function releaseHeldItemSquash(el) {
+    el.classList.remove('held-item-hands', 'held-item-flat');
+}
+
 function renderState(gameNow, screenWidth, frameMs) {
     const renderMargin = GAME_CONFIG.rendering.bufferZone;
 
@@ -119,26 +179,20 @@ function renderState(gameNow, screenWidth, frameMs) {
         if (!els) continue;
         const wrapper = els.wrapper;
 
-        if (kart.state === 'hit') {
-            if (kart.stopped) {
-                if (!wrapper.classList.contains('kart-stopped')) wrapper.classList.add('kart-stopped');
-                if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].classList.add('item-stopped');
-            } else {
-                wrapper.classList.remove('kart-stopped');
-                if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].classList.remove('item-stopped');
-            }
-        } else {
-            wrapper.classList.remove('kart-stopped');
-            if (kart.heldItem && itemEls[kart.heldItem.id]) itemEls[kart.heldItem.id].classList.remove('item-stopped');
-        }
+        // Ne fige plus que l'arc-en-ciel de l'etoile : le cahot, lui, se
+        // coupe dans kartBounceY.
+        wrapper.classList.toggle('kart-stopped', kart.state === 'hit' && !!kart.stopped);
 
         const rx = getScreenPosition(kart.worldX, renderCameraX, screenWidth);
         const spriteX = rx - kartDrawHalfWidth(kart);
         const isVisibleNow = (rx > -renderMargin && rx < screenWidth + renderMargin);
 
         if (isVisibleNow) {
+            // Pose sur le conteneur, et non sur le sprite : l'objet tenu en
+            // main recoit la meme valeur plus bas, au meme pixel pres.
+            const bounceY = kartBounceY(kart, gameNow);
             wrapper.style.display = 'block';
-            wrapper.style.transform = `translate3d(${spriteX}px, ${depthToY(kart.yPercent)}px, 0)`;
+            wrapper.style.transform = `translate3d(${spriteX}px, ${depthToY(kart.yPercent) - bounceY}px, 0)`;
 
             const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
             if (wrapper.style.zIndex != zVal) wrapper.style.zIndex = zVal;
@@ -196,9 +250,8 @@ function renderState(gameNow, screenWidth, frameMs) {
                     hel.style.display = 'block';
 
                     // Un objet passe de la main au trainage pendant sa vie :
-                    // le rebond suit, il n'appartient qu'a l'objet tenu en main.
+                    // le cahot suit, il n'appartient qu'a l'objet tenu en main.
                     const inHands = kart.heldItem.holdPosition === 'hands';
-                    hel.classList.toggle('held-item-bouncing', inHands);
 
                     // Deux objets tenus, deux natures, deux placements.
                     //
@@ -215,10 +268,14 @@ function renderState(gameNow, screenWidth, frameMs) {
                         const hOffset = getHandsItemRenderOffset();
                         const s = kartDrawScale(kart);
                         hx = spriteX + hOffset.offset * s + (hel._halfW || 0);
-                        hy = hOffset.yShift * s;
+                        // Le cahot du porteur, le meme nombre : la main et
+                        // l'objet montent ensemble.
+                        hy = hOffset.yShift * s + bounceY;
+                        squashHeldItem(hel, kart, hOffset, s);
                     } else {
                         hx = rx + heldBehindX;
                         hy = 0;
+                        releaseHeldItemSquash(hel);
                     }
                     // `hy` monte l'objet par rapport a son porteur ; la
                     // profondeur du porteur s'y ajoute, dans la meme

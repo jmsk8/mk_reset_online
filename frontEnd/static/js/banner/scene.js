@@ -31,8 +31,9 @@ const ROAD_PATTERN_WIDTH = 80;
 
 // Les animations CSS decoratives sont calees sur l'horloge du serveur via un
 // animation-delay negatif : deux navigateurs qui creent le meme element a des
-// instants differents jouent malgre tout la meme phase. Sans ca, le rebond des
-// karts et l'arc-en-ciel de l'etoile differeraient d'un spectateur a l'autre.
+// instants differents jouent malgre tout la meme phase. Sans ca, l'arc-en-ciel
+// de l'etoile differerait d'un spectateur a l'autre. (Le cahot des karts n'en
+// est plus : il se calcule en JS a chaque image, cf. kartBounceY.)
 // `prop` sert aux animations portees par un pseudo-element, qui n'accepte aucun
 // style inline : la phase se pose alors en variable CSS sur le parent, que la
 // regle lit dans son `animation-delay`.
