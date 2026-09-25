@@ -64,7 +64,13 @@ const GAME_CONFIG = {
 
         // Levitation decorative des item-boxes : amplitude en px, vitesse en
         // radians par ms. Aucun effet sur la simulation.
-        boxFloat: { amplitude: 10, speed: 0.003 }
+        boxFloat: { amplitude: 10, speed: 0.003 },
+
+        // Cahot des karts, et de l'objet tenu en main : amplitude en px, periode
+        // en ms. Calcule en JS et non joue en CSS — le kart et son objet
+        // recoivent la MEME valeur dans la meme image, ils ne peuvent donc plus
+        // se decaler (cf. kartBounceY dans render.js).
+        kartBounce: { amplitude: 3, periodMs: 300 }
     },
     offsets: {
         // Rendu uniquement, jamais lu par la physique.
