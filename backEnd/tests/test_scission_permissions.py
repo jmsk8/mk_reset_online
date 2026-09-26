@@ -161,8 +161,13 @@ check("add-tournament exige gestion_tournois",
 deb = src.find('def add_tournament')
 fin = src.find('\n@admin_bp.route', deb)
 bloc = src[deb:fin if fin > deb else len(src)]
-check("la création à la volée vérifie gestion_joueurs",
-      "compte_a_permission(g.compte, 'gestion_joueurs')" in bloc)
+# S-09 (audit du 24/09) : depuis le découpage du 17/09, gestion_joueurs n'ouvre
+# plus que la LECTURE des fiches. C'est joueurs_creation qui crée -- ici comme
+# sur la page Fiches joueurs, sinon le tournoi redevient un détour.
+check("la création à la volée vérifie joueurs_creation",
+      "compte_a_permission(g.compte, 'joueurs_creation')" in bloc)
+check("  et plus gestion_joueurs, qui ne donne que la lecture",
+      "compte_a_permission(g.compte, 'gestion_joueurs')" not in bloc)
 check("  et refuse par un code lisible",
       '"joueur_inconnu"' in bloc or "'joueur_inconnu'" in bloc)
 check("  avec rollback avant de sortir",

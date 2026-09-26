@@ -61,8 +61,10 @@ check("la reponse dit que le dossier sportif est conserve",
       (r.get_json() or {}).get('dossier_sportif_conserve') is True, r.get_json())
 
 tables_effacees = {s.split('DELETE FROM ')[1].split()[0].lower() for s in deletes(cur)}
-check("efface sessions, profil, demandes et compte",
-      tables_effacees == {'sessions_joueurs', 'profils', 'liaisons_demandes', 'comptes'},
+# consentements depuis le lot F (25/09) : l'historique part avec le compte.
+check("efface sessions, profil, demandes, consentements et compte",
+      tables_effacees == {'sessions_joueurs', 'profils', 'liaisons_demandes',
+                          'consentements', 'comptes'},
       tables_effacees)
 
 for table in ('joueurs', 'participations', 'awards_obtenus', 'tournois', 'ghost_log',
@@ -240,7 +242,8 @@ class CurExport(type(cur)):
 cli, cur, conn, _ = monter([])
 cur.plan = [
     (r"SELECT discord_id, discord_username", ('123', 'toto', 'Toto', 'h', 9, 'linked',
-                                              'player', None, None, PASSE, PASSE, PASSE, PASSE, PASSE)),
+                                              'player', None, None, PASSE, PASSE, PASSE, PASSE, PASSE,
+                                              None, None)),
     (r"SELECT bio, couleur_accent", ('ma bio', '#FF0000', {'twitch': 'x'}, PASSE)),
     (r"SELECT nom, mu, sigma, score_trueskill", ('Mario', 50.0, 2.0, 44.0, 'A', True, '#FFF')),
     (r"FROM sessions_joueurs s JOIN comptes c", ligne_session(joueur_id=9)),

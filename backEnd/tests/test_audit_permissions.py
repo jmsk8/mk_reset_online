@@ -258,9 +258,17 @@ check("compte inexistant : laissé à la route (404 de son ressort), pas 403",
 src_auth = io_open(os.path.join(RACINE, 'auth.py'))
 _d = src_auth.find('def compte_cible_protegee')
 _f = src_auth.find('\ndef ', _d + 10)
+corps_decorateur = src_auth[_d:_f]
+# Depuis S-11 (25/09), le calcul vit dans refus_de_rang, partage avec
+# fiche_cible_protegee et les routes de liaison : une seule copie de la regle.
+# _rangs porte le defaut ferme, refus_de_rang la comparaison : les deux ensemble.
+_d = src_auth.find('def _rangs')
+_f = src_auth.find('\ndef ', src_auth.find('def refus_de_rang') + 10)
 corps_cible = src_auth[_d:_f]
+check("compte_cible_protegee delegue la decision a refus_de_rang",
+      'refus_de_rang(' in corps_decorateur and 'ROLE_HIERARCHY' not in corps_decorateur)
 check("la décision repose sur ROLE_HIERARCHY, pas sur des rôles en dur",
-      'ROLE_HIERARCHY' in corps_cible and 'rang_acteur <= rang_cible' in corps_cible)
+      'ROLE_HIERARCHY' in corps_cible and 'rang_acteur > rang_cible' in corps_cible)
 check("  le cas chef_admin n'est plus un `if` particulier",
       'role_cible == ROLE_CHEF_ADMIN' not in corps_cible)
 

@@ -224,6 +224,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // recoit qu'un id par son onclick.
 const joueursCharges = {};
 
+// S-11 : le backend marque `protegee` les fiches liées à un compte de rang égal
+// ou supérieur (fiche_cible_protegee les refuserait). Grisées, jamais masquées :
+// l'admin doit comprendre que c'est la hiérarchie qui l'arrête.
+const TITRE_FICHE_PROTEGEE = "Fiche d'un compte de rang égal ou supérieur au vôtre : "
+    + "seul un rang au-dessus peut la modifier.";
+
 /* Tri du tableau des joueurs.
 
    `colonne` vaut null tant que l'utilisateur n'a rien demande : on affiche
@@ -362,8 +368,17 @@ function afficherJoueurs() {
                 <span class="tag ${tierBadge.class}" style="${tierBadge.style}">${escapeHtml(player.tier || '?')}</span>
             </td>
             <td class="has-text-right">
+                ${player.protegee ? `
+                <button class="button is-small is-info is-outlined mr-1 est-interdit" disabled
+                    title="${TITRE_FICHE_PROTEGEE}">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="button is-small is-danger is-outlined est-interdit" disabled
+                    title="${TITRE_FICHE_PROTEGEE}">
+                    <i class="fas fa-trash"></i>
+                </button>` : `
                 <button class="button is-small is-info is-outlined mr-1"
-                    onclick="openEditModal(${player.id}, '${escapeHtml(player.nom).replace(/'/g, "\\'")}', ${player.mu}, ${player.sigma}, ${player.is_ranked}, ${player.consecutive_missed}, '${escapeHtml(player.color || '#ffffff')}')">
+                    onclick="openEditModal(${Number(player.id)})">
                     <i class="fas fa-edit"></i>
                 </button>
                 ${peutChamp('irreversible') ? `
@@ -373,7 +388,7 @@ function afficherJoueurs() {
                 <button class="button is-small is-danger is-outlined est-interdit" disabled
                     title="Vous n'avez pas la permission « Supprimer ou anonymiser ».">
                     <i class="fas fa-trash"></i>
-                </button>`}
+                </button>`}`}
             </td>
         `;
         tbody.appendChild(tr);
@@ -532,7 +547,22 @@ function interdireChamp(idChamp, permission) {
     champ.title = "Vous n'avez pas la permission « " + permission + " ».";
 }
 
-function openEditModal(id, nom, mu, sigma, isRanked, missed, color) {
+// S-01 (audit du 24/09) : l'identifiant SEUL passe par l'attribut onclick, le
+// reste est relu dans joueursCharges. Le nom y passait entre apostrophes, échappé
+// pour le HTML (`'` -> `&#039;`) AVANT le `.replace(/'/g, …)` censé le protéger
+// pour JavaScript : le replace ne trouvait plus rien, le navigateur redécodait
+// `&#039;` en lisant l'attribut, et un pseudo Discord comme `x');alert(1);('`
+// devenait du code dans la page d'un admin. Ne jamais remettre de texte dans
+// un gestionnaire inline (test_audit_securite_0924.py y veille).
+function openEditModal(id) {
+    const joueur = joueursCharges[id];
+    if (!joueur) return;
+    const nom = joueur.nom;
+    const mu = joueur.mu;
+    const sigma = joueur.sigma;
+    const isRanked = joueur.is_ranked;
+    const missed = joueur.consecutive_missed;
+    const color = joueur.color;
     document.getElementById('editId').value = id;
     document.getElementById('editNom').value = nom;
     document.getElementById('editMu').value = parseFloat(mu).toFixed(3);

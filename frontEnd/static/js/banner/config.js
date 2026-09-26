@@ -49,7 +49,12 @@ const GAME_CONFIG = {
     rendering: {
         bufferZone: 200,
         zIndexBase: 400,
-        mobileBreakpoint: 769,
+        // L'ecran compact : etroit, ou un telephone couche. Recopie a l'identique
+        // des `@media` de banner.css — le JS et la feuille de style doivent
+        // tomber d'accord, sinon un telephone couche aurait des sprites
+        // mobiles dans une scene PC. Sans le second terme, un 844 x 390 passait
+        // en PC : 408 px de bandeau dans 390 px d'ecran.
+        compactQuery: 'screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape)',
         // Miroir de `.kart-container-moving` en CSS. Le sprite est centre sur la
         // position du kart, qui est aussi le centre de sa hitbox : c'est la
         // demi-largeur qui sert.
@@ -58,9 +63,10 @@ const GAME_CONFIG = {
         // `scale` que le serveur envoie, tire de la taille de son PNG. Tout
         // ramener a 100 px dessinait dk exactement aussi long que koopa.
         //
-        // Ce qui reste ici est le DESSIN seul, d'ou les deux valeurs — la hitbox,
-        // elle, ne depend pas de l'appareil.
-        kartWidth: { pc: 100, mobile: 80 },
+        // Une seule valeur pour tous les appareils : sur telephone, c'est la
+        // scene entiere qui est reduite (`--stage-scale`, cf. layout.js), pas
+        // chaque sprite. Le dessin garde donc partout le rapport a sa hitbox.
+        kartWidth: 100,
 
         // Levitation decorative des item-boxes : amplitude en px, vitesse en
         // radians par ms. Aucun effet sur la simulation.
@@ -81,25 +87,25 @@ const GAME_CONFIG = {
             // du serveur (WORLD.hitboxes.heldBehindX). Un reglage de rendu en
             // face n'aurait fait qu'une chose : dessiner l'objet a cote de ce
             // qui touche.
-            heldItemHands: { x: { pc: 28, mobile: 18 }, yShift: { pc: 30, mobile: 25 } },
+            heldItemHands: { x: 28, yShift: 30 },
             // Abaissement de l'orbite, en pixels vers le bas. Au point le plus
             // recule l'objet monte de radiusY au-dessus des roues et donne
             // l'impression de leviter ; ce decalage le ramene au ras du sol sur
             // toute la rotation. Purement visuel : la hitbox suit toujours la
             // position monde calculee par getOrbitItemPosition().
-            orbitDrop: { pc: 10, mobile: 8 }
+            orbitDrop: 10
         }
     },
     visuals: {
-        greenShell: { width: 48, widthMobile: 32 },
-        redShell: { width: 48, widthMobile: 32 },
-        blueShell: { width: 58, widthMobile: 40 },
-        banana: { width: 32, widthMobile: 28 },
-        shroom: { width: 36, widthMobile: 26 },
-        star: { width: 36, widthMobile: 26 },
-        lightning: { width: 30, widthMobile: 22 },
-        bill: { width: 69, widthMobile: 51 },
-        box: { sizePC: 42, sizeMobile: 42 },
+        greenShell: { width: 48 },
+        redShell: { width: 48 },
+        blueShell: { width: 58 },
+        banana: { width: 32 },
+        shroom: { width: 36 },
+        star: { width: 36 },
+        lightning: { width: 30 },
+        bill: { width: 69 },
+        box: { size: 42 },
         // La taille du tuyau N'EST PLUS ICI : elle vient du serveur
         // (WORLD.pipeDraw), parce que c'est elle qui decide de son emprise —
         // `pipe.hitbox` en est une fraction fixe. Une largeur de dessin qui

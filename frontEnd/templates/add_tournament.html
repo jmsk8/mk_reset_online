@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestion tournois - Admin</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
     <link rel="stylesheet" href="../static/css/styles.css">
     <link rel="stylesheet" href="../static/css/dark-mode.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
@@ -537,11 +537,18 @@
                         </label>
                     </td>
                     <td class="is-vcentered">
-                        <button class="button is-small is-danger is-outlined" onclick="removePlayer('${escapeHtml(nom).replace(/'/g, "\\'")}', this)">
+                        <button class="button is-small is-danger is-outlined btn-retirer">
                             <i class="fas fa-times"></i>
                         </button>
                     </td>
                 `;
+                // S-01 (audit du 24/09) : le nom ne passe plus par un onclick
+                // inline. Il y etait echappe pour le HTML avant de l'etre pour
+                // JavaScript, dans le mauvais ordre : une apostrophe dans un nom
+                // (un pseudo Discord suffit) fermait la chaine et le reste
+                // s'executait. La closure garde le nom tel quel, sans interpretation.
+                tr.querySelector('.btn-retirer')
+                  .addEventListener('click', (e) => removePlayer(nom, e.currentTarget));
                 tableBody.appendChild(tr);
             }
 

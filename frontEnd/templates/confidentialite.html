@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Politique de confidentialité - MK Reset</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
@@ -52,6 +52,7 @@
                                 <tr><td>Référence de votre avatar</td><td>Discord</td><td>affichage</td></tr>
                                 <tr><td>Navigateur utilisé</td><td>votre navigateur</td><td>écran « vos sessions actives »</td></tr>
                                 <tr><td>Notifications reçues</td><td>le site</td><td>vous informer des décisions qui vous concernent</td></tr>
+                                <tr><td>Chacune de vos acceptations de ce document (version et date)</td><td>le site</td><td>pouvoir démontrer votre consentement, y compris aux versions précédentes</td></tr>
                             </tbody>
                         </table>
                         <p>
@@ -62,7 +63,8 @@
                         </p>
                         <p>
                             <strong>Base légale :</strong> votre consentement, donné en cliquant
-                            « Se connecter avec Discord » après avoir accepté le présent document.
+                            « J'ai lu et j'accepte » sur la page qui vous présente ce document, à votre
+                            première connexion puis à chaque nouvelle version.
                             Vous pouvez le retirer à tout moment en demandant la suppression de
                             votre compte (voir §5).
                         </p>
@@ -107,7 +109,7 @@
                                 <tr><td>Compte, profil et notifications</td><td>jusqu'à la suppression de votre compte</td></tr>
                                 <tr><td>Session de connexion</td><td>30 jours au maximum</td></tr>
                                 <tr><td>Invitation expirée, demande refusée, compte jamais rattaché et inactif</td><td>supprimés lors des purges, déclenchées par un administrateur</td></tr>
-                                <tr><td>Journal des actions d'administration</td><td>conservé ; il peut contenir un pseudo de jeu</td></tr>
+                                <tr><td>Journal des actions d'administration</td><td>conservé sans limite de durée ; il peut contenir votre pseudo de jeu, votre ancien et votre nouveau pseudo Discord quand un administrateur les synchronise, et le motif qu'un administrateur a rédigé en refusant l'une de vos demandes</td></tr>
                                 <tr><td>Dossier sportif</td><td>conservé (voir §6)</td></tr>
                             </tbody>
                         </table>
@@ -137,16 +139,22 @@
                                     <td><strong>Sans limite de durée</strong></td>
                                 </tr>
                                 <tr>
-                                    <td>La date et la version de la politique que vous avez acceptée
-                                        en tant qu'administrateur.</td>
+                                    <td>Chacune de vos acceptations de la politique administrateur
+                                        (version et date), y compris celles qu'une version plus
+                                        récente a remplacées.</td>
                                     <td>Tant que le compte existe</td>
                                 </tr>
                             </tbody>
                         </table>
                         <p>
-                            <strong>Ce journal subsiste si votre compte est supprimé.</strong> Votre
-                            identifiant y est alors détaché — les lignes ne pointent plus vers un
-                            compte existant — mais les actions elles-mêmes restent. C'est ce qui
+                            <strong>Ce journal subsiste si votre compte est supprimé.</strong> Les
+                            lignes ne pointent plus vers un compte existant, mais chacune garde le
+                            pseudo sous lequel vous avez agi et une <em>empreinte</em> de votre
+                            identifiant Discord, qui permet de regrouper vos actions. Cette empreinte
+                            n'est pas votre identifiant, mais elle ne l'efface pas non plus : à partir
+                            de la liste des membres d'un serveur Discord, on peut la faire
+                            correspondre à un compte. C'est une donnée <em>pseudonyme</em>, pas
+                            anonyme. C'est ce qui
                             permet de comprendre après coup qui a décidé quoi, et c'est la raison
                             pour laquelle ce rôle demande un accord distinct : le consentement donné
                             à la création de votre compte, alors que vous étiez simple joueur, ne
@@ -190,9 +198,15 @@
 
                         <h2 class="title is-4">6. Ce que la suppression de votre compte efface, et ce qu'elle laisse</h2>
                         <p><strong>Elle efface</strong> votre identifiant Discord, votre pseudo
-                           Discord, la référence de votre avatar, votre bio, vos liens, vos sessions
-                           et vos demandes de rattachement. Définitivement, dès que votre
-                           demande est exécutée.</p>
+                           Discord, la référence de votre avatar, votre bio, vos liens, vos sessions,
+                           vos demandes de rattachement et l'historique de vos acceptations de ce
+                           document. Définitivement, dès que votre demande est exécutée.</p>
+                        <p>Le journal d'administration garde la trace de la suppression, avec une
+                           <em>empreinte</em> de votre identifiant Discord et non l'identifiant
+                           lui-même. Elle ne sert qu'à une chose : si une sauvegarde antérieure
+                           devait être restaurée, retrouver votre compte pour le supprimer de
+                           nouveau. Elle reste une donnée pseudonyme — rapprochée de la liste des
+                           membres d'un serveur Discord, elle désigne un compte.</p>
                         <p><strong>Elle laisse</strong> votre pseudo de jeu et votre historique de
                            tournois.</p>
                         <p>

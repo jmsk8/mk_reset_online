@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MK Reset</title>
     
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
     
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
@@ -157,6 +157,13 @@
             // Sous le failsafe du rideau (5 s).
             const SPLASH_MAX_MS = 4000;
 
+            // Retard du semis du decor sur la levee du voile : sans lui, les
+            // motifs surgissaient des le debut du fondu, encore dans le noir, et
+            // l'on voyait mal leur « pop ». Reste sous le fondu (1.2 s) pour
+            // qu'il n'y ait pas de temps mort. Filet de decor-mk.js a tenir
+            // au-dessus de SPLASH_MAX_MS + ce retard.
+            const DECOR_RETARD_MS = 500;
+
             const startedAt = Date.now();
             let dismissed = false;
 
@@ -170,10 +177,13 @@
                    entier derriere le voile (jusqu'a 4 s) et la page
                    s'afficherait avec un fond deja en place.
 
-                   Emis a la LEVEE du voile, pas a son retrait complet : le
-                   fondu dure 1,2 s, les motifs surgissent donc pendant qu'il
-                   s'efface, et non apres un temps mort. */
-                document.dispatchEvent(new CustomEvent('mkr:scene-visible'));
+                   Emis peu apres la LEVEE du voile (DECOR_RETARD_MS), pas a
+                   son retrait complet : le fondu dure 1,2 s, les motifs
+                   surgissent donc pendant qu'il s'efface, et non apres un
+                   temps mort. */
+                setTimeout(() => {
+                    document.dispatchEvent(new CustomEvent('mkr:scene-visible'));
+                }, DECOR_RETARD_MS);
 
                 // Retiré du DOM une fois le fondu fini. À tenir au-dessus de la transition
                 // de `.boot-splash` (1.2 s).
@@ -192,6 +202,10 @@
 
     {% include 'navbar.html' %}
     
+    {# Le cadre du plein ecran (banner/fullscreen.js) : c'est lui qui prend
+       l'ecran, en noir, et le bandeau s'y centre. Sans plein ecran il n'a
+       aucun effet sur la page. #}
+    <div class="banner-frame" id="bannerFrame">
     <section class="hero smk-snes-banner" id="bannerSection" data-season="{{ banner_season }}">
         <div class="game-content-wrapper">
             <div class="layer-scrolling-bg"></div>
@@ -275,6 +289,7 @@
 
         <div id="race-leaderboard"></div>
     </section>
+    </div>
 
     {# Releve de decision du kart suivi. Sous la banniere et non dedans : il ne
        fait pas partie de la scene, il l'explique. Vide et masque hors du mode
@@ -433,7 +448,7 @@
     </section>
 
     {% include 'footer.html' %}
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/jquery-3.6.0/jquery.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
     {# Le banner, découpé en scripts classiques chargés DANS CET ORDRE.
 
@@ -451,7 +466,7 @@
        côté serveur, et le client ne fait qu'afficher ce qu'il reçoit. #}
     {% for module in [
         'config', 'state', 'layout', 'assets', 'camera', 'focus', 'position', 'director',
-        'controls', 'leaderboard', 'scene', 'items', 'curtain', 'reconcile',
+        'controls', 'fullscreen', 'leaderboard', 'scene', 'items', 'curtain', 'reconcile',
         'effects', 'results', 'render', 'interpolate', 'net', 'loop', 'debug',
         'snow', 'main'
     ] %}
@@ -459,19 +474,21 @@
     {% endfor %}
 
     <script>
+        // Relayé par le serveur (/discord/widget) : appelé d'ici, discord.com
+        // recevait l'IP de chaque visiteur de l'accueil.
         document.addEventListener('DOMContentLoaded', () => {
-            const guildId = '1240353798753620039';
-            fetch(`https://discord.com/api/guilds/${guildId}/widget.json`)
+            const lien = document.getElementById('discordWidgetLink');
+            const enLigne = document.getElementById('onlineCount');
+            fetch('/discord/widget', { headers: { 'Accept': 'application/json' } })
                 .then(response => response.json())
                 .then(data => {
-                    if (data.instant_invite) document.getElementById('discordWidgetLink').href = data.instant_invite;
-                    if (data.presence_count) document.getElementById('onlineCount').innerText = data.presence_count;
-                    else document.getElementById('onlineCount').innerText = "Top";
+                    lien.href = data.instant_invite || "https://discord.gg/mkreset";
+                    enLigne.innerText = data.presence_count || "Top";
                 })
                 .catch(err => {
                     console.error("Erreur chargement Discord:", err);
-                    document.getElementById('onlineCount').innerText = "+";
-                    document.getElementById('discordWidgetLink').href = "https://discord.gg/mkreset"; 
+                    enLigne.innerText = "+";
+                    lien.href = "https://discord.gg/mkreset";
                 });
         });
     </script>

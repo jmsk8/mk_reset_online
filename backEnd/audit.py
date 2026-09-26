@@ -104,10 +104,12 @@ def _identite_acteur():
       - le pseudo, FIGE a cet instant. C'est un fait historique, pas une
         reference a suivre : si la personne se renomme ensuite, la ligne doit
         continuer de dire sous quel nom elle agissait.
-      - une EMPREINTE du snowflake, jamais le snowflake. Elle permet de
-        REGROUPER les actions d'un meme acteur supprime sans reconserver son
-        identifiant Discord -- meme motif que `compte_supprime` et
-        `noms_interdits`, on reste coherent avec le reste du projet.
+      - une EMPREINTE du snowflake, jamais le snowflake en clair. Elle permet
+        de REGROUPER les actions d'un meme acteur supprime -- meme motif que
+        `compte_supprime` et `noms_interdits`, on reste coherent avec le reste
+        du projet. C'est une PSEUDONYMISATION, pas une anonymisation (S-16) :
+        un snowflake n'est pas secret, son sha256 se retrouve a partir de la
+        liste des membres du serveur. La politique le dit comme tel.
       - le role porte a cet instant, qui explique ce que l'action lui etait
         permise.
 
@@ -143,12 +145,11 @@ def ecrire(cur, action, cible_type=None, cible_id=None, details=None,
     """Ecrit une ligne d'audit dans la transaction en cours.
 
     `acteur_id` n'est a preciser que lorsque l'acteur n'est PAS celui de la
-    requete courante -- deux cas aujourd'hui :
-
-      - l'amorcage du superadmin, ou le compte se promeut lui-meme avant
-        d'avoir une session ;
-      - la purge RGPD, declenchee par un ordonnanceur et sans acteur humain,
-        qui passe explicitement None.
+    requete courante -- un seul cas aujourd'hui : l'amorcage du superadmin, ou
+    le compte se promeut lui-meme avant d'avoir une session. (La purge RGPD
+    passait None jusqu'au 25/09 ; elle est declenchee a la main par un
+    chef_admin, qui doit donc etre nomme -- S-16.) Hors requete, ne rien passer
+    donne deja None.
 
     Partout ailleurs, ne rien passer : l'acteur est deduit de `g.compte`.
     """

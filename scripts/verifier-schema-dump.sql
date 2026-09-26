@@ -20,7 +20,7 @@ DECLARE
     -- encore (aucune migration n'a ete appliquee en prod). Tenir cette liste a
     -- jour en meme temps que docker-compose.dump.yml.
     attendues TEXT[] := ARRAY[
-        'audit_admin', 'comptes', 'global_reset_details', 'invitations',
+        'audit_admin', 'comptes', 'consentements', 'global_reset_details', 'invitations',
         'liaisons_demandes', 'noms_interdits', 'notifications',
         'permissions_admin', 'profils', 'promotions_proposees', 'service_tokens',
         'sessions_joueurs', 'sessions_tournois', 'tiers'

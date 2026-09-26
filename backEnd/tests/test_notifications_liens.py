@@ -61,6 +61,7 @@ print("\n=== Liaison approuvee -> la fiche joueur, par son id ===")
 # et emporterait le lien avec lui.
 cli, cur, conn = monter([
     (r"SELECT d\.compte_id, d\.joueur_id, d\.statut", (5, 9, 'pending', None)),
+    (r"SELECT statut, role FROM comptes WHERE id", ('pending', 'player')),
     (r"SELECT id FROM comptes WHERE joueur_id", None),
     (r"SELECT nom FROM joueurs WHERE id", ('Mario',)),
     (r"SELECT joueur_id FROM comptes WHERE id", (None,)),
@@ -102,6 +103,7 @@ print("\n=== Les accuses de reception n'ont PAS de lien (choix, pas oubli) ===")
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
 ], role='player', compte_id=5)
 r = cli.post('/me/promotion', json={'accepte': False}, headers=H)
 n = notif_inseree(cur)
@@ -111,6 +113,7 @@ check("lien NULL", n and n[3] is None, n and n[3])
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
 ], role='player', compte_id=5)
 r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': '1.0'}, headers=H)
 n = notif_inseree(cur)
@@ -128,6 +131,7 @@ check("acceptation : role dans le corps", n and 'le rôle admin' in n[2], n and 
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
 ], role='player', compte_id=5)
 r = cli.post('/me/promotion', json={'accepte': False}, headers=H)
 n = notif_inseree(cur)
@@ -137,6 +141,7 @@ check("refus : pseudo dans le corps", n and n[2].startswith('Admin a refusé'), 
 plan = [
     (r"SELECT role FROM comptes WHERE id", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
     (r"FROM sessions_joueurs s JOIN comptes c",
      ligne_session(compte_id=5, discord_id='111', username='vieuxcompte',
                    global_name=None, role='player')),

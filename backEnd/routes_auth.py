@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request, g
 
-from constants import (INVITATION_LIFETIME_HOURS, CGU_VERSION, ROLE_ADMIN,
+from constants import (INVITATION_LIFETIME_HOURS, INVITATION_MAX_HOURS,
+                       INVITATION_MAX_USES, CGU_VERSION, ROLE_ADMIN,
                        ROLE_CHEF_ADMIN, ROLE_HIERARCHY, PERMISSIONS_CATALOGUE,
                        permissions_effectives)
 from auth import (player_required, player_required_sans_cgu, permission_required,
@@ -48,7 +49,6 @@ def discord_exchange():
             invite_token=data.get('invite_token'),
             user_agent=data.get('user_agent'),
             redirect_uri=data.get('redirect_uri'),
-            cgu_acceptee=bool(data.get('cgu_acceptee')),
         )
     except DiscordAuthError as e:
         return jsonify({"error": e.message, "code": e.code}), e.status
@@ -390,11 +390,28 @@ def creer_invitation():
     data = request.get_json(silent=True) or {}
     label = (data.get('label') or '')[:100] or None
     joueur_id = data.get('joueur_id')
+    # Meme garde que demander_liaison : un joueur_id non entier faisait un 500
+    # a la requete SQL. bool est un int en Python, d'ou son exclusion explicite.
+    if joueur_id is not None and (not isinstance(joueur_id, int) or isinstance(joueur_id, bool)):
+        return jsonify({"error": "Parametres invalides"}), 400
     try:
-        max_uses = max(1, int(data.get('max_uses', 1)))
-        heures = max(1, int(data.get('heures', INVITATION_LIFETIME_HOURS)))
+        max_uses = int(data.get('max_uses', 1))
+        heures = int(data.get('heures', INVITATION_LIFETIME_HOURS))
     except (TypeError, ValueError):
         return jsonify({"error": "Parametres invalides"}), 400
+
+    # S-08 : un refus explicite plutot qu'un plafonnement silencieux -- l'admin
+    # doit savoir que le lien qu'il envoie ne vivra pas ce qu'il a demande. La
+    # borne haute sur `heures` evite aussi l'OverflowError de timedelta, qui
+    # sortait en 500 hors de tout try.
+    if not (1 <= max_uses <= INVITATION_MAX_USES and 1 <= heures <= INVITATION_MAX_HOURS):
+        return jsonify({
+            "error": "Une invitation vaut au plus %d utilisations et %d jours."
+                     % (INVITATION_MAX_USES, INVITATION_MAX_HOURS // 24),
+            "code": "invitation_hors_plafond",
+            "max_uses": INVITATION_MAX_USES,
+            "max_heures": INVITATION_MAX_HOURS,
+        }), 400
 
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(hours=heures)

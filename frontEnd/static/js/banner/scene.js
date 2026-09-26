@@ -19,7 +19,7 @@ const LAKITU_SPRITES = [
 ];
 
 // Hauteur du sprite de Lakitu et sa position au-dessus de la route.
-const LAKITU_HEIGHT = { pc: 120, mobile: 82 };
+const LAKITU_HEIGHT = 120;
 const LAKITU_BOTTOM = 32;
 // Periode du flottement de Lakitu (depart et dernier tour). Miroir de `lakituFloat` dans
 // banner.css : les deux doivent bouger ensemble.

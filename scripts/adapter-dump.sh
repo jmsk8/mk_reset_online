@@ -125,7 +125,7 @@ info "    $appliquees migrations appliquees"
 # echouerait a moitie sans renvoyer d'erreur se verrait ici.
 echo
 info "3/4 Verification du schema obtenu…"
-ATTENDUES="audit_admin comptes invitations liaisons_demandes noms_interdits \
+ATTENDUES="audit_admin comptes consentements invitations liaisons_demandes noms_interdits \
 notifications permissions_admin profils service_tokens sessions_joueurs tiers"
 
 manquantes=""

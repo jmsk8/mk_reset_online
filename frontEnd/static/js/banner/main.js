@@ -144,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => bannerLink.raiseCurtain(), CURTAIN_FAILSAFE_MS);
 
     initScene();
+    initFullscreen();
     const _bannerEl = document.getElementById('bannerSection');
     if (!_bannerEl || _bannerEl.dataset.season === 'winter') initSnow();
 

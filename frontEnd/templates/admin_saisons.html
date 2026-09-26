@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - Gestion des Saisons</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
     <link rel="stylesheet" href="../static/css/styles.css">
     <link rel="stylesheet" href="../static/css/dark-mode.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
@@ -801,6 +801,15 @@ async function loadAwardTypes() {
         if(selectedOpt) selectedOpt.classList.add('selected');
     }
 
+    const saisonsParId = {};
+
+    function publierSaison(id) {
+        const s = saisonsParId[id];
+        if (!s) return;
+        saveAwards(s.id, !!s.is_league_recap, s.ligue_id || null, s.ligue_nom || null,
+                   !!s.include_league_moves, s.ip_version === 'v2' ? 'v2' : 'v1');
+    }
+
     async function loadSaisons() {
         const list = await api('/admin/saisons', 'GET');
         const tbody = document.getElementById('saisonsList');
@@ -833,10 +842,15 @@ async function loadAwardTypes() {
                 ligueBadge += '<span class="tag ml-1 is-info is-light"><i class="fas fa-exchange-alt mr-1"></i>Mouvements</span>';
             }
 
-            const escapedLigueNom = s.ligue_nom ? escapeHtml(s.ligue_nom).replace(/'/g, "\\'") : null;
+            // S-01 (audit du 24/09) : l'identifiant SEUL dans l'onclick, le
+            // reste est relu dans saisonsParId. Le nom de ligue y passait entre
+            // apostrophes, echappe pour le HTML avant de l'etre pour JavaScript :
+            // l'ordre inverse de celui qui protege, et un nom de ligue piege
+            // s'executait dans la page d'un rang superieur.
+            saisonsParId[s.id] = s;
             let publishBtn = s.is_active
                 ? ''
-                : `<button onclick="saveAwards(${s.id}, ${s.is_league_recap ? 'true' : 'false'}, ${s.ligue_id || 'null'}, ${escapedLigueNom ? "'" + escapedLigueNom + "'" : 'null'}, ${s.include_league_moves ? 'true' : 'false'}, '${ipVersion}')" class="button is-primary is-outlined" title="Publier">
+                : `<button onclick="publierSaison(${Number(s.id)})" class="button is-primary is-outlined" title="Publier">
                      <i class="fas fa-rocket"></i>&nbsp;Publier
                    </button>`;
 

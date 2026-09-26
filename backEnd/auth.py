@@ -417,31 +417,120 @@ def compte_cible_protegee(f):
         # de repondre 404, le decorateur n'a pas a trancher a sa place (et un
         # 403 ici revelerait l'inexistence par un code different).
         if row is not None:
-            role_cible = row[0]
-            # Defaut ferme des deux cotes : un role inconnu en base vaut le rang
-            # le PLUS BAS pour l'acteur (il ne peut presque rien) et le plus
-            # HAUT pour la cible (elle est presque intouchable). Une colonne
-            # corrompue ne doit jamais ouvrir une porte.
-            rang_acteur = ROLE_HIERARCHY.get(acteur['role'], ROLE_HIERARCHY[ROLE_PLAYER])
-            rang_cible = ROLE_HIERARCHY.get(role_cible, ROLE_HIERARCHY[ROLE_SUPERADMIN])
+            refus = refus_de_rang(acteur, cible_id, row[0])
+            if refus is not None:
+                return refus
 
-            if rang_acteur <= rang_cible:
-                logger.warning(
-                    "Cible protegee : %s (role %s) refuse sur le compte %s (role %s), %s",
-                    acteur['id'], acteur['role'], cible_id, role_cible, request.path,
-                )
-                # Le message nomme le rang de la cible : « action impossible »
-                # sans dire pourquoi renvoie l'admin vers un support qui ne peut
-                # pas deviner non plus.
-                if role_cible == ROLE_SUPERADMIN:
-                    message = "Ce compte est le super-administrateur : action impossible."
-                elif rang_acteur == rang_cible:
-                    message = ("Ce compte a le meme niveau de privilege que le votre : "
-                               "seul un compte de rang superieur peut agir dessus.")
-                else:
-                    message = ("Ce compte est plus privilegie que le votre : "
-                               "action impossible.")
-                return _erreur(message, 403, 'cible_protegee')
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def _rangs(role_acteur: str, role_cible: str) -> tuple[int, int]:
+    """(rang de l'acteur, rang de la cible), en defaut ferme des deux cotes.
+
+    Un role inconnu en base vaut le rang le PLUS BAS pour l'acteur (il ne peut
+    presque rien) et le plus HAUT pour la cible (elle est presque
+    intouchable). Une colonne corrompue ne doit jamais ouvrir une porte.
+    """
+    return (ROLE_HIERARCHY.get(role_acteur, ROLE_HIERARCHY[ROLE_PLAYER]),
+            ROLE_HIERARCHY.get(role_cible, ROLE_HIERARCHY[ROLE_SUPERADMIN]))
+
+
+def hors_de_portee(role_acteur: str, role_cible: str) -> bool:
+    """Vrai si la regle de rang interdit a l'acteur d'agir sur cette cible.
+
+    Pour les ECRANS, qui grisent un bouton d'avance plutot que de laisser
+    l'admin decouvrir un 403 (§B.0 de hierarchie-admin-plan.md). Meme calcul
+    que refus_de_rang, qui reste la frontiere.
+    """
+    rang_acteur, rang_cible = _rangs(role_acteur, role_cible)
+    return not rang_acteur > rang_cible
+
+
+def refus_de_rang(acteur: dict, cible_id: int, role_cible: str, objet: str = 'compte'):
+    """LA regle de rang, en un seul endroit. Renvoie une reponse 403 ou None.
+
+    rang(acteur) > rang(cible) -> None ; sinon 403 cible_protegee. Agir sur
+    SOI-MEME n'est pas tranche ici : chaque appelant l'ecarte avant, comme
+    compte_cible_protegee.
+
+    Partagee par compte_cible_protegee, fiche_cible_protegee et les routes de
+    liaison, qui ne recoivent pas l'identifiant du compte dans l'URL. Deux
+    copies du calcul finiraient par diverger ; c'est l'ecart qu'on ne voit
+    qu'une fois dehors.
+
+    `objet` ne change que le message : « compte » ou « fiche » (la fiche d'un
+    compte, S-11 de l'audit du 24/09).
+    """
+    rang_acteur, rang_cible = _rangs(acteur['role'], role_cible)
+    if rang_acteur > rang_cible:
+        return None
+
+    logger.warning(
+        "Cible protegee : %s (role %s) refuse sur le compte %s (role %s, %s), %s",
+        acteur['id'], acteur['role'], cible_id, role_cible, objet,
+        request.path,
+    )
+    # Le message nomme le rang de la cible : « action impossible » sans dire
+    # pourquoi renvoie l'admin vers un support qui ne peut pas deviner non plus.
+    sujet = ("Cette fiche appartient a un compte qui" if objet == 'fiche'
+             else "Ce compte")
+    if role_cible == ROLE_SUPERADMIN:
+        message = ("Cette fiche appartient au super-administrateur : action impossible."
+                   if objet == 'fiche'
+                   else "Ce compte est le super-administrateur : action impossible.")
+    elif rang_acteur == rang_cible:
+        message = ("%s a le meme niveau de privilege que le votre : seul un compte "
+                   "de rang superieur peut agir dessus." % sujet)
+    else:
+        message = "%s est plus privilegie que le votre : action impossible." % sujet
+    return _erreur(message, 403, 'cible_protegee')
+
+
+def fiche_cible_protegee(f):
+    """compte_cible_protegee, pour les routes qui visent une FICHE joueur.
+
+    S-11 (audit du 24/09), tranche par l'utilisateur le 25/09 : la hierarchie
+    vaut aussi pour le dossier sportif. Un admin ne modifie, ne supprime ni
+    n'anonymise la fiche d'un autre admin ou d'un rang superieur ; un chef_admin
+    pas celle d'un pair ni du superadmin. Avant, seule la route qui passe par
+    le COMPTE (/sync) portait la regle : un admin porteur de
+    joueurs_irreversible pouvait anonymiser la fiche du superadmin.
+
+    Une fiche sans compte lie vaut une fiche de player : tout admin muni du bon
+    droit y touche. Sa PROPRE fiche reste accessible, comme son propre compte
+    l'est pour compte_cible_protegee -- sinon personne ne pourrait jamais
+    toucher a celle du superadmin.
+
+    Ne couvre PAS les calculs collectifs (tournoi, reset global, repartition
+    des ligues) : ils touchent tout le monde a egalite et n'ont pas de cible.
+
+    Lit l'identifiant dans le parametre d'URL `id` (convention de
+    routes_admin : /admin/joueurs/<int:id>). A poser SOUS
+    permission_required, pour la meme raison que compte_cible_protegee.
+    """
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        joueur_id = kwargs.get('id')
+        acteur = g.compte
+        if joueur_id is None:
+            return f(*args, **kwargs)
+
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, role FROM comptes WHERE joueur_id = %s",
+                                (joueur_id,))
+                    row = cur.fetchone()
+        except Exception as e:
+            logger.error("Verification de fiche protegee impossible: %s", e)
+            return _erreur("Service indisponible", 503, 'indisponible')
+
+        # Aucun compte lie, ou la sienne : rien a proteger.
+        if row is not None and row[0] != acteur['id']:
+            refus = refus_de_rang(acteur, row[0], row[1], objet='fiche')
+            if refus is not None:
+                return refus
 
         return f(*args, **kwargs)
     return decorated_function

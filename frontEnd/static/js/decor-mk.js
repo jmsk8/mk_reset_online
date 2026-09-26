@@ -233,10 +233,11 @@
         document.addEventListener('mkr:scene-visible', generer, { once: true });
         /* Filet : si le voile ne se levait jamais (script casse, evenement
            manque), le fond resterait vide. Au-dela du plafond du voile
-           (4 s) on seme quand meme. */
+           (4 s) et du retard du semis (0,5 s, DECOR_RETARD_MS dans
+           index.html) on seme quand meme. */
         setTimeout(() => {
             if (!zone.children.length) generer();
-        }, 4500);
+        }, 5000);
     } else {
         generer();
     }

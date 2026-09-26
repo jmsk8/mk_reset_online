@@ -31,11 +31,12 @@ from constants import (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN, ROLE_HIERAR
                        PROMOTION_LIFETIME_DAYS, CGU_ADMIN_VERSION)
 from auth import (player_required, player_required_sans_cgu, role_required,
                  permission_required, compte_cible_protegee, permissions_delegables_par,
-                 refuse_auto_modification)
+                 refuse_auto_modification, refus_de_rang, hors_de_portee)
 from auth_discord import avatar_url, hash_token
 from cache import invalidate_cache
 from services import (construire_lobbies, resoudre_joueurs_matchmaking,
-                      purger_donnees_expirees)
+                      purger_donnees_expirees, nom_creable, empreinte_nom)
+from utils import RE_COULEUR
 from db import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -93,45 +94,19 @@ def _confirmation_handle_valide(saisie, handle):
 
 
 def _nom_creable(cur, nom):
-    """Un nom de fiche est-il utilisable ? Renvoie (nom_propre, reponse d'erreur).
+    """services.nom_creable, mis en reponse Flask pour les demandes de liaison.
 
     Appele a la demande et de nouveau a l'approbation : add_tournament cree des
     fiches a la volee, le nom a pu etre pris entre-temps.
     """
-    nom = (nom or '').strip()[:255]
-    if not nom:
-        return None, (jsonify({"error": "Le nom est vide", "code": "nom_vide"}), 409)
-
-    if '/' in nom:
-        # /stats/joueur/<nom> : Flask ne route pas un nom contenant un slash.
-        return None, (jsonify({
-            "error": "Le nom contient un « / », incompatible avec l'URL publique",
-            "code": "nom_invalide",
-        }), 409)
-
-    cur.execute(
-        "SELECT 1 FROM noms_interdits WHERE nom_hash = %s",
-        (hashlib.sha256(nom.lower().encode('utf-8')).hexdigest(),),
-    )
-    if cur.fetchone() is not None:
-        return None, (jsonify({
-            "error": "Ce nom correspond a une identite retiree et ne peut pas etre recree",
-            "code": "nom_interdit",
-        }), 409)
-
-    # joueurs.nom est UNIQUE mais sensible a la casse : « Mario » et « mario »
-    # coexisteraient en base tout en etant indiscernables a l'oeil.
-    cur.execute("SELECT id, nom FROM joueurs WHERE lower(nom) = lower(%s)", (nom,))
-    collision = cur.fetchone()
-    if collision is not None:
-        return None, (jsonify({
-            "error": "La fiche « %s » existe deja : revendiquez-la au lieu d'en creer une."
-                     % collision[1],
-            "code": "nom_deja_pris",
-            "joueur_en_conflit": {"id": collision[0], "nom": collision[1]},
-        }), 409)
-
-    return nom, None
+    nom, erreur = nom_creable(cur, nom)
+    if erreur is None:
+        return nom, None
+    if erreur['code'] == 'nom_deja_pris':
+        # Ici le joueur demande une CREATION : la sortie utile est de revendiquer.
+        erreur['error'] = ("La fiche « %s » existe deja : revendiquez-la au lieu d'en creer une."
+                           % erreur['joueur_en_conflit']['nom'])
+    return None, (jsonify(erreur), 409)
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +353,8 @@ def lister_liaisons():
                c.discord_avatar_hash, c.statut,
                j.id, j.nom,
                i.joueur_id,
-               d.nom_demande
+               d.nom_demande,
+               c.role
         FROM liaisons_demandes d
         JOIN comptes c ON c.id = d.compte_id
         -- LEFT JOIN : une demande de creation n'a pas encore de fiche. Avec un
@@ -420,6 +396,10 @@ def lister_liaisons():
         # vise. Sur une demande de creation, c'est la non-concordance qui informe.
         "joueur_vise_par_invitation": r[13],
         "concordance_invitation": (r[13] is not None and r[13] == r[11]),
+        # Ce que approuver/refuser refuseraient (S-11, S-13) : l'ecran grise
+        # les boutons d'avance au lieu de laisser decouvrir un 403.
+        "hors_de_portee": hors_de_portee(g.compte['role'], r[15]),
+        "est_moi": r[5] == g.compte['id'],
     } for r in rows])
 
 
@@ -456,6 +436,40 @@ def approuver_liaison(demande_id):
                         return jsonify({
                             "error": "Cette demande a deja ete traitee",
                             "code": "deja_traitee",
+                        }), 409
+
+                    # S-13 : revendiquer une fiche est declaratif, tout repose
+                    # sur un second regard. Approuver sa propre demande le
+                    # supprime.
+                    erreur = refuse_auto_modification(_acteur_id(), compte_id)
+                    if erreur is not None:
+                        conn.rollback()
+                        return erreur
+
+                    # S-04 : l'UPDATE ci-dessous pose statut = 'linked'. Sur un
+                    # compte suspendu, il levait la suspension -- par un admin
+                    # qui n'a que gestion_liaisons, donc pas le droit de
+                    # reactiver. Lu sous verrou : une suspension concurrente
+                    # passe avant ou apres, jamais entre la lecture et l'ecriture.
+                    cur.execute("SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE",
+                                (compte_id,))
+                    ligne_compte = cur.fetchone()
+                    if ligne_compte is None:
+                        conn.rollback()
+                        return jsonify({"error": "Compte introuvable"}), 404
+                    # S-11 : approuver ecrit sur le COMPTE (joueur_id, statut).
+                    # La route ne recoit que l'id de la demande, d'ou la regle
+                    # de rang posee a la main plutot que par compte_cible_protegee.
+                    refus = refus_de_rang(g.compte, compte_id, ligne_compte[1])
+                    if refus is not None:
+                        conn.rollback()
+                        return refus
+                    if ligne_compte[0] == 'suspended':
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Ce compte est suspendu : sa demande ne peut pas etre "
+                                     "approuvee tant qu'il n'est pas reactive.",
+                            "code": "compte_suspendu",
                         }), 409
 
                     creation = joueur_id is None
@@ -553,6 +567,23 @@ def refuser_liaison(demande_id):
                     if statut != 'pending':
                         conn.rollback()
                         return jsonify({"error": "Deja traitee", "code": "deja_traitee"}), 409
+
+                    # S-13, par symetrie avec l'approbation : on ne statue pas
+                    # sur sa propre demande, dans un sens ou dans l'autre.
+                    erreur = refuse_auto_modification(_acteur_id(), compte_id)
+                    if erreur is not None:
+                        conn.rollback()
+                        return erreur
+
+                    # S-11, meme regle de rang que l'approbation : la demande
+                    # d'un rang egal ou superieur se tranche plus haut.
+                    cur.execute("SELECT role FROM comptes WHERE id = %s", (compte_id,))
+                    ligne_compte = cur.fetchone()
+                    if ligne_compte is not None:
+                        refus = refus_de_rang(g.compte, compte_id, ligne_compte[0])
+                        if refus is not None:
+                            conn.rollback()
+                            return refus
 
                     cur.execute(
                         """UPDATE liaisons_demandes
@@ -700,6 +731,16 @@ def _verifier_sync(cur, compte_id):
     if nouveau == nom_actuel:
         return None, (jsonify({
             "error": "Le nom du joueur est deja a jour", "code": "deja_synchro",
+        }), 409)
+
+    # S-05 : la synchronisation ecrit joueurs.nom, elle aussi. Sans ce refus, un
+    # pseudo Discord identique a une identite anonymisee la faisait revenir.
+    cur.execute("SELECT 1 FROM noms_interdits WHERE nom_hash = %s", (empreinte_nom(nouveau),))
+    if cur.fetchone() is not None:
+        return None, (jsonify({
+            "error": "Ce pseudo correspond a une identite retiree et ne peut pas devenir "
+                     "le nom d'une fiche. Modifiez le nom a la main.",
+            "code": "nom_interdit",
         }), 409)
 
     # joueurs.nom est UNIQUE mais sensible a la casse : "Mario" et "mario"
@@ -960,6 +1001,13 @@ def changer_role(compte_id):
                         if cur.rowcount:
                             _audit(cur, 'permissions_purgees', 'compte', compte_id,
                                    {"motif": "sortie_role_admin", "nouveau_role": nouveau})
+
+                    # S-02 : cette route ne fait que descendre. Une proposition
+                    # recue avant la sanction la defairait a l'acceptation, et
+                    # celles que la cible a faites reposent sur un rang qu'elle
+                    # n'a plus.
+                    _annuler_promotions(cur, 'cible_retrogradee', cible=compte_id)
+                    _annuler_promotions(cur, 'proposant_retrograde', proposant=compte_id)
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -1017,6 +1065,45 @@ def _promotion_en_attente(cur, compte_id, pour_update=False):
         (compte_id,),
     )
     return cur.fetchone()
+
+
+def _annuler_promotions(cur, motif, cible=None, proposant=None, role_propose=None):
+    """Annule les propositions en attente devenues sans objet. Renvoie leur nombre.
+
+    S-02 (audit du 24/09) : une proposition vit trente jours, et la situation
+    qui la justifiait peut changer entre-temps -- la cible est retrogradee ou
+    suspendue, le proposant perd le rang qui lui permettait de proposer. Sans
+    ce solde, la personne acceptait plus tard sur la foi d'un pouvoir qui
+    n'existait plus, et remontait parfois plus haut qu'avant sa sanction.
+
+    `cible` vise les propositions RECUES par un compte, `proposant` celles
+    qu'il a FAITES ; `role_propose` restreint a un role. Chaque annulation est
+    tracee avec son motif : la ligne disparait du badge « en attente », le
+    journal doit dire pourquoi.
+    """
+    conditions, params = ["statut = 'pending'", "expires_at > now()"], []
+    if cible is not None:
+        conditions.append("compte_id = %s")
+        params.append(cible)
+    if proposant is not None:
+        conditions.append("propose_par = %s")
+        params.append(proposant)
+    if role_propose is not None:
+        conditions.append("role_propose = %s")
+        params.append(role_propose)
+    # Jamais un UPDATE sans filtre de compte : il solderait toute la table.
+    if cible is None and proposant is None:
+        raise ValueError("_annuler_promotions exige une cible ou un proposant")
+    cur.execute(
+        "UPDATE promotions_proposees SET statut = 'cancelled', decided_at = now() "
+        "WHERE " + " AND ".join(conditions) + " RETURNING id, compte_id, role_propose",
+        tuple(params),
+    )
+    annulees = cur.fetchall()
+    for promotion_id, compte_id, role in annulees:
+        _audit(cur, 'promotion_annulee', 'compte', compte_id,
+               {"role_propose": role, "promotion_id": promotion_id, "motif": motif})
+    return len(annulees)
 
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/promotion', methods=['POST'])
@@ -1164,6 +1251,22 @@ def annuler_promotion(compte_id):
                             "code": "aucune_promotion",
                         }), 404
 
+                    # S-14 : un chef_admin ne defait pas le geste d'un rang
+                    # au-dessus du sien (une proposition chef_admin du
+                    # superadmin, typiquement). Un proposant parti n'a plus de
+                    # rang a proteger : sa proposition s'annule librement.
+                    if ligne[2] is not None:
+                        cur.execute("SELECT role FROM comptes WHERE id = %s", (ligne[2],))
+                        p = cur.fetchone()
+                        if (p is not None and ROLE_HIERARCHY.get(p[0], 99)
+                                > ROLE_HIERARCHY.get(g.compte['role'], 0)):
+                            conn.rollback()
+                            return jsonify({
+                                "error": "Cette proposition a ete faite par un rang superieur "
+                                         "au votre : seul lui peut la retirer.",
+                                "code": "proposition_rang_superieur",
+                            }), 403
+
                     cur.execute(
                         """UPDATE promotions_proposees
                            SET statut = 'cancelled', decided_at = now() WHERE id = %s""",
@@ -1303,6 +1406,58 @@ def repondre_promotion():
                         logger.info("Promotion %s refusee par le compte %s", role, compte['id'])
                         return jsonify({"status": "success", "accepte": False})
 
+                    # S-02 / S-03 (audit du 24/09) : la proposition doit
+                    # tenir AU MOMENT de l'acceptation, pas seulement a celui
+                    # ou elle a ete faite. Deux conditions :
+                    #
+                    #  - le proposant a encore le rang qu'il fallait pour
+                    #    proposer ce role (chef_admin pour admin, superadmin
+                    #    pour chef_admin), et n'est ni suspendu ni supprime.
+                    #    Un proposant parti ne peut plus etre verifie : la
+                    #    proposition tombe avec lui.
+                    #  - c'est toujours une MONTEE. Sans ca, un superadmin qui
+                    #    accepte une vieille proposition « chef_admin » (recue
+                    #    avant un legs) se retrogradait seul : zero superadmin,
+                    #    seul ecrivain de comptes.role sans cette garde.
+                    #
+                    # Lecture du proposant SANS verrou : le poser apres celui
+                    # de la proposition croiserait l'ordre de changer_role
+                    # (compte, puis propositions) et risquerait l'interblocage.
+                    # Une retrogradation concurrente attend de toute facon le
+                    # verrou de la ligne, et trouve ensuite la proposition
+                    # soldee : l'acceptation passe pour anterieure, ce qu'elle est.
+                    seuil = ROLE_SUPERADMIN if role == ROLE_CHEF_ADMIN else ROLE_CHEF_ADMIN
+                    rang_proposant = None
+                    if proposant is not None:
+                        cur.execute("SELECT role, statut FROM comptes WHERE id = %s",
+                                    (proposant,))
+                        p = cur.fetchone()
+                        if p is not None and p[1] != 'suspended':
+                            rang_proposant = ROLE_HIERARCHY.get(p[0], 0)
+                    proposant_valide = (rang_proposant is not None
+                                        and rang_proposant >= ROLE_HIERARCHY[seuil])
+                    # Role inconnu : 99, donc jamais une montee (defaut ferme).
+                    toujours_une_montee = (ROLE_HIERARCHY[role]
+                                           > ROLE_HIERARCHY.get(role_actuel, 99))
+                    if not (proposant_valide and toujours_une_montee):
+                        cur.execute(
+                            """UPDATE promotions_proposees
+                               SET statut = 'cancelled', decided_at = now() WHERE id = %s""",
+                            (promotion_id,),
+                        )
+                        _audit(cur, 'promotion_annulee', 'compte', compte['id'],
+                               {"role_propose": role, "promotion_id": promotion_id,
+                                "motif": ("proposant_sans_droit" if not proposant_valide
+                                          else "plus_une_promotion")})
+                        # COMMIT et non rollback : la proposition est morte,
+                        # elle ne doit plus s'afficher ni se retenter.
+                        conn.commit()
+                        return jsonify({
+                            "error": "Cette proposition n'est plus valable : la situation "
+                                     "a change depuis qu'elle a ete faite.",
+                            "code": "proposition_caduque",
+                        }), 409
+
                     # ACCEPTATION : le role est pose ici, et seulement ici.
                     cur.execute(
                         """UPDATE promotions_proposees
@@ -1316,6 +1471,8 @@ def repondre_promotion():
                            WHERE id = %s""",
                         (role, CGU_ADMIN_VERSION, compte['id']),
                     )
+                    _enregistrer_consentement(cur, compte['id'], 'cgu_admin',
+                                              CGU_ADMIN_VERSION, 'acceptation_promotion')
                     # A-01 : TOUTES les sessions, celle-ci comprise. C'est la
                     # session de joueur qui vient d'accepter, ouverte pour 30
                     # jours : la garder donnerait a un admin soixante fois la
@@ -1396,6 +1553,8 @@ def accepter_cgu_admin():
                        WHERE id = %s""",
                     (CGU_ADMIN_VERSION, compte['id']),
                 )
+                _enregistrer_consentement(cur, compte['id'], 'cgu_admin',
+                                          CGU_ADMIN_VERSION, 'regularisation_admin')
                 _audit(cur, 'cgu_admin_acceptee', 'compte', compte['id'],
                        {"version": CGU_ADMIN_VERSION})
             conn.commit()
@@ -1466,9 +1625,15 @@ def _lire_journal(cur, acteur, compte_id=None, avant_id=None, limite=AUDIT_PAGE)
     conditions = []
     params = []
 
+    # Ses PROPRES lignes se lisent toujours, quel que soit son rang : c'est le
+    # droit d'acces (S-07, export « mes donnees »). Le filtre de rang protege
+    # les actions des AUTRES ; sans cette exception, un admin -- qui ne lit pas
+    # le journal -- ne pourrait pas obtenir copie de ce qu'on garde a son nom.
+    ses_propres_lignes = compte_id is not None and compte_id == acteur['id']
+
     # Les roles que cet acteur a le droit de lire. Un superadmin lit tout, y
     # compris les lignes dont l'acteur a ete supprime (acteur_compte_id NULL).
-    if acteur['role'] != ROLE_SUPERADMIN:
+    if acteur['role'] != ROLE_SUPERADMIN and not ses_propres_lignes:
         roles_lisibles = [r for r in ROLE_HIERARCHY
                           if _peut_lire_journal(acteur, r)]
         if not roles_lisibles:
@@ -2017,6 +2182,15 @@ def leguer_superadmin(compte_id):
                     _audit(cur, 'superadmin_legue', 'compte', compte_id,
                            {"ancien": acteur_id, "nouveau": compte_id,
                             "ancien_role_cible": ancien_role_cible})
+
+                    # S-03 : une proposition encore en attente pour la cible
+                    # la ferait redescendre a l'acceptation (repondre_promotion
+                    # le refuse aussi, ceci est la ceinture). Et l'ancien
+                    # superadmin, desormais chef_admin, ne peut plus designer
+                    # de chef_admin : ses propositions de ce role tombent.
+                    _annuler_promotions(cur, 'legs_superadmin', cible=compte_id)
+                    _annuler_promotions(cur, 'proposant_retrograde', proposant=acteur_id,
+                                        role_propose=ROLE_CHEF_ADMIN)
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -2190,20 +2364,31 @@ def _refus_auto_verrouillage(cur, compte_id: int, role: str, geste: str):
 @permission_required('gestion_comptes')
 @compte_cible_protegee
 def changer_statut(compte_id):
-    """Suspend ou reactive un compte. Ne touche jamais au role ni au joueur lie."""
-    nouveau = (request.get_json(silent=True) or {}).get('statut')
-    if nouveau not in ('linked', 'pending', 'suspended'):
-        return jsonify({"error": "Statut invalide"}), 400
+    """Suspend ou reactive un compte. Ne touche jamais au role ni au joueur lie.
+
+    Deux choix seulement : `suspended` ou `actif` (S-17, audit du 24/09). La
+    route acceptait `linked` sur un compte sans fiche et `pending` sur un compte
+    lie -- des etats qu'aucun ecran ne sait lire. Reactiver rend l'etat que
+    dicte le rattachement : `linked` s'il y a une fiche, `pending` sinon.
+    """
+    demande = (request.get_json(silent=True) or {}).get('statut')
+    if demande not in ('actif', 'suspended'):
+        return jsonify({"error": "Statut invalide : « actif » ou « suspended ».",
+                        "code": "statut_invalide"}), 400
 
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE",
+                cur.execute("SELECT statut, role, joueur_id FROM comptes WHERE id = %s FOR UPDATE",
                             (compte_id,))
                 row = cur.fetchone()
                 if row is None:
                     conn.rollback()
                     return jsonify({"error": "Compte introuvable"}), 404
+                if demande == 'suspended':
+                    nouveau = 'suspended'
+                else:
+                    nouveau = 'linked' if row[2] is not None else 'pending'
 
                 # B-02.2 / B-03. Suspendre est fonctionnellement AUSSI FORT que
                 # retrograder -- ca ferme les sessions et interdit la
@@ -2225,6 +2410,12 @@ def changer_statut(compte_id):
                 if nouveau == 'suspended':
                     # Sans fermer les sessions, la suspension ne serait qu'un libelle d'affichage.
                     cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte_id,))
+                    # S-02 : une proposition en attente survivrait a la
+                    # suspension et s'accepterait a la reactivation. Celles que
+                    # le compte a faites tombent aussi : un proposant suspendu
+                    # n'engage plus personne.
+                    _annuler_promotions(cur, 'cible_suspendue', cible=compte_id)
+                    _annuler_promotions(cur, 'proposant_suspendu', proposant=compte_id)
                 _audit(cur, 'statut_change', 'compte', compte_id,
                        {"ancien": row[0], "nouveau": nouveau})
             conn.commit()
@@ -2251,7 +2442,7 @@ RESEAUX_CONNUS = {
 # Handles admis par les plateformes ci-dessus : lettres, chiffres, et quelques
 # separateurs. Volontairement strict -- on peut toujours elargir.
 _RE_HANDLE = re.compile(r'^[A-Za-z0-9_.\-]{1,50}$')
-_RE_COULEUR = re.compile(r'^#[0-9A-Fa-f]{6}$')
+_RE_COULEUR = RE_COULEUR   # une seule regex de couleur pour tout le backend (utils)
 
 
 def _reseaux_avec_urls(reseaux):
@@ -2668,6 +2859,25 @@ def revoquer_service_token(token_id):
 # RGPD : consentement, acces, portabilite, effacement
 # ---------------------------------------------------------------------------
 
+def _enregistrer_consentement(cur, compte_id, politique, version, origine):
+    """Ajoute une acceptation a l'historique (table consentements, ajout seul).
+
+    A appeler dans la MEME transaction que l'UPDATE des colonnes cgu_* de
+    comptes : l'etat courant et son histoire vivent ou meurent ensemble. Une
+    acceptation enregistree dans comptes sans ligne ici serait une preuve qui
+    disparait au prochain changement de version (lot F, audit du 24/09).
+
+    `origine` nomme le GESTE (page_consentement, acceptation_promotion,
+    regularisation_admin) : une ligne qui dit « accepte » sans dire comment
+    est ce que S-06 reprochait au lien cgu=1.
+    """
+    cur.execute(
+        """INSERT INTO consentements (compte_id, politique, version, origine)
+           VALUES (%s, %s, %s, %s)""",
+        (compte_id, politique, version, origine),
+    )
+
+
 @comptes_bp.route('/me/cgu', methods=['POST'])
 @player_required_sans_cgu
 def accepter_cgu():
@@ -2685,6 +2895,8 @@ def accepter_cgu():
                        WHERE id = %s""",
                     (CGU_VERSION, g.compte['id']),
                 )
+                _enregistrer_consentement(cur, g.compte['id'], 'cgu', CGU_VERSION,
+                                          'page_consentement')
             conn.commit()
     except Exception as e:
         logger.error("Enregistrement du consentement impossible: %s", e)
@@ -2770,6 +2982,17 @@ def exporter_mes_donnees():
     Inclut le dossier sportif en plus de l'identite. Il n'est pas supprime par
     l'effacement du compte -- raison de plus pour que la personne puisse en
     obtenir copie.
+
+    S-07 (audit du 24/09) : l'export oubliait les demandes de CREATION de fiche
+    (jointure interne sur une fiche qui n'existe pas encore), le consentement
+    administrateur, les propositions de role, les permissions et, pour un
+    admin, les lignes du journal dont il est l'auteur -- nominatives et
+    conservees sans limite, donc les premieres a devoir y figurer.
+
+    Ce qui n'y figure PAS, volontairement : l'identite des AUTRES comptes (qui
+    a propose un role, qui a accorde une permission). L'export donne les
+    donnees de la personne, pas celles des administrateurs qui ont agi sur
+    elle (art. 15.4 : ne pas porter atteinte aux droits d'autrui).
     """
     compte_id = g.compte['id']
     joueur_id = g.compte['joueur_id']
@@ -2789,7 +3012,8 @@ def exporter_mes_donnees():
                     """SELECT discord_id, discord_username, discord_global_name,
                               discord_avatar_hash, joueur_id, statut, role,
                               cgu_accepted_at, cgu_version, created_at, updated_at,
-                              last_login_at, discord_synced_at, profil_synced_at
+                              last_login_at, discord_synced_at, profil_synced_at,
+                              cgu_admin_accepted_at, cgu_admin_version
                        FROM comptes WHERE id = %s""",
                     (compte_id,),
                 )
@@ -2808,7 +3032,20 @@ def exporter_mes_donnees():
                     "derniere_connexion": c[11].isoformat() if c[11] else None,
                     "miroir_discord_rafraichi_le": c[12].isoformat() if c[12] else None,
                     "pseudo_synchronise_le": c[13].isoformat() if c[13] else None,
+                    "politique_admin_acceptee_le": c[14].isoformat() if c[14] else None,
+                    "politique_admin_version": c[15],
                 }
+
+                # Lot F : toutes les acceptations, pas seulement la derniere.
+                cur.execute(
+                    """SELECT politique, version, accepte_le, origine
+                       FROM consentements WHERE compte_id = %s ORDER BY accepte_le, id""",
+                    (compte_id,),
+                )
+                export["consentements"] = [{
+                    "politique": r[0], "version": r[1],
+                    "accepte_le": r[2].isoformat(), "origine": r[3],
+                } for r in cur.fetchall()]
 
                 cur.execute(
                     "SELECT bio, couleur_accent, reseaux, updated_at FROM profils WHERE compte_id = %s",
@@ -2831,16 +3068,53 @@ def exporter_mes_donnees():
                     "navigateur": r[3],
                 } for r in cur.fetchall()]
 
+                # LEFT JOIN : une demande de CREATION n'a pas encore de fiche.
+                # La jointure interne la faisait disparaitre de l'export, avec
+                # son message et le nom demande (le pseudo Discord).
                 cur.execute(
-                    """SELECT d.statut, d.message, d.created_at, d.decided_at, j.nom
-                       FROM liaisons_demandes d JOIN joueurs j ON j.id = d.joueur_id
+                    """SELECT d.statut, d.message, d.created_at, d.decided_at, j.nom,
+                              d.joueur_id, d.nom_demande
+                       FROM liaisons_demandes d LEFT JOIN joueurs j ON j.id = d.joueur_id
                        WHERE d.compte_id = %s ORDER BY d.created_at""",
                     (compte_id,),
                 )
                 export["demandes_de_liaison"] = [{
+                    "type": 'rattachement' if r[5] is not None else 'creation',
                     "statut": r[0], "message": r[1], "faite_le": r[2].isoformat(),
-                    "decidee_le": r[3].isoformat() if r[3] else None, "joueur": r[4],
+                    "decidee_le": r[3].isoformat() if r[3] else None,
+                    "joueur": r[4], "nom_demande": r[6],
                 } for r in cur.fetchall()]
+
+                cur.execute(
+                    """SELECT role_propose, statut, created_at, expires_at, decided_at
+                       FROM promotions_proposees WHERE compte_id = %s ORDER BY created_at""",
+                    (compte_id,),
+                )
+                export["propositions_de_role"] = [{
+                    "role_propose": r[0], "statut": r[1], "proposee_le": r[2].isoformat(),
+                    "expirait_le": r[3].isoformat(),
+                    "decidee_le": r[4].isoformat() if r[4] else None,
+                } for r in cur.fetchall()]
+
+                cur.execute(
+                    """SELECT permission, created_at FROM permissions_admin
+                       WHERE compte_id = %s ORDER BY created_at""",
+                    (compte_id,),
+                )
+                export["permissions"] = [{
+                    "permission": r[0], "accordee_le": r[1].isoformat(),
+                } for r in cur.fetchall()]
+
+                # Les actions d'administration dont la personne est l'AUTEUR,
+                # toutes (limite=None : LIMIT NULL, sans borne). Par le lecteur
+                # partage, comme le volet, l'onglet et l'export admin : une
+                # seule requete lit ce journal. Vide pour qui n'a jamais administre.
+                export["journal_de_mes_actions"] = [
+                    {k: v for k, v in _ligne_journal(r).items()
+                     # L'identite de l'auteur est deja dans « compte ».
+                     if k not in ('acteur_compte_id', 'acteur_pseudo', 'acteur_supprime')}
+                    for r in _lire_journal(cur, g.compte, compte_id=compte_id, limite=None)
+                ]
 
                 cur.execute(
                     """SELECT created_at, type, titre, corps, lu_at, lien
@@ -2905,7 +3179,8 @@ def exporter_mes_donnees():
 def _effacer_compte(cur, compte_id, joueur_id, discord_id, origine):
     """Droit a l'effacement (art. 17), niveau 1 : efface un compte.
 
-    Detruit l'IDENTITE -- compte, profil, sessions, demandes de liaison -- et
+    Detruit l'IDENTITE -- compte, profil, sessions, demandes de liaison,
+    historique des consentements -- et
     laisse INTACT le dossier sportif, qui appartient a une fiche joueur
     pseudonyme.
 
@@ -2926,15 +3201,22 @@ def _effacer_compte(cur, compte_id, joueur_id, discord_id, origine):
     # L'audit AVANT la suppression : la ligne reference le compte, et
     # acteur_compte_id est en ON DELETE SET NULL. On y consigne de quoi rejouer
     # la suppression apres une restauration de sauvegarde (runbook §5), sans
-    # conserver la moindre donnee personnelle.
+    # garder le snowflake EN CLAIR.
+    #
+    # ⚠️ S-16 (audit du 24/09) : l'empreinte est une PSEUDONYMISATION, pas une
+    # anonymisation. Un snowflake n'a rien de secret : face a la liste des
+    # membres du serveur Discord, sha256 de chacun retrouve le compte en une
+    # seconde. C'est donc encore une donnee personnelle, conservee sans limite
+    # avec le journal -- justifiee par le seul usage ci-dessous, et declaree
+    # comme telle dans la politique (§ journal d'administration).
     _audit(
         cur, 'compte_supprime', 'compte', compte_id,
         {
              "joueur_id": joueur_id,
              "origine": origine,
-             # Empreinte et non identifiant : permet de verifier apres
-             # restauration qu'un compte ressuscite doit etre resupprime, sans
-             # reconserver le snowflake.
+             # Empreinte et non identifiant en clair : permet de verifier apres
+             # restauration qu'un compte ressuscite doit etre resupprime.
+             # Pseudonyme, pas anonyme (voir plus haut).
              "discord_id_hash": hash_token(discord_id),
         },
     )
@@ -2944,6 +3226,14 @@ def _effacer_compte(cur, compte_id, joueur_id, discord_id, origine):
     cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte_id,))
     cur.execute("DELETE FROM profils WHERE compte_id = %s", (compte_id,))
     cur.execute("DELETE FROM liaisons_demandes WHERE compte_id = %s", (compte_id,))
+    # Lot F (decision du 25/09) : l'historique des consentements part avec le
+    # compte. Plus de traitement, plus rien a justifier ; le garder serait
+    # conserver une donnee personnelle sans raison.
+    cur.execute("DELETE FROM consentements WHERE compte_id = %s", (compte_id,))
+    # S-02 : les propositions RECUES partent par CASCADE avec le compte ; celles
+    # qu'il a FAITES passeraient a propose_par NULL et resteraient affichees en
+    # attente, alors que repondre_promotion les refuserait a l'acceptation.
+    _annuler_promotions(cur, 'proposant_supprime', proposant=compte_id)
     cur.execute("DELETE FROM comptes WHERE id = %s", (compte_id,))
 
 

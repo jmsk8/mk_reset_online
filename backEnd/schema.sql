@@ -396,8 +396,9 @@ CREATE TABLE public.promotions_proposees (
     id           SERIAL PRIMARY KEY,
     compte_id    integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
     role_propose character varying(20) NOT NULL,
-    -- SET NULL : si le proposant part, la proposition reste valide -- elle a
-    -- ete faite par quelqu'un qui en avait le droit a ce moment-la.
+    -- SET NULL pour que l'historique survive au proposant. La proposition,
+    -- elle, ne survit pas : depuis S-02 (audit du 24/09), le droit de proposer
+    -- est reverifie a l'acceptation, et un proposant parti ne peut plus l'etre.
     propose_par  integer REFERENCES public.comptes(id) ON DELETE SET NULL,
     statut       character varying(20) NOT NULL DEFAULT 'pending',
     created_at   timestamp with time zone NOT NULL DEFAULT now(),
@@ -418,6 +419,40 @@ CREATE UNIQUE INDEX idx_promotion_pending_compte
     ON public.promotions_proposees(compte_id) WHERE statut = 'pending';
 CREATE INDEX idx_promotion_compte_statut
     ON public.promotions_proposees(compte_id, statut);
+
+-- CONSENTEMENTS -- une ligne par acceptation, jamais reecrite (lot F de l'audit
+-- du 24/09). comptes.cgu_* disent l'etat COURANT ; cette table dit l'HISTOIRE,
+-- qui survit a un changement de version de la politique. Effacee avec le
+-- compte. Detail : migrations/2026-09-25_consentements.sql.
+CREATE TABLE public.consentements (
+    id          SERIAL PRIMARY KEY,
+    compte_id   integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
+    politique   character varying(20) NOT NULL,
+    version     character varying(20) NOT NULL,
+    accepte_le  timestamp with time zone NOT NULL DEFAULT now(),
+    origine     character varying(30) NOT NULL,
+    CONSTRAINT consentements_politique_valide
+        CHECK (politique IN ('cgu', 'cgu_admin')),
+    CONSTRAINT consentements_origine_valide
+        CHECK (origine IN ('page_consentement', 'acceptation_promotion',
+                           'regularisation_admin', 'reprise_migration'))
+);
+ALTER TABLE public.consentements OWNER TO CURRENT_USER;
+CREATE INDEX idx_consentements_compte
+    ON public.consentements(compte_id, accepte_le);
+
+-- Ajout seul : corriger une acceptation apres coup, c'est en fabriquer une.
+-- DELETE reste permis (effacement du compte).
+CREATE FUNCTION public.consentements_sans_modification()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'consentements est en ajout seul : une acceptation ne se modifie pas.'
+        USING HINT = 'Inserer une nouvelle ligne pour une nouvelle acceptation.';
+END;
+$$;
+CREATE TRIGGER consentements_ajout_seul
+    BEFORE UPDATE ON public.consentements
+    FOR EACH ROW EXECUTE FUNCTION public.consentements_sans_modification();
 
 -- NOTIFICATIONS -- ce qu'un admin a decide sur le dos de quelqu'un.
 -- Texte fige a l'emission : une notification parle souvent d'une chose qui

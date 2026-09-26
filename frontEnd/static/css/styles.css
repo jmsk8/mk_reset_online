@@ -199,3 +199,23 @@ input[type="submit"]:hover {
 .est-interdit:disabled {
     pointer-events: auto;
 }
+
+/* Déconnexion en POST (S-17, audit du 24/09) : un formulaire là où il y avait
+   un lien. `display: contents` efface le <form> de la mise en page, si bien que
+   le bouton prend exactement la place du lien (item de menu, pied de carte,
+   rangée de boutons). `.bouton-lien` retire au <button> ce qui le distingue
+   d'un lien, pour les emplacements qui n'étaient pas des boutons. */
+.form-en-ligne {
+    display: contents;
+}
+.bouton-lien {
+    background: none;
+    border: none;
+    font: inherit;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+}
+.card-footer-item.bouton-lien {
+    text-align: center;
+}

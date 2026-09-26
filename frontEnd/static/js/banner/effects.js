@@ -18,7 +18,7 @@ const STORM_BOLTS = [
 
 // Largeur des traits, miroir de .storm-bolt en CSS : l'ecart se calcule en
 // pixels de conteneur, il lui faut la meme mesure que le rendu.
-const STORM_BOLT_W = { pc: 60, mobile: 40 };
+const STORM_BOLT_W = 60;
 
 // Marge entre la pointe et le bord du kart epargne.
 const STORM_BOLT_CLEARANCE = 8;
@@ -81,7 +81,7 @@ function ensureStormEls() {
 // les ancres etant trop espacees pour qu'un meme kart en couvre deux.
 function placeStormBolts(els, shooterId, screenWidth) {
     const svgs = els.bolts.children;
-    const boltW = cachedIsMobile ? STORM_BOLT_W.mobile : STORM_BOLT_W.pc;
+    const boltW = STORM_BOLT_W;
     // Le milieu du kart EST sa position : le sprite y est centre, comme sa
     // hitbox. `keepOut` ci-dessous s'en deduit — la demi-largeur DE CE KART,
     // qui n'est pas la meme pour tous depuis que le dessin suit le sprite, plus
@@ -261,14 +261,14 @@ function renderLakitu(gameNow, screenWidth) {
 
     els.wrapper.style.display = 'block';
 
-    // `height` est une propriete de mise en page : on ne la reecrit que lorsque
-    // l'appareil a change de gabarit, pas soixante fois par seconde.
-    const h = `${cachedIsMobile ? LAKITU_HEIGHT.mobile : LAKITU_HEIGHT.pc}px`;
+    // `height` est une propriete de mise en page : posee une fois, pas soixante
+    // fois par seconde.
+    const h = `${LAKITU_HEIGHT}px`;
     if (els.height !== h) {
         els.height = h;
         els.wrapper.style.height = h;
     }
-    // Centre sur la ligne : la moitie de largeur gagnee compte sur mobile.
+    // Centre sur la ligne.
     //
     // Sa profondeur passe par la meme conversion que les corps de la piste : il
     // survole le bitume, et doit donc rester colle a lui quand le cadre change

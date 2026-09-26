@@ -9,8 +9,8 @@
     <meta property="og:title" content="MK Reset — invitation">
     <meta property="og:description" content="Rejoignez le classement MK Reset.">
     <title>Invitation - MK Reset</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
@@ -66,17 +66,18 @@
                                     </p>
                                 </div>
 
-                                <label class="checkbox is-size-7 mb-3">
-                                    <input type="checkbox" id="cgu">
-                                    J'ai lu et j'accepte la
+                                {# S-06 : plus de case ici. Elle ne faisait que griser un
+                                   lien qui portait cgu=1 en dur, et le consentement
+                                   s'enregistrait sans geste réel. Il se donne à l'étape
+                                   suivante, sur /consentement (formulaire POST). #}
+                                <p class="is-size-7 mb-3">
+                                    Après la connexion, vous serez invité à lire et accepter la
                                     <a href="/confidentialite" target="_blank"
                                        rel="noopener">politique de confidentialité</a>.
-                                </label>
+                                </p>
 
-                                <a class="button is-primary is-fullwidth" id="btn-discord"
-                                   href="{{ url_for('discord_login', invite=invite_token, cgu=1) }}"
-                                   aria-disabled="true"
-                                   style="pointer-events:none;opacity:.5">
+                                <a class="button is-primary is-fullwidth"
+                                   href="{{ url_for('discord_login', invite=invite_token) }}">
                                     <span class="icon"><i class="fab fa-discord"></i></span>
                                     <span>Se connecter avec Discord</span>
                                 </a>
@@ -116,17 +117,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.fade-in').forEach(e => e.classList.add('visible'));
 
-            // Le bouton reste inerte tant que la case n'est pas cochée. Le consentement
-            // part ensuite dans le paramètre `cgu`.
-            const cgu = document.getElementById('cgu');
-            const btn = document.getElementById('btn-discord');
-            if (cgu && btn) {
-                cgu.addEventListener('change', () => {
-                    btn.style.pointerEvents = cgu.checked ? 'auto' : 'none';
-                    btn.style.opacity = cgu.checked ? '1' : '.5';
-                    btn.setAttribute('aria-disabled', cgu.checked ? 'false' : 'true');
-                });
-            }
         });
     </script>
 </body>

@@ -8,8 +8,72 @@ function getZIndex(yPercent) {
 }
 
 function updateMobileStatus() {
-    cachedIsMobile = window.innerWidth < GAME_CONFIG.rendering.mobileBreakpoint;
+    cachedIsMobile = window.matchMedia(GAME_CONFIG.rendering.compactQuery).matches;
     return cachedIsMobile;
+}
+
+// Hauteur de la scene PC, en px de mise en page : les 408 px du bandeau moins sa
+// bordure basse de 4 (Bulma pose `border-box` partout).
+const SCENE_HEIGHT = 404;
+
+// Sur telephone, la scene EST celle du PC, reduite d'un bloc. La feuille de
+// style choisit la hauteur du bandeau — elle suit la largeur de l'ecran, pour
+// que chaque telephone voie la meme longueur de piste —, et l'echelle s'en
+// deduit : la scene garde ses 404 px de haut, la piste ses proportions, le
+// decor les siennes, et les sprites leur taille PC.
+//
+// En plein ecran (fullscreen.js), la meme regle vaut : la hauteur du bandeau
+// fixe l'echelle. La feuille de style la plafonne pour que la largeur montre au
+// moins `--fullscreen-min-units` de piste (banner.css) : un ecran trop haut pour
+// ca — un PC en 16:9, une tablette — garde des bandes noires plutot que de
+// zoomer sur un bout de route. La scene garde donc partout ses proportions.
+//
+// Posee avant toute mesure : les largeurs lues ensuite en dependent.
+let cachedHero = null;
+let cachedFrame = null;
+
+// Marge du classement sous la scene, en haut et en bas : celle de la page.
+const LEADERBOARD_GAP = 8;
+
+function applyStageScale() {
+    if (!cachedHero) cachedHero = document.getElementById('bannerSection');
+    if (!cachedHero) return;
+
+    const h = cachedHero.clientHeight;
+    const w = cachedHero.clientWidth;
+    const fullscreen = cachedHero.classList.contains('is-fullscreen');
+    const staged = (cachedIsMobile || fullscreen) && h > 0 && w > 0;
+
+    if (staged) {
+        cachedHero.style.setProperty('--stage-scale', (h / SCENE_HEIGHT).toFixed(4));
+    } else {
+        cachedHero.style.removeProperty('--stage-scale');
+    }
+    cachedHero.classList.toggle('is-staged', staged);
+
+    placeInFrame(fullscreen && staged);
+}
+
+// Les bandes noires du plein ecran. Centree, la scene en laisse une en haut et
+// une en bas ; des que l'ecart le permet, celle du bas prend de quoi loger le
+// classement, qui retrouve alors sa place de la page — sous la piste, sans rien
+// cacher. Sinon il remonte dans le ciel (`has-board-room` absente, banner.css).
+function placeInFrame(on) {
+    if (!cachedFrame) cachedFrame = document.getElementById('bannerFrame');
+    const board = document.getElementById('race-leaderboard');
+
+    let top = 0;
+    let room = false;
+    if (on && cachedFrame) {
+        const spare = Math.max(0, cachedFrame.clientHeight - cachedHero.clientHeight);
+        const need = (board ? board.offsetHeight : 0) + 2 * LEADERBOARD_GAP;
+        room = spare >= need;
+        top = room ? Math.min(spare / 2, spare - need) : spare / 2;
+    }
+
+    if (on) cachedHero.style.setProperty('--frame-top', `${Math.round(top)}px`);
+    else cachedHero.style.removeProperty('--frame-top');
+    cachedHero.classList.toggle('has-board-room', room);
 }
 
 // Remesure la scene. Le seul endroit du fichier qui a le droit de lire une
@@ -20,6 +84,7 @@ function updateMobileStatus() {
 // une hauteur de repli pour toute la session.
 function refreshLayoutMetrics() {
     updateMobileStatus();
+    applyStageScale();
 
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     if (!cachedGameWrapper) cachedGameWrapper = document.querySelector('.game-content-wrapper');

@@ -1,5 +1,12 @@
 DEFAULT_MU = 50.0
 DEFAULT_SIGMA = 8.333
+
+# Bornes d'une saisie MANUELLE (S-10, decidees le 25/09). Larges autour des
+# valeurs du moteur : elles arretent une faute de frappe (500 au lieu de 50) ou
+# un NaN, pas une correction reelle. Le moteur, lui, n'est pas borne : un sigma
+# qui monte au-dela par penalites fantomes reste tel quel tant qu'on n'y touche pas.
+MU_MIN, MU_MAX = 0.0, 100.0
+SIGMA_MAX = 20.0          # sigma > 0, borne basse exclue
 TRUESKILL_BETA = 4.167
 TRUESKILL_DRAW_PROBABILITY = 0.1
 
@@ -101,6 +108,13 @@ SESSION_ADMIN_LIFETIME_HOURS = 12
 
 INVITATION_LIFETIME_HOURS = 72
 
+# Plafonds d'une invitation (S-08, audit du 24/09 ; valeurs choisies le 25/09).
+# Sans eux, un admin porteur de gestion_invitations (delegable) creait un lien
+# de 10 000 usages valable 100 ans : une porte d'entree publique et permanente,
+# dont le jeton finit en plus dans les journaux nginx (chemin de l'URL).
+INVITATION_MAX_HOURS = 30 * 24
+INVITATION_MAX_USES = 50
+
 # Duree de validite d'une proposition de promotion au rang d'admin.
 #
 # 30 jours et non 72 heures comme une invitation : une invitation s'envoie a
@@ -125,6 +139,15 @@ DISCORD_CDN_BASE = "https://cdn.discordapp.com"
 DISCORD_OAUTH_SCOPE = "identify"
 # Deux appels reseau vers Discord se cachent derriere l'echange du code.
 DISCORD_HTTP_TIMEOUT = 10
+
+# Widget du serveur Discord (membres en ligne, lien d'invitation sur l'accueil),
+# relaye par /discord/widget : appele depuis le navigateur, il donnait a Discord
+# l'IP de chaque visiteur (audit du 24/09, §4.6 de la note de reprise). Le
+# timeout reste sous celui de backend_request (5 s) pour que le frontend recoive
+# toujours une reponse, meme vide.
+DISCORD_GUILD_ID = "1240353798753620039"
+DISCORD_WIDGET_TIMEOUT = 3
+DISCORD_WIDGET_CACHE_TTL = 300
 
 ROLE_PLAYER = "player"
 ROLE_ADMIN = "admin"

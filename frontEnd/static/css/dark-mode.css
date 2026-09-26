@@ -208,6 +208,14 @@ strong,
     color: var(--text-color);
 }
 
+/* ... sauf dans une notification : `.is-light` garde un fond clair, et le gras
+   clair y devenait invisible (le pseudo revendique sur « Mon compte »). Le gras
+   reprend la couleur du texte de la notification, comme le veut Bulma. */
+.notification strong,
+.content .notification strong {
+    color: currentColor;
+}
+
 .title, .subtitle, .card-header-title {
     color: var(--header-text-color);
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);

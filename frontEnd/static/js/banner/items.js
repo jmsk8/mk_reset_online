@@ -4,19 +4,19 @@ function getItemVisualConfig(itemType) {
     switch (itemType) {
         case 'greenShell':
             return {
-                size: cachedIsMobile ? GAME_CONFIG.visuals.greenShell.widthMobile : GAME_CONFIG.visuals.greenShell.width,
+                size: GAME_CONFIG.visuals.greenShell.width,
                 src: imageCache['greenShell_1'] ? imageCache['greenShell_1'].src : GAME_CONFIG.resources.paths.greenShell(1),
                 holdPosition: 'behind'
             };
         case 'redShell':
             return {
-                size: cachedIsMobile ? GAME_CONFIG.visuals.redShell.widthMobile : GAME_CONFIG.visuals.redShell.width,
+                size: GAME_CONFIG.visuals.redShell.width,
                 src: imageCache['redShell_1'] ? imageCache['redShell_1'].src : GAME_CONFIG.resources.paths.redShell(1),
                 holdPosition: 'behind'
             };
         case 'banana':
             return {
-                size: cachedIsMobile ? GAME_CONFIG.visuals.banana.widthMobile : GAME_CONFIG.visuals.banana.width + 4,
+                size: GAME_CONFIG.visuals.banana.width + 4,
                 src: imageCache['banana'] ? imageCache['banana'].src : GAME_CONFIG.resources.paths.banana,
                 holdPosition: 'behind'
             };
@@ -31,7 +31,7 @@ function getItemVisualConfig(itemType) {
             return Object.assign(getItemVisualConfig('redShell'), { holdPosition: 'orbit' });
         case 'blueShell':
             return {
-                size: cachedIsMobile ? GAME_CONFIG.visuals.blueShell.widthMobile : GAME_CONFIG.visuals.blueShell.width,
+                size: GAME_CONFIG.visuals.blueShell.width,
                 src: imageCache['blueShell_1'] ? imageCache['blueShell_1'].src : GAME_CONFIG.resources.paths.blueShell(1),
                 holdPosition: 'hands'
             };
@@ -41,25 +41,25 @@ function getItemVisualConfig(itemType) {
             return { size: WORLD.blastRadius * 2, src: null, holdPosition: 'behind' };
         case 'shroom':
             return {
-                size: cachedIsMobile ? GAME_CONFIG.visuals.shroom.widthMobile : GAME_CONFIG.visuals.shroom.width,
+                size: GAME_CONFIG.visuals.shroom.width,
                 src: imageCache['shroom'] ? imageCache['shroom'].src : GAME_CONFIG.resources.paths.shroom,
                 holdPosition: 'hands'
             };
         case 'star':
             return {
-                size: cachedIsMobile ? GAME_CONFIG.visuals.star.widthMobile : GAME_CONFIG.visuals.star.width,
+                size: GAME_CONFIG.visuals.star.width,
                 src: imageCache['star'] ? imageCache['star'].src : GAME_CONFIG.resources.paths.star,
                 holdPosition: 'hands'
             };
         case 'lightning':
             return {
-                size: cachedIsMobile ? GAME_CONFIG.visuals.lightning.widthMobile : GAME_CONFIG.visuals.lightning.width,
+                size: GAME_CONFIG.visuals.lightning.width,
                 src: GAME_CONFIG.resources.paths.lightning,
                 holdPosition: 'hands'
             };
         case 'bill':
             return {
-                size: cachedIsMobile ? GAME_CONFIG.visuals.bill.widthMobile : GAME_CONFIG.visuals.bill.width,
+                size: GAME_CONFIG.visuals.bill.width,
                 src: imageCache['bill_1'] ? imageCache['bill_1'].src : GAME_CONFIG.resources.paths.bill(1),
                 holdPosition: 'hands'
             };
@@ -70,8 +70,7 @@ function getItemVisualConfig(itemType) {
 
 // Ou se pose l'objet TENU EN MAIN, en ecart au bord gauche du sprite. Du dessin
 // et rien d'autre : en main, un objet n'a aucune emprise. Il peut donc se caler a
-// l'oeil, et plus serre sur mobile. Recalcule a chaque image pour suivre un
-// changement de breakpoint.
+// l'oeil.
 //
 // L'objet TRAINE n'a pas son pendant ici : sa place est une position du monde
 // (`heldBehindX`), pas un reglage de rendu.
@@ -79,8 +78,8 @@ function getHandsItemRenderOffset() {
     const r = GAME_CONFIG.offsets.render.heldItemHands;
 
     return {
-        offset: cachedIsMobile ? r.x.mobile : r.x.pc,
-        yShift: cachedIsMobile ? r.yShift.mobile : r.yShift.pc
+        offset: r.x,
+        yShift: r.yShift
     };
 }
 
@@ -158,8 +157,7 @@ function renderOrbitItems(kart, rx, gameNow) {
     // ancres par leur coin gauche, avec deux largeurs differentes a rattraper.
     const cx = rx;
 
-    const d = GAME_CONFIG.offsets.render.orbitDrop;
-    const drop = cachedIsMobile ? d.mobile : d.pc;
+    const drop = GAME_CONFIG.offsets.render.orbitDrop;
     const kartZ = getZIndex(kart.yPercent);
     const animSrc = getOrbitFrameSrc(held.childType, gameNow);
 

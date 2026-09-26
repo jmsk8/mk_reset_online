@@ -183,20 +183,25 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     }
 
 
-def upsert_compte(cur, profil: dict, invitation_id: int | None = None,
-                  cgu_acceptee: bool = False) -> dict:
+def upsert_compte(cur, profil: dict, invitation_id: int | None = None) -> dict:
     """Cree ou rafraichit le compte, et renvoie son etat.
 
     Le miroir Discord est rafraichi a chaque connexion. Rien n'est propage vers
     joueurs.nom : c'est un geste admin explicite.
+
+    Ne pose JAMAIS le consentement (S-06, audit du 24/09). Il arrivait ici par
+    un parametre `cgu=1` present en dur dans le lien de la page d'invitation :
+    la case a cocher ne faisait que griser le lien, et un clic du milieu ou un
+    lien recopie enregistrait un consentement que personne n'avait donne. Un
+    compte neuf nait donc sans consentement, et la page /consentement (POST,
+    jeton CSRF, bouton explicite) le recueille avant tout le reste (A-07).
     """
     cur.execute(
         """
         INSERT INTO comptes (discord_id, discord_username, discord_global_name,
                              discord_avatar_hash, invitation_id,
-                             cgu_accepted_at, cgu_version,
                              discord_synced_at, last_login_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, now(), now())
+        VALUES (%s, %s, %s, %s, %s, now(), now())
         ON CONFLICT (discord_id) DO UPDATE SET
             discord_username    = EXCLUDED.discord_username,
             discord_global_name = EXCLUDED.discord_global_name,
@@ -204,16 +209,14 @@ def upsert_compte(cur, profil: dict, invitation_id: int | None = None,
             discord_synced_at   = now(),
             last_login_at       = now(),
             updated_at          = now()
-        -- cgu_* volontairement absentes du DO UPDATE : la date du consentement
-        -- d'origine ne doit pas etre ecrasee a chaque reconnexion.
+        -- cgu_* absentes de l'INSERT comme du DO UPDATE : seul POST /me/cgu
+        -- les ecrit.
         RETURNING id, discord_id, discord_username, discord_global_name,
                   discord_avatar_hash, joueur_id, statut, role,
                   cgu_accepted_at, cgu_version
         """,
         (profil['discord_id'], profil['username'], profil['global_name'],
-         profil['avatar_hash'], invitation_id,
-         datetime.now(timezone.utc) if cgu_acceptee else None,
-         CGU_VERSION if cgu_acceptee else None),
+         profil['avatar_hash'], invitation_id),
     )
     row = cur.fetchone()
     return {
@@ -460,7 +463,7 @@ def consume_invitation(cur, token: str | None) -> tuple[int, int | None]:
 
 
 def login(code: str, invite_token: str | None, user_agent: str | None,
-          redirect_uri: str | None = None, cgu_acceptee: bool = False) -> dict:
+          redirect_uri: str | None = None) -> dict:
     """Parcours complet : code -> profil Discord -> compte -> session.
 
     Une seule transaction : le compte, l'invitation consommee et la session
@@ -494,7 +497,7 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
                     if not peut_amorcer_sans_invitation(cur, profil['discord_id']):
                         invitation_id, joueur_vise = consume_invitation(cur, invite_token)
 
-                compte = upsert_compte(cur, profil, invitation_id, cgu_acceptee)
+                compte = upsert_compte(cur, profil, invitation_id)
                 promote_bootstrap_superadmin(cur, compte)
                 token, expires_at = create_session(
                     cur, compte['id'], compte['role'], user_agent

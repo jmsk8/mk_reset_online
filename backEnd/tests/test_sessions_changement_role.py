@@ -183,6 +183,7 @@ PROMO = (7, 'admin', 1, PASSE, FUTUR)
 PLAN_PROMO = [
     (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
     (r"FROM promotions_proposees", PROMO),
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
 ]
 
 cli, cur, conn = monter(PLAN_PROMO, role='player', compte_id=5)

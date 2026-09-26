@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import math
 import logging
+import re
 from typing import Any
 
+import requests
 from flask import Blueprint, jsonify, request, abort, render_template
 
 from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAULT_PAGE_SIZE, IP_VERSION_DEFAULT,
+    DISCORD_API_BASE, DISCORD_GUILD_ID, DISCORD_WIDGET_TIMEOUT, DISCORD_WIDGET_CACHE_TTL,
 )
 from db import get_db_connection
 from cache import get_cached, set_cached
@@ -23,6 +26,49 @@ from services import (
 logger = logging.getLogger(__name__)
 
 public_bp = Blueprint('public', __name__)
+
+
+# Le lien d'invitation finit dans un href : on n'accepte que la forme que
+# Discord renvoie, jamais une URL quelconque.
+_INVITATION_DISCORD = re.compile(r'^https://discord\.(?:com/invite|gg)/[A-Za-z0-9-]+$')
+
+
+@public_bp.route('/discord/widget')
+def discord_widget():
+    """Membres en ligne et lien d'invitation du serveur, pour l'accueil.
+
+    Relaye plutot qu'appele depuis le navigateur : Discord ne voit plus que
+    l'IP du serveur, jamais celle des visiteurs, et la CSP n'a plus a autoriser
+    discord.com. Seuls les deux champs affiches sortent. Un echec est mis en
+    cache comme une reussite (valeurs nulles) : si Discord ne repond pas, on ne
+    le relance pas a chaque visite, l'accueil affiche son repli.
+    """
+    cached = get_cached("discord_widget", ttl=DISCORD_WIDGET_CACHE_TTL)
+    if cached is not None:
+        return jsonify(cached)
+
+    widget = {"presence_count": None, "instant_invite": None}
+    try:
+        reponse = requests.get(
+            f"{DISCORD_API_BASE}/guilds/{DISCORD_GUILD_ID}/widget.json",
+            timeout=DISCORD_WIDGET_TIMEOUT,
+        )
+        data = reponse.json() if reponse.status_code == 200 else {}
+    except (requests.exceptions.RequestException, ValueError) as e:
+        logger.warning("Widget Discord indisponible: %s", e)
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    presence = data.get("presence_count")
+    if isinstance(presence, int) and not isinstance(presence, bool) and presence >= 0:
+        widget["presence_count"] = presence
+    invitation = data.get("instant_invite")
+    if isinstance(invitation, str) and _INVITATION_DISCORD.match(invitation):
+        widget["instant_invite"] = invitation
+
+    set_cached("discord_widget", widget)
+    return jsonify(widget)
 
 
 @public_bp.route('/saisons', methods=['GET'])

@@ -8,7 +8,8 @@
    Sections, dans l'ordre : cadre et logo, decor defilant, tuyaux, corps sur la
    piste, souffle de la bleue, Lakitu, classement final, tableau du grand prix,
    rideau de depart, etat de la connexion, cartouche du kart suivi, neige, HUD de
-   debug, classement lateral, course figee, orage, Bill Ball, ecran de demarrage.
+   debug, classement lateral, course figee, orage, Bill Ball, ecran de demarrage,
+   plein ecran.
    
    Regle qui vaut partout : le CSS decrit un ASPECT, jamais un deroule. Ce qui
    avance dans le temps est pose image par image par le rendu, d'apres les dates
@@ -19,9 +20,9 @@
    coordonnees de monde traduites en pixels par static/js/banner/layout.js. */
 .hero.smk-snes-banner {
     position: relative;
-    /* Meme decoupage que sur PC, a l'echelle. La piste ROULABLE n'a jamais change
-       de taille — voir `--road-band-pct` et `.layer-ground`. */
-    height: 262px;
+    /* 408 : 264 px de ciel + 144 px d'asphalte, dont 126 roulables. Les 18 px
+       ajoutes sont du bitume derriere la piste, la bordure ne bouge pas. */
+    height: 408px;
     overflow: visible;
     background-color: #f7ce8c;
     padding: 0 !important;
@@ -29,11 +30,17 @@
     margin-bottom: 60px;
 }
 
-@media screen and (min-width: 769px) {
+/* Ecran compact (le meme test que `compactQuery`, config.js) : la scene du PC,
+   reduite. La hauteur suit la LARGEUR de l'ecran, et c'est elle qui fixe
+   l'echelle (`--stage-scale`, posee par `applyStageScale()` dans layout.js) : a
+   47vw, chaque telephone voit ~870 unites de piste — la grille de depart entiere
+   et la ligne. Plafonnee a 246 px, soit l'echelle 0.6 d'avant (404 x 0.6 + 4 de
+   bordure) : un ecran large ne s'agrandit pas.
+   
+   Posee en CSS et non en JS : la page ne saute pas quand le script arrive. */
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .hero.smk-snes-banner {
-        /* 408 : 264 px de ciel + 144 px d'asphalte, dont 126 roulables. Les 18 px
-           ajoutes sont du bitume derriere la piste, la bordure ne bouge pas. */
-        height: 408px;
+        height: min(246px, 47vw);
     }
 }
 
@@ -67,15 +74,19 @@
     --ground-pct: 35.294;
 }
 
-@media screen and (max-width: 768px) {
-    .game-content-wrapper {
-        transform: scale(0.6);
-        transform-origin: center center;
-        width: 166.67%;
-        height: 166.67%;
-        left: -33.33%;
-        top: -33.33%;
-    }
+/* La scene garde les dimensions du PC en mise en page et se reduit d'un bloc :
+   agrandie de 1/echelle, mise a l'echelle depuis son coin, elle couvre le
+   bandeau au pixel pres.
+   
+   Une classe et non un `@media` : l'echelle vaut sur ecran compact ET en plein
+   ecran, et c'est `applyStageScale()` (layout.js) qui sait lequel des deux
+   s'applique. Elle pose la classe avec la variable, jamais l'une sans l'autre.
+   Avant le script, le rideau couvre la scene. */
+.hero.is-staged .game-content-wrapper {
+    transform: scale(var(--stage-scale));
+    transform-origin: 0 0;
+    width: calc(100% / var(--stage-scale));
+    height: calc(100% / var(--stage-scale));
 }
 
 .hero-body-content {
@@ -93,34 +104,31 @@
 }
 
 /* Le logo ne retrecit pas avec la scene : il vit dans `.game-content-wrapper`
-   pour se peindre au bon rang, mais ce wrapper est reduit de 0.6 sur mobile pour
+   pour se peindre au bon rang, mais ce wrapper est reduit sur mobile pour
    montrer plus de piste — et le logo est du decor de page, pas de la piste.
    
-   L'echelle inverse le remet a 1:1, les trois autres valeurs replacent la boite.
+   La boite reprend la taille du bandeau, et l'echelle inverse la remet a 1:1.
    Tout ce qu'elle contient garde donc la valeur ecrite, sans compensation. */
-@media screen and (max-width: 768px) {
-    .hero-body-content {
-        width: 60%;
-        height: 60%;
-        left: 20%;
-        top: 20%;
-        transform: scale(1.6667);
-    }
+.hero.is-staged .hero-body-content {
+    width: calc(100% * var(--stage-scale));
+    height: calc(100% * var(--stage-scale));
+    transform-origin: 0 0;
+    transform: scale(calc(1 / var(--stage-scale)));
 }
 
 .mk-logo-responsive {
     display: block;
     height: auto;
     width: auto;
-    max-width: 300px;
-    transform: translateY(5px); 
+    max-width: 450px;
+    transform: translateY(10px);
     filter: drop-shadow(0 0 20px rgba(255,255,255,0.7));
 }
 
-@media screen and (min-width: 769px) {
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .mk-logo-responsive {
-        max-width: 450px;
-        transform: translateY(+10px); 
+        max-width: 300px;
+        transform: translateY(5px);
     }
 }
 
@@ -161,8 +169,8 @@
     position: absolute;
     top: 0%;
     left: 0;
-    width: 70px;
-    height: 61px;
+    width: 100px;
+    height: 88px;
     z-index: 2;
     display: none;
     will-change: transform;
@@ -223,13 +231,6 @@
     background-position: center;
     image-rendering: pixelated;
     pointer-events: none;
-}
-
-@media screen and (min-width: 769px) {
-    .layer-sun {
-        width: 100px;
-        height: 88px;
-    }
 }
 
 @keyframes sunGlow {
@@ -323,33 +324,22 @@
 /* Le tuyau, plante sur la piste. Ancre par sa base a sa profondeur comme un kart
    : le z-index pose par le JS le fait passer devant ou derriere.
    
-   LE DESSIN retrecit sur mobile, l'emprise non. `--pipe-w` / `--pipe-h` sont la
-   taille que le serveur envoie, posees en inline par le rendu ; le facteur qui
-   les accompagne n'existe que parce que le mobile montre plus de piste dans moins
-   de place. A 0.85 plutot que le 0.8 du kart : un obstacle se lit d'un peu plus
-   loin qu'un concurrent, il a le droit de peser un peu plus.
-   
-   Comme pour le kart, la hitbox ne bouge pas : c'est le dessin qui suit
-   l'appareil, jamais la simulation. */
+   `--pipe-w` / `--pipe-h` sont la taille que le serveur envoie, posees en inline
+   par le rendu. Une seule taille pour tous les appareils : sur telephone, c'est
+   la scene entiere qui est reduite, et le dessin garde partout le rapport a son
+   emprise. */
 .pipe {
     position: absolute;
     left: 0;
     bottom: 0;
     z-index: 90;
     will-change: transform;
-    width: calc(var(--pipe-w, 67.2) * 0.85px);
-    height: calc(var(--pipe-h, 87.71) * 0.85px);
+    width: calc(var(--pipe-w, 67.2) * 1px);
+    height: calc(var(--pipe-h, 87.71) * 1px);
     /* Centré sur sa position : la moitié de la largeur ci-dessus. */
-    margin-left: calc(var(--pipe-w, 67.2) * -0.425px);
+    margin-left: calc(var(--pipe-w, 67.2) * -0.5px);
 }
 
-@media screen and (min-width: 769px) {
-    .pipe {
-        width: calc(var(--pipe-w, 67.2) * 1px);
-        height: calc(var(--pipe-h, 87.71) * 1px);
-        margin-left: calc(var(--pipe-w, 67.2) * -0.5px);
-    }
-}
 
 /* Le dessin est dans l'enfant : le parent porte le défilement, et une
    animation sur sa transform le figerait à l'écran. */
@@ -404,8 +394,8 @@
    et son emprise suit le meme rapport. Sans elle, le repli a 1 redonne la largeur
    d'avant.
    
-   Une variable et non une largeur en px calculee en JS : c'est ici que vit la
-   difference PC / mobile. */
+   Une variable et non une largeur en px calculee en JS : la feuille de style
+   garde la main sur la largeur de base. */
 /* Ancre au sol : la profondeur est pliee dans la `translate3d` posee a chaque
    image, et non dans un `bottom` en pourcentage — propriete de mise en page, qui
    relancait le calcul du conteneur entier. */
@@ -414,13 +404,7 @@
     left: 0;
     bottom: 0;
     will-change: transform;
-    width: calc(80px * var(--kart-length, 1));
-}
-
-@media screen and (min-width: 769px) {
-    .kart-container-moving {
-        width: calc(100px * var(--kart-length, 1));
-    }
+    width: calc(100px * var(--kart-length, 1));
 }
 
 /* Porte le miroir du tête-à-queue : les orientations ouest n'existent pas en
@@ -574,7 +558,7 @@
 
 /* Au départ et au dernier tour, il flotte sur son nuage : il monte et descend
    doucement, sans pivoter. En pourcentage de sa hauteur, pour que l'amplitude suive
-   le gabarit (5 px sur ordinateur, 3 sur mobile). La période est reprise par
+   le gabarit de Lakitu. La période est reprise par
    LAKITU_FLOAT_MS (scene.js), qui cale la phase sur l'horloge du serveur. */
 .lakitu.is-floating img {
     animation: lakituFloat 1.8s ease-in-out infinite;
@@ -644,7 +628,7 @@
     background-color: #333;
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .race-results {
         right: 8px;
         padding: 5px 7px;
@@ -763,7 +747,7 @@
     color: #ffcc00;
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .race-gp {
         padding: 9px 12px;
         border-width: 1px;
@@ -841,7 +825,7 @@
     transition: none;
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .race-curtain {
         background-position: 0 0, 20px 20px;
         background-size: 40px 40px;
@@ -968,7 +952,7 @@
     filter: drop-shadow(1px 2px 1px rgba(0, 0, 0, 0.45));
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .race-position {
         top: 4px;
         left: 6px;
@@ -1020,7 +1004,7 @@
     50% { opacity: 0.35; }
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .race-status-label { display: none; }
 }
 
@@ -1567,7 +1551,7 @@
     fill: #ffcc00;
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .leaderboard-camera {
         left: -32px;
     }
@@ -1649,7 +1633,7 @@
     100% { transform: translate(0, 0) rotate(360deg); }
 }
 
-@media screen and (max-width: 768px) {
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     #race-leaderboard {
         margin-top: 5px;
         right: 5px;
@@ -1734,12 +1718,6 @@
     overflow: visible;
 }
 
-@media screen and (max-width: 768px) {
-    .storm-bolt {
-        width: 40px;
-        margin-left: -20px;
-    }
-}
 
 /* Halo jaune large sous un cœur blanc fin : c'est le décalage entre les deux
    qui donne la brûlure. non-scaling-stroke parce que le SVG est étiré en
@@ -1880,11 +1858,6 @@
             drop-shadow(4px 4px 0 rgba(0, 0, 0, 0.45));
 }
 
-@media screen and (max-width: 768px) {
-    .kart-container-moving.kart-bill .kart-static-png {
-        transform: translateY(-10px);
-    }
-}
 
 /* ── Écran de démarrage ───────────────────────────────────────────────────
    Voile noir plein écran à l'arrivée sur la page, façon logo de console : une
@@ -1977,4 +1950,178 @@ html.boot-seen .boot-splash {
 @media (prefers-reduced-motion: reduce) {
     .boot-logo { animation: none; opacity: 1; }
     .boot-splash { transition: opacity 0.2s linear; }
+}
+
+
+/* ── Plein ecran ───────────────────────────────────────────────────────────────
+   Le bandeau seul, telephone couche (fullscreen.js). Une classe pour les deux
+   voies — l'API Fullscreen et le repli qui recouvre la page — : ce qui suit ne
+   sait pas laquelle a servi.
+   
+   C'est le CADRE qui prend l'ecran, en noir ; le bandeau s'y pose, pleine
+   largeur, a une hauteur plafonnee pour montrer au moins
+   `--fullscreen-min-units` de piste. Caler la scene sur la hauteur de l'ecran
+   ne montrait qu'un bout de route sur un PC (~720 unites en 16:9) : on prefere
+   une piste moins epaisse et des bandes noires. Un telephone couche, plus
+   allonge, remplit l'ecran ou presque.
+   
+   L'echelle de la scene se deduit ensuite de cette hauteur, et la place des
+   bandes du classement (`applyStageScale()`, `placeInFrame()`, layout.js). */
+.banner-frame.is-fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    z-index: 10000;
+    background-color: #000;
+    /* Longueur de piste minimale visible, en unites du monde. 1200 : la grille
+       de depart, la ligne et de quoi voir le peloton s'etirer. Plus haut, la
+       piste s'amincit et les bandes grandissent. */
+    --fullscreen-min-units: 1200;
+}
+
+.hero.smk-snes-banner.is-fullscreen {
+    width: 100%;
+    /* 404 : la scene PC. Sa hauteur pour une largeur donnee, a l'echelle ou
+       elle montre exactement le minimum de piste. */
+    height: min(100%, calc(100vw * 404 / var(--fullscreen-min-units)));
+    /* Pose par `placeInFrame()` : la bande du haut. Sans script, la scene reste
+       en haut du cadre. */
+    margin: var(--frame-top, 0px) 0 0;
+    border-bottom: 0;
+}
+
+/* Repli : la page reste dessous, elle ne doit plus defiler. */
+html.banner-pseudo-fullscreen,
+html.banner-pseudo-fullscreen body {
+    overflow: hidden;
+}
+
+/* Le classement vit sous le bandeau. En plein ecran, la bande du bas le loge
+   s'il y a la place (`has-board-room`, layout.js) ; sinon il n'y a plus de
+   dessous et il remonte dans le ciel, en haut a droite. L'etat de la
+   connexion, qui tenait ce coin, descend dans celui d'en bas. */
+.hero.is-fullscreen:not(.has-board-room) #race-leaderboard {
+    top: 8px;
+    margin-top: 0;
+}
+
+.hero.is-fullscreen:not(.has-board-room) .race-status {
+    top: auto;
+    bottom: 8px;
+}
+
+/* Le bouton, a gauche du vote : meme serie de decalages que la camera, la pause
+   et le vote (46 px, 32 sur ecran compact), dont il prolonge la suite. */
+.leaderboard-fullscreen {
+    left: -184px;
+    background-color: #111111;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+.leaderboard-camera + .leaderboard-vote + .leaderboard-fullscreen {
+    left: -138px;
+}
+
+.leaderboard-fullscreen svg {
+    width: 20px;
+    height: 20px;
+    fill: #ffffff;
+}
+
+.leaderboard-fullscreen .ico-exit,
+.leaderboard-fullscreen.is-active .ico-enter {
+    display: none;
+}
+
+.leaderboard-fullscreen.is-active .ico-exit {
+    display: inline;
+}
+
+@media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
+    .leaderboard-fullscreen {
+        left: -128px;
+    }
+
+    .leaderboard-camera + .leaderboard-vote + .leaderboard-fullscreen {
+        left: -96px;
+    }
+
+    .leaderboard-fullscreen svg {
+        width: 15px;
+        height: 15px;
+    }
+}
+
+/* Un geste de telephone : a la souris, le bouton n'a rien a faire la. */
+@media (hover: hover) and (pointer: fine) {
+    .leaderboard-fullscreen {
+        display: none;
+    }
+}
+
+/* Plein ecran tenu droit : la scene, calee sur la largeur, ne serait qu'une
+   mince bande. Le voile couvre tout le cadre, bouton de sortie compris — d'ou
+   le sien. */
+.race-rotate-hint {
+    display: none;
+}
+
+@media (orientation: portrait) {
+    .banner-frame.is-fullscreen .race-rotate-hint {
+        position: absolute;
+        inset: 0;
+        z-index: 900;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background-color: #111111;
+        color: #ffffff;
+        text-align: center;
+        font-weight: bold;
+    }
+}
+
+.race-rotate-hint svg {
+    width: 56px;
+    height: 56px;
+    fill: none;
+    stroke: #ffffff;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    animation: rotateHint 2s ease-in-out infinite;
+}
+
+.race-rotate-hint p {
+    margin: 0;
+    font-size: 16px;
+}
+
+.race-rotate-hint button {
+    padding: 6px 14px;
+    border: 2px solid #ffffff;
+    border-radius: 16px;
+    background: transparent;
+    color: #ffffff;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+@keyframes rotateHint {
+    0%, 25%   { transform: rotate(0deg); }
+    55%, 100% { transform: rotate(-90deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .race-rotate-hint svg { animation: none; transform: rotate(-90deg); }
 }

@@ -271,7 +271,10 @@ cli, cur, conn, lots = monter([
     (r"FROM grille_snapshots WHERE date", None),
     (r"INSERT INTO sessions_tournois DEFAULT VALUES", (501,)),
     (r"INSERT INTO Tournois", (777,)),
-    (r"SELECT id, mu, sigma FROM Joueurs WHERE nom", (10, 25.0, 8.333)),
+    # Une fiche par nom, retrouvee sans tenir compte de la casse (25/09) :
+    # une meme fiche pour deux joueurs serait refusee (joueur_en_double).
+    (r"SELECT id, nom, mu, sigma FROM Joueurs WHERE lower\(nom\)",
+     lambda p: (10 + sum(map(ord, p[0])), p[0], 25.0, 8.333)),
     (r"key IN \('ghost_enabled'", [('ghost_enabled', 'false'),
                                    ('unranked_threshold', '5')]),
     (r"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs", []),

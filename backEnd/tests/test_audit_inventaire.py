@@ -52,14 +52,14 @@ def tables_ecrites(fn):
 # ailleurs rougirait. Une entree devenue inutile aussi, pour que la liste ne
 # grossisse pas en silence.
 EXEMPTEES = {
+    # `fix_db_structure` l'a quittee le 2026-09-25 (S-17) : route de migration
+    # ponctuelle, ecrivant en base sur un GET, sans proxy ni appelant.
     # `refresh_token` a quitte cette liste le 2026-09-23 : la route a ete
     # supprimee avec l'authentification par mot de passe. C'est ce test qui l'a
     # signale, et c'est sa raison d'etre -- une exemption devenue inutile doit
     # rougir, sinon la liste ne fait que grossir.
     'verifier_session_tournoi': ("POST pour porter une liste de noms ; lecture seule", set()),
     'matchmaking_admin': ("POST pour porter une liste de joueurs ; calcule des lobbies", set()),
-    'fix_db_structure': ("migration de schema idempotente (colonnes de Tournois et leur "
-                         "remplissage), n'agit sur les donnees de personne", {'tournois'}),
 }
 
 
@@ -145,7 +145,7 @@ print("\n=== R-61 : aucune route d'ecriture admin sans audit ===")
 check("l'inventaire trouve les routes (sinon le test ne prouverait rien)",
       len(ROUTES) >= 40, len(ROUTES))
 for nom in ('api_update_joueur', 'add_tournament', 'changer_role', 'supprimer_compte',
-            'declencher_purge', 'fix_db_structure'):
+            'declencher_purge'):
     check("  %s est bien inventoriee" % nom, nom in PAR_NOM)
 
 oublis = sorted('%s %s (%s)' % ('/'.join(m), c, n)

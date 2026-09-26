@@ -28,9 +28,7 @@ function kartDrawScale(kart) {
 // sur l'emprise qui le fait toucher. Tout ce qui se cale sur la SILHOUETTE part
 // de ce meme bord gauche.
 function kartDrawHalfWidth(kart) {
-    const base = cachedIsMobile ? GAME_CONFIG.rendering.kartWidth.mobile
-                                : GAME_CONFIG.rendering.kartWidth.pc;
-    return base * kartDrawScale(kart) / 2;
+    return GAME_CONFIG.rendering.kartWidth * kartDrawScale(kart) / 2;
 }
 
 function ensureKartEl(kart) {
@@ -45,8 +43,7 @@ function ensureKartEl(kart) {
     wrapper.style.zIndex = getZIndex(kart.yPercent);
 
     // La longueur du dessin, en rapport au kart de reference. Une variable CSS et
-    // non des pixels : c'est la feuille de style qui connait la largeur de base,
-    // et elle n'est pas la meme sur mobile.
+    // non des pixels : c'est la feuille de style qui connait la largeur de base.
     wrapper.style.setProperty('--kart-length', kartDrawScale(kart));
 
     // Intercalaire dédié au rapetissement de l'éclair : il porte une transition,
@@ -95,7 +92,7 @@ function ensureBoxEl(box, index) {
     if (!cachedContainer) cachedContainer = document.getElementById('karts-container');
     if (!cachedContainer) return null;
 
-    const size = cachedIsMobile ? GAME_CONFIG.visuals.box.sizeMobile : GAME_CONFIG.visuals.box.sizePC;
+    const size = GAME_CONFIG.visuals.box.size;
     const el = document.createElement('div');
     el.classList.add('item-box');
     el.style.width = `${size}px`;
@@ -124,8 +121,7 @@ function ensurePipeEl(pipe, index) {
 
     // Du serveur et de lui seul : c'est cette taille qui a servi a calculer
     // l'emprise du tuyau, les deux ne peuvent donc plus diverger. Posee en
-    // variables et non en pixels — le retrecissement mobile du DESSIN vit dans la
-    // feuille de style, et un tuyau une fois cree n'est jamais recree.
+    // variables et non en pixels : la feuille de style en tire la boite.
     const size = WORLD.pipeDraw || OFFLINE_WORLD.pipeDraw;
     const el = document.createElement('div');
     el.classList.add('pipe');

@@ -16,9 +16,14 @@
     </a>
   {% endif %}
   <hr class="navbar-divider">
-  <a class="navbar-item" href="/logout">
-    <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
-  </a>
+  {# POST + CSRF (S-17) : en GET, une simple image sur un autre site suffisait
+     à déconnecter le visiteur. #}
+  <form class="form-en-ligne" method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="navbar-item bouton-lien">
+      <i class="fas fa-sign-out-alt mr-2"></i> Déconnexion
+    </button>
+  </form>
 {% endmacro %}
 
 <style>

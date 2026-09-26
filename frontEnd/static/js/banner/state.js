@@ -107,6 +107,7 @@ let leaderboardState = {
     cameraEl: null,
     pauseEl: null,
     voteEl: null,
+    fullscreenEl: null,
     bound: false
 };
 

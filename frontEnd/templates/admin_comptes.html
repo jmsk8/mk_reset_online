@@ -6,8 +6,8 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Gestion des comptes - MK Reset</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
@@ -472,6 +472,24 @@
                     if (r.ok) { afficher('info', 'Demande refusée.'); chargerLiaisons(); }
                     else { afficher('danger', r.data.error || 'Échec.'); }
                 });
+                // Ce que le backend refuserait, grisé d'avance plutôt que
+                // découvert en 403 : sa propre demande (S-13), un compte de rang
+                // égal ou supérieur (S-11), un compte suspendu (S-04, approuver
+                // seulement : refuser reste possible pour vider la file).
+                const bloque = d.est_moi
+                    ? 'On ne statue pas sur sa propre demande : un autre administrateur doit le faire.'
+                    : d.hors_de_portee
+                        ? 'Compte de rang égal ou supérieur au vôtre : un rang au-dessus doit trancher.'
+                        : null;
+                const interdire = (b, titre) => {
+                    b.disabled = true;
+                    b.classList.add('est-interdit');
+                    b.title = titre;
+                };
+                if (bloque) { interdire(oui, bloque); interdire(non, bloque); }
+                else if (d.compte.statut === 'suspended') {
+                    interdire(oui, 'Compte suspendu : réactivez-le avant d\'approuver sa demande.');
+                }
                 actions.appendChild(oui);
                 actions.appendChild(non);
                 carte.appendChild(actions);
@@ -717,7 +735,9 @@
                     const bSusp = txt('button', suspendu ? 'Réactiver' : 'Suspendre',
                                       'button is-small ' + (suspendu ? 'is-success is-light' : 'is-danger is-light'));
                     bSusp.addEventListener('click', async () => {
-                        const cible = suspendu ? (c.joueur_id ? 'linked' : 'pending') : 'suspended';
+                        // « actif » : le backend en déduit lié ou en attente
+                        // selon la fiche (S-17), plus de valeur à inventer ici.
+                        const cible = suspendu ? 'actif' : 'suspended';
                         if (!confirmer(suspendu ? 'Réactiver ce compte ?' : 'Suspendre ce compte ?',
                                        nomDe(c),
                                        suspendu
@@ -1521,11 +1541,13 @@
 
             const champUses = document.createElement('input');
             champUses.className = 'input mb-2';
-            champUses.type = 'number'; champUses.min = '1'; champUses.value = '1';
+            // Plafonds recopies de constants.py (INVITATION_MAX_*) pour guider la
+            // saisie ; le backend reste la frontiere et refuse au-dela (S-08).
+            champUses.type = 'number'; champUses.min = '1'; champUses.max = '50'; champUses.value = '1';
 
             const champHeures = document.createElement('input');
             champHeures.className = 'input mb-2';
-            champHeures.type = 'number'; champHeures.min = '1'; champHeures.value = '72';
+            champHeures.type = 'number'; champHeures.min = '1'; champHeures.max = '720'; champHeures.value = '72';
 
             const btn = txt('button', 'Créer le lien', 'button is-primary');
             const zoneLien = document.createElement('div');
@@ -1555,8 +1577,8 @@
             });
 
             [txt('label', 'Libellé', 'label is-small'), champLabel,
-             txt('label', 'Nombre d’utilisations', 'label is-small'), champUses,
-             txt('label', 'Validité (heures)', 'label is-small'), champHeures,
+             txt('label', 'Nombre d’utilisations (50 au plus)', 'label is-small'), champUses,
+             txt('label', 'Validité en heures (720 au plus, soit 30 jours)', 'label is-small'), champHeures,
              btn, zoneLien].forEach(e => form.appendChild(e));
             vue.appendChild(form);
 

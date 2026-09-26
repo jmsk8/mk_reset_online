@@ -48,7 +48,10 @@ def plan_ajout(conflits=None, cible_existe=True):
         (r"FROM grille_snapshots WHERE date", None),
         (r"INSERT INTO sessions_tournois DEFAULT VALUES", (501,)),
         (r"INSERT INTO Tournois", (777,)),
-        (r"SELECT id, mu, sigma FROM Joueurs WHERE nom", (10, 25.0, 8.333)),
+        # Une fiche par nom, retrouvee sans tenir compte de la casse (25/09) :
+        # une meme fiche pour deux joueurs serait refusee (joueur_en_double).
+        (r"SELECT id, nom, mu, sigma FROM Joueurs WHERE lower\(nom\)",
+         lambda p: (10 + sum(map(ord, p[0])), p[0], 25.0, 8.333)),
         (r"SELECT 1 FROM Tournois WHERE id = %s", (1,) if cible_existe else None),
         (r"SELECT DISTINCT j.nom", [(n,) for n in (conflits or [])]),
         (r"SELECT id, session_id FROM Tournois WHERE id IN", [(777, 501), (400, 300)]),

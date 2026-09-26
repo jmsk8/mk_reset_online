@@ -48,9 +48,21 @@ function initLeaderboard() {
     leaderboardState.container.appendChild(vote);
     leaderboardState.voteEl = vote;
 
+    // Plein ecran, a gauche du vote. Construit partout, montre sur ecran
+    // tactile seulement (banner.css) : c'est un geste de telephone. Deux icones,
+    // comme la pause — agrandir, puis reduire.
+    const fullscreen = document.createElement('div');
+    fullscreen.className = 'leaderboard-pp leaderboard-fullscreen visible';
+    fullscreen.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+        '<g class="ico-enter"><path d="M4 4h6v2H6v4H4zM14 4h6v6h-2V6h-4zM4 14h2v4h4v2H4zM18 14h2v6h-6v-2h4z"/></g>' +
+        '<g class="ico-exit"><path d="M8 4h2v6H4V8h4zM14 4h2v4h4v2h-6zM4 14h6v6H8v-4H4zM14 14h6v2h-4v4h-2z"/></g></svg>';
+    leaderboardState.container.appendChild(fullscreen);
+    leaderboardState.fullscreenEl = fullscreen;
+
     updateFocusMarks();
     renderPause();
     renderVote();
+    renderFullscreenButton();
 
     setLeaderboardSlots(worldState.karts.length);
 }

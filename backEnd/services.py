@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import statistics
@@ -33,6 +34,67 @@ logger = logging.getLogger(__name__)
 
 _CURVE_RESOLUTION = 120
 _CURVE_SPREAD = 3.5
+
+
+# ---------------------------------------------------------------------------
+# Nom d'une fiche joueur
+# ---------------------------------------------------------------------------
+
+def empreinte_nom(nom: str) -> str:
+    """Empreinte stockee dans `noms_interdits` : sha256 du nom nettoye, en minuscules.
+
+    Une seule definition pour l'anonymisation qui ecrit et les chemins qui
+    lisent : une divergence (un strip oublie d'un cote) rouvrirait le nom.
+    """
+    return hashlib.sha256(nom.strip().lower().encode('utf-8')).hexdigest()
+
+
+def nom_creable(cur: Any, nom: Any, exclure_id: int | None = None):
+    """Un nom de fiche est-il utilisable ? Renvoie (nom_propre, None) ou (None, erreur).
+
+    `erreur` est un dict pret pour jsonify (`error`, `code`, parfois
+    `joueur_en_conflit`) ; l'appelant repond 409. Sans Flask ici : ce module
+    n'en depend pas.
+
+    S-05 (audit du 24/09) : la regle vivait dans routes_comptes et ne servait
+    qu'aux demandes de liaison. La creation depuis la page Fiches joueurs, le
+    renommage et le formulaire de tournoi la sautaient -- un nom anonymise
+    pouvait revenir, un « / » rendre la fiche inatteignable par son URL, et
+    « Mario » coexister avec « mario ». Tout chemin qui ECRIT joueurs.nom passe
+    desormais ici.
+
+    `exclure_id` : pour un renommage, la fiche elle-meme ne compte pas comme
+    collision (changer la casse de son propre nom reste possible).
+    """
+    nom = (nom if isinstance(nom, str) else '').strip()[:255]
+    if not nom:
+        return None, {"error": "Le nom est vide", "code": "nom_vide"}
+
+    if '/' in nom:
+        # /stats/joueur/<nom> : Flask ne route pas un nom contenant un slash.
+        return None, {"error": "Le nom contient un « / », incompatible avec l'URL publique",
+                      "code": "nom_invalide"}
+
+    cur.execute("SELECT 1 FROM noms_interdits WHERE nom_hash = %s", (empreinte_nom(nom),))
+    if cur.fetchone() is not None:
+        return None, {"error": "Ce nom correspond a une identite retiree et ne peut pas "
+                               "etre recree",
+                      "code": "nom_interdit"}
+
+    # joueurs.nom est UNIQUE mais sensible a la casse : « Mario » et « mario »
+    # coexisteraient en base tout en etant indiscernables a l'oeil.
+    if exclure_id is None:
+        cur.execute("SELECT id, nom FROM joueurs WHERE lower(nom) = lower(%s)", (nom,))
+    else:
+        cur.execute("SELECT id, nom FROM joueurs WHERE lower(nom) = lower(%s) AND id <> %s",
+                    (nom, exclure_id))
+    collision = cur.fetchone()
+    if collision is not None:
+        return None, {"error": "La fiche « %s » existe deja." % collision[1],
+                      "code": "nom_deja_pris",
+                      "joueur_en_conflit": {"id": collision[0], "nom": collision[1]}}
+
+    return nom, None
 
 
 def trueskill_score(mu: float, sigma: float) -> float:
@@ -1714,10 +1776,13 @@ def purger_donnees_expirees(cur):
     total = sum(bilan.values())
     if total:
         # L'audit garde la trace de la purge, sans conserver ce qui a ete purge.
-        # acteur_id=None EXPLICITE : la purge est declenchee par un
-        # ordonnanceur, il n'y a aucun acteur humain a nommer. Sans ce
-        # parametre, le helper irait chercher g.compte et attribuerait la
-        # purge a qui se trouve passer par la.
-        audit.ecrire(cur, 'purge_rgpd', 'systeme', details=bilan, acteur_id=None)
+        #
+        # L'acteur est celui de la requete (S-16, audit du 24/09). Le code
+        # passait acteur_id=None au motif qu'un ordonnanceur declenchait la
+        # purge : il n'y en a pas, le seul appelant est POST /admin/purge-rgpd,
+        # clique par un chef_admin -- et le journal ne disait donc pas QUI
+        # avait purge. Si un ordonnanceur apparait un jour, rien a changer ici :
+        # hors requete, acteur_courant() rend deja None.
+        audit.ecrire(cur, 'purge_rgpd', 'systeme', details=bilan)
         logger.info("Purge RGPD : %s", bilan)
     return bilan

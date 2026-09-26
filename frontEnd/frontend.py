@@ -910,9 +910,6 @@ def discord_login():
     invite_token = request.args.get('invite')
     if invite_token:
         session['invite_token'] = invite_token
-    # Case cochée sur la page d'invitation. Transite par la session : elle n'a
-    # pas à faire l'aller-retour par Discord.
-    session['cgu_acceptee'] = request.args.get('cgu') == '1'
     session.permanent = True
 
     params = {
@@ -976,7 +973,6 @@ def discord_callback():
             # Même choix qu'à l'aller : Discord a renvoyé sur cet hôte-là.
             'redirect_uri': _redirect_uri(),
             'user_agent': request.headers.get('User-Agent', '')[:255],
-            'cgu_acceptee': session.pop('cgu_acceptee', False),
         },
         timeout=OAUTH_EXCHANGE_TIMEOUT,
     )
@@ -1013,9 +1009,18 @@ def discord_callback():
     return redirect(url_for('index'))
 
 
-@app.route('/logout')
+@app.route('/logout', methods=['GET', 'POST'])
 def player_logout():
-    """Déconnexion joueur. Ne touche pas à la session admin (miroir de R-13)."""
+    """Déconnexion joueur. Ne touche pas à la session admin (miroir de R-13).
+
+    POST seulement pour agir, avec le jeton CSRF que CSRFProtect exige de tout
+    POST (S-17, audit du 24/09). En GET, une balise <img src="/logout"> sur
+    n'importe quel site déconnectait le visiteur à son insu. Un GET (ancien
+    favori, lien recopié) ne fait plus que renvoyer à l'accueil, sans rien
+    fermer.
+    """
+    if request.method == 'GET':
+        return redirect(url_for('index'))
     token = session.get('player_token')
     if token:
         try:
@@ -1147,6 +1152,18 @@ def proxy_avatar_compte(compte_id):
     if headers is None:
         return '', 404
     return _relayer_avatar(f'/avatar/compte/{compte_id}', headers)
+
+
+@app.route('/discord/widget')
+def proxy_discord_widget():
+    """Widget Discord de l'accueil, relayé par le backend (qui le met en cache)
+    pour que Discord ne voie pas les visiteurs. Jamais d'erreur : des champs
+    nuls, et l'accueil affiche son repli."""
+    data, status = backend_request('GET', '/discord/widget')
+    if status != 200 or not isinstance(data, dict):
+        data = {}
+    return jsonify({'presence_count': data.get('presence_count'),
+                    'instant_invite': data.get('instant_invite')})
 
 
 @app.route('/me/notifications', methods=['GET'])
@@ -2038,6 +2055,31 @@ def admin_ligues_page():
     return render_template('admin_ligues.html')
 
 
+# CSP complète (S-15, audit du 24/09). Tout est servi par le site depuis le
+# 25/09 (librairies dans static/vendor/, widget Discord relayé) : aucune origine
+# externe à autoriser. 'unsafe-inline' reste obligatoire, les gabarits reposent
+# sur des onclick et des <script> dans la page. La CSP n'empêche donc pas un
+# code injecté de s'exécuter ; elle l'empêche de charger un script d'ailleurs
+# et d'envoyer des données hors du site. connect-src 'self' couvre le WebSocket
+# de la bannière (/ws/race, même hôte).
+#
+# Bloquante depuis le 26/09. Elle a d'abord tourné en Report-Only (25/09) :
+# aucune violation relevée dans la console en parcourant le site. Elle remplace
+# l'ancien en-tête partiel (img-src et frame-ancestors seuls).
+CSP_COMPLETE = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+])
+
+
 @app.after_request
 def add_header(response):
     # Les avatars gardent le cache posé par _relayer_avatar.
@@ -2049,11 +2091,7 @@ def add_header(response):
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Pas de script-src ni de style-src : les gabarits reposent sur des
-    # gestionnaires inline, les interdire casserait le site.
-    response.headers["Content-Security-Policy"] = (
-        "img-src 'self' data:; frame-ancestors 'self'"
-    )
+    response.headers["Content-Security-Policy"] = CSP_COMPLETE
     return response
 
 if __name__ == '__main__':

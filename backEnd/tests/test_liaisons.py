@@ -70,6 +70,7 @@ print("\n=== R-07 : course à l'approbation ===")
 # cette section ne testait donc plus rien. C'est le constat B-05.
 cli, cur, conn, _ = monter([
     (r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'pending', None)),
+    (r"SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE", ('pending', 'player')),
     (r"SELECT nom FROM joueurs WHERE id", ('Mario',)),
     (r"SELECT id FROM comptes WHERE joueur_id = %s FOR UPDATE", (77,)),  # pris entre-temps
 ])
@@ -89,6 +90,7 @@ check("demande déjà traitée -> 409", r.status_code == 409 and r.get_json()['c
 
 cli, cur, conn, _ = monter([
     (r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'pending', None)),
+    (r"SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE", ('pending', 'player')),
     (r"SELECT nom FROM joueurs WHERE id", ('Mario',)),
     (r"SELECT id FROM comptes WHERE joueur_id = %s FOR UPDATE", None),
 ])
@@ -194,7 +196,7 @@ print("\n=== Suspension : fermer les sessions, pas seulement l'étiquette ===")
 # concerne pas, et aucun COUNT n'est fait. C'est bien la fermeture des sessions
 # qu'on teste ici, pas le verrouillage.
 cli, cur, conn, _ = monter([
-    (r"SELECT statut, role FROM comptes WHERE id", ('linked', 'player')),
+    (r"SELECT statut, role, joueur_id FROM comptes WHERE id", ('linked', 'player', 9)),
 ])
 r = cli.post('/admin/comptes/5/statut', json={'statut': 'suspended'}, headers=H)
 check("suspension -> 200", r.status_code == 200)

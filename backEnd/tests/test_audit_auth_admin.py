@@ -364,8 +364,8 @@ print("\n=== B-02b : le superadmin se suspend lui-meme (irrattrapable) ===")
 cli, cur, conn = monter_comptes([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
-    (r"SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE",
-     ('linked', 'superadmin')),
+    (r"SELECT statut, role, joueur_id FROM comptes WHERE id = %s FOR UPDATE",
+     ('linked', 'superadmin', 9)),
     (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (0,)),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
@@ -403,13 +403,13 @@ check("un superadmin ne peut pas viser un AUTRE superadmin (403 avant la garde) 
 cli, cur, conn = monter_comptes([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
-    (r"SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE",
-     ('suspended', 'superadmin')),
+    (r"SELECT statut, role, joueur_id FROM comptes WHERE id = %s FOR UPDATE",
+     ('suspended', 'superadmin', 9)),
     (r"UPDATE comptes SET statut", None),
     (r"INSERT INTO audit_admin", None),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
-r = cli.post('/admin/comptes/1/statut', json={'statut': 'linked'}, headers=H)
+r = cli.post('/admin/comptes/1/statut', json={'statut': 'actif'}, headers=H)
 sqls = [s for s, _ in cur.executed]
 check("NON-REGRESSION : REACTIVER un compte reste possible (la garde ne vise "
       "que 'suspended')",

@@ -231,8 +231,13 @@ function updateFocusMarks() {
 }
 
 function onLeaderboardClick(event) {
-    const target = event.target.closest('.leaderboard-vote, .leaderboard-pause, .leaderboard-camera, [data-kart-id]');
+    const target = event.target.closest('.leaderboard-vote, .leaderboard-pause, .leaderboard-fullscreen, .leaderboard-camera, [data-kart-id]');
     if (!target) return;
+
+    if (target.classList.contains('leaderboard-fullscreen')) {
+        toggleBannerFullscreen();
+        return;
+    }
 
     if (target.classList.contains('leaderboard-vote')) {
         toggleVote();

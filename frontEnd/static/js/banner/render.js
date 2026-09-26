@@ -69,7 +69,7 @@ function renderState(gameNow, screenWidth, frameMs) {
     // Avant la camera de rendu : elle suit le kart choisi ici, et le faire
     // apres afficherait une image de retard a chaque changement de plan.
     raceDirector.update(gameNow);
-    updateRenderCamera();
+    updateRenderCamera(gameNow, screenWidth);
     updateFocusHud(frameMs);
     updatePositionHud();
 

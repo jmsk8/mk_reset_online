@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 import json
 import secrets
-import hashlib
 import logging
 from typing import Any
 from datetime import datetime
@@ -21,14 +20,14 @@ from constants import (
     DEFAULT_GHOST_THRESHOLD_SESSIONS, DEFAULT_GHOST_INTERVAL_SESSIONS,
     GHOST_SIGMA_CAP, IP_VERSION_DEFAULT,
     ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN,
-    PERMISSIONS_CHAMPS_JOUEUR,
+    PERMISSIONS_CHAMPS_JOUEUR, MU_MIN, MU_MAX, SIGMA_MAX,
 )
 from db import get_db_connection
 from auth import (permission_required, role_required, player_required,
-                  compte_a_permission)
+                  compte_a_permission, fiche_cible_protegee, hors_de_portee)
 from cache import invalidate_cache
 from textes_ip import textes_ip, VERSIONS as IP_VERSIONS
-from utils import generate_unique_slug, extract_league_number
+from utils import generate_unique_slug, extract_league_number, nombre_fini, couleur_valide
 from services import (
     recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
     drop_session_if_orphan, annuler_absences,
@@ -38,6 +37,7 @@ from services import (
     _aggregate_season_stats, _determine_winners, _save_awards_to_db,
     _apply_inter_league_moves,
     build_distribution, trueskill_score, has_tier, load_tiers,
+    nom_creable, empreinte_nom,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,31 @@ admin_bp = Blueprint('admin', __name__)
 # derouler tout l'historique dans une modale.
 SESSION_CANDIDATS_PAR_DEFAUT = 20
 SESSION_CANDIDATS_MAX = 100
+
+
+# S-10 (audit du 24/09) : ce que dit un refus de valeur, par champ. Un seul
+# code, `valeur_invalide`, et le champ en cause : l'ecran sait lequel surligner.
+_BORNES_LISIBLES = {
+    'mu': "mu doit etre un nombre entre %g et %g." % (MU_MIN, MU_MAX),
+    'sigma': "sigma doit etre un nombre strictement positif, %g au plus." % SIGMA_MAX,
+    'color': "La couleur doit etre au format #RRGGBB.",
+    'couleur': "La couleur doit etre au format #RRGGBB.",
+    'tau': "tau doit etre un nombre entre 0 et %g." % SIGMA_MAX,
+    'ghost_penalty': "La penalite fantome doit etre un nombre entre 0 et %g." % SIGMA_MAX,
+    'sigma_threshold': "Le seuil de sigma doit etre strictement positif, %g au plus." % SIGMA_MAX,
+    'value': "La valeur du reset doit etre strictement positive, %g au plus." % SIGMA_MAX,
+    'max_sigma': "Le sigma maximal doit etre strictement positif, %g au plus." % SIGMA_MAX,
+}
+
+
+def _valeur_invalide(champ):
+    return jsonify({"error": _BORNES_LISIBLES[champ], "code": "valeur_invalide",
+                    "champ": champ}), 400
+
+
+def _sigma_valide(valeur):
+    """Un sigma saisi a la main : fini, > 0, SIGMA_MAX au plus. None sinon."""
+    return nombre_fini(valeur, 0.0, SIGMA_MAX, min_exclu=True)
 
 
 
@@ -90,35 +115,6 @@ def check_token():
 
 
 
-@admin_bp.route('/api/admin/fix-db-structure', methods=['GET'])
-@role_required(ROLE_SUPERADMIN)
-def fix_db_structure():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    ALTER TABLE Tournois
-                    ADD COLUMN IF NOT EXISTS ligue_nom VARCHAR(100),
-                    ADD COLUMN IF NOT EXISTS ligue_couleur VARCHAR(20);
-                """)
-
-                cur.execute("""
-                    UPDATE Tournois t
-                    SET ligue_nom = l.nom,
-                        ligue_couleur = l.couleur
-                    FROM Ligues l
-                    WHERE t.ligue_id = l.id
-                    AND (t.ligue_nom IS NULL OR t.ligue_nom = '');
-                """)
-
-            conn.commit()
-        return jsonify({"status": "success", "message": "Structure Tournois mise à jour et historique synchronisé."})
-    except Exception as e:
-        logger.error(f"Erreur serveur: {e}")
-        return jsonify({"error": "Erreur interne du serveur"}), 500
-
-
-
 # ---------------------------------------------------------------------------
 # Reset global du sigma -- permission gestion_config (« Reglage TS »).
 #
@@ -149,15 +145,17 @@ def apply_global_reset():
     """
     data = request.get_json()
     try:
-        val = float(data.get('value', 0))
-        max_sigma = float(data.get('max_sigma', 0))
+        # S-10 : `val <= 0` laissait passer NaN (toute comparaison a NaN est
+        # fausse) et Infinity. Le reset touche le sigma de TOUS les joueurs.
+        val = _sigma_valide(data.get('value'))
+        max_sigma = _sigma_valide(data.get('max_sigma'))
         date_str = data.get('date')
 
-        if val <= 0:
-            return jsonify({"error": "La valeur doit être positive"}), 400
+        if val is None:
+            return _valeur_invalide('value')
 
-        if max_sigma <= 0:
-            return jsonify({"error": "Le plafond de sigma doit être positif"}), 400
+        if max_sigma is None:
+            return _valeur_invalide('max_sigma')
 
         if not date_str:
             return jsonify({"error": "Une date est requise"}), 400
@@ -410,12 +408,20 @@ def update_config():
         configs = []
         touche_trueskill = False
 
+        # S-10 : chaque reglage flottant est fini et borne. tau et la penalite
+        # fantome entrent dans le calcul de tous les joueurs au tournoi suivant.
         if 'tau' in data:
-            configs.append(('tau', str(float(data['tau']))))
+            tau = nombre_fini(data['tau'], 0.0, SIGMA_MAX)
+            if tau is None:
+                return _valeur_invalide('tau')
+            configs.append(('tau', str(tau)))
         if 'ghost_enabled' in data:
             configs.append(('ghost_enabled', str(data['ghost_enabled']).lower()))
         if 'ghost_penalty' in data:
-            configs.append(('ghost_penalty', str(float(data['ghost_penalty']))))
+            penalite = nombre_fini(data['ghost_penalty'], 0.0, SIGMA_MAX)
+            if penalite is None:
+                return _valeur_invalide('ghost_penalty')
+            configs.append(('ghost_penalty', str(penalite)))
         # Seuils exprimes en SESSIONS LOUPEES, plus en jours (decision 8).
         # max(1, ...) : un seuil nul penaliserait des le tournoi ou le joueur
         # vient de jouer, un intervalle nul diviserait par zero.
@@ -426,7 +432,10 @@ def update_config():
             configs.append(('ghost_interval_sessions',
                             str(max(1, int(data['ghost_interval_sessions'])))))
         if 'sigma_threshold' in data:
-            configs.append(('sigma_threshold', str(float(data['sigma_threshold']))))
+            seuil = _sigma_valide(data['sigma_threshold'])
+            if seuil is None:
+                return _valeur_invalide('sigma_threshold')
+            configs.append(('sigma_threshold', str(seuil)))
         if 'ip_version_live' in data:
             ip_version_live = str(data['ip_version_live'])
             if ip_version_live not in ('v1', 'v2'):
@@ -912,7 +921,8 @@ def api_get_joueurs():
                 cur.execute("""
                     SELECT j.id, j.nom, j.mu, j.sigma, j.tier, j.is_ranked, j.consecutive_missed, j.color,
                            l.id, l.nom, l.couleur,
-                           COALESCE(c.discord_global_name, c.discord_username), c.statut
+                           COALESCE(c.discord_global_name, c.discord_username), c.statut,
+                           c.id, c.role
                     FROM Joueurs j
                     LEFT JOIN Ligues l ON j.ligue_id = l.id
                     LEFT JOIN comptes c ON c.joueur_id = j.id
@@ -928,7 +938,11 @@ def api_get_joueurs():
                     "consecutive_missed": r[6] if r[6] is not None else 0,
                     "color": r[7] if r[7] else "#FFFFFF",
                     "ligue": { "id": r[8], "nom": r[9], "couleur": r[10] } if r[8] else None,
-                    "compte_lie": { "pseudo": r[11], "statut": r[12] } if r[12] else None
+                    "compte_lie": { "pseudo": r[11], "statut": r[12] } if r[12] else None,
+                    # S-11 : ce que fiche_cible_protegee refuserait. Sa propre
+                    # fiche reste accessible, comme dans le decorateur.
+                    "protegee": (r[13] is not None and r[13] != g.compte['id']
+                                 and hors_de_portee(g.compte['role'], r[14])),
                 } for r in cur.fetchall()]
         return jsonify(joueurs)
     except Exception as e:
@@ -938,6 +952,7 @@ def api_get_joueurs():
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['PUT'])
 @permission_required('gestion_joueurs')
+@fiche_cible_protegee   # S-11 : pas la fiche d'un rang egal ou superieur
 def api_update_joueur(id):
     """Edite une fiche joueur, un champ a la fois selon les droits de l'acteur.
 
@@ -983,7 +998,11 @@ def api_update_joueur(id):
         if 'is_ranked' in data:
             demande['is_ranked'] = bool(data['is_ranked'])
         if 'color' in data:
-            demande['color'] = data['color']
+            # Normalisee pour la comparaison : « #ff0000 » renvoye par le
+            # selecteur n'est pas une modification de « #FF0000 ». Une valeur
+            # qui n'est pas une couleur est gardee telle quelle, pour etre
+            # refusee plus bas.
+            demande['color'] = couleur_valide(data['color']) or data['color']
 
         # Comparaison AVANT verification : renvoyer la valeur affichee sans y
         # toucher n'est pas une modification.
@@ -1000,7 +1019,22 @@ def api_update_joueur(id):
             if champ in ('mu', 'sigma'):
                 return (round(demande[champ], DECIMALES_AFFICHEES)
                         != round(courant[champ], DECIMALES_AFFICHEES))
+            if champ == 'color':
+                return str(demande[champ]).upper() != str(courant[champ]).upper()
             return demande[champ] != courant[champ]
+
+        # S-10 : bornes et finitude, sur les seules valeurs MODIFIEES. Une fiche
+        # dont le sigma a depasse la borne par penalites fantomes doit rester
+        # renommable sans qu'on exige de corriger un score qu'on ne touche pas.
+        # NaN et Infinity sont toujours vus comme modifies (round(nan) differe
+        # de tout), donc toujours controles.
+        if a_change('mu') and nombre_fini(demande['mu'], MU_MIN, MU_MAX) is None:
+            return _valeur_invalide('mu')
+        if a_change('sigma') and _sigma_valide(demande['sigma']) is None:
+            return _valeur_invalide('sigma')
+        if a_change('color'):
+            if couleur_valide(demande['color']) is None:
+                return _valeur_invalide('color')
 
         for champ, permission in PERMISSIONS_CHAMPS_JOUEUR.items():
             if not a_change(champ):
@@ -1048,6 +1082,17 @@ def api_update_joueur(id):
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # S-05 : un renommage passe par la meme regle que la creation --
+                # sinon rendre son ancien nom a une fiche anonymisee suffisait a
+                # defaire l'anonymisation. La fiche elle-meme ne compte pas
+                # comme collision : corriger la casse de son nom reste permis.
+                if a_change('nom'):
+                    nom, erreur = nom_creable(cur, nom, exclure_id=id)
+                    if erreur is not None:
+                        conn.rollback()
+                        return jsonify(erreur), 409
+                    demande['nom'] = nom
+
                 if modifier_absences:
                     cur.execute(
                         "UPDATE Joueurs SET nom=%s, mu=%s, sigma=%s, is_ranked=%s,"
@@ -1105,6 +1150,7 @@ def api_update_joueur(id):
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['DELETE'])
 @permission_required('joueurs_irreversible')   # sous-permission : exige aussi gestion_joueurs
+@fiche_cible_protegee
 def api_delete_joueur(id):
     """Supprime un joueur, sauf s'il a un historique de matchs.
 
@@ -1206,6 +1252,7 @@ def api_delete_joueur(id):
 
 @admin_bp.route('/admin/joueurs/<int:id>/anonymiser', methods=['POST'])
 @permission_required('joueurs_irreversible')   # sous-permission : exige aussi gestion_joueurs
+@fiche_cible_protegee
 def api_anonymiser_joueur(id):
     """Détache l'identité d'un joueur sans toucher à son dossier sportif.
 
@@ -1240,7 +1287,7 @@ def api_anonymiser_joueur(id):
                 # ressaisir dans le formulaire de tournoi recreerait la fiche effacee.
                 cur.execute(
                     "INSERT INTO noms_interdits (nom_hash) VALUES (%s) ON CONFLICT DO NOTHING",
-                    (hashlib.sha256(ancien_nom.strip().lower().encode('utf-8')).hexdigest(),),
+                    (empreinte_nom(ancien_nom),),
                 )
                 # Idem : l'acteur manquait sur une action IRREVERSIBLE.
                 audit.ecrire(cur, 'joueur_anonymise', 'joueur', id,
@@ -1273,12 +1320,18 @@ def api_add_joueur():
     data = request.get_json()
     try:
         nom = data.get('nom')
-        mu = float(data.get('mu', DEFAULT_MU))
-        sigma = float(data.get('sigma', DEFAULT_SIGMA))
-        color = data.get('color', '#FFFFFF')
+        mu = nombre_fini(data.get('mu', DEFAULT_MU), MU_MIN, MU_MAX)
+        sigma = _sigma_valide(data.get('sigma', DEFAULT_SIGMA))
+        # Normalisee en majuscules AVANT la comparaison au defaut plus bas :
+        # le selecteur de couleur renvoie « #ffffff », qui exigeait sinon le
+        # droit couleur pour une fiche laissee blanche.
+        color = couleur_valide(data.get('color', '#FFFFFF'))
 
         if not nom:
             return jsonify({"error": "Le nom du joueur est requis"}), 400
+        for champ, valeur in (('mu', mu), ('sigma', sigma), ('color', color)):
+            if valeur is None:
+                return _valeur_invalide(champ)
 
         # Seul un depart HORS defaut demande le droit : creer au score standard
         # ne contourne rien, c'est ce que fait le moteur pour tout nouveau venu.
@@ -1314,9 +1367,12 @@ def api_add_joueur():
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM Joueurs WHERE nom = %s", (nom,))
-                if cur.fetchone():
-                    return jsonify({"error": "Ce nom de joueur existe déjà"}), 409
+                # S-05 : nom anonymise, « / », collision de casse -- la meme
+                # regle que partout ou joueurs.nom s'ecrit.
+                nom, erreur = nom_creable(cur, nom)
+                if erreur is not None:
+                    conn.rollback()
+                    return jsonify(erreur), 409
 
                 cur.execute(
                     """INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked, consecutive_missed, color)
@@ -1906,31 +1962,31 @@ def add_tournament():
                 for joueur in joueurs_data:
                     nom, score = joueur['nom'], joueur['score']
                     exclude_ts = joueur.get('exclude_from_ts', False)
-                    cur.execute("SELECT id, mu, sigma FROM Joueurs WHERE nom = %s", (nom,))
+                    if not isinstance(nom, str):
+                        conn.rollback()
+                        return jsonify({"error": "Nom de joueur invalide."}), 400
+                    # Casse ignoree (decision du 25/09) : « mario » tape a la main
+                    # designe la fiche « Mario », au lieu d'en creer un doublon
+                    # indiscernable a l'oeil.
+                    cur.execute("SELECT id, nom, mu, sigma FROM Joueurs WHERE lower(nom) = lower(%s)",
+                                (nom.strip(),))
                     res = cur.fetchone()
                     if res:
-                        jid, mu, sigma = res
+                        jid, nom_fiche, mu, sigma = res
                     else:
-                        # Nom inconnu : creation a la volee, sauf identite anonymisee -- la recreer
-                        # ferait reapparaitre ce qu'on venait d'effacer, sur un doublon.
-                        cur.execute(
-                            "SELECT 1 FROM noms_interdits WHERE nom_hash = %s",
-                            (hashlib.sha256(nom.strip().lower().encode('utf-8')).hexdigest(),),
-                        )
-                        if cur.fetchone() is not None:
+                        # Nom inconnu : creation a la volee, sous la meme regle
+                        # que partout (S-05) -- une identite anonymisee ne revient
+                        # pas, un « / » rendrait la fiche inatteignable.
+                        nom_fiche, erreur = nom_creable(cur, nom)
+                        if erreur is not None:
                             conn.rollback()
-                            return jsonify({
-                                "error": "Le nom « %s » correspond a un joueur anonymise et ne "
-                                         "peut pas etre recree. Choisissez un autre nom." % nom,
-                                "code": "nom_interdit",
-                            }), 409
-                        # Creer une fiche releve de gestion_joueurs, pas de
-                        # gestion_tournois. Sans ce garde-fou la scission des
-                        # deux permissions (2026-09-13) serait contournable en
-                        # tapant simplement un nom absent dans le formulaire de
-                        # tournoi -- le chemin normal de cette route, pas un cas
-                        # limite.
-                        accordee, erreur = compte_a_permission(g.compte, 'gestion_joueurs')
+                            return jsonify(erreur), 409
+                        # S-09 : creer une fiche exige joueurs_creation, comme sur
+                        # la page Fiches joueurs. gestion_joueurs n'ouvre plus que
+                        # la lecture depuis le decoupage du 17/09 : l'exiger ici
+                        # laissait creer des fiches par ce detour. La
+                        # sous-permission emporte son parent (permissions_effectives).
+                        accordee, erreur = compte_a_permission(g.compte, 'joueurs_creation')
                         if erreur is not None:
                             conn.rollback()
                             return erreur
@@ -1938,12 +1994,24 @@ def add_tournament():
                             conn.rollback()
                             return jsonify({
                                 "error": "Le joueur « %s » n'existe pas. Sa creation releve de la "
-                                         "permission « Fiches joueurs » : demandez sa creation "
-                                         "prealable, ou verifiez l'orthographe." % nom,
+                                         "permission « Ajouter un joueur » : demandez sa creation "
+                                         "prealable, ou verifiez l'orthographe." % nom_fiche,
                                 "code": "joueur_inconnu",
                             }), 409
-                        cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked) VALUES (%s, %s, %s, 'U', true) RETURNING id", (nom, DEFAULT_MU, DEFAULT_SIGMA))
+                        cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked) VALUES (%s, %s, %s, 'U', true) RETURNING id", (nom_fiche, DEFAULT_MU, DEFAULT_SIGMA))
                         jid, mu, sigma = cur.fetchone()[0], DEFAULT_MU, DEFAULT_SIGMA
+                    # Deux lignes pour la meme fiche (« Mario » et « mario », ou
+                    # un doublon) heurtaient la cle primaire de Participations :
+                    # un 500 sans explication.
+                    if jid in joueurs_ids_map.values():
+                        conn.rollback()
+                        return jsonify({
+                            "error": "Le joueur « %s » figure deux fois dans ce tournoi." % nom_fiche,
+                            "code": "joueur_en_double",
+                        }), 409
+                    # Le nom de la FICHE remplace celui tape : c'est la cle de tout
+                    # le calcul qui suit (sorted_joueurs reprend ces memes dicts).
+                    joueur['nom'] = nom = nom_fiche
                     joueurs_ratings[nom] = trueskill.Rating(mu=float(mu), sigma=float(sigma))
                     joueurs_ids_map[nom] = jid
                     joueurs_exclude_ts[nom] = exclude_ts
@@ -2490,6 +2558,14 @@ def setup_ligues():
 
     if not ligues_data:
         return jsonify({"error": "Aucune donnée de ligue reçue"}), 400
+
+    # La couleur d'une ligue finit dans des attributs style (badges, recaps,
+    # page Saisons) : #RRGGBB et rien d'autre, verifie avant toute ecriture.
+    for l_data in ligues_data:
+        couleur = couleur_valide(l_data.get('couleur', '#FFFFFF'))
+        if couleur is None:
+            return _valeur_invalide('couleur')
+        l_data['couleur'] = couleur
 
     try:
         with get_db_connection() as conn:
