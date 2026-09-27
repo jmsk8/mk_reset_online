@@ -176,7 +176,7 @@ docker compose exec -T db sh -c \
 
 # Meme normalisation que scripts/db-dump.sh : le dump reste independant du nom
 # de role, comme schema.sql.
-sed -i -E 's/ OWNER TO [A-Za-z0-9_]+;/ OWNER TO CURRENT_USER;/g' "$TMP_OUT"
+sed -i -E 's/ OWNER TO ("[^"]+"|[A-Za-z0-9_]+);/ OWNER TO CURRENT_USER;/g' "$TMP_OUT"
 
 grep -q '^COPY public\.joueurs ' "$TMP_OUT" || {
   err "Le dump produit ne contient pas la table joueurs — extraction ratee."

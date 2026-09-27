@@ -61,7 +61,10 @@ docker compose exec -T db sh -c \
   'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' > "$TMP"
 
 # Garde le dump indépendant du nom de rôle, comme schema.sql.
-sed -i -E 's/ OWNER TO [A-Za-z0-9_]+;/ OWNER TO CURRENT_USER;/g' "$TMP"
+# Un rôle avec une majuscule (« postgresU ») sort ENTRE GUILLEMETS de pg_dump :
+# sans la seconde forme, il restait tel quel et la restauration sous un autre
+# rôle s'arrêtait sur « role "postgresU" does not exist » (constaté le 27/09).
+sed -i -E 's/ OWNER TO ("[^"]+"|[A-Za-z0-9_]+);/ OWNER TO CURRENT_USER;/g' "$TMP"
 
 if ! grep -q '^COPY public\.joueurs ' "$TMP"; then
   err "Le dump ne contient pas la table joueurs — base vide ou extraction ratée."
