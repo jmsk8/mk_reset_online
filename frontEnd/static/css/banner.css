@@ -163,6 +163,11 @@
     background-image: url('../img/banners/summer/index-banner-summer.png');
 }
 
+/* Automne : dessine par scripts/banner-autumn.py, qu'on relance pour retoucher. */
+.hero.smk-snes-banner[data-season="autumn"] .layer-scrolling-bg {
+    background-image: url('../img/banners/autumn/index-banner-autumn.png');
+}
+
 /* Soleil (été uniquement) : suit .layer-scrolling-bg via bgCameraX, entre le
    ciel et le reste des calques. */
 .layer-sun {
@@ -238,7 +243,7 @@
     50%      { opacity: 1;    transform: scale(1.16); }
 }
 
-/* Décor de premier plan (été uniquement), défile à la vitesse de la route.
+/* Décor de premier plan (été et automne), défile à la vitesse de la route.
    Même traitement que le fond : élargi d'un pas, translaté. */
 .layer-scrolling-fg {
     position: absolute;
@@ -255,6 +260,32 @@
 
 .hero.smk-snes-banner[data-season="summer"] .layer-scrolling-fg {
     background-image: url('../img/banners/summer/index-banner-summer-foureground.png');
+}
+
+.hero.smk-snes-banner[data-season="autumn"] .layer-scrolling-fg {
+    background-image: url('../img/banners/autumn/index-banner-autumn-foreground.png');
+}
+
+/* Second plan (automne uniquement) : un rang d'arbres plus petits, entre le fond
+   et le premier plan, aux trois quarts de la vitesse de la route. Absent des
+   autres saisons : pas de calque compose pour une texture vide. */
+.layer-scrolling-mid {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: calc(100% + 480px);
+    height: calc(100% - var(--ground-pct) * 1%);
+    z-index: 2;
+    display: none;
+    background-size: 3840px 100%;
+    background-repeat: repeat-x;
+    image-rendering: pixelated;
+    will-change: transform;
+}
+
+.hero.smk-snes-banner[data-season="autumn"] .layer-scrolling-mid {
+    display: block;
+    background-image: url('../img/banners/autumn/index-banner-autumn-midground.png');
 }
 
 /* L'asphalte n'est PLUS la piste, il la contient : la piste occupe ses 126 px du

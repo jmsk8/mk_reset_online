@@ -84,7 +84,12 @@ function initScene() {
     cachedFg = document.querySelector('.layer-scrolling-fg');
     cachedGround = document.querySelector('.layer-ground');
     const _bannerElSeason = document.getElementById('bannerSection');
-    cachedIsSummerBanner = !!_bannerElSeason && _bannerElSeason.dataset.season === 'summer';
+    // Les saisons a premier plan ont un fond lointain, qui defile moitie moins vite.
+    const _season = _bannerElSeason && _bannerElSeason.dataset.season;
+    cachedHasParallaxBg = _season === 'summer' || _season === 'autumn';
+    // Le second plan n'existe qu'en automne : ailleurs il reste masque, et on ne
+    // le fait pas defiler pour rien.
+    cachedMid = _season === 'autumn' ? document.querySelector('.layer-scrolling-mid') : null;
 
     if (GAME_CONFIG.debugMode) initDebugHUD();
 }

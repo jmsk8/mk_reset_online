@@ -17,8 +17,9 @@ let clockCalibrated = false;
 
 let cachedBg = null;
 let cachedFg = null;
+let cachedMid = null;
 let cachedGround = null;
-let cachedIsSummerBanner = false;
+let cachedHasParallaxBg = false;
 let cachedContainer = null;
 let cachedIsMobile = false;
 let cachedGameWrapper = null;

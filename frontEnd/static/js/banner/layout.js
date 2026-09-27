@@ -180,6 +180,7 @@ function scrollLayer(el, phase, state) {
 
 const bgScroll = { bp: null };
 const fgScroll = { bp: null };
+const midScroll = { bp: null };
 
 // `cameraX` designe le **centre** de ce qu'on voit, pas son bord gauche : la
 // fenetre s'etend symetriquement de part et d'autre, sur la largeur dont

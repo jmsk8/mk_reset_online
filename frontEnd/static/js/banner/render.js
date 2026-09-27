@@ -95,15 +95,27 @@ function renderState(gameNow, screenWidth, frameMs) {
     const halfView = screenWidth / 2;
 
     if (cachedBg) {
-        // Été : parallaxe, moitié vitesse.
-        const bgX = cachedIsSummerBanner ? renderBgCameraX : renderCameraX;
+        // Été et automne : parallaxe, moitié vitesse.
+        const bgX = cachedHasParallaxBg ? renderBgCameraX : renderCameraX;
         scrollLayer(cachedBg, halfView - bgX, bgScroll);
     } else {
         cachedBg = document.querySelector('.layer-scrolling-bg');
     }
 
+    if (cachedMid) {
+        // Second plan (automne) : la moyenne des deux cameras, soit les trois
+        // quarts de la route. Tiree de valeurs que le serveur synchronise, elle
+        // est la meme pour tous les spectateurs.
+        //
+        // Quand une camera boucle, la moyenne saute d'un demi-tour. Tous les
+        // circuits font 7680 px : le saut vaut 3840, pile une texture, et ne se
+        // voit pas. Un tour qui ne serait pas multiple de 7680 le ferait voir.
+        const midX = (renderCameraX + renderBgCameraX) / 2;
+        scrollLayer(cachedMid, halfView - midX, midScroll);
+    }
+
     if (cachedFg) {
-        // Décor de premier plan (été uniquement) : même vitesse que la route.
+        // Décor de premier plan (été et automne) : même vitesse que la route.
         const fgX = (renderCameraX - halfView) % WORLD.width;
         scrollLayer(cachedFg, -fgX, fgScroll);
     } else {
