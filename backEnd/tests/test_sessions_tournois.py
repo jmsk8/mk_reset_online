@@ -199,10 +199,10 @@ check("elle est appelee deux fois (revert + delete)",
 # La session_id doit etre lue avant le DELETE du tournoi : apres, elle est
 # introuvable et le nettoyage ne peut plus avoir lieu.
 check("revert lit session_id dans son SELECT initial",
-      'SELECT id, date, session_id FROM Tournois ORDER BY date DESC' in src_admin, None)
+      'SELECT id, date, session_id, ligue_id FROM Tournois ORDER BY id DESC' in src_admin, None)
 
 check("delete lit session_id avant de supprimer",
-      'SELECT date, session_id FROM Tournois WHERE id' in src_admin, None)
+      'SELECT date, session_id, ligue_id FROM Tournois WHERE id' in src_admin, None)
 
 def corps_fonction(src, nom):
     """Le source d'une fonction, de sa signature au prochain decorateur."""
@@ -215,8 +215,8 @@ def corps_fonction(src, nom):
 
 # Verifie route par route : chercher dans le fichier entier ferait correspondre
 # l'appel de l'AUTRE route, et l'assertion passerait pour de mauvaises raisons.
-for route, lecture in (('revert_last_tournament', 'session_id FROM Tournois'),
-                       ('delete_tournament', 'session_id FROM Tournois WHERE id')):
+for route, lecture in (('revert_last_tournament', 'session_id, ligue_id FROM Tournois'),
+                       ('delete_tournament', 'session_id, ligue_id FROM Tournois WHERE id')):
     corps = corps_fonction(src_admin, route)
     check("%s : session_id lue avant l'appel de nettoyage" % route.split('_')[0],
           avant(corps, lecture, 'drop_session_if_orphan(cur'), None)
@@ -280,10 +280,13 @@ cli, cur, conn, lots = monter([
     (r"SELECT id, sigma, consecutive_missed, is_ranked FROM Joueurs", []),
     (r"SELECT DISTINCT ON \(p.joueur_id\)", []),
     (r"FROM ghost_log g", []),
+    (r"key = 'tau'", ('0.083',)),
 ])
+# Deux joueurs : un tournoi en exige deux (27/09), et TrueSkill ne classe pas
+# un joueur seul.
 r = cli.post('/add-tournament', headers=H, json={
     "date": "2026-09-15",
-    "joueurs": [{"nom": "A", "score": 100}],
+    "joueurs": [{"nom": "A", "score": 100}, {"nom": "B", "score": 80}],
 })
 
 executes = sql_joints(cur)

@@ -87,7 +87,7 @@ CREATE TABLE public.joueurs (
     mu double precision DEFAULT 50.0, 
     sigma double precision DEFAULT 8.333, 
     score_trueskill double precision GENERATED ALWAYS AS ((mu - ((3)::double precision * sigma))) STORED, 
-    tier character(1) DEFAULT 'U'::bpchar,
+    tier character varying(10) DEFAULT 'U',
     consecutive_missed integer DEFAULT 0,
     is_ranked boolean DEFAULT true,
     color character varying(7) DEFAULT '#FFFFFF',
@@ -169,7 +169,7 @@ CREATE TABLE public.grille_snapshots (
     mu double precision NOT NULL,
     sigma double precision NOT NULL,
     is_ranked boolean NOT NULL DEFAULT true,
-    tier character(1) NOT NULL DEFAULT 'U',
+    tier character varying(10) NOT NULL DEFAULT 'U',
     source character varying(16) NOT NULL DEFAULT 'live',
     created_at timestamp without time zone DEFAULT now(),
     CONSTRAINT grille_snapshots_pkey PRIMARY KEY (date, joueur_id)

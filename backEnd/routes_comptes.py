@@ -378,6 +378,7 @@ def lister_liaisons():
         logger.error("Liste des liaisons impossible: %s", e)
         return jsonify({"error": "Erreur serveur"}), 500
 
+    superadmin = g.compte['role'] == ROLE_SUPERADMIN
     return jsonify([{
         "id": r[0], "statut": r[1], "message": r[2],
         "created_at": r[3].isoformat(),
@@ -397,10 +398,29 @@ def lister_liaisons():
         "joueur_vise_par_invitation": r[13],
         "concordance_invitation": (r[13] is not None and r[13] == r[11]),
         # Ce que approuver/refuser refuseraient (S-11, S-13) : l'ecran grise
-        # les boutons d'avance au lieu de laisser decouvrir un 403.
-        "hors_de_portee": hors_de_portee(g.compte['role'], r[15]),
-        "est_moi": r[5] == g.compte['id'],
+        # les boutons d'avance au lieu de laisser decouvrir un 403. Le
+        # superadmin, seul a pouvoir statuer sur sa propre demande
+        # (_statue_sur_soi), n'y voit rien de grise.
+        "hors_de_portee": (not superadmin or r[5] != g.compte['id'])
+                          and hors_de_portee(g.compte['role'], r[15]),
+        "est_moi": r[5] == g.compte['id'] and not superadmin,
     } for r in rows])
+
+
+def _statue_sur_soi(compte_id: int):
+    """S-13 sur les liaisons : True si l'acteur statue sur SA demande et en a
+    le droit, False s'il statue sur celle d'un autre, None s'il doit etre refuse.
+
+    Le superadmin fait exception. Pour lui, S-13 et la regle de rang (S-11)
+    se cumulaient en impasse : il ne peut pas statuer sur soi, et personne
+    n'a de rang superieur au sien pour le faire a sa place. Sa demande
+    restait en attente pour toujours, et son compte sans fiche. Le second
+    regard que S-13 protege n'existe pas au sommet ; le journal garde la
+    trace (`sur_soi`).
+    """
+    if compte_id != _acteur_id():
+        return False
+    return True if g.compte['role'] == ROLE_SUPERADMIN else None
 
 
 @comptes_bp.route('/admin/liaisons/<int:demande_id>/approve', methods=['POST'])
@@ -440,11 +460,11 @@ def approuver_liaison(demande_id):
 
                     # S-13 : revendiquer une fiche est declaratif, tout repose
                     # sur un second regard. Approuver sa propre demande le
-                    # supprime.
-                    erreur = refuse_auto_modification(_acteur_id(), compte_id)
-                    if erreur is not None:
+                    # supprime -- sauf pour le superadmin (_statue_sur_soi).
+                    soi = _statue_sur_soi(compte_id)
+                    if soi is None:
                         conn.rollback()
-                        return erreur
+                        return refuse_auto_modification(_acteur_id(), compte_id)
 
                     # S-04 : l'UPDATE ci-dessous pose statut = 'linked'. Sur un
                     # compte suspendu, il levait la suspension -- par un admin
@@ -460,7 +480,9 @@ def approuver_liaison(demande_id):
                     # S-11 : approuver ecrit sur le COMPTE (joueur_id, statut).
                     # La route ne recoit que l'id de la demande, d'ou la regle
                     # de rang posee a la main plutot que par compte_cible_protegee.
-                    refus = refus_de_rang(g.compte, compte_id, ligne_compte[1])
+                    # Sur soi elle ne s'applique pas : refus_de_rang laisse ce
+                    # cas aux appelants, et il vient d'etre tranche.
+                    refus = None if soi else refus_de_rang(g.compte, compte_id, ligne_compte[1])
                     if refus is not None:
                         conn.rollback()
                         return refus
@@ -521,7 +543,7 @@ def approuver_liaison(demande_id):
                     )
                     _audit(cur, 'liaison_approuvee', 'compte', compte_id,
                            {"joueur_id": joueur_id, "demande_id": demande_id,
-                            "fiche_creee": creation})
+                            "fiche_creee": creation, "sur_soi": soi})
                     notifier(
                         cur, compte_id, 'liaison_approuvee',
                         "Votre compte est synchronisé",
@@ -569,17 +591,18 @@ def refuser_liaison(demande_id):
                         return jsonify({"error": "Deja traitee", "code": "deja_traitee"}), 409
 
                     # S-13, par symetrie avec l'approbation : on ne statue pas
-                    # sur sa propre demande, dans un sens ou dans l'autre.
-                    erreur = refuse_auto_modification(_acteur_id(), compte_id)
-                    if erreur is not None:
+                    # sur sa propre demande, dans un sens ou dans l'autre --
+                    # sauf le superadmin (_statue_sur_soi).
+                    soi = _statue_sur_soi(compte_id)
+                    if soi is None:
                         conn.rollback()
-                        return erreur
+                        return refuse_auto_modification(_acteur_id(), compte_id)
 
                     # S-11, meme regle de rang que l'approbation : la demande
                     # d'un rang egal ou superieur se tranche plus haut.
                     cur.execute("SELECT role FROM comptes WHERE id = %s", (compte_id,))
                     ligne_compte = cur.fetchone()
-                    if ligne_compte is not None:
+                    if ligne_compte is not None and not soi:
                         refus = refus_de_rang(g.compte, compte_id, ligne_compte[0])
                         if refus is not None:
                             conn.rollback()
@@ -592,7 +615,8 @@ def refuser_liaison(demande_id):
                         (_acteur_id(), demande_id),
                     )
                     _audit(cur, 'liaison_refusee', 'compte', compte_id,
-                           {"joueur_id": joueur_id, "demande_id": demande_id, "motif": motif})
+                           {"joueur_id": joueur_id, "demande_id": demande_id, "motif": motif,
+                            "sur_soi": soi})
                     notifier(
                         cur, compte_id, 'liaison_refusee',
                         "Votre demande a été refusée",

@@ -122,10 +122,14 @@ function bounceItemOffPipe(cfg, pipe, item) {
 // Un seul pas de 33 ms ne suffit plus des que la profondeur bouge vite : a 45
 // degres une verte avance de huit unites par pas, pour une hitbox de kart qui en
 // fait cinq. Elle enjamberait ses victimes et traverserait un tuyau sans le voir.
+// L'avance le long de la piste est bornee aussi : 29 px par pas contre un tuyau
+// large de 44, et la carapace le traversait droit devant elle.
 function advanceProjectile(cfg, state, item, deltaTime, now) {
     const spec = cfg.pipe;
 
-    let steps = Math.ceil(Math.abs(item.vy * deltaTime) / spec.maxSubStepY);
+    let steps = Math.max(
+        Math.ceil(Math.abs(item.vy * deltaTime) / spec.maxSubStepY),
+        Math.ceil(Math.abs(item.vx * deltaTime) / spec.maxSubStepX));
     if (!(steps >= 1)) steps = 1;
     if (steps > spec.maxSubSteps) steps = spec.maxSubSteps;
 
@@ -400,16 +404,16 @@ function choosePipeLane(cfg, kart, rng, dist, current) {
     const cap = steerCapOver(cfg, kart, lane.speed, near, trip);
     const chosen = chooseLane(cfg, rng, kart, cap, ttc, lane);
 
-    // Aucun endroit tenable d'ici la : il garde sa ligne et grappille ce qu'il
-    // peut. Arriver contre le bord du tuyau vaut mieux que se figer, la poussee
-    // du choc l'en degagera.
+    // Aucun endroit tenable d'ici la. En reprise, il garde le couloir deja
+    // choisi ; a l'engagement, `null` : l'appelant ne s'engage pas et repose la
+    // question au tick suivant (cf. `steerAroundPipes`).
     //
-    // Mais un couloir DEJA CHOISI vaut mieux que cette ligne : rendre `yPercent`
+    // Un couloir DEJA CHOISI vaut mieux que la ligne du moment : rendre `yPercent`
     // par-dessus lui effacait une decision valable pour la position du moment,
     // laquelle vaut « reste ou tu es » — c'est-a-dire, apres un choc, contre le
     // tuyau. La reprise avait alors une chance sur deux de defaire le seul bon
     // choix du kart.
-    if (chosen === null) return (current !== null) ? current : kart.yPercent;
+    if (chosen === null) return current;
     if (current === null) return chosen;
 
     // S'ENGAGER : on ne change de couloir que si le nouveau est NETTEMENT
@@ -487,9 +491,21 @@ function steerAroundPipes(cfg, state, rng, now, kart, deltaTime) {
         // ou deux dixiemes, et il decide alors sur des nombres vrais.
         if (sight.pipeAheadDist <= reach.x) return false;
 
+        // Aucun couloir tenable : il NE S'ENGAGE PAS non plus. S'engager sur
+        // « reste ou tu es » figeait la ligne jusqu'a la reprise, tiree au sort.
+        //
+        // C'est le cas a la sortie d'un mur quand le suivant est de l'autre cote
+        // (tracks/04.md, colonnes 70 puis 78) : la vue a 80 ms de retard et
+        // voit encore le mur qu'on vient de passer, qui ferme le haut quand le
+        // suivant ferme le bas. Aucune profondeur ne tient, et le kart fonçait
+        // droit dans le second — 85 % des chocs du circuit. Un balayage plus
+        // tard, le mur passe a quitte la vue et le couloir s'ouvre.
+        const laneY = choosePipeLane(cfg, kart, rng, sight.pipeAheadDist, null);
+        if (laneY === null) return false;
+
         kart.pipeTargetIndex = sight.pipeAheadIndex;
         dist = sight.pipeAheadDist;
-        kart.pipeLaneY = choosePipeLane(cfg, kart, rng, dist, null);
+        kart.pipeLaneY = laneY;
         kart.pipeReviewAt = now + reviewDelay(cfg, rng);
 
     } else if (now >= kart.pipeReviewAt) {

@@ -276,6 +276,27 @@ check("refuser SA propre demande -> 403 (symetrie)",
       r.status_code == 403 and (r.get_json() or {}).get('code') == 'auto_modification',
       r.get_json())
 
+# Exception du superadmin : S-13 + S-11 l'enfermaient -- lui ne statue pas sur
+# soi, et personne n'a de rang superieur au sien pour le faire.
+r, cur, conn = approuver('pending', acteur=5, role_cible='superadmin', role_acteur='superadmin')
+check("le superadmin approuve SA propre demande -> 200", r.status_code == 200, r.get_json())
+check("  le compte est rattache", any('SET joueur_id' in s for s in sql_de(cur)))
+check("  le journal le marque sur_soi",
+      any('"sur_soi": true' in str(p) or "'sur_soi': True" in str(p) for p in audits(cur)),
+      audits(cur))
+
+cli, cur, conn = monter([
+    (r"SELECT compte_id, joueur_id, statut FROM liaisons_demandes", (5, 9, 'pending')),
+    (r"SELECT role FROM comptes WHERE id", ('superadmin',)),
+], role='superadmin', compte_id=5)
+r = cli.post('/admin/liaisons/1/reject', json={}, headers=H)
+check("le superadmin refuse SA propre demande -> 200", r.status_code == 200, r.get_json())
+
+r, cur, conn = approuver('pending', acteur=1, role_cible='superadmin', role_acteur='superadmin')
+check("NON-REGRESSION : un superadmin sur la demande d'un AUTRE superadmin -> 403 cible_protegee",
+      r.status_code == 403 and (r.get_json() or {}).get('code') == 'cible_protegee',
+      r.get_json())
+
 
 # ===========================================================================
 print("\n=== S-11 : la hierarchie protege aussi la FICHE d'un compte ===")
@@ -413,6 +434,14 @@ _l = {d['id']: (d['hors_de_portee'], d['est_moi'])
       for d in (cli.get('/admin/liaisons', headers=H).get_json() or [])}
 check("file des liaisons : hors_de_portee et est_moi exposes",
       _l == {1: (False, False), 2: (True, False), 3: (True, True)}, _l)
+
+cli, cur, conn = monter([(r"FROM liaisons_demandes d", [
+    _demande(1, 7, 'player'), _demande(3, 1, 'superadmin')])],
+    role='superadmin', compte_id=1)
+_l = {d['id']: (d['hors_de_portee'], d['est_moi'])
+      for d in (cli.get('/admin/liaisons', headers=H).get_json() or [])}
+check("file des liaisons : le superadmin n'a rien de grise sur SA demande",
+      _l == {1: (False, False), 3: (False, False)}, _l)
 
 
 # ===========================================================================
@@ -744,18 +773,22 @@ check("« Mario » et « mario » : la meme fiche, reconnue sans tenir compte de
       r.status_code == 409 and (r.get_json() or {}).get('code') == 'joueur_en_double', r.get_json())
 check("  et aucune fiche n'est creee pour « mario »", not ecrit(cur))
 
-r, cur = tournoi([{'nom': 'Inconnu', 'score': 10}], TOURNOI_SEUL)
+# Un joueur connu en plus : un tournoi exige au moins deux lignes.
+LUIGI = {'luigi': (11, 'Luigi')}
+r, cur = tournoi([{'nom': 'Luigi', 'score': 12}, {'nom': 'Inconnu', 'score': 10}],
+                 TOURNOI_SEUL, existants=LUIGI)
 check("S-09 : gestion_joueurs sans joueurs_creation ne cree pas de fiche -> 409 joueur_inconnu",
       r.status_code == 409 and (r.get_json() or {}).get('code') == 'joueur_inconnu'
       and not ecrit(cur), r.get_json())
 
-r, cur = tournoi([{'nom': 'Ancien', 'score': 10}],
-                 TOURNOI_SEUL + ('joueurs_creation',), interdit=True)
+r, cur = tournoi([{'nom': 'Luigi', 'score': 12}, {'nom': 'Ancien', 'score': 10}],
+                 TOURNOI_SEUL + ('joueurs_creation',), existants=LUIGI, interdit=True)
 check("S-05 : un nom anonymise n'est pas recree par le tournoi -> 409 nom_interdit",
       r.status_code == 409 and (r.get_json() or {}).get('code') == 'nom_interdit'
       and not ecrit(cur), r.get_json())
 
-r, cur = tournoi([{'nom': 'a/b', 'score': 10}], TOURNOI_SEUL + ('joueurs_creation',))
+r, cur = tournoi([{'nom': 'Luigi', 'score': 12}, {'nom': 'a/b', 'score': 10}],
+                 TOURNOI_SEUL + ('joueurs_creation',), existants=LUIGI)
 check("S-05 : un « / » n'est pas cree par le tournoi -> 409",
       r.status_code == 409 and not ecrit(cur), r.get_json())
 

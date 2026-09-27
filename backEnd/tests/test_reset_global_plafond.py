@@ -156,14 +156,16 @@ check("aucun joueur n'est meme selectionne",
       sql_execute(cur))
 
 
-print("\n=== revert : restaure old_sigma, y compris pour les joueurs ecretes ===")
+print("\n=== revert : retire ce que chacun a recu, y compris les joueurs ecretes ===")
 
 # Le joueur 20 avait ete ecrete (1.8 -> 2.0, soit +0.2). Un revert uniforme de
 # value_applied (0.3) le mettrait a 1.7 : c'est precisement ce qu'on evite.
+# Depuis le 27/09 on retire delta_applied au lieu de restaurer old_sigma : un
+# sigma edite a la main depuis le reset n'est plus ecrase.
 cli, cur, conn, lots = monter([
     (r"SELECT id, value_applied, date FROM global_resets", (42, 0.3, '2026-09-20')),
     (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (0,)),
-    (r"SELECT joueur_id, old_sigma FROM global_reset_details", [(10, 1.0), (20, 1.8)]),
+    (r"SELECT joueur_id, delta_applied FROM global_reset_details", [(10, 0.3), (20, 0.2)]),
 ])
 r = cli.post('/api/admin/revert-global-reset', headers=H)
 check("revert repond 200", r.status_code == 200, r.get_data(as_text=True))
@@ -172,13 +174,15 @@ soustractions = [s for s in sql_execute(cur) if 'sigma = sigma -' in s]
 check("aucune soustraction uniforme quand le detail existe",
       not soustractions, soustractions)
 
-restauration = lot(lots, 'SET sigma = data.old_sigma')
-check("un lot de restauration est ecrit", restauration is not None, lots)
-restaure = dict(restauration or [])
-check("le joueur ecrete revient a 1.8, pas a 1.7",
-      abs(restaure.get(20, 0) - 1.8) < 1e-9, restaure)
-check("le joueur non ecrete revient a 1.0",
-      abs(restaure.get(10, 0) - 1.0) < 1e-9, restaure)
+retrait = lot(lots, 'GREATEST(j.sigma - data.delta')
+check("un lot de retrait par joueur est ecrit", retrait is not None, lots)
+retire = dict(retrait or [])
+check("le joueur ecrete perd 0.2 (ce qu'il a recu), pas 0.3",
+      abs(retire.get(20, 0) - 0.2) < 1e-9, retire)
+check("le joueur non ecrete perd 0.3",
+      abs(retire.get(10, 0) - 0.3) < 1e-9, retire)
+check("le sigma ne descend jamais a 0 (TrueSkill divise par sigma²)",
+      any('GREATEST(j.sigma - data.delta, 0.001)' in sql for sql, _ in lots), lots)
 
 
 print("\n=== revert : un reset anterieur a la migration reste annulable ===")
@@ -187,7 +191,7 @@ print("\n=== revert : un reset anterieur a la migration reste annulable ===")
 cli, cur, conn, lots = monter([
     (r"SELECT id, value_applied, date FROM global_resets", (7, 0.3, '2026-08-01')),
     (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (0,)),
-    (r"SELECT joueur_id, old_sigma FROM global_reset_details", []),
+    (r"SELECT joueur_id, delta_applied FROM global_reset_details", []),
 ])
 r = cli.post('/api/admin/revert-global-reset', headers=H)
 check("revert repond 200 sur un reset legacy", r.status_code == 200,
@@ -266,7 +270,7 @@ check("elle date le reset annule", n and '20/09/2026' in (n[2] or ''), n and n[2
 cli, cur, conn, lots = monter([
     (r"SELECT id, value_applied, date FROM global_resets", (7, 0.3, '2026-08-01')),
     (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (0,)),
-    (r"SELECT joueur_id, old_sigma FROM global_reset_details", []),
+    (r"SELECT joueur_id, delta_applied FROM global_reset_details", []),
 ])
 r = cli.post('/api/admin/revert-global-reset', headers=H)
 check("date en chaine : l'annulation passe quand meme", r.status_code == 200,

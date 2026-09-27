@@ -412,6 +412,50 @@ def drop_session_if_orphan(cur: Any, session_id: Any) -> None:
     cur.execute("DELETE FROM sessions_tournois WHERE id = %s", (session_id,))
 
 
+# Cle du verrou consultatif partage par TOUS les gestes qui ecrivent le dossier
+# sportif en masse : ajout, annulation, suppression et liaison de tournoi, reset
+# global et son annulation. Valeur arbitraire, fixe : elle ne doit servir a rien
+# d'autre.
+VERROU_TOURNOIS = 7_300_001
+
+
+# Serialise ces gestes entre eux, jusqu'a la fin de la transaction courante.
+#
+# Chacun lit mu/sigma/consecutive_missed, calcule, puis reecrit : deux gestes
+# simultanes (deux admins, un double envoi) se marchaient dessus sans erreur --
+# le second ecrasait le premier avec des valeurs calculees sur l'etat d'avant.
+# Les controles croises (conflit de session, reset posterieur a un tournoi)
+# avaient le meme trou : chacun ne voit pas encore ce que l'autre ecrit.
+#
+# pg_advisory_XACT_lock : libere seul au commit ou au rollback, y compris sur
+# une exception -- aucun chemin de sortie ne peut l'oublier. A appeler en
+# PREMIERE requete, avant toute lecture qui sert au calcul.
+def verrou_tournois(cur: Any) -> None:
+    cur.execute("SELECT pg_advisory_xact_lock(%s)", (VERROU_TOURNOIS,))
+
+
+# Un autre tournoi de la meme ligue existe-t-il dans cette session ?
+#
+# C'est lui qui porte l'absence de la session : « une session manquee = +1 »,
+# pas « un tournoi manque = +1 ». Le premier tournoi d'une session compte les
+# absents ; les suivants (lobbies lies a la creation) n'ont plus rien a compter,
+# et l'annulation d'un tournoi ne retire l'absence que si la session disparait
+# avec lui pour cette ligue.
+#
+# Meme filtre de ligue que le calcul des presents d'add_tournament.
+def session_a_un_autre_tournoi(cur: Any, session_id: Any, tournoi_id: Any,
+                               ligue_id: Any) -> bool:
+    if session_id is None:
+        return False
+    cur.execute("""
+        SELECT 1 FROM Tournois
+        WHERE session_id = %s AND id <> %s
+          AND (ligue_id = %s OR (%s IS NULL AND ligue_id IS NULL))
+        LIMIT 1
+    """, (session_id, tournoi_id, ligue_id, ligue_id))
+    return cur.fetchone() is not None
+
+
 # Nombre de joueurs a nommer dans un message de conflit. Purement cosmetique :
 # la DETECTION ne depend jamais de cette borne, une seule ligne suffit a refuser.
 MAX_CONFLITS_NOMMES = 5

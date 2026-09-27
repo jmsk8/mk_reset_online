@@ -31,6 +31,7 @@ from utils import generate_unique_slug, extract_league_number, nombre_fini, coul
 from services import (
     recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
     drop_session_if_orphan, annuler_absences,
+    verrou_tournois, session_a_un_autre_tournoi,
     joueurs_en_conflit_de_session, joueurs_en_conflit_entre_sessions,
     fusionner_sessions, annuler_penalites_de_session,
     MAX_CONFLITS_NOMMES, penalite_due,
@@ -143,7 +144,7 @@ def apply_global_reset():
     Le plafond est obligatoire : c'est lui qui borne le geste, et le laisser
     optionnel rendrait « pas de plafond » atteignable par simple oubli du champ.
     """
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     try:
         # S-10 : `val <= 0` laissait passer NaN (toute comparaison a NaN est
         # fausse) et Infinity. Le reset touche le sigma de TOUS les joueurs.
@@ -165,8 +166,27 @@ def apply_global_reset():
         except ValueError:
              return jsonify({"error": "Format de date invalide"}), 400
 
+        # Le reset s'applique MAINTENANT, quelle que soit sa date. Date dans le
+        # futur, il bloquait en plus tout ajout de tournoi jusqu'a elle
+        # (add_tournament refuse un tournoi date avant un reset).
+        if target_date > datetime.now().date():
+            return jsonify({"error": "La date du reset ne peut pas être dans le futur."}), 400
+
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                verrou_tournois(cur)
+                # Deux resets a la meme date : un double envoi (le bouton n'est
+                # pas desactive pendant l'appel), qui relevait le sigma deux
+                # fois. Un vrai second reset passe par l'annulation du premier.
+                cur.execute("SELECT 1 FROM global_resets WHERE date::date = %s LIMIT 1",
+                            (target_date,))
+                if cur.fetchone() is not None:
+                    return jsonify({
+                        "error": "Un reset global existe déjà à cette date. Annulez-le "
+                                 "d'abord pour en appliquer un autre.",
+                        "code": "reset_en_double",
+                    }), 409
+
                 cur.execute("SELECT COUNT(*) FROM Tournois WHERE date >= %s", (target_date,))
                 conflict_count = cur.fetchone()[0]
 
@@ -260,6 +280,7 @@ def revert_global_reset():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                verrou_tournois(cur)
                 cur.execute("SELECT id, value_applied, date FROM global_resets ORDER BY id DESC LIMIT 1")
                 last = cur.fetchone()
                 if not last:
@@ -276,22 +297,27 @@ def revert_global_reset():
                     }), 409
 
                 cur.execute(
-                    "SELECT joueur_id, old_sigma FROM global_reset_details WHERE reset_id = %s",
+                    "SELECT joueur_id, delta_applied FROM global_reset_details WHERE reset_id = %s",
                     (reset_id,),
                 )
                 details = cur.fetchall()
 
                 if details:
-                    # Restauration a l'identique : avec un plafond, les joueurs
-                    # n'ont pas tous recu `val`, donc le soustraire ferait
-                    # descendre les joueurs ecretes plus bas que leur point de
-                    # depart. Le garde-fou ci-dessus garantit qu'aucun tournoi
-                    # n'a bouge ces sigma depuis.
+                    # On RETIRE ce que chacun a recu (delta_applied), on ne
+                    # restaure pas old_sigma. Pas `val` non plus : avec un
+                    # plafond, les joueurs ecretes ont recu moins.
+                    #
+                    # Le garde-fou ci-dessus n'exclut que les tournois. Le sigma
+                    # a pu bouger autrement depuis : edition d'une fiche,
+                    # liaison tardive qui retire une penalite. Restaurer
+                    # old_sigma effacait ces gestes ; une soustraction les
+                    # laisse en place. Plancher a 0.001 : un sigma nul casse
+                    # TrueSkill (division par sigma²).
                     psycopg2.extras.execute_values(cur, """
-                        UPDATE Joueurs AS j SET sigma = data.old_sigma
-                        FROM (VALUES %s) AS data(id, old_sigma)
+                        UPDATE Joueurs AS j SET sigma = GREATEST(j.sigma - data.delta, 0.001)
+                        FROM (VALUES %s) AS data(id, delta)
                         WHERE j.id = data.id
-                    """, details)
+                    """, [(jid, float(delta)) for jid, delta in details])
                 else:
                     # Reset applique avant la migration du plafond : pas de
                     # detail par joueur, mais il etait uniforme et sans plafond.
@@ -1879,10 +1905,32 @@ def save_season_awards(id):
 
 
 
+def _joueurs_tournoi_invalides(joueurs_data):
+    """Controle de forme de la liste des joueurs. Message d'erreur, ou None.
+
+    `bool` est ecarte des scores explicitement : True est un int en Python, et
+    passerait pour un score de 1.
+    """
+    if not isinstance(joueurs_data, list) or len(joueurs_data) < 2:
+        return "Il faut au moins 2 joueurs."
+    for j in joueurs_data:
+        if not isinstance(j, dict):
+            return "Ligne de joueur invalide."
+        nom, score = j.get('nom'), j.get('score')
+        if not isinstance(nom, str) or not nom.strip():
+            return "Nom de joueur invalide."
+        # La borne evite le depassement de la colonne integer (un 500).
+        if isinstance(score, bool) or not isinstance(score, int) or abs(score) > 1_000_000:
+            return "Score invalide pour « %s » : un nombre entier est attendu." % nom.strip()
+        if not isinstance(j.get('exclude_from_ts', False), bool):
+            return "Option « hors TrueSkill » invalide pour « %s »." % nom.strip()
+    return None
+
+
 @admin_bp.route('/add-tournament', methods=['POST'])
 @permission_required('gestion_tournois')
 def add_tournament():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     date_tournoi_str = data.get('date')
     joueurs_data = data.get('joueurs')
     ligue_id = data.get('ligue_id')
@@ -1899,6 +1947,20 @@ def add_tournament():
         except (TypeError, ValueError):
             return jsonify({"error": "Tournoi à lier invalide."}), 400
 
+    # Tout le payload est verifie AVANT la premiere ecriture. Un score en
+    # chaine triait « 9 » devant « 12 » sans erreur (classement faux, en
+    # silence) ; un score decimal ou une ligne sans « nom » finissaient en 500
+    # au milieu de la transaction.
+    erreur = _joueurs_tournoi_invalides(joueurs_data)
+    if erreur is not None:
+        return jsonify({"error": erreur, "code": "saisie_invalide"}), 400
+
+    if ligue_id is not None and str(ligue_id).lower() != 'mixte':
+        try:
+            ligue_id = int(ligue_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Ligue invalide."}), 400
+
     try:
         date_tournoi = datetime.strptime(date_tournoi_str, '%Y-%m-%d').date()
         if date_tournoi > datetime.now().date():
@@ -1906,6 +1968,7 @@ def add_tournament():
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                verrou_tournois(cur)
                 cur.execute("SELECT count(*) FROM global_resets WHERE date >= %s", (date_tournoi,))
                 conflict = cur.fetchone()[0]
                 if conflict > 0:
@@ -1930,9 +1993,11 @@ def add_tournament():
                 elif ligue_id:
                     cur.execute("SELECT nom, couleur FROM Ligues WHERE id = %s", (ligue_id,))
                     res_ligue = cur.fetchone()
-                    if res_ligue:
-                        ligue_nom_archive = res_ligue[0]
-                        ligue_couleur_archive = res_ligue[1]
+                    if res_ligue is None:
+                        # Finissait en violation de cle etrangere, donc en 500.
+                        return jsonify({"error": "Cette ligue n'existe pas."}), 400
+                    ligue_nom_archive = res_ligue[0]
+                    ligue_couleur_archive = res_ligue[1]
 
                 # Reference IP v2 : on fige la grille avant que le tournoi ne fasse bouger le
                 # moindre mu. Sans effet si un tournoi du meme jour l'a deja figee.
@@ -2017,6 +2082,36 @@ def add_tournament():
                     joueurs_exclude_ts[nom] = exclude_ts
                     cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma, exclude_from_ts) VALUES (%s, %s, %s, %s, %s, %s)", (tournoi_id, jid, score, float(mu), float(sigma), exclude_ts))
 
+                # ── DOUBLON ─────────────────────────────────────────────────
+                # Meme date, memes joueurs, memes scores : c'est un second envoi
+                # du meme tournoi (double clic, ou nouvel essai apres une reponse
+                # perdue alors que le premier avait abouti), pas un vrai tournoi.
+                # Il appliquerait TrueSkill une seconde fois a tout le monde.
+                # Compare sur les joueur_id resolus : « mario » et « Mario »
+                # designent la meme fiche.
+                cur.execute("""
+                    SELECT t.id FROM Tournois t
+                    WHERE t.date = %s AND t.id <> %s
+                      AND NOT EXISTS (
+                          (SELECT joueur_id, score FROM Participations WHERE tournoi_id = t.id)
+                          EXCEPT
+                          (SELECT joueur_id, score FROM Participations WHERE tournoi_id = %s))
+                      AND NOT EXISTS (
+                          (SELECT joueur_id, score FROM Participations WHERE tournoi_id = %s)
+                          EXCEPT
+                          (SELECT joueur_id, score FROM Participations WHERE tournoi_id = t.id))
+                    LIMIT 1
+                """, (date_tournoi, tournoi_id, tournoi_id, tournoi_id))
+                doublon = cur.fetchone()
+                if doublon is not None:
+                    conn.rollback()
+                    return jsonify({
+                        "error": "Ce tournoi est déjà enregistré (même date, mêmes joueurs, "
+                                 "mêmes scores). Rien n'a été ajouté.",
+                        "code": "tournoi_en_double",
+                        "tournoi_id": doublon[0],
+                    }), 409
+
                 # ── RATTACHEMENT A UNE SESSION EXISTANTE ────────────────────
                 # L'admin a demande, AVANT validation, de lier ce tournoi a un
                 # autre : deux lobbies d'une meme soiree.
@@ -2081,6 +2176,13 @@ def add_tournament():
                 ts_env = trueskill.TrueSkill(mu=DEFAULT_MU, sigma=DEFAULT_SIGMA, beta=TRUESKILL_BETA, tau=tau_val, draw_probability=TRUESKILL_DRAW_PROBABILITY)
 
                 new_ratings_map = {}
+                # TrueSkill ne classe pas un joueur seul (ValueError « need
+                # multiple rating groups », donc un 500) : a moins de deux
+                # joueurs comptes, personne ne bouge, comme s'ils etaient tous
+                # exclus.
+                if len(ts_joueurs) < 2:
+                    joueurs_exclude_ts.update({j['nom']: True for j in ts_joueurs})
+                    ts_joueurs = []
                 if ts_joueurs:
                     new_ratings = ts_env.rate([[joueurs_ratings[j['nom']]] for j in ts_joueurs], ranks=ts_ranks)
                     for i, j in enumerate(ts_joueurs):
@@ -2180,7 +2282,15 @@ def add_tournament():
                 # d'etre.
                 # Conception : docs/plan-sessions-tournois.md, 5.1
                 deja_presents = set()
-                if absent_ids:
+                # Un autre tournoi de cette session (meme ligue) a deja compte
+                # ses absents : un joueur absent de tous les lobbies a pris son
+                # +1 la-bas. Le recompter ici le penalisait une fois par TOURNOI
+                # -- la regle est une fois par SESSION. La liaison tardive
+                # (annuler_penalites_de_session) corrigeait deja ce cas ; le
+                # chemin nominal, lui, le creait.
+                session_deja_comptee = session_a_un_autre_tournoi(
+                    cur, session_id, tournoi_id, ligue_id)
+                if absent_ids and not session_deja_comptee:
                     cur.execute("""
                         SELECT DISTINCT p.joueur_id
                         FROM Participations p
@@ -2195,7 +2305,8 @@ def add_tournament():
                 for pid, sig, missed, is_r in absents:
                     # Present ailleurs dans la session : ne prend pas d'absence.
                     present_dans_session = pid in deja_presents
-                    new_missed = (missed or 0) if present_dans_session else (missed or 0) + 1
+                    compte_absent = not (present_dans_session or session_deja_comptee)
+                    new_missed = (missed or 0) + 1 if compte_absent else (missed or 0)
                     new_sig = float(sig)
 
                     # Le compteur de sessions loupees decide seul du
@@ -2203,7 +2314,7 @@ def add_tournament():
                     # ghost_log reste le journal des penalites (tracabilite et
                     # restauration a l'annulation), mais n'est plus consulte
                     # pour DECIDER.
-                    if (ghost_enabled and not present_dans_session and new_sig < GHOST_SIGMA_CAP
+                    if (ghost_enabled and compte_absent and new_sig < GHOST_SIGMA_CAP
                             and penalite_due(new_missed, seuil_sessions, intervalle_sessions)):
                         capped_sig = min(new_sig + penalty_val, GHOST_SIGMA_CAP)
                         applied = round(capped_sig - new_sig, 6)
@@ -2362,6 +2473,7 @@ def lier_session_tournoi(tournoi_id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                verrou_tournois(cur)
                 cur.execute(
                     "SELECT id, session_id FROM Tournois WHERE id IN (%s, %s)",
                     (tournoi_id, autre_tournoi_id))
@@ -2435,12 +2547,33 @@ def revert_last_tournament():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                verrou_tournois(cur)
+                # Le dernier ENREGISTRE (id), pas le plus recent par date. Un
+                # tournoi saisi apres coup avec une date anterieure a ete
+                # applique en dernier : c'est lui que old_mu/old_sigma
+                # permettent de defaire. Trier par date annulait l'avant-dernier
+                # applique, et sa restauration effacait l'effet du dernier chez
+                # les joueurs communs.
                 cur.execute(
-                    "SELECT id, date, session_id FROM Tournois ORDER BY date DESC, id DESC LIMIT 1")
+                    "SELECT id, date, session_id, ligue_id FROM Tournois ORDER BY id DESC LIMIT 1")
                 last = cur.fetchone()
                 if not last: return jsonify({"message": "Aucun tournoi à annuler."}), 404
                 # session_id lue MAINTENANT : apres le DELETE, elle est introuvable.
-                tid, tdate, tsession = last[0], last[1], last[2]
+                tid, tdate, tsession, tligue = last[0], last[1], last[2], last[3]
+
+                # Un reset global posterieur a releve des sigma APRES ce
+                # tournoi : restaurer old_sigma l'effacerait chez les
+                # participants, et annuler ensuite le reset remettrait les
+                # valeurs d'apres tournoi. Meme regle, lue dans l'autre sens,
+                # qu'a l'ajout d'un tournoi.
+                cur.execute("SELECT 1 FROM global_resets WHERE date >= %s LIMIT 1", (tdate,))
+                if cur.fetchone() is not None:
+                    return jsonify({
+                        "status": "error",
+                        "message": "Un reset global a été appliqué après ce tournoi : "
+                                   "annulez d'abord le reset.",
+                        "code": "reset_posterieur",
+                    }), 409
 
                 cur.execute("SELECT joueur_id, old_mu, old_sigma FROM Participations WHERE tournoi_id = %s", (tid,))
                 participants = cur.fetchall()
@@ -2471,7 +2604,10 @@ def revert_last_tournament():
                 cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
                 res = cur.fetchone()
                 threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
-                annuler_absences(cur, [jid for jid, _, _ in participants], threshold)
+                # Un autre tournoi de la session porte l'absence : celui-ci n'en
+                # avait pas compte (add_tournament), il n'y a rien a defaire.
+                if not session_a_un_autre_tournoi(cur, tsession, tid, tligue):
+                    annuler_absences(cur, [jid for jid, _, _ in participants], threshold)
 
                 # AVANT les DELETE : apres, il ne reste rien a consigner --
                 # ni la date, ni le nombre de participants.
@@ -2504,28 +2640,48 @@ def delete_tournament(id):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                verrou_tournois(cur)
                 cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
                 res = cur.fetchone()
                 threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
 
                 # Lues AVANT le DELETE : introuvables apres.
-                cur.execute("SELECT date, session_id FROM Tournois WHERE id = %s", (id,))
+                cur.execute("SELECT date, session_id, ligue_id FROM Tournois WHERE id = %s", (id,))
                 row_tournoi = cur.fetchone()
-                tdate = row_tournoi[0] if row_tournoi else None
-                tsession = row_tournoi[1] if row_tournoi else None
+                if row_tournoi is None:
+                    # Repondait « success » et journalisait une suppression
+                    # fantome, datee None.
+                    return jsonify({"error": "Tournoi introuvable."}), 404
+                tdate, tsession, tligue = row_tournoi
 
-                cur.execute("SELECT joueur_id, old_sigma FROM ghost_log WHERE tournoi_id = %s", (id,))
+                # On RETIRE la penalite, on ne restaure pas old_sigma : ce
+                # tournoi n'est pas forcement le dernier, et old_sigma
+                # effacerait tout ce qui a bouge depuis chez ces joueurs
+                # (tournois suivants, reset global). Meme raisonnement
+                # qu'annuler_penalites_de_session.
+                cur.execute("""
+                    SELECT joueur_id, SUM(penalty_applied) FROM ghost_log
+                    WHERE tournoi_id = %s GROUP BY joueur_id
+                """, (id,))
                 ghost_rows = cur.fetchall()
                 if ghost_rows:
                     psycopg2.extras.execute_values(cur, """
-                        UPDATE Joueurs AS j SET sigma = data.sigma
-                        FROM (VALUES %s) AS data(id, sigma)
+                        UPDATE Joueurs AS j SET sigma = GREATEST(j.sigma - data.retrait, 0.001)
+                        FROM (VALUES %s) AS data(id, retrait)
                         WHERE j.id = data.id
-                    """, [(pid, old_sig) for pid, old_sig in ghost_rows])
+                    """, [(pid, float(retrait)) for pid, retrait in ghost_rows])
 
                 cur.execute("SELECT joueur_id FROM Participations WHERE tournoi_id = %s", (id,))
                 parts = [r[0] for r in cur.fetchall()]
-                annuler_absences(cur, parts, threshold)
+                # Qui a rejoue APRES ce tournoi (enregistre apres lui) a vu son
+                # compteur remis a 0 depuis : l'absence de ce tournoi n'y est
+                # plus, la retirer ferait descendre le compteur sous sa vraie
+                # valeur. Sans objet quand c'est le dernier tournoi.
+                cur.execute("SELECT DISTINCT joueur_id FROM Participations WHERE tournoi_id > %s",
+                            (id,))
+                ont_rejoue = [r[0] for r in cur.fetchall()]
+                if not session_a_un_autre_tournoi(cur, tsession, id, tligue):
+                    annuler_absences(cur, parts + ont_rejoue, threshold)
 
                 # AVANT le DELETE, meme raison qu'a l'annulation.
                 # ⚠️ Cette route est signalee dangereuse par R-37 : contrairement
@@ -2537,8 +2693,7 @@ def delete_tournament(id):
                     "scores_restaures": False,
                 })
                 cur.execute("DELETE FROM Tournois WHERE id = %s", (id,))
-                if tdate is not None:
-                    drop_grille_snapshot_if_orphan(cur, tdate)
+                drop_grille_snapshot_if_orphan(cur, tdate)
                 drop_session_if_orphan(cur, tsession)
             conn.commit()
             recalculate_tiers()

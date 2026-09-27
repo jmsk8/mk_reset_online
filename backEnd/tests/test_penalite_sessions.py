@@ -103,8 +103,17 @@ check("la variable dit ce qu'elle contient (deja_presents)",
       'deja_presents = {r[0] for r in cur.fetchall()}' in src_admin, None)
 # Un present dans la session ne prend pas d'absence : c'est la regle 5 du plan.
 check("un present dans la session n'est pas incremente",
-      'new_missed = (missed or 0) if present_dans_session else (missed or 0) + 1' in src_admin,
+      'compte_absent = not (present_dans_session or session_deja_comptee)' in src_admin
+      and 'new_missed = (missed or 0) + 1 if compte_absent else (missed or 0)' in src_admin,
       None)
+# Un absent de tous les lobbies ne prend qu'UNE absence pour la session : le
+# premier tournoi la compte, les lobbies lies ensuite n'y touchent plus (27/09).
+check("un second tournoi de la session ne recompte pas les absents",
+      'session_deja_comptee = session_a_un_autre_tournoi(' in src_admin, None)
+check("la penalite de sigma suit la meme regle que le compteur",
+      'if (ghost_enabled and compte_absent and' in src_admin, None)
+check("les annulations ne retirent l'absence que si la session disparait",
+      src_admin.count('if not session_a_un_autre_tournoi(cur, tsession') == 2, None)
 
 
 # Le gain de la decision 10 : la session est connue AVANT le calcul, donc la
@@ -236,15 +245,21 @@ def corps(fn):
     return src_admin[d:f if f != -1 else len(src_admin)]
 
 
-for fn in ('revert_last_tournament', 'delete_tournament'):
+# revert annule le DERNIER tournoi : restaurer old_sigma y est exact. delete
+# peut viser un tournoi ancien : il retire penalty_applied, pour ne pas effacer
+# ce qui a bouge depuis (27/09).
+for fn, motif_sigma, source in (
+        ('revert_last_tournament', 'SET sigma = data.sigma', 'old_sigma FROM ghost_log'),
+        ('delete_tournament', 'SET sigma = GREATEST(j.sigma - data.retrait',
+         'SUM(penalty_applied) FROM ghost_log')):
     c = corps(fn)
-    i_sigma = c.find('SET sigma = data.sigma')
+    i_sigma = c.find(motif_sigma)
     i_compteur = c.find('annuler_absences(cur')
-    check("%s : sigma restaure AVANT le decrement du compteur" % fn.split('_')[0],
+    check("%s : sigma corrige AVANT le decrement du compteur" % fn.split('_')[0],
           i_sigma != -1 and i_compteur != -1 and i_sigma < i_compteur,
           (i_sigma, i_compteur))
-    check("%s : le sigma vient de ghost_log.old_sigma" % fn.split('_')[0],
-          'old_sigma FROM ghost_log' in c, None)
+    check("%s : le sigma vient de ghost_log (%s)" % (fn.split('_')[0], source),
+          source in c, None)
 
 # La regle de decrement ne doit vivre qu'a un seul endroit : c'est la lecon de
 # la Phase 0, ou les deux routes avaient diverge.

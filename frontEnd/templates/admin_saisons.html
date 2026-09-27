@@ -137,12 +137,18 @@
         }
 
         /* ------------------------------------------------------------------
-           SEUIL DU MODE TELEPHONE : 900px.
+           SEUIL DU MODE TELEPHONE : 1023px.
 
            Plus large que les 768px de Bulma, parce que ce n'est pas la taille
            de l'ecran qui decide ici mais celle du contenu : deux cartes cote
            a cote, dont un formulaire dense, restent a l'etroit bien au-dessus
            du seuil « tablette » standard.
+
+           900px ne suffisait pas : vers 930px la colonne du formulaire
+           tombait a ~350px et les deux champs date (~160px chacun, largeur
+           plancher du champ natif) debordaient de la carte. 1023px est la
+           limite `touch`/`desktop` de Bulma : au-dela, le `.container` passe
+           a 960px fixes et la colonne tient les deux dates.
 
            Ce seuil est repete dans les trois @media ci-dessous et dans
            `.visible-mode-tel` — les quatre doivent bouger ensemble.
@@ -150,13 +156,13 @@
 
         /* Boutons propres au mode telephone (le « + » et la croix).
            `is-hidden-tablet` de Bulma ne convenait pas : il est fige a 769px,
-           et les aurait masques entre 769 et 900px, la ou on en a justement
+           et les aurait masques entre 769 et 1023px, la ou on en a justement
            besoin. */
         .visible-mode-tel {
             display: none;
         }
 
-        @media screen and (max-width: 900px) {
+        @media screen and (max-width: 1023px) {
             .visible-mode-tel {
                 display: inline-flex;
             }
@@ -175,7 +181,7 @@
            flux et repositionne. Un second exemplaire aurait dedouble les
            `id` du formulaire et casse le JS qui les lit.
            ------------------------------------------------------------------ */
-        @media screen and (max-width: 900px) {
+        @media screen and (max-width: 1023px) {
             /* Replie par defaut. `display:none` plutot qu'une simple
                transparence : les champs ne doivent etre ni tabulables ni lus
                par un lecteur d'ecran tant que la modale est fermee. */
@@ -242,7 +248,7 @@
             }
 
             /* La liste prend toute la largeur rendue disponible. `flex` en
-               plus de `width` : entre 769 et 900px Bulma met encore les
+               plus de `width` : entre 769 et 1023px Bulma met encore les
                colonnes en ligne (son seuil a lui), et la base flex de `is-7`
                l'aurait laissee a 58%. */
             .column.is-7 {
@@ -384,10 +390,10 @@
             }
         }
 
-        /* Au-dela de 900px le bloc redevient une colonne : on neutralise tout
+        /* A partir de 1024px le bloc redevient une colonne : on neutralise tout
            etat laisse par un passage en mode telephone (rotation de l'ecran,
            redimensionnement), sinon la carte resterait en position fixe. */
-        @media screen and (min-width: 901px) {
+        @media screen and (min-width: 1024px) {
             #blocNouvelleSaison.est-ouvert {
                 position: static;
                 display: block;
@@ -399,6 +405,18 @@
         }
         /* Versions de l'IP : une par ligne, leur resume dessous. */
         .choix-ip { display: block; margin: 0 0 0.6rem 0 !important; }
+
+        /* Debut / Fin : les colonnes de Bulma refusent de descendre sous la
+           largeur plancher d'un champ date natif, et debordent de la carte
+           au lieu de passer a la ligne. On autorise le retour a la ligne des
+           qu'une date n'a plus sa place. */
+        .ligne-dates {
+            flex-wrap: wrap;
+        }
+
+        .ligne-dates > .column {
+            min-width: 11rem;
+        }
     </style>
 </head>
 <body>
@@ -430,7 +448,7 @@
                                     <label class="label">Nom</label>
                                     <input class="input" type="text" id="nomSaison" placeholder="Ex: Hiver 2025" required>
                                 </div>
-                                <div class="columns">
+                                <div class="columns ligne-dates">
                                     <div class="column">
                                         <div class="field">
                                             <label class="label">Début</label>
@@ -1017,7 +1035,7 @@ async function loadAwardTypes() {
     /* Formulaire « Nouvelle Saison » en modale sur telephone.
 
        Les deux fonctions restent sans effet en desktop : la classe qu'elles
-       posent n'est lue que par la media query <=900px, ou le bloc est une
+       posent n'est lue que par la media query <=1023px, ou le bloc est une
        colonne ordinaire. Inutile donc de tester la largeur ici — le CSS
        decide seul, et une rotation d'ecran ne laisse rien d'incoherent. */
     function ouvrirFormulaireSaison() {

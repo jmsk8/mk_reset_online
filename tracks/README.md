@@ -120,13 +120,14 @@ Deux pipes sur la même colonne, repérés par la rangée du haut de leur carré
 | 0 + 8 | 12,7 | large — les deux bords opposés |
 | 0 + 7 · 1 + 8 | 8,8 | juste |
 | du même côté du milieu (0 à 4, ou 4 à 8) | 8,3 à 20 | large |
-| tout le reste (0 + 5, 2 + 6, 3 + 8…) | 0,5 à 5 | **refusé** |
+| 0 + 5, 0 + 6, 1 + 5, 1 + 7, 2 + 5, 2 + 8, 3 + 5 à 3 + 8 | 4,4 à 5 | serré — accepté |
+| 1 + 6, 2 + 6, 2 + 7 | 0,5 à 1,1 | **refusé** |
 
 Le piège est contre-intuitif : **deux tuyaux côte à côte au milieu ne font pas une
 porte, ils font un mur.** Leurs zones bloquées fusionnent dès qu'ils sont séparés
-de moins de 18,4 en profondeur — soit plus de la moitié de la piste. La seule
-paire qui tienne est celle des deux tuyaux **du même côté**, ou celle des deux
-bords opposés.
+de moins de 18,4 en profondeur — soit plus de la moitié de la piste. Les paires
+à l'aise sont celles des deux tuyaux **du même côté**, ou des deux bords
+opposés ; les autres ne laissent qu'un couloir serré, et le peloton s'y bouscule.
 
 Pour une porte à deux passages, il faut *un seul* pipe au milieu — il laisse 8,3
 de chaque côté, de quoi faire passer un kart (profond de 6,3) sans confort.
@@ -170,7 +171,7 @@ deux colonnes, un circuit sans `x` ou sans `B`, une tabulation dans le dessin,
 un pipe incomplet (un `P` seul, trois `P` en ligne, une forme en L…), un pipe
 qui mélange `P` et `p`, un pipe coupé par le bord droit du dessin, un tour trop
 court pour que la grille de départ y tienne, et **des pipes qui ne
-laissent pas 6 de passage libre**.
+laissent pas 4 de passage libre**.
 
 Ce dernier refus est le plus important de tous : un circuit bouché ne planterait
 pas. Les karts se cogneraient au même tuyau jusqu'au délai maximum, la course

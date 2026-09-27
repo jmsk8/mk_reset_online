@@ -80,6 +80,13 @@ export default {
         // d'un kart (5) — elle enjamberait ses victimes sans les toucher. Chaque
         // sous-pas est borne a cette avance.
         maxSubStepY: 1.5,
+        // Et le long de la piste, contre le tuyau cette fois. A 880 px/s un pas
+        // avance de 29 px pour un disque large de 44 : le premier point vu
+        // dedans tombait parfois PASSE le centre, la carapace semblait deja
+        // ressortir, et `bounceItemOffPipe` la laissait filer — une verte
+        // traversait un tuyau une fois sur quelques-unes, selon la phase du
+        // tick. A 8 px elle ne mord que d'un tiers du demi-axe (21.8).
+        maxSubStepX: 8,
         maxSubSteps: 12,
 
         // Marge de degagement apres un rebond, en fraction du rayon. Sans elle,
@@ -91,14 +98,17 @@ export default {
         // demi-carrosserie est deja dans `kartVsPipe`. Celui-ci demande de la
         // marge, parce qu'un kart arrive rarement pile dans l'axe.
         //
-        // A 6, un tuyau pose au milieu de la piste passe des deux cotes ; a 8, ce
-        // cas le plus naturel de tous serait refuse.
+        // A 4 (6 jusqu'au 27/09), le dessin garde de la liberte : deux tuyaux
+        // loin du milieu (rangees 0 + 5, 3 + 7, 2 + 8...) laissent 4,4 a 5 et
+        // passent. Ne restent refuses que les vrais murs — deux tuyaux au milieu
+        // (1 + 6, 2 + 6, 2 + 7), qui ne laissent que 0,5 a 1,1 : moins que la
+        // tolerance de visee du pilotage (`ai.steering.pipe.tolerance`, 0,6).
         //
         // Ce seuil ne concerne PLUS QUE LE CHARGEMENT : le pilotage note les
         // couloirs au lieu de les refuser, et sait emprunter plus serre que 6
         // quand c'est le moins cher. Un circuit qui n'en laisse pas autant est
         // refuse au demarrage — un mur de tuyaux rendrait la course infinissable
         // sans qu'aucune erreur ne soit levee.
-        minPassageY: 6
+        minPassageY: 4
     },
 };

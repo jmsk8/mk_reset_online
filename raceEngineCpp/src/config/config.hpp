@@ -234,7 +234,7 @@ struct PipeCfg {
     // tuyaux ne provoquerait aucune erreur a l'execution : les karts se
     // cogneraient jusqu'au delai maximum et la course serait close sur un
     // classement d'office, sans que rien dans les journaux n'accuse le circuit.
-    double minPassageY = 6;
+    double minPassageY = 4;  // aligne sur raceEngine/src/config/pipes.js
 
     // Le choc : arret net, puis contrecoup. `immuneMs` evite qu'un kart colle au
     // tuyau rejoue le choc a chaque tick.
