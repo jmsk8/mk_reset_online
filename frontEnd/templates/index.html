@@ -76,10 +76,19 @@
                 --tag-height: 1.5em;
                 --score-height: 10px;
                 --score-text: 9px;
-                /* Assez pour les trois colonnes, pas au-dela. Sur un telephone
-                   large, la carte reste lisible au lieu de s'etirer. */
-                --largeur-resultat: 26rem;
+                /* Assez pour les trois colonnes, pas au-dela. Sous la largeur
+                   d'un telephone courant (~22rem utiles), sinon le plafond ne
+                   joue jamais et le nom reste loin de son score. */
+                --largeur-resultat: 20rem;
             }
+
+            /* Carte de resultat resserree en hauteur : en-tete, pied et ecart
+               entre cartes gardaient leurs marges de bureau. La marge `mb-5`
+               s'ajoutait a celle de la colonne ; la colonne suffit. */
+            .card.carte-resultat { margin-bottom: 0 !important; }
+            .carte-resultat .card-header-title { padding: 0.5rem 0.75rem; }
+            .carte-resultat .card-header-title .title { font-size: 1.1rem; }
+            .carte-resultat .card-footer-item { padding: 0.4rem; font-size: 0.85rem; }
         }
 
         /* Carte de resultat de tournoi.
@@ -331,17 +340,16 @@
                 {% for tournoi_data in resultats %}
                 <div class="column is-12-mobile is-6-tablet is-4-desktop colonne-resultat fade-in" style="animation-delay: {{ loop.index * 0.1 }}s">
                     
-                    <div class="card glass-card rise-in mb-5" style="height: 100%; display: flex; flex-direction: column; {{ 'border-top: 4px solid ' + tournoi_data.meta.ligue_couleur if tournoi_data.meta.type == 'ligue' else '' }}">
+                    <div class="card glass-card carte-resultat rise-in mb-5" style="height: 100%; display: flex; flex-direction: column; {{ 'border-top: 4px solid ' + tournoi_data.meta.ligue_couleur if tournoi_data.meta.type == 'ligue' else '' }}">
                         
                         <div class="card-header" style="background: rgba(0,0,0,0.2);">
                             <p class="card-header-title is-centered is-flex-direction-column">
+                                {% if tournoi_data.meta.type == 'ligue' %}
                                 <span class="title is-5 has-text-white mb-1">
-                                    {% if tournoi_data.meta.type == 'ligue' %}
-                                        {{ tournoi_data.meta.ligue_nom }}
-                                    {% else %}
-                                    {% endif %}
+                                    {{ tournoi_data.meta.ligue_nom }}
                                 </span>
-                                
+                                {% endif %}
+
                                 <span class="tag is-dark is-rounded mt-1">
                                     <i class="far fa-calendar-alt mr-2"></i>
                                     {{ tournoi_data.meta.date }}
