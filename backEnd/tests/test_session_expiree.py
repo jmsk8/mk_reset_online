@@ -387,12 +387,12 @@ check("et redirige au lieu de peindre une erreur",
       'window.location' in api_js)
 
 
-print("\n=== Un 503 du limiteur est distingue d'une panne ===")
+print("\n=== Un 429 du limiteur est distingue d'une panne ===")
 # La page d'erreur du limiteur est du HTML. Les helpers qui faisaient un
 # res.json() dessus levaient une exception, ou affichaient « Erreur serveur
 # (Reponse invalide) » -- un message qui accuse le serveur d'etre casse alors
 # qu'il se protege, et qui tait la seule chose utile : attendre quelques
-# secondes. Un 503 n'est PAS une session morte : surtout ne pas deconnecter.
+# secondes. Un 429 n'est PAS une session morte : surtout ne pas deconnecter.
 _GESTION = os.path.join(FRONT, 'static', 'js', 'gestion.js')
 _SAISONS = os.path.join(FRONT, 'templates', 'admin_saisons.html')
 gestion_js = io_open(_GESTION)
@@ -403,19 +403,19 @@ for _nom, _src, _ancre in [
         ('api (admin_comptes)', admin_html, 'async function api('),
         ('api (admin_saisons)', saisons_html, 'async function api(')]:
     _z = bloc_js(_src, _ancre)
-    check("%s traite le 503" % _nom, 'status === 503' in _z, _z[:120])
+    check("%s traite le 429" % _nom, 'status === 429' in _z, _z[:120])
     check("  et lit Retry-After pour dire quand reessayer" ,
           'Retry-After' in _z, _nom)
-    # Le traitement du 503 doit RENDRE LA MAIN avant tout code de déconnexion :
+    # Le traitement du 429 doit RENDRE LA MAIN avant tout code de déconnexion :
     # un débit limité ne dit rien sur la validité de la session, et déconnecter
     # ferait perdre son travail à quelqu'un qui a simplement cliqué trop vite.
-    # On vérifie donc qu'un `return` sépare le test du 503 de la redirection,
+    # On vérifie donc qu'un `return` sépare le test du 429 de la redirection,
     # et non l'absence de `window.location` dans la fonction (il y est
     # légitimement, pour le 401).
-    _apres503 = _z[_z.find('status === 503'):]
+    _apres503 = _z[_z.find('status === 429'):]
     _redir = _apres503.find('window.location')
     _retour = _apres503.find('return')
-    check("  sans purger la session sur un 503",
+    check("  sans purger la session sur un 429",
           _retour >= 0 and (_redir < 0 or _retour < _redir), _nom)
 
 

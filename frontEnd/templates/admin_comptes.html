@@ -208,7 +208,7 @@
         }
 
         // Message d'échec d'un chargement. Passe par le message d'`api()` quand
-        // il y en a un -- sur un 503 du limiteur, il dit combien de temps
+        // il y en a un -- sur un 429 du limiteur, il dit combien de temps
         // attendre, ce que « Chargement impossible. » ne dit pas.
         //
         // Factorisé, et non répété sur chaque appelant : c'est ce qui évite que
@@ -309,7 +309,7 @@
             let data = null;
             try { data = await res.json(); } catch (e) { /* réponse vide */ }
 
-            // 503 = limiteur de débit nginx, pas une panne : la réponse est une
+            // 429 = limiteur de débit nginx, pas une panne : la réponse est une
             // page HTML, d'où le `data` vide. Message explicite plutôt que le
             // « Chargement impossible. » générique, qui n'indique pas la seule
             // chose utile -- attendre quelques secondes.
@@ -318,9 +318,9 @@
             // débit limité ne dit rien sur la validité de la session, et
             // déconnecter ici ferait perdre son travail à quelqu'un qui a
             // simplement cliqué trop vite.
-            if (res.status === 503) {
+            if (res.status === 429) {
                 const attente = parseInt(res.headers.get('Retry-After'), 10) || 5;
-                return {ok: false, status: 503, limite: true,
+                return {ok: false, status: 429, limite: true,
                         data: {error: `Trop de requêtes d'un coup. Patientez `
                                       + `${attente} secondes, puis rechargez.`}};
             }

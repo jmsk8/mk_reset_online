@@ -354,9 +354,9 @@ check("  et les fetch de la navbar aussi",
                              encoding='utf-8').read())
 
 
-print("\n=== Et le 503 du limiteur reste lisible a l'ecran ===")
+print("\n=== Et le 429 du limiteur reste lisible a l'ecran ===")
 # Meme famille de defaut silencieux que ci-dessus, cote affichage : `api()`
-# compose « Patientez N secondes » sur un 503, mais les appelants ecrasaient ce
+# compose « Patientez N secondes » sur un 429, mais les appelants ecrasaient ce
 # message par un « Chargement impossible. » generique -- le seul indice pointant
 # vers le limiteur etait calcule puis jete.
 #
@@ -386,7 +386,7 @@ check("  le helper d'echec lit le drapeau `limite`",
 check("  et relaie le message porte par la reponse",
       '.error' in _zone_helper, _zone_helper[:160])
 
-# Enfin, la source du drapeau : api() doit continuer de le poser sur un 503,
+# Enfin, la source du drapeau : api() doit continuer de le poser sur un 429,
 # et de rendre la main AVANT toute deconnexion -- un debit limite ne dit rien
 # sur la validite d'une session.
 #
@@ -396,11 +396,11 @@ check("  et relaie le message porte par la reponse",
 _i = _src_comptes.find('async function api(')
 _fin = _src_comptes.find('function ', _i + 30) if _i >= 0 else -1
 _zone_api = _src_comptes[_i:_fin] if _i >= 0 and _fin > _i else ''
-_pos_503 = _zone_api.find('res.status === 503')
+_pos_503 = _zone_api.find('res.status === 429')
 _pos_401 = _zone_api.find('res.status === 401')
-check("  api() pose `limite: true` sur un 503",
+check("  api() pose `limite: true` sur un 429",
       'limite: true' in _zone_api, _zone_api[:160])
-check("  et traite le 503 AVANT le 401 (pas de deconnexion sur un debit limite)",
+check("  et traite le 429 AVANT le 401 (pas de deconnexion sur un debit limite)",
       0 <= _pos_503 < _pos_401, (_pos_503, _pos_401))
 
 

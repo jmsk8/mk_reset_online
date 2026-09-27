@@ -165,6 +165,20 @@ reload-nginx:        ## Recharge la configuration nginx
 	 fi; \
 	 echo "  config rechargee, et le conteneur sert bien le fichier du disque."
 
+# ── Maintenance ──────────────────────────────
+
+# Le public voit la page d'attente, le détenteur du passe voit le vrai site.
+# `on` affiche le passe à ouvrir une fois dans son navigateur. Détails et
+# vérifications : scripts/maintenance.sh.
+maintenance-on:      ## Page de maintenance pour le public, passe affiché pour toi
+	@bash scripts/maintenance.sh on
+
+maintenance-off:     ## Rouvre le site au public
+	@bash scripts/maintenance.sh off
+
+maintenance-status:  ## Dit si la maintenance est active et ce que voit le public
+	@bash scripts/maintenance.sh status
+
 re-db:               ## Recreate database (schema + seed)
 	$(COMPOSE) stop db
 	$(COMPOSE) rm -f db
@@ -340,7 +354,7 @@ help:                ## Show this help
         recompter-absences \
         race-deps race-tracks race-soak race-sim race-scenario race-alerts race-attention race-redshell race-spectate race-nginx \
         engine engine-js engine-cpp \
-        reload-nginx logs logs-nginx logs-front logs-back logs-race logs-db ps \
+        reload-nginx maintenance-on maintenance-off maintenance-status logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help
 
 .DEFAULT_GOAL := help

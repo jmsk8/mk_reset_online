@@ -8,3 +8,6 @@ certbot/
 dumps/
 docker-compose.override.yml
 node_modules/
+
+# Interrupteur du mode maintenance : contient la clé de passe du moment.
+nginx/maintenance/actif.conf

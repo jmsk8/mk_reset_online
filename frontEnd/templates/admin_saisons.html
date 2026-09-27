@@ -684,10 +684,10 @@
             opts.body = JSON.stringify(body);
         }
         return fetch(url, opts).then(res => {
-            // 503 = limiteur de débit nginx : la réponse est une page HTML, et
+            // 429 = limiteur de débit nginx : la réponse est une page HTML, et
             // un res.json() direct levait une exception non rattrapée qui
             // laissait l'écran figé sans le moindre message.
-            if (res.status === 503) {
+            if (res.status === 429) {
                 const attente = parseInt(res.headers.get('Retry-After'), 10) || 5;
                 return { error: `Trop de requêtes d'un coup. Patientez ${attente} `
                                 + `secondes, puis rechargez la page.`, limite: true };

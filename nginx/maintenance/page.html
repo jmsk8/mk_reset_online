@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<!--
+    Page de maintenance, servie par nginx SEUL -- jamais par le frontend.
+
+    Elle s'affiche dans deux cas (nginx/snippets/app.conf) :
+      - `make maintenance-on` : le public la voit, le détenteur du passe voit
+        le vrai site ;
+      - le frontend ne répond pas (502/504), par exemple pendant un rebuild.
+
+    Comme le frontend peut être éteint, rien ici ne passe par lui :
+      - les couleurs sont recopiées de css/dark-mode.css plutôt que chargées ;
+      - le décor et Mario viennent de /_maintenance/, que nginx sert
+        directement depuis frontEnd/static (monté en lecture seule). S'ils
+        manquent, la page reste lisible, simplement sans décor.
+
+    Retoucher les couleurs ici si la palette du site change.
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Recharge seule : le visiteur retrouve le site sans rien faire. Une
+         minute suffit, la page ne coûte rien à nginx. -->
+    <meta http-equiv="refresh" content="60">
+    <meta name="robots" content="noindex">
+    <title>Maintenance - MK Reset</title>
+    <link rel="icon" type="image/png" href="/_maintenance/img/mario/mario-static.png">
+    <link rel="stylesheet" href="/_maintenance/css/decor-mk.css">
+    <style>
+        :root {
+            --background-color: #0f172a;
+            --text-color: #f1f5f9;
+            --header-text-color: #f8fafc;
+            --primary-color: #3b82f6;
+            --card-background: rgba(30, 41, 59, 0.8);
+            --border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        html, body {
+            margin: 0;
+            min-height: 100%;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        main {
+            position: relative;
+            z-index: 1;
+            box-sizing: border-box;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+
+        .carte {
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 2.5rem 1.5rem 2rem;
+            max-width: 620px;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+
+        /* Même traitement que le code d'erreur de la page introuvable. */
+        .etiquette {
+            margin: 0 0 1.5rem;
+            letter-spacing: 0.35em;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--primary-color);
+            opacity: 0.8;
+        }
+
+        /* Halo froid derrière Mario, comme celui du Boo sur la 404. */
+        .halo {
+            display: inline-block;
+            position: relative;
+        }
+        .halo::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 260px;
+            height: 260px;
+            max-width: 65vw;
+            max-height: 65vw;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle,
+                        rgba(59, 130, 246, 0.22) 0%,
+                        rgba(59, 130, 246, 0.08) 45%,
+                        transparent 70%);
+            z-index: -1;
+        }
+
+        /* ── RÉGLAGES DE LA SCÈNE ─────────────────────────────────────────
+           Les seules valeurs à retoucher à la main. Rien d'autre à changer :
+           le reste de la page en dépend.
+             --mario-hauteur  hauteur de l'image de Mario, marteau levé
+                              compris ; min() la réduit sur téléphone
+             --bloc-ratio     taille d'un bloc, en fraction de --mario-hauteur
+             --nb-blocs       nombre de blocs du sol, centrés sous Mario
+             --duree-marteau  durée d'un coup complet : plus petit = plus vite
+             --bump           enfoncement du bloc frappé, en fraction de sa
+                              taille ; négatif, il saute vers le haut au lieu
+                              de s'enfoncer ; 0 pour le supprimer
+           ------------------------------------------------------------------ */
+        .chantier {
+            --mario-hauteur: min(156px, 41vw);
+            --bloc-ratio: 0.5;
+            --nb-blocs: 3;
+            --duree-marteau: 1s;
+            --bump: 0.08;
+
+            --bloc: calc(var(--mario-hauteur) * var(--bloc-ratio));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* Une seule ombre pour Mario et son sol : ils forment un tout. */
+            filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.55));
+        }
+
+        /* Mario bâtisseur tape au marteau : trois poses dans une seule bande
+           (img/mario-builder/marteau.png, produite par
+           scripts/mario-builder.py), calées sur le pied d'appui, qui touche
+           le bas de l'image : le sol se pose juste dessous. `pixelated` garde
+           le pixel art net une fois agrandi.
+
+           Deux animations de même durée, lancées ensemble :
+             - `marteau` change de pose, sans fondu (`step-end`), comme un
+               sprite de jeu ;
+             - `bascule` fait pencher Mario autour de son pied d'appui, en
+               continu. C'est elle qui lie les poses entre elles : trois images
+               seules donneraient un geste saccadé.
+
+           Le geste suit un vrai coup de marteau, et c'est le temps passé sur
+           chaque pose qui le rend crédible :
+             0 %   frappe      le marteau touche le bloc, on tient l'impact
+             22 %  levé        il le remonte au-dessus de la tête
+             40 %  élan        il l'emmène loin derrière et se penche en
+                               arrière, lentement : on sent qu'il prend son élan
+             86 %  levé        l'abattage est rapide, le marteau ne fait que
+                               passer au-dessus de la tête
+             92 %  frappe      impact
+           Pour accélérer tout le geste, changer --duree-marteau (réglages
+           plus haut) plutôt que ces pourcentages. */
+        .mario-marteau {
+            height: var(--mario-hauteur);
+            aspect-ratio: 208 / 156;
+            background: url('/_maintenance/img/mario-builder/marteau.png') 0 0 / 300% 100% no-repeat;
+            image-rendering: pixelated;
+            /* Le pied d'appui : 45 % de la largeur, au ras du sol. */
+            transform-origin: 45% 100%;
+            /* Devant le sol : quand le bloc frappé rebondit, c'est lui qui
+               passe sous la tête du marteau, pas l'inverse. */
+            position: relative;
+            z-index: 1;
+            animation: marteau var(--duree-marteau) step-end infinite,
+                       bascule var(--duree-marteau) ease-in-out infinite;
+        }
+        /* Positions de la bande : 0 % levé, 50 % élan, 100 % frappe. */
+        @keyframes marteau {
+            0%   { background-position: 100% 0; }  /* frappe */
+            22%  { background-position: 0% 0; }    /* levé */
+            40%  { background-position: 50% 0; }   /* élan */
+            86%  { background-position: 0% 0; }    /* levé, en passant */
+            92%  { background-position: 100% 0; }  /* frappe */
+            100% { background-position: 100% 0; }
+        }
+        /* Quelques degrés suffisent : au-delà, le pixel art se crénèle. Vers
+           l'avant, rester sous ~1° : la tête du marteau est loin du pied
+           d'appui, et chaque degré de plus l'enfonce d'environ 1,5 px dans le
+           bloc au moment de la frappe. */
+        @keyframes bascule {
+            0%   { transform: rotate(0.6deg); }   /* reste penché sur l'impact */
+            22%  { transform: rotate(0deg); }
+            40%  { transform: rotate(-1deg); }
+            80%  { transform: rotate(-3deg); }    /* au bout de l'élan */
+            92%  { transform: rotate(0.8deg); }   /* bascule vers l'avant */
+            100% { transform: rotate(0.6deg); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .mario-marteau,
+            .sol::after { animation: none; }
+        }
+
+        /* Le sol : --nb-blocs blocs. Le fond n'en peint que les premiers,
+           limité à la zone de contenu ; le dernier, sous le marteau, est un
+           ::after posé dans le padding droit, pour pouvoir bouger seul. Peint
+           deux fois, le bloc immobile se verrait dans le creux du rebond. */
+        .sol {
+            position: relative;
+            width: calc((var(--nb-blocs) - 1) * var(--bloc));
+            height: var(--bloc);
+            padding-right: var(--bloc);
+            background: url('/_maintenance/img/mario-builder/bloc.png') 0 0 / var(--bloc) var(--bloc) repeat-x;
+            background-origin: content-box;
+            background-clip: content-box;
+            image-rendering: pixelated;
+        }
+        .sol::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: var(--bloc);
+            height: var(--bloc);
+            background: inherit;
+            background-clip: border-box;
+            background-origin: border-box;
+            animation: bump var(--duree-marteau) linear infinite;
+        }
+
+        /* Le bloc frappé : même durée que le marteau et lancé en même temps,
+           donc toujours calé sur l'impact (92 %, voir `marteau`). Il s'enfonce
+           sous le coup, remonte un peu plus haut que sa place, puis s'y pose.
+           Le rebond déborde sur le début du cycle suivant : 0 % et 100 % sont
+           le même instant. */
+        @keyframes bump {
+            0%   { transform: translateY(calc(var(--bloc) * var(--bump) * -0.35));
+                   animation-timing-function: ease-in; }
+            6%   { transform: translateY(0); }
+            92%  { transform: translateY(0);
+                   animation-timing-function: ease-out; }
+            95%  { transform: translateY(calc(var(--bloc) * var(--bump)));
+                   animation-timing-function: ease-in-out; }
+            100% { transform: translateY(calc(var(--bloc) * var(--bump) * -0.35)); }
+        }
+
+        h1 {
+            margin: 1.5rem 0 0;
+            font-size: 1.5rem;
+            color: var(--header-text-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="decor-mk" aria-hidden="true" role="presentation"></div>
+
+    <main>
+        <div class="carte">
+            <p class="etiquette">Maintenance</p>
+
+            <div class="halo">
+                <div class="chantier" aria-hidden="true">
+                    <div class="mario-marteau"></div>
+                    <div class="sol"></div>
+                </div>
+            </div>
+
+            <h1>Travaux en cours</h1>
+        </div>
+    </main>
+
+    <script src="/_maintenance/js/decor-mk.js" defer></script>
+</body>
+</html>

@@ -56,12 +56,12 @@ async function apiCall(endpoint, method = 'GET', body = null) {
             return { error: "Non autorisé" };
         }
 
-        // 503 = le limiteur de débit de nginx a rejeté l'appel, et sa réponse
+        // 429 = le limiteur de débit de nginx a rejeté l'appel, et sa réponse
         // est une page HTML. Sans ce cas, on tombait dans le catch du parse et
         // l'utilisateur lisait « Erreur serveur (Réponse invalide) » -- un
         // message qui accuse le serveur d'être cassé alors qu'il se protège, et
         // qui n'indique pas la seule chose utile : attendre quelques secondes.
-        if (response.status === 503) {
+        if (response.status === 429) {
             const attente = parseInt(response.headers.get('Retry-After'), 10) || 5;
             console.warn(`⏳ Débit limité par le serveur, réessayer dans ${attente}s`);
             return { error: `Trop de requêtes d'un coup. Patientez ${attente} secondes, `

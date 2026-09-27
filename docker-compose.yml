@@ -210,6 +210,11 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - ./nginx/templates:/etc/nginx/templates:ro
+      # Mode maintenance (scripts/maintenance.sh). Dossier entier : l'interrupteur
+      # y apparaît et disparaît, un montage de fichier ne le verrait pas.
+      - ./nginx/maintenance:/etc/nginx/maintenance:ro
+      # Décor de la page de maintenance, servi sans passer par le frontend.
+      - ./frontEnd/static:/srv/mk-static:ro
       - ./nginx/docker-entrypoint.d/99-certbot-reload.sh:/docker-entrypoint.d/99-certbot-reload.sh:ro
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
