@@ -298,8 +298,10 @@ function signTuple(state) {
 // decor decale.
 //
 // `vote` vient du service et non de l'etat du monde, seul a connaitre les
-// connexions. Le snapshot etant serialise une fois pour tous, il ne peut porter
-// que le total : chaque client se souvient seul de son propre vote.
+// connexions : [voix, spectateurs], un spectateur etant un navigateur qui
+// regarde. Le snapshot etant serialise une fois pour tous, il ne peut porter
+// que le total : la voix de chaque navigateur lui est dite a part (`vote`,
+// server.js).
 function buildSnapshot(cfg, state, simTime, vote) {
     return {
         t: 's',

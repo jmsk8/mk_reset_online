@@ -76,9 +76,9 @@ let worldState = {
     // [manche, points de la course, points du grand prix], les deux tableaux
     // etant alignes sur les identifiants de kart.
     gp: null,
-    // [voix posees, spectateurs connectes]. Le snapshot etant commun a tous, il
-    // ne porte que le total : savoir si c'est nous qui avons vote est une
-    // affaire locale, tenue par `myVote`.
+    // [voix posees, spectateurs]. Un spectateur est un navigateur qui regarde,
+    // pas une connexion. Le snapshot etant commun a tous, il ne porte que le
+    // total : notre propre voix est tenue par `myVote`.
     vote: [0, 0],
 
     // Le releve de vision du kart suivi, ou null. Il n'arrive que sur demande
@@ -87,8 +87,9 @@ let worldState = {
     vision: null
 };
 
-// Notre propre voix. Effacee a chaque course neuve, le serveur remettant alors
-// tous les compteurs a zero.
+// Notre propre voix, celle de ce navigateur. Effacee a chaque course neuve, le
+// serveur remettant alors tous les compteurs a zero ; alignee par le message
+// `vote` quand un autre onglet la pose ou la retire.
 let myVote = false;
 
 const kartEls = {};

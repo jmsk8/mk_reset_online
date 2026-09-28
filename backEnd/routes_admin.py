@@ -37,7 +37,7 @@ from services import (
     MAX_CONFLITS_NOMMES, penalite_due,
     _aggregate_season_stats, _determine_winners, _save_awards_to_db,
     _apply_inter_league_moves,
-    build_distribution, trueskill_score, has_tier, load_tiers,
+    build_distribution, trueskill_score, has_tier, load_tiers, load_couleur_u,
     nom_creable, empreinte_nom,
 )
 
@@ -55,15 +55,15 @@ SESSION_CANDIDATS_MAX = 100
 # S-10 (audit du 24/09) : ce que dit un refus de valeur, par champ. Un seul
 # code, `valeur_invalide`, et le champ en cause : l'ecran sait lequel surligner.
 _BORNES_LISIBLES = {
-    'mu': "mu doit etre un nombre entre %g et %g." % (MU_MIN, MU_MAX),
-    'sigma': "sigma doit etre un nombre strictement positif, %g au plus." % SIGMA_MAX,
-    'color': "La couleur doit etre au format #RRGGBB.",
-    'couleur': "La couleur doit etre au format #RRGGBB.",
-    'tau': "tau doit etre un nombre entre 0 et %g." % SIGMA_MAX,
-    'ghost_penalty': "La penalite fantome doit etre un nombre entre 0 et %g." % SIGMA_MAX,
-    'sigma_threshold': "Le seuil de sigma doit etre strictement positif, %g au plus." % SIGMA_MAX,
-    'value': "La valeur du reset doit etre strictement positive, %g au plus." % SIGMA_MAX,
-    'max_sigma': "Le sigma maximal doit etre strictement positif, %g au plus." % SIGMA_MAX,
+    'mu': "mu doit être un nombre entre %g et %g." % (MU_MIN, MU_MAX),
+    'sigma': "sigma doit être un nombre strictement positif, %g au plus." % SIGMA_MAX,
+    'color': "La couleur doit être au format #RRGGBB.",
+    'couleur': "La couleur doit être au format #RRGGBB.",
+    'tau': "tau doit être un nombre entre 0 et %g." % SIGMA_MAX,
+    'ghost_penalty': "La pénalité fantome doit être un nombre entre 0 et %g." % SIGMA_MAX,
+    'sigma_threshold': "Le seuil de sigma doit être strictement positif, %g au plus." % SIGMA_MAX,
+    'value': "La valeur du reset doit être strictement positive, %g au plus." % SIGMA_MAX,
+    'max_sigma': "Le sigma maximal doit être strictement positif, %g au plus." % SIGMA_MAX,
 }
 
 
@@ -421,7 +421,7 @@ def update_config():
                 return erreur
             if not accordee:
                 return jsonify({
-                    "error": "Le mode ligue releve de la permission « Ligues ».",
+                    "error": "Le mode ligue relève de la permission « Ligues ».",
                     "code": "permission_manquante",
                 }), 403
         # Ces huit clefs ne sont ecrites QUE si elles sont dans le payload.
@@ -486,14 +486,14 @@ def update_config():
                 return erreur
             if not accordee:
                 return jsonify({
-                    "error": "Ces reglages relevent de la permission « Reglage TS ».",
+                    "error": "Ces réglages relèvent de la permission « Réglage TS ».",
                     "code": "permission_manquante",
                 }), 403
 
         # Sans ce refus, un compte sans aucune des deux permissions obtiendrait
         # un 200 pour un appel qui n'ecrit rien -- une reussite apparente.
         if not touche_trueskill and not touche_ligues:
-            return jsonify({"error": "Aucun reglage fourni"}), 400
+            return jsonify({"error": "Aucun réglage fourni"}), 400
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -589,6 +589,7 @@ def get_tier_distribution():
 # IP_V2_REF_REQUIRE_TIER, valeur par defaut a la creation d'un joueur) : ce
 # n'est pas une ligne de cette table, et un admin ne peut ni le nommer ainsi
 # ni le supprimer via ces routes -- _nom_valide() le refuse explicitement.
+# Seule sa COULEUR se regle, a part : update_tier_u(), clef de configuration.
 #
 # Toutes ces routes sont sous gestion_config, comme le reste des reglages
 # TrueSkill (cf update_config plus haut), et recalculent les tiers de tous
@@ -686,7 +687,7 @@ def create_tier():
     data = request.get_json() or {}
     nom = _nom_tier_valide(data.get('nom'))
     if nom is None:
-        return jsonify({"error": "Nom de tier invalide (1-10 caracteres, 'U' reserve)"}), 400
+        return jsonify({"error": "Nom de tier invalide (1-10 caractères, 'U' réservé)"}), 400
     couleur = _couleur_valide(data.get('couleur'))
     if couleur is None:
         return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
@@ -701,7 +702,7 @@ def create_tier():
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM tiers WHERE UPPER(nom) = UPPER(%s)", (nom,))
                 if cur.fetchone()[0] > 0:
-                    return jsonify({"error": f"Un tier « {nom} » existe deja"}), 400
+                    return jsonify({"error": f"Un tier « {nom} » existe déjà"}), 400
 
                 avant = _etat_tiers(cur)
                 apres_rang = data.get('apres_rang')
@@ -763,13 +764,13 @@ def update_tier(tier_id):
                 if 'nom' in data:
                     nom = _nom_tier_valide(data['nom'])
                     if nom is None:
-                        return jsonify({"error": "Nom de tier invalide (1-10 caracteres, 'U' reserve)"}), 400
+                        return jsonify({"error": "Nom de tier invalide (1-10 caractères, 'U' réservé)"}), 400
                     cur.execute(
                         "SELECT COUNT(*) FROM tiers WHERE UPPER(nom) = UPPER(%s) AND id != %s",
                         (nom, tier_id),
                     )
                     if cur.fetchone()[0] > 0:
-                        return jsonify({"error": f"Un tier « {nom} » existe deja"}), 400
+                        return jsonify({"error": f"Un tier « {nom} » existe déjà"}), 400
                     champs.append("nom = %s"); valeurs.append(nom)
                 if 'couleur' in data:
                     couleur = _couleur_valide(data['couleur'])
@@ -795,16 +796,28 @@ def update_tier(tier_id):
                         champs.append("seuil_k = %s"); valeurs.append(seuil_k)
 
                 if not champs:
-                    return jsonify({"error": "Aucun champ a modifier"}), 400
+                    return jsonify({"error": "Aucun champ à modifier"}), 400
 
                 valeurs.append(tier_id)
                 cur.execute(f"UPDATE tiers SET {', '.join(champs)} WHERE id = %s", valeurs)
                 apres = _etat_tiers(cur)
-                audit.ecrire(cur, 'tier_modifie', 'systeme', tier_id, {
-                    "nom": next((t["nom"] for t in apres if t["id"] == tier_id), None),
-                    "champs": [c.split(' ')[0] for c in champs],
-                    "avant": avant, "apres": apres,
-                })
+                # Le panneau renvoie nom, couleur ET seuil de chaque tier a
+                # chaque enregistrement. Journaliser l'envoi plutot que le
+                # changement faisait une ligne par tier, identiques ou non, et
+                # « champs » les citait tous : le journal ne disait plus ce
+                # qui avait bouge.
+                t_avant = next((t for t in avant if t["id"] == tier_id), {})
+                t_apres = next((t for t in apres if t["id"] == tier_id), {})
+                changements = {c: [t_avant.get(c), t_apres.get(c)]
+                               for c in ('nom', 'couleur', 'seuil_k')
+                               if t_avant.get(c) != t_apres.get(c)}
+                if changements:
+                    audit.ecrire(cur, 'tier_modifie', 'systeme', tier_id, {
+                        "nom": t_apres.get("nom"),
+                        "champs": list(changements),
+                        "changements": changements,
+                        "avant": avant, "apres": apres,
+                    })
                 # PAS de _appliquer_plancher() ici : le panneau envoie un PUT
                 # par tier AVANT le /reorder final, donc le tier vise peut
                 # encore etre le plancher en base alors qu'il ne le sera plus
@@ -813,11 +826,52 @@ def update_tier(tier_id):
                 # saisie etait perdue, puis remplacee par une valeur inventee).
                 # C'est /reorder, qui connait l'ordre final, qui le retablit.
             conn.commit()
-            recalculate_tiers()
-            invalidate_cache()
+            # Rien n'a change : le tier de personne non plus. Le recalcul
+            # parcourt tous les joueurs, et le panneau envoie un PUT par tier.
+            if changements:
+                recalculate_tiers()
+                invalidate_cache()
         return jsonify({"status": "success"})
     except Exception as e:
         logger.error(f"Erreur update_tier: {e}")
+        return jsonify({"error": "Requête invalide"}), 400
+
+
+@admin_bp.route('/admin/tiers/unranked', methods=['PUT'])
+@permission_required('gestion_config')
+def update_tier_u():
+    """Recolore la pastille U (non classe). Sa couleur est son SEUL reglage :
+    nom, seuil et place restent cables en dur (voir l'en-tete de cette
+    section). La lecture est publique, /tiers/unranked.
+
+    Pas de recalcul : une couleur ne change le tier de personne.
+    """
+    data = request.get_json(silent=True) or {}
+    couleur = _couleur_valide(data.get('couleur'))
+    if couleur is None:
+        return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                avant = load_couleur_u(cur)
+                cur.execute("""
+                    INSERT INTO Configuration (key, value)
+                    VALUES ('tier_u_couleur', %s)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """, (couleur,))
+                # Meme regle que update_tier : on journalise un changement,
+                # pas un envoi.
+                if couleur.upper() != avant.upper():
+                    audit.ecrire(cur, 'tier_modifie', 'systeme', None, {
+                        "nom": "U", "champs": ["couleur"],
+                        "changements": {"couleur": [avant, couleur]},
+                        "avant": avant, "apres": couleur,
+                    })
+            conn.commit()
+            invalidate_cache()
+        return jsonify({"status": "success", "couleur": couleur})
+    except Exception as e:
+        logger.error(f"Erreur update_tier_u: {e}")
         return jsonify({"error": "Requête invalide"}), 400
 
 
@@ -866,7 +920,7 @@ def reorder_tiers():
     data = request.get_json() or {}
     ordre = data.get('ordre')
     if not isinstance(ordre, list) or not ordre:
-        return jsonify({"error": "« ordre » doit etre une liste non vide d'ids"}), 400
+        return jsonify({"error": "« ordre » doit être une liste non vide d'ids"}), 400
 
     try:
         with get_db_connection() as conn:
@@ -895,13 +949,19 @@ def reorder_tiers():
 
                 _appliquer_plancher(cur)
                 apres = _etat_tiers(cur)
-                audit.ecrire(cur, 'tiers_reordonnes', 'systeme', None, {
-                    "nom": " > ".join(t["nom"] for t in apres),
-                    "avant": avant, "apres": apres,
-                })
+                # Le panneau l'appelle a chaque enregistrement, ordre change
+                # ou non : ne tracer (et ne recalculer) que s'il a bouge --
+                # l'ordre, ou le seuil que _appliquer_plancher vient d'effacer.
+                change = apres != avant
+                if change:
+                    audit.ecrire(cur, 'tiers_reordonnes', 'systeme', None, {
+                        "nom": " > ".join(t["nom"] for t in apres),
+                        "avant": avant, "apres": apres,
+                    })
             conn.commit()
-            recalculate_tiers()
-            invalidate_cache()
+            if change:
+                recalculate_tiers()
+                invalidate_cache()
         return jsonify({"status": "success"})
     except Exception as e:
         logger.error(f"Erreur reorder_tiers: {e}")
@@ -1372,8 +1432,8 @@ def api_add_joueur():
                 return erreur
             if not accordee:
                 return jsonify({
-                    "error": "Vous ne pouvez pas fixer le score de depart. "
-                             "Creez la fiche au score par defaut.",
+                    "error": "Vous ne pouvez pas fixer le score de départ. "
+                             "Créez la fiche au score par défaut.",
                     "code": "permission_manquante",
                     "permission": "edition_mu_sigma",
                 }), 403
@@ -2058,9 +2118,9 @@ def add_tournament():
                         if not accordee:
                             conn.rollback()
                             return jsonify({
-                                "error": "Le joueur « %s » n'existe pas. Sa creation releve de la "
-                                         "permission « Ajouter un joueur » : demandez sa creation "
-                                         "prealable, ou verifiez l'orthographe." % nom_fiche,
+                                "error": "Le joueur « %s » n'existe pas. Sa création relève de la "
+                                         "permission « Ajouter un joueur » : demandez sa création "
+                                         "préalable, ou vérifiez l'orthographe." % nom_fiche,
                                 "code": "joueur_inconnu",
                             }), 409
                         cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked) VALUES (%s, %s, %s, 'U', true) RETURNING id", (nom_fiche, DEFAULT_MU, DEFAULT_SIGMA))
@@ -2152,7 +2212,7 @@ def add_tournament():
                         # l'etat d'avant est integralement restaure.
                         conn.rollback()
                         return jsonify({
-                            "error": "Ces joueurs participent deja a un autre tournoi de cette "
+                            "error": "Ces joueurs participent déjà à un autre tournoi de cette "
                                      "session : %s. Un joueur ne peut jouer qu'un seul tournoi "
                                      "par session." % ", ".join(conflits),
                             "code": "conflit_session",

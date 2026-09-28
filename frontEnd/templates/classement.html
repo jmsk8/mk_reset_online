@@ -252,7 +252,10 @@
                                                         {# Couleur portee par les donnees (tiers_couleurs, Partie B) --
                                                            plus de classes tier-s/a/b/c figees en CSS. #}
                                                         {% if joueur.tier in ['U', '?', 'Unranked'] %}
-                                                            <span class="tag is-white tier-tag">U</span>
+                                                            {# Couleur reglable (panneau des tiers), donc texte
+                                                               noir ou blanc selon le fond. `!important` : il
+                                                               doit passer devant le blanc impose a .tier-tag. #}
+                                                            <span class="tag tier-tag" style="background: {{ couleur_u }}; color: {{ couleur_u|texte_lisible }} !important;">U</span>
                                                         {% elif tiers_couleurs.get(joueur.tier) %}
                                                             <span class="tag tier-tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: white;">{{ joueur.tier }}</span>
                                                         {% else %}

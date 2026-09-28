@@ -81,10 +81,22 @@ const MAX_CATCHUP_STEPS = 5;
 // Delai de grace avant l'arret de la course quand plus personne ne regarde.
 const IDLE_GRACE_MS = 30000;
 
-// Taille maximale d'un message entrant. Le client n'envoie que `ping`, `vis`,
-// `vote` et `watch`, quelques dizaines d'octets : ce qui depasse est une
+// Taille maximale d'un message entrant. Le client n'envoie que `hi`, `ping`,
+// `vis`, `vote` et `watch`, quelques dizaines d'octets : ce qui depasse est une
 // tentative.
 const MAX_PAYLOAD = 512;
+
+// Un onglet cache cesse de compter comme spectateur apres ce delai. Le meme que
+// HIDDEN_DISCONNECT_MS (frontEnd/static/js/banner/net.js), au bout duquel le
+// navigateur rend lui-meme sa connexion : l'appliquer ici aussi couvre les
+// onglets qui ne le font jamais — minuteries gelees par le systeme, ancien
+// net.js reste en cache. Pas zero : un simple changement d'onglet ne doit pas
+// completer l'unanimite, et relancer la course de quelqu'un qui revient.
+const HIDDEN_GRACE_MS = 60000;
+
+// L'identifiant de navigateur envoye par `hi` : tire au hasard cote client.
+// Tout le reste est ignore, et la connexion compte alors pour elle seule.
+const NAV_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 // Sonde applicative : une connexion qui ne repond plus au ping est fermee.
 const HEARTBEAT_MS = 30000;
@@ -204,6 +216,10 @@ function beginNewRace() {
         return;
     }
 
+    // Une voix porte sur le grand prix EN COURS : elle ne survit pas a la
+    // course. Le client efface la sienne au `hello` d'une course neuve
+    // (wipeSceneElements) ; sans ceci, le compteur la gardait.
+    clearVotes();
     startRace();
     for (const [ws] of clients) {
         if (ws.readyState === ws.OPEN) sendHello(ws);
@@ -327,13 +343,37 @@ function tick() {
     race.sinceBroadcast += steps;
     if (race.sinceBroadcast >= TICKS_PER_SEND) {
         race.sinceBroadcast = 0;
+        // Un onglet cache sort du compte a l'expiration de son delai, sans
+        // qu'aucun message ne l'annonce : c'est ici que se constate
+        // l'unanimite qu'il bloquait.
+        if (checkVotes()) return;
         broadcast();
     }
 }
 
 // ── Diffusion ───────────────────────────────────────────────────────────────
 
-const clients = new Map(); // ws -> { hidden, alive }
+// ws -> { nav, hidden, hiddenSince, alive, voted, watch }
+const clients = new Map();
+
+// ── Spectateurs ─────────────────────────────────────────────────────────────
+//
+// Un spectateur est un NAVIGATEUR qui regarde, pas une connexion. Deux onglets
+// ouverts comptaient pour deux (constate le 28/09 : trois spectateurs affiches
+// pour deux personnes), et un onglet oublie en arriere-plan pour un de plus.
+//
+// Le navigateur se designe par `nav`, tire au hasard et partage par ses onglets
+// (net.js). Le service ne le garde que le temps de la connexion, ne le journalise
+// pas, et ne le rapproche de rien. Une connexion qui ne l'envoie pas (ancien
+// net.js, stockage refuse) compte pour elle seule, comme avant.
+
+function navKey(meta) {
+    return meta.nav || meta;
+}
+
+function isWatching(meta, now) {
+    return !meta.hidden || now - meta.hiddenSince < HIDDEN_GRACE_MS;
+}
 
 // ── Vote de redemarrage ─────────────────────────────────────────────────────
 //
@@ -341,28 +381,69 @@ const clients = new Map(); // ws -> { hidden, alive }
 // posee, la course repart de zero — grand prix compris. L'unanimite plutot
 // qu'une majorite : a deux spectateurs, une majorite laisserait l'un des deux
 // relancer seul la course de l'autre.
+//
+// Une voix par NAVIGATEUR, tenue a l'identique sur toutes ses connexions.
 
+// [voix, spectateurs]. La voix d'un navigateur qui ne regarde plus ne compte
+// pas : elle ne peut completer une unanimite dont il ne fait plus partie.
 function voteTally() {
+    const now = Date.now();
+    const watching = new Set();
+    const voters = new Set();
+    for (const meta of clients.values()) {
+        const key = navKey(meta);
+        if (isWatching(meta, now)) watching.add(key);
+        if (meta.voted) voters.add(key);
+    }
     let count = 0;
-    for (const meta of clients.values()) if (meta.voted) count++;
-    return [count, clients.size];
+    for (const key of voters) if (watching.has(key)) count++;
+    return [count, watching.size];
 }
 
+function navVoted(key) {
+    for (const meta of clients.values()) {
+        if (meta.voted && navKey(meta) === key) return true;
+    }
+    return false;
+}
+
+// Pose ou retire la voix d'un navigateur sur CHACUNE de ses connexions, et le
+// dit a chacune : l'onglet voisin doit afficher le meme bouton, et une voix
+// retiree depuis l'un ne doit pas survivre dans l'autre.
+function setNavVote(key, voted) {
+    const message = JSON.stringify({ t: 'vote', v: voted });
+    for (const [ws, meta] of clients) {
+        if (navKey(meta) !== key) continue;
+        meta.voted = voted;
+        if (ws.readyState === ws.OPEN) ws.send(message);
+    }
+}
+
+// Les clients ne sont pas prevenus : chacun efface sa voix au `hello` d'une
+// course neuve, qui suit toujours cet appel.
 function clearVotes() {
     for (const meta of clients.values()) meta.voted = false;
 }
 
-// Une voix de plus, ou un spectateur de moins : les deux completent le quorum,
-// d'ou l'appel aussi bien a la fermeture d'une connexion qu'au vote.
+// Une voix de plus, un spectateur de moins, un onglet cache depuis trop
+// longtemps : les trois completent le quorum. Renvoie true si la course est
+// repartie.
 function checkVotes() {
     const [count, total] = voteTally();
-    if (total === 0 || count < total) return;
+    if (total === 0 || count < total) return false;
 
     console.log(`[course] redemarrage vote a l'unanimite (${total} spectateur(s)).`);
-    // Avant le redemarrage : le `hello` qui suit doit annoncer un compteur
-    // remis a zero, sinon les boutons resteraient allumes sur la course neuve.
-    clearVotes();
     restartRace();
+    return true;
+}
+
+// Visibilite d'une connexion. Renvoie true si l'onglet revient au premier plan :
+// il a rate tout ce qui s'est passe, et il lui faut une scene complete.
+function setHidden(meta, hidden) {
+    const wasHidden = meta.hidden;
+    meta.hidden = hidden;
+    if (hidden && !wasHidden) meta.hiddenSince = Date.now();
+    return wasHidden && !hidden;
 }
 
 function broadcast() {
@@ -433,7 +514,10 @@ const httpServer = http.createServer((req, res) => {
             ok: true,
             racing: !!race,
             track: race ? race.track.name : null,
+            // Les connexions, et ce que le banner affiche : les navigateurs qui
+            // regardent. L'ecart entre les deux est ce qui se diagnostique.
             clients: clients.size,
+            spectators: voteTally()[1],
             ticks: race ? race.ticks : 0,
             races: totalRaces,
             uptime: Math.round(process.uptime()),
@@ -495,13 +579,15 @@ httpServer.on('upgrade', (req, socket, head) => {
 wss.on('connection', ws => {
     ensureRunning();
 
-    clients.set(ws, { hidden: false, alive: true, voted: false, watch: null });
+    clients.set(ws, {
+        nav: null, hidden: false, hiddenSince: 0, alive: true, voted: false, watch: null
+    });
     sendHello(ws);
 
     ws.on('message', data => {
-        // Le service repond a `ping`, note `vis` et `watch`, compte `vote`. Tout
-        // le reste est ignore en silence : c'est un flux de lecture, il n'existe
-        // aucune raison legitime de lui envoyer autre chose.
+        // Le service repond a `ping`, note `hi`, `vis` et `watch`, compte
+        // `vote`. Tout le reste est ignore en silence : c'est un flux de
+        // lecture, il n'existe aucune raison legitime de lui envoyer autre chose.
         let msg;
         try {
             msg = JSON.parse(data.toString());
@@ -518,8 +604,30 @@ wss.on('connection', ws => {
             return;
         }
 
+        // Premier message du client, a l'ouverture : quel navigateur, et s'il
+        // regarde. `vis` ne part pas tant que la connexion s'ouvre — un onglet
+        // ouvert en arriere-plan passait donc pour visible.
+        if (msg.t === 'hi') {
+            // Une seule fois par connexion : un identifiant ne change pas en
+            // cours de route.
+            if (!meta.nav && typeof msg.nav === 'string' && NAV_PATTERN.test(msg.nav)) {
+                meta.nav = msg.nav;
+                // Un onglet de plus d'un navigateur qui a deja vote porte sa voix.
+                if (navVoted(meta.nav)) {
+                    meta.voted = true;
+                    ws.send(JSON.stringify({ t: 'vote', v: true }));
+                }
+            }
+            if (setHidden(meta, !!msg.hidden) && race) sendHello(ws);
+            // Deux connexions devenues un seul navigateur : le quorum a baisse.
+            checkVotes();
+            return;
+        }
+
+        // Une bascule, a l'echelle du navigateur.
         if (msg.t === 'vote') {
-            meta.voted = !meta.voted;
+            const key = navKey(meta);
+            setNavVote(key, !navVoted(key));
             checkVotes();
             return;
         }
@@ -543,11 +651,9 @@ wss.on('connection', ws => {
         }
 
         if (msg.t === 'vis') {
-            const wasHidden = meta.hidden;
-            meta.hidden = !!msg.hidden;
             // Au retour d'un onglet, le client a besoin d'une scene complete :
             // il a rate tout ce qui s'est passe, exactement comme un arrivant.
-            if (wasHidden && !meta.hidden && race) sendHello(ws);
+            if (setHidden(meta, !!msg.hidden) && race) sendHello(ws);
         }
     });
 
@@ -653,7 +759,7 @@ function formatClock(ms) {
 
 function report() {
     if (!race) {
-        console.log(`[repos] aucune course (spectateurs : ${clients.size})`);
+        console.log(`[repos] aucune course (connexions : ${clients.size})`);
         return;
     }
 
@@ -668,7 +774,7 @@ function report() {
     console.log(
         `[t+${formatClock(race.simTime - race.t0)}] ${race.state.phase} tour ${race.state.leaderLap}/${CFG.race.laps} — ${board}\n` +
         `           ticks=${race.ticks} objets=${race.state.items.length} arrives=${race.state.finishOrder.length} ` +
-        `nextItemId=${race.state.nextItemId} spectateurs=${clients.size} ` +
+        `nextItemId=${race.state.nextItemId} connexions=${clients.size} spectateurs=${voteTally()[1]} ` +
         `rss=${rss}Mo pas_max=${race.maxStepMs}ms rejetes=${race.droppedSteps}`
     );
 
@@ -686,7 +792,7 @@ function shutdown(code) {
             `pas rejetes     : ${race.droppedSteps}\n` +
             `objets en vol   : ${race.state.items.length}\n` +
             `ids d'objets    : ${race.state.nextItemId}\n` +
-            `spectateurs     : ${clients.size}\n` +
+            `connexions      : ${clients.size}\n` +
             `memoire (rss)   : ${Math.round(process.memoryUsage().rss / 1048576)} Mo\n` +
             `anomalies       : ${problems}`
         );

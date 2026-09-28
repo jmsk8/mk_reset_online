@@ -393,12 +393,12 @@ def creer_invitation():
     # Meme garde que demander_liaison : un joueur_id non entier faisait un 500
     # a la requete SQL. bool est un int en Python, d'ou son exclusion explicite.
     if joueur_id is not None and (not isinstance(joueur_id, int) or isinstance(joueur_id, bool)):
-        return jsonify({"error": "Parametres invalides"}), 400
+        return jsonify({"error": "Paramètres invalides"}), 400
     try:
         max_uses = int(data.get('max_uses', 1))
         heures = int(data.get('heures', INVITATION_LIFETIME_HOURS))
     except (TypeError, ValueError):
-        return jsonify({"error": "Parametres invalides"}), 400
+        return jsonify({"error": "Paramètres invalides"}), 400
 
     # S-08 : un refus explicite plutot qu'un plafonnement silencieux -- l'admin
     # doit savoir que le lien qu'il envoie ne vivra pas ce qu'il a demande. La
@@ -459,7 +459,7 @@ def revoquer_invitation(invitation_id):
                 )
                 if cur.rowcount == 0:
                     conn.rollback()
-                    return jsonify({"error": "Invitation introuvable ou deja revoquee"}), 404
+                    return jsonify({"error": "Invitation introuvable ou déjà révoquée"}), 404
                 audit.ecrire(cur, 'invitation_revoquee', 'invitation', invitation_id)
             conn.commit()
     except Exception as e:

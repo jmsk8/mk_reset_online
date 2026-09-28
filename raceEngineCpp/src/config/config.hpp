@@ -73,7 +73,7 @@ struct SpeedsCfg {
 };
 
 // La loi du volant. `steer()` est la SEULE fonction qui ecrit `vy` — invariant
-// obtenu au prix fort (audit-pilotage-2026-08.md §7.2), il ne se reperd pas.
+// obtenu au prix fort (audit-decision-direction-2026-09-17.md §6), il ne se reperd pas.
 struct SteerCfg {
     double response = 5;
 

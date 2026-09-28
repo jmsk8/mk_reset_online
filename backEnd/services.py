@@ -14,7 +14,7 @@ import audit
 
 from constants import (
     DEFAULT_SIGMA_THRESHOLD,
-    DEFAULT_TIERS,
+    DEFAULT_TIERS, DEFAULT_TIER_U_COULEUR,
     RANKED_SIGMA_LIMIT, GHOST_SIGMA_CAP,
     CHILLGUY_DELTA_LIMIT, BORDERLINE_INSTABILITY_THRESHOLD, BORDERLINE_AWARD_THRESHOLD,
     BORDERLINE_IP_WEIGHT,
@@ -77,8 +77,8 @@ def nom_creable(cur: Any, nom: Any, exclure_id: int | None = None):
 
     cur.execute("SELECT 1 FROM noms_interdits WHERE nom_hash = %s", (empreinte_nom(nom),))
     if cur.fetchone() is not None:
-        return None, {"error": "Ce nom correspond a une identite retiree et ne peut pas "
-                               "etre recree",
+        return None, {"error": "Ce nom correspond à une identité retirée et ne peut pas "
+                               "être recréé",
                       "code": "nom_interdit"}
 
     # joueurs.nom est UNIQUE mais sensible a la casse : « Mario » et « mario »
@@ -90,7 +90,7 @@ def nom_creable(cur: Any, nom: Any, exclure_id: int | None = None):
                     (nom, exclure_id))
     collision = cur.fetchone()
     if collision is not None:
-        return None, {"error": "La fiche « %s » existe deja." % collision[1],
+        return None, {"error": "La fiche « %s » existe déjà." % collision[1],
                       "code": "nom_deja_pris",
                       "joueur_en_conflit": {"id": collision[0], "nom": collision[1]}}
 
@@ -203,6 +203,17 @@ def load_tiers(cur) -> list[dict]:
         {"id": i, "nom": n, "couleur": c, "seuil_k": k, "rang": r}
         for i, n, c, k, r in rows
     ]
+
+
+def load_couleur_u(cur) -> str:
+    """Couleur de la pastille U (non classe), DEFAULT_TIER_U_COULEUR a defaut.
+
+    Hors de load_tiers() : U n'est pas un tier (voir DEFAULT_TIER_U_COULEUR),
+    et chaque lecteur de cette liste la parcourt comme des tiers a attribuer.
+    """
+    cur.execute("SELECT value FROM Configuration WHERE key = 'tier_u_couleur'")
+    row = cur.fetchone()
+    return row[0] if row and row[0] else DEFAULT_TIER_U_COULEUR
 
 
 def tier_thresholds(scores: Iterable[float], tiers: list[dict]) -> dict[str, float]:

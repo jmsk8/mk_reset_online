@@ -309,11 +309,24 @@ r = cli.put('/admin/tiers/reorder', headers=H, json={'ordre': [1, 2, 3, 99]})
 check("ordre avec id inconnu refuse (400)", r.status_code == 400, (r.status_code, r.get_json()))
 
 
+def etats(*listes):
+    """La table `tiers` lue avant, puis apres le geste (la derniere se repete) :
+    les routes ne journalisent et ne recalculent que si les deux different."""
+    restantes = list(listes)
+    def lire(params):
+        return restantes.pop(0) if len(restantes) > 1 else restantes[0]
+    return (r"SELECT id, nom, couleur, seuil_k, rang FROM tiers", lire)
+
+SAB = [(1, 'S', '#f77b7b', 1.0, 2), (2, 'A', '#9cda74', 0.0, 1), (3, 'B', '#7fe6ee', None, 0)]
+audits = lambda cur: [p for s, p in cur.executed if 'audit_admin' in s]
+
+
 print("\n=== PUT /admin/tiers/reorder : applique le nouvel ordre, recalcule ===")
 cli, cur, conn = monter([
     SESSION('admin'),
     (r"SELECT id FROM tiers$", [(1,), (2,), (3,)]),
     (r"SELECT id, seuil_k FROM tiers ORDER BY rang ASC LIMIT 1", (3, None)),
+    etats(SAB, [(3, 'B', '#7fe6ee', 1.0, 2), (1, 'S', '#f77b7b', 0.0, 1), (2, 'A', '#9cda74', None, 0)]),
 ], permissions={'gestion_config'})
 appels = []
 import routes_admin
@@ -325,6 +338,54 @@ finales = {p[1]: p[0] for s, p in cur.executed if s.startswith('UPDATE tiers SET
            and p[0] >= 0}
 check("id 3 (premier de la liste) recoit le rang le plus haut (2)", finales.get(3) == 2, finales)
 check("id 2 (dernier de la liste) recoit le rang le plus bas (0)", finales.get(2) == 0, finales)
+check("le nouvel ordre est journalise", len(audits(cur)) == 1, cur.executed)
+
+cli, cur, conn = monter([
+    SESSION('admin'),
+    (r"SELECT id FROM tiers$", [(1,), (2,), (3,)]),
+    (r"SELECT id, seuil_k FROM tiers ORDER BY rang ASC LIMIT 1", (3, None)),
+    etats(SAB),
+], permissions={'gestion_config'})
+appels = []
+import routes_admin
+routes_admin.recalculate_tiers = lambda: appels.append(True)
+r = cli.put('/admin/tiers/reorder', headers=H, json={'ordre': [1, 2, 3]})
+check("ordre inchange -> 200", r.status_code == 200, (r.status_code, r.get_json()))
+check("  mais ni ligne au journal (le panneau l'envoie a chaque enregistrement)",
+      audits(cur) == [], audits(cur))
+check("  ni recalcul", appels == [], appels)
+
+
+print("\n=== PUT /admin/tiers/<id> : on journalise un changement, pas un envoi ===")
+PUT_S = [SESSION('admin'),
+         (r"SELECT id, rang FROM tiers WHERE id = %s", (1, 2)),
+         (r"SELECT COUNT\(\*\) FROM tiers WHERE UPPER\(nom\) = UPPER\(%s\) AND id", (0,))]
+# Ce que le panneau envoie pour chaque tier : les trois champs, toujours.
+TOUT_S = {'nom': 'S', 'couleur': '#334155', 'seuil_k': 1.0}
+
+cli, cur, conn = monter(PUT_S + [etats(SAB, [(1, 'S', '#334155', 1.0, 2)] + SAB[1:])],
+                        permissions={'gestion_config'})
+appels = []
+import routes_admin
+routes_admin.recalculate_tiers = lambda: appels.append(True)
+r = cli.put('/admin/tiers/1', headers=H, json=TOUT_S)
+check("couleur changee -> 200", r.status_code == 200, (r.status_code, r.get_json()))
+check("  une ligne au journal", len(audits(cur)) == 1, cur.executed)
+check("  qui ne cite QUE la couleur, seul champ modifie",
+      audits(cur) and '"champs": ["couleur"]' in str(audits(cur)[0]), audits(cur))
+check("  avec l'avant et l'apres de ce champ",
+      audits(cur) and '"changements": {"couleur": ["#f77b7b", "#334155"]}' in str(audits(cur)[0]),
+      audits(cur))
+check("  et le recalcul", appels == [True], appels)
+
+cli, cur, conn = monter(PUT_S + [etats(SAB)], permissions={'gestion_config'})
+appels = []
+import routes_admin
+routes_admin.recalculate_tiers = lambda: appels.append(True)
+r = cli.put('/admin/tiers/1', headers=H, json={'nom': 'S', 'couleur': '#f77b7b', 'seuil_k': 1.0})
+check("tier renvoye a l'identique -> 200", r.status_code == 200, (r.status_code, r.get_json()))
+check("  sans ligne au journal", audits(cur) == [], audits(cur))
+check("  ni recalcul", appels == [], appels)
 
 
 print("\n=== POST /admin/tiers/reset : restaure S/A/B/C, recalcule ===")
@@ -411,6 +472,59 @@ cli, cur, conn = monter([
 ], permissions={'gestion_ligues'})
 r = cli.get('/admin/config/tier-distribution', headers=H)
 check("403 pour un compte sans gestion_config", r.status_code == 403, r.status_code)
+
+
+print("\n=== Couleur de U : lecture, defaut blanc ===")
+sys.modules.pop('services', None)
+install_db([])
+import services
+_u = services.load_couleur_u(FakeCursor([]))
+check("sans reglage en base, U reste blanc (l'apparence d'avant)", _u == '#FFFFFF', _u)
+_u = services.load_couleur_u(FakeCursor([(r"key = 'tier_u_couleur'", ('#334155',))]))
+check("avec un reglage, sa valeur", _u == '#334155', _u)
+
+
+print("\n=== PUT /admin/tiers/unranked : seule la couleur de U se regle ===")
+U_AVANT = (r"key = 'tier_u_couleur'", ('#FFFFFF',))
+
+cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_config'})
+appels = []
+import routes_admin
+routes_admin.recalculate_tiers = lambda: appels.append(True)
+r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur': '#334155'})
+check("200 pour un compte gestion_config", r.status_code == 200, (r.status_code, r.get_json()))
+ecrit = [p for s, p in cur.executed
+         if s.startswith('INSERT INTO Configuration') and 'tier_u_couleur' in s]
+check("la couleur part dans configuration, clef tier_u_couleur", ecrit == [('#334155',)], cur.executed)
+check("rien n'est ecrit dans la table tiers : U n'en est pas un",
+      not any('tiers' in s.split('INTO')[-1].split()[0].lower()
+              for s, _ in cur.executed if s.startswith(('INSERT', 'UPDATE', 'DELETE'))
+              and 'audit_admin' not in s and 'Configuration' not in s),
+      cur.executed)
+check("commit", conn.committed)
+check("pas de recalcul des tiers : une couleur ne classe personne", appels == [], appels)
+audit_u = [p for s, p in cur.executed if 'audit_admin' in s]
+check("l'action est journalisee", len(audit_u) == 1, cur.executed)
+check("  avec l'avant et l'apres", audit_u and "#FFFFFF" in str(audit_u[0]) and "#334155" in str(audit_u[0]),
+      audit_u)
+
+for mauvaise in ('rouge', '#12', '', None, 'red; background: url(x)'):
+    cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_config'})
+    r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur': mauvaise})
+    check("couleur invalide %r -> 400, rien d'ecrit" % (mauvaise,),
+          r.status_code == 400
+          and not any('tier_u_couleur' in s or 'audit_admin' in s for s, _ in cur.executed),
+          (r.status_code, r.get_json(), cur.executed))
+
+cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_config'})
+r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur': '#ffffff'})
+check("meme couleur (casse comprise) -> 200 sans ligne au journal",
+      r.status_code == 200 and not any('audit_admin' in s for s, _ in cur.executed),
+      (r.status_code, cur.executed))
+
+cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_ligues'})
+r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur': '#334155'})
+check("403 sans gestion_config", r.status_code == 403, r.status_code)
 
 
 print("\n" + "=" * 60)

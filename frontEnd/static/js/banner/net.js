@@ -3,6 +3,41 @@
 // Le protocole est decrit cote serveur, dans raceEngine/src/protocol.js. Regle
 // qui gouverne les deux cotes : le snapshot fait foi.
 
+// Un onglet cache depuis ce delai rend sa connexion. nginx limite les flux
+// simultanes par IP (`limit_conn ws_conn`), et un onglet oublie en arriere-plan
+// tenait sa place indefiniment : un foyer avec quelques onglets ouverts
+// suffisait a refuser la course a l'appareil suivant (27/09). Il comptait aussi
+// comme spectateur, ce qui bloquait le vote de redemarrage, a l'unanimite.
+// Declaree ici et non dans interpolate.js : pendant un deploiement, un
+// navigateur peut garder l'ancien interpolate.js en cache avec le nouveau net.js.
+const HIDDEN_DISCONNECT_MS = 60000;
+
+// Le service compte les NAVIGATEURS, pas les connexions : deux onglets font un
+// spectateur, et une voix au vote de redemarrage. Il lui faut pour ca un
+// identifiant commun aux onglets, tire au hasard et garde dans le stockage
+// local. Il ne designe personne, et le service ne le garde que le temps de la
+// connexion (docs/banner/protocole.md). Mentionne dans la politique de
+// confidentialite : c'est le seul usage du stockage local sur le site.
+const NAV_STORAGE_KEY = 'mk-banner-nav';
+const NAV_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+
+// null si le stockage est refuse (navigation privee stricte, donnees du site
+// bloquees) : chaque onglet compte alors pour un, comme avant.
+function navigatorId() {
+    try {
+        let id = localStorage.getItem(NAV_STORAGE_KEY);
+        if (!NAV_PATTERN.test(id || '')) {
+            const bytes = new Uint8Array(16);
+            crypto.getRandomValues(bytes);
+            id = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+            localStorage.setItem(NAV_STORAGE_KEY, id);
+        }
+        return id;
+    } catch (err) {
+        return null;
+    }
+}
+
 const bannerNet = {
     ws: null,
     buffer: [],
@@ -16,6 +51,10 @@ const bannerNet = {
     reconnectTimer: null,
     pingTimer: null,
     rttSamples: [],
+    // Connexion rendue par un onglet reste cache trop longtemps : elle sera
+    // rouverte a son retour, pas avant.
+    suspended: false,
+    suspendTimer: null,
 
     url() {
         // Jamais `wss://` en dur : en local le site est en clair, et l'erreur ne
@@ -41,6 +80,13 @@ const bannerNet = {
         ws.onopen = () => {
             this.attempts = 0;
             this.rttSamples = [];
+            // Avant tout le reste : qui regarde, et si l'onglet est au premier
+            // plan. `vis` ne part pas tant que la connexion s'ouvre, et un
+            // onglet ouvert en arriere-plan passait donc pour visible.
+            const hi = { t: 'hi', hidden: this.hidden };
+            const nav = navigatorId();
+            if (nav) hi.nav = nav;
+            this.send(hi);
             // Trois mesures rapprochees : l'ecart d'horloge se stabilise en une
             // seconde au lieu d'attendre le premier ping periodique.
             this.ping();
@@ -64,6 +110,14 @@ const bannerNet = {
 
         if (msg.t === 'pong') {
             this.onPong(msg);
+            return;
+        }
+
+        // La voix de CE navigateur, posee ou retiree depuis n'importe lequel de
+        // ses onglets : le bouton suit le service, seul a tenir le compte.
+        if (msg.t === 'vote') {
+            myVote = !!msg.v;
+            renderVote();
             return;
         }
 
@@ -189,6 +243,15 @@ const bannerNet = {
         this.hidden = hidden;
         this.buffer = [];
 
+        if (hidden) {
+            if (!this.suspendTimer && !this.suspended) {
+                this.suspendTimer = setTimeout(() => this.suspend(), HIDDEN_DISCONNECT_MS);
+            }
+        } else if (this.suspendTimer) {
+            clearTimeout(this.suspendTimer);
+            this.suspendTimer = null;
+        }
+
         if (!hidden) {
             // L'horloge locale a pu etre resynchronisee pendant la mise en
             // veille, et le tampon est de toute facon perime. On repart de zero
@@ -204,10 +267,65 @@ const bannerNet = {
         }
 
         if (!hidden) {
+            // Connexion rendue pendant l'absence : on la rouvre, et le `hello`
+            // qui suit refait la scene comme a une premiere visite. Les trois
+            // pings partent a l'ouverture (`connect`).
+            if (this.suspended) {
+                this.suspended = false;
+                this.attempts = 0;
+                this.connect();
+                return;
+            }
             this.ping();
             setTimeout(() => this.ping(), 400);
             setTimeout(() => this.ping(), 1200);
         }
+    },
+
+    // Rend la connexion d'un onglet cache (voir HIDDEN_DISCONNECT_MS). Rien n'est
+    // relance ici : c'est le retour de l'onglet qui rouvre, dans setHidden().
+    suspend() {
+        this.suspendTimer = null;
+        if (!this.hidden || this.suspended) return;
+        this.suspended = true;
+
+        // Y compris une reprise en attente : un onglet cache n'a pas a
+        // reessayer en boucle une connexion que personne ne regarde.
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        if (this.ws) {
+            const ws = this.ws;
+            ws.onclose = null;
+            ws.onerror = null;
+            ws.onmessage = null;
+            ws.close();
+        }
+        this.ws = null;
+        this.ready = false;
+        this.gotHello = false;
+        this.buffer = [];
+        this.pendingHello = null;
+        clearTimeout(this.rebuildTimer);
+        if (this.pingTimer) {
+            clearInterval(this.pingTimer);
+            this.pingTimer = null;
+        }
+
+        // Le serveur oublie la voix avec la connexion : le bouton ne doit pas
+        // l'afficher encore au retour. Si un autre onglet de ce navigateur la
+        // tient toujours, le service la renverra au `hi` de la reconnexion.
+        myVote = false;
+
+        // La scene sera refaite depuis le `hello` au retour. On la vide et on
+        // baisse le rideau des maintenant, pendant que personne ne regarde : il
+        // se relevera sur deux snapshots, comme a la premiere visite, au lieu de
+        // montrer une course figee depuis le depart de l'onglet.
+        bannerLink.gates.stream = false;
+        bannerLink.lowerCurtain();
+        bannerLink.setStatus('connecting');
+        clearScene();
     },
 
     onDisconnected() {

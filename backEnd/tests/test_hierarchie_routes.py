@@ -12,6 +12,9 @@ du superadmin se verifie sur une vraie base.
 """
 from harness import *
 from flask import Flask
+# Version courante de la politique admin, lue et non recopiee : la passer
+# de 1.0 a 1.1 (badge de role public, 27/09) cassait ces tests.
+from constants import CGU_ADMIN_VERSION as V_ADMIN
 
 
 def monter(plan, role='superadmin', compte_id=1):
@@ -323,7 +326,7 @@ check("  aucune requête de legs partie",
 # Cible inexistante.
 cli, cur, conn = monter([
     (r"SELECT id, role, discord_username, cgu_admin_version\s+FROM comptes WHERE id IN",
-     [(1, 'superadmin', 'chef', '1.0')]),
+     [(1, 'superadmin', 'chef', V_ADMIN)]),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'x'}, headers=H)
@@ -331,7 +334,7 @@ check("cible inexistante -> 404", r.status_code == 404, r.get_json())
 
 # Confirmation : c'est discord_username qui fait foi, pas le nom affiche.
 cli, cur, conn = monter([
-    DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),
+    DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'Nom Affiche'}, headers=H)
@@ -341,7 +344,7 @@ check("  aucune écriture du rôle",
       not any('UPDATE comptes SET role' in s for s in sql_de(cur)))
 
 cli, cur, conn = monter([
-    DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),
+    DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin', json={}, headers=H)
 check("confirmation absente -> 400", r.status_code == 400, r.get_json())
@@ -349,7 +352,7 @@ check("confirmation absente -> 400", r.status_code == 400, r.get_json())
 # Le handle tel que la liste l'affiche (« @vraipseudo »), recopie avec une
 # espace ou une majuscule, confirme : meme regle que la suppression de compte.
 cli, cur, conn = monter([
-    DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),
+    DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': ' @VraiPseudo '}, headers=H)
@@ -359,7 +362,7 @@ check("handle recopié avec @, espaces et majuscules -> 200",
 # Un prefixe du handle, ou une valeur qui n'est pas du texte : refuse, sans 500.
 for _saisie in ('vraipseud', 42):
     cli, cur, conn = monter([
-        DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),
+        DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
     ], role='superadmin')
     r = cli.post('/admin/comptes/5/leguer-superadmin',
                  json={'confirmation_pseudo': _saisie}, headers=H)
@@ -370,7 +373,7 @@ for _saisie in ('vraipseud', 42):
 
 # Course : l'acteur n'est plus superadmin au moment du verrou.
 cli, cur, conn = monter([
-    DEUX_LIGNES((1, 'chef_admin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),
+    DEUX_LIGNES((1, 'chef_admin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'vraipseudo'}, headers=H)
@@ -383,7 +386,7 @@ print("\n=== Legs du superadmin : le cas nominal ===")
 # ===========================================================================
 
 cli, cur, conn = monter([
-    DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'chef_admin', 'vraipseudo', '1.0')),
+    DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'chef_admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'vraipseudo'}, headers=H)
@@ -413,7 +416,7 @@ check("  FOR UPDATE posé", 'FOR UPDATE' in verrou[0][0])
 
 # R-53 s'applique aussi ici : une cible admin quitte le role admin.
 cli, cur, conn = monter([
-    DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'admin', 'vraipseudo', '1.0')),
+    DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
 cli.post('/admin/comptes/5/leguer-superadmin',
          json={'confirmation_pseudo': 'vraipseudo'}, headers=H)
@@ -422,7 +425,7 @@ check("cible admin : ses permissions sont purgées (R-53)",
 
 # Une cible chef_admin n'a rien a purger.
 cli, cur, conn = monter([
-    DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'chef_admin', 'vraipseudo', '1.0')),
+    DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'chef_admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'vraipseudo'}, headers=H)
@@ -441,11 +444,11 @@ print("\n=== Legs : la cible doit avoir consenti (R-68) ===")
 
 for role_cible, version, motif in (
         ('player', None, "un player (n'a accepté aucun rôle)"),
-        ('player', '1.0', "un player ayant consenti autrefois (n'a pas accepté CE rôle)"),
+        ('player', V_ADMIN, "un player ayant consenti autrefois (n'a pas accepté CE rôle)"),
         ('admin', None, "un admin promu avant le consentement, jamais régularisé"),
         ('chef_admin', '0.9', "un chef_admin sur une version périmée de la politique")):
     cli, cur, conn = monter([
-        DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, role_cible, 'vraipseudo', version)),
+        DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, role_cible, 'vraipseudo', version)),
     ], role='superadmin')
     r = cli.post('/admin/comptes/5/leguer-superadmin',
                  json={'confirmation_pseudo': 'vraipseudo'}, headers=H)
@@ -460,7 +463,7 @@ for role_cible, version, motif in (
 # Le blocage est dit AVANT la confirmation : sinon le superadmin retaperait le
 # pseudo pour rien, et lirait « pseudo faux » au lieu du vrai motif.
 cli, cur, conn = monter([
-    DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'), (5, 'player', 'vraipseudo', None)),
+    DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'player', 'vraipseudo', None)),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'mauvais'}, headers=H)

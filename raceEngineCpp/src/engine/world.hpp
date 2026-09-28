@@ -104,7 +104,7 @@ struct Kart {
 
     // ── Lateral ─────────────────────────────────────────────────────────────
     // `vy` n'est ecrit QUE par `steer()` — invariant obtenu au prix fort, cf.
-    // audit-pilotage-2026-08.md §7.2. Il ne se reperd pas.
+    // audit-decision-direction-2026-09-17.md §6. Il ne se reperd pas.
     double vy = 0;
     double targetVy = 0;
 

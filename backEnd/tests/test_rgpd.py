@@ -232,7 +232,7 @@ check("  celle du legs aussi", "@' + c.handle" in _lg[_lg.find('prompt('):])
 _ch = _ac[_ac.find('async function chargerComptes('):]
 _ch = _ch[:_ch.find('\n        }\n')]
 check("la liste des comptes affiche le handle sous le nom",
-      "'@' + c.handle" in _ch and "txt('td', c.pseudo)" in _ch)
+      "'@' + c.handle" in _ch and "txt('td', c.pseudo" in _ch)
 check("le proxy de la route superadmin transmet le corps (la confirmation)",
       "_proxy_admin('DELETE', f'/admin/comptes/{compte_id}', json_body=True)" in _front_py)
 

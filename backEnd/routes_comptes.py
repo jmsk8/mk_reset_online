@@ -104,7 +104,7 @@ def _nom_creable(cur, nom):
         return nom, None
     if erreur['code'] == 'nom_deja_pris':
         # Ici le joueur demande une CREATION : la sortie utile est de revendiquer.
-        erreur['error'] = ("La fiche « %s » existe deja : revendiquez-la au lieu d'en creer une."
+        erreur['error'] = ("La fiche « %s » existe déjà : revendiquez-la au lieu d'en créer une."
                            % erreur['joueur_en_conflit']['nom'])
     return None, (jsonify(erreur), 409)
 
@@ -166,7 +166,7 @@ def demander_liaison():
 
     compte = g.compte
     if compte['joueur_id'] is not None:
-        return jsonify({"error": "Ce compte est deja rattache", "code": "deja_lie"}), 409
+        return jsonify({"error": "Ce compte est déjà rattaché", "code": "deja_lie"}), 409
 
     try:
         with get_db_connection() as conn:
@@ -185,7 +185,7 @@ def demander_liaison():
                     if cur.fetchone() is not None:
                         conn.rollback()
                         return jsonify({
-                            "error": "Cette fiche est deja rattachee a un compte",
+                            "error": "Cette fiche est déjà rattachée à un compte",
                             "code": "joueur_deja_pris",
                         }), 409
 
@@ -197,7 +197,7 @@ def demander_liaison():
                     if cur.fetchone() is not None:
                         conn.rollback()
                         return jsonify({
-                            "error": "Vous avez deja une demande en cours",
+                            "error": "Vous avez déjà une demande en cours",
                             "code": "demande_en_cours",
                         }), 409
 
@@ -208,7 +208,7 @@ def demander_liaison():
                     if cur.fetchone() is not None:
                         conn.rollback()
                         return jsonify({
-                            "error": "Une demande est deja en attente sur cette fiche",
+                            "error": "Une demande est déjà en attente sur cette fiche",
                             "code": "joueur_revendique",
                         }), 409
 
@@ -240,7 +240,7 @@ def demander_creation():
     """
     compte = g.compte
     if compte['joueur_id'] is not None:
-        return jsonify({"error": "Ce compte est deja rattache", "code": "deja_lie"}), 409
+        return jsonify({"error": "Ce compte est déjà rattaché", "code": "deja_lie"}), 409
 
     message = ((request.get_json(silent=True) or {}).get('message') or '')[:500] or None
     voulu = _pseudo(compte['discord_username'], compte['discord_global_name'])
@@ -262,7 +262,7 @@ def demander_creation():
                     if cur.fetchone() is not None:
                         conn.rollback()
                         return jsonify({
-                            "error": "Vous avez deja une demande en cours",
+                            "error": "Vous avez déjà une demande en cours",
                             "code": "demande_en_cours",
                         }), 409
 
@@ -454,7 +454,7 @@ def approuver_liaison(demande_id):
                     if statut != 'pending':
                         conn.rollback()
                         return jsonify({
-                            "error": "Cette demande a deja ete traitee",
+                            "error": "Cette demande a déjà été traitée",
                             "code": "deja_traitee",
                         }), 409
 
@@ -489,8 +489,8 @@ def approuver_liaison(demande_id):
                     if ligne_compte[0] == 'suspended':
                         conn.rollback()
                         return jsonify({
-                            "error": "Ce compte est suspendu : sa demande ne peut pas etre "
-                                     "approuvee tant qu'il n'est pas reactive.",
+                            "error": "Ce compte est suspendu : sa demande ne peut pas être "
+                                     "approuvée tant qu'il n'est pas réactivé.",
                             "code": "compte_suspendu",
                         }), 409
 
@@ -526,7 +526,7 @@ def approuver_liaison(demande_id):
                         # s'en remet au rollback implicite de putconn().
                         conn.rollback()
                         return jsonify({
-                            "error": "Cette fiche vient d'etre rattachee a un autre compte",
+                            "error": "Cette fiche vient d'être rattachée à un autre compte",
                             "code": "joueur_deja_pris",
                         }), 409
 
@@ -588,7 +588,7 @@ def refuser_liaison(demande_id):
                     compte_id, joueur_id, statut = row
                     if statut != 'pending':
                         conn.rollback()
-                        return jsonify({"error": "Deja traitee", "code": "deja_traitee"}), 409
+                        return jsonify({"error": "Déjà traitée", "code": "deja_traitee"}), 409
 
                     # S-13, par symetrie avec l'approbation : on ne statue pas
                     # sur sa propre demande, dans un sens ou dans l'autre --
@@ -730,7 +730,7 @@ def _verifier_sync(cur, compte_id):
     username, global_name, joueur_id, nom_actuel = row
     if joueur_id is None:
         return None, (jsonify({
-            "error": "Ce compte n'est rattache a aucune fiche joueur",
+            "error": "Ce compte n'est rattaché à aucune fiche joueur",
             "code": "non_lie",
         }), 409)
 
@@ -754,7 +754,7 @@ def _verifier_sync(cur, compte_id):
 
     if nouveau == nom_actuel:
         return None, (jsonify({
-            "error": "Le nom du joueur est deja a jour", "code": "deja_synchro",
+            "error": "Le nom du joueur est déjà à jour", "code": "deja_synchro",
         }), 409)
 
     # S-05 : la synchronisation ecrit joueurs.nom, elle aussi. Sans ce refus, un
@@ -762,8 +762,8 @@ def _verifier_sync(cur, compte_id):
     cur.execute("SELECT 1 FROM noms_interdits WHERE nom_hash = %s", (empreinte_nom(nouveau),))
     if cur.fetchone() is not None:
         return None, (jsonify({
-            "error": "Ce pseudo correspond a une identite retiree et ne peut pas devenir "
-                     "le nom d'une fiche. Modifiez le nom a la main.",
+            "error": "Ce pseudo correspond à une identité retirée et ne peut pas devenir "
+                     "le nom d'une fiche. Modifiez le nom à la main.",
             "code": "nom_interdit",
         }), 409)
 
@@ -776,8 +776,8 @@ def _verifier_sync(cur, compte_id):
     collision = cur.fetchone()
     if collision is not None:
         return None, (jsonify({
-            "error": "Un autre joueur porte deja ce nom (%s). Renommez-le d'abord, "
-                     "ou modifiez le nom a la main." % collision[1],
+            "error": "Un autre joueur porte déjà ce nom (%s). Renommez-le d'abord, "
+                     "ou modifiez le nom à la main." % collision[1],
             "code": "collision_nom",
             "joueur_en_conflit": {"id": collision[0], "nom": collision[1]},
         }), 409)
@@ -886,7 +886,7 @@ def changer_role(compte_id):
     nouveau = corps.get('role')
     if nouveau not in ROLE_HIERARCHY:
         return jsonify({
-            "error": "Role invalide", "code": "role_invalide",
+            "error": "Rôle invalide", "code": "role_invalide",
             "roles": sorted(ROLE_HIERARCHY, key=ROLE_HIERARCHY.get),
         }), 400
 
@@ -895,7 +895,7 @@ def changer_role(compte_id):
     # ici et heurter idx_comptes_superadmin_unique.
     if nouveau == ROLE_SUPERADMIN:
         return jsonify({
-            "error": "Le role superadmin ne s'attribue pas : il se legue.",
+            "error": "Le rôle superadmin ne s'attribue pas : il se lègue.",
             "code": "superadmin_non_attribuable",
         }), 400
 
@@ -903,7 +903,7 @@ def changer_role(compte_id):
     # (plan 2, contrainte 3).
     if nouveau == ROLE_CHEF_ADMIN and not acteur_est_superadmin:
         return jsonify({
-            "error": "Seul le super-administrateur peut designer un chef d'administration.",
+            "error": "Seul le super-administrateur peut désigner un chef d'administration.",
             "code": "droits_insuffisants",
         }), 403
 
@@ -945,7 +945,7 @@ def changer_role(compte_id):
                     if ROLE_HIERARCHY[nouveau] > ROLE_HIERARCHY[ancien]:
                         conn.rollback()
                         return jsonify({
-                            "error": "Une promotion ne s'impose pas : proposez le role, "
+                            "error": "Une promotion ne s'impose pas : proposez le rôle, "
                                      "la personne l'acceptera depuis son compte.",
                             "code": "promotion_par_proposition",
                         }), 409
@@ -968,8 +968,8 @@ def changer_role(compte_id):
                         if cur.fetchone()[0] == 0:
                             conn.rollback()
                             return jsonify({
-                                "error": "C'est le dernier super-administrateur. Le retrograder "
-                                         "rendrait toute attribution de role impossible, et il "
+                                "error": "C'est le dernier super-administrateur. Le rétrograder "
+                                         "rendrait toute attribution de rôle impossible, et il "
                                          "n'existe pas de mot de passe de secours. Promouvez "
                                          "d'abord un autre compte.",
                                 "code": "dernier_superadmin",
@@ -989,7 +989,7 @@ def changer_role(compte_id):
                             conn.rollback()
                             return jsonify({
                                 "error": "C'est le dernier chef d'administration. Sans lui, si le "
-                                         "super-administrateur perd son acces, plus personne ne "
+                                         "super-administrateur perd son accès, plus personne ne "
                                          "pourra administrer le site sans intervention en base. "
                                          "Confirmez pour continuer.",
                                 "code": "dernier_chef_admin",
@@ -1147,14 +1147,14 @@ def proposer_promotion(compte_id):
 
     if role not in (ROLE_ADMIN, ROLE_CHEF_ADMIN):
         return jsonify({
-            "error": "Seuls les roles admin et chef_admin se proposent.",
+            "error": "Seuls les rôles admin et chef_admin se proposent.",
             "code": "role_non_proposable",
         }), 400
 
     # Meme plafond que changer_role : un chef_admin ne designe pas un pair.
     if role == ROLE_CHEF_ADMIN and acteur['role'] != ROLE_SUPERADMIN:
         return jsonify({
-            "error": "Seul le super-administrateur peut designer un chef d'administration.",
+            "error": "Seul le super-administrateur peut désigner un chef d'administration.",
             "code": "droits_insuffisants",
         }), 403
 
@@ -1180,7 +1180,7 @@ def proposer_promotion(compte_id):
                     if role_actuel == role:
                         conn.rollback()
                         return jsonify({
-                            "error": "Ce compte porte deja ce role.",
+                            "error": "Ce compte porte déjà ce rôle.",
                             "code": "role_inchange",
                         }), 409
 
@@ -1192,7 +1192,7 @@ def proposer_promotion(compte_id):
                     if ROLE_HIERARCHY[role] < ROLE_HIERARCHY[role_actuel]:
                         conn.rollback()
                         return jsonify({
-                            "error": "Ce n'est pas une promotion : changez le role "
+                            "error": "Ce n'est pas une promotion : changez le rôle "
                                      "directement.",
                             "code": "pas_une_promotion",
                         }), 409
@@ -1210,7 +1210,7 @@ def proposer_promotion(compte_id):
                     if _promotion_en_attente(cur, compte_id, pour_update=True):
                         conn.rollback()
                         return jsonify({
-                            "error": "Une proposition est deja en attente pour ce compte.",
+                            "error": "Une proposition est déjà en attente pour ce compte.",
                             "code": "promotion_deja_en_attente",
                         }), 409
 
@@ -1236,7 +1236,7 @@ def proposer_promotion(compte_id):
                     notifier(
                         cur, compte_id, 'promotion_proposee',
                         "Proposition : devenir %s" % role,
-                        "Un administrateur vous propose ce role. Ouvrez votre compte "
+                        "Un administrateur vous propose ce rôle. Ouvrez votre compte "
                         "pour l'accepter ou le refuser.",
                         lien="/mon-compte#bloc-promotion",
                     )
@@ -1286,8 +1286,8 @@ def annuler_promotion(compte_id):
                                 > ROLE_HIERARCHY.get(g.compte['role'], 0)):
                             conn.rollback()
                             return jsonify({
-                                "error": "Cette proposition a ete faite par un rang superieur "
-                                         "au votre : seul lui peut la retirer.",
+                                "error": "Cette proposition a été faite par un rang supérieur "
+                                         "au vôtre : seul lui peut la retirer.",
                                 "code": "proposition_rang_superieur",
                             }), 403
 
@@ -1372,7 +1372,7 @@ def repondre_promotion():
 
     if accepte and corps.get('cgu_admin_version') != CGU_ADMIN_VERSION:
         return jsonify({
-            "error": "La politique administrateur doit etre acceptee dans sa version courante.",
+            "error": "La politique administrateur doit être acceptée dans sa version courante.",
             "code": "version_cgu_admin",
             "attendue": CGU_ADMIN_VERSION,
         }), 400
@@ -1397,7 +1397,7 @@ def repondre_promotion():
                         conn.rollback()
                         return jsonify({
                             "error": "Aucune proposition en attente. Elle a pu expirer "
-                                     "ou etre annulee.",
+                                     "ou être annulée.",
                             "code": "aucune_promotion",
                         }), 409
 
@@ -1478,7 +1478,7 @@ def repondre_promotion():
                         conn.commit()
                         return jsonify({
                             "error": "Cette proposition n'est plus valable : la situation "
-                                     "a change depuis qu'elle a ete faite.",
+                                     "a changé depuis qu'elle a été faite.",
                             "code": "proposition_caduque",
                         }), 409
 
@@ -1966,8 +1966,8 @@ def accorder_permission(compte_id, permission):
                     if row[0] != ROLE_ADMIN:
                         conn.rollback()
                         return jsonify({
-                            "error": "Les permissions ne s'accordent qu'a un compte admin. "
-                                     "Un chef d'administration a deja tout le catalogue.",
+                            "error": "Les permissions ne s'accordent qu'à un compte admin. "
+                                     "Un chef d'administration a déjà tout le catalogue.",
                             "code": "cible_non_admin",
                         }), 409
 
@@ -1986,7 +1986,7 @@ def accorder_permission(compte_id, permission):
                         if cur.fetchone() is None:
                             conn.rollback()
                             return jsonify({
-                                "error": "Ce droit complete « %s », qui doit etre accorde "
+                                "error": "Ce droit complète « %s », qui doit être accordé "
                                          "d'abord." % parent,
                                 "code": "parent_manquant",
                                 "parent": parent,
@@ -2140,7 +2140,7 @@ def leguer_superadmin(compte_id):
                     if moi is None or moi[1] != ROLE_SUPERADMIN:
                         conn.rollback()
                         return jsonify({
-                            "error": "Vous n'etes plus super-administrateur.",
+                            "error": "Vous n'êtes plus super-administrateur.",
                             "code": "plus_superadmin",
                         }), 409
 
@@ -2152,9 +2152,9 @@ def leguer_superadmin(compte_id):
                             or cible[3] != CGU_ADMIN_VERSION):
                         conn.rollback()
                         return jsonify({
-                            "error": "Ce compte n'a pas accepte de role d'administration "
+                            "error": "Ce compte n'a pas accepté de rôle d'administration "
                                      "dans la version courante de la politique. Proposez-lui "
-                                     "d'abord le role admin : le legs ne se fait qu'a un "
+                                     "d'abord le rôle admin : le legs ne se fait qu'à un "
                                      "compte qui a consenti.",
                             "code": "legs_sans_consentement",
                         }), 409
@@ -2289,7 +2289,7 @@ def delier_compte(compte_id):
                     if joueur_id is None:
                         conn.rollback()
                         return jsonify({
-                            "error": "Ce compte n'est rattache a aucune fiche joueur",
+                            "error": "Ce compte n'est rattaché à aucune fiche joueur",
                             "code": "non_lie",
                         }), 409
 
@@ -2376,9 +2376,9 @@ def _refus_auto_verrouillage(cur, compte_id: int, role: str, geste: str):
     if role != ROLE_SUPERADMIN or not _dernier_de_son_role(cur, compte_id, ROLE_SUPERADMIN):
         return None
     return jsonify({
-        "error": "Vous etes le dernier super-administrateur. Vous %s maintenant "
+        "error": "Vous êtes le dernier super-administrateur. Vous %s maintenant "
                  "rendrait toute administration impossible, et il n'existe pas de "
-                 "mot de passe de secours. Leguez d'abord votre role a un autre "
+                 "mot de passe de secours. Léguez d'abord votre rôle à un autre "
                  "compte." % geste,
         "code": "dernier_superadmin",
     }), 409
@@ -2484,24 +2484,24 @@ def _valider_profil(data):
     bio = data.get('bio')
     if bio is not None:
         if not isinstance(bio, str):
-            return None, "La bio doit etre du texte"
+            return None, "La bio doit être du texte"
         bio = bio.strip()[:500] or None
 
     couleur = data.get('couleur_accent')
     if couleur is not None:
         if not isinstance(couleur, str) or not _RE_COULEUR.match(couleur.strip()):
-            return None, "La couleur doit etre au format #RRGGBB"
+            return None, "La couleur doit être au format #RRGGBB"
         couleur = couleur.strip().upper()
 
     reseaux = data.get('reseaux')
     if reseaux is None:
         reseaux = {}
     if not isinstance(reseaux, dict):
-        return None, "Format de reseaux invalide"
+        return None, "Format de réseaux invalide"
     propres = {}
     for cle, handle in reseaux.items():
         if cle not in RESEAUX_CONNUS:
-            return None, "Reseau inconnu : %s" % cle
+            return None, "Réseau inconnu : %s" % cle
         if handle in (None, ''):
             continue
         if not isinstance(handle, str) or not _RE_HANDLE.match(handle.strip()):
@@ -2580,7 +2580,13 @@ def profil_public(cur, joueur_id):
     """Partie publique du profil d'un joueur, ou None.
 
     Ne renvoie que ce qui est destine a etre lu par n'importe quel visiteur.
-    Le statut du compte, son role et sa date de connexion restent internes.
+    Le statut du compte et sa date de connexion restent internes.
+
+    Le role, lui, est public depuis le 2026-09-27, mais SEULEMENT s'il s'agit
+    d'un role d'administration (badge sur la fiche joueur) : un joueur ordinaire
+    renvoie `role: None`, pas « player ». C'est annonce dans la politique
+    administrateur (§4 bis de /confidentialite, CGU_ADMIN_VERSION 1.1) : on
+    l'accepte en acceptant le role.
 
     A noter : l'URL d'avatar contient le snowflake Discord du joueur. C'est
     inherent au choix « avatar servi par le CDN Discord, aucune copie stockee »,
@@ -2593,7 +2599,8 @@ def profil_public(cur, joueur_id):
         # anonymise_at IS NULL : sans cette condition, une fiche anonymisee affichait
         # encore l'avatar, la bio et les liens de son proprietaire -- et l'URL de
         # l'avatar contenait l'identifiant Discord.
-        """SELECT c.discord_id, c.discord_avatar_hash, p.bio, p.couleur_accent, p.reseaux
+        """SELECT c.discord_id, c.discord_avatar_hash, p.bio, p.couleur_accent, p.reseaux,
+                  c.role
            FROM comptes c
            JOIN joueurs j ON j.id = c.joueur_id
            LEFT JOIN profils p ON p.compte_id = c.id
@@ -2609,6 +2616,7 @@ def profil_public(cur, joueur_id):
         "bio": row[2],
         "couleur_accent": row[3],
         "reseaux": _reseaux_avec_urls(row[4]),
+        "role": row[5] if row[5] in (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN) else None,
     }
 
 
@@ -2756,7 +2764,7 @@ def matchmaking_admin():
 
     if len(joueurs) < 2:
         return jsonify({
-            "error": "Selectionnez au moins deux joueurs.",
+            "error": "Sélectionnez au moins deux joueurs.",
             "code": "pas_assez_de_joueurs",
             "introuvables": introuvables,
         }), 400
@@ -2820,10 +2828,10 @@ def creer_service_token():
     if not nom:
         return jsonify({"error": "Un nom est requis", "code": "nom_manquant"}), 400
     if not isinstance(scopes, list) or not scopes:
-        return jsonify({"error": "Au moins une portee est requise", "code": "scopes_manquants"}), 400
+        return jsonify({"error": "Au moins une portée est requise", "code": "scopes_manquants"}), 400
     inconnus = [s for s in scopes if s not in SCOPES_CONNUS]
     if inconnus:
-        return jsonify({"error": "Portee inconnue : %s" % ', '.join(inconnus),
+        return jsonify({"error": "Portée inconnue : %s" % ', '.join(inconnus),
                         "code": "scope_inconnu", "scopes_valides": list(SCOPES_CONNUS)}), 400
 
     jours = data.get('jours')
@@ -2832,7 +2840,7 @@ def creer_service_token():
         try:
             expires_at = datetime.now(timezone.utc) + timedelta(days=max(1, int(jours)))
         except (TypeError, ValueError):
-            return jsonify({"error": "Duree invalide"}), 400
+            return jsonify({"error": "Durée invalide"}), 400
 
     jeton = secrets.token_urlsafe(32)
     try:
@@ -2870,7 +2878,7 @@ def revoquer_service_token(token_id):
                 )
                 if cur.rowcount == 0:
                     conn.rollback()
-                    return jsonify({"error": "Jeton introuvable ou deja revoque"}), 404
+                    return jsonify({"error": "Jeton introuvable ou déjà révoqué"}), 404
                 _audit(cur, 'service_token_revoque', 'service_token', token_id)
             conn.commit()
     except Exception as e:
@@ -3023,9 +3031,9 @@ def exporter_mes_donnees():
     export = {
         "genere_le": datetime.now(timezone.utc).isoformat(),
         "avertissement": (
-            "Le dossier sportif (participations, awards) est rattache a une fiche "
-            "joueur pseudonyme et n'est PAS supprime avec le compte. Voir la "
-            "politique de confidentialite."
+            "Le dossier sportif (participations, awards) est rattaché à une fiche "
+            "joueur pseudonyme et n'est PAS supprimé avec le compte. Voir la "
+            "politique de confidentialité."
         ),
     }
 

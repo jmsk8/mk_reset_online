@@ -36,11 +36,107 @@
         #tierChartArea.dragging-handle { cursor: ew-resize; }
         /* Versions de l'IP : une par ligne, leur resume dessous. */
         .choix-ip { display: block; margin: 0 0 0.6rem 0 !important; }
+
+        /* Liste des tiers : une ligne par tier, bord gauche a sa couleur. */
+        .tier-ligne {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+            grid-template-areas: "couleur nom seuil ordre suppr";
+            align-items: center;
+            gap: 0.5rem 0.75rem;
+            padding: 0.6rem 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.04);
+            border-left: 5px solid var(--tier-couleur, #fff);
+        }
+        .tier-ligne .zone-couleur { grid-area: couleur; }
+        .tier-ligne .zone-nom { grid-area: nom; }
+        .tier-ligne .zone-seuil { grid-area: seuil; display: flex; align-items: center; gap: 0.4rem; }
+        .tier-ligne .zone-ordre { grid-area: ordre; display: flex; gap: 0.3rem; }
+        .tier-ligne .zone-suppr { grid-area: suppr; }
+        .tier-ligne .zone-seuil .input { width: 6.5rem; }
+        .tier-etiquette { font-size: 0.75rem; color: #94a3b8; white-space: nowrap; }
+        .tier-plancher { font-size: 0.8rem; color: #94a3b8; font-style: italic; }
+        /* U (non classé) : hors classement, donc détaché de la liste. Seule
+           sa couleur se règle ; le nom est du texte, pas un champ. */
+        .tier-ligne-u { margin-top: 1rem; border-top: 1px dashed rgba(255,255,255,0.15); }
+        .tier-nom-fixe { font-weight: 700; padding-left: 0.75rem; }
+        /* Pastille de couleur : cible de 44 px, assez grande pour le doigt. */
+        .tier-pastille {
+            width: 44px; height: 44px; padding: 0;
+            border-radius: 10px; border: 2px solid rgba(255,255,255,0.35);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 1rem;
+        }
+        .tier-pastille:focus-visible { outline: 3px solid #3b82f6; outline-offset: 2px; }
+        .tiers-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+        .tiers-actions #tierSaveBtn { margin-left: auto; }
+
+        /* Fenetre de choix de couleur, aux couleurs des autres fenetres admin. */
+        .tier-couleur-carte { max-width: 440px; }
+        .tier-couleur-carte .modal-card-head,
+        .tier-couleur-carte .modal-card-foot { background-color: #1e293b; border-color: #3b82f6; }
+        .tier-couleur-carte .modal-card-head { border-bottom: 1px solid #3b82f6; }
+        .tier-couleur-carte .modal-card-foot { border-top: 1px solid #3b82f6; justify-content: flex-end; gap: 0.5rem; }
+        .tier-couleur-carte .modal-card-foot .button:not(:last-child) { margin-right: 0; }
+        .tier-couleur-carte .modal-card-title { color: #f8fafc; }
+        .tier-couleur-carte .modal-card-body { background-color: #0f172a; color: #f1f5f9; }
+        .tier-couleur-apercu { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-bottom: 1rem; }
+        .tier-couleur-badge {
+            min-width: 4.5rem; padding: 0.45rem 1rem; border-radius: 20px;
+            font-weight: 700; font-size: 1.1rem; text-align: center;
+            transition: background-color 0.1s, color 0.1s;
+        }
+        .tier-couleur-avant {
+            width: 1.6rem; height: 1.6rem; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.35);
+        }
+        .tier-palette { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+        .tier-palette button {
+            aspect-ratio: 1; width: 100%; padding: 0; cursor: pointer;
+            border: 2px solid transparent; border-radius: 8px;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25);
+        }
+        .tier-palette button.choisie { border-color: #fff; box-shadow: 0 0 0 2px #3b82f6; }
+        .tier-couleur-sous-titre { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; margin: 1rem 0 0.4rem; }
+        .tier-curseur { display: grid; grid-template-columns: 5.5rem 1fr; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.85rem; }
+        /* Curseurs a piste degradee : on voit ou mene chaque reglage. */
+        .tier-curseur input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            width: 100%; height: 18px; border-radius: 9px; margin: 0;
+            border: 1px solid rgba(255,255,255,0.25); background: #334155;
+        }
+        .tier-curseur input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 26px; height: 26px; border-radius: 50%;
+            background: #fff; border: 2px solid #0f172a; box-shadow: 0 0 0 1px #fff;
+        }
+        .tier-curseur input[type="range"]::-moz-range-thumb {
+            width: 22px; height: 22px; border-radius: 50%;
+            background: #fff; border: 2px solid #0f172a; box-shadow: 0 0 0 1px #fff;
+        }
+        #tierCurseurTeinte {
+            background: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00);
+        }
+        #tierCouleurHex { font-family: monospace; text-transform: uppercase; }
+        #tierCouleurHex.is-danger { border-color: #ef4444; }
+
         @media (max-width: 768px) {
             .chart-container-wrapper { flex-direction: column; height: auto; }
             .chart-legend { width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 15px; max-height: 130px; display: flex; flex-wrap: wrap; }
             .legend-item { width: 50%; }
             .chart-area { height: 320px; }
+
+            /* Deux rangees : couleur, nom, suppression ; puis seuil et ordre. */
+            .tier-ligne {
+                grid-template-columns: auto minmax(0, 1fr) auto;
+                grid-template-areas: "couleur nom suppr" "seuil seuil ordre";
+            }
+            .tiers-actions .button { flex: 1 1 auto; }
+            .tiers-actions #tierSaveBtn { flex-basis: 100%; margin-left: 0; }
+            .tier-couleur-carte .modal-card-body { padding: 1rem; }
+            .tier-palette { gap: 5px; }
         }
     </style>
 </head>
@@ -60,8 +156,7 @@
                délégable via gestion_config (contexte 8.5-D), il suit donc la
                configuration au lieu d'exiger chef_admin. Les deux blocs restent
                visuellement distincts pour la lisibilité, mais ils ne portent
-               plus de frontière de droits différente.
-               Voir docs/onglets-admin-plan.md 3.2. #}
+               plus de frontière de droits différente. #}
 
             <div class="columns is-centered">
                 <div class="column is-10">
@@ -202,10 +297,10 @@
                         <div class="card-content">
                             <p class="has-text-grey-light is-size-7 mb-4">
                                 Les frontières de tier sont exprimées en écarts-types (σ) autour de la
-                                moyenne des scores classés (score = moyenne + k × σ). Fais glisser une
-                                ligne sur le graphique, ou règle la valeur en σ dans le tableau ci-dessous
-                                — les tiers affichés se recalculent en direct. Ajoute, renomme, recolore,
-                                réordonne ou supprime un tier depuis ce même tableau.
+                                moyenne des scores classés (score = moyenne + k × σ). Faites glisser une
+                                ligne sur le graphique, ou réglez la valeur en σ dans la liste ci-dessous :
+                                les tiers affichés se recalculent en direct. La même liste permet
+                                d'ajouter, de renommer, de recolorer ou de supprimer un tier.
                                 <strong>Enregistrer applique aussitôt le changement au tier de tous les joueurs.</strong>
                             </p>
 
@@ -222,41 +317,81 @@
                                     </div>
                                 </div>
 
-                                <div class="table-container mt-4">
-                                    <table class="table is-fullwidth is-narrow">
-                                        <thead>
-                                            <tr>
-                                                <th style="width:70px;">Ordre</th>
-                                                <th style="width:60px;">Couleur</th>
-                                                <th>Nom</th>
-                                                <th>Seuil</th>
-                                                <th style="width:50px;"></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="tiersListBody"></tbody>
-                                    </table>
-                                </div>
+                                {# Du meilleur tier (en haut) au plancher (en bas). Une
+                                   ligne par tier, construite par tier_thresholds.js ;
+                                   au telephone elle passe sur deux rangees. #}
+                                <p class="has-text-grey-light is-size-7 mt-4 mb-2">
+                                    Du meilleur tier au plus bas, puis U (non classés), dont seule la couleur se règle.
+                                    Touchez la pastille pour changer la couleur.
+                                </p>
+                                <div id="tiersListBody" class="tiers-liste"></div>
 
-                                <div class="level mt-2">
-                                    <div class="level-left">
-                                        <button type="button" id="tierAddBtn" class="button is-small">
-                                            <i class="fas fa-plus mr-1"></i> Ajouter un tier
-                                        </button>
-                                    </div>
-                                    <div class="level-right">
-                                        <button type="button" id="tierResetBtn" class="button is-small mr-2">
-                                            <i class="fas fa-rotate-left mr-1"></i> Réinitialiser (S/A/B/C)
-                                        </button>
-                                        <button type="button" id="tierSaveBtn" class="button is-info">
-                                            <i class="fas fa-save mr-2"></i> Enregistrer les tiers
-                                        </button>
-                                    </div>
+                                <div class="tiers-actions mt-3">
+                                    <button type="button" id="tierAddBtn" class="button is-small">
+                                        <i class="fas fa-plus mr-1"></i> Ajouter un tier
+                                    </button>
+                                    <button type="button" id="tierResetBtn" class="button is-small">
+                                        <i class="fas fa-rotate-left mr-1"></i> Réinitialiser (S/A/B/C)
+                                    </button>
+                                    <button type="button" id="tierSaveBtn" class="button is-info">
+                                        <i class="fas fa-save mr-2"></i> Enregistrer les tiers
+                                    </button>
                                 </div>
                             </div>
 
                             <div id="tierChartEmpty" class="notification is-warning is-light" style="display:none;">
                                 Pas assez de joueurs classés pour afficher une distribution.
                             </div>
+                        </div>
+                    </div>
+
+                    {# Choix de la couleur d'un tier. Remplace le <input type="color">
+                       natif, qui au telephone ne proposait qu'une poignee de teintes.
+                       Rien n'est applique avant « Confirmer ». #}
+                    <div class="modal" id="tierCouleurModal" role="dialog" aria-modal="true" aria-labelledby="tierCouleurTitre">
+                        <div class="modal-background" data-fermer></div>
+                        <div class="modal-card tier-couleur-carte">
+                            <header class="modal-card-head">
+                                <p class="modal-card-title" id="tierCouleurTitre">Couleur du tier</p>
+                                <button type="button" class="delete" aria-label="Fermer" data-fermer></button>
+                            </header>
+                            <section class="modal-card-body">
+                                <div class="tier-couleur-apercu">
+                                    <span class="tier-couleur-badge" id="tierCouleurApercu"></span>
+                                    <span class="tier-couleur-avant" id="tierCouleurAvant" title="Couleur actuelle"></span>
+                                </div>
+
+                                <div class="tier-palette" id="tierPalette" role="listbox" aria-label="Palette"></div>
+
+                                <p class="tier-couleur-sous-titre">Affiner</p>
+                                <label class="tier-curseur">
+                                    <span>Teinte</span>
+                                    <input type="range" min="0" max="359" step="1" id="tierCurseurTeinte">
+                                </label>
+                                <label class="tier-curseur">
+                                    <span>Saturation</span>
+                                    <input type="range" min="0" max="100" step="1" id="tierCurseurSaturation">
+                                </label>
+                                <label class="tier-curseur">
+                                    <span>Clarté</span>
+                                    <input type="range" min="0" max="100" step="1" id="tierCurseurClarte">
+                                </label>
+
+                                <div class="field has-addons mt-3 mb-0">
+                                    <p class="control"><span class="button is-static is-small">Code</span></p>
+                                    <p class="control is-expanded">
+                                        <input class="input is-small" type="text" id="tierCouleurHex"
+                                               maxlength="7" autocomplete="off" autocapitalize="characters"
+                                               spellcheck="false" placeholder="#RRGGBB">
+                                    </p>
+                                </div>
+                            </section>
+                            <footer class="modal-card-foot">
+                                <button type="button" class="button" data-fermer>Annuler</button>
+                                <button type="button" class="button is-info" id="tierCouleurConfirmer">
+                                    <i class="fas fa-check mr-2"></i> Confirmer
+                                </button>
+                            </footer>
                         </div>
                     </div>
                     {% endif %}
@@ -278,6 +413,7 @@
 
     {% include 'footer.html' %}
     <script src="../static/js/gestion.js"></script>
-    <script src="../static/js/tier_thresholds.js"></script>
+    {# ?v= : nginx garde les .js 7 jours en cache, l'ancienne version resterait servie. #}
+    <script src="../static/js/tier_thresholds.js?v={{ app_version }}"></script>
 </body>
 </html>

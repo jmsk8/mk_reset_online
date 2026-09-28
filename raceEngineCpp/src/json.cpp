@@ -1,5 +1,6 @@
 #include "json.hpp"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -217,6 +218,7 @@ ClientMessage parse_client_message(std::string_view payload) {
     std::string pingToken;
     std::string watchRaw;
     std::string hiddenRaw;
+    std::string navRaw;
 
     while (i < payload.size()) {
         skip_spaces(payload, i);
@@ -236,7 +238,7 @@ ClientMessage parse_client_message(std::string_view payload) {
             if (!read_string(payload, i, value)) return ClientMessage {};
         } else if (payload[i] == '{' || payload[i] == '[') {
             // Aucun message client n'a de valeur composee. En rencontrer une
-            // veut dire que ce n'est pas l'un des quatre : on abandonne.
+            // veut dire que ce n'est pas l'un des cinq : on abandonne.
             return ClientMessage {};
         } else {
             read_scalar(payload, i, value);
@@ -246,6 +248,7 @@ ClientMessage parse_client_message(std::string_view payload) {
         else if (key == "c") pingToken = value;
         else if (key == "id") watchRaw = value;
         else if (key == "hidden") hiddenRaw = value;
+        else if (key == "nav") navRaw = value;
 
         skip_spaces(payload, i);
         if (i < payload.size() && payload[i] == ',') { i++; continue; }
@@ -273,6 +276,17 @@ ClientMessage parse_client_message(std::string_view payload) {
     } else if (type == "vis") {
         msg.type = ClientMessageType::Vis;
         msg.hidden = (hiddenRaw == "true");
+    } else if (type == "hi") {
+        msg.type = ClientMessageType::Hi;
+        msg.hidden = (hiddenRaw == "true");
+        // Meme motif que NAV_PATTERN (server.js) : tout autre identifiant est
+        // ignore, jamais tronque ni corrige.
+        const bool valid = navRaw.size() >= 16 && navRaw.size() <= 64
+            && std::all_of(navRaw.begin(), navRaw.end(), [](char c) {
+                   return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                       || (c >= '0' && c <= '9') || c == '_' || c == '-';
+               });
+        if (valid) msg.nav = navRaw;
     }
 
     return msg;

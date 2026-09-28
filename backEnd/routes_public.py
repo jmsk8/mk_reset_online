@@ -19,7 +19,7 @@ from textes_ip import bloc_ip
 from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
-    tier_thresholds, normal_top_percent, build_distribution, load_tiers,
+    tier_thresholds, normal_top_percent, build_distribution, load_tiers, load_couleur_u,
     compute_ip_evolution, compute_position_evolution, compute_position_breakdown,
 )
 
@@ -913,6 +913,22 @@ def tier_seuils():
                     }
                     for t in tiers
                 ])
+    except Exception:
+        return jsonify({"error": "Erreur serveur"}), 500
+
+
+@public_bp.route('/tiers/unranked')
+def couleur_tier_u():
+    """Couleur de la pastille U (non classe).
+
+    A part de /tier-seuils, et non en entree de plus dans sa liste : ses
+    lecteurs la parcourent comme des tiers (legende, seuils), et U n'en est pas
+    un. Publique comme elle : la couleur se voit deja sur le classement.
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                return jsonify({"couleur": load_couleur_u(cur)})
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 

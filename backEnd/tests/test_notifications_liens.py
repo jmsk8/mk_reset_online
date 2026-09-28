@@ -18,6 +18,9 @@ et avec quels parametres, pas le SQL lui-meme.
 """
 from harness import *
 from flask import Flask
+# Version courante de la politique admin, lue et non recopiee : la passer
+# de 1.0 a 1.1 (badge de role public, 27/09) cassait ces tests.
+from constants import CGU_ADMIN_VERSION as V_ADMIN
 import importlib
 
 
@@ -115,7 +118,7 @@ cli, cur, conn = monter([
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
     (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
 ], role='player', compte_id=5)
-r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': '1.0'}, headers=H)
+r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': V_ADMIN}, headers=H)
 n = notif_inseree(cur)
 check("type = promotion_acceptee", n and n[0] == 'promotion_acceptee', n)
 check("lien NULL", n and n[3] is None, n and n[3])
@@ -154,7 +157,7 @@ importlib.reload(routes_comptes)
 app = Flask(__name__)
 app.register_blueprint(routes_comptes.comptes_bp)
 r = app.test_client().post('/me/promotion',
-                           json={'accepte': True, 'cgu_admin_version': '1.0'}, headers=H)
+                           json={'accepte': True, 'cgu_admin_version': V_ADMIN}, headers=H)
 n = notif_inseree(cur)
 check("sans global_name : repli sur le handle",
       n and n[2].startswith('vieuxcompte a accepté'), n and n[2])

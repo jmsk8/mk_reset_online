@@ -2,7 +2,7 @@
 // <- raceEngine/src/engine/steering.js
 //
 // `steer()` est la SEULE fonction qui ecrit `vy`. Invariant obtenu au prix fort
-// (audit-pilotage-2026-08.md §7.2) : il ne se reperd pas. Tout ce qui veut
+// (audit-decision-direction-2026-09-17.md §6) : il ne se reperd pas. Tout ce qui veut
 // deplacer un kart lateralement passe par une CONSIGNE (`laneY`), jamais par
 // une ecriture directe.
 

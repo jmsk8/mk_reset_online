@@ -74,22 +74,22 @@
                             Indépendamment de tout compte, le site conserve un pseudo de jeu et
                             l'historique des tournois qui s'y rattache : scores, positions,
                             classement, trophées. Ces données sont
-                            <strong>publiques par nature</strong> — c'est l'objet même d'un
-                            classement — et reposent sur l'intérêt légitime de la communauté à
+                            <strong>publiques par nature</strong>, puisque c'est l'objet même d'un
+                            classement. Elles reposent sur l'intérêt légitime de la communauté à
                             disposer d'un classement exact.
                         </p>
 
                         <h2 class="title is-4">3. Qui d'autre voit ces données</h2>
                         <ul>
                             <li>
-                                <strong>Discord Inc. (États-Unis)</strong> — c'est de là que
-                                viennent votre identifiant, votre pseudo et votre avatar. Discord
-                                sait donc que vous vous êtes connecté à ce site. Ce transfert hors
+                                <strong>Discord Inc. (États-Unis)</strong> : votre identifiant,
+                                votre pseudo et votre avatar proviennent de Discord, qui sait donc
+                                que vous vous êtes connecté à ce site. Ce transfert hors
                                 de l'Union européenne est encadré par les clauses contractuelles
                                 types de Discord.
                             </li>
                             <li>
-                                <strong>Le réseau de diffusion d'images de Discord</strong> — notre
+                                <strong>Le réseau de diffusion d'images de Discord</strong> : notre
                                 serveur y récupère votre avatar, puis le sert lui-même. Les
                                 navigateurs des personnes qui consultent le site ne contactent
                                 jamais Discord : celui-ci ne voit ni leur adresse IP, ni les pages
@@ -97,11 +97,21 @@
                                 pendant une heure au maximum, jamais sur disque.
                             </li>
                             <li>
-                                <strong>{{ hebergeur }}</strong> — hébergement du site.
+                                <strong>{{ hebergeur }}</strong> : hébergement du site.
                             </li>
                         </ul>
                         <p>Aucune donnée n'est vendue, louée, ni utilisée à des fins publicitaires.
                            Il n'y a ni cookie publicitaire, ni outil de mesure d'audience tiers.</p>
+                        {# Seul usage du stockage local sur le site : banner/net.js,
+                           docs/banner/protocole.md (« Spectateurs »). #}
+                        <p>La course animée de la page d'accueil garde dans votre navigateur un
+                           identifiant tiré au hasard (stockage local, clé
+                           <code>mk-banner-nav</code>). Il sert uniquement à ce que plusieurs
+                           onglets ouverts comptent pour un seul spectateur et une seule voix
+                           au vote de redémarrage. Il n'est lié ni à votre compte ni à votre
+                           adresse IP ; notre serveur ne le garde que le temps de la connexion,
+                           sans l'enregistrer nulle part. Effacer les données du site dans votre
+                           navigateur le supprime.</p>
 
                         <h2 class="title is-4">4. Combien de temps</h2>
                         <table class="table is-fullwidth is-striped">
@@ -144,24 +154,36 @@
                                         récente a remplacées.</td>
                                     <td>Tant que le compte existe</td>
                                 </tr>
+                                {# Ajout de la version 1.1 de la politique admin (27/09) :
+                                   le rôle devient visible de tous. Nouveau traitement,
+                                   donc nouvelle version et nouvel accord. #}
+                                <tr>
+                                    <td>Votre <strong>rôle</strong> (administrateur, chef
+                                        administrateur ou super-administrateur),
+                                        <strong>affiché publiquement</strong> par un badge sur
+                                        votre fiche joueur, pour que la communauté sache qui
+                                        administre le site.</td>
+                                    <td>Tant que vous avez le rôle</td>
+                                </tr>
                             </tbody>
                         </table>
                         <p>
                             <strong>Ce journal subsiste si votre compte est supprimé.</strong> Les
-                            lignes ne pointent plus vers un compte existant, mais chacune garde le
-                            pseudo sous lequel vous avez agi et une <em>empreinte</em> de votre
-                            identifiant Discord, qui permet de regrouper vos actions. Cette empreinte
-                            n'est pas votre identifiant, mais elle ne l'efface pas non plus : à partir
-                            de la liste des membres d'un serveur Discord, on peut la faire
-                            correspondre à un compte. C'est une donnée <em>pseudonyme</em>, pas
-                            anonyme. C'est ce qui
-                            permet de comprendre après coup qui a décidé quoi, et c'est la raison
-                            pour laquelle ce rôle demande un accord distinct : le consentement donné
-                            à la création de votre compte, alors que vous étiez simple joueur, ne
-                            pouvait pas couvrir un traitement qui n'existait pas encore.
+                            lignes ne sont plus reliées à un compte, mais chacune garde le pseudo
+                            sous lequel vous avez agi et une <em>empreinte</em> de votre identifiant
+                            Discord, qui permet de regrouper vos actions. Cette empreinte n'est pas
+                            votre identifiant, mais en la comparant à la liste des membres d'un
+                            serveur Discord, on peut retrouver le compte correspondant : il s'agit
+                            donc d'une donnée <em>pseudonyme</em>, et non anonyme.
+                        </p>
+                        <p>
+                            Ce journal permet de savoir après coup qui a pris quelle décision.
+                            Lorsque vous avez créé votre compte en tant que joueur, ce traitement
+                            ne vous concernait pas encore : c'est pourquoi le rôle
+                            d'administrateur demande un accord distinct.
                         </p>
                         <p class="is-size-7 has-text-grey">
-                            Base légale : intérêt légitime — la traçabilité des actions
+                            Base légale : intérêt légitime, à savoir la traçabilité des actions
                             d'administration d'un site. Vous pouvez retirer votre rôle à tout moment
                             en demandant à un administrateur de vous rétrograder ; les actions déjà
                             enregistrées, elles, sont conservées.
@@ -182,16 +204,16 @@
                                 Discord.</li>
                         </ul>
                         <p>
-                            La suppression se fait sur demande écrite, et non plus d'un clic
-                            depuis votre compte : elle est irréversible, et une session restée
-                            ouverte sur un appareil partagé ou perdu suffisait à la déclencher.
+                            La suppression de votre compte se fait sur demande écrite, et non
+                            depuis le site : elle est irréversible, et nous voulons éviter qu'elle
+                            puisse être déclenchée depuis un appareil partagé ou perdu.
                             Pour nous assurer que la demande vient bien de vous, nous pourrons
                             vous demander de la confirmer depuis votre compte Discord. Nous y
                             donnons suite dans un délai d'<strong>un mois</strong> au plus.
                         </p>
                         <p>
-                            Pour toute autre demande — notamment l'anonymisation de votre pseudo de
-                            jeu — écrivez à <strong>{{ contact }}</strong>. Vous pouvez également
+                            Pour toute autre demande, notamment l'anonymisation de votre pseudo de
+                            jeu, écrivez à <strong>{{ contact }}</strong>. Vous pouvez également
                             saisir la CNIL (<a href="https://www.cnil.fr" rel="noopener noreferrer"
                             target="_blank">cnil.fr</a>).
                         </p>
@@ -202,15 +224,15 @@
                            vos demandes de rattachement et l'historique de vos acceptations de ce
                            document. Définitivement, dès que votre demande est exécutée.</p>
                         <p>Le journal d'administration garde la trace de la suppression, avec une
-                           <em>empreinte</em> de votre identifiant Discord et non l'identifiant
-                           lui-même. Elle ne sert qu'à une chose : si une sauvegarde antérieure
-                           devait être restaurée, retrouver votre compte pour le supprimer de
-                           nouveau. Elle reste une donnée pseudonyme — rapprochée de la liste des
-                           membres d'un serveur Discord, elle désigne un compte.</p>
+                           <em>empreinte</em> de votre identifiant Discord plutôt que l'identifiant
+                           lui-même. Elle sert uniquement, si une sauvegarde antérieure devait être
+                           restaurée, à retrouver votre compte pour le supprimer de nouveau. Elle
+                           reste une donnée pseudonyme : rapprochée de la liste des membres d'un
+                           serveur Discord, elle permet de retrouver un compte.</p>
                         <p><strong>Elle laisse</strong> votre pseudo de jeu et votre historique de
                            tournois.</p>
                         <p>
-                            La raison est technique et nous tenons à l'exposer. Le classement repose
+                            Cette conservation tient au fonctionnement du classement, qui repose
                             sur un calcul <em>incrémental</em> : chaque tournoi part du niveau
                             estimé de chaque participant et le met à jour. Il n'existe aucun moyen
                             de le recalculer depuis le début. Retirer les matchs d'une personne
@@ -224,8 +246,8 @@
                             légitime de la communauté à disposer d'un classement exact.
                         </p>
                         <p>
-                            Si votre pseudo de jeu vous identifie malgré tout — parce que vous
-                            l'utilisez ailleurs, par exemple — <strong>demandez-nous son
+                            Si votre pseudo de jeu permet malgré tout de vous identifier, par
+                            exemple parce que vous l'utilisez ailleurs, <strong>demandez-nous son
                             anonymisation</strong> : il sera remplacé par un identifiant neutre, et
                             vos résultats resteront comptabilisés sans vous être rattachés.
                             Elle retire aussi de la fiche votre avatar, votre bio et vos liens de

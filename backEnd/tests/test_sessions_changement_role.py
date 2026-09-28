@@ -24,6 +24,9 @@ Aucun Postgres : le curseur est scripte.
 """
 from harness import *
 from flask import Flask
+# Version courante de la politique admin, lue et non recopiee : la passer
+# de 1.0 a 1.1 (badge de role public, 27/09) cassait ces tests.
+from constants import CGU_ADMIN_VERSION as V_ADMIN
 import ast
 import glob
 import importlib
@@ -187,7 +190,7 @@ PLAN_PROMO = [
 ]
 
 cli, cur, conn = monter(PLAN_PROMO, role='player', compte_id=5)
-r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': '1.0'}, headers=H)
+r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': V_ADMIN}, headers=H)
 f = fermetures(cur)
 d = r.get_json() or {}
 check("accepter -> 200", r.status_code == 200, d)
@@ -215,7 +218,7 @@ cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
     (r"FROM promotions_proposees", None),
 ], role='player', compte_id=5)
-r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': '1.0'}, headers=H)
+r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': V_ADMIN}, headers=H)
 check("proposition expiree -> 409", r.status_code == 409, r.get_json())
 check("  aucune session fermee", not fermetures(cur), fermetures(cur))
 
@@ -229,8 +232,8 @@ DEUX_LIGNES = lambda acteur, cible: (
 
 # Cible admin : sans la fermeture, elle deviendrait superadmin sur une session
 # d'admin ouverte avant le legs. (Une cible player n'est plus leguable, R-68.)
-cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'),
-                                     (5, 'admin', 'vraipseudo', '1.0'))])
+cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN),
+                                     (5, 'admin', 'vraipseudo', V_ADMIN))])
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'vraipseudo'}, headers=H)
 f = fermetures(cur)
@@ -245,8 +248,8 @@ check("  apres les deux ecritures du role, dans la meme transaction",
 check("la reponse dit que la session de l'acteur est fermee",
       d.get('session_fermee') is True, d)
 
-cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef', '1.0'),
-                                     (5, 'admin', 'vraipseudo', '1.0'))])
+cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN),
+                                     (5, 'admin', 'vraipseudo', V_ADMIN))])
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'Nom Affiche'}, headers=H)
 check("legs refuse (pseudo faux) -> 400", r.status_code == 400, r.get_json())

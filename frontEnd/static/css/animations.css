@@ -115,3 +115,22 @@
     color: white !important;
     box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
 }
+
+/* Badges de rôle d'administration (partiels/badge_role.html). Couleurs hors de
+   celles des autres badges de la fiche (rouge victoires, jaune Top %, bleu
+   clair absences) ; le rang monte en intensité. Texte blanc : `.tag` le met
+   sombre par défaut, illisible sur ces fonds. */
+.tag.role-tag {
+    color: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.35);
+}
+.tag.role-admin {
+    background-color: #0e8f8f;
+}
+.tag.role-chef-admin {
+    background-color: #4f46c8;
+}
+.tag.role-superadmin {
+    background-image: linear-gradient(135deg, #6d28d9, #be185d);
+    box-shadow: 0 0 8px rgba(190, 24, 93, 0.35);
+}

@@ -91,6 +91,7 @@
 <body>
     {% include 'decor.html' %}
     {% include 'navbar.html' %}
+    {% from 'partiels/badge_role.html' import badge_role %}
     
     {% if profil and (profil.bio or profil.reseaux) %}
         {# Contenu rédigé par le joueur : jamais |safe, jamais dans un attribut
@@ -135,10 +136,18 @@
                     {{ nom }}
                 </h1>
                 <h2 class="subtitle has-text-centered">
+                    {# Rôle d'administration du compte rattaché (profil_public ne le
+                       renvoie que pour admin, chef_admin et superadmin). TOUJOURS le
+                       premier badge, à gauche de tous les autres : d'où `mr-2` et
+                       non `ml-2`, le Tier qui suit n'ayant pas de marge propre. #}
+                    {% if profil and profil.role %}{{ badge_role(profil.role, classes='mr-2') }}{% endif %}
+
                     {# Couleur portee par les donnees (tiers dynamiques, Partie B) --
                        plus de branches S/A/B/C figees, voir docs/tableau-seuils-tiers-plan.md. #}
                     {% if tiers_couleurs.get(stats.tier) %}
                         <span class="tag" style="background: {{ tiers_couleurs[stats.tier] }}; color: white;">Tier {{ stats.tier }}</span>
+                    {% elif stats.tier == 'U' and couleur_u %}
+                        <span class="tag" style="background: {{ couleur_u }}; color: {{ couleur_u|texte_lisible }};">Tier U</span>
                     {% else %}<span class="tag is-white">Tier {{ stats.tier }}</span>{% endif %}
 
                     {% if stats.ligue %}
@@ -146,7 +155,7 @@
                         <i class="fas fa-shield-alt mr-1"></i> {{ stats.ligue.nom }}
                     </span>
                     {% endif %}
-                   
+
                     {% if stats.victoires >= 3 %}<span class="tag is-danger ml-2"><i class="fas fa-trophy"></i>&nbsp;{{ stats.victoires }} victoires</span>{% endif %}
                     {% if stats.percentile_trueskill != '?' and stats.percentile_trueskill <= 20 %}<span class="tag is-warning ml-2"><i class="fas fa-star mr-1"></i> Top {{ stats.percentile_trueskill }}%</span>{% endif %}
                     {% if stats.consecutive_missed > 10 %}<span class="tag is-info is-light ml-2"><i class="fas fa-ghost mr-1"></i> Absent.e depuis {{ stats.consecutive_missed }} tournois</span>{% endif %}

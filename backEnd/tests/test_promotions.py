@@ -21,6 +21,9 @@ lui-meme, mais qui ecrit quoi, dans quel ordre, et sous quelles conditions.
 """
 from harness import *
 from flask import Flask
+# Version courante de la politique admin, lue et non recopiee : la passer
+# de 1.0 a 1.1 (badge de role public, 27/09) cassait ces tests.
+from constants import CGU_ADMIN_VERSION as V_ADMIN
 import importlib
 
 
@@ -202,7 +205,7 @@ cli, cur, conn = monter([
     (r"INSERT INTO notifications", None),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
-r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': '1.0'}, headers=H)
+r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': V_ADMIN}, headers=H)
 _s = sqls(cur)
 _params = [p for s, p in cur.executed if 'UPDATE comptes' in s]
 
@@ -213,7 +216,7 @@ check("et le consentement admin est enregistre DANS LE MEME UPDATE",
       any('cgu_admin_accepted_at' in s for s in _s))
 check("la version acceptee est stockee, pas seulement la date "
       "-- c'est ce qui permet de demontrer QUOI a ete accepte",
-      any('1.0' in str(p) for p in _params), _params)
+      any(V_ADMIN in str(p) for p in _params), _params)
 check("la proposition passe a 'accepted'",
       any('UPDATE promotions_proposees' in s for s in _s))
 check("l'attribution est tracee", any('INSERT INTO audit_admin' in s for s in _s))
@@ -246,7 +249,7 @@ def _accepter(role_actuel, role_propose):
         (r"INSERT INTO notifications", None),
         (r"UPDATE sessions_joueurs SET last_seen_at", None),
     ])
-    r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': '1.0'},
+    r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': V_ADMIN},
                  headers=H)
     return r, cur
 
@@ -332,7 +335,7 @@ cli, cur, conn = monter([
     (r"FROM promotions_proposees", None),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
-r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': '1.0'}, headers=H)
+r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': V_ADMIN}, headers=H)
 check("repondre a une proposition absente/expiree -> 409",
       r.status_code == 409 and (r.get_json() or {}).get('code') == 'aucune_promotion',
       r.get_json())
@@ -402,7 +405,7 @@ cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=5, role='admin', statut='linked')),
     (r"FROM promotions_proposees", None),
-    (r"SELECT cgu_admin_accepted_at", (PASSE, '1.0')),
+    (r"SELECT cgu_admin_accepted_at", (PASSE, V_ADMIN)),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
 _d = cli.get('/me/promotion', headers=H).get_json()
@@ -424,7 +427,7 @@ cli, cur, conn = monter([
      ligne_session(compte_id=5, role='player', statut='linked')),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
-r = cli.post('/me/cgu-admin', json={'version': '1.0'}, headers=H)
+r = cli.post('/me/cgu-admin', json={'version': V_ADMIN}, headers=H)
 check("un player ne peut pas accepter la politique admin -> 403",
       r.status_code == 403 and (r.get_json() or {}).get('code') == 'non_concerne',
       r.get_json())
@@ -436,7 +439,7 @@ cli, cur, conn = monter([
     (r"INSERT INTO audit_admin", None),
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
-r = cli.post('/me/cgu-admin', json={'version': '1.0'}, headers=H)
+r = cli.post('/me/cgu-admin', json={'version': V_ADMIN}, headers=H)
 _s = sqls(cur)
 check("un admin regularise son consentement -> 200", r.status_code == 200, r.get_json())
 check("sans qu'aucun role ne soit touche : il l'a deja",

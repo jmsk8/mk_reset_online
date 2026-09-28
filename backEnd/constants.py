@@ -39,6 +39,12 @@ DEFAULT_TIERS = [
     {"nom": "C", "couleur": "#ae6ce4", "seuil_k": None, "rang": 0},
 ]
 
+# Couleur de la pastille U (non classe). U n'est pas une ligne de `tiers` --
+# c'est l'absence de tier : sans seuil ni rang, tier_for_score() ne doit
+# jamais pouvoir l'attribuer. Sa couleur vit donc dans `configuration`, sous
+# la clef 'tier_u_couleur'. Blanc : l'apparence d'avant ce reglage.
+DEFAULT_TIER_U_COULEUR = "#FFFFFF"
+
 RANKED_SIGMA_LIMIT = 2.5
 GHOST_SIGMA_CAP = 3.5
 GHOST_MISSED_THRESHOLD = 4
@@ -130,7 +136,7 @@ PROMOTION_LIFETIME_DAYS = 30
 # Version de la politique « en tant qu'administrateur ». Distincte de
 # CGU_VERSION : les deux textes evoluent independamment, et melanger leurs
 # numeros rendrait impossible de demontrer QUOI a ete accepte.
-CGU_ADMIN_VERSION = "1.0"
+CGU_ADMIN_VERSION = "1.1"
 
 DISCORD_API_BASE = "https://discord.com/api/v10"
 DISCORD_CDN_BASE = "https://cdn.discordapp.com"

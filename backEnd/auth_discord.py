@@ -102,7 +102,7 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     Ne loggue jamais le corps des reponses : il contient le code et les jetons.
     """
     if not discord_configured():
-        raise DiscordAuthError("Authentification Discord non configuree", 503, 'non_configure')
+        raise DiscordAuthError("Authentification Discord non configurée", 503, 'non_configure')
 
     # Toujours une valeur de l'environnement : Discord compare caractere par
     # caractere avec le portail developpeur. Celle que transmet le frontend
@@ -135,12 +135,12 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     if token_res.status_code != 200:
         # Le statut seul : le corps contient le code OAuth.
         logger.warning("Echec /oauth2/token (HTTP %s)", token_res.status_code)
-        raise DiscordAuthError("Code d'autorisation invalide ou expire", 400, 'code_invalide')
+        raise DiscordAuthError("Code d'autorisation invalide ou expiré", 400, 'code_invalide')
 
     try:
         access_token = token_res.json()['access_token']
     except (ValueError, KeyError):
-        raise DiscordAuthError("Reponse Discord inexploitable", 502, 'reponse_invalide')
+        raise DiscordAuthError("Réponse Discord inexploitable", 502, 'reponse_invalide')
 
     try:
         me_res = requests.get(
@@ -158,7 +158,7 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     try:
         me = me_res.json()
     except ValueError:
-        raise DiscordAuthError("Reponse Discord inexploitable", 502, 'reponse_invalide')
+        raise DiscordAuthError("Réponse Discord inexploitable", 502, 'reponse_invalide')
 
     if not me.get('id'):
         raise DiscordAuthError("Profil Discord sans identifiant", 502, 'profil_illisible')
@@ -452,11 +452,11 @@ def consume_invitation(cur, token: str | None) -> tuple[int, int | None]:
 
     inv_id, joueur_vise, max_uses, uses, expires_at, revoked_at = row
     if revoked_at is not None:
-        raise DiscordAuthError("Invitation revoquee", 403, 'invitation_revoquee')
+        raise DiscordAuthError("Invitation révoquée", 403, 'invitation_revoquee')
     if expires_at <= datetime.now(timezone.utc):
-        raise DiscordAuthError("Invitation expiree", 403, 'invitation_expiree')
+        raise DiscordAuthError("Invitation expirée", 403, 'invitation_expiree')
     if uses >= max_uses:
-        raise DiscordAuthError("Invitation deja utilisee", 403, 'invitation_epuisee')
+        raise DiscordAuthError("Invitation déjà utilisée", 403, 'invitation_epuisee')
 
     cur.execute("UPDATE invitations SET uses = uses + 1 WHERE id = %s", (inv_id,))
     return inv_id, joueur_vise

@@ -23,6 +23,55 @@
             overflow-wrap: anywhere;
         }
 
+        /* Téléphone et tablette : chaque ligne de tableau devient une carte,
+           chaque cellule précédée du titre de sa colonne (recopié par
+           etiqueter()). Sans ça, `anywhere` ci-dessus laisse les colonnes se
+           réduire à une lettre de large : le tableau tenait dans l'écran, mais
+           se lisait verticalement. 1023px et non 768 : sous la largeur du
+           container Bulma, la table des comptes commence déjà à se tasser. */
+        @media screen and (max-width: 1023px) {
+            .table-cartes, .table-cartes tbody, .table-cartes td { display: block; }
+            .table-cartes thead { display: none; }
+            .table-cartes tr {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                margin-bottom: .75rem;
+                padding: .5rem .75rem;
+                border: 1px solid var(--border-color, rgba(59, 130, 246, .3));
+                border-radius: 10px;
+                /* Toutes les cartes du même fond : `is-striped` en éclaircirait
+                   une sur deux. */
+                background-color: rgba(255, 255, 255, 0.04) !important;
+            }
+            .table-cartes td {
+                flex: 1 1 100%;
+                position: relative;
+                padding: .3rem 0 .3rem 6.5rem !important;
+                border: none !important;
+            }
+            .table-cartes td::before {
+                content: attr(data-label);
+                position: absolute;
+                left: 0;
+                top: .3rem;
+                width: 6rem;
+                line-height: 1.5rem;
+                font-size: .75rem;
+                font-weight: 600;
+                color: #94a3b8;
+            }
+            .table-cartes td:empty { display: none; }
+            /* Colonne sans titre (avatar, bouton) : ni étiquette ni retrait. */
+            .table-cartes td[data-label=""] { padding-left: 0 !important; }
+            .table-cartes td[data-label=""]::before { content: none; }
+            /* Comptes : l'avatar et le pseudo forment l'en-tête de la carte. */
+            .table-cartes td.cellule-avatar { flex: none; }
+            .table-cartes td.cellule-titre { flex: 1 1 0; padding-left: 0 !important; font-weight: 600; }
+            .table-cartes td.cellule-titre::before { content: none; }
+            .table-cartes td.cellule-titre > span { font-weight: normal; }   /* le @handle */
+        }
+
         /* Un message reste un message, pas un mur : au-delà, il défile. */
         #vue-liaisons blockquote {
             max-height: 9rem;
@@ -244,6 +293,16 @@
                 fig.appendChild(img);
             }
             return fig;
+        }
+
+        // Prépare un tableau à son affichage en cartes (`.table-cartes`, voir
+        // le style) : chaque cellule reçoit le titre de sa colonne. À rappeler
+        // après tout ajout de lignes -- la pagination des journaux.
+        function etiqueter(table) {
+            table.classList.add('table-cartes');
+            const titres = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+            table.querySelectorAll('tbody tr').forEach(tr =>
+                [...tr.children].forEach((td, i) => { td.dataset.label = titres[i] || ''; }));
         }
 
         // `discret` : afficher sans jamais bouger la page. Pour les gestes faits
@@ -524,12 +583,13 @@
                 const tr = document.createElement('tr');
 
                 const tdAv = document.createElement('td');
+                tdAv.className = 'cellule-avatar';
                 tdAv.appendChild(avatar(c.avatar_url));
                 tr.appendChild(tdAv);
 
                 // Nom affiché, et en dessous le handle : c'est lui que le legs et
                 // la suppression font retaper, il doit se lire sur la ligne.
-                const tdD = txt('td', c.pseudo);
+                const tdD = txt('td', c.pseudo, 'cellule-titre');
                 if (c.handle) {
                     tdD.appendChild(document.createElement('br'));
                     tdD.appendChild(txt('span', '@' + c.handle, 'is-size-7 has-text-grey'));
@@ -833,6 +893,7 @@
                 tbody.appendChild(tr);
             });
             table.appendChild(tbody);
+            etiqueter(table);
             vue.appendChild(table);
         }
 
@@ -980,6 +1041,12 @@
             return JSON.stringify(v);
         }
 
+        const CHAMPS_TIER = {nom: 'nom', couleur: 'couleur', seuil_k: 'seuil'};
+        function valeurTier(champ, v) {
+            if (champ === 'seuil_k') return v === null ? 'aucun (plancher)' : (+v).toFixed(2) + 'σ';
+            return String(v);
+        }
+
         function resumeDetails(l) {
             const d = l.details || {};
             // La fiche concernée d'abord : « fiche 7 modifiée » oblige sinon à
@@ -989,6 +1056,15 @@
             if (l.action === 'joueur_modifie' && d.avant && d.apres) {
                 return sujet + (d.champs || []).map(c =>
                     c + ' : ' + valeurLisible(c, d.avant[c]) + ' → ' + valeurLisible(c, d.apres[c])
+                ).join(', ');
+            }
+            // Tier : ce qui a changé, pas seulement lequel. Les lignes d'avant
+            // le 2026-09-28 n'ont pas `changements` -- leur `champs` citait
+            // tout ce que le panneau envoyait, changé ou non : on s'en tient
+            // au nom plutôt que de le recopier.
+            if (l.action === 'tier_modifie' && d.changements) {
+                return d.nom + ' — ' + Object.entries(d.changements).map(([c, [a, b]]) =>
+                    (CHAMPS_TIER[c] || c) + ' : ' + valeurTier(c, a) + ' → ' + valeurTier(c, b)
                 ).join(', ');
             }
             if (d.ancien && d.nouveau) return sujet + d.ancien + ' → ' + d.nouveau;
@@ -1081,6 +1157,7 @@
                 const corps = document.createElement('tbody');
                 lignesJournal(corps, r.data.lignes);
                 table.appendChild(corps);
+                etiqueter(table);
                 contenu.appendChild(table);
 
                 // Pagination par curseur : le bouton se supprime lui-même
@@ -1095,6 +1172,7 @@
                         plus.classList.remove('is-loading');
                         if (!suite.ok) { afficher('danger', 'Lecture impossible.'); return; }
                         lignesJournal(corps, suite.data.lignes);
+                        etiqueter(table);
                         if (suite.data.avant_id) plus.dataset.curseur = suite.data.avant_id;
                         else plus.remove();
                     });
@@ -1566,7 +1644,7 @@
                 const lien = window.location.origin + '/invite/' + r.data.token;
                 const n = document.createElement('div');
                 n.className = 'notification is-success is-light';
-                n.appendChild(txt('p', 'Lien créé. Il ne sera plus jamais affiché : copiez-le maintenant.', 'is-size-7'));
+                n.appendChild(txt('p', 'Lien créé. Copiez-le maintenant : il ne sera plus affiché.', 'is-size-7'));
                 const inp = document.createElement('input');
                 inp.className = 'input is-small mt-2';
                 inp.readOnly = true; inp.value = lien;
@@ -1631,6 +1709,7 @@
                 tbody.appendChild(tr);
             });
             table.appendChild(tbody);
+            etiqueter(table);
             liste.appendChild(table);
         }
 
@@ -1691,6 +1770,7 @@
             const corps = document.createElement('tbody');
             lignesJournal(corps, r.data.lignes);
             table.appendChild(corps);
+            etiqueter(table);
             vue.appendChild(table);
 
             if (r.data.avant_id) {
@@ -1702,6 +1782,7 @@
                     plus.classList.remove('is-loading');
                     if (!suite.ok) { afficher('danger', 'Lecture impossible.'); return; }
                     lignesJournal(corps, suite.data.lignes);
+                    etiqueter(table);
                     if (suite.data.avant_id) plus.dataset.curseur = suite.data.avant_id;
                     else plus.remove();
                 });
@@ -1720,7 +1801,7 @@
             form.className = 'box';
             form.appendChild(txt('p', 'Créer un jeton de bot', 'title is-6'));
             form.appendChild(txt('p',
-                'Le jeton ne sera affiché qu’une seule fois : seule son empreinte part en base.',
+                'Copiez le jeton maintenant : il ne sera plus affiché.',
                 'help mb-3'));
 
             const champNom = document.createElement('input');
@@ -1827,6 +1908,7 @@
                 tbody.appendChild(tr);
             });
             table.appendChild(tbody);
+            etiqueter(table);
             liste.appendChild(table);
         }
 

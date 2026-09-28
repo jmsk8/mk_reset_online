@@ -220,7 +220,7 @@
                                                 {% if tiers_couleurs.get(joueur.tier) %}
                                                     <span class="tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: white;">{{ joueur.tier }}</span>
                                                 {% else %}
-                                                    <span class="tag is-light">U</span>
+                                                    <span class="tag" style="background: {{ couleur_u }}; color: {{ couleur_u|texte_lisible }};">U</span>
                                                 {% endif %}
                                             </p>
                                             <div class="tags">

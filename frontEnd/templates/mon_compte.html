@@ -18,6 +18,7 @@
 <body>
     {% include 'decor.html' %}
     {% include 'navbar.html' %}
+    {% from 'partiels/badge_role.html' import badge_role %}
 
     <section class="section">
         <div class="container">
@@ -46,11 +47,9 @@
                                        il est librement modifiable par son porteur. #}
                                     <p class="title is-4">{{ moi.pseudo }}</p>
                                     <p class="subtitle is-6 has-text-grey">
-                                        {% if moi.role == 'superadmin' %}
-                                            <span class="tag is-danger">Super-administrateur</span>
-                                        {% elif moi.role == 'admin' %}
-                                            <span class="tag is-warning">Administrateur</span>
-                                        {% endif %}
+                                        {# Macro partagée avec la fiche joueur : chef_admin
+                                           y manquait, faute d'une liste unique. #}
+                                        {{ badge_role(moi.role, long=true) }}
                                     </p>
                                 </div>
                             </div>
@@ -159,7 +158,7 @@
                                 <p>
                                     La suppression de votre compte efface votre identité Discord et votre
                                     profil, mais <strong>conserve votre pseudo de jeu et votre
-                                    historique de tournois</strong> — les retirer fausserait le
+                                    historique de tournois</strong>, car les retirer fausserait le
                                     classement de tous les autres joueurs.
                                     <a href="/confidentialite">Pourquoi, en détail</a>.
                                 </p>
@@ -328,8 +327,8 @@
                     'Proposition : devenir ' + p.role_propose,
                     [
                         para('Un administrateur vous propose ce rôle. Vous pouvez '
-                             + 'l’accepter ou le refuser — refuser ne change rien '
-                             + 'à votre compte.'),
+                             + 'l’accepter ou le refuser ; si vous refusez, rien ne change '
+                             + 'pour votre compte.'),
                         para('Cette proposition expire le ' + expire + '.',
                              'is-size-7 has-text-grey'),
                         consequences(),

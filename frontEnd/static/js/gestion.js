@@ -110,18 +110,52 @@ async function loadTiers() {
     return tiersPromesse;
 }
 
+// Couleur de la pastille U (non classé) : hors de /admin/tiers, U n'étant pas
+// un tier. Promesse partagée, comme loadTiers().
+let couleurUPromesse = null;
+
+async function loadCouleurU() {
+    if (couleurUPromesse) return couleurUPromesse;
+    couleurUPromesse = apiCall('/admin/tiers/unranked', 'GET').then(res =>
+        (res && /^#[0-9a-fA-F]{3,8}$/.test(res.couleur || '')) ? res.couleur : '#FFFFFF');
+    return couleurUPromesse;
+}
+
+// Après un enregistrement des tiers : sans ça, loadTiers() resservirait la
+// liste d'avant, et le panneau réafficherait des tiers que la base n'a plus --
+// qu'un second enregistrement supprimerait alors pour de bon.
+function oublierTiers() {
+    tiersPromesse = null;
+    couleurUPromesse = null;
+}
+
 async function loadTiersColorCache() {
-    await loadTiers();
+    const [, couleurU] = await Promise.all([loadTiers(), loadCouleurU()]);
+    tiersColorCache.U = couleurU;
     return tiersColorCache;
+}
+
+// Noir ou blanc, selon ce qui se lit sur le fond `hex` : la pastille U peut
+// être claire, là où les autres tiers supposent tous un texte blanc.
+function texteLisible(hex) {
+    let h = String(hex || '').replace('#', '');
+    if (h.length === 3 || h.length === 4) h = h.slice(0, 3).split('').map(c => c + c).join('');
+    const n = parseInt(h.slice(0, 6), 16);
+    if (isNaN(n)) return '#0a0a0a';
+    const r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0a0a0a' : '#ffffff';
 }
 
 // Renvoie {class, style} pour un badge de tier : `style` porte la couleur
 // dynamique (fond degrade non reproduit ici -- juste la couleur du tier),
-// `class` gere seulement les cas hors table (U, tier inconnu/vide).
+// `class` gere seulement les cas hors table (tier inconnu/vide).
 function getTierColor(rank) {
     if (!rank) return { class: 'is-light', style: '' };
     const cleanedRank = rank.trim();
-    if (cleanedRank === 'U') return { class: 'is-white', style: '' };
+    if (cleanedRank === 'U') {
+        const c = (tiersColorCache && tiersColorCache.U) || '#FFFFFF';
+        return { class: '', style: `background:${c}; color:${texteLisible(c)};` };
+    }
     const couleur = tiersColorCache && tiersColorCache[cleanedRank];
     if (couleur) return { class: '', style: `background:${couleur}; color:#fff;` };
     return { class: 'is-light', style: '' };
@@ -456,10 +490,16 @@ async function loadTierLegend() {
     // Passe par le cache partagé : loadPlayers() demande la même liste au même
     // moment, et deux appels pour une donnée identique épuisent pour rien le
     // budget de la zone nginx `admin`.
-    const res = await loadTiers();
+    const [res, couleurU] = await Promise.all([loadTiers(), loadCouleurU()]);
     if (!Array.isArray(res)) return;
 
     const uLi = list.querySelector('li');
+    const uTag = uLi && uLi.querySelector('.tag');
+    if (uTag) {
+        uTag.classList.remove('is-white');
+        uTag.style.background = couleurU;
+        uTag.style.color = texteLisible(couleurU);
+    }
     res.slice().sort((a, b) => b.rang - a.rang).forEach((t, idx, arr) => {
         const li = document.createElement('li');
         const tag = document.createElement('span');

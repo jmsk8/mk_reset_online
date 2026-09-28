@@ -84,7 +84,7 @@ def bot_joueur_par_discord(discord_id):
     if row is None:
         # Volontairement indistinct : compte inconnu, non lie ou suspendu donnent la
         # meme reponse. Detailler renseignerait un tiers sur qui possede un compte.
-        return jsonify({"error": "Aucun joueur lie a ce compte Discord",
+        return jsonify({"error": "Aucun joueur lié à ce compte Discord",
                         "code": "non_lie"}), 404
 
     return jsonify({
@@ -167,7 +167,7 @@ def bot_matchmaking():
 
     if len(joueurs) < 2:
         return jsonify({
-            "error": "Au moins deux joueurs connus sont necessaires",
+            "error": "Au moins deux joueurs connus sont nécessaires",
             "code": "pas_assez_de_joueurs",
             "introuvables": introuvables,
         }), 400

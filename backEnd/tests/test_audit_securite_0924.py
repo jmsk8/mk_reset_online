@@ -46,7 +46,10 @@ def monter(plan, role='superadmin', compte_id=1):
 
 
 H = {'X-Session-Token': 'tok'}
-ACCEPTER = {'accepte': True, 'cgu_admin_version': '1.0'}
+# Version courante de la politique admin : lue, pas recopiee, pour que le
+# prochain changement de version ne casse pas ces tests.
+from constants import CGU_ADMIN_VERSION as V_ADMIN
+ACCEPTER = {'accepte': True, 'cgu_admin_version': V_ADMIN}
 sql_de = lambda cur: [s for s, _ in cur.executed]
 annulations = lambda cur: [(s, p) for s, p in cur.executed
                            if "UPDATE promotions_proposees SET statut = 'cancelled'" in s]
@@ -191,7 +194,7 @@ check("reactiver ne touche a aucune proposition",
 # Legs : S-03, la ceinture.
 cli, cur, conn = monter([
     (r"SELECT id, role, discord_username, cgu_admin_version\s+FROM comptes WHERE id IN",
-     [(1, 'superadmin', 'moi', '1.0'), (5, 'chef_admin', 'cible', '1.0')]),
+     [(1, 'superadmin', 'moi', V_ADMIN), (5, 'chef_admin', 'cible', V_ADMIN)]),
 ], role='superadmin')
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'cible'}, headers=H)
@@ -857,7 +860,7 @@ check("  dans la MEME transaction que l'etat courant, apres lui",
 # Accepter un role admin : consentement distinct, origine distincte.
 r, cur, conn = accepter('player', 'admin', 3, ('chef_admin', 'linked'))
 check("accepter une promotion -> ligne ('cgu_admin', 'acceptation_promotion')",
-      consent(cur) == [(5, 'cgu_admin', '1.0', 'acceptation_promotion')], consent(cur))
+      consent(cur) == [(5, 'cgu_admin', V_ADMIN, 'acceptation_promotion')], consent(cur))
 r, cur, conn = accepter('player', 'admin', 3, ('admin', 'linked'))
 check("  une proposition caduque n'enregistre AUCUN consentement", not consent(cur), consent(cur))
 cli, cur, conn = monter([
@@ -869,9 +872,9 @@ check("  un refus non plus", not consent(cur), consent(cur))
 
 # Admin deja en poste qui regularise.
 cli, cur, conn = monter([(r"UPDATE comptes", None)], role='admin', compte_id=5)
-r = cli.post('/me/cgu-admin', json={'version': '1.0'}, headers=H)
+r = cli.post('/me/cgu-admin', json={'version': V_ADMIN}, headers=H)
 check("regularisation admin -> ligne ('cgu_admin', 'regularisation_admin')",
-      r.status_code == 200 and consent(cur) == [(5, 'cgu_admin', '1.0', 'regularisation_admin')],
+      r.status_code == 200 and consent(cur) == [(5, 'cgu_admin', V_ADMIN, 'regularisation_admin')],
       (r.get_json(), consent(cur)))
 
 # Effacement : l'historique part avec le compte (decision du 25/09).

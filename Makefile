@@ -335,6 +335,13 @@ race-spectate:       ## Test de l'arrivant contre le service `race` en cours d'e
 	$(RACE_DOCKER) --network container:$$($(COMPOSE) ps -q race) $(RACE_IMAGE) \
 		node tools/spectate.js --url ws://127.0.0.1:3000/ws/race --after $${AFTER:-30}
 
+# Le compte des spectateurs et le vote de redemarrage, par le seul protocole :
+# vaut pour les deux moteurs. Le dernier scenario vote un redemarrage, donc
+# l'outil s'arrete sans rien faire si quelqu'un d'autre regarde deja.
+race-spectators:     ## Verifie le compte des spectateurs et le vote (GRACE=1 : onglet cache, ~65 s de plus)
+	$(RACE_DOCKER) --network container:$$($(COMPOSE) ps -q race) $(RACE_IMAGE) \
+		node tools/spectators.js --url ws://127.0.0.1:3000/ws/race $${GRACE:+--grace}
+
 # Meme test, mais par l'URL publique : c'est le seul qui traverse nginx, donc le
 # seul qui verifie l'upgrade WebSocket, les timeouts et limit_conn.
 #
@@ -352,7 +359,7 @@ help:                ## Show this help
 .PHONY: check-env check-net check-dump up stop start build down fclean distclean re redump \
         re-front re-back re-race restart-race re-db re-db-dump db-migrate ip-backfill \
         recompter-absences \
-        race-deps race-tracks race-soak race-sim race-scenario race-alerts race-attention race-redshell race-spectate race-nginx \
+        race-deps race-tracks race-soak race-sim race-scenario race-alerts race-attention race-redshell race-spectate race-spectators race-nginx \
         engine engine-js engine-cpp \
         reload-nginx maintenance-on maintenance-off maintenance-status logs logs-nginx logs-front logs-back logs-race logs-db ps \
         db-shell db-dump db-example help

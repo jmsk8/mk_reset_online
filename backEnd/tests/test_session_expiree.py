@@ -191,7 +191,7 @@ check("et memoise sur g, jamais sur la session ni un global",
 
 
 print("\n=== Gate de permission : droit manquant != session expiree ===")
-# Le coeur du §8.3 de permissions-onglets-contexte.md, longtemps non teste.
+# Longtemps non teste (chantier 8 de hierarchie-admin-avancement.md).
 #
 # Deux refus coexistent sur ces pages et ne doivent SURTOUT pas se confondre :
 #
@@ -312,7 +312,7 @@ check("admin_comptes : aucun onglet n'est marque actif en dur dans le gabarit",
       'class="is-active"' not in admin_html and "class='is-active'" not in admin_html)
 
 # --- admin_reglages : la page n'est PLUS un double-gate -------------------
-# Le §8.3 de permissions-onglets-contexte.md la cite comme l'exemple a tester.
+# Elle a longtemps servi d'exemple de double-gate a tester.
 # C'etait vrai avant le 2026-09-13 : le reset global exigeait alors chef_admin,
 # la configuration demandait gestion_config. Le reset est devenu delegable, les
 # deux blocs ont convergé sous le MEME droit. Le verifier evite qu'on

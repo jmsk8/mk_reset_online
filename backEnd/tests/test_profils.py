@@ -84,7 +84,8 @@ cli, cur, conn, rc = monter([])
 # d'ou le motif elargi : l'ancien s'arretait a « FROM comptes c LEFT JOIN »,
 # qui ne correspondait plus -- le curseur rendait None et le fichier cassait.
 cur.plan = [(r"FROM comptes c\s+JOIN joueurs j.*LEFT JOIN profils p",
-             ('123456789012345678', 'abc', 'ma bio', '#FF0000', {'twitch': 'j_sk8', 'monsite': 'x'}))]
+             ('123456789012345678', 'abc', 'ma bio', '#FF0000', {'twitch': 'j_sk8', 'monsite': 'x'},
+              'player'))]
 pub = rc.profil_public(cur, 9)
 check("bio publiée", pub['bio'] == 'ma bio')
 check("réseau hors liste blanche filtré à l'affichage aussi", 'monsite' not in pub['reseaux'])
@@ -94,8 +95,18 @@ check("avatar servi par le relais, pas par le CDN en direct",
       pub['avatar_url'] == '/avatar/joueur/9', pub['avatar_url'])
 check("le snowflake Discord n'apparait pas dans l'URL publique",
       '123456789012345678' not in pub['avatar_url'])
-check("ni rôle ni statut dans la charge publique",
-      'role' not in pub and 'statut' not in pub and 'discord_id' not in pub)
+check("ni statut ni snowflake dans la charge publique",
+      'statut' not in pub and 'discord_id' not in pub)
+# Le role n'est public que s'il est un role d'administration (badge de la
+# fiche joueur, politique admin 1.1) : un simple joueur ne sort pas « player ».
+check("simple joueur -> role None, pas « player »", pub['role'] is None, pub['role'])
+for _role in ('admin', 'chef_admin', 'superadmin'):
+    cur.plan = [(r"FROM comptes c\s+JOIN joueurs j.*LEFT JOIN profils p",
+                 ('1', 'abc', None, None, None, _role))]
+    check("role %s publié pour le badge" % _role, rc.profil_public(cur, 9)['role'] == _role)
+cur.plan = [(r"FROM comptes c\s+JOIN joueurs j.*LEFT JOIN profils p",
+             ('1', 'abc', None, None, None, 'inconnu'))]
+check("role hors liste -> None", rc.profil_public(cur, 9)['role'] is None)
 sql = ' '.join(s for s, _ in cur.executed)
 check("seuls les comptes 'linked' sont publiés", "statut = 'linked'" in sql, sql[:150])
 

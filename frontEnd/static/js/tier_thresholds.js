@@ -6,9 +6,10 @@
 // S/A/B/C. Ce fichier affiche :
 //   - un graphique (courbe normale + joueurs + lignes de seuil glissables),
 //     genere pour un nombre quelconque de tiers ;
-//   - un panneau liste ou chaque tier se renomme, se recolore, se regle (en
-//     sigma) et se supprime, avec ajout d'un nouveau tier et bouton
-//     Reinitialiser (restaure S/A/B/C par defaut, /admin/tiers/reset).
+//   - un panneau liste ou chaque tier se renomme, se recolore (fenetre de
+//     choix avec « Confirmer »), se regle (en sigma) et se supprime, avec
+//     ajout d'un nouveau tier et bouton Reinitialiser (restaure S/A/B/C par
+//     defaut, /admin/tiers/reset).
 //
 // Le graphique reste en score TrueSkill brut sur son axe (c'est la
 // distribution reelle du jour) ; le panneau liste et les seuils du plugin de
@@ -22,6 +23,11 @@
     // meilleur en premier). seuil_k est null pour le plancher (rang le plus
     // bas de la liste) -- toujours vrai par construction cote backend.
     let tiersState = [];
+    // U (non classe) : hors de tiersState, ce n'est pas un tier -- ni seuil,
+    // ni rang, ni nom modifiable. Seule sa couleur se regle, et ne part au
+    // serveur que si elle a change : chaque envoi laisse une ligne au journal.
+    let couleurU = '#FFFFFF';
+    let couleurUServeur = '#FFFFFF';
     let playersRaw = [];       // points {nom,x,y,color} venus du backend
     // INDEX (et non id) du tier en cours de glisse, -1 si aucun : un tier
     // ajoute mais pas encore enregistre n'a pas d'id serveur, et deux ids
@@ -173,16 +179,26 @@
         return playersRaw.map(p => colorForTierName(tierForScore(p.x)));
     }
 
-    function redraw() {
+    // Graphique et legende seulement. C'est ce qu'appellent les champs du
+    // panneau pendant la saisie : reconstruire le panneau a chaque frappe
+    // detruisait le champ en cours d'edition (focus perdu, clavier du
+    // telephone referme, selecteur de couleur detache de son champ).
+    function redrawGraphique() {
         if (!chart) return;
         chart.data.datasets[1].backgroundColor = colorsForPoints();
         chart.update('none');
         renderLegend();
+    }
+
+    // Graphique ET panneau : reserve aux changements de structure (ajout,
+    // suppression, deplacement, couleur confirmee), jamais pendant une saisie.
+    function redraw() {
+        redrawGraphique();
         renderTiersPanel();
     }
 
     // Pendant un glisse : on redessine le graphique a chaque pixel, mais PAS
-    // le tableau -- le reconstruire en continu detruirait les champs a chaque
+    // le panneau -- le reconstruire en continu detruirait les champs a chaque
     // mousemove (perte du focus, saisie en cours annulee). Seule la valeur du
     // champ de seuil concerne est rafraichie, sans toucher au DOM alentour.
     let frameDemandee = false;
@@ -194,14 +210,11 @@
         frameDemandee = true;
         requestAnimationFrame(() => {
             frameDemandee = false;
-            if (!chart) return;
-            chart.data.datasets[1].backgroundColor = colorsForPoints();
-            chart.update('none');
-            renderLegend();
+            redrawGraphique();
             const t = tiersState[draggingIdx];
             if (!t || t.seuil_k === null || t.seuil_k === undefined) return;
             const champ = document.querySelector(
-                `#tiersListBody tr:nth-child(${draggingIdx + 1}) input[type="number"]`);
+                `#tiersListBody .tier-ligne[data-idx="${draggingIdx}"] .tier-seuil`);
             if (champ) champ.value = t.seuil_k.toFixed(3);
         });
     }
@@ -338,6 +351,25 @@
 
     // --- Panneau liste des tiers -------------------------------------------
 
+    function bouton(classe, icone, titre, action) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = classe;
+        b.title = titre;
+        b.setAttribute('aria-label', titre);
+        b.innerHTML = `<i class="fas ${icone}"></i>`;
+        b.onclick = action;
+        return b;
+    }
+
+    function zone(nom) {
+        const d = document.createElement('div');
+        d.className = `zone-${nom}`;
+        return d;
+    }
+
+    // Une ligne par tier (div en grille, plus un tableau) : au telephone elle
+    // passe sur deux rangees au lieu de deborder de l'ecran (CSS de la page).
     function renderTiersPanel() {
         const body = document.getElementById('tiersListBody');
         if (!body) return;
@@ -345,82 +377,331 @@
 
         tiersState.forEach((t, idx) => {
             const isPlancher = idx === tiersState.length - 1;
-            const tr = document.createElement('tr');
+            const ligne = document.createElement('div');
+            ligne.className = 'tier-ligne';
+            ligne.dataset.idx = String(idx);
+            ligne.style.setProperty('--tier-couleur', couleurSure(t.couleur));
 
-            const tdOrdre = document.createElement('td');
-            const upBtn = document.createElement('button');
-            upBtn.type = 'button';
-            upBtn.className = 'button is-small mr-1';
-            upBtn.innerHTML = '<i class="fas fa-arrow-up"></i>';
-            upBtn.disabled = idx === 0;
-            upBtn.onclick = () => { moveTier(idx, idx - 1); };
-            const downBtn = document.createElement('button');
-            downBtn.type = 'button';
-            downBtn.className = 'button is-small';
-            downBtn.innerHTML = '<i class="fas fa-arrow-down"></i>';
-            downBtn.disabled = idx === tiersState.length - 1;
-            downBtn.onclick = () => { moveTier(idx, idx + 1); };
-            tdOrdre.appendChild(upBtn);
-            tdOrdre.appendChild(downBtn);
+            // Pastille : ouvre la fenetre de choix, la couleur n'est appliquee
+            // qu'a « Confirmer ».
+            const zCouleur = zone('couleur');
+            const pastille = bouton('tier-pastille', 'fa-palette',
+                `Changer la couleur de ${t.nom || 'ce tier'}`, () => ouvrirChoixCouleur(idx));
+            peindrePastille(pastille, t.couleur);
+            zCouleur.appendChild(pastille);
 
-            const tdCouleur = document.createElement('td');
-            const colorInput = document.createElement('input');
-            colorInput.type = 'color';
-            colorInput.value = /^#[0-9a-fA-F]{6}$/.test(t.couleur) ? t.couleur : '#ffffff';
-            colorInput.oninput = () => { t.couleur = colorInput.value; redraw(); };
-            tdCouleur.appendChild(colorInput);
-
-            const tdNom = document.createElement('td');
+            const zNom = zone('nom');
             const nomInput = document.createElement('input');
             nomInput.className = 'input is-small';
             nomInput.type = 'text';
             nomInput.maxLength = 10;
-            nomInput.style.width = '90px';
+            nomInput.placeholder = 'Nom';
+            nomInput.setAttribute('aria-label', 'Nom du tier');
             nomInput.value = t.nom;
-            nomInput.oninput = () => { t.nom = nomInput.value; };
-            nomInput.onblur = () => { redraw(); };
-            tdNom.appendChild(nomInput);
+            nomInput.oninput = () => { t.nom = nomInput.value; redrawGraphique(); };
+            zNom.appendChild(nomInput);
 
-            const tdSeuil = document.createElement('td');
+            const zSeuil = zone('seuil');
             if (isPlancher) {
                 const span = document.createElement('span');
-                span.className = 'has-text-grey-light is-size-7';
-                span.textContent = 'plancher';
-                tdSeuil.appendChild(span);
+                span.className = 'tier-plancher';
+                span.textContent = 'Plancher : tous les joueurs en dessous';
+                zSeuil.appendChild(span);
             } else {
+                const etiquette = document.createElement('span');
+                etiquette.className = 'tier-etiquette';
+                etiquette.textContent = 'Seuil';
                 const seuilInput = document.createElement('input');
-                seuilInput.className = 'input is-small';
+                seuilInput.className = 'input is-small tier-seuil';
                 seuilInput.type = 'number';
                 seuilInput.step = '0.01';
-                seuilInput.style.width = '90px';
+                seuilInput.setAttribute('aria-label', `Seuil de ${t.nom || 'ce tier'} en écarts-types`);
                 seuilInput.value = (t.seuil_k !== null && t.seuil_k !== undefined) ? t.seuil_k.toFixed(3) : '';
                 seuilInput.oninput = () => {
                     const v = parseFloat(seuilInput.value);
-                    if (!isNaN(v)) { t.seuil_k = v; redraw(); }
+                    if (!isNaN(v)) { t.seuil_k = v; redrawGraphique(); }
                 };
-                tdSeuil.appendChild(seuilInput);
+                // Champ laisse vide ou illisible : on y remet la valeur retenue.
+                seuilInput.onchange = () => {
+                    if (isNaN(parseFloat(seuilInput.value)) && typeof t.seuil_k === 'number') {
+                        seuilInput.value = t.seuil_k.toFixed(3);
+                    }
+                };
                 const unite = document.createElement('span');
-                unite.className = 'has-text-grey-light is-size-7 ml-1';
+                unite.className = 'tier-etiquette';
                 unite.textContent = 'σ';
-                tdSeuil.appendChild(unite);
+                zSeuil.append(etiquette, seuilInput, unite);
             }
 
-            const tdSuppr = document.createElement('td');
-            const delBtn = document.createElement('button');
-            delBtn.type = 'button';
-            delBtn.className = 'button is-small is-danger is-outlined';
-            delBtn.innerHTML = '<i class="fas fa-trash"></i>';
-            delBtn.disabled = tiersState.length <= 1;
-            delBtn.title = tiersState.length <= 1 ? 'Impossible de supprimer le dernier tier' : 'Supprimer';
-            delBtn.onclick = () => { removeTierRow(idx); };
-            tdSuppr.appendChild(delBtn);
+            const zOrdre = zone('ordre');
+            const upBtn = bouton('button is-small', 'fa-arrow-up', 'Monter', () => moveTier(idx, idx - 1));
+            upBtn.disabled = idx === 0;
+            const downBtn = bouton('button is-small', 'fa-arrow-down', 'Descendre', () => moveTier(idx, idx + 1));
+            downBtn.disabled = isPlancher;
+            zOrdre.append(upBtn, downBtn);
 
-            tr.appendChild(tdOrdre);
-            tr.appendChild(tdCouleur);
-            tr.appendChild(tdNom);
-            tr.appendChild(tdSeuil);
-            tr.appendChild(tdSuppr);
-            body.appendChild(tr);
+            const zSuppr = zone('suppr');
+            const seul = tiersState.length <= 1;
+            const delBtn = bouton('button is-small is-danger is-outlined', 'fa-trash',
+                seul ? 'Impossible de supprimer le dernier tier' : 'Supprimer', () => removeTierRow(idx));
+            delBtn.disabled = seul;
+            zSuppr.appendChild(delBtn);
+
+            ligne.append(zCouleur, zNom, zSeuil, zOrdre, zSuppr);
+            body.appendChild(ligne);
+        });
+
+        // U, toujours en dernier : ni deplacable, ni supprimable, ni
+        // renommable. Seule la pastille est active.
+        const ligneU = document.createElement('div');
+        ligneU.className = 'tier-ligne tier-ligne-u';
+        ligneU.style.setProperty('--tier-couleur', couleurSure(couleurU));
+
+        const zCouleurU = zone('couleur');
+        const pastilleU = bouton('tier-pastille', 'fa-palette',
+            'Changer la couleur de U (non classé)', () => ouvrirChoixCouleur(CHOIX_U));
+        peindrePastille(pastilleU, couleurU);
+        zCouleurU.appendChild(pastilleU);
+
+        const zNomU = zone('nom');
+        const nomU = document.createElement('span');
+        nomU.className = 'tier-nom-fixe';
+        nomU.textContent = 'U';
+        zNomU.appendChild(nomU);
+
+        const zSeuilU = zone('seuil');
+        const explication = document.createElement('span');
+        explication.className = 'tier-plancher';
+        explication.textContent = 'Non classés : niveau encore incertain, ou inactifs';
+        zSeuilU.appendChild(explication);
+
+        ligneU.append(zCouleurU, zNomU, zSeuilU);
+        body.appendChild(ligneU);
+    }
+
+    // --- Choix de la couleur ------------------------------------------------
+    //
+    // Remplace le <input type="color"> natif. Au telephone, il ne proposait
+    // qu'une poignee de teintes ; et partout, le premier changement
+    // reconstruisait le panneau, ce qui detruisait le champ et refermait le
+    // selecteur des le premier clic. Ici : une palette, trois curseurs pour
+    // affiner, un code hexadecimal, et rien n'est applique avant « Confirmer ».
+
+    const HEX6 = /^#[0-9a-fA-F]{6}$/;
+
+    function couleurSure(c) {
+        return /^#[0-9a-fA-F]{3,8}$/.test(c || '') ? c : '#FFFFFF';
+    }
+
+    // Le backend accepte #RGB a #RRGGBBAA ; la fenetre travaille en #RRGGBB.
+    function versHex6(c) {
+        c = couleurSure(c);
+        if (c.length === 4 || c.length === 5) {
+            return ('#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3]).toUpperCase();
+        }
+        return c.slice(0, 7).toUpperCase();
+    }
+
+    function hslVersHex(h, s, l) {
+        s /= 100; l /= 100;
+        const a = s * Math.min(l, 1 - l);
+        const f = n => {
+            const k = (n + h / 30) % 12;
+            const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+            return Math.round(v * 255).toString(16).padStart(2, '0');
+        };
+        return ('#' + f(0) + f(8) + f(4)).toUpperCase();
+    }
+
+    function hexVersHsl(hex) {
+        const n = parseInt(versHex6(hex).slice(1), 16);
+        const r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const l = (max + min) / 2;
+        let h = 0, s = 0;
+        if (max !== min) {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+            else if (max === g) h = (b - r) / d + 2;
+            else h = (r - g) / d + 4;
+            h *= 60;
+        }
+        return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
+    }
+
+    // Texte lisible sur la couleur : noir sur fond clair, blanc sur fond fonce.
+    function texteSur(hex) {
+        const n = parseInt(versHex6(hex).slice(1), 16);
+        const r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+        return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0f172a' : '#ffffff';
+    }
+
+    function peindrePastille(el, couleur) {
+        el.style.backgroundColor = couleurSure(couleur);
+        el.style.color = texteSur(couleur);
+    }
+
+    // Palette : 8 teintes en colonnes, de la plus claire a la plus foncee,
+    // puis une rangee de neutres et de metaux. Les couleurs par defaut
+    // (S/A/B/C) en font partie, pour pouvoir y revenir d'un geste.
+    const PALETTE = (() => {
+        const teintes = [0, 28, 48, 125, 172, 205, 265, 320];
+        const nuances = [[90, 82], [85, 70], [80, 58], [75, 46], [70, 34]];
+        const couleurs = [];
+        nuances.forEach(([s, l]) => teintes.forEach(h => couleurs.push(hslVersHex(h, s, l))));
+        couleurs.push('#F77B7B', '#9CDA74', '#7FE6EE', '#AE6CE4',   // S/A/B/C par defaut
+                      '#FFD700', '#C0C0C0', '#CD7F32', '#FFFFFF',   // or, argent, bronze, blanc
+                      '#F1F5F9', '#CBD5E1', '#94A3B8', '#64748B',   // gris, du clair...
+                      '#475569', '#334155', '#1E293B', '#000000');  // ...au noir
+        return couleurs;
+    })();
+
+    const CHOIX_U = 'U';        // choixIdx de la pastille U, hors de tiersState
+    let choixIdx = -1;          // tier dont on choisit la couleur
+    let choixCouleur = '#FFFFFF';
+    let choixDeclencheur = null; // pastille a qui rendre le focus en sortant
+
+    function elChoix(id) { return document.getElementById(id); }
+
+    function cibleChoix(idx) {
+        return idx === CHOIX_U ? { nom: 'U', couleur: couleurU } : tiersState[idx];
+    }
+
+    // Met a jour toute la fenetre depuis `choixCouleur`. `source` evite de
+    // reecrire le champ qu'on est en train de manipuler.
+    function afficherChoix(source) {
+        const c = choixCouleur;
+        const apercu = elChoix('tierCouleurApercu');
+        apercu.style.backgroundColor = c;
+        apercu.style.color = texteSur(c);
+
+        elChoix('tierPalette').querySelectorAll('button').forEach(b => {
+            const oui = b.dataset.couleur === c;
+            b.classList.toggle('choisie', oui);
+            b.setAttribute('aria-selected', oui ? 'true' : 'false');
+        });
+
+        const hex = elChoix('tierCouleurHex');
+        if (source !== 'hex') { hex.value = c; hex.classList.remove('is-danger'); }
+
+        if (source !== 'curseurs') {
+            const { h, s, l } = hexVersHsl(c);
+            elChoix('tierCurseurTeinte').value = h;
+            elChoix('tierCurseurSaturation').value = s;
+            elChoix('tierCurseurClarte').value = l;
+        }
+        // Pistes degradees calees sur les deux autres reglages.
+        const h = +elChoix('tierCurseurTeinte').value;
+        const s = +elChoix('tierCurseurSaturation').value;
+        const l = +elChoix('tierCurseurClarte').value;
+        elChoix('tierCurseurSaturation').style.background =
+            `linear-gradient(to right, ${hslVersHex(h, 0, l)}, ${hslVersHex(h, 100, l)})`;
+        elChoix('tierCurseurClarte').style.background =
+            `linear-gradient(to right, #000, ${hslVersHex(h, s, 50)}, #fff)`;
+    }
+
+    function ouvrirChoixCouleur(idx) {
+        const t = cibleChoix(idx);
+        const modal = elChoix('tierCouleurModal');
+        if (!t || !modal) return;
+        choixIdx = idx;
+        choixCouleur = versHex6(t.couleur);
+        choixDeclencheur = document.activeElement;
+        elChoix('tierCouleurTitre').textContent = `Couleur du tier ${t.nom.trim() || ''}`.trim();
+        elChoix('tierCouleurApercu').textContent = t.nom.trim() || '?';
+        elChoix('tierCouleurAvant').style.backgroundColor = couleurSure(t.couleur);
+        afficherChoix();
+        modal.classList.add('is-active');
+        document.documentElement.classList.add('is-clipped');
+        elChoix('tierCouleurConfirmer').focus();
+    }
+
+    function fermerChoixCouleur() {
+        const modal = elChoix('tierCouleurModal');
+        if (!modal || !modal.classList.contains('is-active')) return;
+        modal.classList.remove('is-active');
+        document.documentElement.classList.remove('is-clipped');
+        choixIdx = -1;
+        if (choixDeclencheur && document.contains(choixDeclencheur)) choixDeclencheur.focus();
+        choixDeclencheur = null;
+    }
+
+    function confirmerChoixCouleur() {
+        if (choixIdx === CHOIX_U) {
+            couleurU = choixCouleur;
+            fermerChoixCouleur();
+            renderTiersPanel();   // U n'est pas sur le graphique
+            const p = document.querySelector('#tiersListBody .tier-ligne-u .tier-pastille');
+            if (p) p.focus();
+            return;
+        }
+        const t = tiersState[choixIdx];
+        if (t) {
+            t.couleur = choixCouleur;
+            // Le panneau peut etre reconstruit : la fenetre est au premier plan,
+            // aucun champ n'y est en cours d'edition. On rend ensuite le focus
+            // a la NOUVELLE pastille, l'ancienne n'existant plus.
+            const idx = choixIdx;
+            fermerChoixCouleur();
+            redraw();
+            const p = document.querySelector(`#tiersListBody .tier-ligne[data-idx="${idx}"] .tier-pastille`);
+            if (p) p.focus();
+            return;
+        }
+        fermerChoixCouleur();
+    }
+
+    function attachChoixCouleur() {
+        const modal = elChoix('tierCouleurModal');
+        if (!modal) return;
+
+        const palette = elChoix('tierPalette');
+        PALETTE.forEach(c => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.dataset.couleur = c;
+            b.style.backgroundColor = c;
+            b.title = c;
+            b.setAttribute('role', 'option');
+            b.setAttribute('aria-label', c);
+            palette.appendChild(b);
+        });
+        // Un clic dans la palette ne fait que CHOISIR : rien ne se ferme, rien
+        // n'est applique au tier avant « Confirmer ».
+        palette.addEventListener('click', e => {
+            const b = e.target.closest('button[data-couleur]');
+            if (!b) return;
+            choixCouleur = b.dataset.couleur;
+            afficherChoix();
+        });
+
+        ['tierCurseurTeinte', 'tierCurseurSaturation', 'tierCurseurClarte'].forEach(id => {
+            elChoix(id).addEventListener('input', () => {
+                choixCouleur = hslVersHex(+elChoix('tierCurseurTeinte').value,
+                                          +elChoix('tierCurseurSaturation').value,
+                                          +elChoix('tierCurseurClarte').value);
+                afficherChoix('curseurs');
+            });
+        });
+
+        const hex = elChoix('tierCouleurHex');
+        hex.addEventListener('input', () => {
+            let v = hex.value.trim();
+            if (v && v[0] !== '#') v = '#' + v;
+            const ok = HEX6.test(v);
+            hex.classList.toggle('is-danger', !ok && v.length >= 7);
+            if (ok) { choixCouleur = v.toUpperCase(); afficherChoix('hex'); }
+        });
+        // Entree dans le champ code = Confirmer, comme on s'y attend au clavier.
+        hex.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); confirmerChoixCouleur(); }
+        });
+
+        elChoix('tierCouleurConfirmer').addEventListener('click', confirmerChoixCouleur);
+        modal.querySelectorAll('[data-fermer]').forEach(el => el.addEventListener('click', fermerChoixCouleur));
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') fermerChoixCouleur();
         });
     }
 
@@ -480,6 +761,7 @@
                 const res = await apiCall('/admin/tiers/reset', 'POST');
                 resetBtn.classList.remove('is-loading');
                 if (res.error) { alert("Erreur: " + res.error); return; }
+                if (typeof oublierTiers === 'function') oublierTiers();
                 await initTierChart();
             });
         }
@@ -576,7 +858,14 @@
             // 4. Nom, couleur et seuil de chaque tier, a sa place definitive.
             //    seuil_k est toujours transmis, `null` pour le plancher :
             //    l'omettre laissait un ancien plancher promu sans seuil.
+            //    Seulement les tiers crees ou modifies : chaque PUT recalcule
+            //    le tier de tous les joueurs.
+            const lus = new Map(original.map(t => [t.id, t]));
             for (const t of tiersState) {
+                const o = lus.get(t.id);
+                const seuil = t.seuil_k === undefined ? null : t.seuil_k;
+                if (o && o.nom === t.nom.trim() && o.couleur === t.couleur
+                        && (o.seuil_k === undefined ? null : o.seuil_k) === seuil) continue;
                 const res = await apiCall(`/admin/tiers/${t.id}`, 'PUT', {
                     nom: t.nom.trim(), couleur: t.couleur,
                     seuil_k: (t.seuil_k === undefined ? null : t.seuil_k),
@@ -584,7 +873,14 @@
                 if (res.error) throw new Error(res.error);
             }
 
+            // 5. Couleur de U, a part : ce n'est pas un tier.
+            if (couleurU !== couleurUServeur) {
+                const res = await apiCall('/admin/tiers/unranked', 'PUT', { couleur: couleurU });
+                if (res.error) throw new Error(res.error);
+            }
+
             alert("Tiers enregistrés — les tiers de tous les joueurs viennent d'être recalculés.");
+            if (typeof oublierTiers === 'function') oublierTiers();
             await initTierChart();
         } catch (e) {
             alert("Erreur: " + (e.message || e));
@@ -613,12 +909,16 @@
         //
         // Le repli garde la page fonctionnelle si gestion.js n'est pas charge :
         // ce script sert aussi ailleurs.
-        const [dist, tiersData] = await Promise.all([
+        const [dist, tiersData, couleurUData] = await Promise.all([
             apiCall('/admin/config/tier-distribution', 'GET'),
             (typeof loadTiers === 'function')
                 ? loadTiers()
                 : apiCall('/admin/tiers', 'GET'),
+            (typeof loadCouleurU === 'function')
+                ? loadCouleurU()
+                : apiCall('/admin/tiers/unranked', 'GET').then(r => r && r.couleur),
         ]);
+        couleurU = couleurUServeur = couleurSure(couleurUData);
 
         loading.style.display = 'none';
 
@@ -747,6 +1047,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         if (!document.getElementById('tierChart')) return;
         attachPanelHandlers();
+        attachChoixCouleur();
         initTierChart();
     });
 })();

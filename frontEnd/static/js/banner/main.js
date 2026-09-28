@@ -151,6 +151,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // La connexion part tout de suite, en parallele du chargement des images :
     // c'est elle qui met le plus de temps a fournir une scene affichable.
     bannerNet.connect();
+    // Page ouverte directement en arriere-plan (clic molette) : aucun
+    // `visibilitychange` ne viendra, et l'onglet doit quand meme rendre sa
+    // connexion s'il reste cache (HIDDEN_DISCONNECT_MS, net.js).
+    if (document.hidden) bannerNet.setHidden(true);
 
     animate(0);
 

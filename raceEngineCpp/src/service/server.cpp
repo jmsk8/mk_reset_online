@@ -7,7 +7,9 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <vector>
 
 #include "App.h"
 
@@ -43,9 +45,14 @@ constexpr int MAX_CATCHUP_STEPS = 5;
 // simple F5 ne doit pas repartir de zero.
 constexpr double IDLE_GRACE_MS = 30000;
 
-// Le client n'envoie que `ping`, `vis`, `vote` et `watch`, quelques dizaines
-// d'octets : ce qui depasse est une tentative.
+// Le client n'envoie que `hi`, `ping`, `vis`, `vote` et `watch`, quelques
+// dizaines d'octets : ce qui depasse est une tentative.
 constexpr int MAX_PAYLOAD = 512;
+
+// Un onglet cache cesse de compter comme spectateur apres ce delai — celui de
+// HIDDEN_GRACE_MS (server.js) et de HIDDEN_DISCONNECT_MS (net.js). Pas zero :
+// un simple changement d'onglet ne doit pas completer l'unanimite.
+constexpr double HIDDEN_GRACE_MS = 60000;
 
 // Le sujet de diffusion. Un seul, et c'est tout l'interet : uWS compresse la
 // charge UNE FOIS pour le sujet, la ou une boucle d'envoi la recompresserait
@@ -66,11 +73,17 @@ void on_sighup(int) { g_sighup = 1; }
 
 // Ce que le service garde par connexion.
 struct ClientMeta {
+    // L'identifiant du navigateur (`hi`), vide tant qu'il ne l'a pas donne.
+    // Garde le temps de la connexion, jamais ecrit ailleurs.
+    std::string nav;
     bool hidden = false;
+    double hiddenSince = 0;
     bool voted = false;
     bool hasWatch = false;
     long long watchId = 0;
 };
+
+using Socket = uWS::WebSocket<false, true, ClientMeta>;
 
 struct Race {
     config::Config cfg;
@@ -88,8 +101,10 @@ struct Service {
     engine::Rng rng { 0x9E3779B9u };
 
     std::optional<Race> race;
-    int clientCount = 0;
-    int votedCount = 0;
+
+    // Les connexions ouvertes : uWS ne sait pas les enumerer, et il faut les
+    // parcourir pour compter les navigateurs et dire a chacun sa voix.
+    std::set<Socket*> sockets;
 
     // Le grand prix court sur plusieurs courses : il vit ICI et non dans l'etat
     // du monde, refait a chaque depart.
@@ -118,8 +133,90 @@ struct Service {
     uWS::App* app = nullptr;
 };
 
+// ── Spectateurs et vote ────────────────────────────────────────────────────
+//
+// Meme regles que server.js, qui les detaille : un spectateur est un
+// NAVIGATEUR qui regarde, pas une connexion, et il a une voix, tenue a
+// l'identique sur toutes ses connexions.
+
+// La cle d'un navigateur : son identifiant, ou la connexion elle-meme quand il
+// ne l'a pas donne. `@` n'entre dans aucun identifiant valide : les deux
+// espaces ne se croisent pas.
+std::string nav_key(Socket* ws) {
+    const ClientMeta* meta = ws->getUserData();
+    if (!meta->nav.empty()) return meta->nav;
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "@%p", static_cast<const void*>(ws));
+    return buf;
+}
+
+// [voix, spectateurs]. La voix d'un navigateur qui ne regarde plus ne compte
+// pas : elle ne peut completer une unanimite dont il ne fait plus partie.
 protocol::VoteTally tally(const Service& svc) {
-    return { svc.votedCount, svc.clientCount };
+    const double now = now_ms();
+    std::set<std::string> watching;
+    std::set<std::string> voters;
+    for (Socket* ws : svc.sockets) {
+        const ClientMeta* meta = ws->getUserData();
+        const std::string key = nav_key(ws);
+        if (!meta->hidden || now - meta->hiddenSince < HIDDEN_GRACE_MS) watching.insert(key);
+        if (meta->voted) voters.insert(key);
+    }
+    int votes = 0;
+    for (const std::string& key : voters) {
+        if (watching.count(key)) votes++;
+    }
+    return { votes, static_cast<int>(watching.size()) };
+}
+
+bool unanimous(const protocol::VoteTally& t) {
+    return t.watchers > 0 && t.votes >= t.watchers;
+}
+
+bool nav_voted(const Service& svc, const std::string& key) {
+    for (Socket* ws : svc.sockets) {
+        if (ws->getUserData()->voted && nav_key(ws) == key) return true;
+    }
+    return false;
+}
+
+// Pose ou retire la voix d'un navigateur sur CHACUNE de ses connexions, et le
+// dit a chacune : l'onglet voisin doit afficher le meme bouton. Les cibles sont
+// relevees avant d'envoyer, pour ne jamais parcourir `sockets` pendant un envoi.
+void set_nav_vote(Service& svc, const std::string& key, bool voted) {
+    std::vector<Socket*> targets;
+    for (Socket* ws : svc.sockets) {
+        if (nav_key(ws) == key) targets.push_back(ws);
+    }
+    const std::string message = voted ? R"({"t":"vote","v":true})" : R"({"t":"vote","v":false})";
+    for (Socket* ws : targets) {
+        ws->getUserData()->voted = voted;
+        ws->send(message, uWS::OpCode::TEXT);
+    }
+}
+
+// Une voix porte sur le grand prix EN COURS : elle ne survit pas a la course.
+// Les clients ne sont pas prevenus, chacun efface la sienne au `hello` d'une
+// course neuve, qui suit toujours cet appel.
+void clear_votes(Service& svc) {
+    for (Socket* ws : svc.sockets) ws->getUserData()->voted = false;
+}
+
+// Visibilite d'une connexion. Un onglet en arriere-plan se DESABONNE : c'est ce
+// qui rend le banner gratuit dans un onglet oublie. Rend vrai s'il revient au
+// premier plan : il a rate tout ce qui s'est passe, il lui faut une scene
+// complete, exactement comme a un arrivant.
+bool set_hidden(Socket* ws, bool hidden) {
+    ClientMeta* meta = ws->getUserData();
+    const bool wasHidden = meta->hidden;
+    meta->hidden = hidden;
+    if (hidden) {
+        if (!wasHidden) meta->hiddenSince = now_ms();
+        ws->unsubscribe(TOPIC);
+    } else {
+        ws->subscribe(TOPIC);
+    }
+    return wasHidden && !hidden;
 }
 
 void start_race(Service& svc) {
@@ -174,6 +271,7 @@ void advance_grand_prix(Service& svc) {
     }
 
     svc.gpPoints = svc.race->state.gpPoints;
+    clear_votes(svc);
 
     const bool complete = svc.gpRound >= svc.baseCfg.grandPrix.races;
     if (complete) {
@@ -227,7 +325,10 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         w.key("track");
         if (svc.race.has_value()) w.string(svc.race->trackName);
         else w.null();
-        w.key("clients"); w.integer(svc.clientCount);
+        // Les connexions, et ce que le banner affiche : les navigateurs qui
+        // regardent. L'ecart entre les deux est ce qui se diagnostique.
+        w.key("clients"); w.integer(static_cast<long long>(svc.sockets.size()));
+        w.key("spectators"); w.integer(tally(svc).watchers);
         w.key("ticks");  w.integer(svc.race.has_value() ? svc.race->ticks : 0);
         w.key("races");  w.integer(svc.totalRaces);
         // `make engine` dit ce qui est CHOISI, /healthz dit ce qui TOURNE : les
@@ -286,7 +387,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         },
 
         .open = [&svc](auto* ws) {
-            svc.clientCount++;
+            svc.sockets.insert(ws);
             svc.idleSince = 0;
 
             // La course demarre a la PREMIERE connexion : personne devant
@@ -304,9 +405,10 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         },
 
         .message = [&svc](auto* ws, std::string_view payload, uWS::OpCode /*op*/) {
-            // Le service repond a `ping`, note `vis` et `watch`, compte `vote`.
-            // Tout le reste est ignore EN SILENCE : c'est un flux de lecture, il
-            // n'existe aucune raison legitime de lui envoyer autre chose.
+            // Le service repond a `ping`, note `hi`, `vis` et `watch`, compte
+            // `vote`. Tout le reste est ignore EN SILENCE : c'est un flux de
+            // lecture, il n'existe aucune raison legitime de lui envoyer autre
+            // chose.
             const json::ClientMessage msg = json::parse_client_message(payload);
             ClientMeta* meta = static_cast<ClientMeta*>(ws->getUserData());
 
@@ -316,46 +418,58 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
                              uWS::OpCode::TEXT);
                     break;
 
-                case json::ClientMessageType::Vote:
-                    meta->voted = !meta->voted;
-                    svc.votedCount += meta->voted ? 1 : -1;
-                    if (svc.votedCount < 0) svc.votedCount = 0;
-                    // Unanimite : tout le monde doit vouloir repartir. Un seul
-                    // spectateur suffit donc a relancer quand il est seul, ce
-                    // qui est le cas le plus frequent.
-                    if (svc.clientCount > 0 && svc.votedCount >= svc.clientCount) {
-                        svc.restartRequested = true;
+                // Premier message du client, a l'ouverture : quel navigateur,
+                // et s'il regarde. `vis` ne part pas tant que la connexion
+                // s'ouvre — un onglet ouvert en arriere-plan passait pour visible.
+                case json::ClientMessageType::Hi: {
+                    // Une seule fois par connexion : un identifiant ne change
+                    // pas en cours de route.
+                    if (meta->nav.empty() && !msg.nav.empty()) {
+                        meta->nav = msg.nav;
+                        // Un onglet de plus d'un navigateur qui a deja vote porte
+                        // sa voix.
+                        if (nav_voted(svc, meta->nav)) {
+                            meta->voted = true;
+                            ws->send(R"({"t":"vote","v":true})", uWS::OpCode::TEXT);
+                        }
                     }
+                    if (set_hidden(ws, msg.hidden) && svc.race.has_value()) {
+                        ws->send(protocol::build_hello(svc.race->cfg, svc.race->state,
+                                                       svc.race->state.simTime,
+                                                       svc.race->t0, now_ms(),
+                                                       tally(svc), {}),
+                                 uWS::OpCode::TEXT);
+                    }
+                    // Deux connexions devenues un seul navigateur : le quorum a
+                    // baisse.
+                    if (unanimous(tally(svc))) svc.restartRequested = true;
                     break;
+                }
+
+                // Une bascule, a l'echelle du navigateur. Unanimite : tout le
+                // monde doit vouloir repartir. Un seul spectateur suffit donc a
+                // relancer quand il est seul, ce qui est le cas le plus frequent.
+                case json::ClientMessageType::Vote: {
+                    const std::string key = nav_key(ws);
+                    set_nav_vote(svc, key, !nav_voted(svc, key));
+                    if (unanimous(tally(svc))) svc.restartRequested = true;
+                    break;
+                }
 
                 case json::ClientMessageType::Watch:
                     meta->hasWatch = msg.hasId;
                     meta->watchId = msg.watchId;
                     break;
 
-                case json::ClientMessageType::Vis: {
-                    const bool wasHidden = meta->hidden;
-                    meta->hidden = msg.hidden;
-                    if (meta->hidden) {
-                        // Un onglet en arriere-plan se DESABONNE : c'est ce qui
-                        // rend le banner gratuit dans un onglet oublie. La course
-                        // continue sans lui.
-                        ws->unsubscribe(TOPIC);
-                    } else {
-                        ws->subscribe(TOPIC);
-                        // Au retour, le client a rate tout ce qui s'est passe :
-                        // il lui faut une scene complete, exactement comme a un
-                        // arrivant.
-                        if (wasHidden && svc.race.has_value()) {
-                            ws->send(protocol::build_hello(svc.race->cfg, svc.race->state,
-                                                           svc.race->state.simTime,
-                                                           svc.race->t0, now_ms(),
-                                                           tally(svc), {}),
-                                     uWS::OpCode::TEXT);
-                        }
+                case json::ClientMessageType::Vis:
+                    if (set_hidden(ws, msg.hidden) && svc.race.has_value()) {
+                        ws->send(protocol::build_hello(svc.race->cfg, svc.race->state,
+                                                       svc.race->state.simTime,
+                                                       svc.race->t0, now_ms(),
+                                                       tally(svc), {}),
+                                 uWS::OpCode::TEXT);
                     }
                     break;
-                }
 
                 case json::ClientMessageType::Unknown:
                 default:
@@ -364,14 +478,13 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         },
 
         .close = [&svc](auto* ws, int /*code*/, std::string_view /*message*/) {
-            ClientMeta* meta = static_cast<ClientMeta*>(ws->getUserData());
-            if (meta->voted && svc.votedCount > 0) svc.votedCount--;
+            svc.sockets.erase(ws);
 
-            svc.clientCount--;
-            if (svc.clientCount < 0) svc.clientCount = 0;
+            // Un spectateur de moins peut completer l'unanimite.
+            if (svc.race.has_value() && unanimous(tally(svc))) svc.restartRequested = true;
 
             // Delai de grace : un F5 ne doit pas emporter la course.
-            if (svc.clientCount == 0 && !svc.opts.alwaysOn) {
+            if (svc.sockets.empty() && !svc.opts.alwaysOn) {
                 svc.idleSince = now_ms();
             }
         }
@@ -397,7 +510,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         svc.lastWall = wall;
 
         // L'arret differe : 30 s apres le depart du dernier spectateur.
-        if (svc.idleSince > 0 && svc.clientCount == 0
+        if (svc.idleSince > 0 && svc.sockets.empty()
             && wall - svc.idleSince >= IDLE_GRACE_MS) {
             stop_race(svc);
             svc.idleSince = 0;
@@ -417,7 +530,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         // en train de lire.
         if (svc.restartRequested) {
             svc.restartRequested = false;
-            svc.votedCount = 0;
+            clear_votes(svc);
             svc.gpRound = 1;
             svc.gpPoints.clear();
             svc.lastFinishOrder.clear();
@@ -461,9 +574,15 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
             svc.tickCounter++;
 
             if (svc.tickCounter % TICKS_PER_SEND == 0) {
+                const protocol::VoteTally vote = tally(svc);
+                // Un onglet cache sort du compte a l'expiration de son delai,
+                // sans qu'aucun message ne l'annonce : c'est ici que se constate
+                // l'unanimite qu'il bloquait. Le redemarrage passe par le tick
+                // suivant, comme les autres.
+                if (unanimous(vote)) svc.restartRequested = true;
                 const std::string payload =
                     protocol::build_snapshot(svc.race->cfg, svc.race->state,
-                                             svc.race->state.simTime, tally(svc), events);
+                                             svc.race->state.simTime, vote, events);
                 // Compressee UNE FOIS pour le sujet, quel que soit le nombre de
                 // spectateurs.
                 svc.app->publish(TOPIC, payload, uWS::OpCode::TEXT, true);

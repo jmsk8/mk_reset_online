@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import logging
 import secrets
@@ -51,7 +52,7 @@ app.config['WTF_CSRF_TIME_LIMIT'] = None
 
 csrf = CSRFProtect(app)
 
-APP_VERSION = "1.4.3"
+APP_VERSION = "2.0.0"
 
 @app.context_processor
 def inject_version():
@@ -508,6 +509,7 @@ def classement():
     # Lookup nom -> couleur pour le badge de tier de chaque joueur (evite de
     # coder S/A/B/C en dur dans le gabarit, cf docs/tableau-seuils-tiers-plan.md).
     tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers if t.get('nom')}
+    couleur_u = _couleur_u()
 
     saison = None
     if vue == 'saison':
@@ -518,7 +520,35 @@ def classement():
         if s_status == 200 and isinstance(s_data, dict):
             saison = s_data
 
-    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, tiers=tiers, tiers_couleurs=tiers_couleurs, distribution_data=distribution_data, vue=vue, saison=saison)
+    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, tiers=tiers, tiers_couleurs=tiers_couleurs, couleur_u=couleur_u, distribution_data=distribution_data, vue=vue, saison=saison)
+
+
+_RE_COULEUR_HEX = re.compile(r'#[0-9a-fA-F]{3,8}')
+
+
+def _couleur_u():
+    """Couleur de la pastille U (non classe), blanc si le backend ne repond pas.
+
+    Revalidee ici : elle finit dans un attribut style, et rien d'autre qu'une
+    couleur ne doit pouvoir y entrer.
+    """
+    data, status = backend_request('GET', '/tiers/unranked')
+    couleur = data.get('couleur') if status == 200 and isinstance(data, dict) else None
+    return couleur if isinstance(couleur, str) and _RE_COULEUR_HEX.fullmatch(couleur) else '#FFFFFF'
+
+
+@app.template_filter('texte_lisible')
+def texte_lisible(couleur):
+    """Noir ou blanc, selon ce qui se lit sur le fond `couleur`. Meme calcul
+    que texteSur() de tier_thresholds.js : la pastille U peut etre claire,
+    la ou les autres tiers supposent tous un texte blanc."""
+    if not isinstance(couleur, str) or not _RE_COULEUR_HEX.fullmatch(couleur):
+        return '#0a0a0a'
+    h = couleur[1:]
+    h = ''.join(c * 2 for c in h[:3]) if len(h) in (3, 4) else h[:6]
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return '#0a0a0a' if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else '#ffffff'
+
 
 def _rendre_fiche_joueur(nom, data):
     # Couleur du tier portee par les donnees (tiers dynamiques, Partie B) :
@@ -527,6 +557,9 @@ def _rendre_fiche_joueur(nom, data):
     tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
     if tiers_status == 200 and isinstance(tiers_data, list):
         tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers_data if t.get('nom')}
+    # Un appel de plus au backend, seulement si la fiche en a l'usage.
+    stats = data.get('stats') or {}
+    couleur_u = _couleur_u() if stats.get('tier') == 'U' else None
 
     return render_template(
         "stats_joueur.html",
@@ -540,6 +573,7 @@ def _rendre_fiche_joueur(nom, data):
         profil=data.get('profil'),
         url_canonique=data.get('url_canonique'),
         tiers_couleurs=tiers_couleurs,
+        couleur_u=couleur_u,
     )
 
 
@@ -610,7 +644,8 @@ def stats_joueurs():
     if tiers_status == 200 and isinstance(tiers_data, list):
         tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers_data if t.get('nom')}
 
-    return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist, tiers_couleurs=tiers_couleurs)
+    return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist,
+                           tiers_couleurs=tiers_couleurs, couleur_u=_couleur_u())
 
 @app.route('/stats/tournois')
 def stats_tournois():
@@ -720,7 +755,7 @@ CGU_VERSION = "1.0"
 
 @app.context_processor
 def inject_mentions():
-    return dict(cgu_version=CGU_VERSION, cgu_date='2 septembre 2026', **MENTIONS)
+    return dict(cgu_version=CGU_VERSION, cgu_date='26 septembre 2026', **MENTIONS)
 
 
 @app.context_processor
@@ -1977,6 +2012,17 @@ def proxy_tiers():
     if not _est_admin():
         return jsonify({'error': 'Non autorisé'}), 403
     return _proxy_admin(request.method, '/admin/tiers', json_body=(request.method == 'POST'))
+
+@app.route('/admin/tiers/unranked', methods=['GET', 'PUT'])
+
+def proxy_tier_u():
+    if not _est_admin():
+        return jsonify({'error': 'Non autorisé'}), 403
+    if request.method == 'GET':
+        # Lecture publique au backend : les pages publiques en ont besoin aussi.
+        data, status = backend_request('GET', '/tiers/unranked')
+        return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+    return _proxy_admin('PUT', '/admin/tiers/unranked', json_body=True)
 
 @app.route('/admin/tiers/reorder', methods=['PUT'])
 

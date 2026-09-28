@@ -55,6 +55,7 @@ private:
 // Ce que le client peut envoyer. Tout le reste est ignore en silence.
 enum class ClientMessageType {
     Unknown,
+    Hi,
     Ping,
     Vote,
     Watch,
@@ -74,12 +75,17 @@ struct ClientMessage {
     bool hasId = false;
     long long watchId = 0;
 
-    // `vis`
+    // `vis` et `hi`
     bool hidden = false;
+
+    // `hi` : l'identifiant du navigateur, tire au hasard cote client. Vide s'il
+    // est absent ou hors de [A-Za-z0-9_-]{16,64} : la connexion compte alors
+    // pour elle seule.
+    std::string nav;
 };
 
 // Analyse un message client. Rend `Unknown` sur tout ce qui n'est pas l'un des
-// quatre — y compris un JSON invalide, qui n'a pas a etre signale : ce serait
+// cinq — y compris un JSON invalide, qui n'a pas a etre signale : ce serait
 // repondre a une tentative.
 ClientMessage parse_client_message(std::string_view payload);
 

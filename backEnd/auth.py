@@ -97,7 +97,7 @@ def _charger_compte_session(exiger_cgu: bool = True):
                         "DELETE FROM sessions_joueurs WHERE token_hash = %s", (_hash(token),)
                     )
                     conn.commit()
-                    return None, _erreur("Session expiree", 401, 'session_expiree')
+                    return None, _erreur("Session expirée", 401, 'session_expiree')
 
                 if row[6] == 'suspended':
                     return None, _erreur("Compte suspendu", 403, 'compte_suspendu')
@@ -108,7 +108,7 @@ def _charger_compte_session(exiger_cgu: bool = True):
                 # faire d'autre qu'accepter n'est pas une session « active ».
                 if exiger_cgu and row[9] != CGU_VERSION:
                     return None, _erreur(
-                        "Politique de confidentialite a accepter", 428, 'cgu_a_accepter')
+                        "Politique de confidentialité à accepter", 428, 'cgu_a_accepter')
 
                 cur.execute(
                     "UPDATE sessions_joueurs SET last_seen_at = now() WHERE token_hash = %s",
@@ -473,17 +473,17 @@ def refus_de_rang(acteur: dict, cible_id: int, role_cible: str, objet: str = 'co
     )
     # Le message nomme le rang de la cible : « action impossible » sans dire
     # pourquoi renvoie l'admin vers un support qui ne peut pas deviner non plus.
-    sujet = ("Cette fiche appartient a un compte qui" if objet == 'fiche'
+    sujet = ("Cette fiche appartient à un compte qui" if objet == 'fiche'
              else "Ce compte")
     if role_cible == ROLE_SUPERADMIN:
         message = ("Cette fiche appartient au super-administrateur : action impossible."
                    if objet == 'fiche'
                    else "Ce compte est le super-administrateur : action impossible.")
     elif rang_acteur == rang_cible:
-        message = ("%s a le meme niveau de privilege que le votre : seul un compte "
-                   "de rang superieur peut agir dessus." % sujet)
+        message = ("%s a le même niveau de privilège que le vôtre : seul un compte "
+                   "de rang supérieur peut agir dessus." % sujet)
     else:
-        message = "%s est plus privilegie que le votre : action impossible." % sujet
+        message = "%s est plus privilégié que le vôtre : action impossible." % sujet
     return _erreur(message, 403, 'cible_protegee')
 
 
@@ -564,11 +564,11 @@ def service_required(scope: str):
 
                         _id, nom, scopes, expires_at, revoked_at = row
                         if revoked_at is not None:
-                            return _erreur("Jeton revoque", 401, 'jeton_revoque')
+                            return _erreur("Jeton révoqué", 401, 'jeton_revoque')
                         if expires_at is not None and expires_at <= datetime.now(timezone.utc):
-                            return _erreur("Jeton expire", 401, 'jeton_expire')
+                            return _erreur("Jeton expiré", 401, 'jeton_expire')
                         if scope not in (scopes or []):
-                            return _erreur("Portee insuffisante", 403, 'scope_insuffisant')
+                            return _erreur("Portée insuffisante", 403, 'scope_insuffisant')
 
                         cur.execute(
                             "UPDATE service_tokens SET last_used_at = now() WHERE id = %s",

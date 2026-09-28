@@ -1,0 +1,21 @@
+{# Badge de rôle d'administration, partagé par « Mon compte » et la fiche joueur.
+   Un seul endroit pour les libellés et les couleurs (classes .role-* dans
+   animations.css) : les deux pages ne peuvent pas diverger.
+
+   Couleurs choisies HORS de celles déjà portées par les badges de la fiche :
+   rouge (victoires), jaune (Top %), bleu clair (absences), et celles des tiers
+   et des ligues, qui viennent des données. Le rang se lit à l'intensité :
+   sarcelle, puis indigo, puis dégradé violet-magenta. Texte seul, sans icône.
+
+   `role` inconnu ou « player » : rien n'est affiché. #}
+{% macro badge_role(role, long=false, classes='') %}
+    {% set roles = {
+        'admin':      ('role-admin',      'Admin',       'Administrateur'),
+        'chef_admin': ('role-chef-admin', 'Chef admin',  'Chef administrateur'),
+        'superadmin': ('role-superadmin', 'Super-admin', 'Super-administrateur'),
+    } %}
+    {% if role in roles %}
+        {% set r = roles[role] %}
+        <span class="tag role-tag {{ r[0] }} {{ classes }}" title="{{ r[2] }} du site">{{ r[2] if long else r[1] }}</span>
+    {% endif %}
+{% endmacro %}

@@ -699,7 +699,7 @@
                                                             {% elif award_code == 'stonks' %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val }}</span> point{{ 's' if val|float >= 2 else '' }} TS gagné{{ 's' if val|float >= 2 else '' }}
                                                             {% elif award_code == 'not_stonks' %}
-                                                                <span class="has-text-weight-bold is-size-6">{{ val|string|replace('-', '') }}</span> points{{ 's' if val|float|abs >= 2 else '' }} TS perdu{{ 's' if val|float|abs >= 2 else '' }}
+                                                                <span class="has-text-weight-bold is-size-6">{{ val|string|replace('-', '') }}</span> point{{ 's' if val|float|abs >= 2 else '' }} TS perdu{{ 's' if val|float|abs >= 2 else '' }}
                                                             {% elif award_code == 'stakhanov' %}
                                                                 <span class="has-text-weight-bold is-size-6">{{ val|int }}</span> point{{ 's' if val|int >= 2 else '' }} {{ 'totaux' if val|int >= 2 else 'total' }}
                                                             {% elif award_code == 'borderline' %}
