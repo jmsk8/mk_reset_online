@@ -1,6 +1,8 @@
 __pycache__
 env/
 .env
+.env.*
+.envdev
 pglogfile
 data/
 result/
@@ -11,3 +13,6 @@ node_modules/
 
 # Interrupteur du mode maintenance : contient la clé de passe du moment.
 nginx/maintenance/actif.conf
+
+# Notes de travail locales, jamais publiées
+docs/
