@@ -879,10 +879,10 @@ def update_tier_u():
 @permission_required('gestion_config')
 def delete_tier(tier_id):
     """Supprime un tier. S'il etait le plancher, le tier juste au-dessus
-    devient automatiquement le nouveau plancher (_appliquer_plancher) --
-    decision de l'utilisateur (13/09), voir docs/tableau-seuils-tiers-plan.md
-    Partie B. Refuse de vider la table : il faut toujours au moins un tier
-    pour que has_tier()/recalculate_tiers() aient un resultat autre que 'U'."""
+    devient automatiquement le nouveau plancher (_appliquer_plancher), voir
+    docs/tableau-seuils-tiers-plan.md Partie B. Refuse de vider la table : il
+    faut toujours au moins un tier pour que has_tier()/recalculate_tiers()
+    aient un resultat autre que 'U'."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
