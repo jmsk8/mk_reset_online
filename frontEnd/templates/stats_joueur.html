@@ -45,7 +45,10 @@
         .detail-stat-table th, .detail-stat-table td { padding: 4px 8px; font-size: 0.92rem; }
         .detail-stat-table thead th { color: #9fb3c8; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.12); text-align: right; }
         .detail-stat-table thead th:first-child { text-align: left; }
-        .detail-stat-table td { color: #e6edf3; text-align: right; }
+        /* tbody : Bulma pose `table td:not([align]) { text-align: inherit }`,
+           plus specifique qu'un simple `.detail-stat-table td` ; les valeurs
+           se retrouvaient a gauche sous des en-tetes alignes a droite. */
+        .detail-stat-table tbody td { color: #e6edf3; text-align: right; font-variant-numeric: tabular-nums; }
         .detail-stat-table td:first-child { text-align: left; color: #c8d3de; }
         .detail-stat-table tr.detail-total-row td { font-weight: bold; border-top: 1px solid rgba(255,255,255,0.12); color: #fff; }
         .detail-podium { white-space: nowrap; }
@@ -527,8 +530,10 @@
                 return h + '</tr>';
             };
             league.tailles.forEach(t => { html += rowHtml(t.nb_joueurs + ' joueurs', t, ''); });
+            // Pas « Total » : sur cette ligne, Meilleur est un max et les
+            // colonnes « moy. » des moyennes, pas des sommes des lignes du dessus.
             if (league.tailles.length > 1) {
-                html += rowHtml('Total', league.total, 'detail-total-row');
+                html += rowHtml('Toutes tailles', league.total, 'detail-total-row');
             }
             html += '</tbody></table></div>';
             return html;

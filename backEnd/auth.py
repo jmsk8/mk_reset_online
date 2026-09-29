@@ -1,31 +1,18 @@
 """Decorateurs d'authentification et d'autorisation.
 
-Un seul mecanisme d'authentification depuis le 2026-09-23 : la session Discord,
-via `role_required`. Les deux decorateurs du mot de passe partage ont ete
-supprimes avec l'etape 6 de la phase 4, et `test_bascule.py` refuse desormais
-leurs noms n'importe ou dans le backend -- y compris dans un commentaire, pour
-que le filet reste une regle simple et non une liste d'exceptions.
+L'authentification passe uniquement par la session Discord.
 
-Si le mot de passe devait revenir par un `git revert` (runbook-admin.md 3.2b),
-il revient avec eux -- et avec la regle qui allait avec : ne JAMAIS empiler deux
-decorateurs d'authentification, deux empiles se comportent comme un ET alors
-qu'on veut un OU.
+Deux facons d'autoriser :
 
-Deux facons d'autoriser, a ne pas confondre (docs/hierarchie-admin-plan.md 2) :
+  - capacite de role : cablee via `role_required`, jamais delegable (jetons de
+    bot, reset global, designation d'un chef_admin, legs du superadmin) ;
+  - permission delegable : une entree de PERMISSIONS_CATALOGUE, verifiee par
+    `permission_required`, accordee a un admin par un chef_admin ou le
+    superadmin.
 
-  - CAPACITE DE ROLE -- cablee en dur via `role_required`, jamais delegable.
-    Les jetons de bot, le reset global, la designation d'un chef_admin, le legs
-    du superadmin. Ce n'est pas une case decochee quelque part : c'est un
-    pouvoir qui n'existe pas dans le systeme de permissions.
-  - PERMISSION DELEGABLE -- une entree de PERMISSIONS_CATALOGUE, verifiee via
-    `permission_required`, qu'un chef_admin ou le superadmin accorde a un admin.
-
-Distinction 401/403/503 (R-28) : le frontend purge la session sur 401/403, une
-indisponibilite de la base ne doit donc jamais produire ces codes. C'est la
-raison d'etre de `_DbIndisponible` plus bas. Meme raison pour le consentement
-manquant (A-07), qui repond 428 : la session est valide, il lui manque un
-accord, et la purger renverrait la personne a Discord pour retomber sur le
-meme ecran.
+Le frontend purge la session sur 401/403 : une base indisponible doit donc
+repondre 503, jamais 401/403 (d'ou `_DbIndisponible`). Le consentement manquant
+repond 428 pour la meme raison : la session reste valide.
 """
 
 from __future__ import annotations
@@ -58,19 +45,11 @@ def _erreur(message: str, status: int, code: str):
 def _charger_compte_session(exiger_cgu: bool = True):
     """Resout le token de session en compte. Renvoie (compte, reponse d'erreur).
 
-    Le role est TOUJOURS relu en base : retirer un role doit prendre effet
-    immediatement, pas au bout de 30 jours.
+    Le role est relu en base a chaque requete, pour qu'un droit retire prenne
+    effet immediatement. Ne pas le mettre en cache dans la session.
 
-    `exiger_cgu` impose le consentement a la politique en version courante
-    (A-07, 2026-09-24). Tous les decorateurs passent par ici : un seul point
-    d'application, et une route admin n'y echappe pas plus qu'une route joueur.
-    Seul `player_required_sans_cgu` le leve, pour la courte liste des routes
-    qui servent a accepter ou a exercer ses droits sans accepter.
-
-    NE JAMAIS mettre ce role (ni les permissions) en cache dans la session pour
-    epargner une requete : un droit retire resterait actif jusqu'a l'expiration
-    de la session, ce qui viderait de leur sens l'intouchabilite du superadmin
-    et le plafond de delegation. La relecture a chaque requete EST la garantie.
+    `exiger_cgu` impose le consentement a la politique en version courante.
+    Seul `player_required_sans_cgu` le leve.
     """
     token = request.headers.get(SESSION_HEADER, None)
     if not token:
@@ -102,10 +81,9 @@ def _charger_compte_session(exiger_cgu: bool = True):
                 if row[6] == 'suspended':
                     return None, _erreur("Compte suspendu", 403, 'compte_suspendu')
 
-                # Apres la suspension : un compte suspendu doit l'apprendre,
-                # pas etre invite a accepter une politique qui ne lui ouvrira
-                # rien. Et avant le last_seen_at : une session qui ne peut rien
-                # faire d'autre qu'accepter n'est pas une session « active ».
+                # Apres la suspension (un compte suspendu doit l'apprendre),
+                # avant last_seen_at (accepter seulement ne compte pas comme
+                # une activite).
                 if exiger_cgu and row[9] != CGU_VERSION:
                     return None, _erreur(
                         "Politique de confidentialité à accepter", 428, 'cgu_a_accepter')
@@ -140,23 +118,11 @@ def player_required(f):
 
 
 def player_required_sans_cgu(f):
-    """Comme `player_required`, sans exiger le consentement (A-07).
+    """Comme `player_required`, sans exiger le consentement.
 
-    LISTE BLANCHE, a garder courte : chaque route ici est accessible a une
-    personne qui n'a pas accepte la politique en vigueur. N'y ont leur place
-    que les routes qui servent a accepter, ou a exercer un droit qui ne peut
-    pas dependre de l'acceptation :
-
-      - /auth/check-session : la sonde du frontend, qui doit pouvoir dire
-        « consentement manquant » au lieu de refuser la session ;
-      - /me/cgu : l'acceptation elle-meme ;
-      - /me/export : le droit d'acces (art. 15) ne se negocie pas contre un
-        accord ;
-      - /avatar/moi : la navbar de la page d'acceptation.
-
-    `test_cgu_imposee.py` fige cette liste : en ajouter une doit etre un choix.
-    La deconnexion n'y figure pas parce qu'elle ne demande aucune session
-    valide (routes_auth.logout).
+    Reserve aux routes qui servent a accepter la politique ou a exercer un
+    droit qui n'en depend pas : /auth/check-session, /me/cgu, /me/export,
+    /avatar/moi. Liste figee par `test_cgu_imposee.py`.
     """
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
@@ -169,10 +135,9 @@ def player_required_sans_cgu(f):
 
 
 def role_required(role_minimum: str):
-    """Exige une session ET un role au moins egal a `role_minimum`.
+    """Exige une session et un role au moins egal a `role_minimum`.
 
-    Les roles sont ordonnes : un superadmin satisfait une exigence d'admin. Seule
-    frontiere de privilege de l'application.
+    Les roles sont ordonnes : un superadmin satisfait une exigence d'admin.
     """
     seuil = ROLE_HIERARCHY[role_minimum]
 
@@ -197,18 +162,14 @@ def role_required(role_minimum: str):
 class _DbIndisponible(Exception):
     """La base n'a pas repondu pendant une verification de droits.
 
-    Existe pour que _a_permission puisse distinguer « pas la permission » de
-    « je n'ai pas pu savoir ». Sans ca, un hoquet DB se traduirait en 403, le
-    frontend purgerait la session (R-28) et ejecterait un admin qui avait
-    pourtant le droit.
+    Distingue « pas la permission » (403) de « impossible de savoir » (503).
     """
 
 
 def _a_permission(compte_id: int, permission: str) -> bool:
     """Vrai si ce compte porte cette permission nommee.
 
-    Leve _DbIndisponible plutot que de renvoyer False sur une panne : « ferme
-    par defaut » serait ici le mauvais reflexe, il produirait un 403 (R-55).
+    Leve _DbIndisponible sur une panne plutot que de renvoyer False.
     """
     try:
         with get_db_connection() as conn:
@@ -226,17 +187,11 @@ def _a_permission(compte_id: int, permission: str) -> bool:
 def permission_required(permission: str):
     """Exige une session, et soit un role >= chef_admin, soit la permission nommee.
 
-    chef_admin et superadmin passent TOUJOURS : leur socle EST le catalogue
-    delegable en entier, par construction. Les jetons de bot n'y figurent
-    jamais -- capacite de role, verifiee par role_required(superadmin) direct.
-
-    N'accepte que l'auth Discord (R-54). C'etait deja vrai du temps ou le mot de
-    passe partage existait : aucune permission n'a jamais ete accessible par ce
-    chemin-la.
+    chef_admin et superadmin passent toujours : leur socle est le catalogue
+    entier.
     """
     if permission not in PERMISSIONS_CATALOGUE:
-        # Faute de frappe sur un litteral ecrit par un dev, pas une entree
-        # utilisateur. Un raise plutot qu'un assert : assert disparait sous -O.
+        # raise plutot qu'assert, qui disparait sous -O.
         raise ValueError(f"Permission inconnue du catalogue : {permission!r}")
 
     seuil_chef = ROLE_HIERARCHY[ROLE_CHEF_ADMIN]
@@ -260,10 +215,7 @@ def permission_required(permission: str):
                 )
                 return _erreur("Droits insuffisants", 403, 'permission_manquante')
 
-            # Une sous-permission ne vaut rien sans son parent : l'interface la
-            # presente en retrait et la decoche avec lui, mais c'est ICI que la
-            # regle tient. Sans ca, un octroi direct par l'API donnerait un droit
-            # que l'interface presente comme impossible.
+            # Une sous-permission ne vaut rien sans son parent.
             requises = [permission]
             parent = SOUS_PERMISSIONS.get(permission)
             if parent is not None:
@@ -291,22 +243,11 @@ def permission_required(permission: str):
 
 
 def compte_a_permission(compte: dict, permission: str):
-    """Le compte deja authentifie porte-t-il cette permission ? Pour une
-    verification SECONDAIRE a l'interieur d'une route.
+    """Verification secondaire d'une permission, a l'interieur d'une route.
 
-    Renvoie (accordee: bool, reponse d'erreur | None) -- la reponse est un 503
-    si la base n'a pas repondu, jamais un False silencieux (meme raison qu'en
-    R-55 : « je n'ai pas pu savoir » n'est pas « pas le droit »).
-
-    Existe parce que deux routes melangent deux domaines de permission dans un
-    seul point d'entree, et qu'un decorateur ne peut pas trancher a leur place :
-
-      - update_config ecrit les reglages TrueSkill ET les clefs de mode ligue ;
-      - add_tournament enregistre un tournoi ET cree la fiche d'un joueur
-        inconnu au passage.
-
-    chef_admin et superadmin passent toujours, comme dans permission_required :
-    leur socle EST le catalogue.
+    Renvoie (accordee, reponse d'erreur | None) ; la reponse est un 503 si la
+    base n'a pas repondu. Sert aux routes qui melangent deux permissions
+    (update_config, add_tournament).
     """
     if permission not in PERMISSIONS_CATALOGUE:
         raise ValueError(f"Permission inconnue du catalogue : {permission!r}")
@@ -329,14 +270,8 @@ def compte_a_permission(compte: dict, permission: str):
 
 
 def permissions_delegables_par(compte: dict) -> frozenset:
-    """Ce qu'un compte peut accorder a un admin. Meme fonction pour les deux
-    paliers qui delegent, pas de duplication.
-
-    Aujourd'hui chef_admin et superadmin ont le meme plafond -- le catalogue
-    entier, puisque le socle du chef_admin EST le catalogue. Reste un vrai
-    calcul plutot qu'un court-circuit « si chef_admin ou superadmin : tout »,
-    pour qu'une future permission reservee au superadmin seul n'oblige a
-    changer qu'un seul endroit.
+    """Ce qu'un compte peut accorder a un admin : le catalogue entier pour
+    chef_admin et superadmin, rien pour les autres.
     """
     if ROLE_HIERARCHY.get(compte['role'], ROLE_HIERARCHY[ROLE_PLAYER]) >= ROLE_HIERARCHY[ROLE_CHEF_ADMIN]:
         return frozenset(PERMISSIONS_CATALOGUE)
@@ -346,10 +281,7 @@ def permissions_delegables_par(compte: dict) -> frozenset:
 def refuse_auto_modification(acteur_id: int, cible_id: int):
     """Refuse d'agir sur son propre compte. Renvoie une reponse d'erreur ou None.
 
-    Posee a la main sur les trois routes concernees (changer_role, octroi de
-    permission, legs du superadmin) plutot qu'en decorateur : elle ne s'applique
-    pas partout, et un decorateur pose « au cas ou » finirait par bloquer une
-    route legitime.
+    Appelee a la main par changer_role, l'octroi de permission et le legs.
     """
     if acteur_id == cible_id:
         return _erreur("Action impossible sur son propre compte.", 403, 'auto_modification')
@@ -359,41 +291,13 @@ def refuse_auto_modification(acteur_id: int, cible_id: int):
 def compte_cible_protegee(f):
     """Interdit d'agir sur un compte de rang egal ou superieur au sien.
 
-    UNE regle de rang, et rien d'autre (docs/hierarchie-admin-plan.md 8.1) :
-
         rang(acteur) >  rang(cible)  -> autorise
         rang(acteur) <= rang(cible)  -> 403 cible_protegee
 
-    Consequences : un admin n'agit que sur un player ; un chef_admin sur un
-    player et un admin, jamais sur un pair ; le superadmin sur tout le monde
-    sauf un autre superadmin -- et il est seul a tout instant, donc en pratique
-    sur tout le monde.
+    Agir sur son propre compte reste permis ; les routes ou cela n'a pas de
+    sens appellent refuse_auto_modification.
 
-    ELLE REMPLACE deux `if` en dur (cible superadmin, cible chef_admin) qui ne
-    disaient RIEN du cas admin -> admin : un simple admin porteur de
-    gestion_comptes pouvait suspendre un pair admin et fermer ses sessions, sur
-    les quatre routes /sync /sessions /delier /statut. Prouve par execution le
-    2026-09-13, corrige le 2026-09-14 (test_audit_permissions.py, section 3).
-
-    Le cas chef_admin contre chef_admin (R-52) n'est plus un cas particulier :
-    il tombe de l'egalite des rangs. Ne pas le re-ajouter en dur.
-
-    L'egalite refuse, y compris entre pairs : c'est le coeur de la regle. Agir
-    sur SOI-MEME reste permis (teste plus haut, avant meme la lecture en base) --
-    fermer ses propres sessions est legitime ; ce sont les routes qui doivent
-    refuser l'auto-modification quand elle n'a pas de sens, via
-    refuse_auto_modification.
-
-    Un decorateur plutot qu'une fonction appelee a la main dans chaque route :
-    rien n'empeche un futur endpoint d'oublier un appel, alors qu'un decorateur
-    manquant se voit d'un coup d'oeil et se cherche au grep (R-48).
-
-    Porte UNIQUEMENT sur l'ecriture : voir la liste d'un compte reste permis,
-    c'est agir dessus qui ne l'est pas.
-
-    A poser SOUS role_required/permission_required dans l'empilement -- le
-    decorateur le plus proche de @route s'execute en premier, et g.compte doit
-    deja exister quand celui-ci tourne.
+    A poser sous role_required/permission_required : g.compte doit deja exister.
     """
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
@@ -409,13 +313,10 @@ def compte_cible_protegee(f):
                     cur.execute("SELECT role FROM comptes WHERE id = %s", (cible_id,))
                     row = cur.fetchone()
         except Exception as e:
-            # 503, pas 403 : meme raison que partout ailleurs dans ce fichier.
             logger.error("Verification de cible protegee impossible: %s", e)
             return _erreur("Service indisponible", 503, 'indisponible')
 
-        # row is None : compte inexistant. On laisse passer -- c'est a la route
-        # de repondre 404, le decorateur n'a pas a trancher a sa place (et un
-        # 403 ici revelerait l'inexistence par un code different).
+        # Compte inexistant : la route repondra 404.
         if row is not None:
             refus = refus_de_rang(acteur, cible_id, row[0])
             if refus is not None:
@@ -426,11 +327,10 @@ def compte_cible_protegee(f):
 
 
 def _rangs(role_acteur: str, role_cible: str) -> tuple[int, int]:
-    """(rang de l'acteur, rang de la cible), en defaut ferme des deux cotes.
+    """(rang de l'acteur, rang de la cible).
 
-    Un role inconnu en base vaut le rang le PLUS BAS pour l'acteur (il ne peut
-    presque rien) et le plus HAUT pour la cible (elle est presque
-    intouchable). Une colonne corrompue ne doit jamais ouvrir une porte.
+    Un role inconnu vaut le rang le plus bas pour l'acteur et le plus haut pour
+    la cible.
     """
     return (ROLE_HIERARCHY.get(role_acteur, ROLE_HIERARCHY[ROLE_PLAYER]),
             ROLE_HIERARCHY.get(role_cible, ROLE_HIERARCHY[ROLE_SUPERADMIN]))
@@ -439,28 +339,17 @@ def _rangs(role_acteur: str, role_cible: str) -> tuple[int, int]:
 def hors_de_portee(role_acteur: str, role_cible: str) -> bool:
     """Vrai si la regle de rang interdit a l'acteur d'agir sur cette cible.
 
-    Pour les ECRANS, qui grisent un bouton d'avance plutot que de laisser
-    l'admin decouvrir un 403 (§B.0 de hierarchie-admin-plan.md). Meme calcul
-    que refus_de_rang, qui reste la frontiere.
+    Sert a griser les boutons ; refus_de_rang reste la verification.
     """
     rang_acteur, rang_cible = _rangs(role_acteur, role_cible)
     return not rang_acteur > rang_cible
 
 
 def refus_de_rang(acteur: dict, cible_id: int, role_cible: str, objet: str = 'compte'):
-    """LA regle de rang, en un seul endroit. Renvoie une reponse 403 ou None.
+    """La regle de rang. Renvoie une reponse 403 ou None.
 
-    rang(acteur) > rang(cible) -> None ; sinon 403 cible_protegee. Agir sur
-    SOI-MEME n'est pas tranche ici : chaque appelant l'ecarte avant, comme
-    compte_cible_protegee.
-
-    Partagee par compte_cible_protegee, fiche_cible_protegee et les routes de
-    liaison, qui ne recoivent pas l'identifiant du compte dans l'URL. Deux
-    copies du calcul finiraient par diverger ; c'est l'ecart qu'on ne voit
-    qu'une fois dehors.
-
-    `objet` ne change que le message : « compte » ou « fiche » (la fiche d'un
-    compte, S-11 de l'audit du 24/09).
+    Le cas « soi-meme » est ecarte par l'appelant. `objet` ne change que le
+    message : « compte » ou « fiche ».
     """
     rang_acteur, rang_cible = _rangs(acteur['role'], role_cible)
     if rang_acteur > rang_cible:
@@ -471,8 +360,6 @@ def refus_de_rang(acteur: dict, cible_id: int, role_cible: str, objet: str = 'co
         acteur['id'], acteur['role'], cible_id, role_cible, objet,
         request.path,
     )
-    # Le message nomme le rang de la cible : « action impossible » sans dire
-    # pourquoi renvoie l'admin vers un support qui ne peut pas deviner non plus.
     sujet = ("Cette fiche appartient à un compte qui" if objet == 'fiche'
              else "Ce compte")
     if role_cible == ROLE_SUPERADMIN:
@@ -488,26 +375,13 @@ def refus_de_rang(acteur: dict, cible_id: int, role_cible: str, objet: str = 'co
 
 
 def fiche_cible_protegee(f):
-    """compte_cible_protegee, pour les routes qui visent une FICHE joueur.
+    """compte_cible_protegee, pour les routes qui visent une fiche joueur.
 
-    S-11 (audit du 24/09), tranche par l'utilisateur le 25/09 : la hierarchie
-    vaut aussi pour le dossier sportif. Un admin ne modifie, ne supprime ni
-    n'anonymise la fiche d'un autre admin ou d'un rang superieur ; un chef_admin
-    pas celle d'un pair ni du superadmin. Avant, seule la route qui passe par
-    le COMPTE (/sync) portait la regle : un admin porteur de
-    joueurs_irreversible pouvait anonymiser la fiche du superadmin.
+    La fiche prend le rang du compte qui lui est lie ; une fiche sans compte
+    vaut une fiche de player, et sa propre fiche reste accessible.
 
-    Une fiche sans compte lie vaut une fiche de player : tout admin muni du bon
-    droit y touche. Sa PROPRE fiche reste accessible, comme son propre compte
-    l'est pour compte_cible_protegee -- sinon personne ne pourrait jamais
-    toucher a celle du superadmin.
-
-    Ne couvre PAS les calculs collectifs (tournoi, reset global, repartition
-    des ligues) : ils touchent tout le monde a egalite et n'ont pas de cible.
-
-    Lit l'identifiant dans le parametre d'URL `id` (convention de
-    routes_admin : /admin/joueurs/<int:id>). A poser SOUS
-    permission_required, pour la meme raison que compte_cible_protegee.
+    Lit l'identifiant dans le parametre d'URL `id`. A poser sous
+    permission_required.
     """
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
@@ -555,10 +429,6 @@ def service_required(scope: str):
                             (token_hash,),
                         )
                         row = cur.fetchone()
-                        # La recherche porte sur le sha256, jamais sur le secret :
-                        # une egalite SQL suffit, il n'y a rien a deviner par
-                        # mesure de temps a partir d'un hash. Meme motif que pour
-                        # les sessions joueurs.
                         if row is None:
                             return _erreur("Jeton invalide", 401, 'jeton_invalide')
 
