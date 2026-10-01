@@ -41,37 +41,23 @@ _CURVE_SPREAD = 3.5
 # ---------------------------------------------------------------------------
 
 def empreinte_nom(nom: str) -> str:
-    """Empreinte stockee dans `noms_interdits` : sha256 du nom nettoye, en minuscules.
-
-    Une seule definition pour l'anonymisation qui ecrit et les chemins qui
-    lisent : une divergence (un strip oublie d'un cote) rouvrirait le nom.
-    """
+    """sha256 du nom nettoye et en minuscules, stocke dans `noms_interdits`."""
     return hashlib.sha256(nom.strip().lower().encode('utf-8')).hexdigest()
 
 
 def nom_creable(cur: Any, nom: Any, exclure_id: int | None = None):
-    """Un nom de fiche est-il utilisable ? Renvoie (nom_propre, None) ou (None, erreur).
+    """Verifie qu'un nom de fiche est utilisable.
 
-    `erreur` est un dict pret pour jsonify (`error`, `code`, parfois
-    `joueur_en_conflit`) ; l'appelant repond 409. Sans Flask ici : ce module
-    n'en depend pas.
-
-    S-05 (audit du 24/09) : la regle vivait dans routes_comptes et ne servait
-    qu'aux demandes de liaison. La creation depuis la page Fiches joueurs, le
-    renommage et le formulaire de tournoi la sautaient -- un nom anonymise
-    pouvait revenir, un « / » rendre la fiche inatteignable par son URL, et
-    « Mario » coexister avec « mario ». Tout chemin qui ECRIT joueurs.nom passe
-    desormais ici.
-
-    `exclure_id` : pour un renommage, la fiche elle-meme ne compte pas comme
-    collision (changer la casse de son propre nom reste possible).
+    Renvoie (nom_propre, None) ou (None, erreur) ; `erreur` est un dict pret pour
+    jsonify et l'appelant repond 409. `exclure_id` ignore la fiche elle-meme lors
+    d'un renommage.
     """
     nom = (nom if isinstance(nom, str) else '').strip()[:255]
     if not nom:
         return None, {"error": "Le nom est vide", "code": "nom_vide"}
 
     if '/' in nom:
-        # /stats/joueur/<nom> : Flask ne route pas un nom contenant un slash.
+        # Flask ne route pas un nom contenant un slash (/stats/joueur/<nom>).
         return None, {"error": "Le nom contient un « / », incompatible avec l'URL publique",
                       "code": "nom_invalide"}
 
@@ -81,8 +67,7 @@ def nom_creable(cur: Any, nom: Any, exclure_id: int | None = None):
                                "être recréé",
                       "code": "nom_interdit"}
 
-    # joueurs.nom est UNIQUE mais sensible a la casse : « Mario » et « mario »
-    # coexisteraient en base tout en etant indiscernables a l'oeil.
+    # La contrainte UNIQUE est sensible a la casse.
     if exclure_id is None:
         cur.execute("SELECT id, nom FROM joueurs WHERE lower(nom) = lower(%s)", (nom,))
     else:
@@ -109,16 +94,14 @@ def _gm_base_weight(ip_version: str) -> float:
     return GM_BASE_WEIGHT_V2 if ip_version == "v2" else GM_BASE_WEIGHT_V1
 
 
-# Moyenne d'un groupe en excluant le joueur concerne, pour ne pas biaiser sa
-# propre reference avec son propre niveau.
+# Moyenne d'un groupe sans le joueur concerne.
 def _leave_one_out(sum_mu: float, count_mu: int, own_mu: float | None) -> float | None:
     if own_mu is None or count_mu <= 1:
         return None
     return (sum_mu - float(own_mu)) / (count_mu - 1)
 
 
-# Force du lobby (IP v2, cf IP_V2_* dans constants.py) : ecart de mu entre le
-# lobby et la grille figee du jour, toutes ligues confondues. 1.0 si
+# Force du lobby (IP v2) : ecart de mu avec la grille figee du jour, 1.0 si
 # non calculable.
 def _force_lobby(mu_moyen_lobby: float | None, mu_moyen_reference: float | None) -> float:
     if mu_moyen_lobby is None or mu_moyen_reference is None:
@@ -127,8 +110,7 @@ def _force_lobby(mu_moyen_lobby: float | None, mu_moyen_reference: float | None)
     return max(IP_V2_FORCE_LOBBY_MIN, min(IP_V2_FORCE_LOBBY_MAX, force))
 
 
-# Un joueur compte dans la reference IP v2 s'il a un rank : present dans la
-# grille et pas inactif. Les deux criteres se desactivent via IP_V2_REF_*.
+# Joueurs pris en compte dans la reference IP v2.
 def _counts_in_reference(is_ranked: bool, tier: str | None) -> bool:
     if IP_V2_REF_REQUIRE_RANKED and not is_ranked:
         return False
@@ -137,8 +119,7 @@ def _counts_in_reference(is_ranked: bool, tier: str | None) -> bool:
     return True
 
 
-# {date: {"sum": mu cumule, "count": effectif, "mus": {joueur_id: mu}}}, le
-# detail par joueur servant au leave-one-out.
+# {date: {"sum": mu cumule, "count": effectif, "mus": {joueur_id: mu}}}
 def _load_reference_grids(cur: Any, d_debut: str, d_fin: str) -> dict:
     cur.execute("""
         SELECT date, joueur_id, mu, is_ranked, tier
@@ -156,8 +137,7 @@ def _load_reference_grids(cur: Any, d_debut: str, d_fin: str) -> dict:
     return grids
 
 
-# Mu moyen de la grille figee du jour, le joueur lui-meme exclu. None si la
-# journee n'a pas de grille : l'appelant se rabat sur la moyenne de periode.
+# Mu moyen de la grille du jour sans le joueur ; None si pas de grille.
 def _reference_mu(grid: dict | None, joueur_id: int) -> float | None:
     if not grid or grid["count"] <= 0:
         return None
@@ -179,26 +159,12 @@ def compute_distribution_stats(scores: Iterable[float]) -> tuple[float, float] |
 
 
 def load_tiers(cur) -> list[dict]:
-    """Charge la liste des tiers depuis la table `tiers`, tries par rang
-    decroissant (le meilleur en premier). Retombe sur DEFAULT_TIERS si la
-    table est vide -- ne devrait pas arriver en usage normal (le seed de
-    migration l'evite), mais garantit qu'un recalcul ne classe jamais
-    personne en 'U' faute de tiers a comparer.
-
-    Prend un curseur deja ouvert (plutot qu'une connexion) : appele depuis
-    des fonctions qui tiennent deja leur propre transaction (recalculate_tiers,
-    routes admin), pour ne pas emboiter une seconde connexion.
-    """
+    """Tiers tries par rang decroissant, ou DEFAULT_TIERS si la table est vide."""
     cur.execute("SELECT id, nom, couleur, seuil_k, rang FROM tiers ORDER BY rang DESC")
     rows = cur.fetchall()
     if not rows:
-        # `id: None` explicite : le panneau admin distingue ainsi une ligne
-        # reellement en base d'un simple defaut de secours non persiste.
+        # id None : defaut non persiste.
         return [dict(t, id=None) for t in DEFAULT_TIERS]
-    # `id` est indispensable au panneau d'administration : c'est lui qui
-    # identifie la ligne a deplacer, modifier ou supprimer. Sans lui, le front
-    # confondait tous les tiers (tous `undefined`) et n'agissait que sur le
-    # premier -- bug constate en recette le 13/09.
     return [
         {"id": i, "nom": n, "couleur": c, "seuil_k": k, "rang": r}
         for i, n, c, k, r in rows
@@ -206,23 +172,16 @@ def load_tiers(cur) -> list[dict]:
 
 
 def load_couleur_u(cur) -> str:
-    """Couleur de la pastille U (non classe), DEFAULT_TIER_U_COULEUR a defaut.
-
-    Hors de load_tiers() : U n'est pas un tier (voir DEFAULT_TIER_U_COULEUR),
-    et chaque lecteur de cette liste la parcourt comme des tiers a attribuer.
-    """
+    """Couleur de la pastille U (non classe)."""
     cur.execute("SELECT value FROM Configuration WHERE key = 'tier_u_couleur'")
     row = cur.fetchone()
     return row[0] if row and row[0] else DEFAULT_TIER_U_COULEUR
 
 
 def tier_thresholds(scores: Iterable[float], tiers: list[dict]) -> dict[str, float]:
-    """Score-frontiere (mean + seuil_k*stdev) pour chaque tier ayant un
-    seuil_k -- le plancher (seuil_k None) n'a pas de frontiere basse et vaut
-    toujours 0 dans le retour, pour compatibilite avec les gabarits qui
-    l'affichent (ex: classement.html) sans avoir a tester sa presence.
+    """Score-frontiere (mean + seuil_k*stdev) de chaque tier ; 0 pour le plancher.
 
-    `tiers` doit deja etre trie par rang decroissant (cf load_tiers).
+    `tiers` doit etre trie par rang decroissant.
     """
     stats = compute_distribution_stats(scores)
     seuils = {t["nom"]: 0 for t in tiers}
@@ -236,14 +195,9 @@ def tier_thresholds(scores: Iterable[float], tiers: list[dict]) -> dict[str, flo
 
 
 def tier_for_score(score: float, mean: float, stdev: float, tiers: list[dict]) -> str:
-    """Premier tier (dans l'ordre decroissant de rang) dont le score-frontiere
-    est depasse ; le tier de plus petit rang sert de secours (son seuil_k est
-    normalement None -- s'il ne l'est pas, ex. donnee corrompue, le secours
-    reste correct : personne n'a matche au-dessus).
+    """Premier tier dont le score-frontiere est depasse, sinon le dernier.
 
-    `tiers` doit deja etre trie par rang decroissant (cf load_tiers). Une
-    liste vide n'est pas cense arriver (load_tiers retombe sur DEFAULT_TIERS)
-    mais retourne 'U' plutot que de lever, par coherence avec has_tier().
+    `tiers` doit etre trie par rang decroissant.
     """
     if not tiers:
         return 'U'
@@ -275,12 +229,7 @@ def build_distribution(
     if stats is None:
         return dist
     mean, stdev = stats
-    # Renvoyes tels quels : le front en a besoin pour convertir les seuils
-    # (stockes en ecart-type) en position sur l'axe des scores bruts. Les
-    # reconstruire cote JS depuis min/max de la courbe est fragile -- la
-    # boucle ci-dessous n'atteint pas toujours x_max exactement (accumulation
-    # flottante sur _CURVE_RESOLUTION pas), ce qui decalait legerement mean/
-    # stdev recalcules et donc les lignes de seuil affichees (bug du 14/09).
+    # Renvoyes pour que le front place les seuils sans les recalculer.
     dist["mean"] = mean
     dist["stdev"] = stdev
 
@@ -304,13 +253,8 @@ def build_distribution(
     return dist
 
 
-# Filet de rattrapage d'un decalage de sequence, appele au demarrage
-# (backend.py). Un dump restaure avec des id explicites laisse sa sequence a 1 :
-# le prochain INSERT heurte alors une cle primaire existante.
-#
-# sessions_tournois en fait partie parce que sa migration insere des id
-# explicites (backfill par id du tournoi-ancre) -- exactement le cas que cette
-# fonction rattrape.
+# Tables dont la sequence est resynchronisee au demarrage (utile apres la
+# restauration d'un dump avec des id explicites).
 _TABLES_A_SEQUENCE = [
     'Joueurs', 'Tournois', 'sessions_tournois', 'saisons', 'types_awards', 'awards_obtenus',
 ]
@@ -321,17 +265,13 @@ def sync_sequences() -> None:
         with conn.cursor() as cur:
             for table in _TABLES_A_SEQUENCE:
                 try:
-                    # COALESCE(..., 1) : MAX(id) vaut NULL sur une table vide, et
-                    # setval(NULL) echoue -- sans lui, l'exception ci-dessous
-                    # avalait le cas silencieusement.
+                    # COALESCE : MAX(id) est NULL sur une table vide.
                     cur.execute(
                         f"SELECT setval('public.{table.lower()}_id_seq',"
                         f" COALESCE((SELECT MAX(id) FROM public.{table}), 1))"
                     )
                 except Exception:
-                    # Table absente : une migration n'a pas encore tourne. Non
-                    # bloquant au demarrage, mais tracé -- sinon un decalage de
-                    # sequence reel reste invisible jusqu'au prochain INSERT.
+                    # Table absente (migration pas encore passee).
                     logger.warning("sync_sequences : sequence de %s non synchronisee", table)
                     conn.rollback()
         conn.commit()
@@ -381,9 +321,7 @@ def recalculate_tiers() -> None:
 
 
 # A appeler avant toute modification de mu/sigma : le premier tournoi du jour
-# definit la reference IP v2, les suivants reutilisent la meme grille.
-# Existence testee sur la journee entiere et non ligne par ligne : sinon un
-# joueur cree entre-temps s'ajouterait a une grille deja figee.
+# fige la grille de reference IP v2 pour toute la journee.
 def snapshot_grille(cur: Any, date_tournoi: Any) -> bool:
     cur.execute("SELECT 1 FROM grille_snapshots WHERE date = %s LIMIT 1", (date_tournoi,))
     if cur.fetchone():
@@ -397,8 +335,7 @@ def snapshot_grille(cur: Any, date_tournoi: Any) -> bool:
     return True
 
 
-# Libere la grille d'une journee dont plus aucun tournoi ne subsiste, pour
-# qu'un tournoi rejoue a cette date reparte de l'etat courant.
+# Supprime la grille d'une journee qui n'a plus aucun tournoi.
 def drop_grille_snapshot_if_orphan(cur: Any, date_tournoi: Any) -> None:
     cur.execute("SELECT 1 FROM Tournois WHERE date = %s LIMIT 1", (date_tournoi,))
     if cur.fetchone():
@@ -406,14 +343,8 @@ def drop_grille_snapshot_if_orphan(cur: Any, date_tournoi: Any) -> None:
     cur.execute("DELETE FROM grille_snapshots WHERE date = %s", (date_tournoi,))
 
 
-# Supprime une session que plus aucun tournoi ne reference. Meme role et meme
-# emplacement d'appel que drop_grille_snapshot_if_orphan ci-dessus : a appeler
-# depuis revert_last_tournament et delete_tournament, avec la session_id lue
-# AVANT la suppression du tournoi.
-#
-# Une session vide est inoffensive pour le calcul (aucun tournoi n'y pointe),
-# mais la laisser fausserait tout comptage de sessions -- or c'est precisement
-# ce que ce chantier rend fiable (classement de saison, recaps, seuils d'awards).
+# Supprime une session que plus aucun tournoi ne reference (session_id lue
+# avant la suppression du tournoi).
 def drop_session_if_orphan(cur: Any, session_id: Any) -> None:
     if session_id is None:
         return
@@ -423,37 +354,19 @@ def drop_session_if_orphan(cur: Any, session_id: Any) -> None:
     cur.execute("DELETE FROM sessions_tournois WHERE id = %s", (session_id,))
 
 
-# Cle du verrou consultatif partage par TOUS les gestes qui ecrivent le dossier
-# sportif en masse : ajout, annulation, suppression et liaison de tournoi, reset
-# global et son annulation. Valeur arbitraire, fixe : elle ne doit servir a rien
-# d'autre.
+# Cle du verrou consultatif des ecritures en masse du dossier sportif (ajout,
+# annulation, suppression, liaison de tournoi, reset global).
 VERROU_TOURNOIS = 7_300_001
 
 
-# Serialise ces gestes entre eux, jusqu'a la fin de la transaction courante.
-#
-# Chacun lit mu/sigma/consecutive_missed, calcule, puis reecrit : deux gestes
-# simultanes (deux admins, un double envoi) se marchaient dessus sans erreur --
-# le second ecrasait le premier avec des valeurs calculees sur l'etat d'avant.
-# Les controles croises (conflit de session, reset posterieur a un tournoi)
-# avaient le meme trou : chacun ne voit pas encore ce que l'autre ecrit.
-#
-# pg_advisory_XACT_lock : libere seul au commit ou au rollback, y compris sur
-# une exception -- aucun chemin de sortie ne peut l'oublier. A appeler en
-# PREMIERE requete, avant toute lecture qui sert au calcul.
+# Serialise ces ecritures jusqu'a la fin de la transaction. A appeler avant
+# toute lecture servant au calcul.
 def verrou_tournois(cur: Any) -> None:
     cur.execute("SELECT pg_advisory_xact_lock(%s)", (VERROU_TOURNOIS,))
 
 
-# Un autre tournoi de la meme ligue existe-t-il dans cette session ?
-#
-# C'est lui qui porte l'absence de la session : « une session manquee = +1 »,
-# pas « un tournoi manque = +1 ». Le premier tournoi d'une session compte les
-# absents ; les suivants (lobbies lies a la creation) n'ont plus rien a compter,
-# et l'annulation d'un tournoi ne retire l'absence que si la session disparait
-# avec lui pour cette ligue.
-#
-# Meme filtre de ligue que le calcul des presents d'add_tournament.
+# Vrai si un autre tournoi de la meme ligue existe dans cette session : seul le
+# premier tournoi d'une session compte les absences.
 def session_a_un_autre_tournoi(cur: Any, session_id: Any, tournoi_id: Any,
                                ligue_id: Any) -> bool:
     if session_id is None:
@@ -467,46 +380,22 @@ def session_a_un_autre_tournoi(cur: Any, session_id: Any, tournoi_id: Any,
     return cur.fetchone() is not None
 
 
-# Nombre de joueurs a nommer dans un message de conflit. Purement cosmetique :
-# la DETECTION ne depend jamais de cette borne, une seule ligne suffit a refuser.
+# Nombre de joueurs cites dans un message de conflit (affichage seulement).
 MAX_CONFLITS_NOMMES = 5
 
 
-# La penalite d'absence est-elle due a cette session-ci ?
-#
-# `sessions_loupees` est consecutive_missed APRES incrementation pour le tour en
-# cours. La penalite tombe au palier `seuil`, puis tous les `intervalle`
-# ensuite : seuil=4, intervalle=1 -> 4e, 5e, 6e... ; seuil=2, intervalle=3 ->
-# 2e, 5e, 8e...
-#
-# Remplace un calcul d'ecart calendaire (date de derniere apparition ou de
-# derniere penalite, comparee a la date du tournoi). Consequence VOULUE : une
-# periode sans session ne penalise personne, puisque le compteur ne bouge pas.
-# La penalite sanctionne les occasions loupees, pas le temps qui passe.
-# Conception : docs/plan-sessions-tournois.md, decision 8 et 5.4
+# Vrai si la penalite d'absence tombe a ce nombre de sessions loupees : au
+# palier `seuil`, puis tous les `intervalle` (seuil=4, intervalle=1 -> 4e, 5e...).
 def penalite_due(sessions_loupees: int, seuil: int, intervalle: int) -> bool:
     if sessions_loupees < seuil:
         return False
-    # max(1, ...) : un intervalle nul ou negatif ferait une division par zero,
-    # et la configuration est modifiable depuis l'interface d'administration.
+    # L'intervalle est modifiable depuis l'admin : eviter la division par zero.
     return (sessions_loupees - seuil) % max(1, intervalle) == 0
 
 
-# Un joueur ne peut jouer qu'UN tournoi par session : deux lobbies simultanes,
-# on ne peut pas etre dans les deux (plan-sessions-tournois.md, decision 9).
-#
-# Renvoie les noms des joueurs de `tournoi_id` deja presents dans un AUTRE
-# tournoi de la session cible -- liste vide si la liaison est licite.
-#
-# Le filtre porte sur la SESSION entiere, pas sur le seul tournoi designe :
-# lier C a B quand B est deja avec A doit verifier C contre A et B. Une
-# "simplification" en « WHERE t.id = autre_tournoi_id » passerait les tests
-# evidents et laisserait ce trou transitif.
-#
-# `t.id <> tournoi_id` exclut le tournoi courant : sans lui, s'il a deja rejoint
-# la session, ses propres joueurs remontent comme conflits et TOUTE liaison est
-# refusee. Redondant quand l'appelant verifie avant de fusionner (l'ordre
-# recommande), garde de securite sinon.
+# Joueurs de `tournoi_id` deja presents dans un autre tournoi de la session de
+# `autre_tournoi_id` (un seul tournoi par session et par joueur). Le controle
+# porte sur toute la session, pas seulement sur `autre_tournoi_id`.
 def joueurs_en_conflit_de_session(cur: Any, tournoi_id: Any, autre_tournoi_id: Any) -> list:
     cur.execute("""
         SELECT DISTINCT j.nom
@@ -522,9 +411,7 @@ def joueurs_en_conflit_de_session(cur: Any, tournoi_id: Any, autre_tournoi_id: A
     return [r[0] for r in cur.fetchall()]
 
 
-# Variante pour la fusion de deux sessions DEJA peuplees (liaison tardive) : il
-# faut comparer les deux ensembles dans leur entier, pas un tournoi contre une
-# session. Meme regle, perimetre different.
+# Meme controle entre deux sessions deja peuplees.
 def joueurs_en_conflit_entre_sessions(cur: Any, session_a: Any, session_b: Any) -> list:
     if session_a == session_b:
         return []
@@ -542,49 +429,12 @@ def joueurs_en_conflit_entre_sessions(cur: Any, session_a: Any, session_b: Any) 
     return [r[0] for r in cur.fetchall()]
 
 
-# Reunit deux tournois dans une meme session, en gardant la session d'id le plus
-# PETIT et en y reaffectant les tournois de l'autre.
-#
-# Cette convention rend le resultat independant de l'ordre des arguments et fait
-# qu'une session garde son identite au fil des fusions successives.
-#
-# Idempotente : deux tournois deja dans la meme session -> aucune ecriture,
-# l'admin peut cliquer deux fois sans consequence.
-#
-# NE VERIFIE PAS les conflits de joueurs : c'est a l'appelant de le faire AVANT,
-# pour pouvoir refuser sans avoir rien ecrit. Voir joueurs_en_conflit_*.
-#
-# Renvoie la session_id conservee.
-# Recalcule les absences apres une fusion de sessions, et renvoie la liste des
-# joueurs corriges.
-#
-# LE PROBLEME. Deux tournois enregistres separement, puis lies apres coup :
-# chacun a compte ses absences comme si l'autre n'existait pas. Une fois les
-# deux dans la meme session, la regle « une session manquee = +1 » est violee de
-# deux facons :
-#
-#   1. Un joueur qui a joue l'un des tournois a ete compte ABSENT de l'autre.
-#      Jouer un seul tournoi de la session suffit a compter present pour toute
-#      la session : son compteur doit perdre ces absences.
-#   2. Un joueur absent de TOUS les tournois de la session a ete compte une fois
-#      par tournoi, au lieu d'une fois pour la session. Son compteur doit perdre
-#      les absences en trop (nb_tournois_manques - 1).
-#
-# Ne concerne QUE la liaison tardive. Le chemin nominal (liaison demandee avant
-# l'enregistrement) connait la session avant de calculer et n'ecrit jamais ces
-# absences (docs/plan-sessions-tournois.md, decision 10).
-#
-# POURQUOI RETIRER penalty_applied ET NON RESTAURER old_sigma. old_sigma est
-# l'etat du joueur au moment de cette penalite precise. Le reecrire ecraserait
-# tout ce qui a bouge depuis (matchs joues, autres penalites, corrections
-# d'admin). On retire donc exactement ce que la penalite avait ajoute -- une
-# soustraction est commutative, une restauration d'etat ne l'est pas.
-#
-# GHOST_SIGMA_CAP complique le calcul : une penalite ecretee par le plafond a
-# ajoute MOINS que ghost_penalty. penalty_applied porte la valeur reellement
-# appliquee, d'ou son usage ici plutot qu'une relecture de la configuration.
+# Recalcule les absences apres la fusion tardive de deux sessions, et renvoie
+# les joueurs corriges : un joueur present a un tournoi de la session ne doit
+# avoir aucune absence pour elle, un absent complet une seule.
+# On soustrait penalty_applied (valeur reellement appliquee, plafond compris)
+# plutot que de restaurer old_sigma, qui ecraserait les changements posterieurs.
 def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> list:
-    # Les tournois de la session, et qui a joue dans chacun.
     cur.execute("SELECT id FROM Tournois WHERE session_id = %s", (session_id,))
     tournois = [r[0] for r in cur.fetchall()]
     if len(tournois) < 2:
@@ -599,19 +449,8 @@ def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> l
     """, (session_id,))
     presents = [r[0] for r in cur.fetchall()]
 
-    # Combien d'absences en trop chaque joueur porte-t-il ?
-    #
-    # Un present doit avoir 0 absence imputable a cette session : on retire
-    # toutes celles qu'il a prises pour les tournois qu'il n'a pas joues.
-    # Un absent complet doit n'en avoir qu'une : on retire les autres.
-    #
-    # Le nombre d'absences prises pour cette session n'est stocke nulle part --
-    # `consecutive_missed` est un cumul. On le DEDUIT du nombre de tournois de
-    # la session auxquels le joueur n'a pas participe, ce qui est exact tant que
-    # le joueur etait dans le perimetre de calcul de chacun. Approximation
-    # assumee pour le mode ligue, ou un joueur hors perimetre n'avait de toute
-    # facon pas ete incremente : la borne max(...) ci-dessous empeche alors de
-    # retirer plus que ce qu'il porte.
+    # Absences en trop par joueur, deduites du nombre de tournois de la session
+    # non joues (consecutive_missed est un cumul).
     cur.execute("""
         SELECT j.id,
                %s - count(DISTINCT p.tournoi_id) AS tournois_manques
@@ -623,7 +462,6 @@ def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> l
     """, (len(tournois), tournois))
     manques = {jid: n for jid, n in cur.fetchall()}
 
-    # Penalites de sigma portees par un tournoi de cette session, par joueur.
     cur.execute("""
         SELECT g.joueur_id, SUM(g.penalty_applied), count(*)
         FROM ghost_log g
@@ -635,7 +473,6 @@ def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> l
 
     corriges = []
     for joueur_id, tournois_manques in manques.items():
-        # Un present garde 0 absence pour la session, un absent en garde 1.
         a_garder = 0 if joueur_id in presents else 1
         en_trop = tournois_manques - a_garder
         cumul_sigma, nb_penalites = penalites.get(joueur_id, (0.0, 0))
@@ -651,9 +488,7 @@ def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> l
             continue
         sigma_actuel, missed_actuel = float(ligne[0]), int(ligne[1])
 
-        # Jamais plus que ce que le joueur porte reellement : son compteur a pu
-        # etre remis a 0 depuis (il a rejoue), ou ne jamais avoir ete incremente
-        # (hors perimetre de ligue).
+        # Jamais plus que ce que le joueur porte reellement.
         retrait = min(max(en_trop, 0), missed_actuel)
         nouveau_missed = missed_actuel - retrait
         nouveau_sigma = max(sigma_actuel - cumul_sigma, 0.0)
@@ -661,29 +496,21 @@ def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> l
         if retrait == 0 and nb_penalites == 0:
             continue
 
-        # is_ranked est recalcule : un joueur exclu du classement par ces
-        # absences doit y revenir s'il repasse sous le seuil.
-        #
-        # Le calcul se fait en Python plutot que dans un UPDATE auto-referent :
-        # SET is_ranked = (... consecutive_missed ...) lirait l'ancienne valeur
-        # de la colonne (semantique SQL correcte, mais piege a la relecture --
-        # on croit lire la nouvelle).
+        # is_ranked recalcule en Python : dans l'UPDATE, consecutive_missed
+        # serait lu avant modification.
         cur.execute("""
             UPDATE Joueurs
             SET sigma = %s, consecutive_missed = %s, is_ranked = %s
             WHERE id = %s
         """, (nouveau_sigma, nouveau_missed, nouveau_missed < threshold, joueur_id))
-        # L'avant/apres de chaque joueur touche, et pas seulement son id : la
-        # route en fait sa ligne d'audit, et le sigma est le dossier sportif.
+        # Avant/apres conserves pour la ligne d'audit.
         corriges.append({
             "joueur_id": joueur_id,
             "avant": {"sigma": sigma_actuel, "consecutive_missed": missed_actuel},
             "apres": {"sigma": nouveau_sigma, "consecutive_missed": nouveau_missed},
         })
 
-    # Le journal doit refleter l'etat courant : ces penalites n'existent plus.
-    # Toutes celles de la session partent, y compris celles d'un absent complet :
-    # sa penalite sera de nouveau due au prochain tournoi s'il reste au palier.
+    # Ces penalites n'existent plus.
     if penalites:
         cur.execute("""
             DELETE FROM ghost_log
@@ -693,6 +520,8 @@ def annuler_penalites_de_session(cur: Any, session_id: Any, threshold: int) -> l
     return corriges
 
 
+# Rattache deux tournois a la meme session (celle d'id le plus petit) et
+# renvoie son id. Ne verifie pas les conflits de joueurs.
 def fusionner_sessions(cur: Any, tournoi_id: Any, autre_tournoi_id: Any) -> Any:
     cur.execute(
         "SELECT id, session_id FROM Tournois WHERE id IN (%s, %s)",
@@ -706,28 +535,14 @@ def fusionner_sessions(cur: Any, tournoi_id: Any, autre_tournoi_id: Any) -> Any:
     gardee, absorbee = min(gardee, absorbee), max(gardee, absorbee)
     cur.execute("UPDATE Tournois SET session_id = %s WHERE session_id = %s",
                 (gardee, absorbee))
-    # La session absorbee n'a plus aucun tournoi : la laisser fausserait tout
-    # comptage de sessions.
+    # La session absorbee n'a plus de tournoi.
     cur.execute("DELETE FROM sessions_tournois WHERE id = %s", (absorbee,))
     return gardee
 
 
-# Defait la penalite d'absence d'un tournoi qu'on annule : decremente
-# consecutive_missed et redonne is_ranked a qui repasse sous le seuil.
-#
-# participant_ids = les joueurs a NE PAS toucher (ceux qui ont joue le tournoi
-# annule). Leur compteur a ete remis a 0 par add_tournament, et la valeur d'avant
-# n'est stockee NULLE PART -- Participations garde old_mu/old_sigma, jamais
-# old_missed. Elle est donc definitivement perdue : ils restent a 0. Ce n'est pas
-# un oubli, c'est une limite du schema. Les decrementer serait pire encore, ils
-# passeraient sous leur vraie valeur.
-#
-# Le filtre missed > 0 ne distingue pas un absent DE CE TOURNOI d'un joueur qui
-# cumulait deja des absences hors perimetre (mode ligue). C'est une approximation
-# assumee : les deux routes d'annulation partagent ainsi exactement la meme regle
-# plutot que d'en inventer une troisieme. La correction fine suppose de savoir qui
-# etait reellement dans le perimetre, ce que seule une session explicite dira
-# (cf docs/plan-sessions-tournois.md).
+# Annule la penalite d'absence d'un tournoi supprime : decremente
+# consecutive_missed et retablit is_ranked sous le seuil. Les participants ne
+# sont pas touches (leur ancienne valeur n'est pas conservee).
 def annuler_absences(cur: Any, participant_ids: Iterable[int], threshold: int) -> None:
     ids = list(participant_ids or [])
     if ids:
@@ -844,12 +659,10 @@ def _compute_grand_master(stats_dict: dict, total_tournois: int, ip_version: str
 
             poids = N_i + BASE_POIDS
             if ip_version == "v2":
-                # M_barre_i exclut le joueur juge (leave-one-out), sinon son propre
-                # score tire sa propre reference et amortit artificiellement son ratio.
+                # Moyenne sans le joueur juge (leave-one-out).
                 denom = m.get('avg_score_excl_self') or M_barre_i
                 ratio = min(GM_MAX_RATIO_CAP, S_i / denom) if denom > 0 else 0
-                # Le plafond s'applique de nouveau apres la correction de force du
-                # lobby : sinon un match deja plafonne en ressortirait au-dessus.
+                # Plafond reapplique apres la correction de force du lobby.
                 ratio = min(GM_MAX_RATIO_CAP, ratio * _force_lobby(m.get('avg_old_mu'), m.get('ref_avg_mu')))
             else:
                 ratio = min(GM_MAX_RATIO_CAP, S_i / M_barre_i) if M_barre_i > 0 else 0
@@ -977,8 +790,7 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             """, params)
             parts = cur.fetchall()
 
-            # Reference IP v2 : grille figee du jour du tournoi, toutes ligues
-            # confondues (pas de ligue_filter ici, volontairement).
+            # Reference IP v2 : grille du jour, toutes ligues confondues.
             ref_grids = _load_reference_grids(cur, d_debut, d_fin)
 
             # Repli pour les journees sans grille figee : mu moyen de la periode.
@@ -999,12 +811,8 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
     tournoi_ids = [tid for tid, _, _, _ in tournois]
     tournoi_dates = {tid: d for tid, d, _, _ in tournois}
     tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
-    # Denominateur du seuil de participation : des SESSIONS, comme
-    # _aggregate_season_stats. Deux lobbies lies ne valent qu'une occasion de
-    # jeu ; compter les tournois bruts ici donnerait un seuil different de
-    # celui des awards sur la meme saison.
-    # `tournoi_ids` reste une liste de tournois : elle indexe les courbes
-    # d'evolution, qui ont un point par tournoi joue.
+    # Seuil de participation compte en sessions (deux lobbies lies = une
+    # occasion de jeu), comme _aggregate_season_stats.
     total_tournois = len({sid for _t, _d, _lg, sid in tournois})
 
     seuil_participation = total_tournois * MIN_PARTICIPATION_RATIO
@@ -1019,7 +827,6 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             m["count_mu"] += 1
     for m in meta.values():
         m["avg"] = m["sum"] / m["count"] if m["count"] > 0 else 1.0
-        # avg_mu leave-one-out : calcule par joueur plus bas (cf _leave_one_out).
 
     players: dict[int, dict] = {}
     for tid, jid, nom, color, score, position, old_mu in parts:
@@ -1034,9 +841,6 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
     for jid, p in players.items():
         data: list[float | None] = []
         points: list[dict | None] = []
-        # Seule la version demandee est calculee. Le calcul parallele v1/v2
-        # nourrissait une comparaison cote a cote dans l'infobulle, retiree
-        # expres le 22/08 (e7f8482) : plus rien ne lisait l'autre version.
         num_total = 0.0
         denom_total = 0.0
         matchs = 0
@@ -1051,16 +855,14 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 t = meta[tournoi_ids[idx]]
 
                 if ip_version == "v2":
-                    # avg_score exclut le joueur juge (leave-one-out), meme principe
-                    # que pour le mu : sinon son propre score amortit son propre ratio.
+                    # Moyenne sans le joueur juge (leave-one-out).
                     avg_score_excl = _leave_one_out(t["sum"], t["count"], score) or t["avg"]
                     ratio_base = min(GM_MAX_RATIO_CAP, score / avg_score_excl) if avg_score_excl > 0 else 0.0
                     lobby_avg_mu = _leave_one_out(t["sum_mu"], t["count_mu"], own_old_mu)
                     ref_avg_mu = _reference_mu(ref_grids.get(tournoi_dates[tournoi_ids[idx]]), jid)
                     if ref_avg_mu is None:
                         ref_avg_mu = _leave_one_out(period_sum_mu, period_count_mu, own_old_mu)
-                    # Plafond applique apres la correction de force du lobby, comme
-                    # dans _compute_grand_master.
+                    # Plafond reapplique apres la correction de force du lobby.
                     ratio = min(GM_MAX_RATIO_CAP, ratio_base * _force_lobby(lobby_avg_mu, ref_avg_mu))
                 else:
                     ratio = min(GM_MAX_RATIO_CAP, score / t["avg"]) if t["avg"] > 0 else 0.0
@@ -1141,12 +943,7 @@ def compute_position_evolution(d_debut: str, d_fin: str, recap_mode: str | None 
     tournoi_ids = [tid for tid, _, _ in tournois]
     tournoi_dates = {tid: d for tid, d, _ in tournois}
     tid_index = {tid: i for i, tid in enumerate(tournoi_ids)}
-    # Denominateur du seuil de participation : des SESSIONS, comme
-    # _aggregate_season_stats. Deux lobbies lies ne valent qu'une occasion de
-    # jeu ; compter les tournois bruts ici donnerait un seuil different de
-    # celui des awards sur la meme saison.
-    # `tournoi_ids` reste une liste de tournois : elle indexe les courbes
-    # d'evolution, qui ont un point par tournoi joue.
+    # Seuil de participation compte en sessions, comme _aggregate_season_stats.
     total_tournois = len({sid for _t, _d, sid in tournois})
 
     field_size = {}
@@ -1291,8 +1088,7 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             cur.execute(base_query, params)
             rows = cur.fetchall()
 
-            # Reference IP v2 : grille figee du jour du tournoi, toutes ligues
-            # confondues (pas de filtre ligue ici, volontairement).
+            # Reference IP v2 : grille du jour, toutes ligues confondues.
             ref_grids = _load_reference_grids(cur, d_debut, d_fin)
 
             # Repli pour les journees sans grille figee : mu moyen de la periode.
@@ -1310,19 +1106,8 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                     period_count_mu += 1
 
         tournoi_meta = {}
-        # Sessions distinctes de la periode. Une session = une occasion de jeu :
-        # deux lobbies lies comptent pour UN tournoi dans ce denominateur.
-        #
-        # Remplace un regroupement par (date, ligue_id) recalcule ici, qui
-        # dupliquait hors de add_tournament l'heuristique que ce chantier
-        # supprime. Comme le backfill a utilise la meme cle, le resultat est
-        # identique sur l'historique : c'est un refactor, pas un changement de
-        # regle -- la difference n'apparait que pour les liaisons futures.
-        #
-        # Affichage : cette valeur reste presentee comme un nombre de TOURNOIS
-        # (classement de saison, recaps). La session est l'unite de calcul, le
-        # tournoi l'unite d'affichage.
-        # Conception : docs/plan-sessions-tournois.md, decision 7
+        # Denominateur compte en sessions (deux lobbies lies = une occasion de
+        # jeu), affiche comme un nombre de tournois.
         sessions_vues = set()
         for row in rows:
             tid = row[8]
@@ -1339,7 +1124,6 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
 
         for tid, meta in tournoi_meta.items():
             meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1.0
-            # avg_old_mu leave-one-out : calcule par joueur plus bas (cf _leave_one_out).
 
         total_tournois = len(sessions_vues)
         min_participation_req = total_tournois * MIN_PARTICIPATION_RATIO
@@ -1472,10 +1256,7 @@ def _determine_winners(candidates: dict, vic_cond: str, active_awards: list[str]
     winners_map = {}
     top_3_players = []
 
-    # `candidates['grand_master']` est le nom INTERNE du classement IP, pas une
-    # condition de victoire : l'ancienne valeur 'grand_master' de
-    # saisons.victory_condition a disparu (absente de tous les dumps de prod,
-    # retiree le 2026-09-23, affichage-ip-plan-redaction.md phase 4).
+    # 'grand_master' est le nom interne du classement IP.
     if vic_cond == 'Indice de Performance':
         raw_list = candidates.get('grand_master', [])
         top_3_players = [c for c in raw_list if c.get('eligible', False)]
@@ -1658,27 +1439,18 @@ def _apply_inter_league_moves(conn: Any, moves_count: int, ranking_data: dict, r
 # ---------------------------------------------------------------------------
 # Matchmaking
 # ---------------------------------------------------------------------------
-# Portage de buildLobbies(), qui vivait dans matchmaking.html : la page
-# d'administration et le bot Discord doivent appeler le MEME code.
-#
-# Joueurs tries par score decroissant, puis coupes en k tranches contigues de
-# tailles aussi egales que possible. Le point de coupure est choisi la ou
-# l'ecart de score est le plus faible.
+# Joueurs tries par score decroissant puis coupes en tranches contigues de
+# tailles aussi egales que possible (utilise par l'admin et le bot Discord).
 
 def construire_lobbies(joueurs, max_par_lobby=None):
-    """Repartit des joueurs en lobbies equilibres.
+    """Repartit des joueurs (dicts avec la cle 'ts') en lobbies equilibres.
 
-    `joueurs` : liste de dictionnaires comportant au moins la cle 'ts'.
-    Le tri decroissant est fait ici, et non par l'appelant, pour que tous les
-    appelants se comportent identiquement.
-
-    Renvoie une liste de listes, dans l'ordre : lobby 1 = les meilleurs.
+    Renvoie une liste de lobbies, le premier contenant les meilleurs.
     """
     if max_par_lobby is None:
         max_par_lobby = MAX_PAR_LOBBY
 
-    # Tri stable, comme le tri JS d'origine : a scores egaux, l'ordre d'entree
-    # est conserve.
+    # Tri stable : a score egal, l'ordre d'entree est conserve.
     joueurs = sorted(joueurs, key=lambda p: p['ts'], reverse=True)
 
     n = len(joueurs)
@@ -1690,7 +1462,7 @@ def construire_lobbies(joueurs, max_par_lobby=None):
         return [list(joueurs)]
 
     base = n // k
-    pivots = n % k                      # joueurs a repartir en plus du socle
+    pivots = n % k  # joueurs a repartir en plus du socle
 
     tailles = [base] * k
     curseur = 0
@@ -1699,9 +1471,7 @@ def construire_lobbies(joueurs, max_par_lobby=None):
     for i in range(k):
         taille = tailles[i]
         if i < k - 1 and pivots - places > 0:
-            # Le joueur a la frontiere : le laisse-t-on dans ce lobby, ou
-            # bascule-t-il dans le suivant ? On le rattache au voisin dont il
-            # est le plus proche au score.
+            # Le joueur a la frontiere rejoint le lobby dont il est le plus proche.
             idx_pivot = curseur + taille
             dessus = joueurs[idx_pivot - 1]
             pivot = joueurs[idx_pivot]
@@ -1710,18 +1480,12 @@ def construire_lobbies(joueurs, max_par_lobby=None):
             ecart_dessus = abs(pivot['ts'] - dessus['ts'])
             ecart_dessous = abs(pivot['ts'] - dessous['ts']) if dessous else float('inf')
 
-            # CORRECTIF par rapport au JS d'origine : un lobby ne peut recevoir qu'UN
-            # joueur en plus du socle. Sans cette condition, un lobby deja agrandi a
-            # l'iteration precedente atteignait base+2 -- 11 joueurs pour une limite de
-            # 10, dans 3 % des compositions de 11 a 40 joueurs.
-            #
-            # La repartition est connue d'avance : exactement `pivots` lobbies de taille
-            # base+1. Le choix ne porte que sur LESQUELS, jamais sur combien.
+            # Un lobby ne recoit qu'un joueur en plus du socle (base+1 au maximum).
             deja_servi = taille > base
             if deja_servi or ecart_dessus > ecart_dessous:
-                tailles[i + 1] += 1     # il rejoint le suivant
+                tailles[i + 1] += 1
             else:
-                taille += 1             # il reste dans le lobby courant
+                taille += 1
             places += 1
 
         curseur += taille
@@ -1738,15 +1502,9 @@ def construire_lobbies(joueurs, max_par_lobby=None):
 def resoudre_joueurs_matchmaking(cur, noms=None, joueur_ids=None, discord_ids=None):
     """Resout des identifiants de joueurs en {id, nom, ts}.
 
-    Le score vient TOUJOURS de la base, jamais de l'appelant : un client qui
-    fournirait ses propres scores pourrait composer les lobbies a sa guise.
-
-    Renvoie (joueurs trouves, identifiants introuvables).
+    Le score est toujours relu en base. Renvoie (joueurs trouves, introuvables).
     """
-    # `demandes` porte les valeurs NORMALISEES, celles qui partent dans la
-    # requete. Comparer les valeurs brutes au retour de la base ferait declarer
-    # introuvable un joueur pourtant trouve : un bot envoyant ses snowflakes en
-    # nombres JSON obtenait les bons lobbies et tous ses joueurs en introuvables.
+    # Comparaison sur les valeurs normalisees (un snowflake peut arriver en nombre).
     if joueur_ids:
         cle, condition = 'id', "j.id = ANY(%s)"
         demandes = [int(x) for x in joueur_ids]
@@ -1785,31 +1543,24 @@ def resoudre_joueurs_matchmaking(cur, noms=None, joueur_ids=None, discord_ids=No
 # ---------------------------------------------------------------------------
 # Purges RGPD
 # ---------------------------------------------------------------------------
-# Art. 5.1.e : garder une donnee sans raison est un manquement. Chaque duree
-# ci-dessous doit pouvoir se justifier a l'oral.
 
 def purger_donnees_expirees(cur):
-    """Supprime ce qui n'a plus de raison d'etre conserve. Renvoie le detail.
+    """Supprime les donnees dont la duree de conservation est depassee.
 
-    Prend un curseur : l'appelant maitrise la transaction, et la purge peut
-    donc se greffer sur une operation existante sans ouvrir une connexion de
-    plus.
+    Renvoie le bilan ; l'appelant gere la transaction.
     """
     bilan = {}
 
-    # Une session expiree ne sert plus a rien, meme pas a l'ecran des sessions.
     cur.execute("DELETE FROM sessions_joueurs WHERE expires_at < now()")
     bilan['sessions'] = cur.rowcount
 
-    # Le lien est mort depuis un mois, son empreinte n'a plus d'usage.
     cur.execute(
         "DELETE FROM invitations WHERE expires_at < now() - make_interval(days => %s)",
         (PURGE_INVITATIONS_JOURS,),
     )
     bilan['invitations'] = cur.rowcount
 
-    # Inscription abandonnee : jamais rattachee, inactive depuis trois mois. On ne
-    # touche pas aux comptes lies, ni a ceux qui portent un role.
+    # Inscription jamais rattachee et inactive, sans role.
     cur.execute(
         """DELETE FROM comptes
            WHERE statut = 'pending'
@@ -1820,7 +1571,6 @@ def purger_donnees_expirees(cur):
     )
     bilan['comptes_abandonnes'] = cur.rowcount
 
-    # Un refus s'explique quelque temps, pas indefiniment.
     cur.execute(
         """DELETE FROM liaisons_demandes
            WHERE statut = 'rejected' AND decided_at < now() - make_interval(days => %s)""",
@@ -1830,14 +1580,7 @@ def purger_donnees_expirees(cur):
 
     total = sum(bilan.values())
     if total:
-        # L'audit garde la trace de la purge, sans conserver ce qui a ete purge.
-        #
-        # L'acteur est celui de la requete (S-16, audit du 24/09). Le code
-        # passait acteur_id=None au motif qu'un ordonnanceur declenchait la
-        # purge : il n'y en a pas, le seul appelant est POST /admin/purge-rgpd,
-        # clique par un chef_admin -- et le journal ne disait donc pas QUI
-        # avait purge. Si un ordonnanceur apparait un jour, rien a changer ici :
-        # hors requete, acteur_courant() rend deja None.
+        # Trace de la purge, sans les donnees purgees.
         audit.ecrire(cur, 'purge_rgpd', 'systeme', details=bilan)
         logger.info("Purge RGPD : %s", bilan)
     return bilan

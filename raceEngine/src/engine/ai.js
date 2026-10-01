@@ -1,7 +1,5 @@
-// Le pilote. C'est ici qu'on arbitre.
-// Tout le reste du moteur lui fournit des elements — ce qu'il entend, ce qu'il
-// voit, ce qu'il peut, ce qu'il porte ; `updateAI` les rassemble, `command`
-// decide de l'ordre dans lequel ca compte.
+// Pilote IA : `updateAI` rassemble perception et etat du kart, `command`
+// applique l'ordre de priorite des manoeuvres.
 
 import { randomRange } from './math.js';
 import { steer, steerSettle } from './driving.js';
@@ -11,18 +9,13 @@ import { perceive, updateGlance, updateShield } from './vision.js';
 import { hear, updateBlue } from './alerts.js';
 import { steerAroundPipes } from './pipes.js';
 
-// Le pilotage d'un kart pour un pas de temps. Il ne regarde pas le monde mais ce
-// que le kart en a vu : toute la perception est dans `perceive`, et ce qui reste
-// ici est la decision — un ordre de priorite, une fois la menace designee.
+// Pilotage d'un kart pour un pas de temps, a partir de ce qu'il a percu.
 function updateAI(cfg, state, rng, now, kart, deltaTime) {
     if (kart.state !== 'running') return;
 
     const vis = cfg.vision;
 
-    // Un bill ne se pilote pas : il rejoint le milieu de la piste et n'en bouge
-    // plus. Un tuyau fait exception — il ne l'arreterait pas, mais un projectile
-    // qui laboure le decor en ligne droite n'a rien d'un vol. Juste assez de
-    // pilotage pour le contourner, et rien de plus.
+    // Un bill rejoint le milieu de la piste et ne fait que contourner les tuyaux.
     if (kart.isBill) {
         steer(cfg, kart, deltaTime, billAimDepth(cfg, state, kart),
             cfg.bill.centerSpeed, cfg.ai.steering.bill);
@@ -31,25 +24,20 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
 
     const sight = kart.sight;
 
-    // Ce qui s'entend, avant tout : l'attention s'en sert la premiere. Puis
-    // l'attention, qui decide de ce que le balayage verra. Puis le balayage,
-    // amorti (`vision.scanIntervalMs`).
+    // Ecoute, attention, puis balayage (amorti par `vision.scanIntervalMs`).
     hear(cfg, state, rng, now, kart);
     updateGlance(cfg, rng, state, now, kart);
     if (now - sight.at >= vis.scanIntervalMs) perceive(cfg, state, rng, now, kart);
 
-    // Ce qu'il fait de la bleue, avant le plan : c'est lui qui en porte le
-    // volant quand il cede la tete.
+    // Gestion de la bleue avant le plan.
     updateBlue(cfg, rng, state, now, kart);
     updatePlan(cfg, rng, now, kart);
     updateShield(cfg, rng, state, now, kart);
 
     command(cfg, state, rng, now, kart, deltaTime);
 
-    // LEVER LE PIED devant la bleue, quelle que soit la manoeuvre qui tient le
-    // volant : c'est le seul geste qui fasse ceder la tete, et une esquive en
-    // chemin n'a aucune raison de l'interrompre. Pose APRES la commande, qui
-    // ecrit ses propres freins ; le plus appuye des deux l'emporte.
+    // Lever le pied devant la bleue, quelle que soit la manoeuvre en cours (le
+    // frein le plus appuye l'emporte).
     const mode = kart.alert.blueMode;
     if (mode === 'yield' || mode === 'hang') {
         const factor = cfg.vision.alerts.blue.brakeFactor;
@@ -60,34 +48,20 @@ function updateAI(cfg, state, rng, now, kart, deltaTime) {
     }
 }
 
-// La commande : un ordre de priorite, une fois la menace designee et le plan
-// pose. La premiere manoeuvre qui s'applique tient le volant, et sort.
+// Ordre de priorite : la premiere manoeuvre applicable prend le volant.
 function command(cfg, state, rng, now, kart, deltaTime) {
     const ai = cfg.ai;
     const vis = cfg.vision;
     const sight = kart.sight;
 
-    // L'esquive passe avant tout le reste, MAIS JAMAIS DEVANT UN TUYAU. C'est le
-    // seul veto du pilotage : `pipeOutranksPlan` ne compare pas deux prix, il
-    // verifie que la ligne commandee sort bel et bien du mur dans le temps qui
-    // reste.
-    //
-    // Ceder ne ferme pas le plan, il le suspend — les deux cibles etant
-    // memorisees, une bascule ne coute aucune decision. Et ceder ne revient pas a
-    // encaisser la carapace : le couloir de tuyau se choisit sur la meme vue, ou
-    // l'objet qui rattrape est un span comme un autre.
-    //
-    // La table de cout garde son role ailleurs — designer LA menace dans
-    // `perceive`. Ce qu'elle n'a plus, c'est le droit de mettre un tarif sur un
-    // mur.
+    // L'esquive passe en premier, sauf si elle mene dans un tuyau
+    // (`pipeOutranksPlan`). Ceder suspend le plan sans le fermer.
     const plan = kart.plan;
     if (plan.threatId && plan.kind === 'spin' && !plan.idle
         && !pipeOutranksPlan(cfg, kart)) {
         kart.aiState = 'dodging';
 
-        // Le frein n'accompagne que les esquives qui ne sont pas franches :
-        // accule il n'a plus que lui, en traversee il recule l'impact le temps de
-        // passer devant l'objet.
+        // Frein seulement pour une esquive acculee ou une traversee.
         if (plan.stuck || plan.crossing) {
             kart.brakeUntil = now + ai.edgeBrakeMs;
             kart.brakeFactor = ai.edgeBrakeFactor;
@@ -97,26 +71,17 @@ function command(cfg, state, rng, now, kart, deltaTime) {
         return;
     }
 
-    // Le tuyau passe avant la visee, le depassement et la maraude : c'est le seul
-    // obstacle certain de la piste, les autres ne sont que des occasions.
+    // Les tuyaux passent avant la visee, le depassement et la maraude.
     if (steerAroundPipes(cfg, state, rng, now, kart, deltaTime)) return;
 
-    // La precaution vient apres le tuyau — un mur est certain quand une ligne de
-    // tir n'est qu'une possibilite — et avant les manoeuvres de confort.
-    //
-    // `giveWay` passe meme sans rien a braquer : son geste principal est de LEVER
-    // LE PIED. Une precaution qui n'a nulle part ou aller rend le volant plutot
-    // que de figer le kart. Ceder la tete devant une bleue est le meme geste,
-    // son frein en plus fort (pose par `updateAI`).
+    // Precaution, apres le tuyau et avant les manoeuvres de confort. `giveWay`
+    // s'applique meme sans rien a braquer (son geste principal est de lever le pied).
     if (plan.threatId
         && (plan.kind === 'giveWay' || plan.kind === 'yieldLead'
             || (plan.kind === 'safety' && !plan.idle))) {
         kart.aiState = plan.kind;
 
-        // Se ranger ne suffit pas a laisser passer : sans lever le pied, celui
-        // qui suit ne double jamais et le kart reste devant sa rouge, range pour
-        // rien. Seul frein qui serve une intention plutot qu'une urgence, d'ou sa
-        // douceur.
+        // Ceder le passage : leger frein pour laisser doubler.
         if (plan.kind === 'giveWay') {
             kart.brakeUntil = now + vis.giveWay.brakeMs;
             kart.brakeFactor = vis.giveWay.brakeFactor;
@@ -126,60 +91,36 @@ function command(cfg, state, rng, now, kart, deltaTime) {
         return;
     }
 
-    // Visee, dans le sens de tir choisi a la reception. Apres l'esquive, avant le
-    // depassement.
-    //
-    // Viser n'est pas percevoir : le kart sait ou est sa cible parce qu'il l'a
-    // choisie. Sauf vers l'arriere — se retourner pour tirer dans le peloton est
-    // un geste, et c'est le seul endroit ou la visee emprunte a la vue. Sans
-    // cette condition, le tireur se recalait parfaitement sur une cible qu'il ne
-    // regardait pas.
-    //
-    // Il faut avoir REGARDE, pas regarder pendant : exiger le regard sur toute la
-    // visee laissait le tireur aveugle du debut a la fin, et le banc l'a dit sans
-    // ambiguite. Le tir part a l'heure dite s'il n'a jamais trouve son moment.
+    // Visee dans le sens de tir choisi. Vers l'arriere, elle exige d'avoir
+    // regarde (releve) ; sans releve valable, le tir part a l'aveugle a l'heure dite.
     const aimDir = isAiming(cfg, kart) ? getShotDirection(state, kart) : 0;
     const aiming = aimDir !== 0 && now > kart.throwTime - ai.aimLeadMs;
 
-    // LE RELEVE. Pendant le coup d'oeil il ne vise pas, il regarde ou est l'autre
-    // : ce qu'il en retient est une profondeur et une date. De cette peremption
-    // nait la chance du poursuivant, et elle ne coute aucun tirage — celui qui
-    // bouge apres avoir ete releve se fait manquer.
+    // Releve pendant le coup d'oeil arriere : profondeur et date de la cible.
     if (aiming && aimDir < 0 && sight.back && sight.scanBack && sight.seenKartDist >= 0) {
         kart.aimTargetY = sight.seenKartY;
         kart.aimTargetAt = now;
     }
 
-    // On ne vise qu'en regardant devant. Derriere, on releve.
+    // On ne vise qu'en regardant devant.
     if (aiming && !sight.back) {
         let targetY = null;
 
         if (aimDir > 0) {
-            // Devant, il voit sa cible — mais il ne vise que ce que LA VUE lui
-            // donne. C'etait le dernier endroit du pilotage a lire le monde
-            // directement, sans occlusion ni portee de regard : un kart cache
-            // derriere un autre s'y faisait prendre pour cible, alors que la meme
-            // visee arriere l'interdisait.
-            //
-            // Meme exigence qu'au releve : le balayage doit avoir regarde du bon
-            // cote.
+            // La cible n'est visee que si le balayage l'a vue devant.
             if (!sight.scanBack && sight.seenKartDist >= 0) targetY = sight.seenKartY;
         } else if (now - kart.aimTargetAt <= vis.aimMemoryMs) {
             targetY = kart.aimTargetY;
         }
 
-        // Sans releve valable, il tire a l'aveugle : depuis sa ligne, a l'heure
-        // dite.
+        // Sans releve valable : tir a l'aveugle, depuis sa ligne.
         if (targetY !== null) {
             const margin = cfg.road.edgeSafetyMargin;
             const desired = Math.min(cfg.road.maxY - margin,
                                      Math.max(cfg.road.minY + margin, targetY + kart.aimError));
             const diff = desired - kart.yPercent;
 
-            // La visee passe par la meme loi que le reste. Elle ne depasse plus
-            // sa cible — elle coupait sa consigne a l'alignement et derivait
-            // encore de la course restante — et son approche est proportionnelle,
-            // la ou l'ancien terme saturait des le premier dixieme d'unite.
+            // Approche proportionnelle de la cible.
             const aim = ai.steering.aim;
             if (Math.abs(diff) > aim.tolerance) {
                 kart.aiState = 'aiming';
@@ -189,30 +130,22 @@ function command(cfg, state, rng, now, kart, deltaTime) {
         }
     }
 
-    // Depassement : le kart le plus proche qui bouche vraiment la voie. Il sort
-    // de la vue comme le reste, donc un kart qui regarde derriere n'en prepare
-    // pas.
+    // Depassement du kart le plus proche qui bouche la voie (vu par le balayage).
     if (sight.aheadKartDist >= 0) {
         let dir = (kart.yPercent > sight.aheadKartY) ? 1 : -1;
         if (kart.yPercent > cfg.road.maxY - cfg.road.overtakeMargin) dir = -1;
         if (kart.yPercent < cfg.road.minY + cfg.road.overtakeMargin) dir = 1;
 
-        // Sortir de SA voie, et s'arreter la. C'est deja ce que la poussee
-        // d'avant obtenait, sans jamais le dire ; le viser rend la manoeuvre
-        // lisible et lui donne une fin. La demi-carrosserie de jeu evite qu'elle
-        // se relance a la premiere bousculade.
+        // Sortir de sa voie, avec une marge d'une demi-carrosserie.
         const pass = ai.steering.overtake;
         const clear = ai.overtakeMinDistance + cfg.hitboxes.kartVsKart.y * 0.5;
         steer(cfg, kart, deltaTime, sight.aheadKartY + dir * clear, pass.speed, pass);
         return;
     }
 
-    // Collecte. La boite visee est la plus proche de sa trajectoire parmi celles
-    // qu'il voit libres — celle qu'un kart lui masque est une boite que ce kart
-    // prendra le premier.
+    // Collecte : la boite visible et libre la plus proche de sa trajectoire.
     if (!kart.heldItem && sight.boxDist >= 0) {
-        // Deja dans l'axe : il tient sa ligne. Le laisser repartir en maraude le
-        // ferait deriver hors de la boite qu'il vise.
+        // Deja dans l'axe : il tient sa ligne.
         const grab = ai.steering.box;
         steer(cfg, kart, deltaTime, sight.boxY, grab.speed, grab);
         return;
@@ -221,22 +154,13 @@ function command(cfg, state, rng, now, kart, deltaTime) {
     if (now > kart.nextWanderTime) {
         kart.nextWanderTime = now + randomRange(rng, ai.wanderIntervalMin, ai.wanderIntervalMax);
         kart.wanderEndTime = now + randomRange(rng, ai.wanderDurationMin, ai.wanderDurationMax);
-        // Plus de biais du danger latent ici : il a sa propre manoeuvre, decidee
-        // et tenue (`placeSafety`). Le porter aussi par la maraude donnait deux
-        // mecanismes pour la meme idee, dont un qui attendait le prochain tirage
-        // de derive.
         let dir = (rng() > 0.5) ? 1 : -1;
 
         if (kart.yPercent > cfg.road.maxY - cfg.road.wanderMargin) dir = -1;
         if (kart.yPercent < cfg.road.minY + cfg.road.wanderMargin) dir = 1;
 
-        // Un ECART a rejoindre, et non une vitesse a tenir : la derive emmenait
-        // les karts maniables trois fois plus loin que les lourds sans que rien
-        // ne le demande. Tout le monde vise le meme decalage, seul le temps d'y
-        // arriver change.
-        //
-        // Vise dans la piste et non au-dela : viser dehors revient a demander au
-        // kart de se plaquer contre le mur pour rien.
+        // Ecart identique pour tous (seul le temps change), dans les limites de
+        // la piste.
         kart.wanderY = Math.min(cfg.road.maxY - cfg.road.wanderMargin,
             Math.max(cfg.road.minY + cfg.road.wanderMargin,
                      kart.yPercent + dir * ai.wanderOffset));
@@ -248,21 +172,8 @@ function command(cfg, state, rng, now, kart, deltaTime) {
         return;
     }
 
-    // La croisiere ne vise rien : elle laisse le volant revenir a zero. Dit dans
-    // la langue du systeme, c'est viser l'endroit ou l'on va s'arreter.
-    //
-    // ET IL N'Y A RIEN APRES : aucun retour a la ligne d'avant l'ecart. La piste
-    // est une bande qui defile, `yPercent` en est la PROFONDEUR et non une
-    // trajectoire — pas de virage, pas de corde, et la seule profondeur que la
-    // physique fasse payer est le mur lui-meme (`clampKartToRoad`). Une esquive
-    // finie ne laisse donc le kart nulle part de mauvais : elle le laisse la ou
-    // le placement venait de le juger le moins cher.
-    //
-    // Ce qui vivait ici visait une profondeur MEMORISEE au lieu de la note, seul
-    // endroit du pilotage a le faire. Quatre manoeuvres reecrivaient ce souvenir
-    // a chaque image sans jamais le lire — l'effacement etait devenu le vrai
-    // comportement — et ce qui en restait ramenait le kart vers une place que
-    // personne n'avait revue depuis.
+    // Croisiere : le volant revient a zero (viser le point d'arret). Aucun
+    // retour a une ligne d'origine : la profondeur ne coute rien hors du mur.
     const cruise = ai.steering.cruise;
     kart.aiState = 'cruising';
     steer(cfg, kart, deltaTime, steerSettle(cfg, kart), 0, cruise);

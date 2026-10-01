@@ -1,17 +1,5 @@
-"""Scission des permissions du 2026-09-13 (contexte 8.5, revu avec l'utilisateur).
-
-Trois separations, chacune avec un moyen de contournement a fermer :
-
-  1. gestion_joueurs (fiches) / gestion_tournois (enregistrer un tournoi)
-     -> contournable en tapant un nom inconnu, qui creait une fiche a la volee ;
-  2. gestion_config « Reglage TS » / gestion_ligues (mode ligue)
-     -> la page Ligues repostait TOUTE la config, donc reecrivait les reglages
-        TrueSkill a chaque geste ;
-  3. le reset global devient delegable via gestion_config (inverse R-51).
-
-Ces tests verifient QUI passe et CE QUI est ecrit. L'unicite des contraintes SQL
-n'est pas simulee par FakeCursor, comme partout dans ce banc d'essai.
-"""
+"""Separation des permissions : fiches / tournois, reglages TrueSkill / ligues,
+et reset global delegable via gestion_config."""
 from harness import *
 from flask import Flask
 
@@ -27,9 +15,7 @@ def io_open(chemin):
 def monter(plan, role='admin', permissions=()):
     """Monte routes_admin avec une session au role voulu.
 
-    `permissions` : celles que porte l'acteur. _a_permission interroge
-    permissions_admin avec la permission en 2e parametre -- d'ou une entree de
-    plan CALLABLE, qui repond selon ce parametre et pas seulement selon le SQL.
+    `permissions` : celles de l'acteur (plan callable selon la permission demandee).
     """
     accordees = set(permissions)
     plan = list(plan) + [
@@ -64,16 +50,14 @@ check("gestion_joueurs et gestion_tournois sont bien distinctes",
       {'gestion_joueurs', 'gestion_tournois'} <= set(PERMISSIONS_CATALOGUE),
       sorted(PERMISSIONS_CATALOGUE))
 
-# Le frontend duplique le catalogue : les deux listes doivent rester alignées,
-# sinon un menu affiche une permission que le backend refuse (ou l'inverse).
+# Le catalogue du frontend doit rester aligne sur celui du backend.
 front = io_open(os.path.join(FRONT, 'frontend.py'))
 check("le catalogue frontend porte gestion_tournois",
       "'gestion_tournois'" in front)
 
 
 print("\n=== Réglage TS ≠ Ligues : les clés de ligue exigent gestion_ligues ===")
-# Un admin « Réglage TS » seul ne doit pas pouvoir activer le mode ligue --
-# désactiver détruit l'affectation de TOUS les joueurs.
+# « Reglage TS » seul ne doit pas pouvoir toucher au mode ligue.
 cli, cur, conn = monter([SESSION('admin')], permissions={'gestion_config'})
 r = cli.post('/admin/config', headers=H, json={'league_mode_enabled': 'false'})
 check("gestion_config seul -> 403 sur league_mode_enabled", r.status_code == 403,
@@ -93,9 +77,7 @@ cli, cur, conn = monter([SESSION('admin')], permissions={'gestion_ligues'})
 r = cli.post('/admin/config', headers=H, json={'league_mode_enabled': 'true'})
 check("gestion_ligues -> accepté", r.status_code == 200, (r.status_code, r.get_json()))
 
-# La séparation vaut dans les DEUX sens : la route ne porte plus de décorateur
-# de permission (il aurait refusé « Ligues » avant le corps), chaque domaine
-# garde donc la sienne.
+# Et inversement.
 cli, cur, conn = monter([SESSION('admin')], permissions={'gestion_ligues'})
 r = cli.post('/admin/config', headers=H, json={'tau': 0.5})
 check("gestion_ligues seul -> 403 sur les réglages TrueSkill",
@@ -108,21 +90,17 @@ r = cli.post('/admin/config', headers=H, json={'tau': 0.5})
 check("gestion_config -> accepté sur les réglages TrueSkill",
       r.status_code == 200, (r.status_code, r.get_json()))
 
-# Un compte sans aucune des deux ne doit rien obtenir.
 cli, cur, conn = monter([SESSION('admin')], permissions={'gestion_saisons'})
 r = cli.post('/admin/config', headers=H, json={'tau': 0.5})
 check("une permission étrangère -> 403", r.status_code == 403, r.status_code)
 
-# Un chef_admin porte le catalogue entier par construction.
 cli, cur, conn = monter([SESSION('chef_admin')])
 r = cli.post('/admin/config', headers=H, json={'league_mode_enabled': 'true'})
 check("chef_admin -> accepté (socle = catalogue)", r.status_code == 200, r.status_code)
 
 
 print("\n=== Un payload partiel n'écrase plus les réglages absents ===")
-# Le défaut d'origine : les 8 clés TrueSkill étaient écrites à CHAQUE appel,
-# avec leurs valeurs par défaut si absentes. La page Ligues, qui repostait la
-# config entière, réinitialisait donc tau et consorts.
+# Les cles TrueSkill absentes du payload ne doivent pas etre reecrites.
 cli, cur, conn = monter([SESSION('chef_admin')])
 cli.post('/admin/config', headers=H, json={'league_mode_enabled': 'true'})
 ecrits = [p[0] for s, p in cur.executed
@@ -156,14 +134,11 @@ i = src.find("@admin_bp.route('/add-tournament'")
 check("add-tournament exige gestion_tournois",
       "@permission_required('gestion_tournois')" in src[i:i + 200], src[i:i + 200])
 
-# Le contournement à fermer : un nom absent créait une fiche à la volée, ce qui
-# aurait rendu la scission décorative.
+# Un nom inconnu ne doit pas creer de fiche sans le droit adequat.
 deb = src.find('def add_tournament')
 fin = src.find('\n@admin_bp.route', deb)
 bloc = src[deb:fin if fin > deb else len(src)]
-# S-09 (audit du 24/09) : depuis le découpage du 17/09, gestion_joueurs n'ouvre
-# plus que la LECTURE des fiches. C'est joueurs_creation qui crée -- ici comme
-# sur la page Fiches joueurs, sinon le tournoi redevient un détour.
+# La creation a la volee exige joueurs_creation.
 check("la création à la volée vérifie joueurs_creation",
       "compte_a_permission(g.compte, 'joueurs_creation')" in bloc)
 check("  et plus gestion_joueurs, qui ne donne que la lecture",
@@ -181,16 +156,10 @@ for route in ('/api/admin/global-reset', '/api/admin/revert-global-reset'):
           "@permission_required('gestion_config')" in src[j:j + 220],
           src[j:j + 220])
 
-# La phrase subsiste dans le commentaire qui RETRACE le changement -- c'est
-# voulu. Ce qui ne doit plus exister, c'est la consigne active : le bloc qui
-# annonçait chef_admin comme cible.
 check("la consigne « cible : role_required(ROLE_CHEF_ADMIN) » a disparu",
       'Decorateur cible du chantier' not in src)
-check("  et le commentaire dit que R-51 est inversé",
-      'R-51 est inverse en connaissance de cause' in src)
 
-# L'interface doit suivre le backend : un bloc gaté chef_admin alors que la
-# route accepte gestion_config cacherait un droit réellement accordé.
+# L'interface doit suivre le backend.
 reglages = io_open(os.path.join(FRONT, 'templates', 'admin_reglages.html'))
 check("le bloc reset est gaté par gestion_config",
       "peut('gestion_config')" in reglages)

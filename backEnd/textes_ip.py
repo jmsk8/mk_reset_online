@@ -1,21 +1,6 @@
-"""Textes de l'Indice de Performance (IP) -- la SEULE source de ce qui s'affiche.
+"""Textes affiches sur l'Indice de Performance (IP).
 
-Phase 1 de docs/affichage-ip-plan-redaction.md. Les pages (recap, classement
-de saison, admin Reglages et Saisons) ne redigent plus rien sur l'IP : elles
-recoivent ces textes dans leur payload et les posent tels quels.
-
-POURQUOI ICI ET PAS DANS LES GABARITS. L'ancienne explication citait « 40% » et
-« +0,3 pt » en dur dans un litteral JS : changer la constante rendait le texte
-faux sans aucun signal. Tout chiffre ci-dessous est donc CALCULE depuis
-constants.py, et test_textes_ip.py verifie qu'il suit la constante.
-
-Deux versions, deux noms (decision du 22/09) : « IP brute » (v1) et « IP
-ajustee » (v2). On les distingue par leur nom et leur explication, jamais en
-affichant les deux chiffres cote a cote -- retire expres le 22/08 (e7f8482).
-
-Simplifications assumees, decidees le 22/09 (§5.4 du plan) : le « niveau » des
-adversaires designe le Mu, que le public ne voit jamais ; les bornes x0,5 / x2
-de la correction v2 ne sont pas mentionnees.
+Les chiffres sont calcules depuis constants.py pour rester a jour.
 """
 from __future__ import annotations
 
@@ -29,8 +14,7 @@ from constants import (
 
 VERSIONS = ("v1", "v2")
 
-# Tailles de lobby de l'exemple « un tournoi a 12 compte X fois plus qu'un
-# tournoi a 4 ». Illustratives : aucun calcul ne les lit.
+# Tailles de lobby de l'exemple affiche (illustratives).
 _LOBBY_EXEMPLE_GRAND = 12
 _LOBBY_EXEMPLE_PETIT = 4
 # Nombre de tournois de l'exemple de minimum non entier (40 % de 7 = 2,8).
@@ -48,19 +32,17 @@ _RESUMES_ADMIN = {
 
 
 def _fr(x: float) -> str:
-    """Nombre au format francais : virgule decimale, deux decimales au plus,
-    sans zero final (0.3 -> « 0,3 », 2.8000000000000003 -> « 2,8 », 150.0 -> « 150 »)."""
+    """Nombre au format francais, deux decimales au plus (0.3 -> « 0,3 »)."""
     texte = f"{round(x, 2):.2f}".rstrip("0").rstrip(".")
     return texte.replace(".", ",")
 
 
 def _pct(ratio: float) -> str:
-    """0.4 -> « 40 % », avec l'espace insecable de la typographie francaise."""
+    """0.4 -> « 40 % »."""
     return f"{_fr(ratio * 100)}\u00a0%"
 
 
 def _tournois(n: int, participe: str = "") -> str:
-    """« 1 tournoi », « 3 tournois » ; avec `participe`, « 1 tournoi joué »."""
     s = "s" if n > 1 else ""
     return f"{n} tournoi{s}" + (f" {participe}{s}" if participe else "")
 
@@ -70,12 +52,9 @@ def _version(version: str | None) -> str:
 
 
 def minimum_tournois(total_tournois: int) -> int:
-    """Nombre de tournois a jouer pour etre classe (le N des textes).
+    """Nombre de tournois a jouer pour etre classe.
 
-    Meme expression que le test d'eligibilite de services.py
-    (`nb_matchs >= total_tournois * MIN_PARTICIPATION_RATIO`) : le plus petit
-    entier qui la satisfait est son plafond. Le calculer autrement (arrondi,
-    pourcentage entier) afficherait un minimum que le classement n'applique pas.
+    Meme calcul que le test d'eligibilite de services.py.
     """
     if total_tournois <= 0:
         return 0
@@ -83,11 +62,7 @@ def minimum_tournois(total_tournois: int) -> int:
 
 
 def textes_ip(version: str | None) -> dict:
-    """Ce qui nomme une version, sans rien qui depende de la saison.
-
-    Sert tel quel a l'admin (boutons radio des Reglages et des Saisons), qui a
-    besoin des deux versions a la fois.
-    """
+    """Nom et resume d'une version, independants de la saison."""
     v = _version(version)
     nom = _NOMS[v]
     return {
@@ -100,19 +75,13 @@ def textes_ip(version: str | None) -> dict:
 
 
 def _facteur_lobby(version: str) -> str:
-    """Poids d'un lobby de 12 face a un lobby de 4 : « 1,9 » en v1, « 1,4 » en v2.
-
-    Le poids d'un tournoi dans la moyenne est `joueurs + poids de base`
-    (_compute_grand_master) ; le rapport des deux poids dit combien le grand
-    lobby compte de plus.
-    """
+    """Poids d'un lobby de 12 face a un lobby de 4 (« 1,9 » en v1)."""
     base = GM_BASE_WEIGHT_V2 if version == "v2" else GM_BASE_WEIGHT_V1
     return _fr(round((_LOBBY_EXEMPLE_GRAND + base) / (_LOBBY_EXEMPLE_PETIT + base), 1))
 
 
 def _explication(version: str, total_tournois: int, contexte: str) -> list[dict]:
-    """Paragraphes de la modale. `titre`, quand il existe, s'affiche en gras et
-    le `texte` le prolonge directement (il commence par sa ponctuation)."""
+    """Paragraphes de la modale ; `texte` prolonge `titre` quand il existe."""
     plafond = _fr(GM_MAX_RATIO_CAP * 100)
     facteur = _facteur_lobby(version)
     exemple = _fr(_SAISON_EXEMPLE * MIN_PARTICIPATION_RATIO)
@@ -180,8 +149,7 @@ def _explication(version: str, total_tournois: int, contexte: str) -> list[dict]
 
 
 def _legende() -> list[dict]:
-    """Paliers de couleur, du meilleur au moins bon. `niveau` est la cle que
-    partiels/cellule_ip.html traduit en classes CSS."""
+    """Paliers de couleur, du meilleur au moins bon."""
     return [
         {"niveau": "etoile", "libelle": f"{IP_SEUIL_ETOILE} et plus", "sens": "domination"},
         {"niveau": "bon", "libelle": f"{IP_SEUIL_BON} à {IP_SEUIL_ETOILE}", "sens": "au-dessus du lot"},
@@ -191,12 +159,7 @@ def _legende() -> list[dict]:
 
 
 def _note_rouge(total_tournois: int, contexte: str) -> str:
-    """Ce que veut dire un IP en rouge. Remplace le `title` de la cellule,
-    invisible au doigt.
-
-    Le gabarit ecrit lui-meme « En rouge : » devant, pour colorer le mot : la
-    phrase commence donc en minuscule.
-    """
+    """Explication d'un IP en rouge (le gabarit ajoute « En rouge : » devant)."""
     n = minimum_tournois(total_tournois)
     if contexte == "recap":
         return (f"moins de {_tournois(n, 'joué')} sur {total_tournois} "
@@ -208,10 +171,9 @@ def _note_rouge(total_tournois: int, contexte: str) -> str:
 
 
 def bloc_ip(version: str | None, total_tournois: int, contexte: str) -> dict:
-    """Le bloc `ip` d'un payload public : tout ce qu'une page affiche sur l'IP.
+    """Bloc `ip` d'un payload public.
 
-    `contexte` vaut « recap » (version figee a la creation du recap) ou
-    « classement » (version du reglage en cours, saison encore ouverte).
+    `contexte` vaut « recap » ou « classement ».
     """
     v = _version(version)
     total = int(total_tournois or 0)

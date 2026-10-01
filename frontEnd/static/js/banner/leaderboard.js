@@ -1,4 +1,4 @@
-// Le classement lateral : les vignettes, leur ordre, leurs animations.
+// Classement lateral : vignettes, ordre et animations.
 
 function initLeaderboard() {
     leaderboardState.container = document.getElementById('race-leaderboard');
@@ -21,11 +21,7 @@ function initLeaderboard() {
     leaderboardState.container.appendChild(camera);
     leaderboardState.cameraEl = camera;
 
-    // Pause, entre la camera et le vote, en mode debug seulement : figer
-    // l'image sert a lire la carte de debug, pas a regarder la course.
-    // Elle porte ses deux icones d'un coup, barres et triangle : c'est le CSS
-    // qui montre celle de l'etat courant, ce qui evite de reconstruire du
-    // balisage a chaque clic.
+    // Pause (mode debug) : les deux icones sont presentes, le CSS montre la bonne.
     leaderboardState.pauseEl = null;
     if (GAME_CONFIG.debugMode) {
         const pause = document.createElement('div');
@@ -37,9 +33,7 @@ function initLeaderboard() {
         leaderboardState.pauseEl = pause;
     }
 
-    // Vote de redemarrage, tout a gauche. Sans la pause, il vient se coller a
-    // la camera (banner.css). Le compteur est pose par renderVote() : ici on
-    // ne construit que la coquille.
+    // Vote de redemarrage (compteur pose par renderVote()).
     const vote = document.createElement('div');
     vote.className = 'leaderboard-pp leaderboard-vote visible';
     vote.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
@@ -48,9 +42,7 @@ function initLeaderboard() {
     leaderboardState.container.appendChild(vote);
     leaderboardState.voteEl = vote;
 
-    // Plein ecran, a gauche du vote. Construit partout, montre sur ecran
-    // tactile seulement (banner.css) : c'est un geste de telephone. Deux icones,
-    // comme la pause — agrandir, puis reduire.
+    // Plein ecran, montre sur ecran tactile seulement.
     const fullscreen = document.createElement('div');
     fullscreen.className = 'leaderboard-pp leaderboard-fullscreen visible';
     fullscreen.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' +
@@ -67,11 +59,8 @@ function initLeaderboard() {
     setLeaderboardSlots(worldState.karts.length);
 }
 
-// Une case par kart EN COURSE, pas par personnage connu : le serveur en aligne
-// `roster.perRace` parmi davantage (raceEngine/src/config/bodies.js). Compter
-// `GAME_CONFIG.resources.characters` poserait des cases vides a gauche du
-// classement. Rappelee a chaque `hello`, elle ne refait rien si le nombre n'a
-// pas change.
+// Une case par kart en course (roster.perRace). Ne refait rien si le nombre
+// n'a pas change.
 function setLeaderboardSlots(count) {
     if (!leaderboardState.container) return;
     if (leaderboardState.slots.length === count) return;
@@ -98,7 +87,6 @@ function ensurePPEl(kart) {
     const img = document.createElement('img');
     img.src = GAME_CONFIG.resources.paths.pp(kart.charName);
     img.alt = kart.charName;
-    // ppStarRainbow, 0,4 s.
     alignAnimationPhase(img, 400);
     ppDiv.appendChild(img);
 

@@ -16,13 +16,10 @@
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
-        /* En-tetes de colonnes triables.
-           L'icone est toujours presente, en retrait : elle annonce que la
-           colonne se trie. La faire apparaitre au seul survol la rendrait
-           invisible au doigt, ou il n'y a pas de survol. */
+        /* En-tetes triables : icone toujours visible (pas de survol au doigt). */
         .th-triable {
             cursor: pointer;
-            user-select: none;   /* un double-clic ne selectionne pas le titre */
+            user-select: none; /* pas de selection au double-clic */
             white-space: nowrap;
         }
 
@@ -37,8 +34,7 @@
             opacity: 0.8;
         }
 
-        /* Colonne qui gouverne le tri : sa fleche est pleine, et le titre
-           prend la teinte d'accent. */
+        /* Colonne du tri actif. */
         .th-triable.tri-actif {
             color: var(--primary-color, #3b82f6) !important;
         }
@@ -61,9 +57,7 @@
             <div class="columns is-variable is-6">
                 <div class="column is-8">
 
-                    {# Le bloc entier disparaît sans `joueurs_creation` : à la
-                       différence d'un champ grisé, il n'y a ici aucune valeur à
-                       montrer -- un formulaire vide et inerte n'apprendrait rien. #}
+                    {# Formulaire masque sans `joueurs_creation`. #}
                     {% if peut('joueurs_creation') %}
                     <div class="card glass-card mb-6 fade-in">
                         <div class="card-header">
@@ -81,9 +75,7 @@
                                             </div>
                                         </div>
                                     </div>
-                                    {# Mu/sigma de départ : même droit qu'à l'édition. Sans lui les
-                                       champs restent visibles mais figés sur les valeurs par
-                                       défaut, que le backend appliquera de toute façon. #}
+                                    {# Mu/sigma de départ : même droit qu'à l'édition. #}
                                     <div class="column is-3">
                                         <div class="field">
                                             <label class="label">Mu Init.</label>
@@ -139,8 +131,6 @@
                             <div class="table-container">
                                 <table class="table is-fullwidth is-hoverable" style="background-color: transparent;">
                                     <thead>
-                                        {# En-tetes triables. « Actions » ne l'est pas :
-                                           la colonne ne porte aucune donnee a comparer. #}
                                         <tr>
                                             <th class="has-text-white has-text-centered th-triable" style="width: 60px;"
                                                 data-tri="status" onclick="trierJoueurs('status')"
@@ -187,9 +177,6 @@
                                 <p><strong>Sigma :</strong> Incertitude sur le niveau (défaut: 8.333).</p>
                                 <hr class="has-background-grey-dark">
                                 <p><strong>Tier :</strong> Calculé automatiquement.</p>
-                                {# Liste peuplee dynamiquement par gestion.js (loadTierLegend) depuis
-                                   /admin/tiers : plus de S/A/B/C figes, voir
-                                   docs/tableau-seuils-tiers-plan.md Partie B. #}
                                 <ul id="tierLegendList">
                                     <li><span class="tag is-white">U</span> Non classé (ou inactif)</li>
                                 </ul>
@@ -243,13 +230,8 @@
                         <div class="field">
                             <label class="label has-text-white">Absences consécutives</label>
                             <div class="control has-icons-left">
-                                {# Ce compteur déclenche la pénalité de sigma
-                                   (docs/plan-sessions-tournois.md, décision 8) : le modifier à la
-                                   main provoque ou empêche une pénalité au tournoi suivant. Il est
-                                   donc en lecture seule, sauf pour le superadmin — capacité de
-                                   rôle, jamais une permission déléguable.
-                                   Le chemin normal reste `make recompter-absences`, qui recalcule
-                                   tout le monde selon une règle unique. #}
+                                {# Modifiable par le superadmin seulement (déclenche la pénalité
+                                   d'absence) ; sinon passer par `make recompter-absences`. #}
                                 {% if role_admin == 'superadmin' %}
                                 <input class="input" type="number" step="1" min="0" id="editMissed">
                                 {% else %}
@@ -290,23 +272,13 @@
 
     {% include 'footer.html' %}
     
-    {# Un droit par geste sur la fiche joueur (2026-09-17). `gestion_joueurs`
-       n'ouvre que la lecture ; chaque champ exige sa sous-permission, et le
-       backend la revérifie champ par champ -- ceci ne décide que de l'affichage.
-
-       Un champ interdit est grisé, jamais masqué : l'admin voit la valeur et
-       comprend au survol qu'un droit lui manque, au lieu de croire que la
-       fonction n'existe pas. Déclaré AVANT gestion.js, qui le lit. #}
+    {# Droits par champ, pour l'affichage (le backend revérifie). Un champ sans
+       droit est grisé, pas masqué. Déclaré avant gestion.js, qui le lit. #}
     <script>
         const PEUT_CHAMPS_JOUEUR = {
             nom:          {{ 'true' if peut('joueurs_nom') else 'false' }},
             mu:           {{ 'true' if peut('edition_mu_sigma') else 'false' }},
-            {# `sigma` DOIT être déclaré, même s'il partage la permission de `mu` :
-               `peutChamp()` lit ce dictionnaire par clef, et une clef absente vaut
-               `undefined`, donc REFUS. Le champ sigma restait grisé pour tout le
-               monde -- superadmin compris -- alors que le backend, lui, l'autorisait
-               sous `edition_mu_sigma`. Ne pas déduire une clef d'une autre ici :
-               le mapping doit refléter PERMISSIONS_CHAMPS_JOUEUR à l'identique. #}
+            {# Chaque clé de PERMISSIONS_CHAMPS_JOUEUR doit figurer (clé absente = refus). #}
             sigma:        {{ 'true' if peut('edition_mu_sigma') else 'false' }},
             color:        {{ 'true' if peut('joueurs_couleur') else 'false' }},
             is_ranked:    {{ 'true' if peut('joueurs_statut') else 'false' }},

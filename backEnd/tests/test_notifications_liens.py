@@ -1,25 +1,10 @@
-"""Une notification mene a ce dont elle parle.
+"""Le lien d'une notification est fige a l'emission et mene a ce dont elle parle.
 
-Le lien est FIGE a l'emission, comme le titre et le corps le sont deja. Ce
-fichier verrouille les deux moities de cette regle :
-
-  1. Chaque decision depose bien l'URL attendue, construite au moment ou elle
-     est prise -- pas un identifiant qu'on re-resoudrait a l'affichage, ce qui
-     supposerait que la cible existe encore.
-
-  2. Deux types n'ont deliberement PAS de lien : `promotion_acceptee` et
-     `promotion_refusee` sont des accuses de reception adresses au proposant.
-     Sans test, un tel NULL se relit comme un oubli, et quelqu'un le
-     « corrigera » vers /admin/comptes -- ou le proposant retrograde entre-temps
-     se fera rediriger vers l'accueil.
-
-Aucun Postgres : le curseur est scripte. Ce fichier valide donc qui ecrit quoi
-et avec quels parametres, pas le SQL lui-meme.
+Les accuses de reception de promotion (acceptee, refusee) n'ont pas de lien.
 """
 from harness import *
 from flask import Flask
-# Version courante de la politique admin, lue et non recopiee : la passer
-# de 1.0 a 1.1 (badge de role public, 27/09) cassait ces tests.
+# Version lue plutot que recopiee.
 from constants import CGU_ADMIN_VERSION as V_ADMIN
 import importlib
 
@@ -48,11 +33,7 @@ H = {'X-Session-Token': 'tok'}
 
 
 def notif_inseree(cur):
-    """(type, titre, corps, lien) de la notification deposee, ou None.
-
-    Passe par les parametres et non par le SQL : c'est la valeur reellement
-    ecrite qui nous interesse.
-    """
+    """(type, titre, corps, lien) de la notification deposee, ou None."""
     for sql, params in cur.executed:
         if 'INSERT INTO notifications' in sql and params:
             return params[-4:] if len(params) >= 4 else None
@@ -60,8 +41,7 @@ def notif_inseree(cur):
 
 
 print("\n=== Liaison approuvee -> la fiche joueur, par son id ===")
-# L'URL canonique est /joueur/<id> et non /stats/joueur/<nom> : le nom bouge,
-# et emporterait le lien avec lui.
+# URL canonique par id, stable apres un renommage.
 cli, cur, conn = monter([
     (r"SELECT d\.compte_id, d\.joueur_id, d\.statut", (5, 9, 'pending', None)),
     (r"SELECT statut, role FROM comptes WHERE id", ('pending', 'player')),
@@ -101,12 +81,11 @@ check("lien -> l'ancre du bloc, pas la page nue",
 
 
 print("\n=== Les accuses de reception n'ont PAS de lien (choix, pas oubli) ===")
-# Refus : la notification part au PROPOSANT, qui n'a rien a faire dessus -- et
-# qui a pu perdre l'acces a /admin/comptes entre-temps.
+# Refus : notification au proposant, sans lien.
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
-    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant
 ], role='player', compte_id=5)
 r = cli.post('/me/promotion', json={'accepte': False}, headers=H)
 n = notif_inseree(cur)
@@ -116,7 +95,7 @@ check("lien NULL", n and n[3] is None, n and n[3])
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
-    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant
 ], role='player', compte_id=5)
 r = cli.post('/me/promotion', json={'accepte': True, 'cgu_admin_version': V_ADMIN}, headers=H)
 n = notif_inseree(cur)
@@ -125,8 +104,7 @@ check("lien NULL", n and n[3] is None, n and n[3])
 
 
 print("\n=== Les accuses de reception nomment le compte qui repond ===")
-# « Le compte a accepte » ne disait pas LEQUEL : un proposant qui a plusieurs
-# propositions en cours ne pouvait pas savoir qui avait repondu.
+# Le corps nomme le compte qui a repondu.
 check("acceptation : pseudo dans le corps", n and n[2].startswith('Admin a accepté'),
       n and n[2])
 check("acceptation : role dans le corps", n and 'le rôle admin' in n[2], n and n[2])
@@ -134,17 +112,17 @@ check("acceptation : role dans le corps", n and 'le rôle admin' in n[2], n and 
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
-    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant
 ], role='player', compte_id=5)
 r = cli.post('/me/promotion', json={'accepte': False}, headers=H)
 n = notif_inseree(cur)
 check("refus : pseudo dans le corps", n and n[2].startswith('Admin a refusé'), n and n[2])
 
-# Vieux compte sans global_name : repli sur le handle, jamais « None a accepte ».
+# Compte sans global_name : repli sur le handle.
 plan = [
     (r"SELECT role FROM comptes WHERE id", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', 99, PASSE, FUTUR)),
-    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant
     (r"FROM sessions_joueurs s JOIN comptes c",
      ligne_session(compte_id=5, discord_id='111', username='vieuxcompte',
                    global_name=None, role='player')),

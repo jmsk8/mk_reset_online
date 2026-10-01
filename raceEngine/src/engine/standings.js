@@ -1,4 +1,4 @@
-// Le classement : qui mene, qui suit, et ce que ca rapporte.
+// Classement et points.
 
 import { clamp01 } from './math.js';
 import { remainingDistance } from './geometry.js';
@@ -15,8 +15,7 @@ function getLeader(state) {
     return leader;
 }
 
-// Le mieux place parmi ceux qui courent encore : viser le tour d'honneur
-// d'un kart deja arrive n'aurait aucun sens.
+// Le mieux place parmi les karts encore en course.
 function getRacingLeader(state) {
     let best = null;
     for (let i = 0; i < state.karts.length; i++) {
@@ -28,8 +27,7 @@ function getRacingLeader(state) {
     return best;
 }
 
-// Le dernier encore en course. Pendant de getRacingLeader : ensemble ils
-// donnent l'etalement du peloton.
+// Le dernier encore en course.
 function getRacingTail(state) {
     let worst = null;
     for (let i = 0; i < state.karts.length; i++) {
@@ -47,20 +45,15 @@ function getDistanceToLeader(state, kart) {
     return remainingDistance(kart) - remainingDistance(leader);
 }
 
-// Avancement du premier, 0 au depart a 1 a l'arrivee : mesure d'etape
-// commune a tous les karts.
+// Avancement du premier, de 0 au depart a 1 a l'arrivee.
 function getRaceStage(state) {
     const leader = state.cachedLeader;
     if (!leader || !leader.finishDistance) return 0;
     return clamp01(leader.totalDistance / leader.finishDistance);
 }
 
-// Classement reel, recalcule a chaque pas. Il porte `rank` et
-// `cachedLeader`, dont dependent la distribution d'objets, l'agressivite et
-// toutes les regles de place de l'IA — un rang vieux d'une demi-seconde
-// ferait planifier un objet avec la place precedente, et le premier tirer
-// vers l'avant juste apres avoir pris la tete. Trier huit karts ne coute
-// rien ; c'est l'animation de depassement, plus bas, qui doit etre cadencee.
+// Classement reel, recalcule a chaque pas (rank et cachedLeader alimentent la
+// distribution d'objets et l'IA). Seule l'animation de depassement est cadencee.
 function updateRanks(state) {
     const karts = state.karts;
     const kartsLen = karts.length;
@@ -72,11 +65,8 @@ function updateRanks(state) {
     }
     if (activeKarts.length === 0) return null;
 
-    // Position reelle = distance RESTANTE jusqu'a la ligne et non distance
-    // parcourue : la grille etant en quinconce, les huit karts n'ont pas la meme
-    // distance a couvrir. Un kart arrive garde ensuite sa place quoi qu'il fasse
-    // — il roule au ralenti, et un poursuivant pourrait le depasser en distance
-    // sans lui reprendre sa position.
+    // Tri sur la distance restante (grille en quinconce) ; un kart arrive garde
+    // sa place.
     activeKarts.sort((a, b) => {
         if (a.finished || b.finished) {
             if (a.finished && b.finished) return a.finishRank - b.finishRank;
@@ -86,21 +76,15 @@ function updateRanks(state) {
     });
 
     state.cachedLeader = activeKarts[0];
-    // Combien de places il y a a prendre, et non combien de karts existent :
-    // c'est l'echelle sur laquelle un rang se lit. Un plateau ampute — des
-    // karts encore en grille, une course a six — doit rendre les memes
-    // extremes qu'un plateau complet, sinon le rang ne veut plus dire la
-    // meme chose d'une course a l'autre.
+    // Nombre de places a prendre, echelle de lecture d'un rang.
     state.rankedCount = activeKarts.length;
     for (let i = 0; i < activeKarts.length; i++) activeKarts[i].rank = i + 1;
 
     return activeKarts;
 }
 
-// Les evenements de depassement, eux, restent cadences : chacun declenche
-// une animation de glissement cote client, qui ne peut pas rejouer trente
-// fois par seconde. `previousRanking` n'avance qu'avec eux, pour que le
-// client voie bien le trajet complet d'une place a l'autre.
+// Evenements de depassement cadences (animation cote client) ;
+// `previousRanking` n'avance qu'avec eux.
 function updateLeaderboard(state, now, events) {
     const activeKarts = updateRanks(state);
     if (!activeKarts) return;
@@ -126,10 +110,8 @@ function updateLeaderboard(state, now, events) {
     state.previousRanking = newRanking;
 }
 
-// Points du grand prix, attribues une fois la course close. `racePoints`
-// ne vaut que pour la course qui vient de finir, `gpPoints` cumule depuis le
-// debut du bloc. Les deux sont indexes par personnage et non par kart : les
-// identifiants sont refaits a chaque course, les personnages non.
+// Points du grand prix, une fois la course close. `racePoints` pour la course,
+// `gpPoints` cumules ; indexes par personnage (les ids changent a chaque course).
 function awardRacePoints(cfg, state) {
     const table = cfg.grandPrix.points;
 

@@ -26,37 +26,26 @@ constexpr int TICK_HZ = 30;
 constexpr double DT = 1.0 / TICK_HZ;
 constexpr double DT_MS = DT * 1000.0;
 
-// La simulation tourne a 30 Hz, la diffusion a 10 : le client interpole entre
-// deux snapshots, il n'a pas besoin de tous les pas. Diffuser plus vite double
-// la bande passante par spectateur sans rien changer a ce qu'il voit.
-//
-// Ce rapport n'est pas libre : `RENDER_DELAY_MS = 200` cote client est cale sur
-// SEND_HZ = 10 (piege P-3). Le changer degrade visiblement la fluidite sans rien
-// afficher d'anormal.
+// Simulation a 30 Hz, diffusion a 10 Hz : le client interpole. Lie a
+// `RENDER_DELAY_MS = 200` cote client.
 constexpr int SEND_HZ = 10;
 constexpr int TICKS_PER_SEND = TICK_HZ / SEND_HZ;
 
-// Plafond de rattrapage : sans lui, une pause de l'hote declenche une spirale ou
-// chaque tick rejoue le retard accumule, ce qui sature le CPU — d'autant plus
-// avec la limite a 0.25 cpu de ce service (migration-wss-2026-08.md §6.14).
+// Plafond de rattrapage apres une pause de l'hote.
 constexpr int MAX_CATCHUP_STEPS = 5;
 
-// Delai de grace avant l'arret de la course quand plus personne ne regarde. Un
-// simple F5 ne doit pas repartir de zero.
+// Delai avant l'arret de la course quand plus personne ne regarde (un F5 ne
+// doit pas la relancer).
 constexpr double IDLE_GRACE_MS = 30000;
 
-// Le client n'envoie que `hi`, `ping`, `vis`, `vote` et `watch`, quelques
-// dizaines d'octets : ce qui depasse est une tentative.
+// Messages clients courts : au-dela, rejete.
 constexpr int MAX_PAYLOAD = 512;
 
-// Un onglet cache cesse de compter comme spectateur apres ce delai — celui de
-// HIDDEN_GRACE_MS (server.js) et de HIDDEN_DISCONNECT_MS (net.js). Pas zero :
-// un simple changement d'onglet ne doit pas completer l'unanimite.
+// Delai apres lequel un onglet cache ne compte plus comme spectateur (comme
+// HIDDEN_GRACE_MS de server.js et HIDDEN_DISCONNECT_MS de net.js).
 constexpr double HIDDEN_GRACE_MS = 60000;
 
-// Le sujet de diffusion. Un seul, et c'est tout l'interet : uWS compresse la
-// charge UNE FOIS pour le sujet, la ou une boucle d'envoi la recompresserait
-// par connexion.
+// Sujet de diffusion unique : uWS compresse une fois pour tous.
 constexpr const char* TOPIC = "race";
 
 double now_ms() {
@@ -65,16 +54,14 @@ double now_ms() {
         duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
 }
 
-// Un signal ne peut toucher qu'a ca : le reste du service est lu par la boucle,
-// et un handler qui rebatirait le monde le ferait sous les pieds de uWS.
+// Seul etat touche par le gestionnaire de signal ; la boucle le lit.
 volatile std::sig_atomic_t g_sighup = 0;
 
 void on_sighup(int) { g_sighup = 1; }
 
-// Ce que le service garde par connexion.
+// Etat par connexion.
 struct ClientMeta {
-    // L'identifiant du navigateur (`hi`), vide tant qu'il ne l'a pas donne.
-    // Garde le temps de la connexion, jamais ecrit ailleurs.
+    // Identifiant du navigateur (`hi`), vide tant qu'il n'est pas recu.
     std::string nav;
     bool hidden = false;
     double hiddenSince = 0;
@@ -102,28 +89,22 @@ struct Service {
 
     std::optional<Race> race;
 
-    // Les connexions ouvertes : uWS ne sait pas les enumerer, et il faut les
-    // parcourir pour compter les navigateurs et dire a chacun sa voix.
+    // Connexions ouvertes (uWS ne sait pas les enumerer).
     std::set<Socket*> sockets;
 
-    // Le grand prix court sur plusieurs courses : il vit ICI et non dans l'etat
-    // du monde, refait a chaque depart.
+    // Le grand prix dure plusieurs courses : il vit ici, pas dans le monde.
     int gpRound = 1;
     std::map<std::string, int> gpPoints;
 
-    // Grille de la manche suivante, vainqueur en pole. Vide = tiree au sort,
-    // c'est ce qui ouvre chaque grand prix.
+    // Grille de la manche suivante, vainqueur en pole. Vide = tiree au sort.
     std::vector<std::string> lastFinishOrder;
 
     long long totalRaces = 0;
 
-    // Poses par le vote unanime ou par SIGHUP, consommes par la boucle : on ne
-    // rebatit pas le monde depuis un gestionnaire de signal ni depuis un
-    // handler de message.
+    // Poses par le vote ou SIGHUP, traites par la boucle.
     bool restartRequested = false;
 
-    // Date a laquelle la course s'arretera faute de spectateurs. 0 = pas de
-    // compte a rebours en cours.
+    // Debut du delai d'arret faute de spectateurs ; 0 = aucun.
     double idleSince = 0;
 
     double lastWall = 0;
@@ -135,13 +116,11 @@ struct Service {
 
 // ── Spectateurs et vote ────────────────────────────────────────────────────
 //
-// Meme regles que server.js, qui les detaille : un spectateur est un
-// NAVIGATEUR qui regarde, pas une connexion, et il a une voix, tenue a
-// l'identique sur toutes ses connexions.
+// Memes regles que server.js : un spectateur est un navigateur (pas une
+// connexion), avec une voix commune a toutes ses connexions.
 
-// La cle d'un navigateur : son identifiant, ou la connexion elle-meme quand il
-// ne l'a pas donne. `@` n'entre dans aucun identifiant valide : les deux
-// espaces ne se croisent pas.
+// Cle d'un navigateur : son identifiant, ou la connexion a defaut (`@` n'entre
+// dans aucun identifiant valide).
 std::string nav_key(Socket* ws) {
     const ClientMeta* meta = ws->getUserData();
     if (!meta->nav.empty()) return meta->nav;
@@ -150,8 +129,7 @@ std::string nav_key(Socket* ws) {
     return buf;
 }
 
-// [voix, spectateurs]. La voix d'un navigateur qui ne regarde plus ne compte
-// pas : elle ne peut completer une unanimite dont il ne fait plus partie.
+// [voix, spectateurs]. La voix d'un navigateur qui ne regarde plus ne compte pas.
 protocol::VoteTally tally(const Service& svc) {
     const double now = now_ms();
     std::set<std::string> watching;
@@ -180,9 +158,8 @@ bool nav_voted(const Service& svc, const std::string& key) {
     return false;
 }
 
-// Pose ou retire la voix d'un navigateur sur CHACUNE de ses connexions, et le
-// dit a chacune : l'onglet voisin doit afficher le meme bouton. Les cibles sont
-// relevees avant d'envoyer, pour ne jamais parcourir `sockets` pendant un envoi.
+// Pose ou retire la voix d'un navigateur sur toutes ses connexions, et les
+// previent. Cibles relevees avant l'envoi.
 void set_nav_vote(Service& svc, const std::string& key, bool voted) {
     std::vector<Socket*> targets;
     for (Socket* ws : svc.sockets) {
@@ -195,17 +172,14 @@ void set_nav_vote(Service& svc, const std::string& key, bool voted) {
     }
 }
 
-// Une voix porte sur le grand prix EN COURS : elle ne survit pas a la course.
-// Les clients ne sont pas prevenus, chacun efface la sienne au `hello` d'une
-// course neuve, qui suit toujours cet appel.
+// Les voix ne survivent pas a la course ; les clients effacent la leur au
+// `hello` suivant.
 void clear_votes(Service& svc) {
     for (Socket* ws : svc.sockets) ws->getUserData()->voted = false;
 }
 
-// Visibilite d'une connexion. Un onglet en arriere-plan se DESABONNE : c'est ce
-// qui rend le banner gratuit dans un onglet oublie. Rend vrai s'il revient au
-// premier plan : il a rate tout ce qui s'est passe, il lui faut une scene
-// complete, exactement comme a un arrivant.
+// Visibilite d'une connexion : un onglet en arriere-plan se desabonne. Rend
+// vrai s'il revient au premier plan (il lui faut une scene complete).
 bool set_hidden(Socket* ws, bool hidden) {
     ClientMeta* meta = ws->getUserData();
     const bool wasHidden = meta->hidden;
@@ -225,11 +199,8 @@ void start_race(Service& svc) {
 
     const double now = now_ms();
 
-    // Une manche, un circuit : le grand prix parcourt le dossier dans l'ordre
-    // des noms de fichiers. Le choix se fait ICI et pas plus bas parce que le
-    // circuit est dans la CONFIG — la longueur du tour, la ligne et les boites
-    // en font partie — et que la config doit etre complete avant que le monde
-    // ne soit bati.
+    // Circuit de la manche, choisi avant de batir le monde (il fait partie de
+    // la config).
     track::Track circuit = track::for_round(svc.tracks, svc.gpRound);
 
     Race race;
@@ -253,15 +224,12 @@ void start_race(Service& svc) {
     std::fflush(stdout);
 }
 
-// La manche suivante, ou un bloc neuf. Appele sur `raceOver`, et c'est le
-// SERVICE qui le fait : lui seul detient `create_world_state` et les connexions
-// a prevenir.
+// Manche suivante ou nouveau bloc, sur `raceOver`.
 void advance_grand_prix(Service& svc) {
     if (!svc.race.has_value()) return;
 
-    // L'ordre d'arrivee devient la grille de la manche suivante, par NOM de
-    // personnage : les ids sont reconstruits a chaque course, les personnages
-    // non.
+    // L'ordre d'arrivee donne la grille suivante, par nom de personnage (les
+    // ids changent a chaque course).
     svc.lastFinishOrder.clear();
     for (int id : svc.race->state.finishOrder) {
         if (id >= 0 && id < static_cast<int>(svc.race->state.karts.size())) {
@@ -314,9 +282,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
     svc.app = &app;
 
     // ── /healthz ────────────────────────────────────────────────────────────
-    // Sans healthcheck vert, nginx ne demarre pas du tout
-    // (`depends_on: race: service_healthy`). C'est aussi ce qui decide du choix
-    // de l'image de runtime : il faut un `wget` dedans.
+    // Requis par nginx (`depends_on: race: service_healthy`).
     app.get("/healthz", [&svc](auto* res, auto* /*req*/) {
         json::Writer w;
         w.begin_object();
@@ -325,15 +291,13 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         w.key("track");
         if (svc.race.has_value()) w.string(svc.race->trackName);
         else w.null();
-        // Les connexions, et ce que le banner affiche : les navigateurs qui
-        // regardent. L'ecart entre les deux est ce qui se diagnostique.
+        // Connexions et navigateurs qui regardent.
         w.key("clients"); w.integer(static_cast<long long>(svc.sockets.size()));
         w.key("spectators"); w.integer(tally(svc).watchers);
         w.key("ticks");  w.integer(svc.race.has_value() ? svc.race->ticks : 0);
         w.key("races");  w.integer(svc.totalRaces);
-        // `make engine` dit ce qui est CHOISI, /healthz dit ce qui TOURNE : les
-        // deux peuvent diverger tant qu'un `make re-race` n'a pas eu lieu
-        // (piege P-7).
+        // Moteur reellement en service (peut differer de `make engine` avant
+        // un `make re-race`).
         w.key("engine"); w.string("cpp");
         w.end_object();
 
@@ -342,29 +306,21 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
     });
 
     // ── /ws/race ────────────────────────────────────────────────────────────
-    // L'ordre des champs suit celui de `WebSocketBehavior` : un designated
-    // initializer en C++ doit respecter l'ordre de declaration, sans quoi le
-    // compilateur refuse.
+    // Champs dans l'ordre de `WebSocketBehavior` (designated initializers).
     app.ws<ClientMeta>(opts.wsPath, {
-        // Deux snapshots consecutifs se ressemblent enormement : c'est le cas
-        // ideal pour deflate, a condition de garder le contexte d'un message a
-        // l'autre. La fenetre est reduite a 4 Ko — elle couvre l'historique
-        // utile a des messages de quelques centaines d'octets tout en bornant la
-        // memoire par connexion, qui compte avec la limite a 128 Mo.
+        // Contexte deflate conserve entre messages, fenetre de 4 Ko pour borner
+        // la memoire par connexion.
         .compression = uWS::DEDICATED_COMPRESSOR_4KB,
 
         // `maxPayload: 512` du JS.
         .maxPayloadLength = MAX_PAYLOAD,
 
-        // Le heartbeat manuel du JS (ping toutes les 30 s puis `terminate()`)
-        // devient un reglage : uWS ping tout seul et ferme ce qui ne repond
-        // plus. Le navigateur repond au niveau PROTOCOLE, sans code client.
+        // uWS envoie les pings et ferme les connexions muettes.
         .idleTimeout = 60,
         .sendPingsAutomatically = true,
 
         .upgrade = [&svc, &opts](auto* res, auto* req, auto* context) {
-            // Le controle d'origine a lieu ICI, avant meme d'accepter la
-            // connexion : un 403 brut, comme le JS.
+            // Controle d'origine avant d'accepter : 403.
             std::string origin { req->getHeader("origin") };
             if (!opts.allowedOrigins.empty() && !origin.empty()) {
                 const bool allowed = std::find(opts.allowedOrigins.begin(),
@@ -390,8 +346,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
             svc.sockets.insert(ws);
             svc.idleSince = 0;
 
-            // La course demarre a la PREMIERE connexion : personne devant
-            // l'ecran, aucun CPU consomme.
+            // La course demarre a la premiere connexion.
             start_race(svc);
 
             ws->subscribe(TOPIC);
@@ -405,10 +360,8 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         },
 
         .message = [&svc](auto* ws, std::string_view payload, uWS::OpCode /*op*/) {
-            // Le service repond a `ping`, note `hi`, `vis` et `watch`, compte
-            // `vote`. Tout le reste est ignore EN SILENCE : c'est un flux de
-            // lecture, il n'existe aucune raison legitime de lui envoyer autre
-            // chose.
+            // Repond a `ping`, note `hi`, `vis` et `watch`, compte `vote`. Le
+            // reste est ignore.
             const json::ClientMessage msg = json::parse_client_message(payload);
             ClientMeta* meta = static_cast<ClientMeta*>(ws->getUserData());
 
@@ -418,16 +371,12 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
                              uWS::OpCode::TEXT);
                     break;
 
-                // Premier message du client, a l'ouverture : quel navigateur,
-                // et s'il regarde. `vis` ne part pas tant que la connexion
-                // s'ouvre — un onglet ouvert en arriere-plan passait pour visible.
+                // Premier message : navigateur et visibilite.
                 case json::ClientMessageType::Hi: {
-                    // Une seule fois par connexion : un identifiant ne change
-                    // pas en cours de route.
+                    // Une seule fois par connexion.
                     if (meta->nav.empty() && !msg.nav.empty()) {
                         meta->nav = msg.nav;
-                        // Un onglet de plus d'un navigateur qui a deja vote porte
-                        // sa voix.
+                        // Reprend la voix deja posee par ce navigateur.
                         if (nav_voted(svc, meta->nav)) {
                             meta->voted = true;
                             ws->send(R"({"t":"vote","v":true})", uWS::OpCode::TEXT);
@@ -440,15 +389,12 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
                                                        tally(svc), {}),
                                  uWS::OpCode::TEXT);
                     }
-                    // Deux connexions devenues un seul navigateur : le quorum a
-                    // baisse.
+                    // Deux connexions fusionnees : le quorum a baisse.
                     if (unanimous(tally(svc))) svc.restartRequested = true;
                     break;
                 }
 
-                // Une bascule, a l'echelle du navigateur. Unanimite : tout le
-                // monde doit vouloir repartir. Un seul spectateur suffit donc a
-                // relancer quand il est seul, ce qui est le cas le plus frequent.
+                // Bascule par navigateur ; redemarrage a l'unanimite.
                 case json::ClientMessageType::Vote: {
                     const std::string key = nav_key(ws);
                     set_nav_vote(svc, key, !nav_voted(svc, key));
@@ -483,7 +429,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
             // Un spectateur de moins peut completer l'unanimite.
             if (svc.race.has_value() && unanimous(tally(svc))) svc.restartRequested = true;
 
-            // Delai de grace : un F5 ne doit pas emporter la course.
+            // Delai de grace avant l'arret.
             if (svc.sockets.empty() && !svc.opts.alwaysOn) {
                 svc.idleSince = now_ms();
             }
@@ -492,8 +438,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
 
     // ── La boucle ───────────────────────────────────────────────────────────
     //
-    // Un timer a ~33 ms, l'ACCUMULATEUR a pas fixe faisant le vrai travail : le
-    // timer peut deriver, le pas de simulation non.
+    // Timer a ~33 ms et accumulateur a pas fixe.
     struct us_timer_t* timer = us_create_timer(
         reinterpret_cast<struct us_loop_t*>(uWS::Loop::get()), 0, sizeof(Service*));
     *reinterpret_cast<Service**>(us_timer_ext(timer)) = &svc;
@@ -502,21 +447,20 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
         Service& svc = **reinterpret_cast<Service**>(us_timer_ext(t));
 
         const double wall = now_ms();
-        // Ecoule reel PLAFONNE a 1 s : au-dela, l'hote a gele, et rejouer ce
-        // retard ne rendrait pas le temps perdu.
+        // Ecoule plafonne a 1 s (hote gele).
         double elapsed = wall - svc.lastWall;
         if (elapsed > 1000) elapsed = 1000;
         if (elapsed < 0) elapsed = 0;
         svc.lastWall = wall;
 
-        // L'arret differe : 30 s apres le depart du dernier spectateur.
+        // Arret differe apres le depart du dernier spectateur.
         if (svc.idleSince > 0 && svc.sockets.empty()
             && wall - svc.idleSince >= IDLE_GRACE_MS) {
             stop_race(svc);
             svc.idleSince = 0;
         }
 
-        // SIGHUP (`make restart-race`) : un grand prix neuf, sans couper les
+        // SIGHUP (`make restart-race`) : nouveau grand prix sans couper les
         // connexions.
         if (g_sighup) {
             g_sighup = 0;
@@ -525,9 +469,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
             std::fflush(stdout);
         }
 
-        // Le vote unanime et SIGHUP passent par ici : rebatir le monde depuis un
-        // handler de message ou de signal invaliderait l'etat que la boucle est
-        // en train de lire.
+        // Redemarrage traite ici, hors des handlers de message et de signal.
         if (svc.restartRequested) {
             svc.restartRequested = false;
             clear_votes(svc);
@@ -537,9 +479,8 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
             svc.race.reset();
             start_race(svc);
             if (svc.race.has_value()) {
-                // Une course neuve, c'est un `t0` neuf : le client s'en sert
-                // pour distinguer « nouvelle course » de « reconnexion » et
-                // faire tomber le rideau (piege P-2).
+                // Nouveau `t0` : le client distingue nouvelle course et
+                // reconnexion.
                 svc.app->publish(TOPIC,
                     protocol::build_hello(svc.race->cfg, svc.race->state,
                                           svc.race->state.simTime, svc.race->t0,
@@ -565,8 +506,7 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
                 if (e.type == engine::EventType::RaceOver) raceOver = true;
             }
 
-            // L'horloge de SIMULATION avance de 1000/30 par pas simule, pas par
-            // temps reel : c'est elle que le client interpole (piege P-4).
+            // Horloge de simulation : 1000/30 par pas, interpolee par le client.
             svc.race->state.simTime += DT_MS;
             svc.race->ticks++;
             svc.accumulator -= DT;
@@ -575,37 +515,26 @@ int run(const config::Config& cfg, const std::vector<track::Track>& tracks,
 
             if (svc.tickCounter % TICKS_PER_SEND == 0) {
                 const protocol::VoteTally vote = tally(svc);
-                // Un onglet cache sort du compte a l'expiration de son delai,
-                // sans qu'aucun message ne l'annonce : c'est ici que se constate
-                // l'unanimite qu'il bloquait. Le redemarrage passe par le tick
-                // suivant, comme les autres.
+                // Expiration d'un onglet cache : l'unanimite peut etre atteinte.
                 if (unanimous(vote)) svc.restartRequested = true;
                 const std::string payload =
                     protocol::build_snapshot(svc.race->cfg, svc.race->state,
                                              svc.race->state.simTime, vote, events);
-                // Compressee UNE FOIS pour le sujet, quel que soit le nombre de
-                // spectateurs.
+                // Compressee une fois pour le sujet.
                 svc.app->publish(TOPIC, payload, uWS::OpCode::TEXT, true);
             }
         }
 
-        // Le retard au-dela du plafond est JETE : mieux vaut une course qui
-        // saute que l'hote a genoux.
+        // Retard au-dela du plafond abandonne.
         if (svc.accumulator > DT * MAX_CATCHUP_STEPS) {
             svc.accumulator = DT * MAX_CATCHUP_STEPS;
         }
 
-        // La manche est close : le service en tire la suivante, et previent tout
-        // le monde avec un `hello` complet — le monde a change d'identite, pas
-        // seulement d'etat.
+        // Manche close : la suivante est annoncee par un `hello` complet.
         if (raceOver) {
             advance_grand_prix(svc);
             if (svc.race.has_value()) {
-                // Un `hello` COMPLET et non un snapshot : le monde a change
-                // d'identite, pas seulement d'etat — nouveau circuit possible,
-                // nouvelle grille, nouveaux ids. Et un `t0` neuf, qui est le
-                // seul discriminant « course neuve / reprise » cote client
-                // (piege P-2) : c'est lui qui fait tomber le rideau.
+                // `hello` complet (nouveau circuit, grille, ids) et nouveau `t0`.
                 svc.app->publish(TOPIC,
                     protocol::build_hello(svc.race->cfg, svc.race->state,
                                           svc.race->state.simTime, svc.race->t0,

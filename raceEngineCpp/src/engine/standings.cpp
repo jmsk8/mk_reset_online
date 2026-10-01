@@ -23,16 +23,13 @@ void update_leaderboard(const config::Config& cfg, WorldState& state, double now
                         std::vector<Event>& events) {
     if (state.karts.empty()) return;
 
-    // Le tri se fait sur la distance RESTANTE. `id` departage : sans lui, deux
-    // karts a egalite parfaite echangeraient leurs rangs d'un tick a l'autre et
-    // le classement clignoterait.
+    // Tri sur la distance restante, `id` pour departager.
     std::vector<const Kart*> ordered;
     ordered.reserve(state.karts.size());
     for (const Kart& k : state.karts) ordered.push_back(&k);
 
     std::sort(ordered.begin(), ordered.end(), [](const Kart* a, const Kart* b) {
-        // Un kart arrive garde son rang d'arrivee : il roule au ralenti et se
-        // ferait sinon doubler au classement par ceux qui courent encore.
+        // Un kart arrive garde son rang.
         if (a->finished != b->finished) return a->finished;
         if (a->finished && b->finished) return a->finishRank < b->finishRank;
 
@@ -46,8 +43,7 @@ void update_leaderboard(const config::Config& cfg, WorldState& state, double now
         state.karts[static_cast<size_t>(ordered[i]->id)].rank = static_cast<int>(i) + 1;
     }
 
-    // Le releve ne part que deux fois par seconde : le classement lateral
-    // n'est pas une animation, et l'envoyer a chaque tick noierait `ev[]`.
+    // Deux releves par seconde.
     if (now - state.lastLeaderboardUpdate < 500) return;
     state.lastLeaderboardUpdate = now;
 
@@ -85,8 +81,7 @@ void award_race_points(const config::Config& cfg, WorldState& state) {
         const std::string& name = state.karts[static_cast<size_t>(id)].charName;
         const int points = (i < table.size()) ? table[i] : 0;
 
-        // `racePoints` ne vaut que pour la manche qui vient de finir,
-        // `gpPoints` cumule depuis le debut du bloc.
+        // `racePoints` : la manche ; `gpPoints` : cumul du bloc.
         state.racePoints[name] = points;
         state.gpPoints[name] += points;
     }

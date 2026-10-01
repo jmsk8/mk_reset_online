@@ -6,15 +6,12 @@
 #   scripts/maintenance.sh off      désactive
 #   scripts/maintenance.sh status   dit ce que nginx sert en ce moment
 #
-# Le passe est un cookie. On l'obtient en ouvrant UNE fois l'adresse affichée
-# par `on` dans son navigateur. La clé est tirée au hasard à chaque activation :
-# elle n'est pas dans le dépôt (public), et une clé lue dans les journaux nginx
-# ne sert plus à rien la fois suivante.
+# Le passe est un cookie, obtenu en ouvrant une fois l'adresse affichée par
+# `on`. La clé est tirée au hasard à chaque activation.
 #
-# L'interrupteur est le fichier nginx/maintenance/actif.conf, inclus par
-# nginx/snippets/app.conf. Après l'avoir écrit ou supprimé, on recharge nginx
-# puis on VÉRIFIE le code qu'il renvoie : le reload qui réussit sans rien
-# changer est un piège déjà rencontré ici (docs/audit-503-zone-admin.md §12).
+# L'interrupteur est nginx/maintenance/actif.conf, inclus par
+# nginx/snippets/app.conf. Après chaque changement, nginx est rechargé et le
+# code servi est vérifié.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -55,11 +52,9 @@ recharger() {
     echo "Configuration nginx refusée : rien n'a été rechargé." >&2
     return 1
   fi
-  # Le « signal process started » de nginx n'apprend rien : la vérification
-  # du code servi, elle, dit si le rechargement a pris.
+  # Le résultat du reload se vérifie au code servi.
   "${COMPOSE[@]}" exec -T nginx nginx -s reload 2>/dev/null
-  # Le reload est asynchrone : les nouveaux workers prennent le relais en un
-  # instant, mais pas forcément avant la vérification qui suit.
+  # Reload asynchrone : laisser aux nouveaux workers le temps de prendre le relais.
   sleep 1
 }
 
@@ -83,11 +78,10 @@ case "${1:-}" in
       echo "Maintenance déjà active : même clé, ton passe reste valable."
     else
       cle=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
-      # `umask` : la clé n'a pas à être lisible par les autres comptes de l'hôte.
-      # nginx la lit en root au chargement, avant de passer ses workers en nginx.
+      # Clé lisible par root seul (nginx la lit avant de changer d'utilisateur).
       ( umask 077; cat > "$ACTIF" <<EOF
-# Généré par \`make maintenance-on\` -- supprimé par \`make maintenance-off\`.
-# Ne pas commiter (.gitignore) : c'est la clé de passe du moment.
+# Généré par \`make maintenance-on\`, supprimé par \`make maintenance-off\`.
+# Contient la clé de passe : ne pas commiter (.gitignore).
 
 set \$mk_maintenance 1;
 if (\$cookie_mk_passe = "$cle") { set \$mk_maintenance 0; }
@@ -101,8 +95,7 @@ location = /_maintenance/entrer {
     if (\$arg_cle != "$cle") { return 404; }
     add_header Set-Cookie "mk_passe=$cle; Path=/; Max-Age=43200; HttpOnly; SameSite=Lax" always;
     add_header Cache-Control "no-store" always;
-    # Redirection relative : en prod, le TLS est fait par le proxy externe et
-    # nginx, qui ne voit que du http, écrirait « http://… » en absolu.
+    # Redirection relative : en prod, le TLS est terminé par le proxy externe.
     absolute_redirect off;
     return 302 /;
 }

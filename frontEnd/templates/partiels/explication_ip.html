@@ -1,13 +1,7 @@
-{# Modale « Comment se calcule l'IP », partagee par le recap et le classement
-   de saison (docs/affichage-ip-plan-redaction.md §5).
-
-   Attend `ip`, le bloc du payload (backEnd/textes_ip.py) : tout le texte en
-   vient, avec la version de la page. Aucun chiffre ici.
-
-   S'ouvre par ouvrirExplicationIp() -- le badge de version, et le `?` d'un
-   recap IP. A inclure HORS de toute carte : `.fade-in.visible` et
-   `.glass-card` posent un transform / backdrop-filter, qui font d'un ancetre
-   le repere d'un `position: fixed` et enfermeraient la modale dans la carte. #}
+{# Modale « Comment se calcule l'IP » (recap et classement de saison), a partir
+   du bloc `ip` du payload. S'ouvre par ouvrirExplicationIp(). A inclure hors de
+   toute carte : un transform ou backdrop-filter d'un ancetre enfermerait le
+   `position: fixed`. #}
 {% import 'partiels/cellule_ip.html' as ipm %}
 {% if ip %}
 <style>

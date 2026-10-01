@@ -17,10 +17,7 @@ check("session créée", any('INSERT INTO sessions_joueurs' in s for s in sqls))
 check("token en clair renvoyé, absent de la base",
       res['session_token'] and all(res['session_token'] not in str(p) for _, p in cur.executed))
 check("transaction validée", conn.committed)
-# L'avatar est RELAYE, plus lie en direct : une <img> vers cdn.discordapp.com
-# donnerait a Discord l'IP de chaque visiteur et publierait le snowflake du
-# joueur dans la source de la page. Cette assertion visait l'ancien
-# comportement ; elle verifie desormais qu'on ne revient pas en arriere.
+# L'avatar passe par le relais, pas par le CDN Discord.
 check("l'avatar passe par le relais, jamais par le CDN en direct",
       res['compte']['avatar_url'] == '/avatar/moi', res['compte']['avatar_url'])
 check("le snowflake Discord ne fuit pas dans l'URL d'avatar",
@@ -85,8 +82,7 @@ cur, conn = install_db([
     (r"SELECT id, statut FROM comptes", None),
     (r"FROM invitations WHERE token_hash", (7, None, 1, 0, FUTUR, None)),
     (r"INSERT INTO comptes", ligne_compte(avatar='')),
-    # Verrou pose sur la ligne d'amorcage avant de compter (hierarchie-admin 6bis.0) :
-    # deux connexions simultanees ne doivent pas franchir la garde ensemble.
+    # Verrou sur la ligne d'amorcage avant le COUNT.
     (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
     (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (0,)),      # aucun superadmin
 ])
@@ -109,12 +105,7 @@ res7 = auth_discord.login('c', 'tok', 'UA')
 check("NON promu (superadmin déjà présent)", res7['compte']['role'] == 'player', res7['compte']['role'])
 
 print("--- le compte d'amorçage ENTRE sans invitation (base vierge) ---")
-# Corrige un blocage constaté le 14/09 : promote_bootstrap_superadmin s'exécute
-# APRES consume_invitation, donc il ne pouvait promouvoir qu'un compte déjà
-# existant. Sur une base sans aucun compte, le superadmin désigné se voyait
-# refuser l'entrée — or personne ne pouvait lui émettre d'invitation, émettre
-# exigeant déjà un compte privilégié. Le premier déploiement imposait donc un
-# INSERT SQL à la main dans la table des portes d'entrée.
+# Base vide : le compte d'amorcage doit pouvoir entrer sans invitation.
 recharger(); install_discord()
 cur, conn = install_db([
     (r"SELECT id, statut FROM comptes", None),
@@ -123,34 +114,24 @@ cur, conn = install_db([
     (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (0,)),      # aucun superadmin
 ])
 import auth_discord; importlib.reload(auth_discord)
-res8 = auth_discord.login('c', None, 'UA')          # AUCUNE invitation
+res8 = auth_discord.login('c', None, 'UA')  # aucune invitation
 check("entre sans invitation", res8['compte']['role'] == 'superadmin', res8['compte']['role'])
 check("aucune invitation consommée",
       not any('UPDATE invitations SET uses' in s for s, _ in cur.executed))
-# R-68 (23/09) : les promotions passent desormais par une proposition acceptee,
-# et le legs exige une cible qui a consenti. L'amorcage doit rester HORS de ces
-# deux regles : sur une base vierge, personne ne peut proposer quoi que ce soit
-# au premier compte. S'il se mettait a exiger un consentement ou une
-# proposition, le premier deploiement serait bloque (comme le 14/09).
+# L'amorcage ne doit exiger ni proposition ni consentement admin.
 check("l'amorçage ne passe ni par une proposition ni par le consentement admin",
       not any('promotions_proposees' in s or 'cgu_admin' in s for s, _ in cur.executed),
       [s for s, _ in cur.executed if 'promotions_proposees' in s or 'cgu_admin' in s])
 
 print("--- mais PAS si un superadmin existe déjà ---")
-# La porte doit se refermer définitivement une fois le premier superadmin en
-# place : sinon DISCORD_SUPERADMIN_ID serait une porte dérobée permanente,
-# capable de créer un compte sur une base en production.
+# Une fois un superadmin en place, l'entree sans invitation est fermee.
 recharger(); install_discord()
 cur, conn = install_db([
     (r"SELECT id, statut FROM comptes", None),
     (r"SELECT COUNT\(\*\) FROM comptes WHERE role", (1,)),      # un superadmin existe
 ])
 import auth_discord; importlib.reload(auth_discord)
-# Le plan de curseur s'arrete volontairement au COUNT : si la porte s'ouvrait a
-# tort, la suite du login manquerait de donnees et leverait une erreur
-# quelconque. On l'attrape pour la transformer en assertion ROUGE plutot que de
-# laisser le fichier mourir -- un plantage n'affiche aucun decompte et son
-# absence passe inapercue au milieu des autres (piege deja rencontre le 13/09).
+# Plan volontairement incomplet : une erreur signifie que la porte s'est ouverte.
 try:
     auth_discord.login('c', None, 'UA')
     check("refusé sans invitation", False, "accepté à tort — porte dérobée !")
@@ -196,9 +177,7 @@ except Exception as e:
     check("variable absente : invitation exigée", False,
           "la porte s'est ouverte : %s: %s" % (type(e).__name__, e))
 
-# Les deux fonctions doivent appliquer LES MEMES conditions. Laisser entrer
-# quelqu'un que la promotion refuserait creerait un compte `player` ne devant
-# son existence qu'a la variable d'environnement.
+# Les deux fonctions doivent appliquer les memes conditions.
 import inspect
 src_amorce = inspect.getsource(auth_discord.peut_amorcer_sans_invitation)
 src_promo = inspect.getsource(auth_discord.promote_bootstrap_superadmin)

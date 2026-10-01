@@ -50,9 +50,6 @@ body, html {
     background-color: transparent !important;
 }
 
-/* Le survol des entrees de navbar vit desormais dans interactions.css, qui
-   colore le texte au lieu de peindre le pave entier. */
-
 .navbar-dropdown {
     background-color: var(--secondary-background);
     border-top: 2px solid var(--primary-color);
@@ -137,17 +134,13 @@ body, html {
     font-weight: 600;
 }
 
-/* Cases à cocher et boutons radio : le curseur main de Bulma suffit à dire que
-   le libellé est cliquable. Son :hover passait le texte en #363636 -- gris
-   foncé sur notre fond sombre -- et le lien du libellé virait à son tour, avec
-   0,3 s de retard (transition des liens plus bas) : effet décousu, observé sur
-   la case de la politique de confidentialité (invite.html). */
+/* Cases à cocher et boutons radio : pas de changement de couleur au survol. */
 .checkbox:hover, .radio:hover {
     color: inherit;
 }
 
 .checkbox a:hover, .radio a:hover {
-    color: #485fc7;     /* couleur des liens de Bulma, au repos */
+    color: #485fc7; /* couleur des liens de Bulma */
 }
 
 .card-content {
@@ -175,19 +168,8 @@ body, html {
     background-color: rgba(59, 130, 246, 0.15) !important;
 }
 
-/* Bulma habille ses composants pour un fond CLAIR, avec des couleurs en dur.
-   Trois de ses regles passent devant le theme sombre et rendaient les pages
-   legales illisibles :
-
-   1. `.table.is-striped tbody tr:not(.is-selected):nth-child(2n)` pose un fond
-      #fafafa presque blanc — une ligne sur deux devenait du texte clair sur du
-      blanc. C'est le bug visible sur le tableau « Donnee / Origine / Pourquoi ».
-   2. `.content h1..h6` force #363636. Sa specificite (classe + element) bat
-      notre `.title`, donc les titres de section viraient au gris fonce.
-   3. `strong` force #363636 : tout le texte en gras s'effacait sur le fond.
-
-   Les surcharges ci-dessous sont ecrites a specificite egale ou superieure et
-   placees apres, plutot qu'a coups de !important. */
+/* Surcharges des couleurs claires de Bulma (tableaux rayés, titres et gras de
+   .content), a specificite egale ou superieure plutot qu'avec !important. */
 .table.is-striped tbody tr:not(.is-selected):nth-child(2n) {
     background-color: rgba(255, 255, 255, 0.04);
 }
@@ -208,9 +190,7 @@ strong,
     color: var(--text-color);
 }
 
-/* ... sauf dans une notification : `.is-light` garde un fond clair, et le gras
-   clair y devenait invisible (le pseudo revendique sur « Mon compte »). Le gras
-   reprend la couleur du texte de la notification, comme le veut Bulma. */
+/* ... sauf dans une notification (.is-light garde un fond clair). */
 .notification strong,
 .content .notification strong {
     color: currentColor;

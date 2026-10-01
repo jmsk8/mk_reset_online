@@ -17,18 +17,15 @@ const char* phase_name(engine::Phase phase) {
     return "countdown";
 }
 
-// Les cles du releve de decision, DANS L'ORDRE des indices envoyes par
-// `aiTuple`. Le client y lit le sens d'un indice au lieu de maintenir sa propre
-// copie de cet ordre.
+// Cles du releve de decision, dans l'ordre des indices de `aiTuple`.
 const char* const AI_STATES[] = { "cruising", "pipe", "dodging", "safety", "giveWay", "aiming" };
 const char* const AI_DANGERS[] = { "", "carrier", "ram", "shot" };
 
 // [id, worldX, yPercent, totalDistance, flags, rank, heldId, heldType,
 //  heldHold, orbitAngle, orbIds, hitEnd, bumpEnd]
 //
-// TREIZE cases, toujours. Les cases 6 a 12 restent nulles en v0 : aucun objet
-// n'est distribue, aucun choc n'a lieu. Le client les lit quand meme — un tuple
-// plus court decalerait tout ce qui suit.
+// Toujours treize cases (6 a 12 nulles pour l'instant) : un tuple plus court
+// decalerait la lecture cote client.
 void write_kart_tuple(json::Writer& w, const engine::Kart& kart) {
     w.begin_array();
     w.integer(kart.id);
@@ -36,8 +33,7 @@ void write_kart_tuple(json::Writer& w, const engine::Kart& kart) {
     w.number(engine::round_to(kart.yPercent, 2));
     w.number(engine::round_to(kart.totalDistance, 1));
 
-    // Champ de bits. FLAG_GRID (1) est le seul que la v0 leve : le depart
-    // arrete viendra avec M2, les chocs avec M4.
+    // Champ de bits.
     int flags = 0;
     if (kart.state == engine::KartState::Grid) flags |= 1;      // FLAG_GRID
     if (kart.finished) flags |= 16;                              // FLAG_FINISHED
@@ -47,9 +43,7 @@ void write_kart_tuple(json::Writer& w, const engine::Kart& kart) {
 
     w.integer(kart.rank);
 
-    // L'objet TENU. Seul le PREMIER emplacement part : le second est un etat
-    // purement moteur, invisible du rendu, pour ne pas toucher au protocole 11
-    // ni au front (plan §3).
+    // Seul le premier emplacement d'objet est transmis.
     if (kart.heldItems[0].has_value()) {
         w.integer(kart.heldItems[0]->id);
         w.integer(kart.heldItems[0]->type);
@@ -60,11 +54,10 @@ void write_kart_tuple(json::Writer& w, const engine::Kart& kart) {
     w.null();  // heldHold
     w.null();  // orbitAngle
     w.null();  // orbIds
-    w.null();  // hitEnd — pas de tete-a-queue en v0
+    w.null(); // hitEnd
 
-    // `bumpEnd` EST utilise : le choc de tuyau existe des la v0. C'est une fin
-    // de malus en temps serveur — sans cette date, un arrivant saurait qu'un
-    // kart est arrete mais pas depuis quand, et l'animation repartirait a zero.
+    // `bumpEnd` : fin du malus en temps serveur, pour qu'un arrivant reprenne
+    // l'animation au bon moment.
     if (kart.bumped) w.number(engine::js_round(kart.bumpEndTime));
     else w.null();
 
@@ -76,8 +69,7 @@ void write_snapshot_body(json::Writer& w, const config::Config& cfg,
                          VoteTally vote, const std::vector<engine::Event>& events) {
     w.key("t");  w.string("s");
 
-    // Arrondi a la milliseconde : l'horloge de simulation traine des decimales
-    // qui ne servent a rien, le client interpolant sur des intervalles de 66 ms.
+    // Arrondi a la milliseconde.
     w.key("ts"); w.number(engine::js_round(simTime));
 
     w.key("cx"); w.number(engine::round_to(state.cameraX, 2));
@@ -88,19 +80,16 @@ void write_snapshot_body(json::Writer& w, const config::Config& cfg,
     for (const engine::Kart& kart : state.karts) write_kart_tuple(w, kart);
     w.end_array();
 
-    // Le releve de decision : un 0 par kart. Sans `sight`, `aiTuple` rend 0 —
-    // comportement identique au JS, qui fait de meme quand la vision n'a pas
-    // encore tourne.
+    // Releve de decision : 0 par kart sans `sight`, comme en JS.
     w.key("ai");
     w.begin_array();
     for (size_t i = 0; i < state.karts.size(); i++) w.integer(0);
     w.end_array();
 
-    // Aucun objet en vol en v0.
+    // Aucun objet en vol pour l'instant.
     w.key("i"); w.begin_array(); w.end_array();
 
-    // Les boites, ALIGNEES sur `hello.boxes[]` : le client lit la case i pour la
-    // boite i. Un decalage ici allume la mauvaise boite, sans erreur.
+    // Boites alignees sur `hello.boxes[]` : la case i est la boite i.
     w.key("b");
     w.begin_array();
     for (const engine::ItemBox& box : state.itemBoxes) w.integer(box.active ? 1 : 0);
@@ -109,7 +98,7 @@ void write_snapshot_body(json::Writer& w, const config::Config& cfg,
     w.key("ph"); w.string(phase_name(state.phase));
     w.key("lp"); w.integer(state.leaderLap);
 
-    // [groupe, image]. Le drapeau s'anime cote client : seul le groupe part.
+    // [groupe, image] ; le drapeau s'anime cote client, seul le groupe part.
     w.key("sg");
     if (state.signGroup.empty()) {
         w.null();
@@ -122,19 +111,17 @@ void write_snapshot_body(json::Writer& w, const config::Config& cfg,
         w.end_array();
     }
 
-    // L'orage n'est pas simule en v0.
+    // Orage non simule.
     w.key("st"); w.null();
 
-    // L'ordre d'arrivee voyage dans CHAQUE snapshot : un arrivant qui se
-    // connecte pendant le classement doit le voir en entier.
+    // Ordre d'arrivee dans chaque snapshot, pour les arrivants.
     w.key("fo");
     w.begin_array();
     for (int id : state.finishOrder) w.integer(id);
     w.end_array();
 
-    // [manche, points de la course, cumul]. Les deux tableaux sont alignes sur
-    // l'ordre de `state.karts`, qui est aussi celui du `hello` : le client lit
-    // la case i pour le kart i, sans transporter les noms a chaque envoi.
+    // [manche, points de la course, cumul] ; tableaux alignes sur l'ordre de
+    // `state.karts` (celui du `hello`).
     w.key("gp");
     w.begin_array();
     w.integer(state.gpRound);
@@ -158,10 +145,8 @@ void write_snapshot_body(json::Writer& w, const config::Config& cfg,
     w.integer(vote.watchers);
     w.end_array();
 
-    // Seuls quelques evenements declenchent une animation cote client. Les
-    // autres decrivent des creations ou destructions que la reconciliation
-    // deduit deja du snapshot — les transmettre donnerait deux sources de
-    // verite.
+    // Seuls les evenements qui declenchent une animation sont transmis ; le
+    // reste se deduit du snapshot.
     if (!events.empty()) {
         bool wroteAny = false;
         json::Writer ev;
@@ -171,16 +156,13 @@ void write_snapshot_body(json::Writer& w, const config::Config& cfg,
                 ev.begin_object();
                 ev.key("type");         ev.string("leaderboardPosition");
                 ev.key("kartId");       ev.integer(e.kartId);
-                // Des INDICES, pas des rangs : c'est ce que le client attend
-                // pour animer un depassement.
+                // Indices, pas rangs.
                 ev.key("newPosition");  ev.integer(e.newPosition);
                 ev.key("prevPosition"); ev.integer(e.prevPosition);
                 ev.end_object();
                 wroteAny = true;
             } else if (e.type == engine::EventType::PipeShaken) {
-                // Le seul evenement qui ne se deduise d'AUCUN snapshot : le
-                // tuyau est au meme endroit avant et apres, seul le sursaut a
-                // eu lieu.
+                // Seul evenement qui ne se deduit d'aucun snapshot.
                 ev.begin_object();
                 ev.key("type");      ev.string("pipeShaken");
                 ev.key("pipeIndex"); ev.integer(e.pipeIndex);
@@ -228,7 +210,7 @@ std::string build_hello(const config::Config& cfg, const engine::WorldState& sta
     w.key("roadMinY");    w.number(cfg.road.minY);
     w.key("roadMaxY");    w.number(cfg.road.maxY);
     w.key("roadPPS");     w.number(cfg.speeds.roadPPS);
-    // Duree du tete-a-queue : le client en derive la frame a afficher.
+    // Duree du tete-a-queue (le client en deduit la frame).
     w.key("hitDuration"); w.number(cfg.delays.hitDecelDuration + cfg.delays.hitPauseDuration);
 
     w.key("orbit");
@@ -244,9 +226,7 @@ std::string build_hello(const config::Config& cfg, const engine::WorldState& sta
     w.key("gpRaces");        w.integer(cfg.grandPrix.races);
     w.key("flagAnimSpeed");  w.integer(220);
 
-    // Les champs des systemes NON SIMULES partent quand meme, avec leurs
-    // valeurs de config : le HUD de debug les dessine, et le client ne garde
-    // aucune copie des constantes de simulation.
+    // Systemes non simules : valeurs de config, pour le HUD de debug.
     w.key("blastRadius"); w.number(cfg.blueShell.blastRadiusX);
     w.key("shrinkScale"); w.number(cfg.lightning.scale);
 
@@ -262,9 +242,8 @@ std::string build_hello(const config::Config& cfg, const engine::WorldState& sta
     w.end_array();
     w.end_object();
 
-    // Les emprises REELLES des corps, pour la carte de debug. Ce sont des
-    // DEMI-emprises, celles du corps lui-meme — la distinction compte : les
-    // valeurs de `hitboxes` sont des ecarts entre CENTRES, donc deja des sommes.
+    // Demi-emprises reelles des corps (carte de debug). Les valeurs de
+    // `hitboxes` sont des ecarts entre centres, donc deja des sommes.
     w.key("hitboxes");
     w.begin_object();
     w.key("kart");
@@ -272,9 +251,7 @@ std::string build_hello(const config::Config& cfg, const engine::WorldState& sta
     w.key("x"); w.number(engine::round_to(cfg.hitboxes.kartVsKart.x / 2, 2));
     w.key("y"); w.number(engine::round_to(cfg.hitboxes.kartVsKart.y / 2, 3));
     w.end_object();
-    // Le tuyau porte sa propre emprise, sans rien y sommer — et elle est RONDE :
-    // ce sont les demi-axes d'un disque. Le client dessine la forme, pas
-    // seulement la taille.
+    // Emprise propre du tuyau : demi-axes d'un disque.
     w.key("pipe");
     w.begin_object();
     w.key("x");     w.number(engine::round_to(cfg.pipe.hitbox.x, 2));
@@ -287,8 +264,7 @@ std::string build_hello(const config::Config& cfg, const engine::WorldState& sta
     w.key("y"); w.number(cfg.bodies.item.y);
     w.end_object();
     w.key("heldBehindX"); w.number(cfg.offsets.heldItemBehind);
-    // La boite a objets n'est PAS une somme : c'est une zone de ramassage,
-    // l'endroit ou doit passer un CENTRE de kart.
+    // Boite a objets : zone ou doit passer le centre d'un kart.
     w.key("itemBox");
     w.begin_object();
     w.key("x"); w.number(cfg.hitboxes.itemBox.x);
@@ -305,9 +281,7 @@ std::string build_hello(const config::Config& cfg, const engine::WorldState& sta
     w.key("clear");         w.number(engine::round_to(cfg.vision.clear, 3));
     w.end_object();
 
-    // Taille DESSINEE du tuyau, en px de monde. Elle descend du serveur parce
-    // que c'est elle qui decide de l'emprise : la laisser au client rouvrirait
-    // la divergence qu'elle vient de fermer.
+    // Taille dessinee du tuyau en px de monde ; elle determine l'emprise.
     w.key("pipeDraw");
     w.begin_object();
     w.key("w"); w.number(engine::round_to(cfg.pipe.drawW, 2));
@@ -316,9 +290,7 @@ std::string build_hello(const config::Config& cfg, const engine::WorldState& sta
 
     w.end_object(); // world
 
-    // L'identite d'un kart, et son gabarit : les deux viennent de la meme
-    // source, son sprite. Sans `scale`, tous les karts seraient dessines a la
-    // meme longueur alors que leurs emprises different.
+    // Identite et gabarit de chaque kart, tires de son sprite.
     w.key("karts");
     w.begin_array();
     for (const engine::Kart& kart : state.karts) {
@@ -345,8 +317,8 @@ std::string build_hello(const config::Config& cfg, const engine::WorldState& sta
     }
     w.end_array();
 
-    // Les tuyaux ne bougent ni ne se detruisent : le `hello` suffit. L'ordre est
-    // celui de `state.pipes`, et c'est lui que porte l'index d'un `pipeShaken`.
+    // Tuyaux fixes : envoyes dans le `hello`. Leur ordre est celui de l'index
+    // d'un `pipeShaken`.
     w.key("pipes");
     w.begin_array();
     for (const engine::Pipe& pipe : state.pipes) {
@@ -372,14 +344,8 @@ std::string build_pong(const std::string& clientToken, double serverTime) {
     w.begin_object();
     w.key("t"); w.string("pong");
 
-    // Renvoye TEL QUEL : c'est le client qui l'a ecrit (`c: Date.now()`), et le
-    // relire comme un nombre le tronquerait — c'est lui qui calcule sa latence
-    // en comparant les deux.
-    //
-    // Mais seulement s'il est bien NUMERIQUE : un client qui enverrait une
-    // chaine, volontairement ou non, casserait le JSON de la reponse et
-    // couperait sa propre horloge. Le rejeter en `null` est visible cote client,
-    // un message illisible ne l'est pas.
+    // Renvoye tel quel (non converti en nombre), et seulement s'il est
+    // numerique : sinon `null`.
     bool numeric = !clientToken.empty();
     for (size_t i = 0; i < clientToken.size() && numeric; i++) {
         const char c = clientToken[i];

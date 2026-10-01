@@ -62,7 +62,6 @@ check("le rôle n'est pas dans la réponse", 'role' not in d and 'statut' not in
 print("\n=== Matchmaking : les scores viennent de la base ===")
 JOUEURS = [(1, 'A', 90.0, '111'), (2, 'B', 80.0, '222'), (3, 'C', 70.0, '333')]
 cli, cur, rb = monter([(r"FROM Joueurs j LEFT JOIN comptes c", None)])
-# On force le retour du curseur pour la résolution.
 cur.plan = [(r"FROM service_tokens", (1, 'bot', ['matchmaking'], None, None)),
             (r"FROM Joueurs j\s+LEFT JOIN comptes c", None)]
 class _C(type(cur)):
@@ -73,8 +72,7 @@ d = r.get_json()
 check("composition -> 200", r.status_code == 200, d)
 check("un seul lobby pour 3 joueurs", len(d['lobbies']) == 1, d)
 check("moyenne calculée par le serveur", d['lobbies'][0]['moyenne'] == 80.0, d['lobbies'][0])
-# Un appelant qui fournirait ses propres scores pourrait composer les lobbies
-# à sa guise : on vérifie qu'un champ « ts » glissé dans le corps est ignoré.
+# Un champ « ts » fourni par l'appelant doit etre ignore.
 cli, cur, _ = monter([])
 cur.fetchall = lambda: JOUEURS
 r2 = cli.post('/api/bot/matchmaking',

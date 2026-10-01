@@ -1,17 +1,6 @@
 """Echange OAuth2 Discord et gestion des comptes.
 
-L'echange se fait cote BACKEND : DISCORD_CLIENT_SECRET reste dans le seul
-service qui possede deja des secrets, le frontend ne relaie que le `code`.
-
-Trois pieges Discord, chacun produisant une erreur sans message utile :
-
-1. /oauth2/token attend du x-www-form-urlencoded -> `data=`, pas `json=`.
-2. redirect_uri identique AU CARACTERE PRES entre /authorize, /token et le
-   portail. D'ou l'environnement et jamais url_for(_external=True), qui
-   produirait du http:// derriere les deux proxys.
-3. L'echange est IDEMPOTENT : si le compte existe deja on renvoie une
-   session, sinon un frontend qui abandonne en cours laisse l'utilisateur
-   avec une invitation deja consommee.
+L'echange se fait cote backend pour que DISCORD_CLIENT_SECRET n'en sorte pas.
 """
 
 from __future__ import annotations
@@ -39,16 +28,13 @@ logger = logging.getLogger(__name__)
 
 DISCORD_CLIENT_ID = os.environ.get('DISCORD_CLIENT_ID', '')
 DISCORD_CLIENT_SECRET = os.environ.get('DISCORD_CLIENT_SECRET', '')
-# Une ou plusieurs URI de retour, separees par des virgules (voir
-# redirect_uris()). Le frontend choisit celle de l'hote consulte.
+# Une ou plusieurs URI de retour, separees par des virgules.
 DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', '')
-# Amorcage du premier superadmin : aucune IHM ne peut le creer, toute route
-# d'attribution de role exigeant d'etre deja superadmin.
+# Compte promu superadmin a sa premiere connexion s'il n'en existe aucun.
 DISCORD_SUPERADMIN_ID = os.environ.get('DISCORD_SUPERADMIN_ID', '')
 
 
-# Valide avant de finir dans un chemin d'URL : on ne construit pas une URL
-# publique avec une valeur distante non verifiee.
+# Valeurs Discord inserees dans des URL.
 RE_SNOWFLAKE = re.compile(r'^[0-9]{1,32}$')
 RE_AVATAR_HASH = re.compile(r'^[A-Za-z0-9_]{1,64}$')
 
@@ -64,11 +50,7 @@ class DiscordAuthError(Exception):
 
 
 def redirect_uris() -> list[str]:
-    """Les URI de retour declarees, dans l'ordre de l'environnement.
-
-    Plusieurs servent au poste de dev (localhost, nom .local, IP du reseau) :
-    chacune doit aussi figurer dans le portail developpeur Discord.
-    """
+    """URI de retour declarees (chacune doit figurer dans le portail Discord)."""
     return [u.strip() for u in DISCORD_REDIRECT_URI.split(',') if u.strip()]
 
 
@@ -77,15 +59,14 @@ def discord_configured() -> bool:
 
 
 def hash_token(token: str) -> str:
-    """sha256 hexadecimal. Ce qui va en base, jamais le token lui-meme."""
+    """sha256 hexadecimal (seul le hash est stocke en base)."""
     return hashlib.sha256(token.encode('utf-8')).hexdigest()
 
 
 def avatar_url(discord_id: str, avatar_hash: str | None, size: int = 128) -> str:
-    """URL CDN de l'avatar, avec repli sur l'avatar par defaut Discord.
+    """URL CDN de l'avatar, ou avatar par defaut de Discord.
 
-    Le repli decale le snowflake : a faire ici et pas en JS, ou l'entier
-    depasserait 2^53.
+    Calcule ici : le snowflake depasse 2^53 en JS.
     """
     if avatar_hash:
         return f"{DISCORD_CDN_BASE}/avatars/{discord_id}/{avatar_hash}.png?size={size}"
@@ -99,14 +80,12 @@ def avatar_url(discord_id: str, avatar_hash: str | None, size: int = 128) -> str
 def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     """Echange le code OAuth contre un access_token, puis lit /users/@me.
 
-    Ne loggue jamais le corps des reponses : il contient le code et les jetons.
+    Ne journalise jamais le corps des reponses (code et jetons).
     """
     if not discord_configured():
         raise DiscordAuthError("Authentification Discord non configurée", 503, 'non_configure')
 
-    # Toujours une valeur de l'environnement : Discord compare caractere par
-    # caractere avec le portail developpeur. Celle que transmet le frontend
-    # n'est acceptee que si elle y figure.
+    # Discord exige l'URI exacte du portail : seules celles de l'environnement sont acceptees.
     uris = redirect_uris()
     if redirect_uri is None:
         uri = uris[0]
@@ -119,12 +98,12 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     try:
         token_res = requests.post(
             f"{DISCORD_API_BASE}/oauth2/token",
-            data={                       # form-urlencoded, PAS json=
+            data={  # form-urlencoded, pas json=
                 'client_id': DISCORD_CLIENT_ID,
                 'client_secret': DISCORD_CLIENT_SECRET,
                 'grant_type': 'authorization_code',
                 'code': code,
-                'redirect_uri': uri,     # exige aussi ici, pas seulement sur /authorize
+                'redirect_uri': uri,  # exige aussi ici
             },
             headers={'Content-Type': 'application/x-www-form-urlencoded'},
             timeout=DISCORD_HTTP_TIMEOUT,
@@ -133,7 +112,6 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
         raise DiscordAuthError("Discord injoignable", 503, 'discord_injoignable')
 
     if token_res.status_code != 200:
-        # Le statut seul : le corps contient le code OAuth.
         logger.warning("Echec /oauth2/token (HTTP %s)", token_res.status_code)
         raise DiscordAuthError("Code d'autorisation invalide ou expiré", 400, 'code_invalide')
 
@@ -170,13 +148,12 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
 
     avatar_hash = (me.get('avatar') or '')[:64] or None
     if avatar_hash is not None and not RE_AVATAR_HASH.match(avatar_hash):
-        # Degrade au lieu de refuser : avatar_url() retombe sur l'avatar par
-        # defaut, perdre une image ne justifie pas de bloquer une connexion.
+        # Repli sur l'avatar par defaut plutot que de refuser la connexion.
         logger.warning("Hash d'avatar Discord au format inattendu, ignore")
         avatar_hash = None
 
     return {
-        'discord_id': discord_id,             # snowflake : toujours une chaine
+        'discord_id': discord_id,  # snowflake : toujours une chaine
         'username': (me.get('username') or '')[:64] or None,
         'global_name': (me.get('global_name') or '')[:64] or None,
         'avatar_hash': avatar_hash,
@@ -184,17 +161,9 @@ def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
 
 
 def upsert_compte(cur, profil: dict, invitation_id: int | None = None) -> dict:
-    """Cree ou rafraichit le compte, et renvoie son etat.
+    """Cree ou rafraichit le compte et renvoie son etat.
 
-    Le miroir Discord est rafraichi a chaque connexion. Rien n'est propage vers
-    joueurs.nom : c'est un geste admin explicite.
-
-    Ne pose JAMAIS le consentement (S-06, audit du 24/09). Il arrivait ici par
-    un parametre `cgu=1` present en dur dans le lien de la page d'invitation :
-    la case a cocher ne faisait que griser le lien, et un clic du milieu ou un
-    lien recopie enregistrait un consentement que personne n'avait donne. Un
-    compte neuf nait donc sans consentement, et la page /consentement (POST,
-    jeton CSRF, bouton explicite) le recueille avant tout le reste (A-07).
+    Ne pose jamais le consentement : il est recueilli par la page /consentement.
     """
     cur.execute(
         """
@@ -228,28 +197,14 @@ def upsert_compte(cur, profil: dict, invitation_id: int | None = None) -> dict:
 
 
 def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
-    """Promeut le compte d'amorcage, et lui seul, s'il n'y a aucun superadmin.
-
-    Sans la condition « aucun superadmin existant », la variable
-    d'environnement serait une porte derobee permanente.
-
-    TROISIEME ecrivain de comptes.role = 'superadmin', avec changer_role (qui ne
-    l'ecrit jamais) et le legs. Ce n'est pas une route : pas d'IHM, pas de
-    session admin, juste une reconnexion Discord du compte designe. Reste
-    disponible apres un legs -- si le nouveau superadmin disparait, l'ancien
-    redevient eligible : filet de secours assume face a R-47, bien plus leger
-    qu'un break-glass SQL (docs/hierarchie-admin-plan.md 6bis.0).
-    """
+    """Promeut le compte d'amorcage s'il n'existe aucun superadmin."""
     if not DISCORD_SUPERADMIN_ID or compte['discord_id'] != DISCORD_SUPERADMIN_ID:
         return False
     if compte['role'] == ROLE_SUPERADMIN:
         return False
 
-    # Verrou sur la ligne d'amorcage avant de compter : deux connexions Discord
-    # simultanees de ce meme compte sur une base vierge franchiraient sinon la
-    # garde toutes les deux. La seconde heurterait alors idx_comptes_superadmin_unique
-    # (23505) au lieu de sortir proprement par le chemin « existe deja ».
-    # FOR UPDATE ne peut pas porter sur le COUNT lui-meme (agregation).
+    # Verrou avant le COUNT pour eviter que deux connexions simultanees
+    # passent la garde.
     cur.execute("SELECT role FROM comptes WHERE id = %s FOR UPDATE", (compte['id'],))
     row = cur.fetchone()
     if row is None or row[0] == ROLE_SUPERADMIN:
@@ -270,14 +225,9 @@ def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
         "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
         (ROLE_SUPERADMIN, compte['id']),
     )
-    # Meme regle que toute ecriture du role (A-01/A-02, voir create_session) :
-    # les sessions ouvertes en player sur d'autres appareils garderaient sinon
-    # 30 jours de superadmin. Celle de CETTE connexion n'existe pas encore --
-    # login() la cree apres nous, a la duree du nouveau role.
+    # Ferme les sessions existantes (leur duree depend du role).
     cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte['id'],))
-    # acteur_id EXPLICITE : l'amorcage se produit AVANT toute session, donc
-    # g.compte n'existe pas encore. Le compte est a la fois acteur et cible --
-    # c'est exactement ce qu'un amorcage est, et le journal doit le montrer.
+    # Pas encore de g.compte : le compte est acteur et cible.
     audit.ecrire(
         cur, 'role_attribue', 'compte', compte['id'],
         {"ancien": "player", "nouveau": "superadmin", "origine": "amorcage"},
@@ -289,33 +239,15 @@ def promote_bootstrap_superadmin(cur, compte: dict) -> bool:
 
 
 def peut_amorcer_sans_invitation(cur, discord_id: str) -> bool:
-    """Ce compte Discord inexistant peut-il entrer sans invitation ?
+    """Vrai si ce compte Discord inexistant peut entrer sans invitation.
 
-    Le compte d'amorcage doit pouvoir CREER son compte, pas seulement etre
-    promu : sur une base vierge, personne ne peut lui emettre d'invitation
-    puisque emettre demande deja un compte privilegie. Sans cette porte, le
-    premier deploiement exige un INSERT SQL a la main -- un geste non trace,
-    a faire en production, sur la table qui garde les portes d'entree.
-
-    Les conditions sont EXACTEMENT celles de promote_bootstrap_superadmin :
-    elles doivent le rester. Laisser entrer quelqu'un que la promotion
-    refuserait ensuite creerait un compte `player` ordinaire ne devant son
-    existence qu'a la variable d'environnement -- une porte ouverte sans le
-    privilege qui la justifie. Un test verrouille cette symetrie.
-
-    La troisieme condition (aucun superadmin existant) est ce qui empeche la
-    variable d'environnement d'etre une porte derobee permanente : une fois le
-    premier superadmin en place, ce chemin se referme definitivement et
-    DISCORD_SUPERADMIN_ID redevient inerte pour l'entree.
+    Conditions identiques a promote_bootstrap_superadmin (verifie par un test).
     """
     if not DISCORD_SUPERADMIN_ID or discord_id != DISCORD_SUPERADMIN_ID:
         return False
 
     cur.execute("SELECT COUNT(*) FROM comptes WHERE role = %s", (ROLE_SUPERADMIN,))
     if cur.fetchone()[0] > 0:
-        # Meme journalisation que la promotion : le refus doit etre lisible
-        # dans les logs, sinon « invitation requise » reste inexplicable pour
-        # qui a pourtant renseigne la variable.
         logger.warning(
             "DISCORD_SUPERADMIN_ID ignore pour l'entree : un superadmin existe deja"
         )
@@ -326,39 +258,27 @@ def peut_amorcer_sans_invitation(cur, discord_id: str) -> bool:
 
 
 def _permissions_pour_session(cur, compte: dict) -> list:
-    """Permissions a exposer a l'interface, role compris. Triees, jamais None.
-
-    chef_admin et superadmin recoivent le catalogue entier : leur socle EST le
-    catalogue (plan 2). Un admin n'a que ses lignes accordees, un player rien.
-    """
+    """Permissions a exposer a l'interface, role compris. Triees."""
     if ROLE_HIERARCHY.get(compte['role'], 0) >= ROLE_HIERARCHY[ROLE_CHEF_ADMIN]:
         return sorted(PERMISSIONS_CATALOGUE)
     if compte['role'] != ROLE_ADMIN:
         return []
     cur.execute("SELECT permission FROM permissions_admin WHERE compte_id = %s",
                 (compte['id'],))
-    # Meme filtre qu'ailleurs : une sous-permission sans son parent ne donne
-    # aucun droit, l'exposer ferait afficher un bouton voue au 403.
+    # Ignore les sous-permissions orphelines.
     return sorted(permissions_effectives(r[0] for r in cur.fetchall()))
 
 
 def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tuple[str, datetime]:
-    """Cree une session et renvoie (token en clair, expiration).
+    """Cree une session et renvoie (token en clair, expiration absolue).
 
-    La base n'en garde que le sha256. L'expiration est absolue.
-
-    La duree est FIGEE ici, sur le role du moment, et rien ne la revisite. D'ou
-    la regle qui la tient (A-01/A-02 de docs/audit-auth-discord.md) : toute
-    ecriture de comptes.role ferme les sessions du compte concerne. Sans elle,
-    un joueur promu garderait 30 jours de session d'admin -- soixante fois les
-    12 heures que SESSION_ADMIN_LIFETIME_HOURS lui destine. Recalculer
-    expires_at a la place ferait une seconde source de verite sur la duree.
+    La duree depend du role au moment de la creation : toute modification du
+    role doit donc fermer les sessions du compte.
     """
     token = secrets.token_urlsafe(32)
     if role == ROLE_PLAYER:
         expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_JOUEUR_LIFETIME_DAYS)
     else:
-        # Un compte privilegie ouvre bien plus de portes : session courte.
         expires_at = datetime.now(timezone.utc) + timedelta(hours=SESSION_ADMIN_LIFETIME_HOURS)
 
     cur.execute(
@@ -366,28 +286,22 @@ def create_session(cur, compte_id: int, role: str, user_agent: str | None) -> tu
            VALUES (%s, %s, %s, now(), %s)""",
         (hash_token(token), compte_id, expires_at, (user_agent or '')[:255] or None),
     )
-    # Menage opportuniste, herite de l'ancienne table de jetons admin.
+    # Purge des sessions expirees.
     cur.execute("DELETE FROM sessions_joueurs WHERE expires_at < now()")
     return token, expires_at
 
 
-# Libelles d'appareil, pour l'ecran « Vos appareils connectes ».
-#
-# L'ORDRE DE CES TABLEAUX EST SIGNIFICATIF et c'est le seul piege de la
-# fonction : les user-agents se contiennent mutuellement. Edge annonce
-# « Edg/... Chrome/... Safari/... », Chrome annonce « Chrome/... Safari/... »,
-# et Android annonce « Linux; Android ». Tester du plus specifique au plus
-# generique est donc obligatoire -- inverser deux lignes ne casse aucun test de
-# syntaxe, seulement l'affichage, et silencieusement.
+# Libelles d'appareil. L'ordre compte : les user-agents se contiennent
+# (Edge contient Chrome, Chrome contient Safari, Android contient Linux).
 _NAVIGATEURS = (
-    ('Edg/', 'Edge'),        # avant Chrome : son UA contient « Chrome »
-    ('OPR/', 'Opera'),       # idem
+    ('Edg/', 'Edge'),
+    ('OPR/', 'Opera'),
     ('Firefox/', 'Firefox'),
-    ('Chrome/', 'Chrome'),   # avant Safari : son UA contient « Safari »
+    ('Chrome/', 'Chrome'),
     ('Safari/', 'Safari'),
 )
 _SYSTEMES = (
-    ('Android', 'Android'),  # avant Linux : son UA contient « Linux »
+    ('Android', 'Android'),
     ('iPhone', 'iOS'),
     ('iPad', 'iOS'),
     ('Windows', 'Windows'),
@@ -398,25 +312,9 @@ APPAREIL_INCONNU = 'Appareil inconnu'
 
 
 def resumer_appareil(user_agent: str | None) -> str:
-    """Resume un user-agent en un libelle court, issu d'une LISTE FERMEE.
+    """Resume un user-agent en libelle court.
 
-    Deux raisons d'exister, dans cet ordre :
-
-    1. Utilite. « Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML,
-       like Gecko) Chrome/... » n'aide personne a reconnaitre son propre
-       appareil, et reconnaitre son appareil est la SEULE fonction de l'ecran.
-    2. Surete d'affichage. Le user-agent est une chaine controlee par le client,
-       ecrite telle quelle en base depuis un en-tete HTTP. Jinja echappe par
-       defaut, mais la regle du projet est de ne pas faire reposer une garantie
-       sur un defaut.
-
-    Ne renvoie JAMAIS un fragment de l'entree : uniquement une constante des
-    tableaux ci-dessus, ou APPAREIL_INCONNU. C'est ce qui rend l'affichage sur
-    par construction plutot que par echappement -- une UA piegee ressort en
-    « Appareil inconnu », pas echappee.
-
-    L'UA brute reste disponible dans l'export RGPD : c'est bien une donnee
-    personnelle collectee, et l'export doit la restituer integralement.
+    Ne renvoie que des constantes ci-dessus, jamais un fragment de l'entree.
     """
     if not user_agent:
         return APPAREIL_INCONNU
@@ -430,14 +328,7 @@ def resumer_appareil(user_agent: str | None) -> str:
 
 
 def consume_invitation(cur, token: str | None) -> tuple[int, int | None]:
-    """Valide et consomme une invitation. Renvoie (id, joueur_id vise).
-
-    La consommation n'a lieu QU'ICI, au retour de Discord : coller le lien dans
-    un salon declenche un GET du crawler, qui brulerait un lien max_uses=1 avant
-    que quiconque ait clique.
-
-    Appelee seulement pour un compte inexistant, ce qui rend l'echange rejouable.
-    """
+    """Valide et consomme une invitation. Renvoie (id, joueur_id vise)."""
     if not token:
         raise DiscordAuthError("Invitation requise", 403, 'invitation_requise')
 
@@ -464,11 +355,7 @@ def consume_invitation(cur, token: str | None) -> tuple[int, int | None]:
 
 def login(code: str, invite_token: str | None, user_agent: str | None,
           redirect_uri: str | None = None) -> dict:
-    """Parcours complet : code -> profil Discord -> compte -> session.
-
-    Une seule transaction : le compte, l'invitation consommee et la session
-    existent ensemble, ou rien n'a eu lieu.
-    """
+    """Code -> profil Discord -> compte -> session, en une seule transaction."""
     profil = exchange_code(code, redirect_uri)
 
     with get_db_connection() as conn:
@@ -481,19 +368,12 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
                 existant = cur.fetchone()
 
                 if existant is not None and existant[1] == 'suspended':
-                    # Un compte suspendu ne doit pas obtenir de session : sinon
-                    # la suspension ne serait qu'un libelle d'affichage.
                     raise DiscordAuthError("Ce compte est suspendu", 403, 'compte_suspendu')
 
                 invitation_id = None
                 joueur_vise = None
                 if existant is None:
-                    # Nouveau venu : l'invitation est obligatoire et se consomme.
-                    # SAUF pour le compte d'amorcage sur une base sans aucun
-                    # superadmin : personne ne peut lui en emettre une, puisque
-                    # emettre exige deja un compte privilegie. La promotion qui
-                    # suit (promote_bootstrap_superadmin) applique exactement les
-                    # memes conditions -- il entre donc superadmin, jamais player.
+                    # Invitation obligatoire, sauf pour le compte d'amorcage.
                     if not peut_amorcer_sans_invitation(cur, profil['discord_id']):
                         invitation_id, joueur_vise = consume_invitation(cur, invite_token)
 
@@ -502,10 +382,7 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
                 token, expires_at = create_session(
                     cur, compte['id'], compte['role'], user_agent
                 )
-                # Lues dans CETTE transaction, curseur deja ouvert : l'interface
-                # a besoin des permissions des la connexion pour construire ses
-                # menus, et les pages d'administration ne rappellent pas
-                # /auth/me. Aucune requete supplementaire.
+                # Lues ici pour que l'interface ait ses menus des la connexion.
                 permissions = _permissions_pour_session(cur, compte)
             conn.commit()
         except Exception:
@@ -523,14 +400,10 @@ def login(code: str, invite_token: str | None, user_agent: str | None,
             'joueur_id': compte['joueur_id'],
             'statut': compte['statut'],
             'role': compte['role'],
-            # Ce que l'interface AFFICHE, jamais ce qu'elle autorise : copie
-            # potentiellement perimee, l'autorite reste le backend (plan B.0).
+            # Pour l'affichage uniquement.
             'permissions': permissions,
-            # Permet au frontend de reclamer le consentement aux comptes
-            # anterieurs a sa mise en place.
             'cgu_a_accepter': compte['cgu_version'] != CGU_VERSION,
         },
-        # Invitation nominative : le joueur que l'admin visait en creant le
-        # lien. Le frontend s'en sert pour pre-remplir la revendication.
+        # Invitation nominative : sert a pre-remplir la demande de liaison.
         'joueur_vise': joueur_vise,
     }

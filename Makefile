@@ -13,11 +13,8 @@ DUMP         ?= backEnd/dump.sql
 DUMP_FILE     = $(if $(filter /%,$(DUMP)),$(DUMP),./$(DUMP))
 export DUMP_FILE
 
-# Moteur du service `race` : JS (raceEngine/) ou C++ (raceEngineCpp/). Le choix
-# est COLLANT — il s'ecrit dans `.engine` (gitignore) et vaut pour toutes les
-# cibles. Avec un `ENGINE=cpp` a taper a chaque commande, un seul `make up`
-# distrait remettrait le moteur JS en service sans que rien ne le signale, et le
-# banner changerait de comportement sans explication.
+# Moteur du service `race` : JS (raceEngine/) ou C++ (raceEngineCpp/), memorise
+# dans `.engine` (gitignore) pour toutes les cibles.
 ENGINE       ?= $(if $(wildcard .engine),$(shell cat .engine),js)
 RACE_CONTEXT  = $(if $(filter cpp,$(ENGINE)),./raceEngineCpp,./raceEngine)
 export RACE_CONTEXT
@@ -109,46 +106,27 @@ redump: check-env check-net check-dump fclean ## Full cleanup then rebuild from 
 
 # ── Rebuild individual services ──────────────
 
-# Ces deux cibles RECREENT le conteneur, qui repart donc avec une nouvelle IP
-# sur le reseau Docker -- et nginx, lui, n'est pas recree. Jusqu'au 2026-09-23,
-# cela suffisait a mettre tout le site en 502 : nginx gardait l'ancienne IP,
-# resolue une fois pour toutes au chargement de sa config, et ecrivait a une
-# adresse vide pendant que `docker compose ps` affichait un frontend `healthy`.
-#
-# nginx/snippets/app.conf resout desormais les noms a chaque requete (variable +
-# resolver Docker), ce qui rend ces cibles sures. Ne pas revenir a un
-# `proxy_pass` litteral sans relire docs/audit-503-zone-admin.md 13.
+# Ces cibles recreent le conteneur (nouvelle IP) : nginx doit resoudre les noms
+# a chaque requete (nginx/snippets/app.conf), pas de `proxy_pass` litteral.
 re-front:            ## Rebuild and restart frontend
 	$(COMPOSE) up --build -d --no-deps frontend
 
 re-back:             ## Rebuild and restart backend
 	$(COMPOSE) up --build -d --no-deps backend
 
-# --force-recreate : le moteur est copie dans l'image, donc un changement de
-# code la reconstruit et compose recree de lui-meme. Mais tracks/ est monte, pas
-# copie : sans ce drapeau, retoucher un seul circuit laisse l'image identique,
-# compose repond « up-to-date » et ne recree rien. Avec, le moteur repart
-# toujours d'un process neuf, donc d'un grand prix neuf.
+# --force-recreate : tracks/ est monte, pas copie ; sans ce drapeau, modifier un
+# circuit ne recree pas le conteneur.
 re-race:             ## Rebuild and restart the banner race engine (nouveau grand prix)
 	$(COMPOSE) up --build -d --no-deps --force-recreate race
 
-# SIGHUP plutot qu'un redemarrage de conteneur : le service, les connexions
-# WebSocket et l'image restent en place, mais le grand prix repart de zero —
-# scores effaces et grille tiree au sort.
+# SIGHUP : nouveau grand prix (scores effaces, grille tiree au sort) sans
+# redemarrer le conteneur ni couper les connexions.
 restart-race:        ## Relance un grand prix neuf sans couper le service
 	$(COMPOSE) kill -s HUP race
 
-# A lancer apres une modification de nginx/. Le rechargement relit la config et
-# reresout les upstreams, sans couper les connexions en cours.
-#
-# La comparaison d'empreintes n'est pas du zele. `nginx.conf` est monte comme
-# FICHIER (docker-compose.yml), pas comme dossier : Docker en resout l'inode au
-# demarrage du conteneur. Un editeur qui reecrit le fichier au lieu de le
-# modifier en place cree un nouvel inode, le montage reste colle a l'ancien
-# contenu, et `nginx -s reload` relit fidelement la version d'avant.
-#
-# L'echec est MUET -- `nginx -t` valide et `reload` reussit sur l'ancien
-# contenu. D'ou cette verification, qui le rend bruyant.
+# A lancer apres une modification de nginx/. nginx.conf est monte comme fichier :
+# si l'editeur a remplace l'inode, le reload relit l'ancien contenu sans erreur,
+# d'ou la comparaison d'empreintes.
 reload-nginx:        ## Recharge la configuration nginx
 	$(COMPOSE) exec nginx nginx -t
 	$(COMPOSE) exec nginx nginx -s reload
@@ -167,9 +145,8 @@ reload-nginx:        ## Recharge la configuration nginx
 
 # ── Maintenance ──────────────────────────────
 
-# Le public voit la page d'attente, le détenteur du passe voit le vrai site.
-# `on` affiche le passe à ouvrir une fois dans son navigateur. Détails et
-# vérifications : scripts/maintenance.sh.
+# Le public voit la page d'attente, le détenteur du passe voit le vrai site
+# (voir scripts/maintenance.sh).
 maintenance-on:      ## Page de maintenance pour le public, passe affiché pour toi
 	@bash scripts/maintenance.sh on
 
@@ -222,9 +199,7 @@ ps:                  ## Show running containers
 
 # ── Database ─────────────────────────────────
 
-# L'expansion doit avoir lieu DANS le conteneur, comme pour DB_STATUS : sur
-# l'hôte, make ne lit pas le .env, les deux variables y sont vides et psql
-# reçoit « -U -d », d'où un « role "-d" does not exist » incompréhensible.
+# Variables développées dans le conteneur : make ne lit pas le .env.
 db-shell:            ## Open psql shell
 	$(COMPOSE) exec db sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 
@@ -249,9 +224,8 @@ recompter-absences:  ## Remet consecutive_missed a jour en comptant des sessions
 
 # ── Moteur de course (banner) ────────────────
 
-# Emprunte une image node le temps d'un test, sans rien installer sur la machine
-# ni toucher a la stack. Les options de `docker run` et l'image sont separees :
-# tout ce qui vient apres l'image serait passe au conteneur, pas a docker.
+# Image node temporaire, sans rien installer sur la machine. Les options de
+# `docker run` precedent l'image ; la suite est passee au conteneur.
 RACE_DOCKER = docker run --rm -u "$$(id -u):$$(id -g)" -e npm_config_cache=/tmp/.npm \
 	-v "$$(pwd):/repo" -w /repo/raceEngine
 RACE_IMAGE  = node:22-alpine
@@ -259,10 +233,8 @@ RACE_NODE   = $(RACE_DOCKER) $(RACE_IMAGE)
 
 # ── Bascule de moteur ────────────────────────
 #
-# `make engine` dit ce qui est CHOISI, `/healthz` dit ce qui TOURNE : les deux
-# peuvent diverger tant qu'un `make re-race` n'a pas eu lieu. C'est voulu — la
-# bascule n'entraine pas de reconstruction surprise, elle imprime la commande
-# suivante et s'arrete la.
+# `make engine` affiche le moteur choisi, `/healthz` celui qui tourne : ils
+# different tant qu'un `make re-race` n'a pas eu lieu.
 engine:              ## Affiche le moteur de course actif
 	@echo "moteur choisi : $(ENGINE)  (contexte $(RACE_CONTEXT))"
 	@printf 'moteur qui tourne : '
@@ -280,73 +252,56 @@ engine-cpp:          ## Bascule le service race sur le moteur C++
 race-deps:           ## Installe ws dans raceEngine/node_modules (pour les tests hors conteneur)
 	$(RACE_NODE) npm install --no-audit --no-fund
 
-# Relit les circuits dessines dans tracks/ et les traduit en chiffres : longueur
-# du tour, place de la ligne, profondeur des boites. A passer apres chaque coup
-# de crayon — le service, lui, refuse de demarrer sur un dessin faux.
+# Verifie les circuits dessines et affiche leurs chiffres (longueur du tour,
+# ligne, profondeur des boites).
 race-tracks:         ## Verifie les circuits de tracks/ (ORDER=1 pour l'ordre des manches)
 	$(RACE_NODE) node tools/tracks.js $(if $(ORDER),--order,)
 
 race-soak:           ## Soak du moteur seul, 10 min, sans WebSocket (DURATION=... pour changer)
 	$(RACE_NODE) node src/server.js --duration $${DURATION:-600} --always-on
 
-# Banc d'equilibrage : enchaine des courses hors horloge, des milliers en
-# quelques secondes. RACES=... pour la taille de l'echantillon, SEED=... pour
-# rejouer la meme campagne, CHAIN=1 pour enchainer les grilles comme en prod
-# (vainqueur en pole) au lieu de tirer au sort a chaque course.
-#
-# Par defaut la campagne enchaine tous les circuits de tracks/, comme le fait un
-# grand prix : c'est le jeu tel qu'il se joue. TRACK=... n'en garde qu'un, pour
-# juger un trace en particulier sans que les autres diluent la mesure.
+# Banc d'equilibrage : courses hors horloge. RACES=... taille de l'echantillon,
+# SEED=... pour rejouer, CHAIN=1 pour enchainer les grilles comme en prod,
+# TRACK=... pour un seul circuit (par defaut, tous ceux de tracks/).
 race-sim:            ## Simule N courses et sort les stats (RACES=1000 SEED=42 CHAIN=1 CSV=1 TRACK=anneau)
 	$(RACE_NODE) node tools/simulate.js --races $${RACES:-200} \
 		$(if $(SEED),--seed $(SEED),) $(if $(CHAIN),--chain,) $(if $(CSV),--csv,) \
 		$(if $(TRACK),--track $(TRACK),)
 
-# Trace tick par tick UNE situation, pour comprendre une decision de pilotage
-# que le banc d'equilibrage signale sans l'expliquer.
+# Trace tick par tick une situation de pilotage.
 race-scenario:       ## Deroule les scenarios de pilotage et trace les decisions
 	$(RACE_NODE) node tools/scenario.js
 
-# Ce qu'un kart ENTEND (etoile, bill, rouge, bleue) : des situations rejouees sur
-# SEEDS graines, alertes eteintes puis allumees. Sort en erreur si un engagement
-# n'est pas tenu. CAMPAIGN=... ajoute des courses completes, pour verifier que
-# les alertes ne dereglent rien ailleurs (cf. docs/banner/alertes.md).
+# Banc des alertes (etoile, bill, rouge, bleue), sans puis avec ; echoue si un
+# engagement n'est pas tenu. CAMPAIGN=... ajoute des courses completes.
 race-alerts:         ## Banc des alertes, avec et sans (SEEDS=200 CAMPAIGN=400)
 	$(RACE_NODE) node tools/alerts.js --seeds $${SEEDS:-200} \
 		$(if $(CAMPAIGN),--campaign $(CAMPAIGN),)
 
-# Ce qu'un kart fait de ce qu'il a vu derriere une fois revenu devant (D-5), et
-# si son tirage d'inattention depend de son gabarit (D-6). Mesure seule, ne sort
-# jamais en erreur (cf. docs/banner/audit-decision-direction-2026-09-17.md).
+# Banc de l'attention : mesure seule, ne sort jamais en erreur.
 race-attention:      ## Banc de l'attention, D-5 et D-6 (RACES=300 SEEDS=1000)
 	$(RACE_NODE) node tools/attention.js --races $${RACES:-300} --seeds $${SEEDS:-1000}
 
-# La rouge tiree sur une cible avec un tuyau entre les deux : elle doit le
-# contourner (O-3, cf. docs/banner/audit-decision-objets-2026-09-17.md).
+# Banc de la rouge face a un tuyau entre elle et sa cible.
 race-redshell:       ## Banc de la rouge face aux tuyaux (SEEDS=300)
 	$(RACE_NODE) node tools/redshell.js --seeds $${SEEDS:-300}
 
-# `exec race node ...` supposait que le conteneur du moteur embarque node : c'est
-# faux des que le moteur est le binaire C++, et le test se coupait la branche sur
-# laquelle il est assis. On emprunte donc une image node et on la colle dans la
-# PILE RESEAU du conteneur race, ou `localhost:3000` est le moteur — quel que
-# soit le langage dans lequel il est ecrit.
+# Image node branchee sur la pile reseau du conteneur race (`localhost:3000`),
+# quel que soit le moteur (le binaire C++ n'embarque pas node).
 race-spectate:       ## Test de l'arrivant contre le service `race` en cours d'execution (AFTER=... secondes)
 	$(RACE_DOCKER) --network container:$$($(COMPOSE) ps -q race) $(RACE_IMAGE) \
 		node tools/spectate.js --url ws://127.0.0.1:3000/ws/race --after $${AFTER:-30}
 
-# Le compte des spectateurs et le vote de redemarrage, par le seul protocole :
-# vaut pour les deux moteurs. Le dernier scenario vote un redemarrage, donc
-# l'outil s'arrete sans rien faire si quelqu'un d'autre regarde deja.
+# Compte des spectateurs et vote de redemarrage, via le protocole (valable pour
+# les deux moteurs). Le dernier scenario vote un redemarrage : l'outil s'arrete
+# si quelqu'un d'autre regarde deja.
 race-spectators:     ## Verifie le compte des spectateurs et le vote (GRACE=1 : onglet cache, ~65 s de plus)
 	$(RACE_DOCKER) --network container:$$($(COMPOSE) ps -q race) $(RACE_IMAGE) \
 		node tools/spectators.js --url ws://127.0.0.1:3000/ws/race $${GRACE:+--grace}
 
-# Meme test, mais par l'URL publique : c'est le seul qui traverse nginx, donc le
-# seul qui verifie l'upgrade WebSocket, les timeouts et limit_conn.
-#
-# 127.0.0.1 et non localhost : node resout localhost en ::1 en priorite, alors
-# que docker ne publie le port que sur 0.0.0.0 — donc en IPv4 uniquement.
+# Meme test via l'URL publique, a travers nginx (upgrade WebSocket, timeouts,
+# limit_conn). 127.0.0.1 : node prefere ::1 pour localhost, et le port n'est
+# publie qu'en IPv4.
 race-nginx:          ## Test de l'arrivant a travers nginx (URL=... pour viser un autre hote)
 	$(RACE_DOCKER) --network host $(RACE_IMAGE) node tools/spectate.js --url $${URL:-ws://127.0.0.1/ws/race} --after $${AFTER:-10}
 

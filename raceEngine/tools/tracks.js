@@ -1,15 +1,7 @@
-// Relecture des circuits dessines, hors service.
-//
-// Le moteur refuse de demarrer sur un dessin faux — c'est ce qu'on veut en
-// production, mais pas au moment ou l'on dessine. Cet outil fait la meme lecture
-// et dit la meme chose, sans rien lancer :
+// Verification des circuits dessines, hors service.
 //
 //   node tools/tracks.js            verifie tous les circuits et les resume
-//   node tools/tracks.js --order    ce que ca donne sur un grand prix entier
-//
-// Il traduit surtout le dessin en chiffres : combien de pixels fait le tour, ou
-// tombe la ligne, a quelle profondeur chaque boite se pose. C'est la seule facon
-// de verifier qu'un trace fait bien ce qu'on croyait dessiner.
+//   node tools/tracks.js --order    resume d'un grand prix entier
 
 import CFG from '../src/config/index.js';
 import * as track from '../src/track.js';
@@ -42,8 +34,7 @@ for (const circuit of tracks) {
 
     const width = cfg.world.width;
 
-    // Duree d'un tour a la vitesse de defilement : c'est la mesure qui parle,
-    // bien plus qu'un nombre de pixels. Cinq tours font la course.
+    // Duree d'un tour a la vitesse de defilement.
     const lapSeconds = width / cfg.speeds.roadPPS;
 
     console.log(`── ${circuit.name}  [${circuit.source}]`);
@@ -53,10 +44,7 @@ for (const circuit of tracks) {
     console.log(`   piste    ${circuit.rows} rangees sur ${cfg.road.minY}..${cfg.road.maxY} de profondeur`);
     console.log(`   camera   approche a ${cfg.race.cameraApproachDistance} px de l'arrivee`);
 
-    // Les boites sont regroupees par colonne : c'est ainsi qu'un pilote les
-    // rencontre — un rideau a franchir, pas des boites eparpillees. Et leur
-    // place dans le tour decide du rythme des objets, ce que le dessin ne dit
-    // pas a l'oeil.
+    // Boites regroupees par colonne.
     const columns = new Map();
     for (const box of cfg.world.itemBoxes) {
         if (!columns.has(box.x)) columns.set(box.x, []);
@@ -71,9 +59,7 @@ for (const circuit of tracks) {
             + `  profondeurs ${depths.map(y => y.toFixed(1)).join(', ')}`);
     }
 
-    // Les pipes, et surtout ce qu'ils laissent passer. Un trace se juge la :
-    // un passage juste au-dessus du minimum se franchit, mais huit karts n'y
-    // tiennent pas de front.
+    // Passages laisses par les tuyaux.
     if (cfg.world.pipes.length) {
         console.log(`   pipes    ${cfg.world.pipes.length} : `
             + cfg.world.pipes.map(p =>

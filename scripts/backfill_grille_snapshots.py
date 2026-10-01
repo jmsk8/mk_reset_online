@@ -1,35 +1,23 @@
 #!/usr/bin/env python3
 """Reconstitue les grilles figees (table grille_snapshots) des tournois deja joues.
 
-La reference de l'IP v2 est la grille des joueurs telle qu'elle etait juste
-avant la generation du premier tournoi d'une journee. Les tournois joues avant
-la mise en place du snapshot n'en ont pas : ce script la reconstitue en
-rembobinant l'historique.
+La reference de l'IP v2 est la grille des joueurs juste avant le premier
+tournoi d'une journee. Le script part de l'etat actuel de Joueurs et annule les
+tournois un par un, du plus recent au plus ancien (mu/sigma via
+Participations.old_mu/old_sigma, sigma via ghost_log.old_sigma, compteur
+d'absence des non-presents). Les journees qui ont deja une grille ne sont pas
+touchees.
 
-Methode : on part de l'etat actuel de la table Joueurs et on remonte le temps,
-tournoi par tournoi, en annulant exactement ce que la generation avait applique
-(mu/sigma via Participations.old_mu/old_sigma, sigma via ghost_log.old_sigma,
-compteur d'absence des joueurs non presents). L'etat obtenu juste avant un
-tournoi est la grille recherchee ; comme on parcourt en ordre decroissant, c'est
-le premier tournoi de chaque journee qui fixe la grille de cette journee.
-
-Le compteur d'absence des joueurs presents est remis a zero a la generation et
-n'est donc pas rembobinable : il ressort sous-estime, ce qui ne peut affecter
-que le drapeau is_ranked (bascule a unranked_threshold absences d'affilee). Le
-critere dominant reste le tier, lui recalcule a partir de mu/sigma exacts.
-
-Les journees qui possedent deja une grille ne sont jamais touchees.
+Le compteur d'absence des presents, remis a zero a la generation, ressort
+sous-estime ; seul is_ranked peut en etre affecte.
 
 Usage, depuis la racine du projet :
     make ip-backfill                    # ecrit les grilles manquantes
     make ip-backfill DRY=1              # affiche ce qui serait ecrit, sans rien ecrire
-    make ip-backfill SINCE=2026-06-19   # remonte plus ou moins loin (defaut ci-dessous)
+    make ip-backfill SINCE=2026-06-19   # date de depart (defaut ci-dessous)
 
 Equivalent sans make :
     docker compose exec -T backend python - < scripts/backfill_grille_snapshots.py [--dry-run] [--since AAAA-MM-JJ]
-
-Alternative : dumps/dump_2026-08-20_ipv2.sql est le dump du 18/08 avec ces
-grilles deja reconstituees, restaurable par make redump DUMP=...
 """
 import sys
 from datetime import date, datetime
@@ -45,8 +33,7 @@ from services import (
     _counts_in_reference,
 )
 
-# Debut de la saison en cours : avant cette date l'IP v2 n'est pas utilisee et
-# la reference retombe sur l'ancien calcul de periode.
+# Debut de la saison en cours (pas d'IP v2 avant).
 DEFAULT_SINCE = date(2026, 6, 19)
 
 
@@ -130,10 +117,8 @@ def main():
             state = load_state(cur)
             first_part = load_first_participation(cur)
 
-            # Rembobinage : chaque tour de boucle annule un tournoi, l'etat
-            # obtenu est celui d'avant sa generation. La journee etant parcourue
-            # a l'envers, la derniere ecriture pour une date est bien celle qui
-            # precede son premier tournoi.
+            # Chaque tour annule un tournoi ; en ordre decroissant, la derniere
+            # ecriture pour une date est l'etat d'avant son premier tournoi.
             snapshots = {}
             for tid, tdate in tournois:
                 for jid, old_mu, old_sigma in parts_by_tid.get(tid, []):
@@ -155,10 +140,8 @@ def main():
                 if tdate < since:
                     break
 
-                # Un joueur n'entre dans la grille que s'il avait deja joue avant ce
-                # tournoi : celui qui est cree par cette generation-la n'existait pas
-                # encore, et celui qui n'a jamais joue n'a pas de date d'apparition
-                # exploitable (il serait de toute facon hors reference, tier 'U').
+                # Seuls les joueurs ayant deja joue avant ce tournoi entrent
+                # dans la grille.
                 grid = {
                     jid: dict(p)
                     for jid, p in state.items()

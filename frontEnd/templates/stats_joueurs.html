@@ -99,15 +99,14 @@
         }
     </style>
     <style>
-        /* Remplir le carré de 48px sans déformer : un avatar Discord n'est
-           pas toujours carré. */
+        /* Avatar recadré sans déformation. */
         .avatar-joueur {
             width: 48px; height: 48px;
             object-fit: cover;
             border: 2px solid rgba(255, 255, 255, 0.15);
         }
 
-        /* Repli sans compte rattaché : un cercle neutre plutôt qu'un trou. */
+        /* Sans compte rattaché : cercle neutre. */
         .avatar-defaut {
             display: inline-flex;
             align-items: center;
@@ -200,7 +199,7 @@
                                         <div class="media-left">
                                             <figure class="image is-48x48">
                                                 {% if joueur.avatar_url %}
-                                                    {# onerror : pastille neutre plutôt qu'une image cassée. #}
+                                                    {# onerror : pastille neutre. #}
                                                     <img class="is-rounded avatar-joueur" loading="lazy"
                                                          src="{{ joueur.avatar_url }}" alt=""
                                                          referrerpolicy="no-referrer"
@@ -215,8 +214,6 @@
                                         <div class="media-content">
                                             <p class="title is-4 has-text-light mb-1 is-flex is-align-items-center">
                                                 <span class="mr-2">{{ joueur.nom }}</span>
-                                                {# Couleur portee par les donnees (tiers dynamiques, Partie B) --
-                                                   voir docs/tableau-seuils-tiers-plan.md. #}
                                                 {% if tiers_couleurs.get(joueur.tier) %}
                                                     <span class="tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: white;">{{ joueur.tier }}</span>
                                                 {% else %}

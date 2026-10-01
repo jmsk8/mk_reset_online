@@ -95,30 +95,20 @@
             opacity: 1;
         }
 
-        /* ------------------------------------------------------------------
-           Mode telephone, seuil 900px — le meme que la page des saisons, pour
-           que les deux ecrans d'administration basculent ensemble.
-           ------------------------------------------------------------------ */
+        /* Mode telephone (meme seuil que la page des saisons). */
         @media screen and (max-width: 900px) {
-            /* Les cartes de ligue sont en `is-3`, soit quatre par ligne. Bulma
-               n'applique ses largeurs qu'a partir de 769px : en dessous elles
-               s'empilent seules, mais entre 769 et 900px elles resteraient a
-               25% — quatre colonnes illisibles sur une tablette en portrait.
-               Une par ligne jusqu'a 600px, deux au-dela. */
+            /* Une ligue par ligne jusqu'a 600px, deux au-dela. */
             #currentLeaguesDisplay .column.is-3 {
                 flex: none;
                 width: 50%;
             }
 
-            /* Les blocs de reglage en haut de page : `is-narrow` les garde
-               cote a cote et le bouton finit par deborder. */
+            /* Les blocs de reglage passent les uns sous les autres. */
             .box.glass-card .columns.is-vcentered .column.is-narrow {
                 width: 100%;
             }
 
-            /* Le tableau des joueurs, dans chaque carte de ligue. Il a deja
-               son `.table-container` : on empeche juste les noms de s'enrouler
-               sur deux lignes, qui doublerait la hauteur des cartes. */
+            /* Noms des joueurs sur une seule ligne. */
             #currentLeaguesDisplay .table td {
                 white-space: nowrap;
             }
@@ -130,61 +120,30 @@
             }
         }
 
-        /* ------------------------------------------------------------------
-           Edition manuelle des ligues (modale de draft), sur telephone.
-
-           Le bloc « Joueurs Disponibles » etait fige a 250px par un style
-           inline, hauteur calibree pour un grand ecran. Sur un telephone, une
-           fois l'en-tete de la modale et la barre de mode deduits, il ne
-           restait presque rien pour la zone de depot — alors que c'est elle
-           qu'on manipule.
-
-           On inverse le partage : la liste des joueurs prend la moitie de la
-           hauteur, les ligues gardent le reste et defilent. `!important` est
-           necessaire, le style inline gagnant autrement.
-           ------------------------------------------------------------------ */
+        /* Modale d'edition des ligues sur telephone : la liste des joueurs prend
+           plus de hauteur (!important contre les styles inline). */
         @media screen and (max-width: 900px) {
-            /* C'est la zone qu'on manipule : elle passe en premier dans le
-               partage de la hauteur, et prend 55% de la modale.
-
-               `flex-basis` en pourcentage plutot qu'une hauteur fixe : la
-               modale fait 100vh, donc le bloc suit la taille de l'ecran au
-               lieu d'un chiffre calibre pour un seul appareil.
-
-               Les trois `!important` visent le style inline
-               (`height:250px; min-height:250px`), qui gagne autrement. */
+            /* 55% de la modale. */
             .zone-joueurs-dispo {
                 height: auto !important;
                 flex: 1 1 55% !important;
-                /* Plancher : en dessous, on ne distingue plus assez de
-                   joueurs pour en choisir un. */
                 min-height: 16rem !important;
             }
 
-            /* Les ligues cedent la place. `min-height: 0` est indispensable :
-               par defaut un enfant flex refuse de descendre sous la taille de
-               son contenu, et cette zone-ci en a beaucoup — sans lui, elle
-               garde sa hauteur naturelle et ecrase sa voisine, qui se
-               retrouve reduite a son minimum. */
+            /* min-height: 0 permet a l'enfant flex de retrecir. */
             .zone-ligues-draft {
                 flex: 1 1 45%;
                 min-height: 0;
                 overflow-y: auto;
             }
 
-            /* La zone de depot occupe toute la hauteur qu'on vient de lui
-               donner, au lieu du plafond de 300px de la regle de base. */
             .unassigned-column {
                 max-height: none !important;
                 min-height: 0;
-                /* 1rem de padding coute 2rem de hauteur utile sur un ecran
-                   ou elle est comptee. */
                 padding: 0.6rem !important;
             }
 
-            /* Le titre « Joueurs Disponibles / Non assignes » tient sur deux
-               lignes au telephone et mange la zone qu'il annonce. Reduit, et
-               le compteur reste sur la meme ligne que lui. */
+            /* Titre reduit, compteur sur la meme ligne. */
             .zone-joueurs-dispo .title.is-5 {
                 font-size: 0.95rem;
             }
@@ -193,29 +152,24 @@
                 margin-bottom: 0.35rem !important;
             }
 
-            /* Le corps de la modale : ses 20px de padding par defaut, pris
-               deux fois, sont autant de moins pour les deux zones. */
             #draftModal .modal-card-body {
                 padding: 0.75rem !important;
             }
 
-            /* Les cartes de ligue dans la modale : `is-3` les mettrait a 25%
-               entre 769 et 900px. */
+            /* Une colonne par ligue entre 769 et 900px. */
             #draftContainer .column {
                 flex: none;
                 width: 100%;
             }
 
-            /* La modale prend tout l'ecran : 95vh laissait des bords perdus
-               alors que la place manque. */
+            /* Modale plein ecran. */
             #draftModal .modal-card {
                 width: 100% !important;
                 height: 100vh !important;
                 max-height: 100vh;
             }
 
-            /* Les deux boutons de la barre de mode passent sous le libelle
-               plutot que de deborder. */
+            /* Boutons sous le libelle. */
             #draftModal .level {
                 display: block;
             }
@@ -412,13 +366,7 @@
         async function saveInterLeagueMoves() {
             const newValue = parseInt(document.getElementById('interLeagueMoves').value) || 0;
 
-            // N'envoyer QUE la clé de ligue. Cette page relisait la config
-            // entière pour la reposter telle quelle : elle réécrivait donc tau,
-            // la pénalité fantôme et le seuil de classement à chaque geste —
-            // écrasant ce qu'un autre admin venait d'y changer, et déclenchant
-            // le reclassement de tous les joueurs lié à unranked_threshold.
-            // `update_config` n'écrit désormais que les clés réellement
-            // envoyées (elle appliquait ses défauts aux absentes).
+            // Seule la clé de ligue est envoyée.
             const res = await apiCall('/admin/config', 'POST',
                                       { inter_league_moves: newValue });
 
@@ -439,7 +387,7 @@
                 }
             }
 
-            // Uniquement la clé de ligue, même raison que saveInterLeagueMoves.
+            // Seule la clé de ligue est envoyée.
             const res = await apiCall('/admin/config', 'POST',
                                       { league_mode_enabled: newState });
             

@@ -1,27 +1,6 @@
-"""Ajout, annulation, suppression de tournoi, reset global : les trous du 27/09.
-
-Revue de robustesse demandee apres « de gros problemes » sur ces gestes. Ce
-que ce fichier verrouille :
-
-  1. la saisie est verifiee AVANT toute ecriture (score en chaine trie « 9 »
-     devant « 12 » en silence, un score decimal finissait en 500) ;
-  2. tous ces gestes prennent le MEME verrou consultatif : deux admins ou un
-     double envoi ne se marchent plus dessus ;
-  3. un tournoi envoye deux fois (meme date, memes joueurs, memes scores) est
-     refuse au lieu d'appliquer TrueSkill deux fois ;
-  4. moins de deux joueurs comptes dans TrueSkill : personne ne bouge, au lieu
-     d'un 500 (« need multiple rating groups ») ;
-  5. un absent de tous les lobbies d'une session prend UNE absence, pas une
-     par tournoi -- a la creation comme a l'annulation ;
-  6. l'annulation vise le dernier tournoi ENREGISTRE, et refuse de passer
-     par-dessus un reset global posterieur ;
-  7. la suppression retire la penalite au lieu de restaurer old_sigma, epargne
-     qui a rejoue depuis, et repond 404 sur un tournoi inexistant ;
-  8. le reset global refuse une date future et un second reset le meme jour.
-
-Meme banc que test_liaison_session : curseur scripte, SQL non valide contre
-Postgres. On verifie l'enchainement et les valeurs ecrites.
-"""
+"""Robustesse de l'ajout, l'annulation et la suppression de tournoi, et du
+reset global : validation prealable, verrou commun, doublons, absences par
+session."""
 from harness import *
 from flask import Flask
 
@@ -41,8 +20,7 @@ APPELS_RATE = []
 
 
 class _Env:
-    """Se comporte comme le vrai TrueSkill sur le point qui compte ici : un
-    seul groupe leve ValueError."""
+    """Comme TrueSkill : un seul groupe leve ValueError."""
     def __init__(self, **kw):
         pass
 
@@ -193,8 +171,7 @@ r, cur, conn, lots = ajouter(A_B, doublon=(412,))
 check("doublon -> 409 tournoi_en_double",
       r.status_code == 409 and r.get_json().get('code') == 'tournoi_en_double'
       and r.get_json().get('tournoi_id') == 412, r.get_json())
-# conn.committed ne dit rien ici : l'authentification valide deja sur la meme
-# connexion factice. Le rollback et l'absence d'ecriture de score suffisent.
+# L'authentification commite deja : on verifie le rollback.
 check("  la transaction est annulee", conn.rolledback)
 check("  aucun mu/sigma n'est ecrit", lot(lots, 'UPDATE Joueurs') is None, lots)
 
@@ -223,8 +200,7 @@ check("deux joueurs comptes : TrueSkill tourne normalement", APPELS_RATE == [2],
 # ===========================================================================
 print("\n=== 5. Une absence par SESSION, pas par tournoi ===")
 # ===========================================================================
-# Joueur 20 : absent, 3 sessions deja manquees, sigma 2.0. Penalite au palier 1,
-# intervalle 1 : chaque absence comptee declenche +0.5.
+# Joueur 20 : absent, 3 sessions manquees, sigma 2.0 ; +0.5 par absence comptee.
 ABSENT = [(20, 2.0, 3, True)]
 
 r, cur, conn, lots = ajouter(A_B, absents=ABSENT, ghost=True, autre_tournoi_session=None)

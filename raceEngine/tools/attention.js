@@ -1,13 +1,9 @@
-// Banc de l'attention : ce qu'un kart fait de ce qu'il a vu DERRIERE une fois
-// revenu devant (D-5), et si son tirage d'inattention depend de son gabarit
-// (D-6). Cf. docs/banner/audit-decision-direction-2026-09-17.md.
+// Banc de l'attention : ce qu'un kart fait de ce qu'il a vu derriere une fois
+// revenu devant (D-5), et l'effet du gabarit sur son tirage d'inattention (D-6).
 //
 //     node tools/attention.js                 les deux volets
 //     node tools/attention.js --races 200     D-5 sur plus de courses completes
 //     node tools/attention.js --seeds 800     D-6 sur plus de graines
-//
-// Comme les autres outils il n'ecrit rien dans le moteur : il observe l'etat
-// entre deux pas. D-6 seul pose sa situation a la main (kart, banane, vitesse).
 import * as PH from '../src/engine/index.js';
 import CFG from '../src/config/index.js';
 import * as track from '../src/track.js';
@@ -51,18 +47,9 @@ const PLACES = ['leader', 'pack', 'last'];
 const SHELLS = ['greenShell', 'redShell'];
 
 // ── D-5 : regarder devant en se souvenant de l'arriere ─────────────────────
-//
-// Le modele voulu : le kart ne voit qu'un cote a la fois, mais il RETIENT ce
-// qu'il a vu derriere (`pressureMemoryMs`) et AGIT dessus en regardant devant.
-// Trois questions, dans l'ordre :
-//
-//   1. Combien de temps passe-t-il tourne vers l'arriere ?        (le cout)
-//   2. Quand un danger arriere est en memoire, regarde-t-il devant ? (le souvenir)
-//   3. Les decisions prises sur ce danger le sont-elles aussi face a la route,
-//      et les touches par l'arriere tombent-elles sur un kart qui SAVAIT ?
-//
-// Une decision est comptee au pas ou elle APPARAIT, avec le sens du balayage de
-// ce pas : `scanBack` faux veut dire qu'elle a ete prise sur le souvenir.
+// Temps passe tourne vers l'arriere, regard devant avec un danger arriere en
+// memoire, et decisions prises sur ce souvenir. Une decision est comptee au
+// pas ou elle apparait (`scanBack` faux : prise sur le souvenir).
 
 function newAcc() {
     const byPlace = () => Object.fromEntries(PLACES.map(p => [p, 0]));
@@ -78,7 +65,7 @@ function newAcc() {
             shieldHold: { front: 0, back: 0 },
             counter: { front: 0, back: 0 },
         },
-        // touches par une carapace venue de derriere, par ce que le kart savait
+        // Touches par une carapace venue de derriere, selon ce que le kart savait.
         rearHits: { total: 0, looking: 0, dodging: 0, memory: 0, heard: 0, unaware: 0 },
         frontHits: 0,
     };
@@ -91,8 +78,7 @@ function snapshotKart(k, t) {
         back: s.back,
         scanBack: s.scanBack,
         memory: t - s.dangerAt <= CFG.vision.pressureMemoryMs && s.dangerKind !== '',
-        // Le porteur qui suit, de memoire. Absent des versions du moteur qui ne
-        // le retenaient pas : on retombe alors sur le releve du balayage.
+        // Porteur qui suit, de memoire (sinon releve du balayage).
         carrier: ('carrierAt' in s)
             ? (t - s.carrierAt <= CFG.vision.pressureMemoryMs)
             : (s.pressure && s.pressureBack),
@@ -105,7 +91,7 @@ function snapshotKart(k, t) {
 
 function raceRun(cfg, seed, acc) {
     const rng = makeRng(seed);
-    // Le tirage de la prod (`roster`) : `perRace` karts parmi les actives.
+    // Tirage de production (`roster`).
     const grid = PH.pickRoster(cfg, rng, null);
     const state = PH.createWorldState(cfg, rng, 0, grid, null);
     let t = 0;
@@ -140,8 +126,7 @@ function raceRun(cfg, seed, acc) {
                 }
 
                 const side = now.scanBack ? 'back' : 'front';
-                // Ceder le passage : a celui qui tient une ROUGE (le geste d'origine),
-                // ou a un autre porteur (D-5). Le plan designe le kart.
+                // Ceder le passage a un porteur (le plan designe le kart).
                 if (now.plan === 'giveWay' && was.plan !== 'giveWay') {
                     const other = state.kartsById[-1 - now.threatId];
                     const red = other && other.heldItem && other.heldItem.type === 'redShell';
@@ -156,8 +141,7 @@ function raceRun(cfg, seed, acc) {
             }
         }
 
-        // La contre-attaque : une carapace tiree vers l'ARRIERE par un kart qui
-        // se sait suivi par un porteur.
+        // Contre-attaque : carapace tiree vers l'arriere vers un porteur qui suit.
         if (state.phase === 'racing') {
             for (const ev of events) {
                 if (ev.type !== 'launchItem') continue;
@@ -168,9 +152,7 @@ function raceRun(cfg, seed, acc) {
             }
         }
 
-        // Les touches : la carapace disparue ce pas-ci, la plus proche de la
-        // victime AVANT le pas. Derriere elle, c'est un danger qu'il pouvait
-        // connaitre.
+        // Touches : carapace disparue ce pas-ci, la plus proche de la victime avant le pas.
         const alive = new Set();
         for (const it of state.items) if (!it.isDead && !it.spent) alive.add(it.id);
         for (const ev of events) {
@@ -238,27 +220,14 @@ function reportD5(acc) {
 }
 
 // ── D-6 : le tirage d'inattention depend-il du gabarit ? ──────────────────
-//
-// `missChance` est etalonne sur l'agilite de REFERENCE — l'attention n'a rien a
-// voir avec le volant. Mais la fenetre de menace, elle, se taille sur le besoin
-// du kart : un lourd voit la menace PLUS TOT, garde plus de marge au moment du
-// tirage, et le rate donc moins. Effet de bord ou intention ?
-//
-// Situation identique pour tous : seul en piste, lance a la meme vitesse, une
-// banane posee droit devant dans son axe. Aucun coup d'oeil arriere (on
-// mesure l'attention devant, pas le partage du regard). On releve, a la
-// premiere perception de la banane : la marge qu'il avait, et le verdict du
-// tirage (`judgedIgnored`). Puis l'issue.
-//
-// Deux allures : la meme pour tous (la geometrie seule change d'un kart a
-// l'autre par sa fenetre), puis la sienne (ce qui se passe vraiment en course).
+// `missChance` est etalonne sur l'agilite de reference, mais la fenetre de
+// menace depend du kart. Situation identique pour tous (seul en piste, banane
+// droit devant, pas de coup d'oeil arriere) : marge a la premiere perception,
+// verdict du tirage, puis issue. A allure commune, puis a l'allure propre.
 
 const BANANA_ID = 9001;
 
-// Les scenarios vont chercher leurs personnages par NOM, puis vident la piste :
-// il leur faut le plateau ENTIER, pas les `roster.perRace` karts que le tirage
-// de la prod aurait retenus. Sans ca, un scenario sur un personnage non tire
-// plantait sur un kart introuvable.
+// Plateau complet (les scenarios cherchent leurs personnages par nom).
 function fullRoster(cfg) {
     const names = Object.keys(cfg.roster.enabled);
     return {
@@ -315,10 +284,9 @@ function missCase(cfg, seed, charName, speedOf, gapPx, laneY) {
 
     let judged = null;
     for (let k = 0; k < 240; k++) {
-        // Pas de coup d'oeil : seul devant compte ici.
         kart.sight.nextGlance = Infinity;
         kart.sight.backUntil = 0;
-        // La meme allure jusqu'au verdict : c'est elle qui fait la geometrie.
+        // Meme allure jusqu'au verdict.
         if (!judged) kart.absoluteVelocity = speed;
 
         t += DT_MS;
@@ -367,12 +335,8 @@ function missTable(label, speedOf) {
         + ` (plafond du tirage : ${(100 * BASE.ai.dodgeMissChance).toFixed(0)} %)`);
 }
 
-// La meme question quand la menace APPARAIT tard — ce qui arrive en course
-// derriere un kart qui la masquait. Pose plus pres que la fenetre de tout le
-// monde, la banane est jugee a la meme marge par tous : le tirage doit alors
-// etre le meme, c'est ce que promet l'etalonnage sur l'agilite de reference.
-// Plus loin, les lourds la voient plus tot que les vifs : l'ecart de D-6, s'il
-// existe, apparait la.
+// Meme question quand la menace apparait tard : a courte distance la marge est
+// la meme pour tous, plus loin les lourds la voient plus tot.
 const GAPS = [250, 350, 450, 600, 800];
 
 function gapSweep() {

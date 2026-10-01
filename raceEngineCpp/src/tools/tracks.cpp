@@ -13,8 +13,7 @@ namespace tools {
 
 namespace {
 
-// Les nombres du JS s'ecrivent sans decimale inutile (`7680`, pas `7680.0`) :
-// la sortie doit se comparer telle quelle a celle de l'outil node.
+// Sans decimale inutile, comme en JS : sortie comparable a l'outil node.
 std::string num(double v) {
     if (v == std::floor(v) && std::abs(v) < 1e15) {
         return std::to_string(static_cast<long long>(v));
@@ -59,8 +58,7 @@ int run_tracks(const config::Config& cfg, bool showOrder) {
 
         const double width = applied.world.width;
 
-        // Duree d'un tour a la vitesse de defilement : c'est la mesure qui
-        // parle, bien plus qu'un nombre de pixels.
+        // Duree d'un tour a la vitesse de defilement.
         const double lapSeconds = width / applied.speeds.roadPPS;
 
         std::printf("── %s  [%s]\n", circuit.name.c_str(), circuit.source.c_str());
@@ -75,8 +73,7 @@ int run_tracks(const config::Config& cfg, bool showOrder) {
         std::printf("   camera   approche a %s px de l'arrivee\n",
                     num(applied.race.cameraApproachDistance).c_str());
 
-        // Les boites sont regroupees par colonne : c'est ainsi qu'un pilote les
-        // rencontre — un rideau a franchir, pas des boites eparpillees.
+        // Boites regroupees par colonne.
         std::map<double, std::vector<double>> columns;
         for (const config::Placed& box : applied.world.itemBoxes) {
             columns[box.x].push_back(box.y);
@@ -99,9 +96,7 @@ int run_tracks(const config::Config& cfg, bool showOrder) {
                         depths.c_str());
         }
 
-        // Les tuyaux, et surtout ce qu'ils laissent passer. Un trace se juge
-        // la : un passage juste au-dessus du minimum se franchit, mais tout un
-        // peloton n'y tient pas de front.
+        // Tuyaux et passages laisses libres.
         if (!applied.world.pipes.empty()) {
             std::string list;
             std::vector<std::pair<double, double>> flat;

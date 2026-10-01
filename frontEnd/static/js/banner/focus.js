@@ -1,25 +1,13 @@
-// Le kart suivi : son cartouche, son releve de decision, sa selection.
-//
-// Tout ce que le spectateur obtient en cliquant sur une bulle du classement.
+// Kart suivi : cartouche, releve de decision et selection.
 
-// Le cartouche du kart suivi : son tour, seulement quand la camera suit
-// quelqu'un — c'est une lecture de son tableau de bord. La vitesse s'y ajoute en
-// mode debug seulement : c'est un instrument de reglage, une allure en px/s ne
-// dit rien au spectateur.
-//
-// Les deux se DEDUISENT de `totalDistance`, seule chose transmise. La vitesse
-// parce que ce qui interesse un spectateur n'est pas la consigne du moteur mais
-// le terrain reellement couvert : un kart bloque, en tete-a-queue ou en train de
-// reculer roule a ce que dit sa position. Rien n'est donc a ajouter au protocole.
+// Cartouche du kart suivi : son tour (et sa vitesse en mode debug), deduits de
+// `totalDistance`.
 let focusHudEl = null;
 let focusHudPrevDistance = null;
 let focusHudSpeed = 0;
 let focusHudText = '';
 
-// Constante de temps du lissage, en ms. La distance est interpolee entre deux
-// snapshots : la derivee brute saute a chaque arrivee de paquet, et un compteur
-// qui clignote est illisible. Assez court pour qu'un champignon se voie tout de
-// suite, assez long pour ne pas trembler.
+// Constante de temps du lissage de la vitesse, en ms.
 const FOCUS_HUD_SMOOTH_MS = 220;
 
 function resetFocusHud() {
@@ -41,8 +29,7 @@ function updateFocusHud(frameMs) {
         return;
     }
 
-    // Le premier passage n'a pas de pas precedent : il pose le repere et
-    // n'affiche pas encore de vitesse, plutot que d'en inventer une.
+    // Premier passage : pose le repere sans afficher de vitesse.
     if (focusHudPrevDistance === null) {
         focusHudPrevDistance = kart.totalDistance;
         focusHudEl.classList.add('is-on');
@@ -50,8 +37,7 @@ function updateFocusHud(frameMs) {
         const moved = kart.totalDistance - focusHudPrevDistance;
         focusHudPrevDistance = kart.totalDistance;
 
-        // Un recul contre un tuyau rendrait une vitesse negative : le compteur
-        // affiche l'allure, pas le sens de la marche.
+        // Pas de vitesse negative (recul contre un tuyau).
         const raw = Math.max(0, (moved * 1000) / frameMs);
         const k = frameMs / FOCUS_HUD_SMOOTH_MS;
         focusHudSpeed += (raw - focusHudSpeed) * (k > 1 ? 1 : k);
@@ -61,21 +47,15 @@ function updateFocusHud(frameMs) {
     let text = `TOUR ${lap}/${WORLD.laps || 1}`;
     if (GAME_CONFIG.debugMode) text += ` \u00B7 ${Math.round(focusHudSpeed)} px/s`;
 
-    // Le DOM n'est touche que quand le texte change vraiment : a 60 images par
-    // seconde, la vitesse arrondie ne bouge pas a chaque frame.
+    // DOM modifie seulement si le texte change.
     if (text !== focusHudText) {
         focusHudText = text;
         focusHudEl.textContent = text;
     }
 }
 
-// Le releve de decision, sous la banniere, en mode debug : ce que le kart suivi
-// VOIT et ce qu'il en FAIT. Quatre lignes, pas une de plus — un tableau de bord
-// qu'on ne lit pas d'un coup d'oeil ne sert a rien pendant une course.
-//
-// Tout vient du seul entier `kart.ai` du snapshot : le client ne DEDUIT rien, il
-// traduit. Les libelles sont indexes par CLE et non par rang, l'ordre des indices
-// arrivant du serveur dans `WORLD.ai` — une cle inconnue s'affiche telle quelle.
+// Releve de decision du kart suivi (mode debug), traduit de `kart.ai`. Libelles
+// indexes par cle (ordre fourni par WORLD.ai) ; une cle inconnue s'affiche telle quelle.
 const AI_STATE_LABELS = {
     cruising: 'roule',
     pipe: 'contourne un tuyau',
@@ -91,8 +71,7 @@ const AI_DANGER_LABELS = {
     ram: 'etoile / bill',
     shot: 'carapace en vol'
 };
-// Ce qu'il ENTEND sans l'avoir vu : l'alerte la plus pressante (cf. `hear` cote
-// serveur). Elle se lit dans la ligne « derriere » — les trois arrivent de la.
+// Alerte entendue la plus pressante (voir `hear` cote serveur).
 const AI_ALERT_LABELS = {
     '': '',
     ram: 'etoile / bill',
@@ -100,7 +79,6 @@ const AI_ALERT_LABELS = {
     blue: 'bleue'
 };
 
-// Traduit un indice en libelle, en passant par la cle que le serveur a nommee.
 function aiLabel(table, labels, index) {
     const key = table[index];
     if (key === undefined) return labels[table[0]] || '\u2014';
@@ -136,8 +114,7 @@ function updateAiHud() {
 
     const v = kart.ai || 0;
 
-    // Le DOM n'est touche que quand l'etat change vraiment. A dix snapshots par
-    // seconde et soixante images, le releve est identique la plupart du temps.
+    // DOM modifie seulement si l'etat change.
     if (v === aiHudValue) return;
     aiHudValue = v;
 
@@ -157,19 +134,14 @@ function updateAiHud() {
     const cover = (v >> 16) & 1;
     const watch = (v >> 17) & 1;
 
-    // Le regard d'abord, parce qu'il conditionne tout le reste : ce qui n'est
-    // pas regarde n'est pas vu, et donc pas traite.
     const look = (back ? 'DERRIERE' : 'devant') + (watch ? '  \u00B7  suit du regard' : '');
 
-    // Ce qu'il a VU derriere, puis ce qu'il ENTEND arriver.
     const rearParts = [];
     if ((v >> 4) & 3) rearParts.push(danger + (twoReds ? '  \u00B7  deux rouges' : ''));
     if (heardIndex) rearParts.push('entend : ' + heard + (blueOnMe ? ' (sur lui)' : ''));
     const rear = rearParts.length ? rearParts.join('  \u00B7  ') : '\u2014';
 
-    // « porteur » n'est pas un objet en vol : c'est un kart devant, dans l'axe,
-    // qui tient de quoi finir derriere lui. C'est le seul danger que le releve
-    // taisait, et donc le seul qu'on ne pouvait pas voir manquer.
+    // « porteur » : kart devant, dans l'axe, avec un objet a lacher derriere lui.
     const front = [];
     if (pipeAhead) front.push('tuyau');
     if (itemAhead) front.push('objet');
@@ -199,13 +171,8 @@ function setFocus(kartId) {
     requestVision();
 }
 
-// Le releve de vision du kart suivi. Il ne se demande qu'en mode debug, et il
-// coute au service une seconde serialisation par snapshot : hors debug, ce
-// message ne part jamais et le spectateur reste sur le flux commun.
-//
-// A renvoyer apres chaque `hello` : le service ne garde rien d'une connexion a
-// l'autre, et une course neuve renumerote... non, les identifiants tiennent —
-// mais une reconnexion, elle, repart d'une fiche vierge.
+// Demande le releve de vision du kart suivi (mode debug seulement). A renvoyer
+// apres chaque `hello` : une reconnexion repart d'une fiche vierge.
 function requestVision() {
     if (!GAME_CONFIG.debugMode) return;
     bannerNet.send({ t: 'watch', id: focusedKartId });
@@ -216,9 +183,7 @@ function updateFocusMarks() {
     const cameraBtn = leaderboardState.cameraEl;
     if (cameraBtn) {
         cameraBtn.classList.toggle('is-focused', focusedKartId === null);
-        // La camera jaune dit que la realisation tourne, y compris pendant
-        // qu'elle est posee sur un kart : sans ce reperage, un spectateur ne
-        // peut pas savoir si la vue bougera toute seule.
+        // Camera jaune : realisation automatique active.
         cameraBtn.classList.toggle('is-auto', raceDirector.auto);
         cameraBtn.title = raceDirector.auto
             ? 'Realisation automatique'
@@ -249,12 +214,8 @@ function onLeaderboardClick(event) {
         return;
     }
 
-    // Le bouton camera REMET la realisation automatique, il ne la bascule
-    // pas : un clic de trop ne doit jamais la couper. C'etait le cas quand il
-    // servait d'interrupteur — cliquer « pour revenir en auto » alors qu'elle
-    // tournait deja la coupait, et la vue restait fixe. En auto, un clic ne
-    // fait donc rien : il ne doit pas non plus ramener au plan large un plan
-    // en cours. La vue fixe reste accessible en debug (`bannerDebug.realise(false)`).
+    // Le bouton camera remet la realisation automatique sans jamais la couper
+    // (vue fixe : bannerDebug.realise(false)).
     if (target.classList.contains('leaderboard-camera')) {
         if (raceDirector.auto) return;
         raceDirector.setAuto(true);
@@ -262,8 +223,7 @@ function onLeaderboardClick(event) {
         return;
     }
 
-    // Cliquer un joueur passe en focus manuel : a partir de la, c'est le
-    // spectateur qui realise, et la camera ne bougera plus sans lui.
+    // Cliquer un joueur passe en focus manuel.
     raceDirector.setAuto(false);
     setFocus(Number(target.dataset.kartId));
 }

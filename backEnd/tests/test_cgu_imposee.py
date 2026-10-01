@@ -1,16 +1,5 @@
-"""A-07 : le consentement a la politique est IMPOSE, plus seulement affiche.
-
-Constat d'origine (audit-auth-discord.md, A-07) : `comptes.cgu_version` etait lu
-et transmis, jamais exige. Changer CGU_VERSION affichait un bandeau sur
-/mon-compte et ne bloquait rien. Tranche le 2026-09-24 : on impose.
-
-Ce que ce fichier verrouille :
-  - backend : tous les decorateurs refusent (428 `cgu_a_accepter`) une session
-    sans la version courante, sauf la liste blanche `player_required_sans_cgu`,
-    figee ici route par route ;
-  - frontend : 428 ne purge pas la session, une page HTML renvoie vers
-    /consentement, et le retour apres acceptation ne sort pas du site.
-"""
+"""Le consentement a la politique est exige par tous les decorateurs (428),
+sauf la liste blanche de player_required_sans_cgu."""
 from harness import *
 import ast
 import glob
@@ -50,7 +39,7 @@ DECOS = {
     'permission_required(gestion_comptes)': lambda a: a.permission_required('gestion_comptes'),
 }
 for nom, deco in DECOS.items():
-    role = 'superadmin'     # passe tous les seuils : seul le consentement peut refuser
+    role = 'superadmin'  # passe tous les seuils de role
     s, code, _ = statut(ligne_session(role=role, cgu_version=None), deco)
     check("%s : jamais accepte -> 428 cgu_a_accepter" % nom,
           (s, code) == (428, 'cgu_a_accepter'), (s, code))
@@ -80,8 +69,7 @@ check("  mais pas un compte suspendu", (s, code) == (403, 'compte_suspendu'), (s
 
 # ===========================================================================
 print("\n=== Backend : la liste blanche est figee ===")
-# Une route de plus ici ouvre une porte a qui n'a pas accepte. Ce doit etre un
-# choix ecrit, pas un copier-coller : ce test rougit tant qu'on ne l'a pas acte.
+# Ajouter une route ici doit etre un choix explicite.
 ATTENDUES = {
     ('/auth/check-session', 'GET'),
     ('/me/cgu', 'POST'),
@@ -162,7 +150,7 @@ def client(cgu_a_accepter):
     return c
 
 HTML = {'Accept': 'text/html'}
-c = client(None)       # copie de session anterieure au champ : la sonde le pose
+c = client(None)
 r = c.get('/classement?saison=3', headers=HTML)
 check("une page HTML renvoie vers /consentement",
       r.status_code == 302 and '/consentement' in r.headers['Location'], r.headers.get('Location'))

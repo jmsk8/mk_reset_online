@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
-"""Mesure les sprites du banner et reimprime le bloc `bodies.sprite` de
+"""Mesure les sprites du banner et imprime le bloc `bodies.sprite` de
 raceEngine/src/config/bodies.js.
 
 Trois nombres par kart :
 
-  w, h     le cadre de la pose de course (`side-right`). Les sprites sont
-           detoures au plus juste, donc la largeur du fichier est la longueur
-           du corps.
-  wheels   la largeur ROUE A ROUE, lue sur le sprite de dos (`back`) : la
-           rangee la plus large de la bande des roues, les WHEELS_BAND du bas.
-           C'est elle qui porte la profondeur d'un kart. Ce qui touche, c'est le
-           kart, pas son pilote : un personnage large d'epaules, les bras leves
-           ou tres haut ne roule pas sur une voie plus large.
+  w, h     cadre de la pose de course (`side-right`) ; les sprites sont
+           detoures au plus juste, la largeur est donc la longueur du corps.
+  wheels   largeur roue a roue, lue sur le sprite de dos (`back`) dans la
+           bande des roues (WHEELS_BAND) : elle donne la profondeur du kart,
+           independamment de la carrure du pilote.
 
-Aucune dependance : les assets sont des PNG a palette avec un chunk tRNS, que
-ni `file` ni un coup d'oeil aux en-tetes ne savent compter. Le decodeur tient
-en cinquante lignes, c'est moins cher qu'une bibliotheque a installer.
+Aucune dependance : petit decodeur PNG (palette + tRNS) inclus.
 
     python3 scripts/sprite-metrics.py
 """
@@ -28,19 +23,15 @@ import zlib
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMG = os.path.join(ROOT, 'frontEnd', 'static', 'img')
 
-# L'ordre est celui de la configuration : celui de kartStats.characters, qui
-# est aussi l'ordre du tirage du roster. La sortie se colle telle quelle.
+# Ordre de kartStats.characters (et du tirage) : la sortie se colle telle quelle.
 KARTS = ['bowser', 'dk', 'mario', 'birdo', 'luigi', 'yoshi', 'peach', 'daisy', 'toad', 'koopa']
 
-# Le plateau dont la moyenne fait le kart de reference : `bodies.referenceKarts`
-# dans raceEngine/src/config/bodies.js, fige sur les huit d'origine. Les ratios
-# imprimes plus bas sont pris contre lui, comme le fait le moteur.
+# Karts de reference (`bodies.referenceKarts` de raceEngine/src/config/bodies.js),
+# base des ratios imprimes plus bas.
 REFERENCE = ['bowser', 'dk', 'mario', 'luigi', 'yoshi', 'peach', 'toad', 'koopa']
 
-# La bande des roues, en part de la hauteur du sprite de dos, comptee depuis sa
-# derniere rangee dessinee. Les roues y tiennent sur tout le plateau — de
-# 96 px de haut (toad) a 140 (bowser) — et le personnage n'y descend pas : au-dessus,
-# la largeur retombe sur les epaules ou le dossier.
+# Bande des roues, en part de la hauteur du sprite de dos, depuis sa derniere
+# rangee dessinee. Au-dessus, la largeur est celle du pilote.
 WHEELS_BAND = 0.20
 
 CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
@@ -77,7 +68,7 @@ def read_png(path):
     stride = width * channels
     raw = zlib.decompress(idat)
 
-    # Defiltrage ligne a ligne : c'est tout ce qui separe un IDAT des pixels.
+    # Defiltrage ligne a ligne.
     out = bytearray()
     prev = bytearray(stride)
     pos = 0
@@ -137,10 +128,9 @@ def drawn_pixels(path):
 
 
 def wheel_span(path):
-    """La largeur roue a roue : la rangee la plus large de la bande des roues.
+    """Largeur roue a roue : rangee la plus large de la bande des roues.
 
-    La bande part de la derniere rangee DESSINEE, pas du bord du fichier : un
-    sprite peut garder quelques rangees vides sous ses roues (bowser de dos).
+    La bande part de la derniere rangee dessinee, pas du bord du fichier.
     """
     w, h, color, channels, px, trns = read_png(path)
     alpha = alpha_of(w, color, channels, px, trns)
@@ -189,7 +179,7 @@ def main():
     print(f'                pipe: {{ w: {pipe[0]}, h: {pipe[1]} }}')
     print('            },')
 
-    # De quoi relire le tableau sans refaire les divisions de tete.
+    # Ratios contre la reference, pour relire le tableau.
     ref = [k for k in karts if k[0] in REFERENCE]
     mean_w = sum(k[1] for k in ref) / len(ref)
     mean_wheels = sum(k[3] for k in ref) / len(ref)

@@ -1,14 +1,9 @@
-// L'orage et Lakitu : les deux animations qui debordent de la piste.
+// Orage et Lakitu.
 
-// Orage de l'eclair. Deux mecaniques dans le meme calque : l'assombrissement est
-// DERIVE DU TEMPS, recalcule a chaque image depuis les trois dates du snapshot —
-// c'est ce qui donne le bon niveau de noir a un arrivant ; les eclairs sont une
-// animation ponctuelle, jouee au passage de la frappe, qu'un retardataire rate
-// sans consequence.
-//
-// Trois traits en SVG, dans un cadre de 40x120 etire par le CSS. Chaque trace se
-// termine A DROITE de son depart : les karts vont vers la droite, un eclair qui
-// derive a gauche semble tomber derriere eux.
+// Orage de l'eclair : l'assombrissement est recalcule a chaque image depuis les
+// dates du snapshot ; les eclairs sont une animation jouee a la frappe. Trois
+// traits SVG (cadre 40x120 etire par le CSS), qui finissent a droite de leur
+// depart.
 const STORM_VIEWBOX_W = 40;
 const STORM_BOLTS = [
     { left: 22, tip: 29, path: 'M12 0 L24 42 L13 47 L29 120' },
@@ -16,11 +11,9 @@ const STORM_BOLTS = [
     { left: 83, tip: 31, path: 'M14 0 L26 46 L15 51 L31 120' }
 ];
 
-// Largeur des traits, miroir de .storm-bolt en CSS : l'ecart se calcule en
-// pixels de conteneur, il lui faut la meme mesure que le rendu.
+// Largeur des traits, identique a .storm-bolt (CSS).
 const STORM_BOLT_W = 60;
 
-// Marge entre la pointe et le bord du kart epargne.
 const STORM_BOLT_CLEARANCE = 8;
 
 let stormEls = null;
@@ -49,8 +42,7 @@ function ensureStormEls() {
         svg.setAttribute('preserveAspectRatio', 'none');
         svg.style.left = `${spec.left}%`;
 
-        // Deux traits sur le meme chemin : le large porte la lueur jaune, le fin
-        // le coeur blanc. Un seul trait donnerait une barre plate.
+        // Trait large pour la lueur jaune, trait fin pour le coeur blanc.
         const glow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         glow.setAttribute('d', spec.path);
         glow.setAttribute('class', 'storm-bolt-glow');
@@ -76,16 +68,11 @@ function ensureStormEls() {
     return stormEls;
 }
 
-// Le lanceur traverse son propre orage indemne : le trait qui viserait sa
-// position est ecarte juste assez pour tomber a cote. Au plus un est concerne,
-// les ancres etant trop espacees pour qu'un meme kart en couvre deux.
+// Le trait qui viserait le lanceur est decale pour tomber a cote (un seul au plus).
 function placeStormBolts(els, shooterId, screenWidth) {
     const svgs = els.bolts.children;
     const boltW = STORM_BOLT_W;
-    // Le milieu du kart EST sa position : le sprite y est centre, comme sa
-    // hitbox. `keepOut` ci-dessous s'en deduit — la demi-largeur DE CE KART,
-    // qui n'est pas la meme pour tous depuis que le dessin suit le sprite, plus
-    // la marge de confort.
+    // Zone epargnee : demi-largeur de ce kart plus la marge.
     const shooter = (shooterId === null || shooterId === undefined)
         ? null : worldState.kartsById[shooterId];
     const shooterCx = shooter
@@ -110,14 +97,13 @@ function placeStormBolts(els, shooterId, screenWidth) {
                 const beforeFits = before - half > 0;
                 const afterFits = after + half < screenWidth;
 
-                // On decale du cote ou le trait etait deja ; l'autre sert de
-                // repli quand celui-la sort de l'ecran.
+                // On decale du cote du trait ; l'autre sert de repli.
                 if (beforeFits && (anchor <= shooterCx || !afterFits)) {
                     anchor = before;
                 } else if (afterFits) {
                     anchor = after;
                 } else {
-                    // Nulle part ou tomber : plutot pas de trait du tout.
+                // Aucune place : pas de trait.
                     svg.style.display = 'none';
                     continue;
                 }
@@ -148,10 +134,7 @@ function renderStorm(gameNow, screenWidth) {
     const strikeAt = storm[1];
     const until = storm[2];
 
-    // Le ciel se charge jusqu'a la frappe, tient, puis se degage sur la fin.
-    // Avec strikeAt a zero la premiere branche ne sert pas : le noir est pose
-    // d'un coup, sur la frame meme ou les eclairs partent. Elle reste la pour
-    // qu'un `strikeAt` non nul redonne un ciel qui se charge.
+    // Le ciel se charge jusqu'a la frappe, tient, puis se degage.
     const STORM_CLEAR_MS = 700;
     let level;
     if (gameNow < strikeAt) {
@@ -167,9 +150,7 @@ function renderStorm(gameNow, screenWidth) {
     els.layer.style.display = 'block';
     els.layer.style.opacity = level.toFixed(3);
 
-    // Une seule fois par orage, au passage de la frappe. Le retrait/reflow/repose
-    // est ce qui relance une animation CSS deja jouee : sans lui, un second
-    // orage dans la meme course laisserait le ciel noir sans le moindre eclair.
+    // Une fois par orage : retrait, reflow et remise relancent l'animation CSS.
     if (gameNow >= strikeAt && els.struckFor !== strikeAt) {
         els.struckFor = strikeAt;
         placeStormBolts(els, storm[3], screenWidth);
@@ -181,8 +162,7 @@ function renderStorm(gameNow, screenWidth) {
     }
 }
 
-// Lakitu est ancre sur la ligne de depart : c'est la camera qui le fait entrer
-// et sortir du cadre, et le serveur qui decide du panneau qu'il tient.
+// Lakitu, ancre sur la ligne de depart ; le serveur choisit le panneau.
 let lakituEls = null;
 
 function ensureLakituEl() {
@@ -202,7 +182,7 @@ function ensureLakituEl() {
 }
 
 function lakituSrc(group, frame, gameNow) {
-    // Le drapeau s'anime a partir du temps : le serveur n'envoie que le groupe.
+    // Drapeau anime a partir du temps.
     if (group === 'finish') {
         frame = (Math.floor(gameNow / WORLD.flagAnimSpeed) % 3) + 1;
     }
@@ -210,12 +190,8 @@ function lakituSrc(group, frame, gameNow) {
     return cached ? cached.src : GAME_CONFIG.resources.paths.lakitu(group, frame);
 }
 
-// Le panneau a montrer. Le service n'en envoie qu'un, mais la camera est propre
-// a chaque spectateur : quand le premier prend un tour au dernier, le drapeau
-// (pour le premier) et le dernier tour (pour le dernier) se chevauchent. Lakitu
-// montre alors celui du kart suivi, que le service marque (`finalLap`) tant
-// qu'il est dans sa zone de dernier tour. Sur la vue d'ensemble, qui ne suit
-// personne, le panneau du service.
+// Panneau a montrer : celui du kart suivi s'il est dans son dernier tour
+// (`finalLap`), sinon celui du service.
 function lakituSignFor(kartId) {
     const sign = worldState.sign;
     const kart = kartId === null ? null : worldState.kartsById[kartId];
@@ -246,12 +222,8 @@ function renderLakitu(gameNow, screenWidth) {
         els.img.src = src;
     }
 
-    // Il flotte en tenant ses feux de depart et son panneau du dernier tour ;
-    // pas avec le drapeau, qu'il agite. L'animation est en CSS, sur
-    // l'image seule : le conteneur, lui, est place ici a chaque image. Sa phase
-    // est recalee sur l'horloge du serveur a chaque fois qu'elle reprend -- une
-    // animation relancee repart de zero, et deux spectateurs le verraient sinon
-    // monter et descendre a contretemps.
+    // Flottement CSS avec les feux et le panneau du dernier tour, phase recalee
+    // sur l'horloge du serveur a chaque reprise.
     const floating = sign[0] === 'start' || sign[0] === 'laps';
     if (els.floating !== floating) {
         els.floating = floating;
@@ -261,18 +233,13 @@ function renderLakitu(gameNow, screenWidth) {
 
     els.wrapper.style.display = 'block';
 
-    // `height` est une propriete de mise en page : posee une fois, pas soixante
-    // fois par seconde.
+    // Hauteur posee une seule fois.
     const h = `${LAKITU_HEIGHT}px`;
     if (els.height !== h) {
         els.height = h;
         els.wrapper.style.height = h;
     }
-    // Centre sur la ligne.
-    //
-    // Sa profondeur passe par la meme conversion que les corps de la piste : il
-    // survole le bitume, et doit donc rester colle a lui quand le cadre change
-    // de hauteur. En pourcentage de scene il aurait derive vers le haut.
+    // Centre sur la ligne, profondeur convertie comme les corps de la piste.
     els.wrapper.style.transform =
         `translate3d(${rx}px, ${depthToY(LAKITU_BOTTOM)}px, 0) translateX(-50%)`;
 }

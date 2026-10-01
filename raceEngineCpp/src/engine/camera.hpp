@@ -1,5 +1,4 @@
-// La camera de course. Elle ne suit personne en particulier : elle vise une
-// vitesse, celle qui garde le peloton dans le cadre.
+// Camera de course : vise la vitesse qui garde le peloton dans le cadre.
 // <- raceEngine/src/engine/camera.js
 
 #pragma once

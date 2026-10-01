@@ -1,28 +1,11 @@
-"""La promotion au rang d'admin est une PROPOSITION, pas un decret.
+"""Promotion au rang d'admin : une proposition que la personne accepte.
 
-Phase 1bis de docs/audit-admin-plan.md. Ce que ce fichier verrouille :
-
-  1. Le role n'est JAMAIS pose a la proposition -- seulement a l'acceptation,
-     par la personne elle-meme. C'est l'invariant central : un tiers ne peut
-     pas consentir a la place de quelqu'un dont les actions seront ensuite
-     tracees nominativement, sans limite de duree, et au-dela de la
-     suppression de son compte.
-
-  2. Les plafonds par acteur de `changer_role` valent AUSSI pour la
-     proposition. Sans ca, proposer un role qu'on n'a pas le droit
-     d'attribuer contournerait la hierarchie par un detour.
-
-  3. Les garde-fous de concurrence de `liaisons_demandes` (R-07) sont repris :
-     verrous FOR UPDATE, et un 409 lisible sur chaque cas que l'index unique
-     partiel transformerait sinon en 500.
-
-Aucun Postgres : le curseur est scripte. Ce fichier ne valide donc pas le SQL
-lui-meme, mais qui ecrit quoi, dans quel ordre, et sous quelles conditions.
+Le role n'est pose qu'a l'acceptation, les plafonds de changer_role
+s'appliquent, et les cas de concurrence renvoient un 409 lisible.
 """
 from harness import *
 from flask import Flask
-# Version courante de la politique admin, lue et non recopiee : la passer
-# de 1.0 a 1.1 (badge de role public, 27/09) cassait ces tests.
+# Version lue plutot que recopiee.
 from constants import CGU_ADMIN_VERSION as V_ADMIN
 import importlib
 
@@ -59,9 +42,9 @@ print("\n=== Proposer : la route ne pose AUCUN role ===")
 cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
-    (r"SELECT role FROM comptes WHERE id = %s", ('player',)),          # cible_protegee
+    (r"SELECT role FROM comptes WHERE id = %s", ('player',)),  # cible_protegee
     (r"SELECT role, statut FROM comptes WHERE id = %s FOR UPDATE", ('player', 'linked')),
-    (r"FROM promotions_proposees", None),                              # aucune en attente
+    (r"FROM promotions_proposees", None),  # aucune en attente
     (r"UPDATE promotions_proposees SET statut = 'cancelled'", None),
     (r"INSERT INTO promotions_proposees", (7, FUTUR)),
     (r"INSERT INTO audit_admin", None),
@@ -86,8 +69,6 @@ check("le compte est verrouille avant d'inserer (course a la proposition)",
 
 # ===========================================================================
 print("\n=== Proposer : les plafonds de changer_role s'appliquent ===")
-# Sans ca, proposer serait un contournement de la hierarchie : on proposerait
-# un role qu'on n'a pas le droit d'attribuer, et l'acceptation le poserait.
 
 cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
@@ -129,16 +110,14 @@ check("on ne se propose pas un role a soi-meme (403)", r.status_code == 403, r.g
 
 # ===========================================================================
 print("\n=== Proposer : les cas que l'index unique ferait tomber en 500 ===")
-# `idx_promotion_pending_compte` garantit UNE proposition en attente par
-# compte. Sans ces refus explicites, la seconde proposition heurterait
-# l'index et remonterait en 500 -- illisible pour qui la declenche.
+# Une seule proposition en attente par compte : 409 plutot qu'un 500.
 
 cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
     (r"SELECT role FROM comptes WHERE id = %s", ('player',)),
     (r"SELECT role, statut FROM comptes WHERE id = %s FOR UPDATE", ('player', 'linked')),
-    (r"FROM promotions_proposees", PROMO),      # une est deja en attente
+    (r"FROM promotions_proposees", PROMO),  # deja en attente
     (r"UPDATE sessions_joueurs SET last_seen_at", None),
 ])
 r = cli.post('/admin/comptes/2/promotion', json={'role': 'admin'}, headers=H)
@@ -158,8 +137,7 @@ check("proposer le role deja porte -> 409",
       r.status_code == 409 and (r.get_json() or {}).get('code') == 'role_inchange',
       r.get_json())
 
-# Un compte suspendu ne peut pas se connecter, donc ne pourra jamais accepter :
-# la proposition resterait en attente jusqu'a expiration, en bloquant l'index.
+# Un compte suspendu ne pourrait jamais accepter.
 cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
@@ -172,9 +150,7 @@ check("proposer a un compte SUSPENDU -> 409 (il ne pourrait pas accepter)",
       r.status_code == 409 and (r.get_json() or {}).get('code') == 'compte_suspendu',
       r.get_json())
 
-# R-68, dans l'autre sens : descendre ne se propose pas. Un chef_admin a qui on
-# « propose » admin garderait son rang tant qu'il n'accepte pas -- c'est-a-dire
-# indefiniment s'il n'en a pas envie. La descente passe par /role.
+# Une descente ne se propose pas (elle passe par /role).
 cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
@@ -223,19 +199,14 @@ check("l'attribution est tracee", any('INSERT INTO audit_admin' in s for s in _s
 check("le proposant est notifie de l'acceptation",
       any('INSERT INTO notifications' in s for s in _s))
 
-# Le verrou sur le COMPTE doit precede celui sur la proposition, dans le meme
-# ordre que proposer_promotion -- sinon deux transactions qui se croisent
-# s'interbloquent (R-07).
+# Verrou sur le compte avant celui sur la proposition.
 _ordre = [i for i, s in enumerate(_s) if 'FOR UPDATE' in s]
 check("le compte est verrouille AVANT la proposition (ordre anti-interblocage)",
       len(_ordre) >= 2 and 'FROM comptes' in _s[_ordre[0]],
       [_s[i][:60] for i in _ordre])
 
 
-# R-53 a l'acceptation. Depuis R-68, accepter chef_admin est le SEUL chemin par
-# lequel un admin devient chef_admin : ses permissions a la carte doivent tomber
-# ici, comme elles tombaient dans changer_role. Sinon, retrograde plus tard en
-# admin, il retrouverait des droits que personne ne lui a redonnes.
+# Accepter chef_admin purge les permissions a la carte.
 def _accepter(role_actuel, role_propose):
     cli, cur, conn = monter([
         (r"FROM sessions_joueurs s\s+JOIN comptes c",
@@ -271,8 +242,6 @@ check("un player qui accepte admin n'a rien a purger",
 
 # ===========================================================================
 print("\n=== Accepter : le role et la politique sont UN SEUL geste ===")
-# Les separer laisserait un admin trace sans l'avoir su : il aurait le role, et
-# le consentement resterait a demander « plus tard ».
 
 cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
@@ -325,8 +294,7 @@ check("le proposant est notifie du refus",
 
 # ===========================================================================
 print("\n=== Repondre sans proposition valide ===")
-# Expiree, annulee, ou jamais faite : meme reponse. Le message doit dire que la
-# proposition a pu expirer, sinon le refus parait arbitraire.
+# Expiree, annulee ou inexistante : meme reponse, qui mentionne l'expiration.
 
 cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
@@ -341,8 +309,7 @@ check("repondre a une proposition absente/expiree -> 409",
       r.get_json())
 check("et aucun role n'est pose", not any('SET role' in s for s in sqls(cur)))
 
-# L'expiration est portee par la REQUETE, pas par un balayage : une ligne
-# expiree reste en base (l'historique a de la valeur) mais n'ouvre plus rien.
+# Expiration evaluee par la requete.
 _src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
                          'routes_comptes.py'), encoding='utf-8').read()
 _lecture = _src[_src.index('def _promotion_en_attente'):_src.index('def proposer_promotion')]
@@ -383,9 +350,7 @@ check("annuler ce qui n'existe pas -> 404",
 
 # ===========================================================================
 print("\n=== Consentement d'un admin DEJA en poste (regularisation) ===")
-# La migration ne retrograde personne : les admins existants gardent leur role
-# et n'ont pas de consentement enregistre. L'ecran le leur demandera sans
-# bloquer leur acces -- c'est une regularisation, pas une punition.
+# Les admins existants donnent leur consentement sans perdre leur acces.
 
 cli, cur, conn = monter([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
@@ -449,9 +414,7 @@ check("et le geste est trace", any('INSERT INTO audit_admin' in s for s in _s))
 
 # ===========================================================================
 print("\n=== Les routes de reponse sont ouvertes au TITULAIRE, pas aux admins ===")
-# /me/promotion doit etre joignable par un player : c'est tout l'interet. Si
-# elle exigeait un role admin, la personne ne pourrait jamais accepter celui
-# qu'on lui propose.
+# /me/promotion doit etre joignable par un player.
 _prop = _src[_src.index("@comptes_bp.route('/me/promotion', methods=['GET'])"):
              _src.index('def accepter_cgu_admin')]
 check("/me/promotion est sous player_required, jamais sous role_required",
@@ -476,10 +439,7 @@ check("le proxy d'annulation existe",
 check("les proxys de reponse sont sous /mon-compte (titulaire)",
       "'/mon-compte/promotion'" in _fp and "'/mon-compte/cgu-admin'" in _fp)
 
-# Accepter change le role en base : la copie figee dans le cookie devient
-# fausse, et la navbar continuerait d'afficher un player. Depuis A-01
-# (2026-09-22), le backend ferme en plus la session elle-meme : le proxy purge
-# le jeton ET la copie, par un helper commun avec le legs.
+# Le proxy purge le jeton et la copie du compte apres acceptation.
 _rep = _fp[_fp.index('def repondre_promotion'):_fp.index('def accepter_cgu_admin')]
 _purge = _fp[_fp.index('def _session_fermee_par_changement_de_role'):
              _fp.index('def repondre_promotion')]
@@ -489,11 +449,7 @@ check("accepter purge la copie de compte du cookie (sinon navbar perimee)",
 
 check("l'ecran d'acceptation vit dans /mon-compte",
       'bloc-promotion' in _mc and '/mon-compte/promotion' in _mc)
-# Une case a cocher renvoyant vers une politique que personne n'ouvre ne vaut
-# pas consentement : ce qui engage doit etre lisible sur place.
-# « votre compte est supprimé » et non plus « vous supprimez votre compte » :
-# depuis le 2026-09-22 le titulaire ne supprime plus lui-meme, il le demande.
-# Ce que la phrase doit dire ne change pas -- le journal survit au compte.
+# Ce qui engage doit etre lisible sur place.
 for _phrase in ('sans limite de durée', 'votre compte est supprimé', 'à votre nom'):
     check("l'ecran dit en clair : « %s »" % _phrase, _phrase in _mc, _phrase)
 check("et renvoie quand meme a la politique complete", '/confidentialite' in _mc)
@@ -501,26 +457,18 @@ check("et renvoie quand meme a la politique complete", '/confidentialite' in _mc
 check("l'ecran distingue proposition et consentement a regulariser",
       'afficherProposition' in _mc and 'afficherConsentement' in _mc)
 
-# Piege reel, rencontre le 2026-09-19 : `.fade-in` vaut `opacity: 0`, et c'est
-# `.visible` qui la revele. Le balayage qui pose `.visible` ne tourne qu'au
-# CHARGEMENT de la page -- un element cree par fetch apres coup reste donc
-# invisible, present dans le DOM, sans la moindre erreur en console. Le defaut
-# est silencieux par construction : on voit une page vide et rien n'explique
-# pourquoi.
+# `.fade-in` est a opacity 0 : un element cree apres coup doit recevoir `.visible`.
 import re as _re
 for _m in _re.finditer(r"className\s*=\s*[^;]*fade-in[^;]*;", _mc):
     check("tout element cree en JS avec fade-in porte aussi visible",
           'visible' in _m.group(0), _m.group(0).strip())
 
-# Le selecteur de role doit router : proposer pour une promotion, changer pour
-# une retrogradation. S'il appelait /role dans les deux cas, la promotion
-# redeviendrait un decret.
+# Le selecteur propose une promotion et change directement pour une retrogradation.
 check("le selecteur de role PROPOSE au lieu de poser (promotion)",
       "'/promotion'" in _ac and "promotion = RANGS[sel.value] > RANGS[c.role]" in _ac)
 check("et garde le chemin direct pour la RETROGRADATION",
       "'/role'" in _ac)
-# Le bouton de legs ne s'affiche que sur une ligne admin/chef_admin (R-68) :
-# sur un player, il menerait a coup sur au refus legs_sans_consentement.
+# Bouton de legs sur les lignes admin/chef_admin seulement.
 _i_legs = _ac.find("leguerSuperadmin(c)")
 _garde_legs = _ac[max(0, _i_legs - 700):_i_legs]
 check("le bouton de legs n'est propose que sur un admin ou chef_admin",
@@ -531,8 +479,7 @@ check("le badge « en attente » est affiche sur la ligne",
 check("le backend fournit ce champ a la liste des comptes",
       'promotion_en_attente' in _src)
 
-# La politique doit porter la section « en tant qu'administrateur » AVANT que
-# quiconque accepte : un consentement a un texte qui n'existe pas ne vaut rien.
+# La politique contient la section administrateur.
 _conf = open(os.path.join(_FRONT, 'templates', 'confidentialite.html'), encoding='utf-8').read()
 check("la politique a une section dediee aux administrateurs",
       'Si vous êtes administrateur' in _conf)

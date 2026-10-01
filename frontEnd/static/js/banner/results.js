@@ -1,20 +1,15 @@
-// La fin d'une course : le classement final, puis le tableau du grand prix.
+// Fin de course : classement final, puis tableau du grand prix.
 
 let resultsEl = null;
 let resultsShown = -1;
 let gpEl = null;
-// Empreinte du tableau affiche, pour ne le reconstruire qu'a un vrai changement.
 let gpShown = '';
-// Anime le tableau du grand prix en trois temps : arrivee de la course, gains
-// qui montent dans le cumul, puis remise en ordre sur le general. `null` hors
-// animation en cours.
+// Animation du tableau : arrivee, transfert des gains vers le cumul, puis
+// remise en ordre sur le general. null hors animation.
 let gpAnim = null;
 
-// Pause de lecture avant que les scores ne bougent, duree du compteur qui
-// fait monter le cumul, pause avant le remaniement, puis duree du glissement
-// vers l'ordre general (voir aussi la transition CSS de .race-gp-row). Le
-// tout tient sous resultsDelayMs, avec de la marge pour admirer le resultat
-// une fois les lignes rangees.
+// Durees de l'animation du tableau (voir la transition de .race-gp-row), sous
+// resultsDelayMs.
 const GP_COUNT_DELAY_MS = 2200;
 const GP_COUNT_DURATION_MS = 2600;
 const GP_REORDER_DELAY_MS = 350;
@@ -23,14 +18,12 @@ function easeOutCubic(t) {
     return 1 - Math.pow(1 - t, 3);
 }
 
-// Reconstruit entierement depuis `finishOrder` : un spectateur qui arrive en
-// plein classement le voit en entier, sans avoir assiste aux arrivees.
+// Reconstruit entierement depuis `finishOrder`.
 function renderResults() {
     if (!resultsEl) resultsEl = document.getElementById('race-results');
     if (!resultsEl) return;
 
-    // Il accompagne les arrivees, puis s'efface : le tableau des scores prend
-    // le relais et les deux ensemble surchargeraient la scene.
+    // Affiche pendant les arrivees, efface quand le tableau prend le relais.
     const order = worldState.finishOrder || [];
     const visible = order.length > 0 && worldState.phase !== 'results';
 
@@ -66,10 +59,8 @@ function renderResults() {
     });
 }
 
-// Tableau des scores du grand prix, reconstruit entierement depuis le snapshot :
-// un spectateur qui se connecte pendant le tableau le voit rempli. Poser le
-// tableau ne fait que la premiere image ; le passage au cumul puis au classement
-// general est anime par `stepGrandPrixAnimation`, a chaque frame.
+// Tableau du grand prix, reconstruit depuis le snapshot ; l'animation est
+// jouee par stepGrandPrixAnimation.
 function renderGrandPrix(gameNow) {
     if (!gpEl) gpEl = document.getElementById('race-gp');
     if (!gpEl) return;
@@ -91,8 +82,7 @@ function renderGrandPrix(gameNow) {
     const racePoints = gp[1] || [];
     const totalPoints = gp[2] || [];
 
-    // Le tableau ne bouge plus une fois pose : on ne le reconstruit que si son
-    // contenu a change, sinon chaque frame recreerait huit images.
+    // Reconstruit seulement si le contenu change.
     const stamp = round + '|' + racePoints.join(',') + '|' + totalPoints.join(',');
     if (gpShown === stamp) return;
     gpShown = stamp;
@@ -111,9 +101,7 @@ function renderGrandPrix(gameNow) {
     const rows = document.createElement('div');
     rows.className = 'race-gp-rows';
 
-    // Premiere image du tableau : l'ordre d'arrivee de la course qui vient de
-    // finir, pas encore le general. Un spectateur qui se connecte pendant
-    // l'animation retombe sur ses pieds : il manque juste le compteur.
+    // Premiere image : ordre d'arrivee de la course.
     const arrivalOrder = worldState.finishOrder.length
         ? worldState.finishOrder
         : worldState.karts.map(kart => kart.id);
@@ -127,8 +115,7 @@ function renderGrandPrix(gameNow) {
     entries.forEach((kart, index) => {
         const gained = racePoints[kart.id] || 0;
         const target = totalPoints[kart.id] || 0;
-        // Le cumul affiche part d'avant cette course : c'est lui qui monte
-        // jusqu'au total pendant que le tableau est a l'ecran.
+        // Le cumul part de sa valeur d'avant la course.
         const base = target - gained;
 
         const row = document.createElement('div');
@@ -178,17 +165,14 @@ function renderGrandPrix(gameNow) {
     };
 }
 
-// Bascule les lignes de l'ordre d'arrivee vers le general, en rejouant le
-// deplacement plutot qu'en le faisant apparaitre d'un coup (technique FLIP :
-// position relevee avant le reordonnancement, puis rejouee depuis la ou
-// chaque ligne se trouvait).
+// Passage de l'ordre d'arrivee au general, anime (technique FLIP).
 function settleGrandPrixReorder(anim) {
     const before = new Map();
     anim.rows.forEach(entry => before.set(entry.id, entry.row.getBoundingClientRect()));
 
     const standings = anim.rows.slice().sort((a, b) => {
         const diff = b.target - a.target;
-        // A egalite de points, la course qui vient de finir departage.
+        // A egalite, la course qui vient de finir departage.
         return diff !== 0 ? diff : a.finishIndex - b.finishIndex;
     });
 
@@ -204,8 +188,7 @@ function settleGrandPrixReorder(anim) {
 
         entry.row.style.transition = 'none';
         entry.row.style.transform = `translateY(${dy}px)`;
-        // Force le reflow : sans lui le navigateur fusionnerait les deux
-        // changements de style et sauterait la transition.
+        // Force le reflow pour que la transition se joue.
         entry.row.getBoundingClientRect();
         entry.row.style.transition = '';
         entry.row.style.transform = '';
@@ -214,9 +197,7 @@ function settleGrandPrixReorder(anim) {
     anim.rows = standings;
 }
 
-// Fait vivre le tableau du grand prix image par image, independamment de
-// l'arrivee des snapshots serveur (10 Hz) : un compteur ou un glissement
-// cales sur ce rythme saccaderait.
+// Animation image par image, independante du rythme des snapshots (10 Hz).
 function stepGrandPrixAnimation(gameNow) {
     const anim = gpAnim;
     if (!anim || anim.phase === 'done') return;
@@ -229,8 +210,7 @@ function stepGrandPrixAnimation(gameNow) {
         const t = Math.min(1, (elapsed - GP_COUNT_DELAY_MS) / GP_COUNT_DURATION_MS);
         const eased = easeOutCubic(t);
         anim.rows.forEach(entry => {
-            // Le total se remplit et le gain se vide au meme rythme : c'est le
-            // meme point qui se deplace de l'un vers l'autre, un transfert.
+            // Le gain se vide au rythme ou le total se remplit.
             const filled = Math.round(lerp(entry.base, entry.target, eased));
             entry.scoreEl.textContent = filled;
 

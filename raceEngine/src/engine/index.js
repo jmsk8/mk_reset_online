@@ -1,9 +1,5 @@
-// ── L'API publique du moteur ───────────────────────────────────
-//
-// Deux fonctions suffisent a faire tourner une course : `createWorldState` et
-// `stepPhysics`. Tout le reste n'est expose que pour les OBSERVATEURS — bancs
-// d'essai, releve de decision, protocole — qui ont besoin de relire une grandeur
-// sans la recalculer. Aucun consommateur externe n'ecrit dans l'etat.
+// API publique du moteur : `createWorldState` et `stepPhysics`. Le reste est
+// expose en lecture pour les outils et le protocole.
 
 export { randomRange, shuffleArray } from './math.js';
 export { getShortestDistance } from './geometry.js';

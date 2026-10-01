@@ -1,4 +1,4 @@
-// Les quelques fonctions numeriques que tout le moteur partage.
+// Fonctions numeriques partagees par le moteur.
 
 function shuffleArray(array, rng) {
     for (let i = array.length - 1; i > 0; i--) {
@@ -20,9 +20,8 @@ function clamp(v, min, max) {
     return v < min ? min : (v > max ? max : v);
 }
 
-// Distribution des objets : modele documente en tete de `itemDistribution`
-// dans src/config/. Ce qui suit n'en est que l'evaluation, aucun
-// objet n'est nomme ici.
+// Evaluation des courbes de distribution des objets (voir itemDistribution
+// dans src/config/).
 
 function clamp01(value) {
     return value < 0 ? 0 : (value > 1 ? 1 : value);

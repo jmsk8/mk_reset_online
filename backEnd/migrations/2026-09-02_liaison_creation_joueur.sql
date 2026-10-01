@@ -1,9 +1,5 @@
--- Une demande de liaison peut desormais viser une fiche a CREER.
---
--- Elle emprunte la file d'attente existante plutot qu'une seconde table :
--- meme ecran d'admin, meme approbation, meme journal. Une demande porte donc
--- soit un joueur_id, soit un nom a creer, jamais les deux -- c'est la
--- contrainte plus bas.
+-- Une demande de liaison peut viser une fiche a creer : soit joueur_id, soit
+-- nom_demande, jamais les deux.
 
 BEGIN;
 

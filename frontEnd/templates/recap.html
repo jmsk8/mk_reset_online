@@ -383,8 +383,6 @@
     </style>
 </head>
 <body>
-    {# Tout ce que la page dit de l'IP vient du bloc `ip` du payload
-       (backEnd/textes_ip.py) : version du recap, textes, seuils. #}
     {% import 'partiels/cellule_ip.html' as ipm %}
     {% set ip = saison.ip if saison else none %}
     {% set is_ip = saison and saison.victory_condition == 'Indice de Performance' %}
@@ -1123,8 +1121,7 @@
             const tooltipEl = document.getElementById('chartTooltip');
 
             if (point && tooltipEl) {
-                // Appele depuis la legende (nom, top_percent) comme depuis un
-                // point du graphique (name, percentile).
+                // Appele depuis la legende (nom) comme depuis un point du graphique (name).
                 const nom = playerObj.nom || playerObj.name;
                 const top = playerObj.top_percent != null ? playerObj.top_percent : playerObj.percentile;
                 tooltipEl.innerHTML = `<strong>${escapeHtml(nom)}</strong><br>${escapeHtml(playerObj.x.toFixed(3))} pts TS<br>Top ${escapeHtml(top)}%`;

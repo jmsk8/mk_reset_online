@@ -1,41 +1,15 @@
 #!/usr/bin/env python3
-"""Remet `joueurs.consecutive_missed` a jour, en comptant des SESSIONS manquees.
+"""Recalcule `joueurs.consecutive_missed` en sessions manquees.
 
-POURQUOI. Le compteur a ete alimente pendant des mois par un systeme qui
-raisonnait en jours, puis par des regles successives (mode ligue active puis
-desactive, filtre par ligue de derniere apparition, et un defaut de
-revert_last_tournament qui decrementait toute la base sans clause WHERE,
-corrige le 14/09). Sa valeur actuelle porte la trace cumulee de tout cela : sur
-le dump du 15/09, 20 joueurs sur 41 affichaient un compteur en ecart avec le
-nombre reel de sessions ecoulees depuis leur derniere partie -- jusqu'a 14
-sessions manquantes.
+Pour chaque joueur ayant deja joue : nombre de sessions posterieures a sa
+derniere participation qui le concernaient. Une session sans ligue concerne
+tout le monde, une session de ligue N les joueurs de la ligue N ; un joueur
+sans ligue est rattache a la ligue la plus faible (plus grand `niveau`).
+L'appartenance a une ligue est deduite des participations reelles, pas de
+`joueurs.ligue_id`.
 
-Ce script n'essaie pas de deviner « la bonne valeur d'origine » : elle n'existe
-pas. Il IMPOSE une definition unique et la calcule pour tout le monde.
-
-CE QU'IL NE FAIT PAS. Il ne touche ni `sigma`, ni `ghost_log` : aucune penalite
-n'est appliquee ni annulee rétroactivement. C'est un compteur qu'on remet a
-jour, pas un historique qu'on rejoue. `is_ranked` est en revanche recalcule,
-puisqu'il derive directement du compteur et du seuil `unranked_threshold`.
-
-LA DEFINITION APPLIQUEE. Pour chaque joueur ayant deja joue : le nombre de
-sessions posterieures a sa derniere participation, dans lesquelles il etait
-concerne.
-
-« Concerne » suit la regle de ligue du projet :
-  - une session SANS ligue concerne tout le monde ;
-  - une session de ligue N ne concerne que les joueurs de la ligue N ;
-  - un joueur sans ligue voit ses absences comptees sur la LIGUE LA PLUS FAIBLE
-    (le plus grand `niveau` dans la table Ligues).
-
-L'appartenance a une ligue est deduite des PARTICIPATIONS reelles du joueur sur
-la periode de ce mode ligue, et non de `joueurs.ligue_id` : cette colonne porte
-l'etat courant, et le schema ne conserve aucun historique d'appartenance. Un
-joueur qui n'a jamais joue en ligue est donc rattache a la ligue la plus faible,
-par la regle ci-dessus.
-
-Les joueurs n'ayant jamais participe a aucun tournoi ne sont pas touches : leur
-compteur ne mesure rien.
+`is_ranked` est recalcule ; `sigma` et `ghost_log` ne sont pas touches. Les
+joueurs sans participation sont ignores.
 
 Usage, depuis la racine du projet :
     make recompter-absences DRY=1   # affiche ce qui changerait, n'ecrit rien
@@ -44,8 +18,7 @@ Usage, depuis la racine du projet :
 Equivalent sans make :
     docker compose exec -T backend python - [--dry-run] < scripts/recompter_absences.py
 
-⚠️ Prendre un dump avant d'appliquer : `consecutive_missed` ne se rembobine pas
-par un revert de code (docs/plan-sessions-tournois.md 12.1).
+Faire un dump avant d'appliquer.
 """
 from __future__ import annotations
 
@@ -58,7 +31,7 @@ from db import get_db_connection
 
 
 def charger_ligue_la_plus_faible(cur) -> int | None:
-    """Id de la ligue de plus grand `niveau` -- celle ou tombent les sans-ligue."""
+    """Id de la ligue de plus grand `niveau` (celle des joueurs sans ligue)."""
     cur.execute("SELECT id FROM Ligues ORDER BY niveau DESC, id DESC LIMIT 1")
     row = cur.fetchone()
     return row[0] if row else None
@@ -75,9 +48,8 @@ def main() -> None:
 
             ligue_faible = charger_ligue_la_plus_faible(cur)
 
-            # Une session = une occasion de jeu. Sa date est celle de son
-            # tournoi le plus ancien, sa ligue celle de ses tournois (le
-            # backfill garantit qu'une session ne melange pas deux ligues).
+            # Date d'une session : celle de son premier tournoi ; ligue : celle
+            # de ses tournois (une session ne melange pas deux ligues).
             cur.execute("""
                 SELECT session_id, min(date) AS date_session, min(ligue_id) AS ligue_id
                 FROM Tournois
@@ -86,8 +58,7 @@ def main() -> None:
             """)
             sessions = cur.fetchall()
 
-            # Derniere participation de chaque joueur, et ligues dans lesquelles
-            # il a reellement joue (pour deduire son appartenance d'epoque).
+            # Derniere participation de chaque joueur et ligues ou il a joue.
             cur.execute("""
                 SELECT p.joueur_id, max(t.date) AS derniere
                 FROM Participations p
@@ -96,10 +67,8 @@ def main() -> None:
             """)
             derniere_partie = dict(cur.fetchall())
 
-            # Sessions auxquelles chaque joueur a participe. Comparer les dates
-            # ne suffit pas : deux sessions distinctes peuvent tomber le meme
-            # jour (lobbies non lies), et « date > derniere_partie » les
-            # exclurait toutes les deux.
+            # Sessions jouees par joueur : deux sessions peuvent tomber le meme
+            # jour, la date seule ne suffit pas.
             cur.execute("""
                 SELECT DISTINCT p.joueur_id, t.session_id
                 FROM Participations p
@@ -136,18 +105,12 @@ def main() -> None:
                     jamais_joue += 1
                     continue
 
-                # Les ligues qui concernent ce joueur. Un joueur qui n'a jamais
-                # joue en ligue est rattache a la ligue la plus faible.
+                # Ligues du joueur ; a defaut, la plus faible.
                 mes_ligues = ligues_jouees.get(jid) or (
                     {ligue_faible} if ligue_faible is not None else set())
 
-                # Une session compte comme manquee si elle est posterieure a la
-                # derniere partie du joueur, qu'il n'y a pas participe, et
-                # qu'elle le concernait (regle de ligue ci-dessus).
-                #
-                # Le test de participation n'est pas redondant avec celui de la
-                # date : deux sessions distinctes peuvent tomber le meme jour,
-                # et le joueur peut avoir joue l'une sans jouer l'autre.
+                # Manquee : posterieure a sa derniere partie, non jouee, et le
+                # concernant.
                 mes_sessions = sessions_jouees.get(jid, ())
                 manquees = sum(
                     1 for sid, date_session, ligue_session in sessions

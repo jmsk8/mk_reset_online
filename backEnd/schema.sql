@@ -23,8 +23,7 @@ DROP TABLE IF EXISTS public.joueurs CASCADE;
 DROP TABLE IF EXISTS public.configuration CASCADE;
 DROP TABLE IF EXISTS public.saisons CASCADE;
 DROP TABLE IF EXISTS public.types_awards CASCADE;
--- api_tokens n'est plus creee (auth par mot de passe supprimee le 2026-09-23),
--- mais le DROP reste : une base anterieure la porte encore.
+-- Table supprimee, encore presente sur les anciennes bases.
 DROP TABLE IF EXISTS public.api_tokens CASCADE;
 DROP TABLE IF EXISTS public.ligues CASCADE;
 
@@ -47,15 +46,8 @@ INSERT INTO public.configuration (key, value) VALUES
 ('inter_league_moves', '0'),
 ('ip_version_live', 'v1');
 
--- TIERS : liste geree par l'admin (nom, couleur, seuil en ecart-type, rang).
--- Remplace les seuils tier_k_s/a/b qui vivaient dans `configuration` --
--- migres ici pour pouvoir ajouter/supprimer/reordonner des tiers, pas
--- seulement regler 3 frontieres fixes. Voir docs/tableau-seuils-tiers-plan.md
--- Partie B. 'U' (non classe) reste hors de cette table, cable en dur dans le
--- code (has_tier(), IP_V2_REF_REQUIRE_TIER).
---
--- Rang decroissant du meilleur au pire ; seuil_k NULL uniquement pour le
--- tier au plus petit rang (le plancher, sans seuil bas par definition).
+-- TIERS : nom, couleur, seuil en ecart-type, rang (decroissant du meilleur au
+-- pire). seuil_k NULL uniquement pour le plancher. 'U' n'est pas un tier.
 CREATE TABLE public.tiers (
     id SERIAL PRIMARY KEY,
     nom VARCHAR(10) NOT NULL,
@@ -71,7 +63,7 @@ INSERT INTO public.tiers (nom, couleur, seuil_k, rang) VALUES
 ('B', '#7fe6ee', -1.0, 1),
 ('C', '#ae6ce4', NULL, 0);
 
--- LIGUES (Déplacé avant pour les références)
+-- LIGUES
 CREATE TABLE public.ligues (
     id SERIAL PRIMARY KEY,
     nom VARCHAR(100) NOT NULL,
@@ -92,8 +84,7 @@ CREATE TABLE public.joueurs (
     is_ranked boolean DEFAULT true,
     color character varying(7) DEFAULT '#FFFFFF',
     ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
-    -- Marqueur d'identite retiree : empeche add_tournament de recreer a la
-    -- volee une fiche portant un nom qu'on vient d'anonymiser.
+    -- Fiche anonymisee.
     anonymise_at timestamp with time zone
 );
 ALTER TABLE public.joueurs OWNER TO CURRENT_USER;
@@ -103,12 +94,8 @@ ALTER SEQUENCE public.joueurs_id_seq OWNED BY public.joueurs.id;
 ALTER TABLE ONLY public.joueurs ALTER COLUMN id SET DEFAULT nextval('public.joueurs_id_seq'::regclass);
 
 -- SESSIONS DE TOURNOIS
--- Occasion de jeu regroupant un ou plusieurs tournois (typiquement deux lobbies
--- simultanes). Un tournoi seul forme une session a un seul element : c'est le
--- cas normal, pas un cas particulier -- d'ou tournois.session_id NOT NULL.
---
--- A ne pas confondre avec sessions_joueurs, qui porte l'authentification.
--- Conception : docs/plan-sessions-tournois.md
+-- Regroupe un ou plusieurs tournois joues ensemble (lobbies simultanes) ; un
+-- tournoi seul forme sa propre session.
 CREATE TABLE public.sessions_tournois (
     id integer NOT NULL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -120,16 +107,13 @@ ALTER SEQUENCE public.sessions_tournois_id_seq OWNED BY public.sessions_tournois
 ALTER TABLE ONLY public.sessions_tournois ALTER COLUMN id SET DEFAULT nextval('public.sessions_tournois_id_seq'::regclass);
 
 -- TOURNOIS
--- ligue_nom / ligue_couleur : archive de la ligue au moment du tournoi.
+-- TOURNOIS (ligue_nom / ligue_couleur : archive de la ligue au moment du tournoi)
 CREATE TABLE public.tournois (
     id integer NOT NULL PRIMARY KEY,
     date date NOT NULL,
     ligue_id INTEGER REFERENCES public.ligues(id) ON DELETE SET NULL,
-    ligue_nom character varying(100),    -- Archive du nom au moment du tournoi
-    ligue_couleur character varying(20), -- Archive de la couleur
-    -- Jamais NULL : un tournoi non lie est seul dans sa session. Remplace le
-    -- regroupement implicite par (date, ligue_id) qui etait recalcule a deux
-    -- endroits du code (penalite d'absence et comptage des awards).
+    ligue_nom character varying(100),
+    ligue_couleur character varying(20),
     session_id INTEGER NOT NULL REFERENCES public.sessions_tournois(id) ON DELETE SET NULL
 );
 ALTER TABLE public.tournois OWNER TO CURRENT_USER;
@@ -158,11 +142,8 @@ ALTER TABLE public.participations OWNER TO CURRENT_USER;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_joueur_id_fkey FOREIGN KEY (joueur_id) REFERENCES public.joueurs(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.participations ADD CONSTRAINT participations_tournoi_id_fkey FOREIGN KEY (tournoi_id) REFERENCES public.tournois(id) ON DELETE CASCADE;
 
--- GRILLE FIGEE (reference IP v2)
--- Etat de la grille des joueurs juste avant la generation du premier tournoi
--- d'une journee. Sert de moyenne de reference fixe a l'IP v2 : tous les
--- tournois d'un meme jour partagent la meme reference. Voir IP_V2_REF_* dans
--- constants.py pour le critere d'inclusion.
+-- GRILLE FIGEE : etat des joueurs avant le premier tournoi du jour, reference
+-- de l'IP v2 pour tous les tournois de la journee.
 CREATE TABLE public.grille_snapshots (
     date date NOT NULL,
     joueur_id integer NOT NULL REFERENCES public.joueurs(id) ON DELETE CASCADE,
@@ -195,16 +176,13 @@ CREATE TABLE public.global_resets (
     id SERIAL PRIMARY KEY,
     date TIMESTAMP NOT NULL,
     value_applied REAL NOT NULL,
-    -- NULL = reset applique avant l'ajout du plafond (migration
-    -- 2026-09-17_reset_global_plafond.sql), donc sans limite haute.
+    -- NULL : reset anterieur au plafond.
     max_sigma REAL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE public.global_resets OWNER TO CURRENT_USER;
 
--- Detail par joueur d'un reset global. Avec un plafond les joueurs ne recoivent
--- plus tous la meme valeur, donc le revert ne peut pas se contenter de
--- soustraire value_applied : il restaure old_sigma, joueur par joueur.
+-- Detail par joueur d'un reset global (utilise pour l'annulation).
 CREATE TABLE public.global_reset_details (
     id SERIAL PRIMARY KEY,
     reset_id INTEGER NOT NULL REFERENCES public.global_resets(id) ON DELETE CASCADE,
@@ -238,7 +216,7 @@ CREATE TABLE public.saisons (
 );
 ALTER TABLE public.saisons OWNER TO CURRENT_USER;
 
--- MOUVEMENTS INTER-LIGUES (stockage des promotions/relégations)
+-- MOUVEMENTS INTER-LIGUES
 CREATE TABLE public.league_movements (
     id SERIAL PRIMARY KEY,
     saison_id INTEGER REFERENCES public.saisons(id) ON DELETE CASCADE,
@@ -281,19 +259,11 @@ CREATE UNIQUE INDEX awards_obtenus_unique_no_ligue ON public.awards_obtenus (jou
 
 -- ===========================================================================
 -- AUTHENTIFICATION DISCORD ET COMPTES JOUEURS
--- ---------------------------------------------------------------------------
--- Separation IDENTITE / DOSSIER SPORTIF : comptes + profils + sessions_joueurs
--- decrivent la personne ; joueurs reste un competiteur pseudonyme. Supprimer un
--- compte n'altere donc jamais l'historique des matchs ni le classement.
---
--- Ces tables sont en TIMESTAMPTZ alors que le reste du schema est en TIMESTAMP
--- naif : cote Python, utiliser exclusivement datetime.now(timezone.utc) pour
--- elles, et ne jamais melanger les deux conventions dans une comparaison.
--- Voir aussi migrations/2026-09-02_auth_discord.sql (meme contenu, applique a
--- la main sur une base existante).
+-- Identite (comptes, profils, sessions) separee du dossier sportif (joueurs).
+-- Ces tables sont en TIMESTAMPTZ, contrairement au reste du schema.
 -- ===========================================================================
 
--- INVITATIONS -- le seul moyen d'entrer. Le token brut n'est JAMAIS stocke.
+-- INVITATIONS (seul le hash du token est stocke)
 CREATE TABLE public.invitations (
     id          SERIAL PRIMARY KEY,
     token_hash  CHAR(64) NOT NULL UNIQUE,
@@ -309,30 +279,25 @@ CREATE TABLE public.invitations (
 
 CREATE INDEX idx_invitations_expires ON public.invitations(expires_at);
 
--- COMPTES -- la personne : miroir Discord, role, rattachement au joueur.
+-- COMPTES
 CREATE TABLE public.comptes (
     id                   SERIAL PRIMARY KEY,
-    -- Snowflake Discord : TEXTE obligatoire, depasse 2^53 et se corrompt en JS.
+    -- Snowflake en texte (depasse 2^53).
     discord_id           character varying(32) NOT NULL UNIQUE,
     discord_username     character varying(64),
     discord_global_name  character varying(64),
     discord_avatar_hash  character varying(64),
     joueur_id            integer UNIQUE REFERENCES public.joueurs(id) ON DELETE SET NULL,
     statut               character varying(20) NOT NULL DEFAULT 'pending',
-    -- Seule frontiere de privilege de l'application.
     role                 character varying(20) NOT NULL DEFAULT 'player',
     invitation_id        integer REFERENCES public.invitations(id) ON DELETE SET NULL,
     cgu_accepted_at      timestamp with time zone,
     cgu_version          character varying(20),
-    -- Consentement DISTINCT de celui des CGU joueur : les actions d'un admin
-    -- sont tracees nominativement et conservees sans limite. Le consentement
-    -- donne a la creation du compte, quand la personne etait player, ne peut
-    -- pas couvrir un traitement qui n'existait pas encore.
+    -- Consentement a la politique admin, distinct des CGU joueur.
     cgu_admin_accepted_at timestamp with time zone,
     cgu_admin_version     character varying(20),
-    -- Rafraichi a chaque connexion, sans effet sur le site.
     discord_synced_at    timestamp with time zone,
-    -- Derniere propagation ADMIN du pseudo vers joueurs.nom (jamais automatique).
+    -- Derniere propagation du pseudo vers joueurs.nom par un admin.
     profil_synced_at     timestamp with time zone,
     created_at           timestamp with time zone NOT NULL DEFAULT now(),
     updated_at           timestamp with time zone NOT NULL DEFAULT now(),
@@ -343,36 +308,29 @@ CREATE TABLE public.comptes (
 
 CREATE INDEX idx_comptes_role ON public.comptes(role) WHERE role <> 'player';
 
--- Unicite STRICTE du superadmin. Garantit « jamais 2+ » ; le « jamais 0 » reste
--- applicatif (garde du dernier superadmin, atomicite du legs).
--- Index PARTIEL donc non-deferrable : le legs DOIT retrograder l'ancien avant de
--- promouvoir le nouveau, sous peine de 23505.
+-- Un seul superadmin. Index partiel non differable : le legs retrograde
+-- l'ancien avant de promouvoir le nouveau.
 CREATE UNIQUE INDEX idx_comptes_superadmin_unique
     ON public.comptes (role)
     WHERE role = 'superadmin';
 
--- PERMISSIONS_ADMIN -- droits nommes accordes un par un a un compte role=admin.
--- Les roles chef_admin et superadmin n'y figurent jamais : leur socle couvre le
--- catalogue entier par construction.
+-- PERMISSIONS_ADMIN : droits accordes un par un a un compte role=admin.
 CREATE TABLE public.permissions_admin (
     id          SERIAL PRIMARY KEY,
     compte_id   integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
     permission  character varying(50) NOT NULL,
-    -- Toujours g.compte['id'], jamais une valeur venue de la requete.
     accorde_par integer REFERENCES public.comptes(id) ON DELETE SET NULL,
     created_at  timestamp with time zone NOT NULL DEFAULT now(),
-    -- Rend l'octroi idempotent (ON CONFLICT DO NOTHING).
     CONSTRAINT permissions_admin_unique UNIQUE (compte_id, permission)
 );
 
 CREATE INDEX idx_permissions_admin_compte ON public.permissions_admin(compte_id);
 
--- LIAISONS_DEMANDES -- file d'attente du rattachement compte <-> joueur.
+-- LIAISONS_DEMANDES : demandes de rattachement compte <-> joueur
 CREATE TABLE public.liaisons_demandes (
     id          SERIAL PRIMARY KEY,
     compte_id   integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
-    -- NULL = demande de CREATION : la fiche n'existe pas encore, son nom est
-    -- dans nom_demande. La contrainte plus bas impose l'un ou l'autre.
+    -- NULL : demande de creation (nom dans nom_demande).
     joueur_id   integer REFERENCES public.joueurs(id) ON DELETE CASCADE,
     nom_demande character varying(255),
     statut      character varying(20) NOT NULL DEFAULT 'pending',
@@ -387,25 +345,18 @@ CREATE TABLE public.liaisons_demandes (
 CREATE UNIQUE INDEX idx_liaison_pending_compte ON public.liaisons_demandes(compte_id) WHERE statut = 'pending';
 CREATE UNIQUE INDEX idx_liaison_pending_joueur ON public.liaisons_demandes(joueur_id) WHERE statut = 'pending';
 
--- PROMOTIONS PROPOSEES -- le role d'admin ne s'impose pas, il s'accepte.
--- Meme patron que liaisons_demandes : un etat en attente, une decision, une
--- notification, un index unique partiel. Le role est pose a l'ACCEPTATION, par
--- la personne elle-meme : un tiers ne peut pas consentir a sa place, et la
--- phase 2 du journal tracera ses actions nominativement et sans limite de duree.
+-- PROMOTIONS PROPOSEES : le role est pose a l'acceptation par la personne.
 CREATE TABLE public.promotions_proposees (
     id           SERIAL PRIMARY KEY,
     compte_id    integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
     role_propose character varying(20) NOT NULL,
-    -- SET NULL pour que l'historique survive au proposant. La proposition,
-    -- elle, ne survit pas : depuis S-02 (audit du 24/09), le droit de proposer
-    -- est reverifie a l'acceptation, et un proposant parti ne peut plus l'etre.
+    -- SET NULL : l'historique survit au proposant.
     propose_par  integer REFERENCES public.comptes(id) ON DELETE SET NULL,
     statut       character varying(20) NOT NULL DEFAULT 'pending',
     created_at   timestamp with time zone NOT NULL DEFAULT now(),
     expires_at   timestamp with time zone NOT NULL,
     decided_at   timestamp with time zone,
-    -- superadmin ne se propose pas : il se legue. player n'est pas une
-    -- promotion mais une retrogradation, qui reste unilaterale.
+    -- superadmin se legue ; player est une retrogradation.
     CONSTRAINT promotions_role_valide
         CHECK (role_propose IN ('admin', 'chef_admin')),
     CONSTRAINT promotions_statut_valide
@@ -413,17 +364,13 @@ CREATE TABLE public.promotions_proposees (
 );
 ALTER TABLE public.promotions_proposees OWNER TO CURRENT_USER;
 
--- Une seule proposition en attente par compte : sinon deux chef_admin peuvent
--- proposer deux roles differents, et l'acceptation devient ambigue.
+-- Une seule proposition en attente par compte.
 CREATE UNIQUE INDEX idx_promotion_pending_compte
     ON public.promotions_proposees(compte_id) WHERE statut = 'pending';
 CREATE INDEX idx_promotion_compte_statut
     ON public.promotions_proposees(compte_id, statut);
 
--- CONSENTEMENTS -- une ligne par acceptation, jamais reecrite (lot F de l'audit
--- du 24/09). comptes.cgu_* disent l'etat COURANT ; cette table dit l'HISTOIRE,
--- qui survit a un changement de version de la politique. Effacee avec le
--- compte. Detail : migrations/2026-09-25_consentements.sql.
+-- CONSENTEMENTS : historique des acceptations (ajout seul), efface avec le compte.
 CREATE TABLE public.consentements (
     id          SERIAL PRIMARY KEY,
     compte_id   integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
@@ -441,8 +388,7 @@ ALTER TABLE public.consentements OWNER TO CURRENT_USER;
 CREATE INDEX idx_consentements_compte
     ON public.consentements(compte_id, accepte_le);
 
--- Ajout seul : corriger une acceptation apres coup, c'est en fabriquer une.
--- DELETE reste permis (effacement du compte).
+-- Ajout seul ; DELETE permis pour l'effacement du compte.
 CREATE FUNCTION public.consentements_sans_modification()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -454,19 +400,14 @@ CREATE TRIGGER consentements_ajout_seul
     BEFORE UPDATE ON public.consentements
     FOR EACH ROW EXECUTE FUNCTION public.consentements_sans_modification();
 
--- NOTIFICATIONS -- ce qu'un admin a decide sur le dos de quelqu'un.
--- Texte fige a l'emission : une notification parle souvent d'une chose qui
--- n'existe plus (la fiche supprimee, la demande refusee), et la reconstruire
--- par jointure afficherait « votre demande pour (null) ».
+-- NOTIFICATIONS (texte et lien figes a l'emission)
 CREATE TABLE public.notifications (
     id          SERIAL PRIMARY KEY,
     compte_id   integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
     type        character varying(40) NOT NULL,
     titre       character varying(160) NOT NULL,
     corps       text,
-    -- Fige a l'emission comme le texte, et pour la meme raison : resoudre
-    -- l'URL a l'affichage supposerait que la cible existe encore. NULL quand
-    -- la notification n'appelle aucune action.
+    -- NULL si la notification n'appelle aucune action.
     lien        character varying(255),
     created_at  timestamp with time zone NOT NULL DEFAULT now(),
     lu_at       timestamp with time zone
@@ -474,8 +415,7 @@ CREATE TABLE public.notifications (
 CREATE INDEX idx_notifications_non_lues ON public.notifications(compte_id) WHERE lu_at IS NULL;
 CREATE INDEX idx_notifications_compte_date ON public.notifications(compte_id, created_at DESC);
 
--- PROFILS -- tout le contenu genere par l'utilisateur, purgeable d'un DELETE.
--- Pas d'avatar : il vient du CDN Discord via comptes.discord_avatar_hash.
+-- PROFILS (contenu saisi par l'utilisateur ; l'avatar vient de Discord)
 CREATE TABLE public.profils (
     compte_id       integer PRIMARY KEY REFERENCES public.comptes(id) ON DELETE CASCADE,
     bio             character varying(500),
@@ -485,23 +425,20 @@ CREATE TABLE public.profils (
     updated_at      timestamp with time zone NOT NULL DEFAULT now()
 );
 
--- SESSIONS_JOUEURS -- remplacante de l'ancienne api_tokens : token en sha256 seul,
--- et expiration ABSOLUE (aucune route de renouvellement).
+-- SESSIONS_JOUEURS : token en sha256, expiration absolue.
 CREATE TABLE public.sessions_joueurs (
     token_hash    CHAR(64) PRIMARY KEY,
     compte_id     integer NOT NULL REFERENCES public.comptes(id) ON DELETE CASCADE,
     created_at    timestamp with time zone NOT NULL DEFAULT now(),
     expires_at    timestamp with time zone NOT NULL,
     last_seen_at  timestamp with time zone,
-    -- Pas d'IP : user_agent suffit a un ecran "vos sessions actives".
     user_agent    character varying(255)
 );
 
 CREATE INDEX idx_sessions_joueurs_compte  ON public.sessions_joueurs(compte_id);
 CREATE INDEX idx_sessions_joueurs_expires ON public.sessions_joueurs(expires_at);
 
--- AUDIT_ADMIN -- accountability RGPD (art. 5.2), changements de role et
--- synchronisations de profil.
+-- AUDIT_ADMIN : journal des actions d'administration.
 CREATE TABLE public.audit_admin (
     id               SERIAL PRIMARY KEY,
     action           character varying(50) NOT NULL,
@@ -513,19 +450,16 @@ CREATE TABLE public.audit_admin (
 );
 
 CREATE INDEX idx_audit_admin_created ON public.audit_admin(created_at DESC);
--- Composite : l'ecran de consultation filtre sur l'acteur PUIS trie par date.
--- Un index sur le seul acteur obligerait a trier a chaque page.
+-- Filtre par acteur puis tri par date.
 CREATE INDEX idx_audit_admin_acteur ON public.audit_admin(acteur_compte_id, created_at DESC);
 
--- NOMS_INTERDITS -- sha256(lower(nom)) des identites anonymisees, jamais le nom
--- en clair : empeche add_tournament de recreer a la volee une fiche portant un
--- nom qu'on vient tout juste d'effacer.
+-- NOMS_INTERDITS : sha256(lower(nom)) des identites anonymisees.
 CREATE TABLE public.noms_interdits (
     nom_hash    CHAR(64) PRIMARY KEY,
     created_at  timestamp with time zone NOT NULL DEFAULT now()
 );
 
--- SERVICE_TOKENS -- authentification machine des bots Discord.
+-- SERVICE_TOKENS : jetons des bots Discord.
 CREATE TABLE public.service_tokens (
     id           SERIAL PRIMARY KEY,
     token_hash   CHAR(64) NOT NULL UNIQUE,
@@ -537,7 +471,7 @@ CREATE TABLE public.service_tokens (
     created_at   timestamp with time zone NOT NULL DEFAULT now()
 );
 
--- INDEXES PERFORMANCE
+-- INDEX
 CREATE INDEX idx_participations_joueur_id ON public.participations(joueur_id);
 CREATE INDEX idx_participations_tournoi_id ON public.participations(tournoi_id);
 CREATE INDEX idx_joueurs_ligue_id ON public.joueurs(ligue_id);

@@ -31,23 +31,15 @@ except KeyError as e:
     logger.error(f"❌ Variable d'environnement manquante : {e}")
     sys.exit(1)
 
-# 30 jours : la session joueur survit à la fermeture du navigateur. La durée
-# réelle est celle que le backend a fixée à la connexion selon le rôle (30 jours
-# pour un joueur, 12 h pour un admin) ; ce cookie ne fait que ne pas expirer
-# avant elle.
+# Le cookie ne doit pas expirer avant la session backend (30 j joueur, 12 h admin).
 app.permanent_session_lifetime = timedelta(days=30)
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-# NE PAS passer à 'Strict' : le retour de Discord est une navigation cross-site.
-# En Strict le cookie ne partirait pas, le state serait introuvable, et la
-# connexion échouerait sans message exploitable.
+# Pas 'Strict' : le retour de Discord est une navigation cross-site.
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# Le flag Secure suit le TLS_MODE réellement servi par nginx : en http local, il
-# bloquerait toute connexion admin.
+# Secure seulement en https (sinon la connexion echoue en http local).
 app.config['SESSION_COOKIE_SECURE'] = (os.environ.get('TLS_MODE', 'http') == 'https')
-# flask-wtf a son propre TTL (3600 s), indépendant de la session : une page
-# laissée ouverte une heure voyait son enregistrement rejeté. À None, il suit
-# la session.
+# Jeton CSRF valable aussi longtemps que la session.
 app.config['WTF_CSRF_TIME_LIMIT'] = None
 
 csrf = CSRFProtect(app)
@@ -62,14 +54,8 @@ def inject_version():
 def _sonde_session(endpoint, headers, sur_reponse=None):
     """Interroge une sonde de session. Renvoie True si le backend la refuse.
 
-    Ne purge QUE sur un refus explicite (401/403) : un 5xx ou un timeout dit que
-    le backend a un hoquet, pas que la session est invalide (R-28). Confondre les
-    deux déconnecterait tout le monde à chaque redémarrage du backend.
-
-    `sur_reponse` reçoit le corps JSON d'une réponse 200. Sert à récupérer rôle
-    et permissions au passage : cet appel a lieu à chaque requête de toute
-    façon, et le backend les a déjà lus pour authentifier. En faire un second
-    appel coûterait un aller-retour réseau par page, sur 2 workers gunicorn.
+    Ne purge que sur 401/403 (un 5xx ou un timeout n'invalide pas la session).
+    `sur_reponse` recoit le corps JSON d'une reponse 200 (role et permissions).
     """
     try:
         response = requests.get(f"{BACKEND_URL}{endpoint}", headers=headers, timeout=1)
@@ -87,29 +73,16 @@ def _sonde_session(endpoint, headers, sur_reponse=None):
         try:
             sur_reponse(response.json())
         except Exception as e:
-            # Un corps illisible ne doit jamais casser la requête en cours :
-            # cette fonction tourne dans un before_request, sur toutes les pages.
+            # Ne jamais casser la requete en cours (before_request).
             logger.warning("Réponse de sonde illisible (%s)", e)
     return False
 
 
 def _est_navigation(chemin):
-    """Vrai si ce chemin sert une PAGE, et non une donnée pour une page déjà là.
+    """Vrai si ce chemin sert une page HTML plutot que des donnees.
 
-    Sert à ne sonder la session qu'une fois par page ouverte, au lieu d'une fois
-    par requête. Ouvrir les Fiches joueurs, c'est un document puis trois appels
-    JSON : sonder les quatre revalidait quatre fois la même session, à quelques
-    millisecondes d'intervalle, pour le même verdict.
-
-    La distinction se lit sur l'en-tête `Accept`, que le navigateur pose seul :
-    une navigation demande du HTML, un `fetch()` demande du JSON. Un `Accept`
-    absent ou exotique est traité comme une navigation -- se tromper dans ce sens
-    coûte une sonde de trop, jamais une session laissée valide à tort.
-
-    Ce n'est PAS une frontière de privilège, et ça n'a pas à l'être : le proxy
-    transmet le jeton au backend, qui relit rôle et permissions en base à chaque
-    requête protégée. Un appel JSON non sondé sur une session morte reçoit donc
-    un 401 du backend, relayé tel quel -- exactement ce que la sonde aurait fait.
+    Lu sur l'en-tete Accept ; un Accept absent ou inconnu compte comme une
+    navigation. Permet de ne sonder la session qu'une fois par page.
     """
     if chemin.startswith('/static'):
         return False
@@ -118,24 +91,7 @@ def _est_navigation(chemin):
 
 @app.before_request
 def check_session_validity():
-    """Revalide la session auprès du backend à l'ouverture de chaque page.
-
-    La session Discord était la grande absente : rien ne la revalidait jamais, et
-    `_est_admin()` lisant une copie figée en cookie, un jeton expiré laissait
-    l'utilisateur affiché comme connecté, onglet admin compris, jusqu'à ce qu'il
-    visite /mon-compte. Les pages admin s'ouvraient alors sur une erreur au
-    chargement des données plutôt que sur une reconnexion.
-
-    UNE sonde par page. Sonder à chaque requête -- appels JSON compris --
-    faisait payer 9 allers-retours backend (mesurés) pour ouvrir une page qui
-    n'en vaut que 4, sur 2 workers gunicorn qui bloquent pendant l'attente. D'où
-    les 503 et les « Erreur Backend » intermittents du 2026-09-17
-    (docs/audit-503-zone-admin.md).
-
-    Depuis la suppression du mot de passe admin (2026-09-23), il n'y a plus
-    qu'une voie à sonder. Du temps des deux, la règle était déjà : ne sonder que
-    celle qu'`admin_headers()` allait réellement employer.
-    """
+    """Revalide la session aupres du backend a l'ouverture de chaque page."""
     if not _est_navigation(request.path):
         return
 
@@ -147,15 +103,12 @@ def check_session_validity():
             session.pop('player_token', None)
             session.pop('compte', None)
         else:
-            # Sonde concluante : les vues admin n'ont plus à revérifier.
             g.session_revalidee = True
             return _exiger_consentement()
 
 
-# Pages ouvertes à une session qui n'a pas encore accepté la politique (A-07) :
-# celles qu'il faut pouvoir lire avant d'accepter, et les issues -- accepter,
-# télécharger ses données, se déconnecter. Pendant de la liste blanche du
-# backend (`player_required_sans_cgu`), qui reste la vraie frontière.
+# Pages accessibles avant d'accepter la politique (le backend reste la vraie
+# frontiere via player_required_sans_cgu).
 _PAGES_SANS_CONSENTEMENT = frozenset({
     'consentement', 'confidentialite', 'mentions_legales', 'player_logout',
     'exporter_mes_donnees', 'discord_login', 'discord_callback', 'static',
@@ -163,13 +116,8 @@ _PAGES_SANS_CONSENTEMENT = frozenset({
 
 
 def _exiger_consentement():
-    """Renvoie vers la page d'acceptation si la politique en vigueur manque.
-
-    Le backend refuse déjà tout le reste (428) : sans cette redirection, la
-    personne verrait des pages vides ou des « Erreur Backend » sans comprendre
-    pourquoi. Ne vise que les pages HTML : une image ou un appel JSON n'a rien
-    à faire d'une redirection vers un formulaire.
-    """
+    """Renvoie vers la page d'acceptation si la politique en vigueur manque
+    (pages HTML seulement)."""
     compte = session.get('compte')
     if not isinstance(compte, dict) or not compte.get('cgu_a_accepter'):
         return None
@@ -184,38 +132,17 @@ def _exiger_consentement():
 def _acces_admin_revoque():
     """Vrai si le backend refuse maintenant cette session admin.
 
-    À appeler en tête de chaque vue admin, avant le rendu. Sans cette
-    revalidation, la page s'ouvrait sur la foi du cookie puis son JS se heurtait
-    à un 401 au premier chargement de données : l'utilisateur voyait
-    « Chargement impossible. » au lieu d'être invité à se reconnecter.
-
-    Ne refait PAS l'appel que le before_request vient de faire sur cette même
-    requête HTTP. Les six vues admin le rejouaient à l'identique, quelques
-    millisecondes après, pour le même verdict -- un aller-retour backend par
-    page, payé pour rien. `g` est remis à zéro à chaque requête : la mémoïsation
-    ne peut pas survivre à la requête qui l'a posée, et ne masque donc jamais une
-    révocation intervenue depuis.
+    A appeler en tete de chaque vue admin. Reutilise le verdict du
+    before_request de la meme requete (memorise dans g).
     """
     if getattr(g, 'session_revalidee', False):
         return False
     _, status = backend_request('GET', '/admin/check-token', headers=admin_headers())
     return status in (401, 403)
 
-# `inject_saisons` a été retiré le 2026-09-17. Ce context processor appelait
-# /saisons à CHAQUE rendu de template -- un aller-retour backend synchrone par
-# page, sur 2 workers gunicorn -- pour alimenter un `saisons_menu` qu'aucun
-# gabarit ne lisait (vérifié sur tout le dépôt). Le menu des saisons est servi
-# par les vues qui en ont besoin, pas par une variable globale.
-# Si un menu global redevient nécessaire, le remettre AVEC un cache TTL : c'est
-# une donnée qui change quelques fois par an, pas à chaque affichage.
-
 
 def backend_request(method, endpoint, data=None, params=None, headers=None, timeout=5):
-    """Appel JSON au backend.
-
-    `timeout` est paramétrable pour l'échange OAuth : 5 s couperaient alors que le
-    compte vient d'être créé et l'invitation consommée.
-    """
+    """Appel JSON au backend (`timeout` allonge pour l'echange OAuth)."""
     url = f"{BACKEND_URL}{endpoint}"
     try:
         if method == 'GET':
@@ -225,9 +152,7 @@ def backend_request(method, endpoint, data=None, params=None, headers=None, time
         elif method == 'PUT':
             response = requests.put(url, json=data, headers=headers, timeout=timeout)
         elif method == 'DELETE':
-            # `json=data` et non rien : un DELETE peut porter un corps, et
-            # l'omettre le perdait en silence -- le paramètre partait, la route
-            # backend appliquait son défaut, et rien ne le signalait.
+            # Un DELETE peut porter un corps.
             response = requests.delete(url, json=data, headers=headers, timeout=timeout)
         else:
             return None, 405
@@ -241,32 +166,21 @@ def backend_request(method, endpoint, data=None, params=None, headers=None, time
 
 
 # ---------------------------------------------------------------------------
-# Authentification admin : deux voies pendant la bascule
+# Authentification admin
 # ---------------------------------------------------------------------------
 
 def _session_admin_expiree():
-    """Sortie commune quand le backend refuse la session sur une page admin.
-
-    Renvoie vers l'accueil, et vers lui seul : il n'existe plus de formulaire de
-    connexion admin depuis la suppression du mot de passe (2026-09-23). Avant
-    elle, cette fonction y renvoyait encore, alors que s'y reconnecter ne
-    rouvrait déjà plus rien -- symptôme resté longtemps incompréhensible.
-    """
+    """Sortie commune quand le backend refuse la session sur une page admin."""
     session.pop('player_token', None)
     session.pop('compte', None)
     flash('Votre session a expiré. Reconnectez-vous avec Discord.', 'warning')
     return redirect(url_for('index'))
 
 
-# Rôles qui ouvrent les pages d'administration. UNE seule liste : la même
-# valeur était écrite en dur dans _est_admin et admin_headers, et n'en corriger
-# qu'une donne le symptôme le plus déroutant qui soit -- la page s'ouvre, mais
-# aucune requête n'est authentifiée, donc elle reste vide sans message d'erreur.
+# Roles qui ouvrent les pages d'administration.
 ROLES_ADMIN = ('admin', 'chef_admin', 'superadmin')
 
-# Copie du catalogue de backEnd/constants.py -- le frontend est un service
-# séparé, il ne peut pas l'importer. Même duplication assumée que CGU_VERSION,
-# et même exigence : les deux listes doivent rester alignées (test_revue).
+# Copie du catalogue de backEnd/constants.py (alignement verifie par test_revue).
 PERMISSIONS_CATALOGUE = frozenset({
     'gestion_joueurs', 'joueurs_creation', 'joueurs_nom', 'joueurs_couleur',
     'edition_mu_sigma', 'joueurs_statut', 'joueurs_irreversible',
@@ -275,9 +189,7 @@ PERMISSIONS_CATALOGUE = frozenset({
     'gestion_invitations', 'gestion_config', 'gestion_matchmaking',
 })
 
-# Copie de backEnd/constants.SOUS_PERMISSIONS (enfant -> parent), même
-# duplication assumée que le catalogue lui-même. Sert à l'affichage en retrait
-# et au décochage en cascade ; l'autorité reste le backend, qui exige les deux.
+# Copie de backEnd/constants.SOUS_PERMISSIONS (enfant -> parent).
 SOUS_PERMISSIONS = {
     'joueurs_creation': 'gestion_joueurs',
     'joueurs_nom': 'gestion_joueurs',
@@ -289,22 +201,14 @@ SOUS_PERMISSIONS = {
 
 
 def _role_session():
-    """Rôle réel de la session, '' si absent. Copie potentiellement périmée."""
+    """Role de la session, '' si absent (copie potentiellement perimee)."""
     return (session.get('compte') or {}).get('role') or ''
 
 
 def _permissions_session():
-    """Permissions de la session, comme un set. Vide plutôt que None.
+    """Permissions de la session, pour l'affichage seulement (set).
 
-    Sert UNIQUEMENT à décider ce que l'interface montre. Le backend relit rôle
-    et permissions en base à chaque requête protégée : une copie périmée fait
-    voir un bouton de trop, jamais obtenir un droit de trop (plan B.0).
-
-    Une session ouverte avant ce chantier n'a pas la clé. Le repli ne vaut que
-    pour chef_admin et superadmin, dont le socle EST le catalogue quoi qu'il
-    arrive : leur accorder la liste complète ne suppose rien. Un admin, lui,
-    repart de zéro jusqu'à sa reconnexion -- montrer un menu complet à qui n'a
-    aucune permission ne ferait que produire des 403 au premier clic.
+    Sans la cle, le catalogue complet est suppose pour chef_admin et superadmin.
     """
     compte = session.get('compte') or {}
     permissions = compte.get('permissions')
@@ -315,26 +219,13 @@ def _permissions_session():
 
 
 def _est_admin():
-    """Vrai si la session ouvre les pages d'administration.
-
-    Porte d'INTERFACE, pas frontière de privilège : le rôle vient de la copie mise
-    en session à la connexion et peut être périmé. L'autorité reste le backend, qui
-    le relit en base à chaque requête protégée. Le rafraîchir ici coûterait un appel
-    réseau par page (R-28). Un admin rétrogradé voit donc la page, sans les données.
-
-    Ne dit RIEN des droits réels depuis la hiérarchie à 4 rôles : un admin sans
-    aucune permission ouvre la page et n'y verra que ce que le backend lui sert.
-    """
+    """Vrai si la session ouvre les pages d'administration (affichage ; le
+    backend reverifie a chaque requete)."""
     return _role_session() in ROLES_ADMIN
 
 
 def admin_headers():
-    """En-tête d'auth admin, construit depuis la session serveur.
-
-    Une seule voie depuis le 2026-09-23 : la session Discord, si elle porte le
-    rôle. `None` sinon -- le backend répondra 401, et c'est le comportement
-    voulu : un en-tête absent vaut mieux qu'un en-tête qui n'ouvre rien.
-    """
+    """En-tete d'auth admin depuis la session serveur, ou None."""
     if session.get('player_token') and _role_session() in ROLES_ADMIN:
         return {'X-Session-Token': session['player_token']}
     return None
@@ -378,9 +269,7 @@ def proxy_add_tournament():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-# Etape 1 du rattachement a une session : liste les tournois proposables et
-# marque ceux qui partagent un joueur. Lecture seule cote backend.
-# Conception : docs/plan-sessions-tournois.md, decision 10
+# Tournois rattachables a une session, et ceux en conflit de joueurs.
 @app.route('/admin/tournois/verifier-session', methods=['POST'])
 def proxy_verifier_session():
     if not _est_admin():
@@ -440,8 +329,7 @@ def recap_season(season_slug):
 
     data, status = backend_request('GET', url)
     if status != 200:
-        # `recap.html` n'a jamais affiche la variable `error` qu'on lui passait :
-        # une saison introuvable rendait une page vide.
+        # Message d'erreur affiche par recap.html.
         return render_template(
             "introuvable.html",
             titre="Ce récapitulatif n'existe plus",
@@ -500,14 +388,12 @@ def classement():
     if ligues_status == 200 and isinstance(ligues_data, list):
         ligues = ligues_data
 
-    # Liste ordonnee par rang decroissant (nom, couleur, seuil) -- plus un
-    # dict fige {"S":.., "A":..} depuis les tiers dynamiques (Partie B).
+    # Tiers par rang decroissant (nom, couleur, seuil).
     tiers = []
     tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
     if tiers_status == 200 and isinstance(tiers_data, list):
         tiers = tiers_data
-    # Lookup nom -> couleur pour le badge de tier de chaque joueur (evite de
-    # coder S/A/B/C en dur dans le gabarit, cf docs/tableau-seuils-tiers-plan.md).
+    # Couleur de chaque tier pour les badges.
     tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers if t.get('nom')}
     couleur_u = _couleur_u()
 
@@ -527,11 +413,8 @@ _RE_COULEUR_HEX = re.compile(r'#[0-9a-fA-F]{3,8}')
 
 
 def _couleur_u():
-    """Couleur de la pastille U (non classe), blanc si le backend ne repond pas.
-
-    Revalidee ici : elle finit dans un attribut style, et rien d'autre qu'une
-    couleur ne doit pouvoir y entrer.
-    """
+    """Couleur de la pastille U, blanc si le backend ne repond pas (revalidee :
+    elle finit dans un attribut style)."""
     data, status = backend_request('GET', '/tiers/unranked')
     couleur = data.get('couleur') if status == 200 and isinstance(data, dict) else None
     return couleur if isinstance(couleur, str) and _RE_COULEUR_HEX.fullmatch(couleur) else '#FFFFFF'
@@ -539,9 +422,8 @@ def _couleur_u():
 
 @app.template_filter('texte_lisible')
 def texte_lisible(couleur):
-    """Noir ou blanc, selon ce qui se lit sur le fond `couleur`. Meme calcul
-    que texteSur() de tier_thresholds.js : la pastille U peut etre claire,
-    la ou les autres tiers supposent tous un texte blanc."""
+    """Noir ou blanc selon le contraste avec `couleur` (meme calcul que texteSur()
+    de tier_thresholds.js)."""
     if not isinstance(couleur, str) or not _RE_COULEUR_HEX.fullmatch(couleur):
         return '#0a0a0a'
     h = couleur[1:]
@@ -551,13 +433,11 @@ def texte_lisible(couleur):
 
 
 def _rendre_fiche_joueur(nom, data):
-    # Couleur du tier portee par les donnees (tiers dynamiques, Partie B) :
-    # plus de branches S/A/B/C figees dans stats_joueur.html.
+    # Couleur de chaque tier.
     tiers_couleurs = {}
     tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
     if tiers_status == 200 and isinstance(tiers_data, list):
         tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers_data if t.get('nom')}
-    # Un appel de plus au backend, seulement si la fiche en a l'usage.
     stats = data.get('stats') or {}
     couleur_u = _couleur_u() if stats.get('tier') == 'U' else None
 
@@ -579,11 +459,7 @@ def _rendre_fiche_joueur(nom, data):
 
 @app.route('/joueur/<int:joueur_id>')
 def joueur_detail(joueur_id):
-    """URL canonique d'une fiche joueur.
-
-    Sur l'identifiant et non sur le nom : le nom bouge, et emporte avec lui tous
-    les liens déjà partagés.
-    """
+    """URL canonique d'une fiche joueur, par identifiant."""
     data, status = backend_request('GET', f'/joueur/{joueur_id}')
     if status == 200:
         return _rendre_fiche_joueur(data.get('nom'), data)
@@ -599,16 +475,12 @@ def joueur_detail(joueur_id):
 
 @app.route('/stats/joueur/<nom>')
 def stats_joueur_detail(nom):
-    """Ancienne URL, conservée : des liens circulent déjà sous cette forme.
-
-    301 vers l'URL canonique, pour que ce qui est repartagé depuis ici soit stable.
-    """
+    """Ancienne URL par nom : redirection 301 vers l'URL canonique."""
     resolu, status = backend_request('GET', f'/joueurs/resolve/{nom}')
     if status == 200 and isinstance(resolu, dict) and resolu.get('id'):
         return redirect(url_for('joueur_detail', joueur_id=resolu['id']), code=301)
 
-    # Backend indisponible : on sert la page à l'ancienne. Une 301 est mise en cache
-    # par le navigateur, l'émettre sur une résolution incertaine la graverait.
+    # Backend indisponible : pas de 301 (mise en cache par le navigateur).
     data, status = backend_request('GET', f'/stats/joueur/{nom}')
     if status == 200:
         return _rendre_fiche_joueur(nom, data)
@@ -637,8 +509,7 @@ def stats_joueurs():
         joueurs = []
         dist = {}
 
-    # Couleur du tier portee par les donnees (tiers dynamiques, Partie B) --
-    # plus de classe tier-{{ tier|lower }} figee dans le gabarit.
+    # Couleur de chaque tier.
     tiers_couleurs = {}
     tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
     if tiers_status == 200 and isinstance(tiers_data, list):
@@ -658,9 +529,7 @@ def stats_tournoi_detail(tournoi_id):
     data, status = backend_request('GET', f'/stats/tournoi/{tournoi_id}')
     if status == 200:
         return render_template("stats_tournoi.html", date=data.get('date'), resultats=data.get('resultats', []))
-    # Une notification « nouveau tournoi » survit a l'annulation du tournoi :
-    # son texte est fige a l'emission. La page doit donc le dire, plutot que
-    # de rediriger vers l'accueil avec un bandeau qu'on ne lit pas.
+    # Cible disparue (ex. tournoi annule apres sa notification).
     return render_template(
         "introuvable.html",
         titre="Ce tournoi n'existe plus",
@@ -675,29 +544,15 @@ def stats_tournoi_detail(tournoi_id):
 # ===========================================================================
 
 DISCORD_CLIENT_ID = os.environ.get('DISCORD_CLIENT_ID', '')
-# Toujours l'environnement, jamais url_for(_external=True) : derrière nginx puis
-# gunicorn sans ProxyFix, Flask produirait du http://.
-#
-# Une ou plusieurs URI, séparées par des virgules : voir _redirect_uri().
+# Toujours l'environnement : derriere nginx, url_for(_external=True) donnerait du
+# http://. Une ou plusieurs URI separees par des virgules.
 DISCORD_REDIRECT_URI = os.environ.get('DISCORD_REDIRECT_URI', '')
 DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
-# L'échange déclenche deux appels réseau vers Discord côté backend.
+# Deux appels a Discord cote backend.
 OAUTH_EXCHANGE_TIMEOUT = 20
 
-# Nombre de `state` OAuth gardés en attente simultanément, et leur durée de vie.
-#
-# Une seule case ne suffit pas : deux onglets, un double-clic, un retour arrière
-# ou le préchargement du navigateur suffisent à ce que la seconde tentative
-# écrase la première, qui échoue alors sans que rien d'anormal n'ait eu lieu.
-# C'était le constat B-01, et la cause des « bugs étranges » à la connexion.
-#
-# 5 couvre largement les cas réels (on n'ouvre pas six onglets de connexion) et
-# borne la session : sans borne, un robot qui appelle /login en boucle ferait
-# grossir le cookie jusqu'au refus du navigateur.
-#
-# 15 minutes : au-delà, l'utilisateur a abandonné. Discord n'impose rien ici,
-# c'est notre propre fenêtre — assez large pour une hésitation devant l'écran
-# de consentement, assez courte pour qu'un state oublié ne traîne pas.
+# States OAuth en attente : plusieurs a la fois (onglets, double clic), en
+# nombre et en duree bornes.
 OAUTH_STATES_MAX = 5
 OAUTH_STATE_TTL = 15 * 60
 
@@ -707,22 +562,14 @@ def _redirect_uris():
 
 
 def _redirect_uri():
-    """L'URI de retour déclarée pour l'hôte consulté, à défaut la première.
+    """URI de retour declaree pour l'hote consulte, a defaut la premiere.
 
-    Le retour doit arriver sur l'hôte de départ : le cookie de session, qui
-    porte le `state`, est lié à l'hôte. Une URI unique obligeait donc à
-    naviguer sur cet hôte exact — sur le poste de dev, `127.0.0.1` ou le nom
-    `.local` échouaient en « demande expirée », et un changement d'IP (DHCP)
-    cassait tout. Avec plusieurs URI (localhost, nom `.local`, IP), chaque
-    hôte revient sur lui-même.
-
-    L'en-tête Host ne fait que choisir dans la liste : il n'y ajoute rien.
+    Le cookie qui porte le `state` est lie a l'hote : le retour doit y revenir.
     """
     uris = _redirect_uris()
     if not uris:
         return ''
-    # `//` pour que urlparse lise l'hôte : sans port, sans crochets IPv6, en
-    # minuscules — comme `hostname` de chaque URI.
+    # `//` pour que urlparse lise l'hote.
     hote = urlparse('//' + request.host).hostname
     for uri in uris:
         if urlparse(uri).hostname == hote:
@@ -730,26 +577,15 @@ def _redirect_uri():
     return uris[0]
 
 
-# Identité de l'éditeur, affichée dans les pages légales. Renseignée par
-# l'environnement : informations personnelles, hors d'un dépôt public.
-# ⚠️ Non définies, les pages légales sont incomplètes au sens de la loi.
+# Identite de l'editeur pour les pages legales, fournie par l'environnement.
 MENTIONS = {
     'editeur': os.environ.get('SITE_EDITEUR', '[à renseigner : nom de l’éditeur]'),
     'contact': os.environ.get('SITE_CONTACT', '[à renseigner : adresse de contact]'),
     'hebergeur': os.environ.get('SITE_HEBERGEUR', '[à renseigner : hébergeur et pays]'),
-    # 6 mois : arbitré le 2026-09-18, borne basse de la fourchette CNIL.
-    # ⚠️ Cette valeur est ce qu'on ANNONCE. Ce qui l'impose aujourd'hui est une
-    # borne de TAILLE (30 Mo par service), pas d'âge -- un site peu fréquenté
-    # peut donc garder une ligne au-delà. Tant que T5 du registre RGPD n'a pas
-    # sa case « imposer réellement » cochée, ne pas raccourcir ce texte : il
-    # engage, et une durée annoncée qu'on ne tient pas est pire que pas de
-    # durée du tout.
+    # Duree annoncee ; la limite technique actuelle est une taille (30 Mo par service).
     'retention_logs': os.environ.get('SITE_RETENTION_LOGS', "6 mois au maximum"),
 }
-# ⚠️ Doit rester identique à constants.CGU_VERSION côté backend : c'est le
-# backend qui décide si le consentement doit être redemandé, le frontend ne fait
-# qu'afficher le numéro. Les désaligner ferait afficher une version et en
-# enregistrer une autre.
+# Doit rester identique a constants.CGU_VERSION cote backend.
 CGU_VERSION = "1.0"
 
 
@@ -760,42 +596,24 @@ def inject_mentions():
 
 @app.context_processor
 def inject_discord_configure():
-    """Le bouton de connexion ne s'affiche pas si Discord n'est pas configuré.
-
-    Lu depuis l'environnement : une décision d'affichage ne vaut pas un
-    aller-retour vers le backend sur chaque page.
-    """
+    """Affiche le bouton de connexion seulement si Discord est configure."""
     return dict(discord_configure=bool(DISCORD_CLIENT_ID and _redirect_uris()))
 
 
 def _maj_droits_session(corps):
-    """Recopie rôle et permissions servis par la sonde de session.
+    """Recopie role, permissions et cgu_a_accepter servis par la sonde de session.
 
-    Appelée depuis le before_request, avec le corps de /auth/check-session. Le
-    backend les a lus pour authentifier la requête : les prendre ici ne coûte
-    rien de plus, et la copie en session reste fraîche à chaque page.
-
-    C'est ce qui manquait : cette copie était figée à la CONNEXION, donc un
-    droit accordé n'apparaissait qu'après déconnexion/reconnexion. La faire
-    relire par un appel /auth/me séparé a marché, mais ajoutait un aller-retour
-    réseau synchrone par rendu de page -- sur 2 workers gunicorn, le frontend
-    saturait et nginx répondait 503 (observé le 2026-09-17).
-
-    Le frontend n'est PAS une frontière de privilège : le backend relit rôle et
-    permissions en base à chaque requête protégée. Une copie périmée fait voir
-    un bouton de trop, jamais obtenir un droit de trop.
-
-    Recopie aussi `cgu_a_accepter` (A-07) : une nouvelle version de la
-    politique doit être présentée dès la page suivante, pas à la reconnexion.
+    Appelee depuis le before_request : la copie en session reste a jour sans
+    appel supplementaire.
     """
     compte = session.get('compte')
     if not isinstance(compte, dict) or not isinstance(corps, dict):
         return
     if 'role' not in corps and 'permissions' not in corps:
-        return      # backend plus ancien que ce champ : on garde la copie
+        return  # backend sans ces champs : on garde la copie
     champs = ('role', 'permissions', 'cgu_a_accepter')
     if all(compte.get(c) == corps.get(c) for c in champs):
-        return      # rien de neuf : ne pas réécrire le cookie à chaque requête
+        return  # rien de neuf : pas de reecriture du cookie
     for c in champs:
         compte[c] = corps.get(c)
     session.modified = True
@@ -803,16 +621,7 @@ def _maj_droits_session(corps):
 
 @app.errorhandler(404)
 def page_introuvable(_e):
-    """Toute URL inexistante aboutit a la meme page que les cibles disparues.
-
-    Sert d'abord les liens de notification : une URL figee a l'emission peut
-    designer une route qui n'existe plus apres un renommage, et Flask rendrait
-    sinon sa page d'erreur brute, sans navbar ni retour.
-
-    Les appels JSON gardent du JSON : la navbar et les pages d'administration
-    font tourner des `fetch()` qui parsent la reponse, et leur servir du HTML
-    les casserait sur une erreur bien plus difficile a lire qu'un 404.
-    """
+    """Page commune pour toute URL inexistante (JSON pour les appels fetch)."""
     if not _est_navigation(request.path):
         return jsonify({'error': 'Ressource introuvable'}), 404
     return render_template(
@@ -825,16 +634,8 @@ def page_introuvable(_e):
 
 @app.context_processor
 def inject_est_admin():
-    """Expose la porte d'interface admin aux templates.
-
-    Trois valeurs, pas une, depuis la hiérarchie à 4 rôles :
-      - `est_admin` : la page s'ouvre-t-elle ? (inchangé)
-      - `role_admin` : le rôle réel, pour les capacités qui ne sont PAS des
-        permissions (reset global, jetons de bot, legs).
-      - `peut(...)` : le helper de gate pour tout le reste. Un template ne doit
-        jamais tester un rôle en dur pour une zone déléguable -- c'est le
-        pendant côté interface de R-50.
-    """
+    """Expose aux templates : `est_admin`, `role_admin` (capacites de role) et
+    `peut(...)` (permissions)."""
     permissions = _permissions_session()
     return dict(
         est_admin=_est_admin(),
@@ -851,11 +652,7 @@ def inject_compte():
 
 @app.route('/invite/<token>')
 def invite(token):
-    """Page d'accueil d'une invitation. STRICTEMENT idempotente.
-
-    Coller ce lien dans un salon déclenche un GET du crawler Discord : si
-    l'affichage consommait l'invitation, un lien à usage unique serait brûlé.
-    """
+    """Page d'accueil d'une invitation, sans la consommer (apercus de lien)."""
     data, status = backend_request('GET', f'/auth/invitation/{token}')
     invitation = data if status == 200 and isinstance(data, dict) else None
     if invitation is None:
@@ -867,46 +664,26 @@ def invite(token):
 # ---------------------------------------------------------------------------
 # States OAuth en attente
 # ---------------------------------------------------------------------------
-# Referme B-01. Le défaut n'était pas dans l'un ou l'autre geste -- écrire le
-# state à la connexion et le consommer au retour sont tous deux corrects --
-# mais dans leur combinaison sur une CASE UNIQUE :
-#
-#   - la seconde connexion écrasait le state de la première, qui échouait
-#     alors qu'elle n'avait rien fait d'anormal ;
-#   - le `pop` vidait la case MÊME EN CAS D'ÉCHEC, si bien qu'un échec en
-#     provoquait un second, avec un state pourtant valide. C'est ce qui rendait
-#     le symptôme incompréhensible : deux échecs, puis un succès.
-#
-# Les deux règles ci-dessous suffisent, et l'usage unique est préservé : un
-# state retiré de la liste ne repasse jamais.
+# Une liste de states plutot qu'une case unique : une seconde connexion
+# n'ecrase pas la premiere, et un echec ne consomme pas les states valides.
 
 def _deposer_state(state: str) -> None:
     """Ajoute un state en attente, en purgeant les périmés et les surnuméraires."""
     limite = time.time() - OAUTH_STATE_TTL
-    # Purge d'abord : sans elle, cinq tentatives abandonnées suffiraient à
-    # évincer un state légitime par la borne de taille.
+    # Purge des perimes avant d'appliquer la borne de taille.
     en_attente = [s for s in session.get('oauth_states', [])
                   if isinstance(s, list) and len(s) == 2 and s[1] > limite]
     en_attente.append([state, time.time()])
-    # Les plus ANCIENS sautent en premier : au-delà de la borne, c'est la
-    # tentative la plus fraîche qui a le plus de chances d'aboutir.
+    # Les plus anciens sautent en premier.
     session['oauth_states'] = en_attente[-OAUTH_STATES_MAX:]
 
 
 def _consommer_state(recu: str | None) -> bool:
-    """Retire le state correspondant. Ne consomme RIEN si rien ne correspond.
-
-    C'est le point qui referme B-01.2 : un échec ne doit pas emporter les
-    tentatives encore valides. Comparaison en temps constant, comme avant.
-    """
+    """Retire le state correspondant (comparaison en temps constant). Ne
+    consomme rien si rien ne correspond."""
     if not recu:
         return False
-    # En OCTETS et non en str : `compare_digest` LÈVE un TypeError sur deux
-    # chaînes dont l'une n'est pas ASCII, et le state arrive d'un paramètre
-    # d'URL, donc de l'extérieur. Un `?state=é` suffisait à produire un 500 sur
-    # le chemin de connexion -- défaut antérieur à la correction de B-01, hérité
-    # tel quel en la portant. Encoder ramène le cas à une comparaison qui
-    # échoue proprement, sans rien perdre du temps constant.
+    # En octets : compare_digest leve sur une chaine non ASCII.
     recu_b = recu.encode('utf-8', 'surrogatepass')
     limite = time.time() - OAUTH_STATE_TTL
     en_attente = [s for s in session.get('oauth_states', [])
@@ -916,13 +693,12 @@ def _consommer_state(recu: str | None) -> bool:
     for i, (state, pose_a) in enumerate(en_attente):
         if pose_a > limite and secrets.compare_digest(
                 state.encode('utf-8', 'surrogatepass'), recu_b):
-            # Retiré : un rejeu du même state ne repassera pas.
+            # Usage unique.
             del en_attente[i]
             session['oauth_states'] = en_attente
             return True
 
-    # Aucune correspondance : on garde les states en attente intacts, mais on
-    # profite du passage pour évacuer les périmés.
+    # Aucune correspondance : on retire seulement les perimes.
     restants = [s for s in en_attente if s[1] > limite]
     if len(restants) != len(en_attente):
         session['oauth_states'] = restants
@@ -938,8 +714,7 @@ def discord_login():
 
     state = secrets.token_urlsafe(24)
     _deposer_state(state)
-    # L'invitation transite par la session, pas par le paramètre state : elle
-    # n'a pas à faire l'aller-retour par Discord ni à apparaître dans ses logs.
+    # L'invitation passe par la session, pas par Discord.
     invite_token = request.args.get('invite')
     if invite_token:
         session['invite_token'] = invite_token
@@ -949,21 +724,10 @@ def discord_login():
         'client_id': DISCORD_CLIENT_ID,
         'redirect_uri': _redirect_uri(),
         'response_type': 'code',
-        # identify seul : ni email, ni guilds.
         'scope': 'identify',
         'state': state,
-        # L'écran d'autorisation s'affiche à CHAQUE connexion, même pour qui a
-        # déjà autorisé le site : il dit avec quel compte Discord on entre
-        # (« Ce n'est pas vous ? »), ce qui compte avec plusieurs comptes ou
-        # sur un ordinateur partagé. Décidé le 2026-09-24, au prix d'un clic
-        # de plus par connexion.
-        #
-        # Jusque-là, `prompt=none` sautait l'écran pour qui avait déjà
-        # autorisé : Discord renvoyait aussitôt vers le site, sans laisser lire
-        # sa page. (Chez Discord, `none` retombe sur l'écran pour un premier
-        # consentement au lieu d'une erreur comme en OIDC : voir
-        # `discord-api-docs#6751`.) `consent` est la valeur par défaut de
-        # Discord ; l'écrire ne dépend pas de ce défaut.
+        # Ecran d'autorisation a chaque connexion : il montre avec quel compte
+        # Discord on entre.
         'prompt': 'consent',
     }
     return redirect(f"{DISCORD_AUTHORIZE_URL}?{urlencode(params)}")
@@ -974,16 +738,12 @@ def discord_callback():
     """Retour de Discord : vérifie le state, puis fait échanger le code."""
     erreur = request.args.get('error')
     if erreur:
-        # Cas normal : l'utilisateur a cliqué « Annuler ».
         flash("Connexion Discord annulée.", 'info')
         return redirect(url_for('index'))
 
     state = request.args.get('state')
     if not _consommer_state(state):
-        # Deux causes très différentes, autrefois confondues sous le même
-        # message accusateur. Les distinguer n'est pas cosmétique : le premier
-        # cas est fréquent et bénin (lien rouvert, retour arrière, connexion
-        # déjà terminée ailleurs), le second est le seul qui mérite un regard.
+        # State present mais inconnu (lien rouvert, retour arriere) ou absent.
         if state:
             flash("Cette demande de connexion a déjà servi ou a expiré. "
                   "Relancez la connexion.", 'info')
@@ -1003,7 +763,7 @@ def discord_callback():
         data={
             'code': code,
             'invite_token': invite_token,
-            # Même choix qu'à l'aller : Discord a renvoyé sur cet hôte-là.
+            # Meme URI qu'a l'aller.
             'redirect_uri': _redirect_uri(),
             'user_agent': request.headers.get('User-Agent', '')[:255],
         },
@@ -1013,8 +773,7 @@ def discord_callback():
     if status != 200 or not isinstance(data, dict) or 'session_token' not in data:
         code = data.get('code') if isinstance(data, dict) else None
         if code == 'invitation_requise':
-            # Cas normal : quelqu'un a cliqué « Se connecter » sans avoir de
-            # compte. Le bouton sert à revenir, pas à s'inscrire.
+            # Pas de compte : il faut une invitation.
             flash("Connexion non autorisée. "
                   "L'inscription se fait par lien d'invitation, demandez-en un "
                   "à un administrateur.", 'warning')
@@ -1023,16 +782,14 @@ def discord_callback():
             flash(message or "La connexion a échoué. Réessayez dans un instant.", 'danger')
         return redirect(url_for('index'))
 
-    # Seul un jeton opaque va en session : le cookie Flask est côté client et
-    # plafonné à 4 Ko, il n'a pas à porter le profil.
+    # Seul un jeton opaque va dans le cookie (limite de 4 Ko).
     session.permanent = True
     session['player_token'] = data['session_token']
     session['compte'] = data.get('compte')
 
     compte = data.get('compte') or {}
     if compte.get('cgu_a_accepter'):
-        # Compte antérieur à la politique, amorçage du superadmin, ou nouvelle
-        # version publiée depuis : rien d'autre ne s'ouvrira avant l'accord.
+        # Consentement a donner avant tout le reste.
         return redirect(url_for('consentement'))
     if compte.get('joueur_id'):
         flash(f"Connecté en tant que {compte.get('pseudo')}.", 'success')
@@ -1044,14 +801,8 @@ def discord_callback():
 
 @app.route('/logout', methods=['GET', 'POST'])
 def player_logout():
-    """Déconnexion joueur. Ne touche pas à la session admin (miroir de R-13).
-
-    POST seulement pour agir, avec le jeton CSRF que CSRFProtect exige de tout
-    POST (S-17, audit du 24/09). En GET, une balise <img src="/logout"> sur
-    n'importe quel site déconnectait le visiteur à son insu. Un GET (ancien
-    favori, lien recopié) ne fait plus que renvoyer à l'accueil, sans rien
-    fermer.
-    """
+    """Deconnexion joueur, en POST avec jeton CSRF. Un GET renvoie simplement
+    a l'accueil."""
     if request.method == 'GET':
         return redirect(url_for('index'))
     token = session.get('player_token')
@@ -1075,11 +826,7 @@ def player_logout():
 # ===========================================================================
 
 def player_headers():
-    """En-tête d'auth joueur, construit depuis la session serveur.
-
-    Le mettre dans le DOM recréerait la surface d'exfiltration qu'on vient de
-    retirer aux pages admin.
-    """
+    """En-tete d'auth joueur, construit depuis la session serveur."""
     token = session.get('player_token')
     return {'X-Session-Token': token} if token else None
 
@@ -1100,15 +847,12 @@ def mon_compte():
         flash('Service momentanément indisponible.', 'warning')
         return redirect(url_for('index'))
 
-    # Le miroir Discord peut avoir changé depuis la connexion : on rafraîchit
-    # la copie en session pour que la navbar reste juste.
+    # Rafraichit la copie du compte en session.
     session['compte'] = {
         'id': moi.get('id'), 'discord_id': moi.get('discord_id'),
         'pseudo': moi.get('pseudo'), 'avatar_url': moi.get('avatar_url'),
         'joueur_id': moi.get('joueur_id'), 'statut': moi.get('statut'),
         'role': moi.get('role'),
-        # Rafraîchies en même temps que le rôle : sans ça, un droit accordé
-        # aujourd'hui n'apparaîtrait dans les menus qu'à la prochaine connexion.
         'permissions': moi.get('permissions'),
         'cgu_a_accepter': moi.get('cgu_a_accepter'),
     }
@@ -1144,8 +888,7 @@ def mon_compte_liaison():
     )
 
 
-# Plus large que les 5 s des appels JSON : le backend peut avoir a telecharger
-# l'image chez Discord avant de repondre.
+# Le backend peut devoir telecharger l'image chez Discord.
 AVATAR_TIMEOUT = 10
 
 
@@ -1189,9 +932,7 @@ def proxy_avatar_compte(compte_id):
 
 @app.route('/discord/widget')
 def proxy_discord_widget():
-    """Widget Discord de l'accueil, relayé par le backend (qui le met en cache)
-    pour que Discord ne voie pas les visiteurs. Jamais d'erreur : des champs
-    nuls, et l'accueil affiche son repli."""
+    """Widget Discord de l'accueil, relaye par le backend. Jamais d'erreur."""
     data, status = backend_request('GET', '/discord/widget')
     if status != 200 or not isinstance(data, dict):
         data = {}
@@ -1201,8 +942,7 @@ def proxy_discord_widget():
 
 @app.route('/me/notifications', methods=['GET'])
 def proxy_mes_notifications():
-    """Appelée par la navbar à chaque page. Renvoie un compteur à zéro plutôt
-    qu'une erreur : la navbar reste muette au lieu de casser."""
+    """Notifications de la navbar ; compteur a zero en cas d'erreur."""
     headers = player_headers()
     if headers is None:
         return jsonify({'non_lues': 0, 'notifications': []})
@@ -1223,7 +963,7 @@ def proxy_notifications_lues():
 
 @app.route('/admin/notifications', methods=['GET'])
 def proxy_notifications_admin():
-    """Pastilles de la navbar admin. Même parti pris : jamais d'erreur."""
+    """Pastilles de la navbar admin ; jamais d'erreur."""
     headers = admin_headers()
     if headers is None:
         return jsonify({'total': 0, 'liaisons_en_attente': 0})
@@ -1235,8 +975,7 @@ def proxy_notifications_admin():
 
 @app.route('/auth/demande-creation', methods=['POST'])
 def proxy_demande_creation():
-    """Demande de création d'une fiche. Le nom vient du pseudo Discord, lu côté
-    backend : le navigateur ne le choisit pas."""
+    """Demande de creation d'une fiche (nom tire du pseudo Discord cote backend)."""
     headers = player_headers()
     if headers is None:
         return jsonify({'error': 'Non autorisé'}), 401
@@ -1262,21 +1001,14 @@ def proxy_demande_liaison():
     return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
 
 
-# Pas d'écran de réglages de profil : « Mon profil » mène à la fiche publique.
-# `GET/PUT /me/profil` existe encore côté backend, sans proxy ici — donc hors
-# d'atteinte, nginx ne servant le backend qu'à travers ce frontend.
-
-
 @app.route('/admin/comptes')
 def admin_comptes():
     if not _est_admin():
         flash('Accès réservé aux administrateurs', 'warning')
         return redirect(url_for('index'))
 
-    # La page héberge trois domaines, chacun sous sa permission : elle s'ouvre
-    # dès qu'on en a un, et chaque onglet est gaté séparément dans le gabarit.
-    # Sans ce garde, un admin qui n'en a aucun ouvrait une page vide en tapant
-    # l'URL -- la navbar, elle, masque déjà l'entrée dans ce cas.
+    # Page ouverte avec au moins une des trois permissions ; chaque onglet est
+    # gate dans le gabarit.
     if not ({'gestion_comptes', 'gestion_liaisons', 'gestion_invitations'}
             & _permissions_session()):
         flash("Vous n'avez pas accès à la gestion des comptes.", 'warning')
@@ -1286,21 +1018,17 @@ def admin_comptes():
         return _session_admin_expiree()
 
     compte = session.get('compte') or {}
-    # `role_admin` et `peut()` viennent du context processor ; `mon_compte_id`
-    # permet au JS de ne pas proposer à quelqu'un d'agir sur sa propre ligne
-    # (auto-modification et auto-legs sont refusés côté backend de toute façon).
+    # mon_compte_id : le JS ne propose pas d'agir sur sa propre ligne.
     return render_template(
         'admin_comptes.html',
         est_superadmin=(compte.get('role') == 'superadmin'),
         mon_compte_id=compte.get('id'),
-        # Le panneau de permissions affiche les sous-permissions en retrait sous
-        # leur parent, et les décoche avec lui.
+        # Sous-permissions affichees en retrait sous leur parent.
         sous_permissions=SOUS_PERMISSIONS,
     )
 
 
-# Proxies JSON de la page d'administration des comptes. Tous construisent
-# l'en-tête depuis la session : le JS n'a aucun jeton à porter.
+# Proxies JSON de la page Comptes (en-tete construit depuis la session).
 def _proxy_admin(method, endpoint, json_body=False):
     headers = admin_headers()
     if headers is None:
@@ -1346,10 +1074,7 @@ def proxy_role(compte_id):
     return _proxy_admin('POST', f'/admin/comptes/{compte_id}/role', json_body=True)
 
 
-# La promotion au rang d'admin passe désormais par une proposition que la
-# personne accepte elle-même (phase 1bis du journal d'audit). Ces deux routes
-# sont côté PROPOSANT ; l'acceptation vit sous /mon-compte, avec les autres
-# gestes du titulaire.
+# Propositions de promotion, cote proposant (l'acceptation est sous /mon-compte).
 @app.route('/admin/comptes/<int:compte_id>/promotion', methods=['POST'])
 def proxy_proposer_promotion(compte_id):
     return _proxy_admin('POST', f'/admin/comptes/{compte_id}/promotion', json_body=True)
@@ -1360,8 +1085,7 @@ def proxy_annuler_promotion(compte_id):
     return _proxy_admin('DELETE', f'/admin/comptes/{compte_id}/promotion')
 
 
-# Journal d'audit (phase 3). Trois proxys pour trois vues du meme filtre :
-# le volet d'une ligne, l'onglet complet, et l'export.
+# Journal d'audit : volet d'une ligne, onglet complet et export.
 @app.route('/admin/comptes/<int:compte_id>/audit')
 def proxy_journal_compte(compte_id):
     qs = request.query_string.decode()
@@ -1377,13 +1101,7 @@ def proxy_journal_complet():
 
 @app.route('/admin/audit/export')
 def proxy_journal_export():
-    """Relaie le CSV EN STREAMING, sans le matérialiser.
-
-    Contrairement aux autres proxys, celui-ci ne passe pas par
-    `backend_request` : cette fonction lit `response.json()`, ce qui chargerait
-    tout le fichier en mémoire côté frontend — exactement ce que le streaming
-    backend sert à éviter. On relaie le flux tel quel.
-    """
+    """Relaie le CSV en streaming (backend_request chargerait tout en memoire)."""
     headers = admin_headers()
     if headers is None:
         return jsonify({'error': 'Non autorisé'}), 401
@@ -1411,21 +1129,17 @@ def proxy_permissions(compte_id):
 @app.route('/admin/comptes/<int:compte_id>/permissions/<permission>',
            methods=['POST', 'DELETE'])
 def proxy_permission(compte_id, permission):
-    # La permission n'est pas validée ici : le backend la confronte au
-    # catalogue et au plafond de l'acteur. Filtrer aussi de ce côté donnerait
-    # deux listes à garder synchronisées, dont une sans autorité.
+    # Permission validee par le backend.
     return _proxy_admin(request.method,
                         f'/admin/comptes/{compte_id}/permissions/{permission}')
 
 
 @app.route('/admin/comptes/<int:compte_id>/leguer-superadmin', methods=['POST'])
 def proxy_leguer_superadmin(compte_id):
-    # Le corps porte la confirmation forte (pseudo Discord retapé) : elle doit
-    # traverser intacte, c'est elle qui distingue le geste voulu du clic.
+    # Le corps porte la confirmation (handle Discord retape).
     reponse, status = _proxy_admin('POST', f'/admin/comptes/{compte_id}/leguer-superadmin',
                                    json_body=True)
-    # L'ancien superadmin change de rôle lui aussi : le backend a fermé ses
-    # sessions, celle-ci comprise (A-02).
+    # Le backend a aussi ferme les sessions de l'ancien superadmin.
     if status == 200 and (reponse.get_json(silent=True) or {}).get('session_fermee'):
         _session_fermee_par_changement_de_role(
             "Rôle superadmin transmis. Changer de rôle ferme vos sessions sur tous "
@@ -1436,8 +1150,7 @@ def proxy_leguer_superadmin(compte_id):
 
 @app.route('/admin/comptes/<int:compte_id>', methods=['DELETE'])
 def proxy_supprimer_compte(compte_id):
-    # Même contrat que le legs : la confirmation forte (pseudo Discord retapé)
-    # voyage dans le corps, et doit traverser intacte.
+    # Le corps porte la confirmation (handle Discord retape).
     return _proxy_admin('DELETE', f'/admin/comptes/{compte_id}', json_body=True)
 
 
@@ -1471,13 +1184,7 @@ def proxy_invitation_revoquer(invitation_id):
 # ===========================================================================
 # API de service pour les bots Discord
 # ===========================================================================
-# nginx n'est pas sur le réseau `backend` : il ne proxifie que frontend:5000.
-# Aucune route /api/bot/* définie sur le backend n'est donc joignable depuis
-# internet sans ce relais. C'est le choix retenu — cohérent avec les routes
-# d'administration, et sans élargir la surface réseau exposée.
-#
-# Contrairement aux proxys admin, celui-ci ne construit AUCUN en-tête : le bot
-# porte son propre jeton, on se contente de le transmettre.
+# nginx ne joint que le frontend : ce relais transmet le jeton du bot tel quel.
 
 BOT_TIMEOUT = 10
 
@@ -1485,14 +1192,8 @@ BOT_TIMEOUT = 10
 @app.route('/api/bot/<path:chemin>', methods=['GET', 'POST'])
 @csrf.exempt
 def proxy_bot(chemin):
-    """Relais vers l'API de service du backend.
-
-    `csrf.exempt` n'est pas une facilité : la protection CSRF défend un
-    navigateur qui envoie automatiquement un cookie. Ici l'appelant est une
-    machine qui présente un jeton Bearer explicite — il n'y a pas de cookie à
-    détourner, et sans cette exemption tout POST de bot serait rejeté par
-    CSRFProtect avec un message qui ne parlerait de rien.
-    """
+    """Relais vers l'API de service du backend (exempte de CSRF : jeton Bearer,
+    pas de cookie)."""
     autorisation = request.headers.get('Authorization')
     if not autorisation:
         return jsonify({"error": "Authentification requise", "code": "auth_requise"}), 401
@@ -1520,9 +1221,7 @@ def proxy_bot(chemin):
 
 @app.route('/admin/matchmaking/generer', methods=['POST'])
 def proxy_matchmaking():
-    # Chemin distinct de la page /admin/matchmaking : Flask saurait les
-    # distinguer par la méthode, mais deux routes homonymes pour deux rôles
-    # différents est une confusion qu'on ne se doit pas.
+    # Chemin distinct de la page /admin/matchmaking.
     return _proxy_admin('POST', '/admin/matchmaking', json_body=True)
 
 
@@ -1553,11 +1252,8 @@ def mentions_legales():
 
 
 def _suite_sure(suite):
-    """Chemin local où revenir après l'acceptation, sinon l'accueil.
-
-    `suite` vient de l'URL : sans ce filtre, un lien piégé ferait rebondir
-    vers un autre site juste après un clic de confiance (redirection ouverte).
-    """
+    """Chemin local ou revenir apres l'acceptation, sinon l'accueil (evite une
+    redirection ouverte)."""
     if not suite or not suite.startswith('/') or suite.startswith('//') \
             or '\\' in suite or suite.startswith('/consentement'):
         return url_for('index')
@@ -1566,14 +1262,8 @@ def _suite_sure(suite):
 
 @app.route('/consentement', methods=['GET', 'POST'])
 def consentement():
-    """Page d'acceptation de la politique, imposée depuis le 2026-09-24 (A-07).
-
-    Jusque-là, un bandeau sur /mon-compte proposait d'accepter et rien n'était
-    bloqué. Désormais le backend refuse toute route (428) à une session dont le
-    consentement manque ou porte une version périmée ; cette page est l'endroit
-    où l'on atterrit. Trois issues : accepter, télécharger ses données (le droit
-    d'accès ne dépend pas de l'accord), ou se déconnecter.
-    """
+    """Page d'acceptation de la politique : accepter, telecharger ses donnees
+    ou se deconnecter."""
     suite = _suite_sure(request.values.get('suite'))
     headers = player_headers()
     compte = session.get('compte')
@@ -1600,12 +1290,7 @@ def consentement():
 
 @app.route('/mon-compte/promotion')
 def ma_promotion():
-    """Ce que le titulaire doit accepter : proposition de rôle, ou consentement.
-
-    Chargée en fetch depuis /mon-compte, comme la liste des appareils : la page
-    fait déjà plusieurs appels, et ce bloc n'existe que pour une minorité de
-    comptes.
-    """
+    """Ce que le titulaire doit accepter : proposition de role ou consentement."""
     headers = player_headers()
     if headers is None:
         return jsonify({'error': 'Non autorisé'}), 401
@@ -1614,17 +1299,8 @@ def ma_promotion():
 
 
 def _session_fermee_par_changement_de_role(message):
-    """Purge la session Discord du titulaire dont le rôle vient de changer.
-
-    Le backend ferme toutes les sessions d'un compte qui change de rôle, la
-    courante comprise (A-01/A-02) : la durée d'une session est figée à sa
-    création, sur le rôle du moment. Garder le jeton pointerait vers une session
-    détruite, et le navigateur le découvrirait par une erreur.
-
-    Le message est déposé AVANT la reconnexion Discord que la page relance : il
-    s'affiche au retour, à côté de « Connecté en tant que … ». Si la reconnexion
-    échoue, il reste juste — il ne promet pas qu'elle a eu lieu.
-    """
+    """Purge la session du titulaire dont le role vient de changer (le backend
+    a ferme ses sessions) et prepare le message affiche apres reconnexion."""
     session.pop('player_token', None)
     session.pop('compte', None)
     flash(message, 'info')
@@ -1632,12 +1308,7 @@ def _session_fermee_par_changement_de_role(message):
 
 @app.route('/mon-compte/promotion', methods=['POST'])
 def repondre_promotion():
-    """Accepte ou refuse le rôle proposé.
-
-    En cas d'acceptation, le backend ferme toutes les sessions du compte, celle
-    de cette requête comprise : c'est une session de joueur (30 jours), et un
-    admin n'en a que 12 heures. La page relance alors la connexion Discord.
-    """
+    """Accepte ou refuse le role propose (une acceptation ferme les sessions)."""
     headers = player_headers()
     if headers is None:
         return jsonify({'error': 'Non autorisé'}), 401
@@ -1670,12 +1341,7 @@ def accepter_cgu_admin():
 
 @app.route('/mon-compte/sessions')
 def mes_sessions():
-    """Liste les appareils connectés du titulaire.
-
-    Chargée en fetch depuis /mon-compte plutôt qu'au rendu : la page fait déjà
-    deux appels backend, un troisième synchrone ralentirait une page que tout
-    le monde visite pour un bloc que peu regardent.
-    """
+    """Liste les appareils connectes du titulaire."""
     headers = player_headers()
     if headers is None:
         return jsonify({'error': 'Non autorisé'}), 401
@@ -1685,12 +1351,7 @@ def mes_sessions():
 
 @app.route('/mon-compte/sessions/fermer', methods=['POST'])
 def fermer_mes_sessions():
-    """Ferme les autres sessions du titulaire.
-
-    En POST et non DELETE : CSRFProtect ne couvre que les méthodes mutantes
-    qu'il connaît, et le fetch envoie déjà X-CSRFToken comme les autres actions
-    de la page. Le backend, lui, expose bien un DELETE.
-    """
+    """Ferme les autres sessions du titulaire (POST, protege par CSRF)."""
     headers = player_headers()
     if headers is None:
         return jsonify({'error': 'Non autorisé'}), 401
@@ -1700,8 +1361,7 @@ def fermer_mes_sessions():
         'DELETE', '/auth/mes-sessions',
         data={'inclure_courante': inclure}, headers=headers,
     )
-    # La session serveur pointerait vers une session backend détruite, et le
-    # navigateur découvrirait le problème par une erreur.
+    # La session backend a ete fermee.
     if status == 200 and isinstance(data, dict) and data.get('session_fermee'):
         session.pop('player_token', None)
         session.pop('compte', None)
@@ -1710,11 +1370,7 @@ def fermer_mes_sessions():
 
 @app.route('/mon-compte/export')
 def exporter_mes_donnees():
-    """Télécharge l'export en JSON.
-
-    Passe par une route dédiée plutôt que par le proxy générique : le navigateur
-    doit recevoir un fichier, pas afficher du JSON dans l'onglet.
-    """
+    """Telecharge l'export en JSON, en piece jointe."""
     headers = player_headers()
     if headers is None:
         flash('Connectez-vous pour exporter vos données.', 'warning')
@@ -1734,16 +1390,9 @@ def exporter_mes_donnees():
     )
 
 
-# Plus de /mon-compte/supprimer depuis le 2026-09-22 : la suppression d'un compte
-# se demande par écrit et le superadmin l'exécute (proxy_supprimer_compte). Le
-# bouton de /mon-compte n'appelle plus rien, il affiche la marche à suivre.
-
-
 @app.route('/admin/joueurs/<int:joueur_id>/anonymiser', methods=['POST'])
 def proxy_anonymiser_joueur(joueur_id):
-    # Contrepartie du refus de suppression : celui-ci renvoie un 409 qui
-    # oriente vers l'anonymisation, et la politique de confidentialité la
-    # promet. Sans ce proxy, l'action était injoignable depuis l'interface.
+    # Alternative a la suppression d'une fiche ayant des matchs.
     return _proxy_admin('POST', f'/admin/joueurs/{joueur_id}/anonymiser', json_body=True)
 
 
@@ -1752,22 +1401,13 @@ def proxy_purge_rgpd():
     return _proxy_admin('POST', '/admin/purge-rgpd', json_body=True)
 
 
-# `/admin` (formulaire de mot de passe) et `/admin/logout` ont été supprimés le
-# 2026-09-23 avec l'étape 6 de la phase 4. L'administration n'a plus qu'une
-# entrée, `/auth/discord`, et qu'une sortie, la déconnexion Discord de
-# `/mon-compte` -- celle-ci ferme la session côté backend, ce que l'ancien
-# `/admin/logout` ne savait faire que pour le jeton par mot de passe.
-
-
 @app.route('/admin/tournois', methods=['GET', 'POST'])
 def admin_tournois():
     if not _est_admin():
         flash('Accès réservé aux administrateurs', 'warning')
         return redirect(url_for('index'))
 
-    # Permission propre depuis la scission du 2026-09-13 : sans ce garde, un
-    # admin qui n'a que « Fiches joueurs » ouvrirait un formulaire dont chaque
-    # enregistrement répondrait 403.
+    # Permission propre a l'ajout de tournoi.
     if 'gestion_tournois' not in _permissions_session():
         flash("Vous n'avez pas accès à l'enregistrement des tournois.", 'warning')
         return redirect(url_for('index'))
@@ -1811,9 +1451,7 @@ def admin_tournois():
     data, status = backend_request('GET', '/joueurs/noms')
     joueurs = data if status == 200 else []
 
-    # Liste des tournois, rendue côté serveur : /stats/tournois sert un template
-    # HTML, pas du JSON, elle n'est donc pas consommable en fetch. La charger ici
-    # évite d'ajouter un proxy JSON pour une donnée déjà publique.
+    # Liste des tournois rendue cote serveur (/stats/tournois sert du HTML).
     tournois_data, tournois_status = backend_request('GET', '/stats/tournois')
     tournois = tournois_data if tournois_status == 200 else []
 
@@ -1821,9 +1459,7 @@ def admin_tournois():
 
 @app.route('/admin/matchmaking', methods=['GET'])
 def matchmaking():
-    # Ouvert à tout le monde : la page ne fait que consulter la liste publique
-    # des joueurs (/joueurs/noms) et calcule les équipes côté client, aucune
-    # action admin n'est effectuée ici.
+    # Page publique : equipes calculees a partir de la liste publique des joueurs.
     return render_template("matchmaking.html")
 
 @app.route('/admin/revert_last', methods=['POST'])
@@ -1849,17 +1485,7 @@ def admin_joueurs_fiches():
         flash('Accès interdit.', 'danger')
         return redirect(url_for('index'))
 
-    # Même gate que les deux autres onglets. La navbar cachait déjà le lien
-    # derrière cette permission, mais un lien caché n'est pas un accès fermé :
-    # l'URL restait ouverte, et la page s'affichait pour finir sur
-    # « Chargement impossible. » au premier appel de données -- le backend
-    # répondant 403, correctement. Le droit n'a jamais manqué ; c'est le
-    # message qui manquait.
-    #
-    # `gestion_joueurs` n'ouvre que la LECTURE depuis la scission du
-    # 2026-09-17 : chaque geste exige sa sous-permission, revérifiée champ par
-    # champ côté backend. Gater la page sur ce droit-là est donc exact -- c'est
-    # celui qui autorise à regarder.
+    # gestion_joueurs donne la lecture ; chaque action a sa sous-permission.
     if 'gestion_joueurs' not in _permissions_session():
         flash("Vous n'avez pas accès aux fiches joueurs.", 'warning')
         return redirect(url_for('index'))
@@ -1871,13 +1497,7 @@ def admin_joueurs_fiches():
 
 @app.route('/admin/reglages')
 def admin_reglages():
-    """Réglage TS : configuration globale et reset du sigma.
-
-    Un seul droit depuis le 2026-09-13 : le reset global est devenu délégable
-    via gestion_config (contexte 8.5-D), il ne relève plus d'une capacité de
-    rôle. Le `or role_admin in (...)` d'avant n'a donc plus d'objet -- un
-    chef_admin porte gestion_config par construction, son socle EST le catalogue.
-    """
+    """Reglage TS : configuration globale et reset du sigma (gestion_config)."""
     if not _est_admin():
         flash('Accès interdit.', 'danger')
         return redirect(url_for('index'))
@@ -2019,7 +1639,7 @@ def proxy_tier_u():
     if not _est_admin():
         return jsonify({'error': 'Non autorisé'}), 403
     if request.method == 'GET':
-        # Lecture publique au backend : les pages publiques en ont besoin aussi.
+        # Lecture publique.
         data, status = backend_request('GET', '/tiers/unranked')
         return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
     return _proxy_admin('PUT', '/admin/tiers/unranked', json_body=True)
@@ -2099,17 +1719,9 @@ def admin_ligues_page():
     return render_template('admin_ligues.html')
 
 
-# CSP complète (S-15, audit du 24/09). Tout est servi par le site depuis le
-# 25/09 (librairies dans static/vendor/, widget Discord relayé) : aucune origine
-# externe à autoriser. 'unsafe-inline' reste obligatoire, les gabarits reposent
-# sur des onclick et des <script> dans la page. La CSP n'empêche donc pas un
-# code injecté de s'exécuter ; elle l'empêche de charger un script d'ailleurs
-# et d'envoyer des données hors du site. connect-src 'self' couvre le WebSocket
-# de la bannière (/ws/race, même hôte).
-#
-# Bloquante depuis le 26/09. Elle a d'abord tourné en Report-Only (25/09) :
-# aucune violation relevée dans la console en parcourant le site. Elle remplace
-# l'ancien en-tête partiel (img-src et frame-ancestors seuls).
+# Tout est servi par le site (librairies locales, widget Discord relaye).
+# 'unsafe-inline' reste necessaire pour les onclick et <script> des gabarits.
+# connect-src 'self' couvre le WebSocket de la banniere (/ws/race).
 CSP_COMPLETE = "; ".join([
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
@@ -2126,7 +1738,6 @@ CSP_COMPLETE = "; ".join([
 
 @app.after_request
 def add_header(response):
-    # Les avatars gardent le cache posé par _relayer_avatar.
     if not request.path.startswith('/avatar/'):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"

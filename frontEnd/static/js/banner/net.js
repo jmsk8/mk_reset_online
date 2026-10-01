@@ -1,28 +1,18 @@
-// La connexion au service `race` : ouverture, reprise, messages recus.
-//
-// Le protocole est decrit cote serveur, dans raceEngine/src/protocol.js. Regle
-// qui gouverne les deux cotes : le snapshot fait foi.
+// Connexion au service `race` : ouverture, reprise et messages recus (protocole
+// decrit dans raceEngine/src/protocol.js).
 
-// Un onglet cache depuis ce delai rend sa connexion. nginx limite les flux
-// simultanes par IP (`limit_conn ws_conn`), et un onglet oublie en arriere-plan
-// tenait sa place indefiniment : un foyer avec quelques onglets ouverts
-// suffisait a refuser la course a l'appareil suivant (27/09). Il comptait aussi
-// comme spectateur, ce qui bloquait le vote de redemarrage, a l'unanimite.
-// Declaree ici et non dans interpolate.js : pendant un deploiement, un
-// navigateur peut garder l'ancien interpolate.js en cache avec le nouveau net.js.
+// Un onglet cache depuis ce delai rend sa connexion (nginx limite les flux par
+// IP, et un onglet cache compterait comme spectateur au vote). Declaree ici et
+// non dans interpolate.js pour supporter un cache mixte pendant un deploiement.
 const HIDDEN_DISCONNECT_MS = 60000;
 
-// Le service compte les NAVIGATEURS, pas les connexions : deux onglets font un
-// spectateur, et une voix au vote de redemarrage. Il lui faut pour ca un
-// identifiant commun aux onglets, tire au hasard et garde dans le stockage
-// local. Il ne designe personne, et le service ne le garde que le temps de la
-// connexion (docs/banner/protocole.md). Mentionne dans la politique de
-// confidentialite : c'est le seul usage du stockage local sur le site.
+// Identifiant aleatoire du navigateur, commun a ses onglets (stockage local),
+// pour compter les spectateurs par navigateur. Seul usage du stockage local,
+// mentionne dans la politique de confidentialite.
 const NAV_STORAGE_KEY = 'mk-banner-nav';
 const NAV_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
-// null si le stockage est refuse (navigation privee stricte, donnees du site
-// bloquees) : chaque onglet compte alors pour un, comme avant.
+// null si le stockage est refuse : chaque onglet compte alors pour un.
 function navigatorId() {
     try {
         let id = localStorage.getItem(NAV_STORAGE_KEY);
@@ -51,14 +41,12 @@ const bannerNet = {
     reconnectTimer: null,
     pingTimer: null,
     rttSamples: [],
-    // Connexion rendue par un onglet reste cache trop longtemps : elle sera
-    // rouverte a son retour, pas avant.
+    // Connexion rendue par un onglet cache, rouverte a son retour.
     suspended: false,
     suspendTimer: null,
 
     url() {
-        // Jamais `wss://` en dur : en local le site est en clair, et l'erreur ne
-        // se verrait qu'a l'execution.
+    // Protocole selon la page (http en local).
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         return `${proto}//${location.host}/ws/race`;
     },
@@ -80,15 +68,12 @@ const bannerNet = {
         ws.onopen = () => {
             this.attempts = 0;
             this.rttSamples = [];
-            // Avant tout le reste : qui regarde, et si l'onglet est au premier
-            // plan. `vis` ne part pas tant que la connexion s'ouvre, et un
-            // onglet ouvert en arriere-plan passait donc pour visible.
+            // Envoye avant tout : identifiant et visibilite de l'onglet.
             const hi = { t: 'hi', hidden: this.hidden };
             const nav = navigatorId();
             if (nav) hi.nav = nav;
             this.send(hi);
-            // Trois mesures rapprochees : l'ecart d'horloge se stabilise en une
-            // seconde au lieu d'attendre le premier ping periodique.
+            // Trois mesures rapprochees pour stabiliser vite l'horloge.
             this.ping();
             setTimeout(() => this.ping(), 400);
             setTimeout(() => this.ping(), 1200);
@@ -113,8 +98,7 @@ const bannerNet = {
             return;
         }
 
-        // La voix de CE navigateur, posee ou retiree depuis n'importe lequel de
-        // ses onglets : le bouton suit le service, seul a tenir le compte.
+        // Voix de ce navigateur, posee depuis n'importe lequel de ses onglets.
         if (msg.t === 'vote') {
             myVote = !!msg.v;
             renderVote();
@@ -123,15 +107,12 @@ const bannerNet = {
 
         if (msg.t === 'hello') {
             if (msg.protocol !== PROTOCOL_VERSION) {
-                // Version incompatible : mieux vaut le decor seul qu'une scene
-                // interpretee de travers.
+                // Version incompatible : decor seul.
                 console.warn(`banner : protocole ${msg.protocol} non gere`);
                 this.giveUp();
                 return;
             }
-            // Course neuve alors qu'une autre etait a l'ecran : le rideau tombe
-            // d'abord, la scene n'est refaite qu'une fois qu'il est en bas.
-            // Sinon la nouvelle grille apparait derriere un rideau a mi-hauteur.
+            // Course neuve : la scene est refaite une fois le rideau baisse.
             if (isNewRace(msg) && this.ready) {
                 this.ready = false;
                 this.gotHello = false;
@@ -146,7 +127,7 @@ const bannerNet = {
                 return;
             }
 
-            // Retour apres coupure : la scene est deja vide, rien a cacher.
+            // Retour apres coupure : scene deja vide.
             if (this.wasOffline) {
                 this.wasOffline = false;
                 bannerLink.gates.stream = false;
@@ -159,18 +140,14 @@ const bannerNet = {
 
         if (msg.t === 's' && this.gotHello) {
             this.buffer.push(msg);
-            // Les evenements ne sont que des animations ponctuelles : les jouer
-            // sur une scene figee ferait bouger le classement d'une course
-            // arretee. Les rater est sans consequence — reconcileDom() rebatit
-            // tout depuis l'etat a la reprise.
+            // Pas d'evenements pendant la pause (reconcileDom() rebatit tout a
+            // la reprise).
             if (msg.ev && !racePaused) for (const ev of msg.ev) applyEvent(ev);
 
             const cutoff = getGameTime() - BUFFER_KEEP_MS;
             while (this.buffer.length > 2 && this.buffer[0].ts < cutoff) this.buffer.shift();
 
-            // Le rideau ne se leve qu'avec deux snapshots en main : avec un
-            // seul, l'interpolation demarre a vide et la premiere seconde
-            // saccade.
+            // Le rideau se leve avec deux snapshots en tampon.
             if (!this.ready && this.buffer.length >= 2) {
                 this.ready = true;
                 bannerLink.setStatus('online');
@@ -185,14 +162,11 @@ const bannerNet = {
         this.gotHello = true;
         buildWorldFromHello(msg);
         this.buffer.push(msg.snapshot);
-        // Le service ne garde pas trace du kart suivi d'une connexion a l'autre.
-        // Sans ce rappel, la carte de debug se vidait apres chaque reconnexion
-        // et apres chaque course neuve, sans que rien ne le dise.
+        // Le service oublie le kart suivi a chaque connexion.
         requestVision();
     },
 
-    // Renvoie false si le lien est coupe : l'appelant garde alors son etat
-    // inchange plutot que d'afficher une action qui n'est jamais partie.
+    // Renvoie false si le lien est coupe.
     send(msg) {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false;
         this.ws.send(JSON.stringify(msg));
@@ -203,8 +177,7 @@ const bannerNet = {
         this.send({ t: 'ping', c: Date.now() });
     },
 
-    // On garde la meilleure mesure plutot que la moyenne : un aller-retour
-    // rapide est forcement moins deforme par les files d'attente qu'un lent.
+    // Garde la meilleure mesure (aller-retour le plus court).
     onPong(msg) {
         const now = Date.now();
         const rtt = now - msg.c;
@@ -213,12 +186,8 @@ const bannerNet = {
         this.rttSamples.push({ rtt: rtt, offset: offset, at: now });
         bannerLink.setPing(rtt);
 
-        // Une mesure vieille de plusieurs minutes decrit peut-etre une horloge
-        // qui n'existe plus : un appareil qui sort de veille resynchronise
-        // souvent la sienne sur le reseau. La garder reviendrait a laisser son
-        // faible aller-retour l'emporter indefiniment, et le rendu resterait
-        // cale sur l'ancienne heure — une course coherente, mais decalee de
-        // celle que tout le monde regarde.
+        // Les mesures trop anciennes sont ecartees (horloge locale
+        // resynchronisee apres une mise en veille).
         this.rttSamples = this.rttSamples
             .filter(sample => now - sample.at < CLOCK_SAMPLE_TTL_MS)
             .slice(-8);
@@ -228,10 +197,7 @@ const bannerNet = {
 
         targetClockOffset = best.offset;
 
-        // Premiere mesure : on se cale d'un coup, il n'y a encore rien a
-        // secouer. Les elements deja crees portent en revanche une phase
-        // d'animation calee sur l'heure locale, donc fausse : c'est le seul
-        // moment ou il faut les reprendre.
+        // Premiere mesure : calage immediat et realignement des animations.
         if (!clockCalibrated) {
             clockCalibrated = true;
             serverClockOffset = targetClockOffset;
@@ -253,11 +219,8 @@ const bannerNet = {
         }
 
         if (!hidden) {
-            // L'horloge locale a pu etre resynchronisee pendant la mise en
-            // veille, et le tampon est de toute facon perime. On repart de zero
-            // sur l'estimation : la prochaine mesure sera adoptee telle quelle
-            // au lieu d'etre rejointe en douceur, puisqu'il ne s'agit pas d'une
-            // derive mais d'un saut.
+            // Retour de veille : mesures oubliees, la prochaine est adoptee
+            // telle quelle.
             this.rttSamples = [];
             clockCalibrated = false;
         }
@@ -267,9 +230,7 @@ const bannerNet = {
         }
 
         if (!hidden) {
-            // Connexion rendue pendant l'absence : on la rouvre, et le `hello`
-            // qui suit refait la scene comme a une premiere visite. Les trois
-            // pings partent a l'ouverture (`connect`).
+            // Connexion rendue pendant l'absence : on la rouvre.
             if (this.suspended) {
                 this.suspended = false;
                 this.attempts = 0;
@@ -282,15 +243,13 @@ const bannerNet = {
         }
     },
 
-    // Rend la connexion d'un onglet cache (voir HIDDEN_DISCONNECT_MS). Rien n'est
-    // relance ici : c'est le retour de l'onglet qui rouvre, dans setHidden().
+    // Rend la connexion d'un onglet cache (rouverte dans setHidden()).
     suspend() {
         this.suspendTimer = null;
         if (!this.hidden || this.suspended) return;
         this.suspended = true;
 
-        // Y compris une reprise en attente : un onglet cache n'a pas a
-        // reessayer en boucle une connexion que personne ne regarde.
+        // Annule aussi une reprise en attente.
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
@@ -313,15 +272,10 @@ const bannerNet = {
             this.pingTimer = null;
         }
 
-        // Le serveur oublie la voix avec la connexion : le bouton ne doit pas
-        // l'afficher encore au retour. Si un autre onglet de ce navigateur la
-        // tient toujours, le service la renverra au `hi` de la reconnexion.
+        // Le serveur oublie la voix avec la connexion.
         myVote = false;
 
-        // La scene sera refaite depuis le `hello` au retour. On la vide et on
-        // baisse le rideau des maintenant, pendant que personne ne regarde : il
-        // se relevera sur deux snapshots, comme a la premiere visite, au lieu de
-        // montrer une course figee depuis le depart de l'onglet.
+        // Scene videe et rideau baisse : elle sera refaite depuis le `hello`.
         bannerLink.gates.stream = false;
         bannerLink.lowerCurtain();
         bannerLink.setStatus('connecting');
@@ -353,8 +307,7 @@ const bannerNet = {
         this.reconnectTimer = setTimeout(() => this.connect(), delay);
     },
 
-    // Abandon definitif : protocole incompatible. Reessayer ne servirait qu'a
-    // tenir une connexion inutile ouverte.
+    // Abandon definitif (protocole incompatible).
     giveUp() {
         this.wasOffline = true;
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -364,7 +317,6 @@ const bannerNet = {
         clearScene();
     },
 
-    // Choisit les deux snapshots qui encadrent l'instant a afficher.
     frameFor(renderTime) {
         const buffer = this.buffer;
         if (buffer.length === 0) return null;
@@ -378,8 +330,7 @@ const bannerNet = {
             }
         }
 
-        // Hors tampon : soit le reseau a decroche et on affiche le dernier etat
-        // connu, soit l'horloge est en retard et on affiche le plus ancien.
+        // Hors tampon : dernier etat connu, ou plus ancien si l'horloge est en retard.
         const last = buffer[buffer.length - 1];
         if (renderTime > last.ts) return { a: last, b: null, t: 0 };
         return { a: buffer[0], b: null, t: 0 };

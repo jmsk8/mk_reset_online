@@ -1,11 +1,7 @@
-// Ecriture et lecture JSON, reduites a ce que le protocole echange.
+// Ecriture et lecture JSON, limitees a ce que le protocole echange.
 //
-// Ecriture : un tampon et quelques primitives, pas de DOM intermediaire — le
-// snapshot part dix fois par seconde a chaque spectateur, le construire en
-// arbre pour le serialiser ensuite serait deux fois le travail.
-//
-// Lecture : les QUATRE messages clients, et rien d'autre. Un flux de lecture n'a
-// aucune raison legitime de recevoir autre chose (plan §5.3).
+// Ecriture dans un tampon, sans DOM intermediaire. Lecture des seuls messages
+// clients.
 
 #pragma once
 
@@ -23,8 +19,7 @@ public:
     void begin_array();
     void end_array();
 
-    // Une cle, suivie de sa valeur. `key` doit etre un litteral ASCII : le
-    // protocole n'a pas de cle dynamique.
+    // `key` doit etre un litteral ASCII.
     void key(std::string_view k);
 
     void number(double v);
@@ -33,7 +28,7 @@ public:
     void boolean(bool v);
     void null();
 
-    // Un element de tableau, sans cle.
+    // Element de tableau, sans cle.
     void raw(std::string_view v);
 
     const std::string& str() const { return buffer_; }
@@ -41,9 +36,7 @@ public:
 
 private:
     void separate();
-    // Ecrit l'entier sans poser de separateur : `number()` s'en sert apres
-    // avoir deja appele `separate()`, et le faire deux fois insererait une
-    // virgule au milieu d'une valeur.
+    // Sans separateur : `number()` l'appelle apres `separate()`.
     void integer_no_sep(long long v);
 
     std::string buffer_;
@@ -52,7 +45,7 @@ private:
 
 // ── Lecture ─────────────────────────────────────────────────────────────────
 
-// Ce que le client peut envoyer. Tout le reste est ignore en silence.
+// Messages acceptes ; le reste est ignore.
 enum class ClientMessageType {
     Unknown,
     Hi,
@@ -65,28 +58,24 @@ enum class ClientMessageType {
 struct ClientMessage {
     ClientMessageType type = ClientMessageType::Unknown;
 
-    // `ping` : renvoye TEL QUEL dans le `pong`. C'est le client qui l'a ecrit,
-    // il ne se relit pas comme un nombre — un horodatage peut deborder.
+    // `ping` : renvoye tel quel dans le `pong` (non converti en nombre, pour
+    // ne pas deborder).
     std::string pingToken;
 
-    // `watch` : l'id demande. `hasId` faux vaut « rends-moi le flux commun ».
-    // A ne surtout pas passer par une conversion qui rendrait 0 — soit le kart
-    // 0, donc l'inverse exact de ce qui est demande.
+    // `watch` : `hasId` faux = flux commun (ne pas le confondre avec le kart 0).
     bool hasId = false;
     long long watchId = 0;
 
     // `vis` et `hi`
     bool hidden = false;
 
-    // `hi` : l'identifiant du navigateur, tire au hasard cote client. Vide s'il
-    // est absent ou hors de [A-Za-z0-9_-]{16,64} : la connexion compte alors
-    // pour elle seule.
+    // `hi` : identifiant du navigateur. Vide s'il est absent ou hors de
+    // [A-Za-z0-9_-]{16,64}.
     std::string nav;
 };
 
-// Analyse un message client. Rend `Unknown` sur tout ce qui n'est pas l'un des
-// cinq — y compris un JSON invalide, qui n'a pas a etre signale : ce serait
-// repondre a une tentative.
+// Analyse un message client. Rend `Unknown` pour tout le reste, JSON invalide
+// compris.
 ClientMessage parse_client_message(std::string_view payload);
 
 } // namespace json

@@ -125,8 +125,7 @@ def main():
             rng.shuffle(pool)
             pool = pool[:12]
 
-            # Reference de l'IP v2 : la grille est figee telle qu'elle est
-            # avant que le tournoi du jour ne fasse bouger le moindre mu.
+            # Reference de l'IP v2 : grille figee avant le tournoi du jour.
             grid_stats = current_tier_stats(ratings, played)
             for n in available:
                 r = ratings[n]
@@ -283,8 +282,7 @@ def main():
                 continue
             seen.add((jid, code))
             aid += 1
-            # created_at explicite : sans ça le DEFAULT now() rendrait chaque
-            # régénération différente, et le dump versionné bougerait pour rien.
+            # created_at explicite pour que le dump généré reste stable.
             award_rows.append(
                 "INSERT INTO public.awards_obtenus "
                 "(id, joueur_id, saison_id, award_id, valeur, is_league_award, ligue_id, "

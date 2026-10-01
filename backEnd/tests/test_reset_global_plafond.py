@@ -1,23 +1,5 @@
-"""Reset global du sigma : le plafond borne l'ajout, joueur par joueur.
-
-Avant, le reset faisait « UPDATE Joueurs SET sigma = sigma + val » sans WHERE :
-tout le monde prenait la meme valeur, sans limite haute. L'admin fournit
-desormais un plafond, et deux regles en decoulent :
-
-  - un joueur SOUS le plafond y est amene sans le depasser
-    (1.8 + 0.3 plafonne a 2 -> 2.0, pas 2.1) ;
-  - un joueur DEJA au plafond ou au-dessus n'est pas touche, et ne laisse
-    aucune trace.
-
-Consequence sur l'annulation : les joueurs ecretes n'ont pas recu `val`, donc un
-revert uniforme « sigma - val » les ferait descendre SOUS leur point de depart.
-Le detail par joueur (global_reset_details) existe pour cela, et ce fichier
-verifie que le revert restaure bien old_sigma -- tout en gardant l'ancien
-comportement pour les resets anterieurs a la migration, qui n'ont pas de detail.
-
-Limite du banc d'essai : le curseur est scripte, le SQL n'est pas valide contre
-Postgres. Ce qui est verifie ici, c'est QUI est touche et avec quelles valeurs.
-"""
+"""Reset global du sigma : le plafond borne l'ajout joueur par joueur, et
+l'annulation retire ce que chacun a recu."""
 from harness import *
 from datetime import date
 from flask import Flask
@@ -33,12 +15,7 @@ RESET_CREE = (r"INSERT INTO global_resets", (42,))
 
 
 def monter(plan, role='chef_admin'):
-    """Monte routes_admin sur un curseur scripte, avec execute_values capture.
-
-    Le harness neutralise psycopg2 : execute_values n'existe pas. On l'installe
-    ici pour enregistrer les lots ecrits -- c'est exactement la donnee que ces
-    tests inspectent (quel joueur recoit quel sigma).
-    """
+    """Monte routes_admin sur un curseur scripte, en capturant execute_values."""
     cur, conn = install_db(list(plan) + [SESSION(role)])
     recharger()
     for m in ('routes_admin', 'cache', 'services'):
@@ -78,9 +55,8 @@ def sql_execute(cur):
 
 print("\n=== apply : le plafond ecrete, et exclut ceux qui sont deja au-dessus ===")
 
-# 10 est loin du plafond -> prend la valeur pleine (1.0 + 0.3 = 1.3)
-# 20 est juste sous le plafond -> ecrete (1.8 + 0.3 -> 2.0, pas 2.1)
-# Les joueurs a 2.0 ou plus ne sont pas dans cette liste : le SELECT les exclut.
+# 10 : loin du plafond, 1.0 + 0.3 = 1.3 ; 20 : ecrete, 1.8 + 0.3 -> 2.0.
+# Les joueurs deja au plafond sont exclus par le SELECT.
 cli, cur, conn, lots = monter([
     PAS_DE_TOURNOI_APRES,
     (r"SELECT id, sigma FROM Joueurs WHERE sigma <", [(10, 1.0), (20, 1.8)]),
@@ -158,10 +134,7 @@ check("aucun joueur n'est meme selectionne",
 
 print("\n=== revert : retire ce que chacun a recu, y compris les joueurs ecretes ===")
 
-# Le joueur 20 avait ete ecrete (1.8 -> 2.0, soit +0.2). Un revert uniforme de
-# value_applied (0.3) le mettrait a 1.7 : c'est precisement ce qu'on evite.
-# Depuis le 27/09 on retire delta_applied au lieu de restaurer old_sigma : un
-# sigma edite a la main depuis le reset n'est plus ecrase.
+# Le joueur 20 a recu +0.2 (ecrete) : on retire delta_applied, pas value_applied.
 cli, cur, conn, lots = monter([
     (r"SELECT id, value_applied, date FROM global_resets", (42, 0.3, '2026-09-20')),
     (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (0,)),
@@ -239,8 +212,7 @@ check("diffusee a tous, sauf les suspendus",
           for s, _ in cur.executed),
       [s for s, _ in cur.executed if 'notifications' in s])
 
-# Aucun joueur concerne : le reset est refuse, donc rien ne doit partir --
-# annoncer un reset qui n'a pas eu lieu serait pire que se taire.
+# Aucun joueur concerne : reset refuse, aucune notification.
 cli, cur, conn, lots = monter([
     PAS_DE_TOURNOI_APRES,
     (r"SELECT id, sigma FROM Joueurs WHERE sigma <", []),
@@ -265,8 +237,7 @@ check("type = reset_global_annule", n and n[0] == 'reset_global_annule', n)
 check("elle mene au classement", n and n[3] == '/classement', n and n[3])
 check("elle date le reset annule", n and '20/09/2026' in (n[2] or ''), n and n[2])
 
-# Un reset anterieur au plafond peut rendre sa date en chaine : la
-# notification ne doit pas faire echouer l'annulation pour autant.
+# Une date en chaine ne doit pas faire echouer l'annulation.
 cli, cur, conn, lots = monter([
     (r"SELECT id, value_applied, date FROM global_resets", (7, 0.3, '2026-08-01')),
     (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (0,)),
@@ -277,7 +248,6 @@ check("date en chaine : l'annulation passe quand meme", r.status_code == 200,
       r.get_data(as_text=True))
 check("et la notification part", notif(cur) is not None, notif(cur))
 
-# Refus : rien ne doit partir non plus.
 cli, cur, conn, lots = monter([
     (r"SELECT id, value_applied, date FROM global_resets", (42, 0.3, date(2026, 9, 20))),
     (r"SELECT COUNT\(\*\) FROM Tournois WHERE date >= ", (2,)),

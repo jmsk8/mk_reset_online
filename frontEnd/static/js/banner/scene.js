@@ -1,14 +1,10 @@
-// La scene : la batir au demarrage, l'effacer, la rebatir sur un `hello`.
-//
-// Un spectateur qui arrive en pleine course doit obtenir une scene complete a
-// partir du seul `hello` — c'est la regle qui gouverne le protocole, et c'est
-// ici qu'elle se paie.
+// Construction de la scene au demarrage et reconstruction complete sur `hello`
+// (un arrivant en pleine course doit obtenir une scene complete).
 
-// A tenir en phase avec la transition de .is-down dans banner.css.
+// Suit la transition de .is-down (banner.css).
 const CURTAIN_FALL_MS = 700;
 
-// Duree minimale du rideau baisse, descente comprise : sans plancher, il
-// repartirait vers le haut avant d'avoir fini de tomber.
+// Duree minimale du rideau baisse, descente comprise.
 const CURTAIN_MIN_MS = 1400;
 
 // laps/2 a 4 existent dans les assets mais ne sont pas affiches.
@@ -18,34 +14,25 @@ const LAKITU_SPRITES = [
     ['finish', 1], ['finish', 2], ['finish', 3]
 ];
 
-// Hauteur du sprite de Lakitu et sa position au-dessus de la route.
+// Hauteur du sprite de Lakitu.
 const LAKITU_HEIGHT = 120;
 const LAKITU_BOTTOM = 32;
-// Periode du flottement de Lakitu (depart et dernier tour). Miroir de `lakituFloat` dans
-// banner.css : les deux doivent bouger ensemble.
+// Periode du flottement de Lakitu, identique a `lakituFloat` (banner.css).
 const LAKITU_FLOAT_MS = 1800;
 
-// Periode du damier rouge/blanc de la bordure de route, en unites monde : la
-// bande se repete tous les 80px (repeating-linear-gradient, banner.css).
+// Periode du motif de la bordure de route (80 px dans banner.css).
 const ROAD_PATTERN_WIDTH = 80;
 
-// Les animations CSS decoratives sont calees sur l'horloge du serveur via un
-// animation-delay negatif : deux navigateurs qui creent le meme element a des
-// instants differents jouent malgre tout la meme phase. Sans ca, l'arc-en-ciel
-// de l'etoile differerait d'un spectateur a l'autre. (Le cahot des karts n'en
-// est plus : il se calcule en JS a chaque image, cf. kartBounceY.)
-// `prop` sert aux animations portees par un pseudo-element, qui n'accepte aucun
-// style inline : la phase se pose alors en variable CSS sur le parent, que la
-// regle lit dans son `animation-delay`.
+// Cale une animation CSS decorative sur l'horloge du serveur (animation-delay
+// negatif) pour que tous les spectateurs voient la meme phase. `prop` : pour
+// un pseudo-element, la phase est posee en variable CSS sur le parent.
 function alignAnimationPhase(el, cycleMs, prop) {
     const delay = `${-(getGameTime() % cycleMs)}ms`;
     if (prop) el.style.setProperty(prop, delay);
     else el.style.animationDelay = delay;
 }
 
-// Les elements crees avant que l'horloge du serveur ne soit connue portent une
-// phase calee sur l'heure locale, donc fausse. Elle ne se corrigerait jamais
-// d'elle-meme : un sprite garde son animation-delay tant qu'il existe.
+// Recale les elements crees avant que l'horloge du serveur soit connue.
 function realignAnimations() {
     for (const id in kartEls) alignAnimationPhase(kartEls[id].img, 300);
     for (const id in ppEls) {
@@ -74,9 +61,9 @@ function initScene() {
 
     const sunEl = document.querySelector('.layer-sun');
     if (sunEl) {
-        // sunGlow, 2,4 s. Portee par `.layer-sun::after`, d'ou la variable.
+        // sunGlow, 2,4 s (sur `.layer-sun::after`, d'ou la variable).
         alignAnimationPhase(sunEl, 2400, '--sun-phase');
-        // Solidaire du fond (bgCameraX), pas de la route.
+        // Solidaire du fond (bgCameraX).
         worldState.sun = { element: sunEl, worldX: WORLD.sunX };
     }
 
@@ -84,23 +71,18 @@ function initScene() {
     cachedFg = document.querySelector('.layer-scrolling-fg');
     cachedGround = document.querySelector('.layer-ground');
     const _bannerElSeason = document.getElementById('bannerSection');
-    // Les saisons a premier plan ont un fond lointain, qui defile moitie moins vite.
+    // Fond lointain a mi-vitesse pour les saisons avec premier plan.
     const _season = _bannerElSeason && _bannerElSeason.dataset.season;
     cachedHasParallaxBg = _season === 'summer' || _season === 'autumn';
-    // Le second plan n'existe qu'en automne : ailleurs il reste masque, et on ne
-    // le fait pas defiler pour rien.
+    // Second plan en automne seulement.
     cachedMid = _season === 'autumn' ? document.querySelector('.layer-scrolling-mid') : null;
 
     if (GAME_CONFIG.debugMode) initDebugHUD();
 }
 
-// Vide la scene sans toucher au decor : c'est ce qu'on affiche quand le serveur
-// est injoignable. Pas de course locale, pas de karts fantomes fige a l'ecran —
-// le bandeau continue simplement de defiler.
+// Vide la scene sans toucher au decor (serveur injoignable).
 function clearScene() {
-    // On efface la scene que le gel tenait a l'ecran : la garder figee sur une
-    // piste vide n'aurait plus rien a montrer, et le clic de reprise arriverait
-    // sur une image morte. Le lien coupe leve donc la pause de lui-meme.
+    // La pause est levee : rien ne reste a montrer.
     if (racePaused) {
         racePaused = false;
         renderPause();
@@ -120,25 +102,18 @@ function clearScene() {
     renderGrandPrix();
 }
 
-// Date de depart de la course en cours. Un `hello` peut arriver pour deux
-// raisons tres differentes : une simple reprise (retour d'onglet, reconnexion),
-// ou une course entierement neuve — redemarrage manuel, ou relance apres un
-// arret faute de spectateurs. Seul `t0` les distingue.
+// Date de depart de la course en cours : distingue une simple reprise d'une
+// course neuve.
 let currentRaceT0 = null;
 
-// Une course neuve retire les personnages au sort et remet les identifiants
-// d'objets a 1. Les elements DOM sont indexes par identifiant et leur sprite
-// n'est pose qu'a la creation : sans ce menage, le kart 3 garderait le visage
-// du personnage precedent. La reconciliation ne verrait rien a corriger, les
-// identifiants n'ayant pas bouge.
+// Course neuve : les elements DOM sont recrees (personnages et ids d'objets
+// changent).
 function wipeSceneElements() {
     focusedKartId = null;
     lastFocusCameraX = null;
-    // Le depart se regarde de nouveau en plan large, et l'historique des plans
-    // ne vaut plus rien : les personnages ont ete retires au sort.
+    // Nouveau depart en plan large.
     raceDirector.reset();
-    // Le cartouche mesure une vitesse par ecarts de distance : son repere ne
-    // vaut plus rien quand les compteurs repartent de zero.
+    // Le repere de vitesse du cartouche n'est plus valable.
     resetFocusHud();
 
     if (lakituEls) {
@@ -167,8 +142,7 @@ function isNewRace(hello) {
     return hello.t0 !== currentRaceT0;
 }
 
-// Construit la scene a partir du `hello`. Rien n'est invente ici : identites,
-// geometrie du monde et etat courant viennent tous du serveur.
+// Construit la scene a partir du `hello`.
 function buildWorldFromHello(hello) {
     WORLD = hello.world;
 
@@ -178,11 +152,7 @@ function buildWorldFromHello(hello) {
     worldState.karts = hello.karts.map(entry => ({
         id: entry.id,
         charName: entry.char,
-        // Son gabarit, tire de son sprite par le serveur : `body.x`/`body.y`
-        // sont sa demi-emprise reelle — ce que la carte de debug dessine — et
-        // `body.scale` le rapport de son dessin a celui du kart de reference.
-        // Un serveur qui ne l'enverrait pas laisse le repli commun prendre le
-        // relais, et tous les karts retrouvent la meme longueur.
+        // Gabarit du kart (demi-emprise et echelle du dessin), ou repli commun.
         body: entry.body || null,
         worldX: 0,
         yPercent: WORLD.roadMinY,
@@ -201,7 +171,7 @@ function buildWorldFromHello(hello) {
     setLeaderboardSlots(worldState.karts.length);
 
     worldState.itemBoxes = hello.boxes.map(box => ({ worldX: box.x, y: box.y, active: true }));
-    // Un circuit sans obstacle n'envoie pas de liste : elle vaut alors vide.
+    // Pas de liste sans obstacle.
     worldState.pipes = (hello.pipes || []).map(pipe => ({
         worldX: pipe.x, y: pipe.y, kind: pipe.kind || 'green'
     }));
@@ -214,10 +184,6 @@ function buildWorldFromHello(hello) {
     domDirty = true;
     reconcileDom();
 
-    // La carte de debug se rebatit ICI, et pas seulement au demarrage :
-    // `initScene` tourne avant que la connexion ne parte, quand il n'y a ni kart,
-    // ni boite, ni tuyau. Une course neuve change les tuyaux et les boites — la
-    // reconstruire a chaque `hello` est aussi ce qui la garde juste d'un circuit
-    // a l'autre.
+    // Carte de debug reconstruite a chaque `hello` (tuyaux et boites changent).
     if (GAME_CONFIG.debugMode) initDebugHUD();
 }

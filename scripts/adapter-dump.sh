@@ -1,29 +1,13 @@
 #!/usr/bin/env bash
 # Usage: ./scripts/adapter-dump.sh <dump-source> [dump-sortie]
 #
-# Amene un dump de production au schema courant du code, en lui appliquant les
-# migrations de backEnd/migrations/ dans l'ordre chronologique.
+# Amene un dump de production au schema courant en lui appliquant les
+# migrations de backEnd/migrations/ dans l'ordre chronologique (migrations
+# idempotentes). Le dump est charge dans une base temporaire, detruite en
+# sortant ; ni la base de developpement ni la prod ne sont touchees.
 #
-# POURQUOI CE SCRIPT EXISTE
-# La prod n'a recu AUCUNE migration depuis le 2026-09-02 (cf
-# docs/auth-discord-avancement.md, « Ce qui bloque le deploiement »). Un dump
-# qui en vient porte donc des donnees recentes sur un schema ancien : il lui
-# manque les 11 tables de l'auth Discord, de la hierarchie admin, des
-# notifications et des tiers dynamiques.
-#
-# Editer un tel dump a la main serait une faute : ce ne serait ni reproductible,
-# ni documente, ni rejouable sur la prod le jour du deploiement. On le charge
-# donc dans une base jetable, on applique les migrations -- ecrites en CREATE
-# TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS, donc idempotentes -- et on
-# redumpe. La sequence appliquee ici est exactement celle a rejouer en prod.
-#
-# CE QUE CE SCRIPT NE FAIT PAS
-# Il ne touche NI a la base de developpement en cours, NI a la prod. Il travaille
-# dans une base temporaire portant un nom dedie, et la detruit en sortant.
-#
-# Par defaut la sortie est ecrite HORS du depot (dumps/ contient deja des donnees
-# reelles dans un depot public, cf docs) : passer un chemin explicite pour
-# choisir l'emplacement.
+# Par defaut la sortie est ecrite hors du depot ; passer un chemin pour la
+# placer ailleurs.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,8 +37,7 @@ fi
 BASE="$(basename "${SRC%.sql}")"
 OUT="${2:-${TMPDIR:-/tmp}/${BASE}_migre.sql}"
 
-# Base jetable : un nom dedie, pour qu'aucune confusion avec la base de travail
-# ne soit possible meme si le script est interrompu.
+# Base temporaire au nom dedie, distincte de la base de travail.
 TMPDB="adapter_dump_$$"
 
 if ! docker compose ps --status running --services 2>/dev/null | grep -qx db; then
@@ -83,8 +66,7 @@ nettoyer
 docker compose exec -T db sh -c \
   "psql -q -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d postgres -c 'CREATE DATABASE $TMPDB;'"
 
-# Le dump de pg_dump 17 ouvre sur \restrict, une directive que psql accepte mais
-# qui verrouille la session : on la retire, comme le ferait pg_restore.
+# pg_dump 17 ajoute \restrict, qui verrouille la session psql : on le retire.
 sed -e '/^\\restrict /d' -e '/^\\unrestrict /d' "$SRC" \
   | docker compose exec -T db sh -c "psql -q -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d $TMPDB" \
   > /dev/null
@@ -95,9 +77,8 @@ avant_p=$(psql_tmp -tAc "'SELECT count(*) FROM participations'" | tr -d '[:space
 info "    charge : $avant_j joueurs, $avant_t tournois, $avant_p participations"
 
 # ── 2. Appliquer les migrations ─────────────────────────────────────────────
-# Ordre chronologique par nom de fichier : c'est la convention du projet, et
-# elle porte les dependances reelles (auth_discord cree `comptes`, dont
-# hierarchie_admin et liaison_creation_joueur ont besoin).
+# Ordre chronologique par nom de fichier (auth_discord cree `comptes`, requis
+# par hierarchie_admin et liaison_creation_joueur).
 echo
 info "2/4 Application des migrations…"
 ERRLOG="$(mktemp)"
@@ -121,8 +102,7 @@ done
 info "    $appliquees migrations appliquees"
 
 # ── 3. Verifier que le schema est complet ───────────────────────────────────
-# Le controle porte sur les tables que le CODE attend : une migration qui
-# echouerait a moitie sans renvoyer d'erreur se verrait ici.
+# Tables attendues par le code.
 echo
 info "3/4 Verification du schema obtenu…"
 ATTENDUES="audit_admin comptes consentements invitations liaisons_demandes noms_interdits \
@@ -141,8 +121,7 @@ if [ -n "$manquantes" ]; then
 fi
 info "    les 11 tables attendues sont presentes"
 
-# anonymise_at : ajoutee par auth_discord sur une table preexistante, c'est le
-# cas ou un ADD COLUMN IF NOT EXISTS silencieux pourrait passer inapercu.
+# anonymise_at : colonne ajoutee par auth_discord a une table existante.
 n=$(psql_tmp -tAc "\"SELECT count(*) FROM information_schema.columns WHERE table_name='joueurs' AND column_name='anonymise_at'\"" | tr -d '[:space:]')
 [ "$n" = "1" ] || { err "joueurs.anonymise_at absente apres migration."; exit 1; }
 info "    joueurs.anonymise_at presente"
@@ -150,8 +129,7 @@ info "    joueurs.anonymise_at presente"
 n_tiers=$(psql_tmp -tAc "'SELECT count(*) FROM tiers'" | tr -d '[:space:]')
 info "    tiers : $n_tiers lignes (seed par defaut S/A/B/C attendu)"
 
-# Les donnees doivent avoir traverse les migrations sans perte : une migration
-# qui toucherait aux donnees existantes se verrait ici.
+# Les donnees doivent avoir traverse les migrations sans perte.
 apres_t=$(psql_tmp -tAc "'SELECT count(*) FROM tournois'" | tr -d '[:space:]')
 apres_j=$(psql_tmp -tAc "'SELECT count(*) FROM joueurs'" | tr -d '[:space:]')
 apres_p=$(psql_tmp -tAc "'SELECT count(*) FROM participations'" | tr -d '[:space:]')
@@ -174,8 +152,7 @@ trap 'rm -f "$TMP_OUT" "$ERRLOG"; nettoyer' EXIT
 docker compose exec -T db sh -c \
   "pg_dump -U \"\$POSTGRES_USER\" -d $TMPDB --clean --if-exists" > "$TMP_OUT"
 
-# Meme normalisation que scripts/db-dump.sh : le dump reste independant du nom
-# de role, comme schema.sql.
+# Meme normalisation que scripts/db-dump.sh : dump independant du nom de role.
 sed -i -E 's/ OWNER TO ("[^"]+"|[A-Za-z0-9_]+);/ OWNER TO CURRENT_USER;/g' "$TMP_OUT"
 
 grep -q '^COPY public\.joueurs ' "$TMP_OUT" || {
@@ -185,8 +162,7 @@ grep -q '^COPY public\.joueurs ' "$TMP_OUT" || {
 }
 
 mkdir -p "$(dirname "$OUT")"
-# 644 : le dump est monte dans le conteneur db, ou postgres tourne en uid 70 et
-# doit pouvoir le lire pour l'initialisation (meme raison que db-dump.sh).
+# 644 : lisible par postgres (uid 70) dans le conteneur db.
 chmod 644 "$TMP_OUT"
 mv "$TMP_OUT" "$OUT"
 

@@ -1,6 +1,4 @@
 // Distances et positions sur un circuit qui boucle.
-// Rien ici ne connait ni kart ni objet : ce sont des mesures sur l'axe de la
-// piste, et elles valent pour n'importe quel corps pose dessus.
 
 function getShortestDistance(cfg, fromX, toX) {
     const w = cfg.world.width;
@@ -10,23 +8,19 @@ function getShortestDistance(cfg, fromX, toX) {
     return diff;
 }
 
-// Ecart au premier, mesure en distance restante : deux karts partis de
-// rangs differents n'ont pas la meme distance a couvrir, comparer leurs
-// compteurs bruts placerait la pole en dernier au premier virage.
+// Distance restant a parcourir (les karts ne partent pas tous du meme rang).
 function remainingDistance(kart) {
     return kart.finishDistance - kart.totalDistance;
 }
 
-// Distance a parcourir vers l'avant pour aller de `from` a `to`. La camera
-// ne recule jamais : le decor defilerait a l'envers.
+// Distance vers l'avant de `from` a `to` (la camera ne recule jamais).
 function forwardDistance(cfg, from, to) {
     let d = to - from;
     if (d < 0) d += cfg.world.width;
     return d;
 }
 
-// Position de la camera face a la ligne. La camera designe le centre de la
-// vue, donc un ecart negatif place la ligne a droite du centre.
+// Position de la camera face a la ligne (centre de la vue).
 function parkPosition(cfg, offset) {
     let x = cfg.world.finishLineX + offset;
     if (x < 0) x += cfg.world.width;
@@ -34,12 +28,8 @@ function parkPosition(cfg, offset) {
     return x;
 }
 
-// Le projectile a-t-il croise cette profondeur pendant le pas ?
-//
-// Comparer la seule position d'arrivee suffisait tant qu'une carapace
-// derivait a peine. Depuis qu'elle peut traverser la piste en trois pas, il
-// faut regarder le segment parcouru : sinon elle passe d'un cote a l'autre
-// d'un kart entre deux images, sans jamais avoir ete a sa hauteur.
+// Vrai si le projectile a croise cette profondeur pendant le pas (on teste le
+// segment parcouru, pas seulement la position d'arrivee).
 function crossedDepth(item, targetY, tolerance) {
     const from = item.prevY;
     const to = item.y;

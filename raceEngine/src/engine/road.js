@@ -1,6 +1,4 @@
-// Le bord de piste et le contact entre karts.
-// Deux facons de se faire arreter par quelque chose de solide, resolues au meme
-// endroit parce qu'elles se disputent la meme grandeur : la place disponible.
+// Bord de piste et contact entre karts.
 
 import { clamp } from './math.js';
 import { getShortestDistance } from './geometry.js';
@@ -8,18 +6,9 @@ import { contactInertia, isContactActive, isRamming, isShrunkAt, kartHalfExtents
 import { crushKart, spinOutKart } from './effects.js';
 import { collideKartWithPipes } from './pipes.js';
 
-// Le bord de piste : un mur GLISSANT, et les deux mots comptent. On ne le
-// traverse pas — la position est ramenee au bord — mais on n'y rebondit pas et on
-// n'y est pas arrete : le kart garde son cap et repart quand il veut. Y rester
-// coute de la vitesse, le mur tirant le moteur vers `topSpeed * speedFactor`.
-//
-// Le declencheur n'est pas un choc mais une PRESENCE, ce qui couvre d'un coup les
-// deux cas — se faire pousser contre le mur, et devoir s'y coller pour esquiver.
-//
-// Seule la composante SORTANTE du mouvement lateral est annulee : l'annuler dans
-// les deux sens collerait au mur un kart qui essaie d'en partir.
-//
-// Les objets ne passent pas par ici : le mur n'est glissant que pour les karts.
+// Bord de piste : mur glissant pour les karts (position ramenee au bord, seule
+// la composante sortante est annulee). Y rester ralentit vers
+// `topSpeed * speedFactor`.
 function clampKartToRoad(cfg, kart, deltaTime) {
     const road = cfg.road;
     let atWall = false;
@@ -38,8 +27,7 @@ function clampKartToRoad(cfg, kart, deltaTime) {
 
     if (!atWall) return;
 
-    // Meme forme que le volant et que la separation des contacts : un taux en
-    // 1/s, borne a 1 pour qu'une frame longue arrive pile sur le plancher.
+    // Taux en 1/s, borne a 1.
     const wall = cfg.physics.wall;
     const floor = kart.stats.topSpeed * wall.speedFactor;
     if (kart.absoluteVelocity > floor) {
@@ -48,17 +36,12 @@ function clampKartToRoad(cfg, kart, deltaTime) {
     }
 }
 
-// Combien de profondeur il reste a ce kart avant le bord. Sert au sandwich : un
-// kart plaque contre le bord ne peut pas reculer, sa part de separation passe a
-// l'autre.
+// Profondeur restante avant le bord (un kart plaque cede sa part de separation).
 function roomToward(cfg, kart, n) {
     return n > 0 ? cfg.road.maxY - kart.yPercent : kart.yPercent - cfg.road.minY;
 }
 
-// Deplace un kart le long de la piste en gardant position et progression cousues,
-// comme le fait la boucle de deplacement. Le compteur de tours en fait partie :
-// rien n'interdit qu'une separation de quelques pixels tombe sur la ligne
-// d'arrivee.
+// Deplace un kart le long de la piste (position, progression et tours).
 function shiftKartAlongTrack(cfg, kart, dist) {
     if (!dist) return;
     const prevWorldX = kart.worldX;
@@ -78,25 +61,21 @@ function shiftKartAlongTrack(cfg, kart, dist) {
     }
 }
 
-// Un intouchable fait toupiller ce qu'il percute. Deux gardes qui comptent : on
-// ne relance pas un tete-a-queue deja en cours — la passe se rejoue a chaque tick
-// tant que le contact dure — et on respecte le sursis d'apres-choc. Le prix du
-// choc est celui de ce qui percute : un bill, sinon une etoile.
+// Un intouchable fait toupiller ce qu'il percute (sans relancer un tete-a-queue
+// en cours ni ignorer le sursis). Cout : bill, sinon etoile.
 function spinOnContact(cfg, now, kart, rammer, events) {
     if (kart.state !== 'running') return;
     if (kart.hitInvincibleUntil > now) return;
     spinOutKart(cfg, now, kart, events, rammer.isBill ? 'bill' : 'star');
 }
 
-// Resolution d'une paire. `withImpulse` n'est vrai qu'a la premiere passe ; les
-// suivantes ne font que finir de decoller les positions.
+// Resolution d'une paire ; `withImpulse` seulement a la premiere passe.
 function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
     const c = cfg.physics.contact;
 
     let boxX, boxY;
     if (a.isBill || b.isBill) {
-        // Le bill balaie plus large qu'une carrosserie : il traverse la
-        // piste en trombe, il ne se faufile pas.
+        // Le bill balaie plus large qu'une carrosserie.
         boxX = cfg.bill.hitbox.x;
         boxY = cfg.bill.hitbox.y;
     } else {
@@ -106,8 +85,7 @@ function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
         boxY = halfA.y + halfB.y;
     }
 
-    // `dx` est signe : positif quand `a` est devant `b`. `dy` de meme,
-    // positif quand `a` est du cote des grandes profondeurs.
+    // dx > 0 : `a` devant `b` ; dy > 0 : `a` plus profond.
     const dx = getShortestDistance(cfg, a.worldX, b.worldX);
     const penX = boxX - Math.abs(dx);
     if (penX <= 0) return;
@@ -115,40 +93,20 @@ function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
     const penY = boxY - Math.abs(dy);
     if (penY <= 0) return;
 
-    // Qui SENT le contact. Un intouchable — etoile ou bill — ne sent pas ce qu'il
-    // percute : il fait toupiller sa victime et poursuit sa route sans etre
-    // devie. Ici seulement, le couple echangeait encore une impulsion, si bien
-    // que le porteur d'etoile se faisait bousculer par ce qu'il venait d'envoyer
-    // en toupie.
-    //
-    // Sortir avant l'impulsion coupe les trois effets d'un choc d'un coup :
-    // ejection, refus de braquage, separation. Le chevauchement se resorbe tout
-    // seul.
-    //
-    // L'exception est le BILL : il tient le milieu de la piste et le traverse en
-    // trombe, s'y croiser sans rien serait le seul endroit du jeu ou deux karts
-    // s'ignorent entierement. Le partage reste tres inegal (`billMassFactor`).
-    // Etoile contre etoile, en revanche, se traversent.
+    // Un intouchable (etoile ou bill) ne subit pas le choc ; deux etoiles se
+    // traversent, mais un bill reste en contact (partage tres inegal,
+    // `billMassFactor`).
     const ramA = isRamming(a);
     const ramB = isRamming(b);
 
-    // Un seul des deux est intouchable : il blesse, sa victime toupille.
+    // Un seul intouchable : sa victime toupille.
     if (ramA !== ramB) spinOnContact(cfg, now, ramA ? b : a, ramA ? a : b, events);
 
     const ramContact = ramA && ramB && (a.isBill || b.isBill);
     if ((ramA || ramB) && !ramContact) return;
 
-    // L'ECRASEMENT. Un kart rapetisse qui rencontre un kart normal passe dessous,
-    // et le couple ne s'echange RIEN : ni impulsion, ni refus de braquage, ni
-    // separation. Seul contact du jeu qui sorte sans rien deplacer — le gros ne
-    // sent rien, le petit garde sa trajectoire, les carrosseries se traversent.
-    //
-    // Place APRES le bloc des intouchables, et c'est ce qui donne la regle « une
-    // etoile ne l'ecrase pas, elle le blesse ».
-    //
-    // Rien a defaire quand le petit regrossit : le tick suivant le trouve a
-    // taille normale, et le chevauchement accumule se resorbe en poussant
-    // l'ecraseur.
+    // Ecrasement : un kart rapetisse passe sous un kart normal, sans aucun
+    // echange (une etoile le blesse au lieu de l'ecraser).
     const crushA = isShrunkAt(a, now) && !isShrunkAt(b, now) && !isRamming(b);
     const crushB = isShrunkAt(b, now) && !isShrunkAt(a, now) && !isRamming(a);
     if (crushA || crushB) {
@@ -156,75 +114,53 @@ function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
         return;
     }
 
-    // Une bousculade entre intouchables est attenuee : elle n'est la que pour
-    // qu'ils ne se traversent pas.
+    // Bousculade attenuee entre intouchables.
     const scale = ramContact ? cfg.bill.pushFactor : 1;
 
     const iA = contactInertia(cfg, a);
     const iB = contactInertia(cfg, b);
     const total = iA + iB;
-    // Part du choc encaissee par chacun : c'est l'inertie D'EN FACE qui la fixe.
-    //
-    // Ces deux parts sont le seul endroit ou le gabarit et l'allure se font
-    // sentir dans un contact, mais elles servent aux TROIS effets — ejection,
-    // refus de braquage, separation. Regler `massBias` ou `speedBias` les deplace
-    // donc ensemble.
+    // Part du choc de chacun, fixee par l'inertie d'en face (ejection, refus de
+    // braquage et separation).
     const shareA = iB / total;
     const shareB = iA / total;
 
-    // Fraction du chevauchement resorbee sur ce pas, bornee a 1 comme le lissage
-    // du volant.
+    // Fraction du chevauchement resorbee sur ce pas, bornee a 1.
     const k = c.separationRate * deltaTime;
     const sep = k > 1 ? 1 : k;
 
-    // La normale du choc. Les deux axes n'ont ni la meme unite ni la meme echelle
-    // — 60 px de long contre 5 de profondeur — donc on passe en ESPACE NORMALISE,
-    // ou le contact redevient rond et ou une direction se calcule.
-    //
-    // C'est ce qui donne l'angle : un tamponnement pile dans l'axe rend une
-    // normale horizontale, le meme avec un demi-kart de decalage rend une
-    // diagonale. Le choix d'axe unique d'avant rangeait ce contact dans «
-    // tamponnement » et poussait tout droit.
+    // Normale du choc en espace normalise (chaque axe divise par sa boite).
     let ux = dx / boxX;
     let uy = dy / boxY;
     let len = Math.sqrt(ux * ux + uy * uy);
     if (len < 1e-6) {
-        // Superposition parfaite. Arrive pour de vrai — deux karts clampes au
-        // meme endroit du bord — et se tranche sur l'identifiant, pour que la
-        // passe reste reproductible.
+        // Superposition parfaite : departage par identifiant.
         ux = 0;
         uy = a.id < b.id ? 1 : -1;
         len = 1;
     }
-    // Unitaire, pointe de `b` vers `a`.
+    // Unitaire, de `b` vers `a`.
     const nx = ux / len;
     const ny = uy / len;
 
     if (withImpulse) {
-        // Vitesse de rapprochement, un axe a la fois et dans son unite : l'elan
-        // reel du tick pour la longueur, volant et choc en cours confondus pour
-        // la profondeur.
+        // Vitesse de rapprochement par axe.
         const sgnX = nx >= 0 ? 1 : -1;
         const sgnY = ny >= 0 ? 1 : -1;
         const closeX = (b.contactSpeed - a.contactSpeed) * sgnX;
         const closeY = ((b.vy + b.bumpVy) - (a.vy + a.bumpVy)) * sgnY;
 
-        // Rapprochement le long de la normale, ramene en boites par seconde — la
-        // seule facon de melanger les deux axes.
+        // Rapprochement le long de la normale, en boites par seconde.
         const approach = (closeX / boxX) * Math.abs(nx)
                        + (closeY / boxY) * Math.abs(ny);
 
-        // LA porte du modele : une impulsion ne part que s'ils se rapprochent
-        // ENCORE. Deux karts qui se touchent en s'ecartant deja n'ont plus rien a
-        // se dire, et les repousser a chaque tick est exactement ce qui les
-        // collait l'un a l'autre.
+        // Impulsion seulement s'ils se rapprochent encore.
         if (approach > 0) {
             let force = c.ejectBase + approach * c.restitution;
             if (force > c.maxEject) force = c.maxEject;
             force *= scale;
 
-            // Un seul coup, reparti sur les deux axes par la normale : la
-            // diagonale sort d'elle-meme du rapport `nx`/`ny`.
+            // Coup reparti sur les deux axes par la normale.
             const jx = force * nx * c.ejectX;
             const jy = force * ny * c.ejectY;
             a.bumpVx = clamp(a.bumpVx + jx * shareA, -c.maxBumpX, c.maxBumpX);
@@ -233,11 +169,8 @@ function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
             b.bumpVy = clamp(b.bumpVy - jy * shareB, -c.maxBumpY, c.maxBumpY);
         }
 
-        // Refus de braquage, applique a chaque tick du contact : ce n'est pas une
-        // poussee mais un appui qui se derobe. Chacun perd la part de son volant
-        // qui pousse dans l'autre, en proportion de la masse d'en face — c'est
-        // ici, et nulle part ailleurs, qu'un lourd force le passage. Dose par
-        // `ny` : un tamponnement pur ne prend le volant de personne.
+        // Refus de braquage a chaque tick du contact, en proportion de la masse
+        // d'en face, dose par `ny`.
         const denyReach = Math.abs(ny) * scale;
         const intoA = -a.vy * sgnY;
         if (intoA > 0) a.vy += intoA * c.steerDeny * shareA * denyReach * sgnY;
@@ -245,14 +178,11 @@ function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
         if (intoB > 0) b.vy -= intoB * c.steerDeny * shareB * denyReach * sgnY;
     }
 
-    // Separation : le filet de securite, pas le moteur du choc. L'ejection fait
-    // le travail, ceci empeche seulement deux carrosseries de rester l'une dans
-    // l'autre.
+    // Separation : empeche les carrosseries de rester imbriquees.
     const corrX = Math.max(penX - c.slopX, 0) * sep * Math.abs(nx);
     const corrY = Math.max(penY - c.slopY, 0) * sep * Math.abs(ny);
 
-    // Le sandwich contre le bord se traite ici : un kart sans place devant lui
-    // rend sa part a l'autre, sinon la paire reste collee au bord.
+    // Contre le bord, un kart sans place rend sa part a l'autre.
     const dirY = ny >= 0 ? 1 : -1;
     let corrAy = corrY * shareA;
     let corrBy = corrY * shareB;
@@ -268,12 +198,8 @@ function resolveKartPair(cfg, now, deltaTime, a, b, withImpulse, events) {
     shiftKartAlongTrack(cfg, b, -corrX * shareB * dirX);
 }
 
-// Passe complete : plusieurs relaxations sur toutes les paires, puis remise en
-// ordre. Une seule passe laisse un paquet de trois karts en chevauchement.
-//
-// La remise en ordre finale n'est pas optionnelle : un contact peut pousser un
-// kart hors de la piste ou dans un tuyau, et ces deux verdicts ont ete rendus
-// plus tot dans le tick, sur une position qui n'est plus la sienne.
+// Passe complete : plusieurs relaxations sur toutes les paires, puis remise au
+// bord et contre les tuyaux.
 function resolveKartContacts(cfg, state, now, deltaTime, events) {
     const c = cfg.physics.contact;
     const kartsLen = state.karts.length;
@@ -295,12 +221,10 @@ function resolveKartContacts(cfg, state, now, deltaTime, events) {
         const kart = state.karts[i];
         if (!isContactActive(kart)) continue;
 
-        // Un kart que la passe de contacts vient de plaquer contre le bord y
-        // frotte comme s'il s'y etait mis lui-meme.
+        // Frottement du bord apres la passe de contacts.
         clampKartToRoad(cfg, kart, deltaTime);
 
-        // Le sursis par tuyau rend ce second passage sans danger : seul un tuyau
-        // ou la poussee vient de mettre le kart peut encore le cogner.
+        // Le sursis par tuyau rend ce second passage sans danger.
         collideKartWithPipes(cfg, state, kart, now, events);
     }
 }

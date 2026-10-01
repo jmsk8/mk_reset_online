@@ -19,8 +19,7 @@ void set_sign(WorldState& state, const char* group, int frame,
     state.signUntil = now + duration;
 }
 
-// Le coup d'envoi. Chaque kart tire SON depart : turbo pour la grande majorite,
-// depart normal, ou cale d'une seconde.
+// Depart de chaque kart : turbo, normal ou cale d'une seconde.
 void launch_karts(const config::Config& cfg, WorldState& state, Rng& rng,
                   double now, std::vector<Event>& events) {
     const config::RaceCfg& race = cfg.race;
@@ -42,7 +41,6 @@ void launch_karts(const config::Config& cfg, WorldState& state, Rng& rng,
             kart.absoluteVelocity = kart.stats->topSpeed * rng.range(0.85, 0.95);
             ev.value = 1; // normal
         } else {
-            // Depart rate : le kart reste sur place, moteur noye.
             kart.startStallUntil = now + race.failStallMs;
             kart.absoluteVelocity = 0;
             kart.momentum = 0;
@@ -65,24 +63,13 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
     const Kart* leader = get_leader(state);
     if (!leader) return;
 
-    // Tour du premier. `lapCount` compte les FRANCHISSEMENTS ; le premier
-    // cloture le trajet depuis la grille et non un tour, d'ou le plancher a 1.
-    //
-    // Suivi HORS de la machine a phases, et c'est essentiel : la camera passe en
-    // approche deux tours avant la fin, si bien que tenir ce compteur dans la
-    // seule phase 'racing' le figeait pour les deux derniers tours de chaque
-    // course.
+    // Tour du premier (plancher a 1), suivi en 'racing' et en 'finishing'.
     if (state.phase == Phase::Racing || state.phase == Phase::Finishing) {
         const int lap = std::min(race.laps, std::max(1, leader->lapCount));
         if (lap != state.leaderLap) state.leaderLap = lap;
 
-        // Le panneau du dernier tour. Il sort quand le PREMIER approche la ligne
-        // qui ouvre ce tour -- a `flagDistance`, comme le drapeau -- et reste en
-        // main jusqu'a ce que le DERNIER l'ait passee d'autant. Le dernier est
-        // relu a chaque pas (un depassement en queue change qui ferme la
-        // marche) ; si le premier prend un tour au dernier, le drapeau le
-        // remplace avant. Borne en distance et non en duree, hors de la machine
-        // a phases : voir race.js, qui porte le raisonnement complet.
+        // Panneau du dernier tour (voir race.js) : du passage du premier a
+        // `flagDistance` de la ligne jusqu'a celui du dernier.
         const double width = cfg.world.width;
         const double leaderToLine = leader->finishDistance - leader->totalDistance - width;
         if (!state.finalSignShown && race.laps > 1 && leaderToLine <= race.flagDistance) {
@@ -100,9 +87,7 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
             }
         }
 
-        // Et pour CHAQUE kart, s'il est dans sa propre zone de dernier tour : le
-        // client montre le panneau du kart qu'il suit quand drapeau et dernier
-        // tour se chevauchent (voir race.js).
+        // Zone de dernier tour propre a chaque kart.
         for (Kart& kart : state.karts) {
             const double toLine = kart.finishDistance - kart.totalDistance - width;
             kart.finalLapSign = state.finalSignShown && !kart.finished &&
@@ -110,7 +95,6 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
         }
     }
 
-    // Le panneau s'efface tout seul.
     if (!state.signGroup.empty() && now > state.signUntil) {
         state.signGroup.clear();
         state.signFrame = 0;
@@ -119,8 +103,7 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
     if (state.phase == Phase::Countdown) {
         const double remaining = state.startAt - now;
 
-        // Un feu par intervalle : la premiere image est tenue le temps de
-        // l'attente, la quatrieme — le feu vert — n'apparait qu'au GO.
+        // Premiere image tenue pendant l'attente ; le feu vert apparait au GO.
         const double elapsed = state.countdownMs - remaining;
         const int step = (elapsed < race.countdownHoldMs)
             ? 1
@@ -147,9 +130,7 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
             state.phase = Phase::Finishing;
             state.hasCameraTarget = true;
             state.cameraTarget = park_position(cfg, race.parkFinishOffset);
-            // Pas de drapeau ici : la camera se gare deux tours avant la fin et
-            // la ligne reste a l'ecran tout ce temps. C'est la phase
-            // 'finishing' qui sort Lakitu a l'approche REELLE.
+            // Le drapeau sort plus tard, a l'approche reelle de la ligne.
             events.push_back({ EventType::RaceFinishing });
         }
         return;
@@ -158,20 +139,14 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
     if (state.phase == Phase::Finishing) {
         const double remaining = leader->finishDistance - leader->totalDistance;
 
-        // Une fois sorti, le drapeau reste en main : il accompagne CHAQUE
-        // passage, pas seulement le premier.
+        // Une fois sorti, le drapeau reste.
         if (!state.flagShown && remaining <= race.flagDistance) {
             state.flagShown = true;
             set_sign(state, "finish", 0, now, race.maxRaceMs);
         }
 
-        // Deux facons de clore : le quota d'arrivees est atteint, ou le delai
-        // large est depasse — un kart bloque ne doit pas figer le service. Dans
-        // les deux cas les retardataires sont classes dans l'ordre ou ils
-        // roulent.
-        //
-        // Quota borne sur le plateau reel, comme en JS : avec moins de karts
-        // que prevu, le quota fixe ne serait jamais atteint.
+        // Fin de course : quota d'arrivees (borne par le nombre de karts) ou
+        // delai maximal ; retardataires classes dans l'ordre ou ils roulent.
         const int quota = std::min(race.stopAtFinisher,
                                    std::max(1, static_cast<int>(state.karts.size()) - 1));
         const bool quotaReached =
@@ -194,8 +169,7 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
 
             award_race_points(cfg, state);
 
-            // La derniere manche du bloc porte le classement general : on laisse
-            // le temps de le lire.
+            // Plus de temps pour lire le classement general a la fin du bloc.
             const bool isFinalRace = state.gpRound >= cfg.grandPrix.races;
             state.resultsAt = now + (isFinalRace ? race.finalResultsDelayMs
                                                  : race.resultsDelayMs);
@@ -206,15 +180,13 @@ void update_race(const config::Config& cfg, WorldState& state, Rng& rng,
     }
 
     if (state.phase == Phase::Results && state.resultsAt > 0 && now >= state.resultsAt) {
-        // Le SERVICE en tire une course neuve : c'est lui qui detient
-        // `create_world_state` et les connexions a prevenir.
+        // Le service lance la course suivante.
         Event ev;
         ev.type = EventType::RaceOver;
         ev.value = (state.gpRound >= cfg.grandPrix.races) ? 1 : 0;
         events.push_back(ev);
 
-        // Repousse : sans ca l'evenement partirait a chaque tick jusqu'a ce que
-        // le service ait fini de rebatir le monde.
+        // Repousse pour ne pas reemettre l'evenement a chaque tick.
         state.resultsAt = now + race.resultsDelayMs;
     }
 }

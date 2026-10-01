@@ -114,14 +114,10 @@
                                 </table>
                             </div>
 
-                            {# Compteur : sur une page de 20 lignes, rien ne dit
-                               combien de tournois existent en tout. #}
                             <p class="has-text-grey is-size-7 has-text-centered mt-3"
                                id="compteurTournois"></p>
 
-                            {# Pagination construite par le JS : le nombre de
-                               pages depend des lignes reellement affichees, qui
-                               varie avec le filtre par date. #}
+                            {# Pagination construite par le JS (depend du filtre par date). #}
                             <nav class="pagination is-centered mt-2" role="navigation"
                                  aria-label="pagination" id="paginationTournois">
                                 <a class="pagination-previous" id="pagePrecedente">Précédent</a>
@@ -143,13 +139,8 @@
             const fadeElems = document.querySelectorAll('.fade-in');
             fadeElems.forEach(elem => { elem.classList.add('visible'); });
             
-            /* Historique des tournois : filtre par date + pagination.
-
-               Toutes les lignes sont rendues par le serveur en une fois ; la
-               pagination se fait donc ici, sans appel reseau. Les deux
-               mecanismes sont lies : filtrer change le nombre de lignes, donc
-               le nombre de pages. Les traiter separement donnait une
-               pagination calculee sur des lignes deja masquees. */
+            /* Filtre par date et pagination cote client (toutes les lignes sont
+               rendues par le serveur). */
             const PAR_PAGE = 20;
 
             const dateSearch = document.getElementById('tournoisDateSearch');
@@ -168,9 +159,7 @@
                 return Math.max(1, Math.ceil(lignesFiltrees.length / PAR_PAGE));
             }
 
-            /* Affiche la tranche correspondant a `pageCourante`. On masque
-               TOUTES les lignes puis on revele la tranche : repartir de l'etat
-               precedent laisserait visibles celles d'une page plus longue. */
+            /* Affiche la tranche de `pageCourante`. */
             function afficherPage() {
                 toutesLignes.forEach(l => { l.style.display = 'none'; });
 
@@ -196,15 +185,10 @@
             function majPagination() {
                 const pages = nbPages();
 
-                // Une seule page : la barre n'a rien a proposer.
                 pagination.style.display = pages > 1 ? '' : 'none';
                 if (pages <= 1) return;
 
-                /* `is-disabled` de Bulma ne fait que griser : il laisse
-                   passer le clic. `allerA` borne deja la page, donc rien ne
-                   casserait — mais un bouton qui reagit alors qu'il est
-                   affiche comme inerte trompe l'oeil. On coupe les evenements
-                   pour que l'apparence et le comportement concordent. */
+                /* is-disabled de Bulma ne bloque pas le clic. */
                 [[btnPrec, pageCourante === 1],
                  [btnSuiv, pageCourante === pages]].forEach(([bouton, inerte]) => {
                     bouton.classList.toggle('is-disabled', inerte);
@@ -214,9 +198,7 @@
 
                 listePages.innerHTML = '';
 
-                /* Fenetre glissante autour de la page courante, avec toujours
-                   la premiere et la derniere. Lister 40 pages de suite les
-                   rendrait toutes illisibles. */
+                /* Fenetre autour de la page courante, plus la premiere et la derniere. */
                 const aAfficher = new Set([1, pages, pageCourante,
                                            pageCourante - 1, pageCourante + 1]);
                 let precedente = 0;
@@ -245,8 +227,7 @@
             function allerA(n) {
                 pageCourante = Math.min(Math.max(1, n), nbPages());
                 afficherPage();
-                // Le haut du tableau plutot que de la page : on reste dans le
-                // contexte de l'historique.
+                // Remonte au haut du tableau.
                 document.querySelector('.table-container')
                         .scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
@@ -254,10 +235,7 @@
             btnPrec.addEventListener('click', () => allerA(pageCourante - 1));
             btnSuiv.addEventListener('click', () => allerA(pageCourante + 1));
 
-            /* Le filtre porte sur TOUS les tournois, pas seulement la page
-               affichee — sinon chercher une date reviendrait a la chercher
-               dans les vingt lignes sous les yeux. Un champ vide rend la
-               liste complete, ce que l'ancienne version ne faisait pas. */
+            /* Filtre sur tous les tournois ; un champ vide rend la liste complete. */
             function filterTournois() {
                 const searchDate = dateSearch.value;
                 lignesFiltrees = searchDate
@@ -269,7 +247,6 @@
             }
 
             if (btnSearchDate) btnSearchDate.addEventListener('click', filterTournois);
-            // Vider le champ (ou choisir une autre date) rafraichit aussitot.
             if (dateSearch) dateSearch.addEventListener('change', filterTournois);
 
             afficherPage();

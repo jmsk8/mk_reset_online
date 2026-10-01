@@ -1,21 +1,5 @@
-"""Journal des actions admin -- phase 4 : le filet.
-
-Pendant executable de docs/audit-admin-plan.md, phase 4 (R-61, R-64).
-
-R-61 : une route d'ecriture admin ajoutee plus tard oubliera son audit. Ce
-n'est pas une hypothese : au 2026-09-22, les cinq routes des tiers dynamiques
-(ajoutees apres les phases 1 a 3), la suppression et la publication d'un recap,
-et la liaison de deux tournois -- qui modifie le sigma de joueurs -- ecrivaient
-toutes sans laisser de trace. Aucun test ne le voyait.
-
-Ce fichier fait pour l'audit ce que test_bascule.py fait pour les decorateurs :
-il inventorie les routes PAR ANALYSE DU SOURCE, et rougit sur toute route
-d'ecriture admin qui n'atteint pas `audit.ecrire`. La discipline ne tient pas
-toute seule ; un inventaire, si.
-
-R-64 : le vocabulaire des actions est ferme (audit.ACTIONS), et l'ecran Logs
-sait dire chacune en clair.
-"""
+"""Inventaire des routes admin qui ecrivent : chacune doit journaliser, et
+chaque action doit appartenir au vocabulaire ferme (audit.ACTIONS)."""
 import ast
 import glob
 import re
@@ -30,8 +14,7 @@ FRONT = os.path.join(RACINE, '..', 'frontEnd')
 ECRITURES = ('POST', 'PUT', 'DELETE', 'PATCH')
 DECOS_ADMIN = ('permission_required', 'role_required')
 APPELS_AUDIT = ('_audit', 'ecrire')
-# Cherche dans les CHAINES du code seulement, la ou vit le SQL : sur le source
-# brut, `tampon.truncate(0)` (un tampon CSV) passait pour un TRUNCATE.
+# Recherche dans les chaines seulement (sinon `tampon.truncate(0)` passe pour un TRUNCATE).
 SQL_ECRIT = re.compile(r'\b(?:INSERT\s+INTO|DELETE\s+FROM|ALTER\s+TABLE|TRUNCATE(?:\s+TABLE)?)\s+(\w+)'
                        r'|\bUPDATE\s+(\w+)\s+(?:\w+\s+)?SET\b', re.I)
 
@@ -46,18 +29,9 @@ def tables_ecrites(fn):
     return {(a or b).lower() for a, b in SQL_ECRIT.findall(chaines)}
 
 
-# Les SEULES routes admin qui ecrivent -- au sens HTTP -- sans journaliser.
-# Chacune avec sa raison, et les tables qu'elle a le droit de toucher : une
-# exemption n'est pas un blanc-seing, et la route qui se mettrait a ecrire
-# ailleurs rougirait. Une entree devenue inutile aussi, pour que la liste ne
-# grossisse pas en silence.
+# Routes admin qui ecrivent sans journaliser, avec les tables autorisees.
+# Une exemption devenue inutile fait echouer le test.
 EXEMPTEES = {
-    # `fix_db_structure` l'a quittee le 2026-09-25 (S-17) : route de migration
-    # ponctuelle, ecrivant en base sur un GET, sans proxy ni appelant.
-    # `refresh_token` a quitte cette liste le 2026-09-23 : la route a ete
-    # supprimee avec l'authentification par mot de passe. C'est ce test qui l'a
-    # signale, et c'est sa raison d'etre -- une exemption devenue inutile doit
-    # rougir, sinon la liste ne fait que grossir.
     'verifier_session_tournoi': ("POST pour porter une liste de noms ; lecture seule", set()),
     'matchmaking_admin': ("POST pour porter une liste de joueurs ; calcule des lobbies", set()),
 }
@@ -87,11 +61,7 @@ def appels(fn):
 
 
 def atteint_audit(fn, fonctions, vus=None):
-    """Vrai si `fn` appelle l'audit, directement ou via une fonction du backend.
-
-    Suit les appels d'un module a l'autre : la purge RGPD journalise dans
-    services.py, la suppression de compte dans _effacer_compte.
-    """
+    """Vrai si `fn` appelle l'audit, directement ou via une autre fonction du backend."""
     vus = set() if vus is None else vus
     if fn.name in vus:
         return False
@@ -125,8 +95,7 @@ def inventaire(src, fonctions):
             continue
         admin = (any(d.startswith(DECOS_ADMIN) for d in decos)
                  or any(c.startswith(('/admin/', '/api/admin/')) for c in chemins))
-        # Un GET qui ecrit en base compte aussi : c'est le cas le plus facile
-        # a laisser passer, parce qu'on ne le cherche pas.
+        # Un GET qui ecrit en base compte aussi.
         ecrit = bool(methodes & set(ECRITURES)) or bool(tables_ecrites(n))
         if admin and ecrit:
             routes.append((n.name, chemins[0], sorted(methodes),
@@ -168,7 +137,7 @@ for nom, (raison, permises) in sorted(EXEMPTEES.items()):
           ecrites <= permises, sorted(ecrites - permises))
 
 print("\n=== Le filet attrape bien une route oubliee ===")
-# Sans cette preuve, un inventaire qui ne trouverait rien serait tout aussi vert.
+# Controle que l'inventaire detecte bien une route oubliee.
 _ROUTE_OUBLIEE = '''
 @admin_bp.route('/admin/nouveau-reglage', methods=['POST'])
 @permission_required('gestion_config')
@@ -214,11 +183,8 @@ check("une route qui journalise via un helper est reconnue",
 
 print("\n=== R-64 : vocabulaire ferme ===")
 def actions_ecrites():
-    """Chaque action passee a l'audit dans le backend, avec son emplacement.
-
-    Une action calculee (`action = 'a' if ... else 'b'`) est resolue en
-    remontant a son affectation : les deux branches doivent etre au catalogue.
-    """
+    """Chaque action passee a l'audit, avec son emplacement (les actions
+    calculees sont resolues depuis leur affectation)."""
     trouvees, opaques = {}, []
     for f in sorted(glob.glob(os.path.join(RACINE, '*.py'))):
         src = open(f, encoding='utf-8').read()
@@ -285,8 +251,7 @@ for nom, action in (('create_tier', 'tier_cree'), ('update_tier', 'tier_modifie'
                     ('lier_session_tournoi', 'tournoi_lie')):
     corps = corps_de(nom)
     check("%s écrit « %s »" % (nom, action), "'%s'" % action in corps)
-    # Dans la transaction du geste, jamais apres : une ligne validee pour une
-    # action annulee serait pire que pas de ligne (audit.py).
+    # L'audit doit etre dans la transaction, avant le commit.
     i_audit, i_commit = corps.find("'%s'" % action), corps.rfind('conn.commit()')
     check("  avant le commit, dans la même transaction", 0 <= i_audit < i_commit,
           (i_audit, i_commit))

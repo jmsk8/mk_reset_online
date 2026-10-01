@@ -1,32 +1,7 @@
-"""Liaison d'un tournoi a une session : le refus doit etre categorique.
+"""Liaison d'un tournoi a une session : un joueur ne joue qu'un tournoi par
+session, et une liaison en conflit annule toute la creation.
 
-Phase 2 de docs/plan-sessions-tournois.md (2026-09-15), decisions 9 et 10.
-
-La regle : un joueur ne peut jouer qu'UN tournoi par session (deux lobbies
-simultanes, on ne peut pas etre dans les deux). Si la liaison demandee la
-violerait, le tournoi n'est PAS cree -- ni liaison, ni enregistrement.
-
-Trois defauts que ce fichier empeche, tous identifies a la relecture du plan
-avant ecriture du code :
-
-1. **Controle auto-referent** (F-7). Si on fusionne AVANT de controler, le
-   tournoi courant est deja dans la session cible : ses propres joueurs
-   remontent comme conflits et TOUTE liaison est refusee. Le defaut est
-   silencieux -- il ne plante pas, il refuse tout. D'ou l'ordre verifie ici :
-   participations -> controle -> fusion.
-
-2. **Creation malgre le refus** (decision 10). Le refus doit passer par
-   rollback : sans lui, un tournoi reste en base avec des scores calcules pour
-   une liaison qui n'a pas eu lieu.
-
-3. **Confiance dans l'etape 1** (F-10). La route de verification est
-   indicative : elle compare des NOMS, faute d'ids (les joueurs ne sont pas
-   encore crees). add_tournament doit refaire le controle sur les joueur_id,
-   sinon un appel direct a l'API passe au travers (TOCTOU).
-
-Limite du banc d'essai : psycopg2 est neutralise, le SQL n'est pas valide contre
-Postgres. Ce qui est verifie, c'est l'ENCHAINEMENT des requetes et le fait que
-la transaction soit annulee -- exactement ce qui casse en silence.
+Ordre verifie : participations -> controle -> fusion.
 """
 from harness import *
 from flask import Flask
@@ -39,8 +14,7 @@ SESSION = lambda role: (
     ligne_session(compte_id=1, discord_id='111', username='a',
                   global_name='A', role=role))
 
-# Socle commun d'un ajout de tournoi : tout ce que la route lit avant d'arriver
-# au controle de session. Les tests ne divergent qu'apres.
+# Requetes communes a tout ajout de tournoi, avant le controle de session.
 def plan_ajout(conflits=None, cible_existe=True):
     return [
         (r"FROM global_resets WHERE date >=", (0,)),
@@ -48,8 +22,7 @@ def plan_ajout(conflits=None, cible_existe=True):
         (r"FROM grille_snapshots WHERE date", None),
         (r"INSERT INTO sessions_tournois DEFAULT VALUES", (501,)),
         (r"INSERT INTO Tournois", (777,)),
-        # Une fiche par nom, retrouvee sans tenir compte de la casse (25/09) :
-        # une meme fiche pour deux joueurs serait refusee (joueur_en_double).
+        # Fiche retrouvee sans tenir compte de la casse.
         (r"SELECT id, nom, mu, sigma FROM Joueurs WHERE lower\(nom\)",
          lambda p: (10 + sum(map(ord, p[0])), p[0], 25.0, 8.333)),
         (r"SELECT 1 FROM Tournois WHERE id = %s", (1,) if cible_existe else None),
@@ -65,11 +38,7 @@ def plan_ajout(conflits=None, cible_existe=True):
 
 
 class _Rating:
-    """Substitut de trueskill.Rating : le harness neutralise le vrai module.
-
-    Les valeurs renvoyees n'ont aucune importance ici -- ces tests portent sur
-    l'enchainement des requetes et sur le refus, pas sur le calcul de score.
-    """
+    """Substitut de trueskill.Rating (les valeurs n'importent pas ici)."""
     def __init__(self, mu=25.0, sigma=8.333):
         self.mu, self.sigma = float(mu), float(sigma)
 
@@ -154,19 +123,16 @@ check("les participations sont inserees avant le controle",
       i_parts is not None and i_ctrl is not None and i_parts < i_ctrl,
       (i_parts, i_ctrl))
 
-# LE point du fichier : controler apres avoir fusionne rendrait le controle
-# auto-referent et ferait refuser toute liaison.
+# Controler apres la fusion ferait refuser toute liaison.
 check("le controle a lieu AVANT la fusion",
       i_ctrl is not None and i_fusion is not None and i_ctrl < i_fusion,
       (i_ctrl, i_fusion))
 
-# Le controle doit exclure le tournoi courant, sinon il se detecte lui-meme.
 ctrl_sql = next((s for s in sqls(cur) if 'SELECT DISTINCT j.nom' in s), '')
 check("le controle exclut le tournoi courant (t.id <> ...)",
       't.id <> %s' in ctrl_sql, ctrl_sql[:120])
 
-# Et porter sur la session entiere, pas le seul tournoi designe : sinon une
-# liaison transitive (C vers B alors que B est avec A) laisse passer un conflit.
+# Sur toute la session (liaisons transitives).
 check("le controle porte sur la session entiere, pas un tournoi",
       't.session_id = (SELECT session_id FROM Tournois WHERE id = %s)' in ctrl_sql,
       ctrl_sql[:200])
@@ -187,17 +153,10 @@ check("les joueurs en conflit sont nommes",
       corps.get('joueurs_en_conflit') == ['Toto', 'Titi'], corps)
 check("le message cite les noms", 'Toto' in (corps.get('error') or ''), corps)
 
-# L'exigence centrale de la decision 10 : pas de creation en base.
-#
-# On verifie le rollback, pas l'absence de commit : le middleware
-# d'authentification valide sa propre transaction (auth.py, suivi de
-# last_seen_at) et partage le meme faux objet connexion dans ce banc d'essai,
-# la ou la production utilise deux connexions distinctes du pool.
+# Le rollback est verifie (l'authentification commite sur la meme fausse connexion).
 check("la transaction est ANNULEE", conn.rolledback, None)
 
-# Garde-fou de lecture : chaque refus doit etre suivi d'un return, sinon
-# l'execution continuerait jusqu'au commit final et creerait le tournoi malgre
-# le refus. C'est le mode d'echec le plus grave de cette phase.
+# Chaque refus doit etre suivi d'un return.
 src_route = open(os.path.join(RACINE, 'routes_admin.py'), encoding='utf-8').read()
 lignes_ajout = src_route[src_route.index('def add_tournament'):
                          src_route.index('def verifier_session_tournoi')].splitlines()
@@ -210,8 +169,7 @@ for i, ligne in enumerate(lignes_ajout):
 check("chaque rollback de add_tournament est suivi d'un return",
       not sans_return, "lignes %s" % sans_return)
 
-# Un refus ne doit pas laisser la moitie du travail derriere lui : ni fusion,
-# ni calcul, ni notification.
+# Ni fusion, ni calcul, ni notification.
 check("aucune fusion n'a eu lieu",
       indice(cur, 'UPDATE Tournois SET session_id') is None, None)
 check("aucune penalite d'absence n'est calculee",
@@ -249,14 +207,11 @@ r = cli.post('/admin/tournois/verifier-session', headers=H,
              json={"joueurs": [{"nom": "Toto", "score": 1}]})
 check("la route repond 200", r.status_code == 200, r.get_data(as_text=True))
 
-# `sessions_joueurs` est touchee par le middleware d'authentification (suivi
-# de derniere activite), sur toutes les routes : ce n'est pas une ecriture de
-# cette route. On verifie les tables du domaine.
+# sessions_joueurs est ecrite par l'authentification : on ne regarde que le domaine.
 ecritures = [s for s in sqls(cur)
              if any(s.upper().startswith(v) for v in ('INSERT', 'UPDATE', 'DELETE'))
              and 'sessions_joueurs' not in s]
-# Elle ne doit surtout pas creer les fiches joueurs pour pouvoir comparer des
-# ids : un admin qui ouvre la modale puis renonce ne laisse rien derriere lui.
+# Aucune fiche creee par la verification.
 check("aucune ecriture sur les tables du domaine", not ecritures, ecritures)
 
 cands = (r.get_json() or {}).get('candidats') or []
@@ -266,8 +221,7 @@ check("le candidat en conflit est marque non liable",
 check("les joueurs en conflit sont exposes a l'interface",
       cands and cands[0]['joueurs_en_conflit'] == ['Toto'], cands)
 
-# La comparaison de noms doit etre normalisee, sinon « toto » et « Toto »
-# passent pour deux joueurs et le conflit reste invisible dans la modale.
+# Comparaison de noms normalisee.
 sql_noms = next((s for s in sqls(cur) if 'SELECT t.session_id, j.nom' in s), '')
 check("la comparaison de noms est normalisee (casse et espaces)",
       'lower(btrim(j.nom))' in sql_noms, sql_noms[:160])
@@ -285,8 +239,7 @@ check("la transaction est annulee", conn.rolledback, None)
 check("aucune fusion n'a eu lieu",
       indice(cur, 'UPDATE Tournois SET session_id') is None, None)
 
-# Deux sessions deja peuplees : il faut comparer les deux ensembles en entier,
-# pas un tournoi contre une session.
+# Deux sessions peuplees : comparaison des deux ensembles.
 sql_conflit = next((s for s in sqls(cur) if 'SELECT DISTINCT j.nom' in s), '')
 check("le controle compare les deux sessions entre elles",
       'ta.session_id = %s AND tb.session_id = %s' in sql_conflit, sql_conflit[:200])
@@ -311,16 +264,9 @@ check("lier un tournoi a lui-meme -> 400", r.status_code == 400, r.status_code)
 
 print("\n=== Liaison tardive : les absences en trop sont retirees (5.2) ===")
 
-# Scenario reel (constate en usage le 15/09) : deux tournois enregistres
-# separement, puis lies. La session {10, 20} contient donc deux tournois.
-#
-#   - joueur 3 a joue le tournoi 10 -> compte absent du 20, a tort.
-#     Jouer un seul tournoi de la session suffit : son compteur doit revenir a 0.
-#   - joueur 7 est absent des DEUX -> compte 2 fois au lieu d'une.
-#     « Une session manquee = +1 » : il doit perdre 1 absence, pas 2.
-#
-# L'ancienne version ne defaisait que les penalites inscrites dans ghost_log,
-# donc ne corrigeait AUCUN de ces deux cas tant qu'aucun seuil n'etait atteint.
+# Deux tournois enregistres separement puis lies (session {10, 20}) :
+#   - joueur 3 a joue le 10 : son absence au 20 est annulee ;
+#   - joueur 7 absent des deux : garde une seule absence.
 def plan_liaison(manques, sigma_missed, penalites=None, presents=((3,),)):
     return [
         (r"SELECT id, session_id FROM Tournois WHERE id IN", [(10, 100), (20, 200)]),
@@ -335,8 +281,8 @@ def plan_liaison(manques, sigma_missed, penalites=None, presents=((3,),)):
 
 
 cli, cur, conn = monter(plan_liaison(
-    manques=[(3, 1), (7, 2)],          # joueur 3 : 1 tournoi manque ; joueur 7 : 2
-    sigma_missed=(3.0, 1),             # etat lu pour chaque joueur corrige
+    manques=[(3, 1), (7, 2)],  # joueur 3 : 1 tournoi manque ; joueur 7 : 2
+    sigma_missed=(3.0, 1),  # etat lu pour chaque joueur corrige
 ))
 r = cli.post('/admin/tournois/10/lier-session', headers=H, json={"autre_tournoi_id": 20})
 check("la liaison reussit", r.status_code == 200, r.get_data(as_text=True))
@@ -346,20 +292,16 @@ check("les DEUX joueurs sont corriges (present ET absent complet)",
       len(maj) == 2, maj)
 
 par_id = {p[3]: p for p in maj}
-# Joueur 3 a joue un tournoi de la session : 0 absence imputable.
 check("le present (3) perd son absence : 1 -> 0",
       3 in par_id and par_id[3][1] == 0, par_id.get(3))
-# Joueur 7 absent des deux : garde UNE absence pour la session, pas deux.
 check("l'absent complet (7) perd l'absence en trop : 1 -> 0",
       7 in par_id and par_id[7][1] == 0, par_id.get(7))
 check("la transaction est validee", conn.committed, None)
 
-# Le nombre retire ne doit jamais depasser ce que le joueur porte : son compteur
-# a pu etre remis a 0 depuis (il a rejoue), ou ne jamais avoir ete incremente
-# (hors perimetre de ligue).
+# Jamais plus que ce que le joueur porte.
 cli, cur, conn = monter(plan_liaison(
     manques=[(7, 2)],
-    sigma_missed=(3.0, 0),             # compteur deja a 0
+    sigma_missed=(3.0, 0),  # compteur deja a 0
     presents=(),
 ))
 r = cli.post('/admin/tournois/10/lier-session', headers=H, json={"autre_tournoi_id": 20})
@@ -370,7 +312,6 @@ check("un compteur deja a 0 n'est pas rendu negatif",
 
 print("\n=== La penalite de sigma est retiree en plus du compteur ===")
 
-# Joueur 7 : 5 absences, 2 penalites de 0.1 portees par la session.
 cli, cur, conn = monter(plan_liaison(
     manques=[(7, 2)],
     sigma_missed=(3.0, 5),
@@ -385,18 +326,15 @@ check("le nombre de joueurs corriges est renvoye",
 maj = [p for sql, p in cur.executed if 'UPDATE Joueurs' in sql and 'SET sigma' in sql]
 if maj:
     sigma, missed, ranked, jid = maj[0]
-    # On RETIRE le cumul applique, on ne restaure pas un old_sigma fige : sinon
-    # on ecraserait tout ce qui a bouge depuis (matchs, autres penalites).
+    # On retire le cumul applique plutot que de restaurer old_sigma.
     check("sigma : 3.0 - 0.2 de penalites = 2.8", abs(sigma - 2.8) < 1e-9, sigma)
-    # Absent complet : garde 1 absence sur les 2 comptees.
     check("compteur : 5 - 1 absence en trop = 4", missed == 4, missed)
     check("is_ranked recalcule (4 < seuil 5)", ranked is True, ranked)
 
 check("les lignes ghost_log de la session sont supprimees",
       indice(cur, 'DELETE FROM ghost_log') is not None, sqls(cur))
 
-# Le sigma est du dossier sportif : lier deux tournois qui le fait bouger doit
-# laisser une trace aussi precise qu'une modification de fiche (2026-09-22).
+# La liaison est tracee avec l'avant/apres des sigma.
 import json as _json
 _audits = [p for sql, p in cur.executed if 'INSERT INTO audit_admin' in sql]
 _det = _json.loads(_audits[0][4]) if _audits and _audits[0][4] else {}
@@ -410,8 +348,7 @@ check("  et le drapeau score_modifie", _det.get('score_modifie') is True, _det)
 check("  dans la transaction validée, avant le commit",
       indice(cur, 'INSERT INTO audit_admin') is not None and conn.committed)
 
-# L'ordre est essentiel : « les tournois de la session » n'existe qu'une fois
-# les deux reunis. Corriger avant la fusion ne verrait qu'un lobby.
+# Correction apres la fusion.
 i_fusion = indice(cur, 'UPDATE Tournois SET session_id')
 i_tournois = indice(cur, 'SELECT id FROM Tournois WHERE session_id')
 check("la correction a lieu APRES la fusion",
@@ -421,8 +358,7 @@ check("la correction a lieu APRES la fusion",
 
 print("\n=== Session a un seul tournoi : rien a corriger ===")
 
-# Aucune absence ne peut etre « en trop » dans une session a un element : la
-# fonction doit sortir sans lire ni ecrire quoi que ce soit.
+# Session a un seul tournoi : rien a lire ni ecrire.
 cli, cur, conn = monter([
     (r"SELECT id, session_id FROM Tournois WHERE id IN", [(10, 100), (20, 100)]),
     (r"SELECT DISTINCT j.nom", []),
@@ -449,8 +385,7 @@ check("routes_admin l'appelle sans la reimplementer",
 
 corps_annul = src_services_p3[src_services_p3.index('def annuler_penalites_de_session('):]
 corps_annul = corps_annul[:corps_annul.index('\ndef ')]
-# penalty_applied porte la valeur REELLEMENT appliquee : une penalite ecretee
-# par GHOST_SIGMA_CAP a ajoute moins que ghost_penalty.
+# penalty_applied est la valeur reellement appliquee (plafond compris).
 check("le cumul retire vient de penalty_applied (et non de la config)",
       'SUM(g.penalty_applied)' in corps_annul
       and 'ghost_penalty' not in corps_annul, None)
@@ -466,14 +401,13 @@ check("une session a un seul tournoi sort immediatement",
 
 print("\n=== La liaison tardive est accessible depuis l'interface ===")
 
-# Sans porte d'entree dans l'UI, cette route n'etait testable qu'a la console --
-# donc en pratique jamais utilisee, alors qu'elle corrige des absences fausses.
+# La route est accessible depuis l'interface.
 src_public_p4 = open(os.path.join(RACINE, 'routes_public.py'), encoding='utf-8').read()
 check("/stats/tournois expose session_id",
       '"session_id": r[6]' in src_public_p4, None)
 check("/stats/tournois expose le nombre de tournois de la session",
       '"nb_dans_session": r[7]' in src_public_p4, None)
-# Le GROUP BY doit inclure session_id, sinon Postgres refuse la requete.
+# session_id doit etre dans le GROUP BY.
 check("session_id est dans le GROUP BY",
       'GROUP BY t.id, t.date, t.session_id' in src_public_p4, None)
 
@@ -483,8 +417,7 @@ check("un bouton de liaison existe dans la liste des tournois",
       'ouvrirLiaisonTardive(' in tpl, None)
 check("la modale de liaison tardive existe",
       'liaisonTardiveModal' in tpl, None)
-# Le jeton CSRF doit venir du template : le recuperer en JS depuis le DOM
-# echouait sur cette page (constate le 15/09).
+# Jeton CSRF fourni par le template.
 check("le CSRF vient du template, pas d'une recherche dans le DOM",
       "'X-CSRFToken': \"{{ csrf_token() }}\"" in tpl, None)
 check("un tournoi deja en session affiche son etat au lieu du bouton",
@@ -523,8 +456,7 @@ for chemin, corps_req in (('/admin/tournois/verifier-session', {"joueurs": []}),
 
 print("\n=== Invalidation du cache apres liaison tardive ===")
 
-# Lier deux tournois change ce que la landing page doit afficher : sans
-# invalidation, elle garde l'ancien regroupement jusqu'au prochain ajout.
+# La page d'accueil doit etre invalidee apres une liaison.
 src_admin = open(os.path.join(RACINE, 'routes_admin.py'), encoding='utf-8').read()
 bloc = src_admin[src_admin.index('def lier_session_tournoi'):]
 bloc = bloc[:bloc.index('\n@')] if '\n@' in bloc else bloc
@@ -543,8 +475,7 @@ check("joueurs_en_conflit_entre_sessions est dans services.py",
 check("fusionner_sessions est dans services.py",
       'def fusionner_sessions(' in src_services, None)
 
-# La lecon de la Phase 0 : deux routes qui recopient la meme regle finissent par
-# diverger. routes_admin doit appeler, jamais reimplementer.
+# routes_admin appelle services, sans reimplementer la requete.
 check("routes_admin ne reimplemente pas la requete de conflit",
       'SELECT DISTINCT j.nom' not in src_admin, None)
 check("routes_admin ne reimplemente pas la fusion",
@@ -559,8 +490,7 @@ check("la branche standard filtre sur session_id",
       'AND session_id = %s' in src_public, None)
 check("le regroupement par semaine a disparu",
       "date_trunc('week'" not in src_public, None)
-# La branche ligue affiche « ou en est chaque ligue », pas une occasion de jeu :
-# une session ne peut pas modeliser ca.
+# La branche ligue reste par ligue, pas par session.
 check("la branche ligue est inchangee (DISTINCT ON ligue_nom)",
       'DISTINCT ON (t.ligue_nom)' in src_public, None)
 

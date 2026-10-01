@@ -1,28 +1,6 @@
-"""Constats de docs/audit-securite-2026-09-24.md -- ce qui se passe ENTRE deux gestes.
-
-L'audit n'a rien trouve dans les decorateurs. Ce qu'il a trouve, c'est un etat
-qui survit a ce qui aurait du l'annuler :
-
-  S-02  une proposition de role survit a la retrogradation, a la suspension
-        et au depart du proposant ;
-  S-03  legs + proposition en attente : le nouveau superadmin se retrogradait
-        seul en l'acceptant, zero superadmin ;
-  S-04  approuver une demande de liaison levait la suspension du compte ;
-  S-13  un admin approuvait sa propre demande de liaison ;
-  S-14  un chef_admin annulait une proposition faite par le superadmin.
-
-Et, corriges le meme jour :
-
-  S-01  un nom de joueur ou de ligue s'executait dans un onclick (test statique
-        sur tout le frontend) ;
-  S-06  le consentement s'enregistrait a l'inscription sans geste reel ;
-  S-08  les invitations n'avaient ni plafond de duree ni d'usages ;
-  S-11  la regle de rang ne protegeait pas la FICHE d'un compte (decision du
-        25/09 : la hierarchie s'applique partout, dossier sportif compris).
-
-Curseur scripte, comme partout ici : on verifie qui passe, quelles requetes
-partent et dans quel ordre -- pas que Postgres tienne ses verrous.
-"""
+"""Audit de securite du 2026-09-24 : etats qui survivent au geste qui aurait du
+les annuler (propositions, legs, suspension, liaisons), gestionnaires inline,
+consentement, plafonds d'invitation et regle de rang sur les fiches."""
 from harness import *
 from flask import Flask
 
@@ -46,8 +24,7 @@ def monter(plan, role='superadmin', compte_id=1):
 
 
 H = {'X-Session-Token': 'tok'}
-# Version courante de la politique admin : lue, pas recopiee, pour que le
-# prochain changement de version ne casse pas ces tests.
+# Version lue plutot que recopiee.
 from constants import CGU_ADMIN_VERSION as V_ADMIN
 ACCEPTER = {'accepte': True, 'cgu_admin_version': V_ADMIN}
 sql_de = lambda cur: [s for s, _ in cur.executed]
@@ -57,7 +34,7 @@ audits = lambda cur: [p for s, p in cur.executed if 'INSERT INTO audit_admin' in
 
 
 def accepter(role_actuel, role_propose, proposant_id, proposant):
-    """Le titulaire (compte 5) accepte une proposition faite par `proposant_id`.
+    """Le titulaire (compte 5) accepte une proposition de `proposant_id`.
 
     `proposant` : (role, statut) relu a l'acceptation, ou None s'il n'existe plus.
     """
@@ -80,7 +57,7 @@ def caduque(r, cur, conn):
 print("\n=== S-02 : le droit de proposer est reverifie a l'acceptation ===")
 # ===========================================================================
 
-# Scenario 3 de l'audit : le chef_admin C propose admin, puis est retrograde.
+# Le chef_admin proposant a ete retrograde.
 r, cur, conn = accepter('player', 'admin', 3, ('admin', 'linked'))
 check("proposant retrograde admin -> 409 proposition_caduque", caduque(r, cur, conn), r.get_json())
 check("  aucun role n'est pose", not any('SET role' in s for s in sql_de(cur)))
@@ -93,19 +70,18 @@ check("  l'annulation est tracee avec son motif",
 r, cur, conn = accepter('player', 'admin', 3, ('chef_admin', 'suspended'))
 check("proposant suspendu -> 409", caduque(r, cur, conn), r.get_json())
 
-# Proposant supprime : propose_par passe a NULL. Plus rien a verifier.
+# Proposant supprime.
 r, cur, conn = accepter('player', 'admin', None, None)
 check("proposant supprime (propose_par NULL) -> 409", caduque(r, cur, conn), r.get_json())
 check("  sans chercher a relire un compte NULL",
       not any(s.startswith('SELECT role, statut FROM comptes') for s in sql_de(cur)))
 
-# chef_admin ne propose pas chef_admin : seul le superadmin le peut. Un ancien
-# superadmin devenu chef_admin par legs perd donc ses propositions de ce role.
+# Seul le superadmin propose chef_admin.
 r, cur, conn = accepter('admin', 'chef_admin', 1, ('chef_admin', 'linked'))
 check("proposition chef_admin d'un proposant devenu chef_admin -> 409",
       caduque(r, cur, conn), r.get_json())
 
-# NON-REGRESSION : sans ces deux-la, un refus general passerait pour correct.
+# Cas valides.
 r, cur, conn = accepter('player', 'admin', 3, ('chef_admin', 'linked'))
 check("NON-REGRESSION : proposant chef_admin toujours en poste -> 200",
       r.status_code == 200, r.get_json())
@@ -113,7 +89,7 @@ r, cur, conn = accepter('admin', 'chef_admin', 1, ('superadmin', 'linked'))
 check("NON-REGRESSION : chef_admin propose par le superadmin -> 200",
       r.status_code == 200, r.get_json())
 
-# Le refus n'a rien a verifier : refuser ne donne aucun droit.
+# Refuser ne demande aucune verification.
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
     (r"FROM promotions_proposees WHERE compte_id", (7, 'admin', None, PASSE, FUTUR)),
@@ -127,8 +103,7 @@ check("refuser la proposition d'un proposant parti reste possible -> 200",
 print("\n=== S-03 : accepter doit rester une MONTEE (jamais zero superadmin) ===")
 # ===========================================================================
 
-# Le superadmin S propose chef_admin a T, puis lui legue. T, superadmin,
-# accepte la vieille proposition : sans garde, il redescendait chef_admin.
+# Un superadmin qui accepte une ancienne proposition chef_admin ne redescend pas.
 r, cur, conn = accepter('superadmin', 'chef_admin', 1, ('superadmin', 'linked'))
 check("superadmin qui accepte chef_admin -> 409, meme d'un proposant valide",
       caduque(r, cur, conn), r.get_json())
@@ -151,7 +126,7 @@ print("\n=== S-02 : les gestes qui changent la situation soldent les proposition
 # ===========================================================================
 UNE_ANNULEE = (r"UPDATE promotions_proposees SET statut = 'cancelled'", [(7, 2, 'chef_admin')])
 
-# Retrogradation : scenario 1 de l'audit.
+# Retrogradation.
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('admin',)),
     (r"SELECT role FROM comptes WHERE id", ('admin',)),
@@ -170,7 +145,7 @@ check("  chaque annulation est tracee avec son motif",
 check("  jamais les propositions expirees (elles n'engagent deja plus rien)",
       all('expires_at > now()' in s for s, _ in a), a)
 
-# Suspension : scenario 2.
+# Suspension.
 cli, cur, conn = monter([
     (r"SELECT statut, role, joueur_id FROM comptes WHERE id = %s FOR UPDATE",
      ('linked', 'admin', 9)),
@@ -191,7 +166,7 @@ r = cli.post('/admin/comptes/2/statut', json={'statut': 'actif'}, headers=H)
 check("reactiver ne touche a aucune proposition",
       r.status_code == 200 and not annulations(cur), annulations(cur))
 
-# Legs : S-03, la ceinture.
+# Legs.
 cli, cur, conn = monter([
     (r"SELECT id, role, discord_username, cgu_admin_version\s+FROM comptes WHERE id IN",
      [(1, 'superadmin', 'moi', V_ADMIN), (5, 'chef_admin', 'cible', V_ADMIN)]),
@@ -208,7 +183,7 @@ check("  l'ancien, devenu chef_admin, perd ses propositions chef_admin",
 check("  mais PAS ses propositions admin : un chef_admin peut toujours les faire",
       not any('propose_par = %s' in s and 'role_propose' not in s for s, _ in a), a)
 
-# Suppression : les propositions faites resteraient affichees, a NULL.
+# Suppression.
 cli, cur, conn = monter([
     (r"SELECT role, joueur_id, discord_id, discord_username FROM comptes WHERE id = %s FOR UPDATE",
      ('chef_admin', None, '123456789012345678', 'cible')),
@@ -222,7 +197,7 @@ check("  les propositions FAITES par le compte sont soldees avant sa disparition
       and max(i for i, s in enumerate(_s) if "statut = 'cancelled'" in s)
       < _s.index('DELETE FROM comptes WHERE id = %s'), _s)
 
-# Garde-fou du helper : un UPDATE sans filtre de compte solderait toute la table.
+# Le helper exige un filtre de compte.
 import routes_comptes
 try:
     routes_comptes._annuler_promotions(cur, 'test')
@@ -242,7 +217,7 @@ def approuver(statut_compte, acteur=1, role_cible='player', role_acteur='chef_ad
          (statut_compte, role_cible)),
         (r"SELECT nom FROM joueurs WHERE id", ('Mario',)),
         (r"SELECT id FROM comptes WHERE joueur_id = %s FOR UPDATE", None),
-        (r"SELECT 1 FROM permissions_admin", (1,)),     # gestion_liaisons, pour un admin
+        (r"SELECT 1 FROM permissions_admin", (1,)),  # gestion_liaisons, pour un admin
     ], role=role_acteur, compte_id=acteur)
     return cli.post('/admin/liaisons/1/approve', headers=H), cur, conn
 
@@ -279,8 +254,7 @@ check("refuser SA propre demande -> 403 (symetrie)",
       r.status_code == 403 and (r.get_json() or {}).get('code') == 'auto_modification',
       r.get_json())
 
-# Exception du superadmin : S-13 + S-11 l'enfermaient -- lui ne statue pas sur
-# soi, et personne n'a de rang superieur au sien pour le faire.
+# Le superadmin peut statuer sur sa propre demande.
 r, cur, conn = approuver('pending', acteur=5, role_cible='superadmin', role_acteur='superadmin')
 check("le superadmin approuve SA propre demande -> 200", r.status_code == 200, r.get_json())
 check("  le compte est rattache", any('SET joueur_id' in s for s in sql_de(cur)))
@@ -304,8 +278,7 @@ check("NON-REGRESSION : un superadmin sur la demande d'un AUTRE superadmin -> 40
 # ===========================================================================
 print("\n=== S-11 : la hierarchie protege aussi la FICHE d'un compte ===")
 # ===========================================================================
-# Decision du 25/09 : un admin ne touche ni aux autres admins ni a ses
-# superieurs, un chef_admin pas a un pair -- dossier sportif compris.
+# La regle de rang s'applique aussi aux fiches liees a un compte.
 import routes_admin
 
 
@@ -326,15 +299,14 @@ def monter_admin(plan, role, compte_id=1, permissions=()):
     import services
     services.recalculate_tiers = lambda: None
     import routes_admin
-    # trueskill est neutralise par le harness : le formulaire de tournoi a besoin
-    # d'un Rating pour aller au-dela du premier joueur. La valeur n'importe pas.
+    # Rating factice (trueskill est neutralise).
     routes_admin.trueskill.Rating = lambda mu=0, sigma=0: (mu, sigma)
     app = Flask(__name__)
     app.register_blueprint(routes_admin.admin_bp)
     return app.test_client(), cur, conn
 
 
-# L'admin porte TOUS les droits de fiche : seul le rang peut le bloquer.
+# L'admin a tous les droits de fiche : seul le rang peut le bloquer.
 DROITS_FICHE = ('gestion_joueurs', 'joueurs_nom', 'joueurs_couleur', 'edition_mu_sigma',
                 'joueurs_statut', 'joueurs_irreversible')
 GESTES = [('PUT', '/admin/joueurs/9', {'nom': 'Autre'}),
@@ -366,8 +338,7 @@ for methode, url, corps in GESTES:
         check("  rien n'est ecrit",
               not any(s.startswith(('UPDATE', 'DELETE', 'INSERT INTO noms_interdits'))
                       for s in sql_de(cur) if 'sessions_joueurs' not in s))
-    # Portee legitime : ne doit PAS etre refusee par le rang (la route peut
-    # repondre autre chose, 404 sur un curseur vide par exemple, peu importe ici).
+    # Portee legitime : pas de refus de rang.
     for acteur, lien in (('admin', (2, 'player')), ('admin', None),
                          ('chef_admin', (2, 'admin')), ('superadmin', (2, 'chef_admin')),
                          ('admin', (1, 'admin'))):
@@ -382,7 +353,6 @@ r, cur = geste('POST', '/admin/joueurs/9/anonymiser', {}, 'admin', (2, 'superadm
 check("le message dit que la fiche est celle du super-administrateur",
       'super-administrateur' in (r.get_json() or {}).get('error', ''), r.get_json())
 
-# Les trois routes qui visent une fiche portent le decorateur.
 _ra = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'routes_admin.py'),
            encoding='utf-8').read()
 for _route in ("'/admin/joueurs/<int:id>', methods=['PUT']",
@@ -392,7 +362,7 @@ for _route in ("'/admin/joueurs/<int:id>', methods=['PUT']",
     _bloc = _bloc[:_bloc.index('def ')]
     check("%s porte @fiche_cible_protegee" % _route, '@fiche_cible_protegee' in _bloc)
 
-# Liaisons : la route recoit l'id de la DEMANDE, la regle est posee a la main.
+# Liaisons : regle posee a la main (la route recoit l'id de la demande).
 r, cur, conn = approuver('pending', role_cible='chef_admin', role_acteur='chef_admin')
 check("approuver la liaison d'un PAIR chef_admin -> 403", refuse(r), r.get_json())
 check("  aucun rattachement", not any('SET joueur_id' in s for s in sql_de(cur)))
@@ -412,8 +382,7 @@ check("  la demande n'est pas touchee",
       not any('UPDATE liaisons_demandes' in s for s in sql_de(cur)))
 
 
-# Les ecrans grisent d'avance ce que les routes refuseraient : le drapeau vient
-# du backend, meme calcul que la frontiere (hors_de_portee / refus_de_rang).
+# Les ecrans grisent d'avance, avec le meme calcul que le backend.
 def _fiche(jid, compte_id, role):
     return (jid, 'N%d' % jid, 25.0, 8.3, 'U', True, 0, '#FFFFFF', None, None, None,
             'pseudo' if compte_id else None, 'linked' if compte_id else None,
@@ -454,8 +423,7 @@ print("\n=== S-14 : un chef_admin ne defait pas une proposition du superadmin ==
 def annuler(role_acteur, promo, role_proposant):
     cli, cur, conn = monter([
         (r"FROM promotions_proposees WHERE compte_id", promo),
-        # Meme requete pour compte_cible_protegee (cible, player) et pour le
-        # proposant : la premiere lecture sert la cible, la suivante le proposant.
+        # Premiere lecture : la cible ; seconde : le proposant.
         (r"SELECT role FROM comptes WHERE id = %s",
          lambda params: ('player',) if params == (2,) else (role_proposant,)),
     ], role=role_acteur, compte_id=3)
@@ -526,8 +494,7 @@ check("joueur_id entier -> 201", r.status_code == 201, r.get_json())
 # ===========================================================================
 print("\n=== S-06 : le consentement ne s'enregistre plus a l'inscription ===")
 # ===========================================================================
-# Le lien de la page d'invitation portait cgu=1 en dur ; la case ne faisait que
-# le griser. Seul POST /me/cgu (page /consentement, jeton CSRF) l'ecrit desormais.
+# Seul POST /me/cgu (page /consentement) ecrit le consentement.
 _RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 _lire = lambda *p: open(os.path.join(_RACINE, *p), encoding='utf-8').read()
 
@@ -556,15 +523,8 @@ check("et annonce l'etape de consentement qui suit",
 # ===========================================================================
 print("\n=== S-01 : aucune donnee textuelle dans un gestionnaire inline ===")
 # ===========================================================================
-# `onclick="f('${escapeHtml(nom).replace(/'/g, "\\'")}')"` : escapeHtml change
-# `'` en `&#039;` AVANT le replace, qui ne trouve donc plus rien ; le navigateur
-# redecode `&#039;` en lisant l'attribut, et l'apostrophe ferme la chaine. Un
-# pseudo Discord suffisait a executer du code dans la page d'un admin.
-#
-# Regle verifiee : dans un attribut on*="..." construit par un gabarit JS, chaque
-# ${...} est un identifiant numerique -- rien qui puisse porter du texte. Le
-# texte se relit dans une table JS (joueursCharges, saisonsParId) ou passe par
-# addEventListener.
+# Dans un attribut on*="..." construit en JS, chaque ${...} doit etre un
+# identifiant numerique : le texte passe par une table JS ou addEventListener.
 import glob as _glob
 
 _FRONT = os.path.join(_RACINE, 'frontEnd')
@@ -576,10 +536,7 @@ _ID_SUR = re.compile(r'^(Number\([\w.]+\)|[\w.]*[iI]d|index|i|idx)$')
 def _gestionnaires_inline(src):
     """(position, contenu de chaque ${...}) des attributs on*="..." du source.
 
-    Parcours a la main plutot qu'une regex : un ${...} peut contenir des
-    guillemets (`${x ? "'" + y + "'" : 'null'}`), qui couperaient une regex
-    `on\\w+="[^"]*"` au milieu de l'expression -- exactement la ou le defaut se
-    cachait.
+    Parcours manuel : un ${...} peut contenir des guillemets.
     """
     for m in re.finditer(r'\bon[a-z]+="', src):
         i, profondeur, debut, trouve = m.end(), 0, None, []
@@ -617,8 +574,7 @@ check("%d fichiers frontend parcourus" % len(_fichiers), len(_fichiers) > 20, le
 check("aucun ${...} textuel dans un gestionnaire inline, aucun echappement inverse",
       not _fautes, _fautes)
 
-# Le detecteur doit voir les trois formes du defaut d'origine, sinon il ne
-# prouve rien. Echantillons tires tels quels du code d'avant correction.
+# Le detecteur doit reconnaitre les formes du defaut d'origine.
 _ech = [
     '''onclick="openEditModal(${player.id}, '${escapeHtml(player.nom).replace(/'/g, "\\\\'")}')"''',
     '''onclick="removePlayer('${escapeHtml(nom).replace(/'/g, "\\\\'")}', this)"''',
@@ -638,7 +594,7 @@ print("\n=== Lot A (S-05, S-09, S-10, couleurs) : validation des fiches ===")
 from utils import nombre_fini, couleur_valide
 import services as _services
 
-# -- Les deux outils, sur les valeurs qui passaient avant.
+# Valeurs non finies refusees.
 for v, attendu in ((float('nan'), None), (float('inf'), None), ('nan', None), ('inf', None),
                    (True, None), (None, None), ('abc', None), (101, None), (-1, None),
                    (50, 50.0), ('42.5', 42.5), (0, 0.0), (100, 100.0)):
@@ -651,7 +607,7 @@ for v, attendu in (('#ff00aa', '#FF00AA'), (' #FFFFFF ', '#FFFFFF'), ('red', Non
     check("couleur_valide(%r) -> %r" % (v, attendu), couleur_valide(v) == attendu)
 
 
-# -- nom_creable : la regle unique de joueurs.nom.
+# nom_creable.
 def _nc(nom, interdit=False, collision=None, exclure_id=None):
     cur, _ = install_db([(r"FROM noms_interdits", (1,) if interdit else None),
                          (r"FROM joueurs WHERE lower\(nom\)", collision)])
@@ -671,7 +627,7 @@ check("l'empreinte est celle de l'anonymisation (strip + minuscules)",
       _services.empreinte_nom('  MaRiO ') == _services.empreinte_nom('mario'))
 
 
-# -- Creation d'une fiche (page Fiches joueurs).
+# Creation d'une fiche.
 def creer(corps, permissions=DROITS_FICHE + ('joueurs_creation',), interdit=False,
           collision=None):
     cli, cur, conn = monter_admin([
@@ -710,7 +666,7 @@ check("NON-REGRESSION : creation valide -> ecrite avec le nom nettoye",
       r.status_code in (200, 201) and _ins and _ins[0][0] == 'Neuf', (r.get_json(), _ins))
 
 
-# -- Modification d'une fiche.
+# Modification d'une fiche.
 FICHE_9 = ('Mario', 50.0, 8.333333, True, '#FF0000', 0)
 
 def modifier(corps, fiche=FICHE_9, interdit=False, collision=None):
@@ -749,7 +705,7 @@ check("couleur renvoyee en minuscules : pas une modification, la base est gardee
       r.status_code == 200 and _up and '#FF0000' in _up[0], (r.get_json(), _up))
 
 
-# -- Formulaire de tournoi.
+# Formulaire de tournoi.
 def tournoi(joueurs, permissions, existants=None, interdit=False):
     """`existants` : {nom en minuscules: (id, nom)} des fiches deja en base."""
     existants = existants or {}
@@ -776,7 +732,7 @@ check("« Mario » et « mario » : la meme fiche, reconnue sans tenir compte de
       r.status_code == 409 and (r.get_json() or {}).get('code') == 'joueur_en_double', r.get_json())
 check("  et aucune fiche n'est creee pour « mario »", not ecrit(cur))
 
-# Un joueur connu en plus : un tournoi exige au moins deux lignes.
+# Un tournoi exige au moins deux joueurs.
 LUIGI = {'luigi': (11, 'Luigi')}
 r, cur = tournoi([{'nom': 'Luigi', 'score': 12}, {'nom': 'Inconnu', 'score': 10}],
                  TOURNOI_SEUL, existants=LUIGI)
@@ -796,7 +752,7 @@ check("S-05 : un « / » n'est pas cree par le tournoi -> 409",
       r.status_code == 409 and not ecrit(cur), r.get_json())
 
 
-# -- Reglages et reset global (S-10).
+# Reglages et reset global.
 def config(corps):
     cli, cur, conn = monter_admin([], 'admin', permissions=('gestion_config',))
     return cli.post('/admin/config', json=corps, headers=H), cur
@@ -819,7 +775,7 @@ for champ, corps in (('value', {'value': float('nan'), 'max_sigma': 8}),
     check("S-10 : reset global %s -> 400 (NaN passait `<= 0`)" % corps, invalide(r, champ),
           r.get_json())
 
-# -- Couleur d'une ligue.
+# Couleur d'une ligue.
 cli, cur, conn = monter_admin([], 'admin', permissions=('gestion_ligues',))
 r = cli.post('/admin/ligues/setup', json={'ligues': [{'nom': 'Ligue 1',
                                                       'couleur': 'red;background:url(x)'}]},
@@ -828,7 +784,7 @@ check("couleur de ligue hors #RRGGBB -> 400, rien d'ecrit",
       r.status_code == 400 and not any(s.startswith('UPDATE Configuration') for s in sql_de(cur)),
       (r.status_code, r.get_json()))
 
-# -- Synchronisation du pseudo Discord : quatrieme ecrivain de joueurs.nom.
+# Synchronisation du pseudo Discord.
 cli, cur, conn = monter([
     (r"FROM comptes c LEFT JOIN joueurs j", ('ancien', 'Ancien', 9, 'Mario')),
     (r"FROM noms_interdits", (1,)),
@@ -877,7 +833,7 @@ check("regularisation admin -> ligne ('cgu_admin', 'regularisation_admin')",
       r.status_code == 200 and consent(cur) == [(5, 'cgu_admin', V_ADMIN, 'regularisation_admin')],
       (r.get_json(), consent(cur)))
 
-# Effacement : l'historique part avec le compte (decision du 25/09).
+# Effacement : l'historique part avec le compte.
 cli, cur, conn = monter([
     (r"SELECT role, joueur_id, discord_id, discord_username FROM comptes WHERE id = %s FOR UPDATE",
      ('player', None, '123456789012345678', 'cible')),
@@ -901,8 +857,7 @@ for nom, src in (('migration', _mig), ('schema.sql', _sch)):
     check("%s : UPDATE interdit par trigger, DELETE laisse libre (effacement)" % nom,
           'BEFORE UPDATE ON public.consentements' in src
           and 'BEFORE DELETE ON public.consentements' not in src)
-    # Chaque origine ecrite par le code doit etre admise par la contrainte :
-    # sinon l'INSERT echoue en production, et le consentement avec lui.
+    # Chaque origine ecrite par le code doit etre admise par la contrainte.
     _check = src[src.index('consentements_origine_valide'):]
     _check = _check[:_check.index('))')]
     for origine in re.findall(r"_enregistrer_consentement\([^)]*'([a-z_]+)'\)",
@@ -917,7 +872,7 @@ check("controlee par verifier-schema-dump.sql et adapter-dump.sh",
       "'consentements'" in _lire('scripts', 'verifier-schema-dump.sql')
       and 'consentements' in _lire('scripts', 'adapter-dump.sh'))
 
-# La politique ne doit plus decrire le lien cgu=1 supprime par S-06.
+# La politique ne mentionne plus le lien cgu=1.
 _conf = _lire('frontEnd', 'templates', 'confidentialite.html')
 check("la politique ne dit plus que le consentement se donne en cliquant « Se connecter avec Discord »",
       'donné en cliquant\n                            « Se connecter avec Discord »' not in _conf
@@ -984,7 +939,7 @@ check("  et sans limite (LIMIT NULL)", _aud and _aud[0][1][-1] is None, _aud)
 check("aucune identite d'un AUTRE compte (proposant, auteur d'un octroi) n'est exportee",
       'propose_par' not in str(d) and 'accorde_par' not in str(d))
 
-# Le lecteur partage garde son filtre de rang pour les lignes des AUTRES.
+# Le filtre de rang reste applique aux lignes des autres.
 import routes_comptes as _rc
 cur, _ = install_db([(r"FROM audit_admin a", [])])
 _rc._lire_journal(cur, {'id': 1, 'role': 'chef_admin'}, compte_id=7)
@@ -1011,22 +966,19 @@ check("politique : l'empreinte du snowflake est dite pseudonyme, pas anonyme",
       _conf.count('pseudonyme') >= 2 and 'identifiant y est alors détaché' not in _conf)
 check("politique §6 : la suppression efface aussi l'historique des acceptations (lot F)",
       "l'historique de vos acceptations" in _conf)
-check("le code ne presente plus l'empreinte comme « sans la moindre donnee personnelle »",
-      'sans\n    # conserver la moindre donnee personnelle' not in _lire('backEnd', 'routes_comptes.py')
-      and 'PSEUDONYMISATION' in _lire('backEnd', 'routes_comptes.py'))
 
 
 # ===========================================================================
 print("\n=== Lot E (S-17) : hygiene ===")
 # ===========================================================================
 
-# -- Route morte : GET qui ecrivait en base, sans appelant.
+# Route morte supprimee.
 import routes_admin as _ra_mod
 check("GET /api/admin/fix-db-structure n'existe plus",
       not hasattr(_ra_mod, 'fix_db_structure')
       and 'fix-db-structure' not in _lire('backEnd', 'routes_admin.py'))
 
-# -- Statut : actif ou suspendu, le reste se deduit de la fiche.
+# Statut : actif ou suspendu.
 def statut(corps, joueur_id):
     cli, cur, conn = monter([
         (r"SELECT statut, role, joueur_id FROM comptes WHERE id = %s FOR UPDATE",
@@ -1050,7 +1002,7 @@ check("reactiver un compte SANS fiche -> pending", r.status_code == 200 and ecri
 check("la page Comptes envoie « actif » et n'invente plus linked/pending",
       "suspendu ? 'actif' : 'suspended'" in _lire('frontEnd', 'templates', 'admin_comptes.html'))
 
-# -- Deconnexion : POST + CSRF.
+# Deconnexion : POST + CSRF.
 import importlib, types as _types
 os.environ.setdefault('SECRET_KEY', 'audit')
 os.environ.setdefault('BACKEND_URL', 'http://audit.invalid')
@@ -1110,7 +1062,7 @@ check("etat-avancement ne dit plus que debugMode est a true",
 print("\n=== Lot B (S-15) : CSP, et plus aucun tiers ne voit les visiteurs ===")
 # ===========================================================================
 
-# -- L'en-tete : chaque regle, pour qu'aucune ne disparaisse en silence.
+# Chaque regle de la CSP.
 _REGLES_CSP = (
     "default-src 'self'", "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", "font-src 'self'",
@@ -1131,8 +1083,7 @@ check("la CSP complete part sur les pages, en bloquant",
 check("  et plus aucun en-tete en observation",
       'Content-Security-Policy-Report-Only' not in r.headers, dict(r.headers))
 
-# -- Aucun gabarit ni script ne charge ou n'appelle une origine externe. Les
-#    liens cliquables (<a href>) ne sont pas vises : ils ne partent qu'au clic.
+# Aucun gabarit ni script ne charge une origine externe (liens <a> exclus).
 _gabarits = os.path.join(_RACINE, 'frontEnd', 'templates')
 _js = os.path.join(_RACINE, 'frontEnd', 'static', 'js')
 _sources = [os.path.join(_gabarits, f) for f in os.listdir(_gabarits) if f.endswith('.html')]
@@ -1147,7 +1098,7 @@ for chemin in _sources:
 check("%d gabarits et scripts : aucune ressource ni appel vers un autre site" % len(_sources),
       not _externes and len(_sources) > 40, _externes)
 
-# -- Les copies locales existent bien, polices de Font Awesome comprises.
+# Copies locales presentes, polices comprises.
 _static = os.path.join(_RACINE, 'frontEnd', 'static')
 _references = set()
 for chemin in _sources:
@@ -1163,7 +1114,7 @@ _manquants += [p for p in re.findall(r'url\(\.\./(webfonts/[^)]+)\)',
                if not os.path.isfile(os.path.join(_fa, p))]
 check("chaque fichier reference existe dans static/ (polices comprises)", not _manquants, _manquants)
 
-# -- Widget Discord relaye par le backend.
+# Widget Discord relaye par le backend.
 import routes_public as _rp
 _rp.get_cached = lambda k, ttl=None: _cache_widget.get(k)
 _rp.set_cached = lambda k, v: _cache_widget.__setitem__(k, v)
@@ -1217,7 +1168,7 @@ for panne in (OSError('timeout'), (404, {'message': 'Unknown Guild'}), (200, ['p
     check("  et la panne est gardee en cache (Discord pas relance a chaque visite)",
           len(_appels_discord) == 1, _appels_discord)
 
-# -- Cote frontend : jamais d'erreur, et l'accueil n'appelle plus discord.com.
+# Cote frontend : jamais d'erreur, pas d'appel a discord.com.
 _front.requests = _types.SimpleNamespace(
     get=lambda *a, **k: FakeResponse(503, {'error': 'x'}),
     exceptions=_types.SimpleNamespace(RequestException=OSError))

@@ -185,11 +185,8 @@ input[type="submit"]:hover {
     content: none;
 }
 
-/* Champ ou bouton qu'un droit manquant rend inopérant (fiche joueur, 2026-09-17).
-   Grisé plutôt que masqué : la valeur reste lisible, et le curseur barré plus
-   l'infobulle disent qu'il manque une permission -- pas que la fonction n'existe
-   pas. `pointer-events` reste actif, sinon le navigateur n'afficherait ni le
-   curseur ni le `title` sur un élément désactivé. */
+/* Champ ou bouton inopérant faute de droit : grisé plutôt que masqué.
+   pointer-events reste actif pour afficher le curseur et le title. */
 .est-interdit,
 .est-interdit:hover {
     cursor: not-allowed !important;
@@ -200,11 +197,8 @@ input[type="submit"]:hover {
     pointer-events: auto;
 }
 
-/* Déconnexion en POST (S-17, audit du 24/09) : un formulaire là où il y avait
-   un lien. `display: contents` efface le <form> de la mise en page, si bien que
-   le bouton prend exactement la place du lien (item de menu, pied de carte,
-   rangée de boutons). `.bouton-lien` retire au <button> ce qui le distingue
-   d'un lien, pour les emplacements qui n'étaient pas des boutons. */
+/* Formulaire de déconnexion (POST) intégré là où il y avait un lien :
+   display: contents efface le <form>, .bouton-lien habille le bouton en lien. */
 .form-en-ligne {
     display: contents;
 }

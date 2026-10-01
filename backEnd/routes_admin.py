@@ -45,15 +45,12 @@ logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
 
-# Fenetre de tournois proposes pour un rattachement a une session. Assez large
-# pour couvrir une soiree scindee en plusieurs lobbies, assez courte pour ne pas
-# derouler tout l'historique dans une modale.
+# Nombre de tournois proposes pour un rattachement a une session.
 SESSION_CANDIDATS_PAR_DEFAUT = 20
 SESSION_CANDIDATS_MAX = 100
 
 
-# S-10 (audit du 24/09) : ce que dit un refus de valeur, par champ. Un seul
-# code, `valeur_invalide`, et le champ en cause : l'ecran sait lequel surligner.
+# Message d'erreur par champ numerique (code `valeur_invalide`).
 _BORNES_LISIBLES = {
     'mu': "mu doit être un nombre entre %g et %g." % (MU_MIN, MU_MAX),
     'sigma': "sigma doit être un nombre strictement positif, %g au plus." % SIGMA_MAX,
@@ -82,11 +79,7 @@ from routes_comptes import notifier, notifier_tous
 
 
 def _notifier_recap_publie(cur, saison_id):
-    """Annonce un recap au moment ou il devient visible.
-
-    Pas a sa creation : POST /admin/saisons cree un brouillon que /recap ne
-    liste pas encore.
-    """
+    """Annonce un recap au moment ou il devient visible (pas a sa creation)."""
     cur.execute("SELECT nom, slug FROM saisons WHERE id = %s", (saison_id,))
     row = cur.fetchone()
     if row is None:
@@ -103,51 +96,28 @@ def _notifier_recap_publie(cur, saison_id):
 @admin_bp.route('/admin/check-token', methods=['GET'])
 @role_required(ROLE_ADMIN)
 def check_token():
-    """Sonde « cette session ouvre-t-elle encore l'administration ? ».
+    """Verifie que la session donne encore acces a l'administration.
 
-    Son nom vient du mot de passe, pas son mecanisme : elle est passee en
-    `role_required` le 2026-09-13 et ne lit plus que la session Discord. Le plan
-    de la phase 4 la rangeait parmi les suppressions de l'etape 6 -- c'est un
-    ecart plan/code assume : elle est aujourd'hui la revalidation par page des
-    six vues admin du frontend (`_acces_admin_revoque`). La supprimer les
-    rouvrirait sur la foi du seul cookie, defaut deja rencontre le 13/09.
+    Appelee par le frontend a chaque page admin.
     """
     return jsonify({"status": "valid"}), 200
 
 
 
 # ---------------------------------------------------------------------------
-# Reset global du sigma -- permission gestion_config (« Reglage TS »).
-#
-# CHANGEMENT DE DOCTRINE, 2026-09-13 (contexte 8.5-D) : ces deux routes etaient
-# @role_required(ROLE_CHEF_ADMIN), sous un commentaire « NE JAMAIS convertir »
-# qui appliquait R-51. Elles sont desormais DELEGABLES via gestion_config.
-#
-# Motif : le reset passe PAR le moteur TrueSkill, il est tracable et
-# reproductible -- d'une autre nature qu'une saisie manuelle de score. Qui regle
-# le TrueSkill regle donc aussi ce qui le remet a zero, et les deux vivent sur
-# la meme page (/admin/reglages).
-#
-# R-51 est inverse en connaissance de cause. Ne pas revenir a chef_admin+ sans
-# revalidation : ce n'est pas un oubli.
+# Reset global du sigma (permission gestion_config)
 # ---------------------------------------------------------------------------
 
 @admin_bp.route('/api/admin/global-reset', methods=['POST'])
 @permission_required('gestion_config')
 def apply_global_reset():
-    """Ajoute du sigma aux joueurs situes SOUS un plafond, sans le leur faire
-    depasser.
+    """Ajoute du sigma aux joueurs sous un plafond, sans le leur faire depasser.
 
-    Un joueur a 1.8, reset de 0.3, plafond a 2 : il va a 2.0, pas a 2.1. Un
-    joueur deja a 2.0 ou au-dessus n'est pas touche et ne laisse aucune trace.
-
-    Le plafond est obligatoire : c'est lui qui borne le geste, et le laisser
-    optionnel rendrait « pas de plafond » atteignable par simple oubli du champ.
+    Ex. : joueur a 1.8, reset de 0.3, plafond 2 -> 2.0. Un joueur deja au
+    plafond n'est pas touche. Le plafond est obligatoire.
     """
     data = request.get_json(silent=True) or {}
     try:
-        # S-10 : `val <= 0` laissait passer NaN (toute comparaison a NaN est
-        # fausse) et Infinity. Le reset touche le sigma de TOUS les joueurs.
         val = _sigma_valide(data.get('value'))
         max_sigma = _sigma_valide(data.get('max_sigma'))
         date_str = data.get('date')
@@ -166,18 +136,14 @@ def apply_global_reset():
         except ValueError:
              return jsonify({"error": "Format de date invalide"}), 400
 
-        # Le reset s'applique MAINTENANT, quelle que soit sa date. Date dans le
-        # futur, il bloquait en plus tout ajout de tournoi jusqu'a elle
-        # (add_tournament refuse un tournoi date avant un reset).
+        # Une date future bloquerait l'ajout de tournois jusqu'a elle.
         if target_date > datetime.now().date():
             return jsonify({"error": "La date du reset ne peut pas être dans le futur."}), 400
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 verrou_tournois(cur)
-                # Deux resets a la meme date : un double envoi (le bouton n'est
-                # pas desactive pendant l'appel), qui relevait le sigma deux
-                # fois. Un vrai second reset passe par l'annulation du premier.
+                # Evite un double envoi.
                 cur.execute("SELECT 1 FROM global_resets WHERE date::date = %s LIMIT 1",
                             (target_date,))
                 if cur.fetchone() is not None:
@@ -203,8 +169,7 @@ def apply_global_reset():
                         "error": f"Aucun joueur n'a un sigma inférieur à {max_sigma} : le reset n'aurait aucun effet."
                     }), 409
 
-                # min() = c'est le plafond qui gagne quand il est plus proche
-                # que la valeur demandee.
+                # Le plafond l'emporte s'il est plus proche.
                 lignes = [
                     (joueur_id, sigma, min(sigma + val, max_sigma))
                     for joueur_id, sigma in concernes
@@ -231,21 +196,14 @@ def apply_global_reset():
                     for joueur_id, old_sigma, new_sigma in lignes
                 ])
 
-                # Le detail par joueur vit deja dans global_reset_details : le
-                # dupliquer ici ferait grossir le journal sans rien apprendre.
-                # On garde ce qui identifie le GESTE et permet de le retrouver.
+                # Le detail par joueur est dans global_reset_details.
                 audit.ecrire(cur, 'reset_global_applique', 'systeme', reset_id, {
                     "valeur": val, "max_sigma": max_sigma,
                     "date_cible": str(target_date),
                     "joueurs_touches": len(lignes),
                 })
 
-                # Un reset remonte le sigma, donc fait bouger le classement de
-                # tout le monde sans qu'aucun tournoi n'ait ete joue. Sans
-                # annonce, on decouvre un rang different sans explication.
-                #
-                # Le nombre de joueurs touches est dans le texte : il dit si le
-                # reset a concerne tout le monde ou une poignee de retardataires.
+                # Le classement bouge sans tournoi : on previent tout le monde.
                 notifier_tous(
                     cur, 'reset_global',
                     "Reset global du %s" % target_date.strftime('%d/%m/%Y'),
@@ -271,9 +229,7 @@ def apply_global_reset():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# Meme regle que apply_global_reset ci-dessus : delegable via gestion_config.
-# Annuler un reset doit suivre le droit de l'appliquer -- separer les deux
-# laisserait quelqu'un declencher un geste qu'il ne peut pas reprendre.
+# Meme permission que l'application du reset.
 @admin_bp.route('/api/admin/revert-global-reset', methods=['POST'])
 @permission_required('gestion_config')
 def revert_global_reset():
@@ -303,38 +259,25 @@ def revert_global_reset():
                 details = cur.fetchall()
 
                 if details:
-                    # On RETIRE ce que chacun a recu (delta_applied), on ne
-                    # restaure pas old_sigma. Pas `val` non plus : avec un
-                    # plafond, les joueurs ecretes ont recu moins.
-                    #
-                    # Le garde-fou ci-dessus n'exclut que les tournois. Le sigma
-                    # a pu bouger autrement depuis : edition d'une fiche,
-                    # liaison tardive qui retire une penalite. Restaurer
-                    # old_sigma effacait ces gestes ; une soustraction les
-                    # laisse en place. Plancher a 0.001 : un sigma nul casse
-                    # TrueSkill (division par sigma²).
+                    # On retire ce que chacun a recu (delta_applied) plutot que
+                    # de restaurer old_sigma, pour ne pas effacer les changements
+                    # posterieurs. Plancher a 0.001 : un sigma nul casse TrueSkill.
                     psycopg2.extras.execute_values(cur, """
                         UPDATE Joueurs AS j SET sigma = GREATEST(j.sigma - data.delta, 0.001)
                         FROM (VALUES %s) AS data(id, delta)
                         WHERE j.id = data.id
                     """, [(jid, float(delta)) for jid, delta in details])
                 else:
-                    # Reset applique avant la migration du plafond : pas de
-                    # detail par joueur, mais il etait uniforme et sans plafond.
+                    # Reset anterieur au plafond : uniforme, sans detail.
                     cur.execute("UPDATE Joueurs SET sigma = sigma - %s", (val,))
 
-                # AVANT le DELETE : la ligne disparait, et avec elle la seule
-                # trace de ce qui avait ete applique.
+                # Avant le DELETE, qui efface la trace de ce qui a ete applique.
                 audit.ecrire(cur, 'reset_global_annule', 'systeme', reset_id, {
                     "valeur_annulee": float(val), "date_du_reset": str(reset_date),
                 })
 
-                # L'annonce du reset est encore dans les cloches : la laisser
-                # sans suite decrirait un classement qui n'existe plus. Le
-                # texte est fige, on ne peut pas le corriger -- on le complete.
-                # `strftime` seulement si la colonne est bien une date : sur un
-                # reset anterieur au plafond, elle peut remonter en chaine, et
-                # une notification ne doit pas faire echouer l'annulation.
+                # Complete l'annonce du reset deja envoyee. La date peut remonter
+                # en chaine sur un ancien reset.
                 notifier_tous(
                     cur, 'reset_global_annule',
                     "Reset global annulé",
@@ -359,13 +302,9 @@ def revert_global_reset():
 @admin_bp.route('/admin/config', methods=['GET'])
 @player_required
 def get_config():
-    """Lecture seule des reglages. Ouverte a toute session authentifiee.
+    """Lecture des reglages, ouverte a toute session authentifiee.
 
-    Trois pages d'administration en dependent sans relever de gestion_config :
-    Ligues (etat du mode ligue), Saisons (mouvements inter-ligues) et Fiches
-    joueurs. L'exiger ici rendrait ces pages inutilisables a qui porte leur
-    propre permission -- et ces valeurs ne sont pas des secrets : le mode ligue
-    et le seuil de classement se deduisent deja des pages publiques.
+    Utilisee par les pages Ligues, Saisons et Fiches joueurs, sans gestion_config.
     """
     try:
         with get_db_connection() as conn:
@@ -385,8 +324,7 @@ def get_config():
             "league_mode_enabled": rows.get('league_mode_enabled', 'false') == 'true',
             "inter_league_moves": int(rows.get('inter_league_moves', 0)),
             "ip_version_live": rows.get('ip_version_live', IP_VERSION_DEFAULT),
-            # Les deux versions a la fois : Reglages et Saisons les proposent
-            # cote a cote dans leurs boutons radio.
+            # Les deux versions, proposees cote a cote dans l'admin.
             "ip_textes": {v: textes_ip(v) for v in IP_VERSIONS},
         })
     except Exception:
@@ -396,21 +334,10 @@ def get_config():
 @admin_bp.route('/admin/config', methods=['POST'])
 @player_required
 def update_config():
-    """Reglages TrueSkill, et les clefs de mode ligue. DEUX permissions.
+    """Reglages TrueSkill (gestion_config) et mode ligue (gestion_ligues).
 
-    Depuis le 2026-09-13 les clefs de ligue (league_mode_enabled,
-    inter_league_moves) relevent de gestion_ligues, le reste de gestion_config
-    (« Reglage TS »).
-
-    PAS de @permission_required ici, volontairement : le decorateur s'execute
-    avant le corps et exigerait gestion_config de tout le monde -- un admin qui
-    n'a que « Ligues » serait refuse avant d'avoir pu activer le mode ligue,
-    c'est-a-dire l'inverse de la separation voulue. Chaque domaine porte donc sa
-    propre verification ci-dessous, et l'appel qui ne touche a rien est refuse.
-
-    Le refus est EXPLICITE (403) et non un silence : desactiver le mode ligue
-    detruit l'affectation de tous les joueurs, croire l'avoir fait sans que rien
-    ne bouge serait le pire des deux mondes.
+    Pas de @permission_required : chaque groupe de cles verifie sa propre
+    permission, et un refus est explicite (403).
     """
     data = request.get_json()
     try:
@@ -424,18 +351,11 @@ def update_config():
                     "error": "Le mode ligue relève de la permission « Ligues ».",
                     "code": "permission_manquante",
                 }), 403
-        # Ces huit clefs ne sont ecrites QUE si elles sont dans le payload.
-        # Elles l'etaient auparavant a chaque appel, defauts compris : un client
-        # qui n'envoyait que sa propre clef reinitialisait donc tau, la penalite
-        # fantome et le seuil de classement sans le savoir. C'est exactement ce
-        # que faisait la page Ligues, qui relisait toute la config pour la
-        # reposter -- contournable seulement tant que les deux domaines
-        # partageaient la meme permission.
+        # Seules les cles presentes dans le payload sont ecrites.
         configs = []
         touche_trueskill = False
 
-        # S-10 : chaque reglage flottant est fini et borne. tau et la penalite
-        # fantome entrent dans le calcul de tous les joueurs au tournoi suivant.
+        # Reglages flottants finis et bornes.
         if 'tau' in data:
             tau = nombre_fini(data['tau'], 0.0, SIGMA_MAX)
             if tau is None:
@@ -448,9 +368,7 @@ def update_config():
             if penalite is None:
                 return _valeur_invalide('ghost_penalty')
             configs.append(('ghost_penalty', str(penalite)))
-        # Seuils exprimes en SESSIONS LOUPEES, plus en jours (decision 8).
-        # max(1, ...) : un seuil nul penaliserait des le tournoi ou le joueur
-        # vient de jouer, un intervalle nul diviserait par zero.
+        # Seuils en sessions loupees, au moins 1.
         if 'ghost_threshold_sessions' in data:
             configs.append(('ghost_threshold_sessions',
                             str(max(1, int(data['ghost_threshold_sessions'])))))
@@ -468,12 +386,7 @@ def update_config():
                 return jsonify({"error": "ip_version_live invalide"}), 400
             configs.append(('ip_version_live', ip_version_live))
 
-        # Les seuils de tiers (nom/couleur/seuil_k/rang) ne relevent plus de
-        # cette route depuis les tiers dynamiques (Partie B) : ils vivent
-        # dans la table `tiers`, geree par les routes CRUD /admin/tiers/*
-        # plus bas dans ce fichier.
-
-        # A part : sa valeur pilote le reclassement de TOUS les joueurs plus bas.
+        # Traite a part : declenche le reclassement de tous les joueurs.
         unranked_threshold = None
         if 'unranked_threshold' in data:
             unranked_threshold = int(data['unranked_threshold'])
@@ -490,8 +403,7 @@ def update_config():
                     "code": "permission_manquante",
                 }), 403
 
-        # Sans ce refus, un compte sans aucune des deux permissions obtiendrait
-        # un 200 pour un appel qui n'ecrit rien -- une reussite apparente.
+        # Aucune cle autorisee : rien a ecrire.
         if not touche_trueskill and not touche_ligues:
             return jsonify({"error": "Aucun réglage fourni"}), 400
 
@@ -516,28 +428,20 @@ def update_config():
                         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                     """, (k, v))
 
-                # Uniquement si le seuil a ete fourni : sans ce garde, un appel
-                # qui ne touche qu'au mode ligue passerait None ici et
-                # declasserait tous les joueurs d'un coup.
+                # Seulement si le seuil a ete fourni.
                 if unranked_threshold is not None:
                     cur.execute("""
                         UPDATE Joueurs
                         SET is_ranked = (COALESCE(consecutive_missed, 0) < %s)
                     """, (unranked_threshold,))
 
-                # DEUX actions distinctes et non une seule : cette route sert
-                # deux domaines sous deux permissions differentes
-                # (gestion_config et gestion_ligues). Les confondre dans le
-                # journal rendrait impossible de filtrer « qui a touche aux
-                # ligues » sans relire chaque ligne de details.
+                # Une entree d'audit par domaine (config et ligues).
                 CLES_LIGUE = {'league_mode_enabled', 'inter_league_moves'}
                 ligue = {k: v for k, v in configs if k in CLES_LIGUE}
                 ts = {k: v for k, v in configs if k not in CLES_LIGUE}
                 if ts:
                     audit.ecrire(cur, 'config_modifiee', 'systeme', None, {
                         "cles": ts,
-                        # Le declassement touche TOUS les joueurs d'un coup :
-                        # le signaler evite de croire a un reglage anodin.
                         "declassement_rejoue": unranked_threshold is not None,
                     })
                 if ligue:
@@ -556,10 +460,9 @@ def update_config():
 @admin_bp.route('/admin/config/tier-distribution', methods=['GET'])
 @permission_required('gestion_config')
 def get_tier_distribution():
-    """Courbe + position des joueurs rankes actuels, pour le tableau de
-    reglage des seuils de tiers (page Reglages TrueSkill). Meme population
-    que recalculate_tiers() : c'est la distribution qui sera reellement
-    utilisee au prochain recalcul, le preview doit lui etre fidele.
+    """Courbe et position des joueurs classes, pour l'apercu des seuils de tiers.
+
+    Meme population que recalculate_tiers().
     """
     try:
         with get_db_connection() as conn:
@@ -583,22 +486,12 @@ def get_tier_distribution():
         return jsonify({"error": "Erreur serveur"}), 500
 
 
-# --- Tiers dynamiques (Partie B, docs/tableau-seuils-tiers-plan.md) --------
-#
-# 'U' (non classe / hors distribution) reste cable en dur ailleurs (has_tier,
-# IP_V2_REF_REQUIRE_TIER, valeur par defaut a la creation d'un joueur) : ce
-# n'est pas une ligne de cette table, et un admin ne peut ni le nommer ainsi
-# ni le supprimer via ces routes -- _nom_valide() le refuse explicitement.
-# Seule sa COULEUR se regle, a part : update_tier_u(), clef de configuration.
-#
-# Toutes ces routes sont sous gestion_config, comme le reste des reglages
-# TrueSkill (cf update_config plus haut), et recalculent les tiers de tous
-# les joueurs immediatement apres chaque ecriture -- meme comportement que
-# /admin/config.
+# --- Tiers (permission gestion_config) ------------------------------------
+# 'U' (non classe) n'est pas un tier en base : seule sa couleur se regle.
+# Chaque ecriture recalcule les tiers de tous les joueurs.
 
 def _nom_tier_valide(nom) -> str | None:
-    """Normalise et valide un nom de tier ; None si invalide (vide, > 10
-    caracteres, ou 'U' qui est reserve au sentinel hors-distribution)."""
+    """Nom de tier normalise, ou None (vide, > 10 caracteres, ou 'U')."""
     if not isinstance(nom, str):
         return None
     nom = nom.strip()
@@ -618,10 +511,7 @@ def _couleur_valide(couleur) -> str | None:
 
 
 def _renumeroter_rangs(cur) -> None:
-    """Rangs toujours 0..N-1 sans trou, dans l'ordre croissant deja en base.
-    A appeler apres toute suppression : un trou casserait l'hypothese
-    « le plancher est le tier de plus petit rang » si le trou se trouvait
-    juste au-dessus du rang 0."""
+    """Renumerote les rangs 0..N-1 sans trou."""
     cur.execute("SELECT id FROM tiers ORDER BY rang ASC")
     ids = [r[0] for r in cur.fetchall()]
     for nouveau_rang, tid in enumerate(ids):
@@ -629,20 +519,9 @@ def _renumeroter_rangs(cur) -> None:
 
 
 def _appliquer_plancher(cur) -> None:
-    """Efface le seuil du tier de plus petit rang : le plancher n'a pas de
-    frontiere basse, par definition.
+    """Efface le seuil du tier de plus petit rang (le plancher n'en a pas).
 
-    NE FABRIQUE AUCUNE VALEUR. Une version precedente donnait d'office
-    `voisin + 1.0` a tout tier sans seuil qui n'etait plus le plancher --
-    elle inventait donc une frontiere que l'admin n'avait pas demandee, ce qui
-    corrompait le classement (bug de recette du 14/09 : un tier se retrouvait
-    a 1.0 au milieu du classement, au-dessus de tiers censes lui etre
-    superieurs). Un tier promu au-dessus du plancher recoit sa vraie valeur du
-    PUT correspondant ; s'il n'en a pas, `tier_for_score()` le traite comme le
-    dernier recours, ce qui reste coherent.
-
-    N'est appelee qu'en fin d'operation (creation, suppression,
-    reordonnancement), jamais entre deux ecritures d'une meme sequence.
+    A n'appeler qu'en fin d'operation.
     """
     cur.execute("SELECT id, seuil_k FROM tiers ORDER BY rang ASC LIMIT 1")
     row = cur.fetchone()
@@ -651,13 +530,7 @@ def _appliquer_plancher(cur) -> None:
 
 
 def _etat_tiers(cur):
-    """La table des tiers telle qu'on la journalise, du meilleur au pire.
-
-    L'etat COMPLET avant et apres, plutot que le seul champ touche : la table
-    tient en quelques lignes, et un geste sur un tier en deplace d'autres (le
-    plancher passe au voisin, les rangs se renumerotent). C'est aussi ce qui
-    permet de tout remettre en place apres un « Reinitialiser » malheureux.
-    """
+    """Etat complet des tiers pour le journal, du meilleur au pire."""
     return [{"id": t["id"], "nom": t["nom"], "couleur": t["couleur"],
              "seuil_k": t["seuil_k"]} for t in load_tiers(cur)]
 
@@ -665,9 +538,7 @@ def _etat_tiers(cur):
 @admin_bp.route('/admin/tiers', methods=['GET'])
 @player_required
 def get_tiers():
-    """Lecture seule, ouverte a toute session authentifiee -- meme raison
-    que get_config() : ces valeurs ne sont pas des secrets, et /classement
-    (page publique) en depend deja indirectement via /tier-seuils."""
+    """Lecture des tiers, ouverte a toute session authentifiee."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -681,9 +552,7 @@ def get_tiers():
 @admin_bp.route('/admin/tiers', methods=['POST'])
 @permission_required('gestion_config')
 def create_tier():
-    """Cree un tier. Position d'insertion optionnelle (`apres_rang`) : sans
-    elle, le nouveau tier prend le rang le plus haut (meilleur tier) --
-    choix par defaut le moins surprenant pour un ajout."""
+    """Cree un tier, au sommet par defaut ou au-dessus de `apres_rang`."""
     data = request.get_json() or {}
     nom = _nom_tier_valide(data.get('nom'))
     if nom is None:
@@ -711,19 +580,13 @@ def create_tier():
                 rang_max = rang_max[0] if rang_max else -1
 
                 if apres_rang is None:
-                    # Par defaut : au sommet (meilleur tier).
                     nouveau_rang = rang_max + 1
                 else:
-                    # Insertion juste au-dessus du rang donne : decale tout ce
-                    # qui est strictement au-dessus pour lui faire de la place.
+                    # Decale les rangs superieurs pour faire de la place.
                     apres_rang = int(apres_rang)
                     cur.execute("UPDATE tiers SET rang = rang + 1 WHERE rang > %s", (apres_rang,))
                     nouveau_rang = apres_rang + 1
 
-                # Le nouveau tier n'est jamais le plancher a la creation (sauf
-                # table vide, cas degenere non attendu en usage normal) :
-                # _appliquer_plancher() rectifie de toute facon juste apres si
-                # besoin, donc seuil_k fourni est respecte tel quel ici.
                 cur.execute(
                     "INSERT INTO tiers (nom, couleur, seuil_k, rang) VALUES (%s, %s, %s, %s) RETURNING id",
                     (nom, couleur, seuil_k, nouveau_rang),
@@ -735,9 +598,7 @@ def create_tier():
             conn.commit()
             recalculate_tiers()
             invalidate_cache()
-        # L'id est renvoye pour que l'appelant (panneau de gestion des tiers)
-        # puisse suivre ce tier sans avoir a le reidentifier par son nom
-        # ensuite (fragile si un renommage est encore en cours cote client).
+        # Id renvoye pour que le panneau suive le tier sans passer par son nom.
         return jsonify({"status": "success", "id": nouvel_id})
     except Exception as e:
         logger.error(f"Erreur create_tier: {e}")
@@ -747,9 +608,7 @@ def create_tier():
 @admin_bp.route('/admin/tiers/<int:tier_id>', methods=['PUT'])
 @permission_required('gestion_config')
 def update_tier(tier_id):
-    """Renomme / recolore / change le seuil d'UN tier. Le rang se change via
-    /admin/tiers/reorder, pas ici -- un changement de rang isole ouvrirait un
-    etat incoherent (deux tiers au meme rang) le temps de plusieurs appels."""
+    """Modifie nom, couleur ou seuil d'un tier (le rang passe par /reorder)."""
     data = request.get_json() or {}
     try:
         with get_db_connection() as conn:
@@ -777,14 +636,8 @@ def update_tier(tier_id):
                     if couleur is None:
                         return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
                     champs.append("couleur = %s"); valeurs.append(couleur)
-                # seuil_k accepte tel quel, y compris sur le tier actuellement
-                # plancher : le panneau d'administration envoie ses PUT AVANT
-                # le /reorder, donc « qui est le plancher » est encore l'ancien
-                # etat a cet instant. Refuser ici bloquait tout ajout d'un
-                # nouveau tier sous le plancher existant (bug de recette du
-                # 13/09). L'invariant « seul le rang le plus bas a seuil_k
-                # NULL » est retabli par _appliquer_plancher() ci-dessous, et
-                # de nouveau apres le reorder.
+                # seuil_k accepte meme sur le plancher actuel : le panneau envoie
+                # ses PUT avant le /reorder, qui retablit l'invariant.
                 if 'seuil_k' in data:
                     if data['seuil_k'] is None:
                         champs.append("seuil_k = NULL")
@@ -801,11 +654,7 @@ def update_tier(tier_id):
                 valeurs.append(tier_id)
                 cur.execute(f"UPDATE tiers SET {', '.join(champs)} WHERE id = %s", valeurs)
                 apres = _etat_tiers(cur)
-                # Le panneau renvoie nom, couleur ET seuil de chaque tier a
-                # chaque enregistrement. Journaliser l'envoi plutot que le
-                # changement faisait une ligne par tier, identiques ou non, et
-                # « champs » les citait tous : le journal ne disait plus ce
-                # qui avait bouge.
+                # On ne journalise que ce qui a change.
                 t_avant = next((t for t in avant if t["id"] == tier_id), {})
                 t_apres = next((t for t in apres if t["id"] == tier_id), {})
                 changements = {c: [t_avant.get(c), t_apres.get(c)]
@@ -818,16 +667,9 @@ def update_tier(tier_id):
                         "changements": changements,
                         "avant": avant, "apres": apres,
                     })
-                # PAS de _appliquer_plancher() ici : le panneau envoie un PUT
-                # par tier AVANT le /reorder final, donc le tier vise peut
-                # encore etre le plancher en base alors qu'il ne le sera plus
-                # apres reordonnancement. Rejouer l'invariant a cet instant
-                # effacait le seuil tout juste ecrit (bug du 14/09 : la valeur
-                # saisie etait perdue, puis remplacee par une valeur inventee).
-                # C'est /reorder, qui connait l'ordre final, qui le retablit.
+                # Pas de _appliquer_plancher() ici : c'est /reorder qui le fait.
             conn.commit()
-            # Rien n'a change : le tier de personne non plus. Le recalcul
-            # parcourt tous les joueurs, et le panneau envoie un PUT par tier.
+            # Recalcul seulement si quelque chose a change.
             if changements:
                 recalculate_tiers()
                 invalidate_cache()
@@ -840,12 +682,7 @@ def update_tier(tier_id):
 @admin_bp.route('/admin/tiers/unranked', methods=['PUT'])
 @permission_required('gestion_config')
 def update_tier_u():
-    """Recolore la pastille U (non classe). Sa couleur est son SEUL reglage :
-    nom, seuil et place restent cables en dur (voir l'en-tete de cette
-    section). La lecture est publique, /tiers/unranked.
-
-    Pas de recalcul : une couleur ne change le tier de personne.
-    """
+    """Couleur de la pastille U (non classe). Pas de recalcul necessaire."""
     data = request.get_json(silent=True) or {}
     couleur = _couleur_valide(data.get('couleur'))
     if couleur is None:
@@ -859,8 +696,7 @@ def update_tier_u():
                     VALUES ('tier_u_couleur', %s)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """, (couleur,))
-                # Meme regle que update_tier : on journalise un changement,
-                # pas un envoi.
+                # On ne journalise que ce qui a change.
                 if couleur.upper() != avant.upper():
                     audit.ecrire(cur, 'tier_modifie', 'systeme', None, {
                         "nom": "U", "champs": ["couleur"],
@@ -878,11 +714,10 @@ def update_tier_u():
 @admin_bp.route('/admin/tiers/<int:tier_id>', methods=['DELETE'])
 @permission_required('gestion_config')
 def delete_tier(tier_id):
-    """Supprime un tier. S'il etait le plancher, le tier juste au-dessus
-    devient automatiquement le nouveau plancher (_appliquer_plancher), voir
-    docs/tableau-seuils-tiers-plan.md Partie B. Refuse de vider la table : il
-    faut toujours au moins un tier pour que has_tier()/recalculate_tiers()
-    aient un resultat autre que 'U'."""
+    """Supprime un tier (le tier au-dessus devient plancher si besoin).
+
+    Refuse de supprimer le dernier tier.
+    """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -913,10 +748,7 @@ def delete_tier(tier_id):
 @admin_bp.route('/admin/tiers/reorder', methods=['PUT'])
 @permission_required('gestion_config')
 def reorder_tiers():
-    """Recoit l'ordre COMPLET des tiers (liste d'ids, du meilleur au pire) et
-    reassigne tous les rangs d'un coup -- evite un etat incoherent (deux
-    tiers au meme rang) qu'un reordonnancement fait d'appels individuels
-    pourrait produire entre deux requetes."""
+    """Reassigne tous les rangs a partir de l'ordre complet (ids, du meilleur au pire)."""
     data = request.get_json() or {}
     ordre = data.get('ordre')
     if not isinstance(ordre, list) or not ordre:
@@ -935,12 +767,7 @@ def reorder_tiers():
                     return jsonify({"error": "« ordre » doit contenir exactement tous les tiers existants"}), 400
                 avant = _etat_tiers(cur)
 
-                # Rang decroissant : premier de la liste = meilleur tier =
-                # rang le plus haut. Passage par des rangs temporaires
-                # negatifs : `rang` est UNIQUE, des UPDATE un par un vers les
-                # rangs finaux (0..n-1, deja tous occupes) violeraient la
-                # contrainte des le premier si son rang cible est encore pris
-                # par un autre tier de la boucle.
+                # Rangs temporaires negatifs : `rang` est UNIQUE.
                 n = len(ordre)
                 for position, tid in enumerate(ordre):
                     cur.execute("UPDATE tiers SET rang = %s WHERE id = %s", (-(position + 1), int(tid)))
@@ -949,9 +776,7 @@ def reorder_tiers():
 
                 _appliquer_plancher(cur)
                 apres = _etat_tiers(cur)
-                # Le panneau l'appelle a chaque enregistrement, ordre change
-                # ou non : ne tracer (et ne recalculer) que s'il a bouge --
-                # l'ordre, ou le seuil que _appliquer_plancher vient d'effacer.
+                # Trace et recalcul seulement si l'ordre ou le plancher a change.
                 change = apres != avant
                 if change:
                     audit.ecrire(cur, 'tiers_reordonnes', 'systeme', None, {
@@ -971,15 +796,11 @@ def reorder_tiers():
 @admin_bp.route('/admin/tiers/reset', methods=['POST'])
 @permission_required('gestion_config')
 def reset_tiers():
-    """Restaure exactement S/A/B/C avec les seuils par defaut (DEFAULT_TIERS)
-    -- le bouton « Reinitialiser » du panneau de gestion des tiers. Detruit
-    toute personnalisation en cours, le frontend confirme avant d'appeler."""
+    """Restaure les tiers par defaut (DEFAULT_TIERS)."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # L'etat detruit est ce qui compte ici : « Reinitialiser »
-                # efface toute personnalisation, et c'est la seule trace qui
-                # permette de la reconstruire.
+                # Etat complet avant reinitialisation, pour pouvoir le reconstruire.
                 avant = _etat_tiers(cur)
                 cur.execute("DELETE FROM tiers")
                 for t in DEFAULT_TIERS:
@@ -1025,8 +846,7 @@ def api_get_joueurs():
                     "color": r[7] if r[7] else "#FFFFFF",
                     "ligue": { "id": r[8], "nom": r[9], "couleur": r[10] } if r[8] else None,
                     "compte_lie": { "pseudo": r[11], "statut": r[12] } if r[12] else None,
-                    # S-11 : ce que fiche_cible_protegee refuserait. Sa propre
-                    # fiche reste accessible, comme dans le decorateur.
+                    # Fiche protegee (rang egal ou superieur), sauf la sienne.
                     "protegee": (r[13] is not None and r[13] != g.compte['id']
                                  and hors_de_portee(g.compte['role'], r[14])),
                 } for r in cur.fetchall()]
@@ -1038,7 +858,7 @@ def api_get_joueurs():
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['PUT'])
 @permission_required('gestion_joueurs')
-@fiche_cible_protegee   # S-11 : pas la fiche d'un rang egal ou superieur
+@fiche_cible_protegee  # pas la fiche d'un rang egal ou superieur
 def api_update_joueur(id):
     """Edite une fiche joueur, un champ a la fois selon les droits de l'acteur.
 
@@ -1048,9 +868,8 @@ def api_update_joueur(id):
     champs partagent un seul UPDATE : un @permission_required de route entiere
     ne saurait pas lequel est en cause.
 
-    Un champ absent du payload, ou renvoye identique a la base, ne demande
-    AUCUN droit -- sinon un admin qui n'a que « couleur » ne pourrait rien
-    enregistrer, le formulaire renvoyant toujours la fiche entiere.
+    Un champ absent du payload, ou identique a la base, ne demande aucun droit :
+    le formulaire renvoie toujours la fiche entiere.
     """
     data = request.get_json()
     try:
@@ -1084,21 +903,11 @@ def api_update_joueur(id):
         if 'is_ranked' in data:
             demande['is_ranked'] = bool(data['is_ranked'])
         if 'color' in data:
-            # Normalisee pour la comparaison : « #ff0000 » renvoye par le
-            # selecteur n'est pas une modification de « #FF0000 ». Une valeur
-            # qui n'est pas une couleur est gardee telle quelle, pour etre
-            # refusee plus bas.
+            # Normalisee pour la comparaison ; une valeur invalide est refusee plus bas.
             demande['color'] = couleur_valide(data['color']) or data['color']
 
-        # Comparaison AVANT verification : renvoyer la valeur affichee sans y
-        # toucher n'est pas une modification.
-        #
-        # mu/sigma se comparent A LA PRECISION AFFICHEE (3 decimales, cf.
-        # toFixed(3) dans openEditModal). TrueSkill produit des valeurs bien
-        # plus longues -- un sigma de 8.333333333 s'affiche « 8.333 » et revient
-        # ainsi : l'ecart est de 3e-7, donc une tolerance plus fine le lirait
-        # comme une saisie et refuserait un admin qui n'a touche a rien.
-        # C'est le defaut que ce calcul existe pour eviter.
+        # Une valeur renvoyee telle qu'affichee n'est pas une modification.
+        # mu/sigma sont compares a la precision affichee (3 decimales).
         DECIMALES_AFFICHEES = 3
 
         def a_change(champ):
@@ -1109,11 +918,7 @@ def api_update_joueur(id):
                 return str(demande[champ]).upper() != str(courant[champ]).upper()
             return demande[champ] != courant[champ]
 
-        # S-10 : bornes et finitude, sur les seules valeurs MODIFIEES. Une fiche
-        # dont le sigma a depasse la borne par penalites fantomes doit rester
-        # renommable sans qu'on exige de corriger un score qu'on ne touche pas.
-        # NaN et Infinity sont toujours vus comme modifies (round(nan) differe
-        # de tout), donc toujours controles.
+        # Bornes verifiees seulement sur les valeurs modifiees.
         if a_change('mu') and nombre_fini(demande['mu'], MU_MIN, MU_MAX) is None:
             return _valeur_invalide('mu')
         if a_change('sigma') and _sigma_valide(demande['sigma']) is None:
@@ -1136,10 +941,8 @@ def api_update_joueur(id):
                     "permission": permission,
                 }), 403
 
-        # Un champ juge inchange garde la valeur de la BASE, pas celle du
-        # payload. Sans ca, editer le nom d'un joueur reecrirait son sigma avec
-        # les 3 decimales affichees (8.333333333 -> 8.333) : une troncature
-        # silencieuse du score, a chaque passage dans la modale.
+        # Un champ inchange garde la valeur de la base (evite la troncature a
+        # 3 decimales).
         for champ in PERMISSIONS_CHAMPS_JOUEUR:
             if not a_change(champ):
                 demande[champ] = courant[champ]
@@ -1147,20 +950,8 @@ def api_update_joueur(id):
         mu, sigma, nom = demande['mu'], demande['sigma'], demande['nom']
         is_ranked, color = demande['is_ranked'], demande['color']
 
-        # `consecutive_missed` declenche la penalite de sigma (decision 8 de
-        # docs/plan-sessions-tournois.md) : une valeur saisie a la main
-        # provoque ou empeche une penalite au tournoi suivant. C'est donc une
-        # valeur derivee du calcul, pas une donnee d'edition courante -- et la
-        # laisser modifiable par tout detenteur de `gestion_joueurs` l'a rendue
-        # non fiable (28 compteurs perimes constates le 15/09).
-        #
-        # Le SUPERADMIN garde la main : il faut une porte de sortie pour
-        # rattraper un compteur faux sans passer par la base. CAPACITE DE ROLE,
-        # jamais une permission delegable -- meme regle que l'annulation de
-        # tournoi (hierarchie-admin-plan.md 5).
-        #
-        # Le chemin normal reste scripts/recompter_absences.py, qui recalcule
-        # tout le monde selon une regle unique plutot qu'un joueur a la main.
+        # consecutive_missed n'est modifiable que par le superadmin (correction
+        # ponctuelle ; sinon passer par scripts/recompter_absences.py).
         modifier_absences = (g.compte['role'] == ROLE_SUPERADMIN
                              and 'consecutive_missed' in data)
         if modifier_absences:
@@ -1168,10 +959,7 @@ def api_update_joueur(id):
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # S-05 : un renommage passe par la meme regle que la creation --
-                # sinon rendre son ancien nom a une fiche anonymisee suffisait a
-                # defaire l'anonymisation. La fiche elle-meme ne compte pas
-                # comme collision : corriger la casse de son nom reste permis.
+                # Meme regle que la creation ; la fiche elle-meme est exclue.
                 if a_change('nom'):
                     nom, erreur = nom_creable(cur, nom, exclure_id=id)
                     if erreur is not None:
@@ -1190,16 +978,7 @@ def api_update_joueur(id):
                         " color=%s WHERE id=%s",
                         (nom, mu, sigma, is_ranked, color, id))
 
-                # C'est la trace qui repond a la question d'origine : « qui a
-                # mis ce joueur a 32.5, et quelle etait sa valeur avant ».
-                #
-                # `a_change()` fait deja tout le travail : il compare A LA
-                # PRECISION AFFICHEE, donc un sigma revenu inchange de la modale
-                # (8.333333333 -> 8.333) n'est PAS compte comme une
-                # modification. Reutiliser ce predicat plutot que de recomparer
-                # ici evite que le journal et la verification de droits ne
-                # divergent -- sinon on tracerait des modifications que la
-                # route n'a pas jugees telles, et inversement.
+                # Memes champs que la verification de droits (a_change).
                 champs = [c for c in PERMISSIONS_CHAMPS_JOUEUR if a_change(c)]
                 if modifier_absences and consecutive_missed != actuel_absences:
                     champs.append('consecutive_missed')
@@ -1210,19 +989,9 @@ def api_update_joueur(id):
                         avant['consecutive_missed'] = actuel_absences
                         apres['consecutive_missed'] = consecutive_missed
                     audit.ecrire(cur, 'joueur_modifie', 'joueur', id, {
-                        # Le nom de la fiche, FIGE a l'instant de l'action.
-                        # Sans lui, la ligne dit « fiche 7 modifiee » et il faut
-                        # aller chercher qui est le joueur 7 -- ou le deviner,
-                        # si la fiche a ete renommee ou supprimee depuis. C'est
-                        # le meme motif que la denormalisation de l'acteur.
-                        #
-                        # `courant` et non `demande` : on nomme la fiche telle
-                        # qu'elle etait AVANT, sinon un renommage afficherait le
-                        # nouveau nom pour une ligne qui raconte le changement.
+                        # Nom de la fiche avant modification.
                         "joueur_nom": courant['nom'],
                         "avant": avant, "apres": apres, "champs": champs,
-                        # Le drapeau qui permet de filtrer d'un coup d'oeil les
-                        # modifications de SCORE parmi les simples renommages.
                         "score_modifie": bool({'mu', 'sigma'} & set(champs)),
                     })
             conn.commit()
@@ -1235,18 +1004,14 @@ def api_update_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>', methods=['DELETE'])
-@permission_required('joueurs_irreversible')   # sous-permission : exige aussi gestion_joueurs
+@permission_required('joueurs_irreversible')
 @fiche_cible_protegee
 def api_delete_joueur(id):
     """Supprime un joueur, sauf s'il a un historique de matchs.
 
-    Toutes les FK vers Joueurs sont en ON DELETE CASCADE : la suppression
-    emporte participations, awards, ghost_log et league_movements. Or le moteur
-    TrueSkill est incrémental — chaque tournoi part du mu/sigma courant et
-    l'écrase — et il n'existe aucune fonction de recalcul depuis zéro. Retirer
-    les participations d'un joueur rend donc le classement de TOUS les autres
-    définitivement faux, sans moyen de le reconstruire.
-    D'où le refus, et l'anonymisation offerte en alternative.
+    Les FK sont en ON DELETE CASCADE et le calcul TrueSkill est incremental :
+    supprimer des participations fausserait le classement des autres. Dans ce
+    cas, il faut anonymiser.
     """
     try:
         with get_db_connection() as conn:
@@ -1273,9 +1038,7 @@ def api_delete_joueur(id):
                         "alternative": f"/admin/joueurs/{id}/anonymiser",
                     }), 409
 
-                # La FK est en ON DELETE SET NULL : supprimer sans delier
-                # laisserait un compte `linked` sans fiche, etat qu'aucun ecran
-                # ne sait rattraper.
+                # Delie d'abord le compte (FK en ON DELETE SET NULL).
                 cur.execute(
                     """SELECT id, statut,
                               COALESCE(discord_global_name, discord_username)
@@ -1286,7 +1049,7 @@ def api_delete_joueur(id):
                 compte_delie = None
                 if compte is not None:
                     compte_id, statut_compte, pseudo = compte
-                    # Une suspension est une decision independante du lien.
+                    # Une suspension reste en place.
                     nouveau_statut = 'pending' if statut_compte == 'linked' else statut_compte
                     cur.execute(
                         """UPDATE comptes
@@ -1295,17 +1058,12 @@ def api_delete_joueur(id):
                            WHERE id = %s""",
                         (nouveau_statut, compte_id),
                     )
-                    # Passe par le helper : cet appel omettait `acteur_compte_id`,
-                    # donc le journal savait QUOI mais pas QUI (§3.2 du plan).
                     audit.ecrire(
                         cur, 'liaison_annulee', 'compte', compte_id,
                         {"joueur_id": id, "joueur_nom": row[0],
                          "statut": nouveau_statut,
                          "origine": "suppression_fiche"},
                     )
-                    # Passe par le helper, comme tous les autres sites : cet
-                    # INSERT ecrit a la main etait le seul a diverger, et il
-                    # aurait fallu y reporter chaque evolution de la table.
                     notifier(
                         cur, compte_id, 'fiche_supprimee',
                         "Votre fiche joueur a été supprimée",
@@ -1318,10 +1076,7 @@ def api_delete_joueur(id):
                     compte_delie = {"id": compte_id, "pseudo": pseudo,
                                     "statut": nouveau_statut}
 
-                # AVANT le DELETE : la ligne d'audit doit etre ecrite tant que
-                # la fiche existe encore, et le nom consigne ici est la SEULE
-                # trace qui en restera -- la suppression emporte tout le reste
-                # par CASCADE.
+                # Avant le DELETE : le nom n'existera plus ailleurs.
                 audit.ecrire(cur, 'joueur_supprime', 'joueur', id, {
                     "nom": row[0],
                     "compte_delie": compte_delie['id'] if compte_delie else None,
@@ -1337,14 +1092,12 @@ def api_delete_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs/<int:id>/anonymiser', methods=['POST'])
-@permission_required('joueurs_irreversible')   # sous-permission : exige aussi gestion_joueurs
+@permission_required('joueurs_irreversible')
 @fiche_cible_protegee
 def api_anonymiser_joueur(id):
-    """Détache l'identité d'un joueur sans toucher à son dossier sportif.
+    """Detache l'identite d'un joueur sans toucher a son dossier sportif.
 
-    Aucun nom n'étant dénormalisé, un UPDATE du nom se propage partout et laisse
-    stats, TrueSkill et awards identiques. Le suffixe aléatoire évite la collision
-    avec un joueur qui porterait littéralement « Joueur #12 ».
+    Le suffixe aleatoire evite une collision avec un nom existant.
     """
     try:
         with get_db_connection() as conn:
@@ -1369,13 +1122,11 @@ def api_anonymiser_joueur(id):
                     "UPDATE Joueurs SET nom = %s, color = %s, anonymise_at = now() WHERE id = %s",
                     (nouveau_nom, '#FFFFFF', id),
                 )
-                # L'ancien nom est verrouille par son empreinte, jamais en clair : sinon le
-                # ressaisir dans le formulaire de tournoi recreerait la fiche effacee.
+                # Empreinte de l'ancien nom pour empecher sa recreation.
                 cur.execute(
                     "INSERT INTO noms_interdits (nom_hash) VALUES (%s) ON CONFLICT DO NOTHING",
                     (empreinte_nom(ancien_nom),),
                 )
-                # Idem : l'acteur manquait sur une action IRREVERSIBLE.
                 audit.ecrire(cur, 'joueur_anonymise', 'joueur', id,
                              {"nouveau_nom": nouveau_nom})
             conn.commit()
@@ -1393,24 +1144,18 @@ def api_anonymiser_joueur(id):
 
 
 @admin_bp.route('/admin/joueurs', methods=['POST'])
-@permission_required('joueurs_creation')   # sous-permission : exige aussi gestion_joueurs
+@permission_required('joueurs_creation')
 def api_add_joueur():
     """Cree une fiche joueur.
 
-    Le mu/sigma de depart exige `edition_mu_sigma`, comme sur l'edition : sans
-    cette seconde verification, un admin qui n'a que « creation » fixerait le
-    score qu'il veut a la creation, et pourrait meme contourner le droit sur un
-    joueur existant en le supprimant pour le recreer. Le contournement par
-    suppression suppose « irreversible » en plus, mais il resterait ouvert.
+    Un mu/sigma de depart non standard exige aussi `edition_mu_sigma`.
     """
     data = request.get_json()
     try:
         nom = data.get('nom')
         mu = nombre_fini(data.get('mu', DEFAULT_MU), MU_MIN, MU_MAX)
         sigma = _sigma_valide(data.get('sigma', DEFAULT_SIGMA))
-        # Normalisee en majuscules AVANT la comparaison au defaut plus bas :
-        # le selecteur de couleur renvoie « #ffffff », qui exigeait sinon le
-        # droit couleur pour une fiche laissee blanche.
+        # Majuscules avant la comparaison au defaut.
         color = couleur_valide(data.get('color', '#FFFFFF'))
 
         if not nom:
@@ -1419,13 +1164,7 @@ def api_add_joueur():
             if valeur is None:
                 return _valeur_invalide(champ)
 
-        # Seul un depart HORS defaut demande le droit : creer au score standard
-        # ne contourne rien, c'est ce que fait le moteur pour tout nouveau venu.
-        #
-        # Tolerance stricte ici, contrairement a l'edition : on compare aux
-        # constantes DEFAULT_MU/DEFAULT_SIGMA, qui tiennent en 3 decimales et que
-        # le formulaire renvoie a l'identique. Rien a absorber, donc rien a
-        # relacher -- et un seuil serre ferme mieux le contournement.
+        # Seul un depart hors defaut demande le droit.
         if abs(mu - DEFAULT_MU) > 1e-9 or abs(sigma - DEFAULT_SIGMA) > 1e-9:
             accordee, erreur = compte_a_permission(g.compte, 'edition_mu_sigma')
             if erreur is not None:
@@ -1438,8 +1177,7 @@ def api_add_joueur():
                     "permission": "edition_mu_sigma",
                 }), 403
 
-        # La couleur suit la meme regle que sur l'edition : la choisir a la
-        # creation est le meme geste que la changer apres coup.
+        # Meme regle que sur l'edition.
         if color != '#FFFFFF':
             accordee, erreur = compte_a_permission(g.compte, 'joueurs_couleur')
             if erreur is not None:
@@ -1453,8 +1191,7 @@ def api_add_joueur():
 
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # S-05 : nom anonymise, « / », collision de casse -- la meme
-                # regle que partout ou joueurs.nom s'ecrit.
+                # Meme regle que partout ou joueurs.nom s'ecrit.
                 nom, erreur = nom_creable(cur, nom)
                 if erreur is not None:
                     conn.rollback()
@@ -1466,16 +1203,10 @@ def api_add_joueur():
                     (nom, mu, sigma, color)
                 )
                 joueur_id = cur.fetchone()[0]
-                # `joueur_cree` EXISTE DEJA (routes_comptes.py, creation a
-                # l'approbation d'une liaison) : on le reutilise. Une seconde
-                # action homonyme tracant le meme geste par un autre chemin
-                # serait indemelable une fois en base.
                 audit.ecrire(cur, 'joueur_cree', 'joueur', joueur_id, {
                     "nom": nom, "mu": mu, "sigma": sigma, "color": color,
                     "origine": "formulaire",
-                    # Un depart hors defaut est le geste qui exige
-                    # `edition_mu_sigma` : le distinguer ici evite de relire
-                    # les constantes pour comprendre la ligne.
+                    # Depart hors defaut (exige edition_mu_sigma).
                     "score_impose": abs(mu - DEFAULT_MU) > 1e-9 or abs(sigma - DEFAULT_SIGMA) > 1e-9,
                 })
             conn.commit()
@@ -1582,15 +1313,10 @@ def admin_saisons():
                         )
                         saison_id = cur.fetchone()[0]
 
-                        # `recap_cree` et non `saison_creee` : le brouillon EST
-                        # le recap, et c'est sous ce nom que l'ecran le designe.
-                        # Suit la convention <objet>_<participe> du §5.2bis.
                         audit.ecrire(cur, 'recap_cree', 'saison', saison_id, {
                             "nom": nom, "slug": slug,
                             "type": "ligue_unifie",
                             "periode": "%s -> %s" % (d_debut, d_fin),
-                            # Un brouillon ne publie rien : le distinguer evite
-                            # de lire la ligne comme une publication.
                             "brouillon": True,
                         })
                         conn.commit()
@@ -1673,9 +1399,7 @@ def delete_saison(saison_id):
                 cur.execute("DELETE FROM awards_obtenus WHERE saison_id = %s", (saison_id,))
                 awards_supprimes = cur.rowcount
                 cur.execute("DELETE FROM saisons WHERE id = %s", (saison_id,))
-                # Supprimer un recap PUBLIE retire des trophees deja visibles et
-                # peut ramener des joueurs dans leur ancienne ligue : sans cette
-                # ligne, rien ne dirait plus qu'ils ont existe.
+                # Garde une trace des trophees et mouvements retires.
                 audit.ecrire(cur, 'recap_supprime', 'saison', saison_id, {
                     "nom": nom, "slug": slug, "publie": bool(publie),
                     "awards_supprimes": awards_supprimes,
@@ -1941,10 +1665,7 @@ def save_season_awards(id):
                 cur.execute("UPDATE saisons SET is_active = true WHERE id = %s", (id,))
                 _notifier_recap_publie(cur, id)
 
-            # Publier distribue les trophees et peut deplacer des joueurs d'une
-            # ligue a l'autre. Les mouvements vont dans le detail : dans la
-            # branche « saison d'une ligue », ils ne sont ecrits nulle part
-            # ailleurs (pas de league_movements).
+            # Les mouvements de ligue ne sont ecrits qu'ici.
             cur.execute("SELECT COUNT(*) FROM awards_obtenus WHERE saison_id = %s", (id,))
             nb_awards = cur.fetchone()
             audit.ecrire(cur, 'recap_publie', 'saison', id, {
@@ -1966,11 +1687,7 @@ def save_season_awards(id):
 
 
 def _joueurs_tournoi_invalides(joueurs_data):
-    """Controle de forme de la liste des joueurs. Message d'erreur, ou None.
-
-    `bool` est ecarte des scores explicitement : True est un int en Python, et
-    passerait pour un score de 1.
-    """
+    """Controle de forme de la liste des joueurs. Message d'erreur, ou None."""
     if not isinstance(joueurs_data, list) or len(joueurs_data) < 2:
         return "Il faut au moins 2 joueurs."
     for j in joueurs_data:
@@ -1979,7 +1696,7 @@ def _joueurs_tournoi_invalides(joueurs_data):
         nom, score = j.get('nom'), j.get('score')
         if not isinstance(nom, str) or not nom.strip():
             return "Nom de joueur invalide."
-        # La borne evite le depassement de la colonne integer (un 500).
+        # bool exclu (True est un int) ; borne de la colonne integer.
         if isinstance(score, bool) or not isinstance(score, int) or abs(score) > 1_000_000:
             return "Score invalide pour « %s » : un nombre entier est attendu." % nom.strip()
         if not isinstance(j.get('exclude_from_ts', False), bool):
@@ -1994,8 +1711,7 @@ def add_tournament():
     date_tournoi_str = data.get('date')
     joueurs_data = data.get('joueurs')
     ligue_id = data.get('ligue_id')
-    # Tournoi auquel rattacher celui-ci (deux lobbies d'une meme soiree).
-    # None = ce tournoi reste seul dans sa session, cas par defaut.
+    # Tournoi a rattacher a la meme session (None : session propre).
     autre_tournoi_id = data.get('autre_tournoi_id')
 
     if not date_tournoi_str or not joueurs_data:
@@ -2007,10 +1723,7 @@ def add_tournament():
         except (TypeError, ValueError):
             return jsonify({"error": "Tournoi à lier invalide."}), 400
 
-    # Tout le payload est verifie AVANT la premiere ecriture. Un score en
-    # chaine triait « 9 » devant « 12 » sans erreur (classement faux, en
-    # silence) ; un score decimal ou une ligne sans « nom » finissaient en 500
-    # au milieu de la transaction.
+    # Tout le payload est verifie avant la premiere ecriture.
     erreur = _joueurs_tournoi_invalides(joueurs_data)
     if erreur is not None:
         return jsonify({"error": erreur, "code": "saisie_invalide"}), 400
@@ -2054,21 +1767,14 @@ def add_tournament():
                     cur.execute("SELECT nom, couleur FROM Ligues WHERE id = %s", (ligue_id,))
                     res_ligue = cur.fetchone()
                     if res_ligue is None:
-                        # Finissait en violation de cle etrangere, donc en 500.
                         return jsonify({"error": "Cette ligue n'existe pas."}), 400
                     ligue_nom_archive = res_ligue[0]
                     ligue_couleur_archive = res_ligue[1]
 
-                # Reference IP v2 : on fige la grille avant que le tournoi ne fasse bouger le
-                # moindre mu. Sans effet si un tournoi du meme jour l'a deja figee.
+                # Fige la grille de reference IP v2 avant de modifier les mu.
                 snapshot_grille(cur, date_tournoi)
 
-                # Toute creation de tournoi ouvre sa propre session : un tournoi
-                # non lie est seul dans la sienne, ce n'est pas un cas
-                # particulier. C'est ce qui garantit l'invariant session_id NOT
-                # NULL, et donc l'absence de branche « tournoi sans session »
-                # dans tout le code de calcul.
-                # Conception : docs/plan-sessions-tournois.md
+                # Chaque tournoi ouvre sa propre session (session_id NOT NULL).
                 cur.execute("INSERT INTO sessions_tournois DEFAULT VALUES RETURNING id")
                 session_id = cur.fetchone()[0]
 
@@ -2099,18 +1805,14 @@ def add_tournament():
                     if res:
                         jid, nom_fiche, mu, sigma = res
                     else:
-                        # Nom inconnu : creation a la volee, sous la meme regle
-                        # que partout (S-05) -- une identite anonymisee ne revient
-                        # pas, un « / » rendrait la fiche inatteignable.
+                        # Nom inconnu : creation a la volee, avec les memes
+                        # regles que partout (nom_creable).
                         nom_fiche, erreur = nom_creable(cur, nom)
                         if erreur is not None:
                             conn.rollback()
                             return jsonify(erreur), 409
-                        # S-09 : creer une fiche exige joueurs_creation, comme sur
-                        # la page Fiches joueurs. gestion_joueurs n'ouvre plus que
-                        # la lecture depuis le decoupage du 17/09 : l'exiger ici
-                        # laissait creer des fiches par ce detour. La
-                        # sous-permission emporte son parent (permissions_effectives).
+                        # Creer une fiche exige joueurs_creation, comme sur la
+                        # page Fiches joueurs (la sous-permission inclut son parent).
                         accordee, erreur = compte_a_permission(g.compte, 'joueurs_creation')
                         if erreur is not None:
                             conn.rollback()
@@ -2125,30 +1827,21 @@ def add_tournament():
                             }), 409
                         cur.execute("INSERT INTO Joueurs (nom, mu, sigma, tier, is_ranked) VALUES (%s, %s, %s, 'U', true) RETURNING id", (nom_fiche, DEFAULT_MU, DEFAULT_SIGMA))
                         jid, mu, sigma = cur.fetchone()[0], DEFAULT_MU, DEFAULT_SIGMA
-                    # Deux lignes pour la meme fiche (« Mario » et « mario », ou
-                    # un doublon) heurtaient la cle primaire de Participations :
-                    # un 500 sans explication.
+                    # Meme fiche saisie deux fois.
                     if jid in joueurs_ids_map.values():
                         conn.rollback()
                         return jsonify({
                             "error": "Le joueur « %s » figure deux fois dans ce tournoi." % nom_fiche,
                             "code": "joueur_en_double",
                         }), 409
-                    # Le nom de la FICHE remplace celui tape : c'est la cle de tout
-                    # le calcul qui suit (sorted_joueurs reprend ces memes dicts).
+                    # Le nom de la fiche remplace celui saisi pour la suite du calcul.
                     joueur['nom'] = nom = nom_fiche
                     joueurs_ratings[nom] = trueskill.Rating(mu=float(mu), sigma=float(sigma))
                     joueurs_ids_map[nom] = jid
                     joueurs_exclude_ts[nom] = exclude_ts
                     cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma, exclude_from_ts) VALUES (%s, %s, %s, %s, %s, %s)", (tournoi_id, jid, score, float(mu), float(sigma), exclude_ts))
 
-                # ── DOUBLON ─────────────────────────────────────────────────
-                # Meme date, memes joueurs, memes scores : c'est un second envoi
-                # du meme tournoi (double clic, ou nouvel essai apres une reponse
-                # perdue alors que le premier avait abouti), pas un vrai tournoi.
-                # Il appliquerait TrueSkill une seconde fois a tout le monde.
-                # Compare sur les joueur_id resolus : « mario » et « Mario »
-                # designent la meme fiche.
+                # Doublon : meme date, memes joueurs, memes scores (second envoi).
                 cur.execute("""
                     SELECT t.id FROM Tournois t
                     WHERE t.date = %s AND t.id <> %s
@@ -2172,29 +1865,10 @@ def add_tournament():
                         "tournoi_id": doublon[0],
                     }), 409
 
-                # ── RATTACHEMENT A UNE SESSION EXISTANTE ────────────────────
-                # L'admin a demande, AVANT validation, de lier ce tournoi a un
-                # autre : deux lobbies d'une meme soiree.
-                #
-                # ORDRE DES TROIS GESTES, a ne pas modifier :
-                #   1. les participations sont inserees (fait juste au-dessus),
-                #      donc les noms saisis sont resolus en joueur_id -- on
-                #      compare des identifiants, jamais des chaines ;
-                #   2. on CONTROLE le conflit, alors que ce tournoi est encore
-                #      seul dans sa session : l'ensemble teste est donc
-                #      exactement « les autres tournois de la session cible » ;
-                #   3. on fusionne seulement si le controle passe.
-                #
-                # Inverser 2 et 3 rendrait le controle auto-referent (les
-                # joueurs de ce tournoi seraient deja dans la session cible) et
-                # ferait refuser TOUTE liaison.
-                #
-                # Le controle est refait ici meme si le client l'a deja fait via
-                # /admin/tournois/verifier-session : cette route est indicative,
-                # celle-ci est autoritaire. Sans cette reverification, deux
-                # admins simultanes -- ou un appel direct a l'API -- passeraient
-                # au travers (TOCTOU).
-                # Conception : docs/plan-sessions-tournois.md, decisions 9 et 10
+                # Rattachement a une session existante. Le controle de conflit
+                # se fait apres l'insertion des participations (joueur_id connus)
+                # et avant la fusion ; il est refait ici meme si le client l'a
+                # deja fait via /admin/tournois/verifier-session.
                 if autre_tournoi_id is not None:
                     cur.execute("SELECT 1 FROM Tournois WHERE id = %s", (autre_tournoi_id,))
                     if cur.fetchone() is None:
@@ -2206,10 +1880,7 @@ def add_tournament():
 
                     conflits = joueurs_en_conflit_de_session(cur, tournoi_id, autre_tournoi_id)
                     if conflits:
-                        # Refus categorique : ni liaison, ni creation. Le
-                        # rollback annule le tournoi, ses participations, les
-                        # fiches joueurs creees a la volee et la grille figee --
-                        # l'etat d'avant est integralement restaure.
+                        # Le rollback annule aussi les fiches creees et la grille figee.
                         conn.rollback()
                         return jsonify({
                             "error": "Ces joueurs participent déjà à un autre tournoi de cette "
@@ -2236,10 +1907,7 @@ def add_tournament():
                 ts_env = trueskill.TrueSkill(mu=DEFAULT_MU, sigma=DEFAULT_SIGMA, beta=TRUESKILL_BETA, tau=tau_val, draw_probability=TRUESKILL_DRAW_PROBABILITY)
 
                 new_ratings_map = {}
-                # TrueSkill ne classe pas un joueur seul (ValueError « need
-                # multiple rating groups », donc un 500) : a moins de deux
-                # joueurs comptes, personne ne bouge, comme s'ils etaient tous
-                # exclus.
+                # TrueSkill exige au moins deux joueurs.
                 if len(ts_joueurs) < 2:
                     joueurs_exclude_ts.update({j['nom']: True for j in ts_joueurs})
                     ts_joueurs = []
@@ -2291,7 +1959,6 @@ def add_tournament():
                 conf = dict(cur.fetchall())
                 ghost_enabled = (conf.get('ghost_enabled') == 'true')
                 penalty_val = float(conf.get('ghost_penalty', DEFAULT_GHOST_PENALTY))
-                # Seuils en SESSIONS LOUPEES, plus en jours (decision 8).
                 seuil_sessions = max(1, int(conf.get('ghost_threshold_sessions',
                                                      DEFAULT_GHOST_THRESHOLD_SESSIONS)))
                 intervalle_sessions = max(1, int(conf.get('ghost_interval_sessions',
@@ -2305,11 +1972,7 @@ def add_tournament():
                 cur.execute(query_absents, tuple(abs_params))
                 all_absents = cur.fetchall()
 
-                # La ligue de la derniere apparition determine qui est concerne
-                # par ce tournoi quand le mode ligue est actif. Les dates de
-                # derniere apparition et de derniere penalite ne sont PLUS lues :
-                # le declenchement se base desormais sur consecutive_missed, un
-                # compteur de sessions loupees, et non sur un ecart calendaire.
+                # Ligue de la derniere apparition, pour le mode ligue.
                 all_absent_ids = [row[0] for row in all_absents]
                 last_played_ligue = {}
                 if all_absent_ids and ligue_id is not None:
@@ -2328,26 +1991,11 @@ def add_tournament():
                 ]
                 absent_ids = [row[0] for row in absents]
 
-                # Presents de la SESSION, et non plus « du meme jour ».
-                #
-                # Jouer un seul tournoi de la session suffit a compter present
-                # pour toute la session : ces joueurs ne prennent donc pas
-                # d'absence, meme s'ils manquent ce tournoi-ci.
-                #
-                # Remplace le couple present_today_ids/same_day_exists, qui
-                # reconstituait ce regroupement par comparaison de dates. Un
-                # ensemble vide produit exactement le meme resultat que
-                # l'ancien « same_day_exists = False » : tous les absents sont
-                # comptes. La branche conditionnelle n'a donc plus de raison
-                # d'etre.
-                # Conception : docs/plan-sessions-tournois.md, 5.1
+                # Un joueur present a un autre tournoi de la session ne prend pas
+                # d'absence.
                 deja_presents = set()
-                # Un autre tournoi de cette session (meme ligue) a deja compte
-                # ses absents : un joueur absent de tous les lobbies a pris son
-                # +1 la-bas. Le recompter ici le penalisait une fois par TOURNOI
-                # -- la regle est une fois par SESSION. La liaison tardive
-                # (annuler_penalites_de_session) corrigeait deja ce cas ; le
-                # chemin nominal, lui, le creait.
+                # Si un autre tournoi de la session a deja compte les absents, on
+                # ne les recompte pas.
                 session_deja_comptee = session_a_un_autre_tournoi(
                     cur, session_id, tournoi_id, ligue_id)
                 if absent_ids and not session_deja_comptee:
@@ -2363,17 +2011,12 @@ def add_tournament():
                 ghost_inserts = []
                 absent_updates = []
                 for pid, sig, missed, is_r in absents:
-                    # Present ailleurs dans la session : ne prend pas d'absence.
                     present_dans_session = pid in deja_presents
                     compte_absent = not (present_dans_session or session_deja_comptee)
                     new_missed = (missed or 0) + 1 if compte_absent else (missed or 0)
                     new_sig = float(sig)
 
-                    # Le compteur de sessions loupees decide seul du
-                    # declenchement : plus de lecture de dates ni de ghost_log.
-                    # ghost_log reste le journal des penalites (tracabilite et
-                    # restauration a l'annulation), mais n'est plus consulte
-                    # pour DECIDER.
+                    # Declenchement base uniquement sur le compteur de sessions loupees.
                     if (ghost_enabled and compte_absent and new_sig < GHOST_SIGMA_CAP
                             and penalite_due(new_missed, seuil_sessions, intervalle_sessions)):
                         capped_sig = min(new_sig + penalty_val, GHOST_SIGMA_CAP)
@@ -2406,10 +2049,7 @@ def add_tournament():
                     lien="/stats/tournoi/%d" % tournoi_id,
                 )
 
-                # En RESUME : le detail des scores vit deja dans
-                # `participations`, qui ne bouge plus une fois le tournoi
-                # enregistre. Le dupliquer ferait grossir le journal sans rien
-                # apprendre de plus.
+                # Le detail des scores est dans `participations`.
                 audit.ecrire(cur, 'tournoi_ajoute', 'tournoi', tournoi_id, {
                     "date": str(date_tournoi),
                     "nb_joueurs": len(joueurs_data),
@@ -2430,18 +2070,8 @@ def add_tournament():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# Etape 1 du rattachement a une session : quels tournois recents peut-on
-# proposer, et lesquels sont interdits parce qu'ils partagent un joueur ?
-#
-# LECTURE SEULE, et strictement indicative. Elle ne cree rien -- en particulier
-# aucune fiche joueur, alors que add_tournament en cree a la volee : un admin qui
-# ouvre la modale puis renonce ne doit rien laisser derriere lui. La consequence
-# est qu'elle compare sur les NOMS (les joueurs saisis n'ont pas encore d'id),
-# la ou add_tournament compare sur les joueur_id.
-#
-# C'est add_tournament qui tranche. Cette route sert a griser les mauvais choix
-# dans l'interface, pas a autoriser quoi que ce soit.
-# Conception : docs/plan-sessions-tournois.md, decision 10
+# Liste les tournois recents rattachables et ceux en conflit de joueurs.
+# Lecture seule et indicative (comparaison par nom) : add_tournament tranche.
 @admin_bp.route('/admin/tournois/verifier-session', methods=['POST'])
 @permission_required('gestion_tournois')
 def verifier_session_tournoi():
@@ -2468,14 +2098,7 @@ def verifier_session_tournoi():
                 """, (limite,))
                 candidats = cur.fetchall()
 
-                # Les joueurs deja engages dans chaque session, pour les noms
-                # saisis. Une seule requete pour tous les candidats : la modale
-                # doit s'ouvrir vite, et le nombre de candidats est borne.
-                #
-                # Comparaison de noms normalisee (minuscules, espaces retires)
-                # comme le fait add_tournament pour les noms interdits : sans
-                # cela, « toto » et « Toto » seraient vus comme deux joueurs et
-                # un conflit resterait invisible dans l'interface.
+                # Joueurs deja engages dans chaque session, noms normalises.
                 engages = {}
                 if noms:
                     cur.execute("""
@@ -2505,19 +2128,7 @@ def verifier_session_tournoi():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# Liaison TARDIVE : rattacher deux tournois deja enregistres. Le chemin normal
-# est la liaison au moment de la creation (add_tournament) ; celui-ci sert quand
-# l'admin a passe l'etape puis change d'avis.
-#
-# Contrairement a la creation, les deux sessions sont ici deja peuplees : le
-# controle de conflit doit comparer les deux ensembles en entier, d'ou
-# joueurs_en_conflit_entre_sessions et non sa variante par tournoi.
-#
-# ⚠️ Ne corrige PAS les penalites d'absence deja calculees sur ces tournois.
-# Tant que la Phase 3 n'a pas basculé le calcul sur session_id, la penalite
-# ignore les sessions : il n'y a donc rien a corriger. Des que la Phase 3 est
-# livree, cette route devra defaire les penalites devenues injustifiees
-# (plan 5.2) -- sans quoi lier deux tournois laissera des absences a tort.
+# Liaison apres coup de deux tournois deja enregistres.
 @admin_bp.route('/admin/tournois/<int:tournoi_id>/lier-session', methods=['POST'])
 @permission_required('gestion_tournois')
 def lier_session_tournoi(tournoi_id):
@@ -2556,23 +2167,14 @@ def lier_session_tournoi(tournoi_id):
 
                 session_id = fusionner_sessions(cur, tournoi_id, autre_tournoi_id)
 
-                # Les deux tournois etaient enregistres separement : chacun a
-                # compte absents les joueurs de l'autre. Maintenant qu'ils
-                # partagent une session, jouer l'un vaut presence pour les deux
-                # -- ces absences doivent etre defaites.
-                #
-                # APRES la fusion, jamais avant : la fonction travaille sur
-                # « les presents de la session », un ensemble qui n'existe qu'une
-                # fois les deux tournois reunis.
-                # Conception : docs/plan-sessions-tournois.md, 5.2
+                # Annule les absences comptees a tort maintenant que les deux
+                # tournois partagent une session (apres la fusion).
                 cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
                 res = cur.fetchone()
                 seuil_declassement = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
                 corriges = annuler_penalites_de_session(cur, session_id, seuil_declassement)
 
-                # Lier deux tournois peut faire bouger le sigma de joueurs :
-                # c'est du dossier sportif, et il doit etre trace comme une
-                # modification de fiche (avant/apres, drapeau score_modifie).
+                # Peut modifier des sigma : trace avec avant/apres.
                 audit.ecrire(cur, 'tournoi_lie', 'tournoi', tournoi_id, {
                     "autre_tournoi_id": autre_tournoi_id,
                     "session_id": session_id,
@@ -2580,12 +2182,9 @@ def lier_session_tournoi(tournoi_id):
                     "score_modifie": bool(corriges),
                 })
             conn.commit()
-            # Les sigma ont pu bouger : les tiers en dependent.
             if corriges:
                 recalculate_tiers()
-            # Lier deux tournois change ce que la landing page doit afficher :
-            # sans cette invalidation, elle garderait l'ancien regroupement en
-            # cache jusqu'au prochain ajout de tournoi.
+            # La page d'accueil affiche le regroupement par session.
             invalidate_cache()
         return jsonify({
             "status": "success",
@@ -2597,10 +2196,7 @@ def lier_session_tournoi(tournoi_id):
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# CAPACITE DE ROLE, jamais une permission delegable (hierarchie-admin-plan.md 5).
-# Cible : @role_required(ROLE_CHEF_ADMIN). Son bouton est dans navbar.html (donc
-# visible depuis toutes les pages admin) : le gate d'interface va la-bas, pas
-# dans une page precise.
+# Capacite de role (chef_admin), non delegable.
 @admin_bp.route('/api/admin/revert-last-tournament', methods=['POST'])
 @role_required(ROLE_CHEF_ADMIN)
 def revert_last_tournament():
@@ -2608,24 +2204,16 @@ def revert_last_tournament():
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 verrou_tournois(cur)
-                # Le dernier ENREGISTRE (id), pas le plus recent par date. Un
-                # tournoi saisi apres coup avec une date anterieure a ete
-                # applique en dernier : c'est lui que old_mu/old_sigma
-                # permettent de defaire. Trier par date annulait l'avant-dernier
-                # applique, et sa restauration effacait l'effet du dernier chez
-                # les joueurs communs.
+                # Le dernier enregistre (id), pas le plus recent par date :
+                # c'est lui que old_mu/old_sigma permettent de defaire.
                 cur.execute(
                     "SELECT id, date, session_id, ligue_id FROM Tournois ORDER BY id DESC LIMIT 1")
                 last = cur.fetchone()
                 if not last: return jsonify({"message": "Aucun tournoi à annuler."}), 404
-                # session_id lue MAINTENANT : apres le DELETE, elle est introuvable.
+                # Lue avant le DELETE.
                 tid, tdate, tsession, tligue = last[0], last[1], last[2], last[3]
 
-                # Un reset global posterieur a releve des sigma APRES ce
-                # tournoi : restaurer old_sigma l'effacerait chez les
-                # participants, et annuler ensuite le reset remettrait les
-                # valeurs d'apres tournoi. Meme regle, lue dans l'autre sens,
-                # qu'a l'ajout d'un tournoi.
+                # Un reset global posterieur serait efface par la restauration.
                 cur.execute("SELECT 1 FROM global_resets WHERE date >= %s LIMIT 1", (tdate,))
                 if cur.fetchone() is not None:
                     return jsonify({
@@ -2656,21 +2244,15 @@ def revert_last_tournament():
                         WHERE j.id = data.id
                     """, [(jid, sig) for jid, sig in ghost_rows])
 
-                # Meme geste que delete_tournament : seuls les NON-participants
-                # reellement penalises sont decrementes, et is_ranked est recalcule.
-                # Avant, un UPDATE global sans WHERE effacait une absence a TOUTE la
-                # base -- y compris aux joueurs hors perimetre de ligue, exclus du
-                # calcul de penalite -- et l'erreur etait cumulative a chaque annulation.
+                # Seuls les non-participants penalises sont decrementes.
                 cur.execute("SELECT value FROM Configuration WHERE key = 'unranked_threshold'")
                 res = cur.fetchone()
                 threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
-                # Un autre tournoi de la session porte l'absence : celui-ci n'en
-                # avait pas compte (add_tournament), il n'y a rien a defaire.
+                # Si un autre tournoi de la session porte l'absence, rien a defaire.
                 if not session_a_un_autre_tournoi(cur, tsession, tid, tligue):
                     annuler_absences(cur, [jid for jid, _, _ in participants], threshold)
 
-                # AVANT les DELETE : apres, il ne reste rien a consigner --
-                # ni la date, ni le nombre de participants.
+                # Avant les DELETE.
                 audit.ecrire(cur, 'tournoi_annule', 'tournoi', tid, {
                     "date": str(tdate), "nb_participants": len(participants),
                     "session_id": tsession,
@@ -2689,11 +2271,7 @@ def revert_last_tournament():
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
-# CAPACITE DE ROLE, jamais une permission delegable (hierarchie-admin-plan.md 5).
-# Route deja signalee dangereuse par R-37 (mu/sigma non restaures apres
-# suppression) et sans proxy frontend aujourd'hui : si quelqu'un lui en ajoute
-# un, il garde le decorateur ci-dessous, pas un chemin d'auth plus permissif
-# (R-58).
+# Capacite de role (chef_admin), non delegable. Ne restaure pas mu/sigma.
 @admin_bp.route('/delete-tournament/<int:id>', methods=['DELETE'])
 @role_required(ROLE_CHEF_ADMIN)
 def delete_tournament(id):
@@ -2705,20 +2283,15 @@ def delete_tournament(id):
                 res = cur.fetchone()
                 threshold = int(res[0]) if res else DEFAULT_UNRANKED_THRESHOLD
 
-                # Lues AVANT le DELETE : introuvables apres.
+                # Lues avant le DELETE.
                 cur.execute("SELECT date, session_id, ligue_id FROM Tournois WHERE id = %s", (id,))
                 row_tournoi = cur.fetchone()
                 if row_tournoi is None:
-                    # Repondait « success » et journalisait une suppression
-                    # fantome, datee None.
                     return jsonify({"error": "Tournoi introuvable."}), 404
                 tdate, tsession, tligue = row_tournoi
 
-                # On RETIRE la penalite, on ne restaure pas old_sigma : ce
-                # tournoi n'est pas forcement le dernier, et old_sigma
-                # effacerait tout ce qui a bouge depuis chez ces joueurs
-                # (tournois suivants, reset global). Meme raisonnement
-                # qu'annuler_penalites_de_session.
+                # On retire la penalite plutot que de restaurer old_sigma (ce
+                # tournoi n'est pas forcement le dernier).
                 cur.execute("""
                     SELECT joueur_id, SUM(penalty_applied) FROM ghost_log
                     WHERE tournoi_id = %s GROUP BY joueur_id
@@ -2733,20 +2306,14 @@ def delete_tournament(id):
 
                 cur.execute("SELECT joueur_id FROM Participations WHERE tournoi_id = %s", (id,))
                 parts = [r[0] for r in cur.fetchall()]
-                # Qui a rejoue APRES ce tournoi (enregistre apres lui) a vu son
-                # compteur remis a 0 depuis : l'absence de ce tournoi n'y est
-                # plus, la retirer ferait descendre le compteur sous sa vraie
-                # valeur. Sans objet quand c'est le dernier tournoi.
+                # Les joueurs ayant rejoue depuis ont deja un compteur remis a 0.
                 cur.execute("SELECT DISTINCT joueur_id FROM Participations WHERE tournoi_id > %s",
                             (id,))
                 ont_rejoue = [r[0] for r in cur.fetchall()]
                 if not session_a_un_autre_tournoi(cur, tsession, id, tligue):
                     annuler_absences(cur, parts + ont_rejoue, threshold)
 
-                # AVANT le DELETE, meme raison qu'a l'annulation.
-                # ⚠️ Cette route est signalee dangereuse par R-37 : contrairement
-                # a l'annulation, elle NE RESTAURE PAS les mu/sigma. Le journal
-                # le consigne, faute de pouvoir le corriger ici.
+                # Avant le DELETE.
                 audit.ecrire(cur, 'tournoi_supprime', 'tournoi', id, {
                     "date": str(tdate), "nb_participants": len(parts),
                     "session_id": tsession,
@@ -2774,8 +2341,7 @@ def setup_ligues():
     if not ligues_data:
         return jsonify({"error": "Aucune donnée de ligue reçue"}), 400
 
-    # La couleur d'une ligue finit dans des attributs style (badges, recaps,
-    # page Saisons) : #RRGGBB et rien d'autre, verifie avant toute ecriture.
+    # Couleurs au format #RRGGBB, verifiees avant toute ecriture.
     for l_data in ligues_data:
         couleur = couleur_valide(l_data.get('couleur', '#FFFFFF'))
         if couleur is None:
@@ -2833,10 +2399,7 @@ def setup_ligues():
                 else:
                     cur.execute("UPDATE Joueurs SET ligue_id = NULL")
 
-                # Meme action que les clefs de mode ligue d'update_config :
-                # c'est le meme domaine, sous la meme permission. Deux noms
-                # pour un domaine obligeraient a connaitre les deux pour le
-                # filtrer.
+                # Meme action que les cles de mode ligue d'update_config.
                 audit.ecrire(cur, 'ligues_configurees', 'systeme', None, {
                     "nb_ligues": len(ligues_data),
                     "ligues_supprimees": len(ids_to_remove),

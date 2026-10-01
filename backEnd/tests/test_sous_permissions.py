@@ -1,19 +1,6 @@
 """Sous-permissions : une permission qui ne vaut rien sans son parent.
 
-Depuis le 2026-09-17, TOUTE la fiche joueur fonctionne ainsi : `gestion_joueurs`
-n'ouvre que la lecture, et chacun des six gestes (creer, renommer, couleur,
-mu/sigma, statut, supprimer/anonymiser) a sa propre sous-permission.
-
-`joueurs_irreversible` est l'ex-`rgpd_joueurs`, renommee au meme moment : le nom
-promettait un dispositif RGPD inexistant -- la suppression est du menage (elle
-refuse tout joueur ayant un match), seule l'anonymisation releve de l'effacement.
-Leur vrai point commun est d'etre sans retour.
-
-La regle tient a TROIS endroits, et ces tests couvrent les trois :
-  - permission_required exige l'enfant ET le parent ;
-  - accorder l'enfant sans le parent est refuse (409 parent_manquant) ;
-  - retirer le parent emporte ses enfants, sinon une permission orpheline
-    reviendrait a la vie au prochain re-octroi du parent.
+Exigee avec son parent, refusee a l'octroi sans lui, retiree avec lui.
 """
 from harness import *
 from flask import Flask
@@ -43,10 +30,7 @@ check("enfants et parents appartiennent tous au catalogue",
 check("aucun parent n'est lui-même un enfant (pas de chaîne à gérer)",
       not (set(SOUS_PERMISSIONS.values()) & set(SOUS_PERMISSIONS)), SOUS_PERMISSIONS)
 
-# Le frontend duplique catalogue ET table : desalignes, l'interface montrerait
-# une case autonome la ou le backend exige un parent -- ou masquerait un droit
-# reellement accorde. La doc affirmait que ce controle existait ; il n'existait
-# nulle part, d'ou sa place ici.
+# Le frontend duplique catalogue et table : ils doivent rester alignes.
 import re as _re
 front = io_open(os.path.join(FRONT, 'frontend.py'))
 
@@ -63,9 +47,7 @@ check("les deux tables de sous-permissions sont identiques",
 
 
 print("\n=== Une sous-permission orpheline n'est jamais exposée à l'interface ===")
-# permissions_admin peut contenir un orphelin : octroi anterieur a la creation
-# de la sous-permission, ou SQL direct. Il ne donne aucun droit, mais l'exposer
-# ferait afficher un bouton voue au 403 -- le defaut que tout ce chantier evite.
+# Une sous-permission orpheline ne doit pas etre exposee a l'affichage.
 from constants import permissions_effectives
 
 check("l'orpheline est retirée",
@@ -79,8 +61,7 @@ check("les permissions ordinaires passent intactes",
       == {'gestion_saisons', 'gestion_ligues'})
 check("un ensemble vide reste vide", permissions_effectives(set()) == set())
 
-# Les deux endroits qui servent les permissions a l'affichage doivent filtrer :
-# /auth/me (rafraichissement) et la connexion (copie mise en session).
+# /auth/me et la connexion filtrent les orphelines.
 for fichier in ('routes_auth.py', 'auth_discord.py'):
     src = io_open(os.path.join(RACINE, fichier))
     check("%s filtre avant d'exposer" % fichier,
@@ -142,10 +123,7 @@ for route, methode in (("'/admin/joueurs/<int:id>', methods=['DELETE']", 'suppre
 
 
 print("\n=== L'édition d'une fiche se vérifie CHAMP PAR CHAMP ===")
-# Le PUT garde `gestion_joueurs` comme porte d'entree -- c'est la lecture de la
-# fiche -- mais chaque champ exige en plus sa sous-permission, DANS le corps :
-# les cinq champs partagent un seul UPDATE, qu'un decorateur ne saurait pas
-# decouper.
+# Le PUT exige gestion_joueurs, puis chaque champ sa sous-permission.
 from constants import PERMISSIONS_CHAMPS_JOUEUR
 
 i = src_admin.find("'/admin/joueurs/<int:id>', methods=['PUT']")
@@ -167,23 +145,17 @@ check("  mu et sigma relèvent du MÊME droit",
 check("  et chaque droit cité existe au catalogue",
       all(p in PERMISSIONS_CATALOGUE for p in PERMISSIONS_CHAMPS_JOUEUR.values()))
 
-# Un champ absent du payload, ou renvoye identique, ne doit demander AUCUN
-# droit : le formulaire renvoie la fiche entiere, donc l'exiger interdirait a un
-# admin qui n'a que « couleur » d'enregistrer quoi que ce soit.
+# Un champ absent ou inchange n'exige aucun droit.
 check("un champ inchangé n'exige aucun droit",
       'def a_change(' in corps_put and 'if not a_change(champ)' in corps_put)
 check("  mu/sigma se comparent à la précision AFFICHÉE, pas à l'identique",
       'DECIMALES_AFFICHEES' in corps_put,
       "le front affiche 3 décimales là où TrueSkill en produit plus")
-# Corollaire : un champ inchangé repart de la base, sinon éditer un nom
-# tronquerait le sigma du joueur au passage. Couvert en exécution par
-# test_fiche_joueur_droits.py.
+# Un champ inchange reprend la valeur de la base.
 check("  et un champ inchangé reprend la valeur de la base",
       'demande[champ] = courant[champ]' in corps_put, corps_put[-600:])
 
-# La creation est la 2e porte vers mu/sigma : sans cette verification, un admin
-# « creation » fixerait le score qu'il veut, et pourrait meme contourner le
-# droit sur un joueur existant en le supprimant pour le recreer.
+# La creation verifie aussi edition_mu_sigma.
 i = src_admin.find("'/admin/joueurs', methods=['POST']")
 j = src_admin.find('\n@admin_bp.route', i + 10)
 corps_post = src_admin[i:j]
@@ -238,9 +210,7 @@ check("  et « Fiches joueurs » n'annonce plus que la lecture",
       "l'anonymisation RGPD." not in comptes_html
       and 'Créer, renommer et corriger le score' not in comptes_html)
 
-# La page des fiches joueurs grise ce qu'un droit manquant rend inoperant. Elle
-# ne masque plus : l'admin doit voir la valeur ET comprendre au survol qu'il lui
-# manque une permission, plutot que de croire la fonction inexistante.
+# Les champs sans droit sont grises, pas masques.
 fiches = io_open(os.path.join(FRONT, 'templates', 'gestion_joueurs.html'))
 check("la page Fiches joueurs expose les droits par geste au JS",
       'PEUT_CHAMPS_JOUEUR' in fiches)
@@ -273,17 +243,14 @@ check("  et l'infobulle reste visible sur un champ désactivé",
 print("\n=== Ergonomie du panneau : confirmation et scroll ===")
 import re as _re2
 
-# Le bandeau remontait la page a CHAQUE succes : cocher un droit dans le volet
-# des permissions (deplie en bas) renvoyait en haut, et il fallait redescendre
-# pour cocher le suivant. Un succes de permission ne doit plus rien deplacer.
+# Un succes de permission ne fait pas remonter la page.
 i = comptes_html.find('function afficher(')
 corps_afficher = comptes_html[i:i + 900]
 check("afficher() sait ne pas bouger la page",
       'discret' in corps_afficher, corps_afficher[:200])
 
 i = comptes_html.find("case_.addEventListener('change'")
-# Borne sur la vraie fin du handler, pas sur une taille devinee : un nombre trop
-# court faisait echouer l'assertion sur du code pourtant present.
+# Borne sur la vraie fin du handler.
 handler = comptes_html[i:comptes_html.find('ligne.appendChild(case_)', i)]
 check("un succès de permission n'appelle plus le bandeau",
       "afficher('success'" not in handler, handler[-600:])
@@ -295,15 +262,13 @@ check("flash() ne touche jamais au défilement",
       'scrollTo' not in comptes_html[comptes_html.find('function flash('):
                                      comptes_html.find('function flash(') + 700])
 
-# Tout changement de droits ou d'etat d'un compte passe par une confirmation
-# nommant la cible : sur une liste, « Confirmer ? » ne dit pas sur QUI on agit.
+# Toute modification de droits ou d'etat confirme en nommant la cible.
 check("un helper de confirmation nommant la cible existe",
       'function confirmer(' in comptes_html and 'const nomDe' in comptes_html)
 
 ecritures = [(m.group(2), m.group(1)) for m in _re2.finditer(
     r"api\(\s*'([^']+)'[^)]*?,\s*'(POST|DELETE|PUT)'", comptes_html, _re2.S)]
-# Creer une invitation ou un jeton ne detruit ni ne modifie rien d'existant :
-# seules ces deux-la restent sans confirmation, deliberement.
+# Seules les creations (invitation, jeton) restent sans confirmation.
 SANS_CONFIRMATION = {'/admin/invitations', '/admin/service-tokens'}
 manquantes = []
 for methode, url in ecritures:
@@ -319,7 +284,6 @@ for geste in ('Changer le rôle', 'Suspendre ce compte', 'Fermer toutes les sess
               'Révoquer cette invitation'):
     check("  « %s » est confirmé" % geste, geste in comptes_html)
 
-# Annuler ne doit pas laisser l'ecran affirmer un etat que la base n'a pas.
 check("annuler un changement de rôle remet le sélecteur",
       'sel.value = c.role;' in comptes_html)
 check("annuler une permission remet la case",
@@ -328,9 +292,7 @@ check("annuler une permission remet la case",
 
 
 print("\n=== Onglets : ce qu'on ne peut pas faire ne s'affiche pas ===")
-# Les trois onglets de /admin/comptes relevent de trois permissions distinctes.
-# Seul « Jetons de bot » etait gate : un admin sans gestion_invitations voyait
-# l'onglet, cliquait, et atterrissait sur la page d'accueil sans explication.
+# Chaque onglet de /admin/comptes depend de sa permission.
 for onglet, perm in (('liaisons', 'gestion_liaisons'),
                      ('comptes', 'gestion_comptes'),
                      ('invitations', 'gestion_invitations')):
@@ -338,14 +300,12 @@ for onglet, perm in (('liaisons', 'gestion_liaisons'),
     amont = comptes_html[max(0, i - 260):i]
     check("l'onglet %s est gaté par %s" % (onglet, perm),
           "peut('%s')" % perm in amont, amont[-120:])
-    # La vue doit suivre l'onglet : une vue rendue sans son onglet serait du
-    # code mort, un onglet sans sa vue un clic dans le vide.
+    # La vue suit l'onglet.
     j = comptes_html.find('id="vue-%s"' % onglet)
     check("  et sa vue l'est aussi",
           "peut('%s')" % perm in comptes_html[max(0, j - 200):j])
 
-# Les vues absentes ne doivent jamais etre dereferencees : un getElementById
-# sur une vue non rendue renvoie null, et la TypeError tuerait tout le script.
+# Une vue absente ne doit jamais etre dereferencee.
 for fn in ('chargerLiaisons', 'chargerComptes', 'chargerInvitations', 'chargerBots'):
     i = comptes_html.find('function %s(' % fn)
     check("%s sort si sa vue n'existe pas" % fn,
@@ -356,8 +316,7 @@ check("l'onglet actif est choisi parmi ceux rendus",
 check("  et plus codé en dur dans le gabarit",
       'class="is-active" data-onglet' not in comptes_html)
 
-# La page s'ouvre avec l'une des trois permissions ; sans aucune, elle serait
-# vide -- la navbar masque deja l'entree, la route doit refuser l'URL directe.
+# Sans aucune des trois permissions, la route refuse.
 i = front.find('def admin_comptes(')
 check("la route refuse qui n'a aucune des trois permissions",
       "'gestion_comptes', 'gestion_liaisons', 'gestion_invitations'"

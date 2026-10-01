@@ -1,6 +1,5 @@
-// L'USAGE d'un objet : le prendre, le viser, le lancer, le trainer.
-// Le tirage est dans `items.js`. Ici commence tout ce qui part vers un autre
-// kart, y compris la decision de tirer et le choix de la cible.
+// Usage des objets (le tirage est dans items.js) : prise, visee, lancer,
+// trainage, decision de tir et choix de la cible.
 
 import { randomRange } from './math.js';
 import { getShortestDistance } from './geometry.js';
@@ -10,9 +9,7 @@ import { getDistanceToLeader, getRaceStage } from './standings.js';
 import { getOrbitSpec, rollItem } from './items.js';
 import { spinOutKart } from './effects.js';
 
-// Tout objet simple arrive en main, y compris ceux qui peuvent ensuite etre
-// traines : en main, il n'a pas de hitbox — il ne protege de rien et ne blesse
-// personne.
+// Tout objet simple arrive en main, sans hitbox.
 function getHoldPosition(cfg, itemType) {
     if (getOrbitSpec(cfg, itemType)) return 'orbit';
     return 'hands';
@@ -22,16 +19,13 @@ function isTrailable(cfg, itemType) {
     return (cfg.trailableItems || []).indexOf(itemType) !== -1;
 }
 
-// Le type qui MENACE, pour un objet tenu, et ce n'est pas toujours celui qu'on
-// lit. Un triple annonce le type de son GROUPE : lu tel quel, aucun predicat de
-// danger latent ne le reconnait, et l'orbite y retombait des deux cotes. Sans
-// effet tant que les triples sont desactives — et c'est bien le probleme.
+// Type menaçant d'un objet tenu (pour un triple, le type de l'objet largue).
 function heldThreatType(held) {
     if (!held) return '';
     return held.childType || held.type;
 }
 
-// Une banane simplement lachee derriere soi ne se vise pas.
+// Une banane lachee derriere soi ne se vise pas.
 function isAiming(cfg, kart) {
     const held = kart.heldItem;
     if (!held || held.holdPosition === 'orbit') return false;
@@ -39,10 +33,8 @@ function isAiming(cfg, kart) {
     return held.type === 'banana' && kart.lobbing;
 }
 
-// De quoi atteindre celui qu'on PRECEDE : ce qui peut partir vers l'avant. Ce
-// n'est pas la question de `isAiming`, qui dit si un kart execute une visee — les
-// deux se sont longtemps confondues, et l'orbite tombait dans l'ecart. Une banane
-// ne compte pas, sauf lancee en cloche, ce qui est alors une visee.
+// Vrai si le kart tient de quoi atteindre celui qu'il precede (pas une banane,
+// sauf lancee en cloche).
 function isArmedForward(cfg, kart) {
     const type = heldThreatType(kart.heldItem);
     if (!type) return false;
@@ -50,19 +42,12 @@ function isArmedForward(cfg, kart) {
     return type === 'banana' && kart.lobbing;
 }
 
-// Agressivite du kart, de 0 a 1. Le rang et l'ecart au premier se multiplient :
-// etre dernier au milieu du peloton, ou deuxieme a une demi-piste, ne suffit pas.
-// La racine remonte le resultat, sans quoi deux moities donneraient un quart.
-//
-// L'etape de course pondere le tout, et vaut 1 a l'arrivee : un dernier a quatre
-// tours de la fin a le temps de voir venir.
+// Agressivite de 0 a 1 : produit du rang et de l'ecart au premier (racine),
+// pondere par l'etape de course (1 a l'arrivee).
 function getAggression(cfg, state, kart) {
     const spec = cfg.ai.aggression;
 
-    // Sur le nombre de places a prendre, comme toutes les regles de place
-    // (`rankedCount`, cf. `updateRanks`) : un plateau ampute doit rendre les
-    // memes extremes qu'un plateau complet. Il comptait tous les karts, grille
-    // comprise.
+    // Rapportee au nombre de places a prendre (`rankedCount`).
     const places = state.rankedCount;
     const rankTerm = (places > 1) ? Math.min(kart.rank - 1, places - 1) / (places - 1) : 0;
 
@@ -71,23 +56,18 @@ function getAggression(cfg, state, kart) {
         ? Math.min(Math.max(dist, 0), spec.distanceRef) / spec.distanceRef
         : 0;
 
-    // Lue sur le premier : c'est lui qui decide du temps qu'il reste aux autres.
-    // La meme mesure que la distribution d'objets (`getRaceStage`) — elle etait
-    // recopiee ici avec un repli a elle, sur le kart lui-meme, la ou l'originale
-    // rend 0. Deux sources pour une grandeur finissent par diverger.
+    // Etape de course lue sur le premier (`getRaceStage`).
     const raceTerm = spec.startRatio + (1 - spec.startRatio) * getRaceStage(state);
 
     return Math.sqrt(rankTerm * distTerm) * raceTerm;
 }
 
-// Ce par quoi multiplier une attente : 1 pour qui mene, hurryRatio pour qui
-// n'a plus rien a perdre.
+// Facteur d'attente : 1 pour qui mene, hurryRatio pour qui n'a rien a perdre.
 function hurryFactor(cfg, aggression) {
     return 1 - aggression * (1 - cfg.ai.aggression.hurryRatio);
 }
 
-// Decide de la vie de l'objet : sorti derriere le kart, ou garde en main jusqu'au
-// tir. Le sens du tir est arrete des la reception.
+// Decide de la vie de l'objet (traine ou garde en main) et du sens du tir.
 function planItemUse(cfg, rng, state, now, kart, itemType) {
     const ai = cfg.ai;
 
@@ -101,9 +81,8 @@ function planItemUse(cfg, rng, state, now, kart, itemType) {
         kart.shotDirection = kart.lobbing ? 1 : -1;
     }
 
-    // Le premier defend : rien ne part devant lui, la banane est posee et non
-    // lobee. La place au moment du plan est retenue — doubl e avant de lancer, ce
-    // plan ne vaudra plus rien (cf. `getShotDirection`).
+    // Le premier defend : rien ne part devant lui (place retenue, voir
+    // `getShotDirection`).
     kart.shotAsLeader = (kart.rank === 1);
     if (kart.shotAsLeader) {
         kart.lobbing = false;
@@ -129,10 +108,7 @@ function planItemUse(cfg, rng, state, now, kart, itemType) {
     kart.throwTime = now + randomRange(rng, ai.holdItemMin, ai.holdItemMax) * hurry;
 }
 
-// Orbite elliptique autour du kart, en coordonnees monde donc identique sur tous
-// les appareils. Qu'une banane passe devant ou derriere ne regarde que le rendu,
-// qui joue la-dessus sur le z-index : ici la position rendue est la position
-// reelle.
+// Orbite elliptique autour du kart, en coordonnees monde.
 function getOrbitItemPosition(cfg, kart, orb, orbitAngle) {
     const orbit = cfg.orbit;
     const angle = orbitAngle + orb.phase;
@@ -144,12 +120,8 @@ function getOrbitItemPosition(cfg, kart, orb, orbitAngle) {
     return { worldX: worldX, y: kart.yPercent + Math.sin(angle) * orbit.radiusY };
 }
 
-// Retire un objet sans toucher aux phases des autres : leur position angulaire ne
-// depend que de `orbitAngle` et de leur propre phase, figee a l'attribution.
-//
-// N'emet volontairement aucun evenement : un objet detruit doit voir son element
-// DOM supprime, un objet largue doit le garder pour que l'item lance le
-// reutilise.
+// Retire un orbe sans toucher aux phases des autres. Aucun evenement : l'element
+// DOM est supprime ou reutilise selon le cas.
 function removeOrbitItem(kart, index) {
     const held = kart.heldItem;
     const orb = held.orbs[index];
@@ -173,17 +145,8 @@ function giveKartItem(cfg, state, rng, now, kart, events) {
 
     kart.lastItem = itemType;
 
-    // Le drapeau de couverture appartient a l'objet qui l'a justifie, et a lui
-    // seul. Sans cette ligne il SURVIVAIT a l'objet lache : un kart qui avait
-    // decide de se couvrir avec une banane gardait shieldHold=true apres
-    // l'avoir posee, et l'objet suivant se faisait retenir sur une decision
-    // prise pour la banane -- alors qu'aucun tirage `keep` n'avait ete joue
-    // pour lui (constat O-1).
-    //
-    // Ici et non dans planItemUse(), qui remet pourtant six autres champs a
-    // zero : planItemUse n'est PAS appelee pour les objets en orbite, la
-    // branche `spec` ci-dessous sortant avant. Le faire en amont des deux
-    // branches est ce qui couvre aussi les triples le jour ou ils reviennent.
+    // Le drapeau de couverture ne survit pas a l'objet qui l'a justifie (remis
+    // ici car planItemUse n'est pas appelee pour les orbites).
     kart.shieldHold = false;
 
     const holdPosition = getHoldPosition(cfg, itemType);
@@ -193,14 +156,11 @@ function giveKartItem(cfg, state, rng, now, kart, events) {
         const orbit = cfg.orbit;
         const orbs = [];
         for (let i = 0; i < orbit.count; i++) {
-            // Phase figee une fois pour toutes : c'est ce qui garantit que la
-            // rotation des survivants ne bouge pas quand l'un disparait.
+            // Phase figee : la rotation des survivants ne change pas.
             orbs.push({ id: state.nextItemId++, phase: (i * 2 * Math.PI) / orbit.count });
         }
 
-        // id de groupe distinct des orbes : aucun element DOM ne lui
-        // correspond, donc les acces generiques a itemEls[heldItem.id] cote
-        // rendu restent des no-op et l'orbite passe par son propre bloc.
+        // id de groupe sans element DOM (l'orbite a son propre rendu).
         kart.heldItem = {
             id: state.nextItemId++,
             type: itemType,
@@ -226,7 +186,7 @@ function giveKartItem(cfg, state, rng, now, kart, events) {
     }
 
     const itemId = state.nextItemId++;
-    // Pas d'offset visuel ici : le client le derive de holdPosition au rendu.
+    // Decalage visuel derive cote client.
     kart.heldItem = {
         id: itemId,
         type: itemType,
@@ -244,17 +204,9 @@ function rankChance(table, state, kart) {
     return table.pack;
 }
 
-// Note d'un candidat pour la rouge, en distance equivalente : la plus basse
-// gagne. Au-dela de `redShellComfortTarget` un kart vaut son ecart brut ; en
-// dessous il reste eligible mais recule d'autant plus qu'il est colle au tireur.
-//
-// C'est une pente et non un seuil : avec un simple plancher, un kart a un pixel
-// sous la barre etait ecarte comme un kart au pare-chocs, et la rouge allait
-// viser derriere lui. Le plancher qui subsiste est celui que la physique impose —
-// l'objet ne s'arme qu'a `itemArmDistance`, et traverse tout sans effet avant.
-//
-// Rend Infinity pour un candidat inatteignable, les karts derriere le tireur
-// compris.
+// Note d'un candidat pour la rouge, en distance equivalente (la plus basse
+// gagne) : au-dela de `redShellComfortTarget` l'ecart brut, en dessous une
+// penalite croissante. Infinity si inatteignable (y compris derriere).
 function redShellTargetScore(cfg, dist) {
     const floor = cfg.speeds.redShellMinTarget;
     if (dist < floor) return Infinity;
@@ -262,15 +214,12 @@ function redShellTargetScore(cfg, dist) {
     const comfort = cfg.speeds.redShellComfortTarget;
     if (dist >= comfort) return dist;
 
-    // Au carre : la penalite reste negligeable au bord du confort et ne mord que
-    // sur les cibles au contact. Lineaire, elle ferait l'inverse en decalant tout
-    // le monde.
+    // Penalite au carre : negligeable au bord du confort.
     const shortfall = (comfort - dist) / (comfort - floor);
     return dist + cfg.speeds.redShellClosePenalty * shortfall * shortfall;
 }
 
-// Le meilleur candidat devant. Null seulement si tout le monde est sous le
-// plancher d'armement : la rouge part alors sans cible.
+// Meilleur candidat devant, ou null si tous sont sous le plancher d'armement.
 function findRedShellTarget(cfg, state, kart) {
     let best = null;
     let bestScore = Infinity;
@@ -291,11 +240,8 @@ function findRedShellTarget(cfg, state, kart) {
     return best;
 }
 
-// Sens de tir effectif : le plan arrete a la reception, corrige des deux
-// changements de place qui l'invalident. Le premier ne lance jamais devant lui ;
-// un kart qui tenait la tete et s'est fait doubler n'a plus de raison de tirer
-// derriere. Les deux regles sont ici et non dans le tirage, pour suivre la place
-// reelle au moment du lancer.
+// Sens de tir effectif : le premier ne tire jamais devant lui, et un kart double
+// depuis le plan ne tire plus derriere.
 function getShotDirection(state, kart) {
     if (kart.rank === 1) return -1;
     if (kart.shotAsLeader) return 1;
@@ -309,10 +255,7 @@ function rollShellDirection(cfg, rng, state, kart, itemType) {
     return rng() < rankChance(chances, state, kart) ? -1 : 1;
 }
 
-// Met un objet en jeu depuis un kart : trajectoire et cible dependent du type,
-// pas de la facon dont il etait porte. Partagee par l'activation et par le
-// largage d'orbite, pour qu'une carapace tiree d'un triple se comporte comme une
-// simple.
+// Met un objet en jeu depuis un kart (activation et largage d'orbite).
 function spawnLaunchedItem(cfg, state, rng, now, kart, itemType, itemId, startX, startY, events, direction) {
     const dir = direction === -1 ? -1 : 1;
     let vx = 0;
@@ -324,9 +267,7 @@ function spawnLaunchedItem(cfg, state, rng, now, kart, itemType, itemId, startX,
         vy = randomRange(rng, -cfg.speeds.shellVertical, cfg.speeds.shellVertical);
     } else if (itemType === 'redShell') {
         vx = cfg.speeds.redShellSpeed * dir;
-        // Tete chercheuse vers l'avant seulement : tiree en arriere, elle part
-        // tout droit. Sans cible au depart, la boucle de suivi ne s'y interesse
-        // jamais.
+        // Tete chercheuse vers l'avant seulement.
         const target = dir > 0 ? findRedShellTarget(cfg, state, kart) : null;
         if (target) {
             targetKartId = target.id;
@@ -339,9 +280,7 @@ function spawnLaunchedItem(cfg, state, rng, now, kart, itemType, itemId, startX,
     events.push({ type: 'launchItem', kartId: kart.id, itemId: itemId });
 }
 
-// L'objet en piste, tel que la boucle des objets le lit. Partage par le tir et
-// par le depot : un objet pose doit porter exactement les memes champs qu'un
-// objet lance, sinon un test de la boucle lirait un champ absent.
+// Objet en piste, avec les memes champs qu'il soit lance ou pose.
 function pushGroundItem(cfg, state, now, kart, itemType, itemId, startX, startY, vx, vy, targetKartId) {
     let worldX = startX;
     if (worldX < 0) worldX += cfg.world.width;
@@ -361,48 +300,34 @@ function pushGroundItem(cfg, state, now, kart, itemType, itemId, startX, startY,
         lastAnimTime: 0,
         isDead: false,
 
-        // Profondeur au pas precedent : les impacts se testent sur le
-        // segment parcouru, pas sur la seule position d'arrivee.
+        // Profondeur au pas precedent (impacts testes sur le segment).
         prevY: startY,
-        // Rebonds encaisses, bords et tuyaux confondus. Au-dela de
-        // `pipe.maxShellBounces` la carapace se detruit — c'est sa seule duree de
-        // vie.
+        // Rebonds encaisses ; au-dela de `pipe.maxShellBounces`, destruction.
         bounces: 0,
-        // Passe a true au premier tuyau touche. Une verte epargne son
-        // lanceur, mais plus une fois qu'un pipe la lui a renvoyee.
+        // Une verte renvoyee par un tuyau peut toucher son lanceur.
         pipeBounced: false,
 
-        // Vol en cloche. `hop` est la hauteur de l'arc en px de rendu ; `rising`
-        // couvre la montee, pendant laquelle l'objet survole tout le monde et n'a
-        // pas de hitbox.
+        // Vol en cloche : `hop` en px de rendu ; pas de hitbox pendant la montee.
         flightUntil: 0,
         flightFrom: 0,
         flightTo: 0,
         hop: 0,
         rising: false,
 
-        // Un objet ne peut toucher son lanceur qu'une fois eloigne de lui.
+        // Ne touche son lanceur qu'une fois eloigne.
         armed: false,
         spent: false,
         deadAt: 0,
 
-        // Pose au sol et non lance (cf. depositHeldItem) : il ne bouge plus, ne
-        // tourne plus, et vit le temps d'une banane. Seule une carapace en a
-        // besoin — une banane est deja immobile — mais le drapeau vaut pour
-        // tout objet pose.
+        // Objet pose (depositHeldItem) : immobile.
         resting: false
     };
     state.items.push(item);
     return item;
 }
 
-// L'objet TRAINE, depose la ou il traine : meme place que l'emprise que le
-// moteur lui testait (`heldItemBehind`), donc aucun saut ni a l'ecran ni sur la
-// carte de debug. Il reprend son id : le client reutilise son element tel quel.
-//
-// Carapace comprise, et immobile : elle n'a pas ete tiree. Elle devient un piege
-// comme une banane — l'IA la voit deja comme tel, un objet a l'arret etant un
-// obstacle fixe pour elle.
+// Depose l'objet traine a sa place (meme emprise, meme id pour le client).
+// Une carapace deposee devient un piege immobile.
 function depositHeldItem(cfg, state, now, kart, events) {
     const held = kart.heldItem;
     const item = pushGroundItem(cfg, state, now, kart, held.type, held.id,
@@ -410,8 +335,7 @@ function depositHeldItem(cfg, state, now, kart, events) {
                                 kart.yPercent, 0, 0, null);
     item.resting = true;
 
-    // Ni `launchItem` (il n'a pas ete tire : les bancs le compteraient comme un
-    // tir) ni `removeHeldItem` (il n'a pas disparu).
+    // Ni `launchItem` (pas un tir) ni `removeHeldItem` (pas disparu).
     events.push({ type: 'dropItem', kartId: kart.id, itemId: held.id });
     kart.heldItem = null;
     kart.trailTime = 0;
@@ -421,8 +345,7 @@ function activateItem(cfg, state, rng, now, kart, events) {
     const held = kart.heldItem;
     if (!held) return;
 
-    // Un seul objet quitte l'orbite par activation : le kart garde son
-    // bouclier reduit et rearme un largage tant qu'il lui en reste.
+    // Un seul orbe largue par activation.
     if (held.holdPosition === 'orbit') {
         const orb = held.orbs[0];
         const child = held.childType;
@@ -432,24 +355,18 @@ function activateItem(cfg, state, rng, now, kart, events) {
         let startX, startY;
         let dir = 1;
         if (child === 'banana') {
-            // Un piege est simplement lache : on part de la position d'orbite
-            // courante, sans saut visuel. Le rayon vertical deborde la route
-            // quand le kart longe un bord, et la boucle items ne reclampe jamais
-            // les bananes : on le fait ici.
+            // Piege lache depuis la position d'orbite, ramene dans la piste.
             startX = pos.worldX;
             startY = Math.min(Math.max(pos.y, cfg.road.minY), cfg.road.maxY);
         } else {
-            // Une carapace est tiree vers l'avant, comme depuis la main : la
-            // faire partir de l'arriere de l'orbite la ferait traverser son
-            // propre kart.
+            // Carapace tiree vers l'avant, comme depuis la main.
             dir = getShotDirection(state, kart);
             startX = kart.worldX + (dir > 0 ? cfg.offsets.world.shellSpawn
                                             : cfg.offsets.world.heldItemBehind);
             startY = kart.yPercent;
         }
 
-        // L'objet reprend son id : son element DOM est reutilise tel quel par
-        // le rendu des items en jeu.
+        // Meme id : l'element DOM est reutilise.
         spawnLaunchedItem(cfg, state, rng, now, kart, child, orb.id, startX, startY, events, dir);
 
         if (kart.heldItem) {
@@ -459,9 +376,7 @@ function activateItem(cfg, state, rng, now, kart, events) {
         return;
     }
 
-    // L'eclair ne part pas vers quelqu'un : il declenche un orage, et c'est
-    // l'orage qui frappe. Ciel noir, eclairs et malus tombent ensemble a
-    // `strikeAt`.
+    // L'eclair declenche un orage (frappe a `strikeAt`).
     if (held.type === 'lightning') {
         const spec = cfg.lightning;
 
@@ -480,8 +395,7 @@ function activateItem(cfg, state, rng, now, kart, events) {
         return;
     }
 
-    // Le bill ne se lance pas : le kart devient le projectile. Meme famille que
-    // l'etoile — un etat du kart, avec sa date de fin.
+    // Le bill : le kart devient le projectile (etat avec date de fin).
     if (held.type === 'bill') {
         const spec = cfg.bill;
 
@@ -489,15 +403,9 @@ function activateItem(cfg, state, rng, now, kart, events) {
         kart.billStartedAt = now;
         kart.billEndTime = now + spec.durationMs;
         kart.billSlowUntil = 0;
-        // Meme regle que l'etoile : on ne peut pas etre intouchable et
-        // ecrase en meme temps. Le bill l'obtenait avant en primant sur le
-        // rapetissement dans le calcul de vitesse ; il l'efface maintenant,
-        // ce qui rend aussi sa taille au sprite au lieu de le laisser voler
-        // en miniature.
+        // Fin du rapetissement.
         kart.shrinkEndTime = 0;
-        // Ceux qui sont devant a l'instant du declenchement. Chacun rattrape
-        // se retire de la liste et raccourcit le vol : la liste est donc a la
-        // fois le compteur et la memoire de qui reste a doubler.
+        // Karts devant au declenchement : chacun rattrape raccourcit le vol.
         kart.billAhead = [];
         for (let i = 0; i < state.karts.length; i++) {
             const other = state.karts[i];
@@ -506,8 +414,7 @@ function activateItem(cfg, state, rng, now, kart, events) {
             }
         }
 
-        // La transformation efface le rapetissement, comme l'etoile : on ne
-        // part pas en trombe en etant ecrase.
+        // Fin du rapetissement.
         kart.shrinkEndTime = 0;
         kart.absoluteVelocity = getBillSpeed(cfg, state, kart);
 
@@ -519,10 +426,7 @@ function activateItem(cfg, state, rng, now, kart, events) {
     }
 
     if (held.type === 'shroom') {
-        // Rien n'est pose sur la vitesse : elle part d'ou le kart en est et
-        // monte. La poser a `topSpeed` ici escamotait toute la premiere
-        // moitie de la montee, et un champignon pris a l'arret rendait
-        // autant qu'un champignon pris a pleine allure.
+        // La vitesse monte depuis l'allure actuelle.
         kart.boostEndTime = now + cfg.speeds.boosts.shroom.durationMs;
         events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
         kart.heldItem = null;
@@ -533,8 +437,7 @@ function activateItem(cfg, state, rng, now, kart, events) {
     if (held.type === 'star') {
         kart.starEndTime = now + cfg.speeds.boosts.star.durationMs;
         kart.isInvincible = true;
-        // On ne peut pas etre invincible et ecrase en meme temps : l'etoile
-        // rend sa taille au kart, comme elle le protege de la foudre a venir.
+        // L'etoile annule le rapetissement.
         kart.shrinkEndTime = 0;
         events.push({ type: 'starOn', kartId: kart.id });
         events.push({ type: 'removeHeldItem', kartId: kart.id, itemId: held.id });
@@ -543,8 +446,6 @@ function activateItem(cfg, state, rng, now, kart, events) {
         return;
     }
 
-    // Une banane est lachee derriere le kart, qu'elle ait ete trainee ou
-    // tenue en main : sinon elle apparaitrait sous lui.
     // La bleue part droit devant, au-dessus de la piste, vers le premier.
     if (held.type === 'blueShell') {
         const spec = cfg.blueShell;
@@ -598,20 +499,17 @@ function activateItem(cfg, state, rng, now, kart, events) {
         item.flightFrom = item.worldX;
         item.flightTo = item.worldX + cfg.speeds.bananaLobDistance;
         item.flightUntil = now + cfg.speeds.bananaLobDurationMs;
-        // Sans hitbox tant qu'elle monte : elle part de la main du lanceur et
-        // passe au-dessus de ce qui le precede immediatement.
+        // Pas de hitbox pendant la montee.
         item.rising = true;
-        // Renseignee pour l'IA seulement : le deplacement vient du vol.
+        // Pour l'IA seulement (le deplacement vient du vol).
         item.vx = cfg.speeds.bananaLobDistance / (cfg.speeds.bananaLobDurationMs / 1000);
     }
     kart.heldItem = null;
     kart.trailTime = 0;
 }
 
-// Passe dediee, executee pour tous les karts y compris ceux en 'hit' : le
-// bouclier continue de tourner pendant un tete-a-queue. Seules les
-// collisions sont suspendues tant que le porteur n'est pas 'running', pour
-// rester aligne sur le traitement de l'objet traine derriere.
+// Orbites de tous les karts, y compris en 'hit' (collisions suspendues tant
+// que le porteur ne roule pas).
 function updateOrbitItems(cfg, state, now, deltaTime, events) {
     const TWO_PI = Math.PI * 2;
     const kartsLen = state.karts.length;
@@ -627,13 +525,8 @@ function updateOrbitItems(cfg, state, now, deltaTime, events) {
 
         if (kart.state !== 'running') continue;
 
-        // Les trois orbes sont testes sur toute l'orbite, y compris la
-        // moitie qui passe derriere le sprite du kart : un objet occulte
-        // est un objet cache, pas un objet absent. Ne pas filtrer sur la
-        // profondeur ici, ce serait rendre le bouclier troue a l'arriere.
-        //
-        // Parcours a rebours : removeOrbitItem() fait un splice, et un orbe
-        // consomme ne doit pas decaler ceux pas encore testes.
+        // Tous les orbes sont testes, y compris derriere le sprite ; parcours a
+        // rebours a cause du splice.
         for (let b = held.orbs.length - 1; b >= 0; b--) {
             const orb = held.orbs[b];
             const pos = getOrbitItemPosition(cfg, kart, orb, held.orbitAngle);
@@ -650,8 +543,7 @@ function updateOrbitItems(cfg, state, now, deltaTime, events) {
                 if (dx >= shrunkReachX(cfg, orbit, victim, now)
                     || dy >= shrunkReachY(cfg, orbit, victim, now)) continue;
 
-                // Une etoile ou un bill encaisse l'objet sans etre ralenti,
-                // mais le consomme quand meme : le bouclier s'use au contact.
+                // Etoile ou bill : pas de tete-a-queue, mais l'orbe est consomme.
                 if (!isRamming(victim)) spinOutKart(cfg, now, victim, events, held.childType);
                 consumed = true;
                 break;
@@ -665,11 +557,8 @@ function updateOrbitItems(cfg, state, now, deltaTime, events) {
     }
 }
 
-// Profondeur visee par un bill : le milieu de la piste, ou le premier
-// degagement si un tuyau s'y trouve.
-//
-// Il ne regarde que le tuyau qui bouche vraiment sa voie, et choisit le cote
-// le plus proche de lui : un bill ne manoeuvre pas, il devie.
+// Profondeur visee par un bill : milieu de la piste, ou le degagement le plus
+// proche si un tuyau bouche sa voie.
 function billAimDepth(cfg, state, kart) {
     const mid = (cfg.road.minY + cfg.road.maxY) / 2;
     const pipes = state.pipes;
@@ -704,8 +593,7 @@ function billAimDepth(cfg, state, kart) {
     if (canAbove) return above;
     if (canBelow) return below;
 
-    // Aucun cote ne tient. Le chargement des circuits l'interdit, mais si
-    // cela arrivait le bill traverserait plutot que de se figer devant.
+    // Aucun cote ne tient (exclu au chargement) : il traverse.
     return mid;
 }
 

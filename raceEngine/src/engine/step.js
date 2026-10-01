@@ -1,6 +1,4 @@
-// Un pas de simulation : l'ordre dans lequel le monde avance.
-// Cette fonction n'invente rien — elle appelle, dans un ordre qui compte, ce que
-// les autres modules savent faire. La lire, c'est lire la course.
+// Un pas de simulation : appelle dans l'ordre ce que les autres modules font.
 
 import { randomRange } from './math.js';
 import { crossedDepth, getShortestDistance } from './geometry.js';
@@ -44,11 +42,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             if (Math.abs(dist) >= cfg.hitboxes.itemBox.x) continue;
             if (dy >= cfg.hitboxes.itemBox.y) continue;
 
-            // Le passage se date en premier et sans condition : la zone se
-            // traverse qu'il y reste un cube ou non. C'est l'endroit qui rend
-            // prudent, pas le butin — celui qui suit vient peut-etre d'y prendre
-            // de quoi tirer. C'est aussi pour ce releve que la boucle ne saute
-            // plus les cubes eteints.
+            // Passage date sans condition, qu'il reste un cube ou non.
             kart.boxPassedAt = now;
 
             if (!box.active) continue;
@@ -68,37 +62,27 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
 
         if (kart.state === 'grid') continue;
 
-        // Double la date en booleen : le protocole n'a pas d'horloge, le drapeau
-        // se lit tel quel dans le snapshot. Hors de la branche 'running', sinon
-        // un kart percute pendant son choc le garderait fige.
+        // Drapeau du snapshot (pose hors de la branche 'running').
         kart.bumped = now < kart.bumpEndTime;
 
-        // Meme raison et meme place que le precedent.
         kart.isFlat = now < kart.flatEndTime;
 
-        // Ce que les objets de vitesse rendent au volant : sans ce gain, un kart
-        // lance perdrait de l'appui (`steer.pace`) et prendre un champignon
-        // reviendrait a se rendre pataud au moment ou l'on double.
-        //
-        // Pose ici une fois par tick, comme les drapeaux ci-dessus : c'est ce qui
-        // permet a `steerCap` de ne lire qu'un kart, sans horloge, et donc de
-        // valoir pareil pour le pilotage et pour les planificateurs.
+        // Gain d'appui des objets de vitesse, pose une fois par tick pour
+        // `steerCap`.
         kart.steerBoost = (now < kart.boostEndTime || now < kart.starEndTime)
             ? cfg.physics.steer.boostGain : 1;
 
-        // Les deux canaux de choc s'amortissent seuls, avant d'etre consommes par
-        // le deplacement. Ils valent pour les deux etats : une toupie encaisse
-        // aussi.
+        // Amortissement des deux canaux de choc (aussi en toupie).
         const bumpDecay = cfg.physics.contact.decay * deltaTime;
         const bumpKeep = bumpDecay > 1 ? 0 : 1 - bumpDecay;
         kart.bumpVy *= bumpKeep;
         kart.bumpVx *= bumpKeep;
 
         if (kart.state === 'running') {
-            // Depart rate : le kart reste sur place, moteur noye.
+            // Depart rate : moteur noye.
             if (kart.startStallUntil > now) continue;
 
-            // Un kart qui a fini ne ramasse plus rien : il rentre au ralenti.
+            // Un kart arrive ne ramasse plus rien.
             if (!kart.finished && kart.pendingItemGrantTime && now > kart.pendingItemGrantTime) {
                 giveKartItem(cfg, state, rng, now, kart, events);
                 kart.pendingItemGrantTime = 0;
@@ -107,18 +91,12 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             updateAI(cfg, state, rng, now, kart, deltaTime);
             updateBill(cfg, state, now, kart, events);
 
-            // Deux regimes, et `boost` seul les separe : sous objet la vitesse
-            // vise la pointe de l'objet, hors objet elle suit l'elan du kart. Le
-            // bill compte comme un objet, sans quoi il sortirait de sa
-            // transformation au ralenti.
+            // Sous objet (bill compris), la vitesse vise la pointe de l'objet ;
+            // sinon elle suit l'elan du kart.
             const boost = getActiveBoost(cfg, state, kart, now);
 
             if (boost) {
-                // La montee, et c'est tout ce qui se passe sous objet : le taux
-                // d'une relance normale multiplie par la vivacite de l'objet. Le
-                // `else` ramene d'un coup quand la pointe visee baisse — un
-                // champignon qui s'eteint pendant une etoile, un bill qui rend la
-                // main.
+                // Montee sous objet ; redescente immediate si la pointe baisse.
                 const rampRate = cfg.speeds.accelerationRate * kart.stats.acceleration * boost.ramp;
                 if (kart.absoluteVelocity < boost.peak) {
                     kart.absoluteVelocity = Math.min(boost.peak,
@@ -127,27 +105,14 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                     kart.absoluteVelocity = boost.peak;
                 }
 
-                // L'elan est SUSPENDU, pas efface : l'objet porte le kart, et le
-                // rythme qu'il avait avant l'attend a la sortie.
-                //
-                // Force a 1.0, il donnait a tout objet une seconde prime que
-                // personne n'avait decidee — le kart ressortait a 100 % de sa
-                // pointe pour le temps d'un tirage entier, soit pres de la moitie
-                // de ce que rendait le champignon.
-                //
-                // La mise de cote se fait au premier tick et vaut pour toute la
-                // chaine : deux objets qui se recouvrent ne font qu'une
-                // suspension. Le compte a rebours est gele avec elle, sinon la
-                // sortie tomberait sur une horloge qui a tourne dans le vide.
+                // L'elan est mis de cote (avec son compte a rebours) au premier
+                // tick sous objet, pour toute la chaine d'objets.
                 if (kart.preBoostMomentum < 0) {
                     kart.preBoostMomentum = kart.momentum;
                     kart.preBoostDriftLeft = Math.max(0, kart.nextMomentumChange - now);
                 }
             } else {
-                // Fin de suspension : l'elan reprend la ou il en etait, pour le
-                // temps qu'il lui restait. Pose avant la lecture de l'horloge,
-                // pour qu'un compte a rebours arrive a terme pendant l'objet tire
-                // des le premier tick libre.
+                // Fin de suspension : l'elan reprend la ou il en etait.
                 if (kart.preBoostMomentum >= 0) {
                     kart.momentum = kart.preBoostMomentum;
                     kart.nextMomentumChange = now + kart.preBoostDriftLeft;
@@ -177,50 +142,29 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 }
             }
 
-            // La pointe sous objet est deja dans `absoluteVelocity` : il ne
-            // reste ici que ce qui peut la rogner.
+            // Ce qui peut encore rogner la vitesse.
             let effectiveSpeed = kart.absoluteVelocity;
 
-            // Freiner au bord et rentrer au ralenti sont des decisions de
-            // pilotage, et un objet n'est pas du pilotage : il ne se module pas.
-            // C'est la seule facon que les trois rendent bien le multiplicateur
-            // qu'on leur donne.
+            // Freins et ralenti ne s'appliquent pas sous objet.
             if (!boost) {
                 if (kart.finished) {
                     effectiveSpeed = Math.min(effectiveSpeed,
                         kart.stats.topSpeed * cfg.race.finishedSpeedRatio);
                 }
-                // Le frein porte sa propre severite : lever le pied pour laisser
-                // passer une rouge n'est pas freiner devant un mur.
-                // `edgeBrakeFactor` reste le defaut.
+                // Severite propre a chaque frein (`edgeBrakeFactor` par defaut).
                 if (now < kart.brakeUntil) {
                     effectiveSpeed *= kart.brakeFactor || cfg.ai.edgeBrakeFactor;
                 }
 
-                // Ce que braquer coute en vitesse. Une seule ligne, parce qu'une
-                // seule fonction en decide (`steerCost`).
-                //
-                // Ici et pas ailleurs : le cout disparait a l'instant ou le kart
-                // cesse de tourner, et il ne se compose pas avec `acceleration` —
-                // rogner `targetSpeed` ferait payer la reprise une seconde fois
-                // par une stat que la masse taxe deja. Sous objet, rien : un
-                // champignon doit rendre le multiplicateur qu'on lui donne.
-                //
-                // Propriete acquise gratuitement : `steer` met la consigne a zero
-                // des que la cible est tenue, donc le cout ne tombe que pendant
-                // les TRANSITIONS. La ligne optimale devient « choisir tot, et
-                // tenir ».
-                //
-                // Le compteur est pose ICI et nulle part ailleurs — seul endroit
-                // qui connaisse les conditions du tick. C'est une observation,
-                // aucune decision ne le lit.
+                // Cout du braquage (`steerCost`), hors objet ; il ne tombe que
+                // pendant les transitions, `steer` annulant la consigne une fois
+                // la cible tenue. Compteur d'observation seulement.
                 const cornerMult = steerCost(cfg, kart);
                 kart.cornerLostPx += effectiveSpeed * (1 - cornerMult) * deltaTime;
                 effectiveSpeed *= cornerMult;
             }
 
-            // L'invincibilite ne dit plus rien de la vitesse : elle ne suit
-            // que la date de l'etoile.
+            // L'etoile ne change pas la vitesse.
             if (kart.starEndTime > now) {
                 kart.isInvincible = true;
             } else if (kart.isInvincible) {
@@ -228,8 +172,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 events.push({ type: 'starOff', kartId: kart.id });
             }
 
-            // Applique en dernier et sur le resultat de tout le reste : un kart
-            // rapetisse est lent quoi qu'il tienne.
+            // Rapetissement en dernier : un kart reduit est lent quoi qu'il tienne.
             if (kart.shrinkEndTime > now) {
                 effectiveSpeed *= cfg.lightning.speedFactor;
                 kart.isShrunk = true;
@@ -238,17 +181,12 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 events.push({ type: 'shrinkOff', kartId: kart.id });
             }
 
-            // Apres le rapetissement et multiplie par-dessus : les deux malus se
-            // cumulent. Un kart aplati traine, il ne s'arrete pas — c'est la
-            // difference avec le tete-a-queue.
+            // Aplati : malus cumule au rapetissement (il traine sans s'arreter).
             if (kart.isFlat) {
                 effectiveSpeed *= cfg.lightning.flatSpeedFactor;
             }
 
-            // La descente de fin de vol. Elle ne peut pas passer par
-            // `absoluteVelocity` : le kart n'est plus sous objet, et le regime «
-            // elan » le ramenerait a `topSpeed` d'un coup. Jamais en dessous de
-            // la vitesse du kart, d'ou le `Math.max`.
+            // Descente de fin de vol du bill, jamais sous la vitesse du kart.
             const billSpeed = getBillSpeed(cfg, state, kart);
             if (!kart.isBill && kart.billSlowUntil > now) {
                 const left = (kart.billSlowUntil - now) / cfg.bill.slowdownMs;
@@ -258,16 +196,12 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 );
             }
 
-            // Le choc longitudinal s'ajoute a la vitesse moteur, borne a l'arret
-            // : emboutir coute son elan au kart de derriere, ca ne le fait pas
-            // repartir en arriere.
+            // Choc longitudinal ajoute, borne a l'arret.
             const shovedSpeed = effectiveSpeed + kart.bumpVx;
             let moveDist = (shovedSpeed > 0 ? shovedSpeed : 0) * deltaTime;
 
-            // Choc contre un tuyau : arret net, puis contrecoup. Le recul entame
-            // `totalDistance` autant que l'avance — position et progression
-            // restent cousues, sans quoi un kart franchirait la ligne en etant
-            // encore en amont a l'ecran.
+            // Choc contre un tuyau : arret net puis recul (deduit aussi de
+            // `totalDistance`).
             if (now < kart.bumpEndTime) {
                 moveDist = 0;
                 if (kart.bumpRecoilLeft > 0) {
@@ -295,9 +229,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                     kart.hasPassedFinishLine = true;
                 }
             } else if (prevWorldX >= finishX && kart.worldX < finishX) {
-                // Repousse a travers la ligne : le compteur se defait. Sans
-                // ce miroir, le tour serait compte une seconde fois a la
-                // prochaine traversee.
+                // Repousse a travers la ligne : le tour est decompte.
                 kart.lapCount--;
             }
 
@@ -306,9 +238,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 kart.finishRank = state.finishOrder.length + 1;
                 state.finishOrder.push(kart.id);
 
-                // Il ne se sert plus de ce qu'il tient : autant le lui
-                // retirer, sinon une banane trainerait derriere lui
-                // jusqu'au bout du tour d'honneur.
+                // Objet retire a l'arrivee.
                 if (kart.heldItem) {
                     if (kart.heldItem.holdPosition === 'orbit') {
                         for (const orb of kart.heldItem.orbs) {
@@ -333,12 +263,8 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
 
             clampKartToRoad(cfg, kart, deltaTime);
 
-            // Apres le deplacement et le recadrage : le tuyau se juge sur la
-            // position ou le kart vient d'arriver.
-            //
-            // Les contacts entre karts, eux, sont dans `resolveKartContacts`, une
-            // fois que tout le monde a bouge — les traiter ici poussait un kart
-            // contre un adversaire qui n'avait pas encore fait son pas.
+            // Tuyau juge apres le deplacement ; les contacts entre karts sont
+            // resolus plus tard (`resolveKartContacts`).
             collideKartWithPipes(cfg, state, kart, now, events);
 
             if (kart.heldItem && kart.state === 'running' && kart.heldItem.holdPosition === 'behind') {
@@ -358,9 +284,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
 
                     const hitThresholdY = 8;
 
-                    // `dx` porte la carrosserie de la victime, donc son
-                    // rapetissement. `dy` non : ce 8 n'est pas une somme de corps
-                    // mais une tolerance de profondeur posee ici.
+                    // `dx` tient compte du rapetissement, `dy` est une tolerance fixe.
                     if (dx < shrunkReachX(cfg, cfg.hitboxes.itemVsKart, victim, now)
                         && dy < hitThresholdY) {
                         if (isRamming(victim)) {
@@ -380,8 +304,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 }
             }
 
-            // Passage de la main au trainage : c'est le seul moment ou la
-            // hitbox de l'objet s'active.
+            // Passage au trainage : la hitbox de l'objet s'active.
             if (kart.heldItem && kart.trailTime && now > kart.trailTime
                 && kart.heldItem.holdPosition === 'hands') {
                 kart.heldItem.holdPosition = 'behind';
@@ -391,18 +314,9 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             if (kart.heldItem && now > kart.throwTime) activateItem(cfg, state, rng, now, kart, events);
 
         } else if (kart.state === 'hit') {
-            // La glissade : la toupie file a la vitesse que son coup lui a
-            // laissee (`hits[source].keep`, cf. `spinOutKart`). A zero elle
-            // s'arrete net — carapaces et bleue.
-            //
-            // Un tuyau arrete aussi une toupie : elle glisse, mais pas a travers
-            // le decor. `pipeBlocked` porte ce contact tant que les deux se
-            // touchent, la ou `bumpEndTime` compte un choc unique reserve aux
-            // karts en course.
-            //
-            // Une toupie glisse sur son erre et encaisse : le choc longitudinal
-            // s'y ajoute, borne a l'arret. Se faire tamponner pendant son
-            // tete-a-queue pousse donc vraiment.
+            // Glissade de la toupie a la vitesse laissee par le coup
+            // (`hits[source].keep`), arretee par un tuyau (`pipeBlocked`), plus
+            // le choc longitudinal borne a l'arret.
             let hitSpeed = 0;
             if (kart.hitKeepSpeed > 0 && now >= kart.bumpEndTime && !kart.pipeBlocked) {
                 hitSpeed = kart.hitKeepSpeed;
@@ -417,20 +331,15 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             kart.worldX += hitMove;
             kart.totalDistance += hitMove;
 
-            // Le choc lateral la deplace aussi. Sans ces trois lignes, une toupie
-            // encaissait une poussee en profondeur sans jamais s'y deplacer :
-            // elle restait plantee dans le kart qui la percutait.
+            // Le choc lateral deplace aussi la toupie.
             kart.yPercent += kart.bumpVy * deltaTime;
-            // Le frottement ne mord pas sur une toupie : sa glissade passe par
-            // `hitSpeed` et non par le moteur, et elle s'arrete deja toute seule.
+            // Pas de frottement de bord sur une toupie.
             clampKartToRoad(cfg, kart, deltaTime);
 
             if (kart.worldX >= cfg.world.width) {
                 kart.worldX -= cfg.world.width;
             }
-            // Le pendant du precedent : depuis qu'un tamponnement peut
-            // ralentir une toupie sous zero, elle peut reculer a travers
-            // l'origine du monde.
+            // Une toupie peut reculer sous l'origine du monde.
             if (kart.worldX < 0) {
                 kart.worldX += cfg.world.width;
             }
@@ -439,39 +348,31 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             if (now > kart.hitEndTime) {
                 kart.state = 'running';
                 kart.stopped = false;
-                // Il repart de ce que son coup lui a laisse : de zero apres une
-                // carapace, en glissant apres une banane.
+                // Reprise a la vitesse laissee par le coup.
                 kart.absoluteVelocity = kart.hitKeepSpeed;
                 kart.hitKeepSpeed = 0;
 
-                // Et le lateral avec : `vy` n'etait pas integre pendant le
-                // tete-a-queue mais pas remis a zero non plus, si bien que le
-                // kart repartait en biais avec la vitesse laterale d'avant le
-                // choc. Un incident remet l'elan a zero ; il n'y a aucune raison
-                // qu'il garde une direction.
+                // Vitesse laterale remise a zero apres l'incident.
                 kart.vy = 0;
                 kart.targetVy = 0;
 
                 kart.momentum = 0.2;
                 kart.momentumTarget = randomRange(rng, 0.6, 1.0);
                 kart.nextMomentumChange = now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax);
-                // Comme pour le tuyau : le tete-a-queue refait l'elan de zero, il
-                // n'y a plus rien a rendre a la fin d'un objet qui aurait
-                // survecu.
+                // Plus d'elan a restituer.
                 kart.preBoostMomentum = -1;
-                // Le sursis depend lui aussi de ce qui a frappe (`hits`).
+                // Sursis selon la source du coup (`hits`).
                 kart.hitInvincibleUntil = now + kart.hitInvincibleMs;
             }
         }
     }
 
-    // Tout le monde a bouge : les carrosseries peuvent enfin se parler.
+    // Contacts entre karts, une fois que tous ont bouge.
     resolveKartContacts(cfg, state, now, deltaTime, events);
 
     updateOrbitItems(cfg, state, now, deltaTime, events);
 
-    // Rien ne casse une bleue, pas meme une autre bleue : elles sont hors de
-    // cette passe, des deux cotes.
+    // Les bleues sont hors de cette passe.
     for (let i = state.items.length - 1; i >= 0; i--) {
         const item = state.items[i];
         if (item.isDead || item.spent) continue;
@@ -494,10 +395,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
         const item = state.items[i];
         if (item.isDead) continue;
 
-        // Profondeur d'ou l'objet part sur ce pas. Les impacts se testent sur le
-        // segment parcouru : une verte renvoyee par un tuyau traverse la piste en
-        // trois pas et passerait sinon d'un cote a l'autre d'un kart sans le
-        // toucher.
+        // Profondeur de depart du pas (impacts testes sur le segment).
         item.prevY = item.y;
 
         if (item.type === 'blueShell') {
@@ -514,9 +412,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
             continue;
         }
 
-        // Vol en cloche. La montee est inoffensive : la banane ne redevient
-        // dangereuse qu'a la redescente, le sommet etant atteint la ou sin()
-        // culmine.
+        // Vol en cloche : inoffensif a la montee.
         if (item.flightUntil) {
             const total = cfg.speeds.bananaLobDurationMs;
             const progress = Math.min(1, 1 - (item.flightUntil - now) / total);
@@ -534,22 +430,21 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 item.hop = 0;
                 item.vx = 0;
                 item.rising = false;
-                // La duree de vie ne court qu'a l'atterrissage.
+                // Duree de vie comptee a l'atterrissage.
                 item.createdAt = now;
             }
         }
 
-        // Une carapace posee (cf. depositHeldItem) ne bouge pas plus qu'une
-        // banane : ni traque, ni trajectoire, ni rebond.
+        // Carapace posee : immobile comme une banane.
         if (item.type !== 'banana' && !item.resting) {
             if (item.type === 'redShell' && item.targetKartId !== null) {
                 const target = state.kartsById[item.targetKartId];
                 if (target && (target.state === 'running' || target.state === 'hit')) {
-                    // La profondeur de sa cible, ou le detour d'un tuyau.
+                    // Profondeur de la cible, ou detour d'un tuyau.
                     const diffY = redShellAimY(cfg, state, item, target) - item.y;
                     item.vy = diffY * cfg.speeds.redShellTrackingSpeed;
                 } else {
-                    // Cible de repli cherchee dans le sens de deplacement.
+                    // Cible de repli dans le sens de deplacement.
                     const dir = item.vx >= 0 ? 1 : -1;
                     let newTarget = null;
                     let bestScore = Infinity;
@@ -573,22 +468,21 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                 }
             }
 
-            // Bords de piste et pipes sont traites la, par sous-pas : c'est
-            // le seul endroit ou une carapace change de trajectoire.
+            // Bords et tuyaux, par sous-pas.
             advanceProjectile(cfg, state, item, deltaTime, now);
         }
 
         if (item.worldX >= cfg.world.width) item.worldX -= cfg.world.width;
         if (item.worldX < 0) item.worldX += cfg.world.width;
 
-        // Posee, une carapace ne tourne plus sur elle-meme : elle garde sa frame.
+        // Carapace posee : frame figee.
         const spin = item.resting ? null : cfg.itemAnim[item.type];
         if (spin && (item.type === 'greenShell' || item.type === 'redShell')
             && now - item.lastAnimTime > spin.animSpeed) {
             item.currentFrame = (item.currentFrame % 3) + 1;
             item.lastAnimTime = now;
         }
-        // Tout ce qui est pose au sol vit le temps d'une banane.
+        // Objet pose : duree de vie d'une banane.
         if ((item.type === 'banana' || item.resting) && now - item.createdAt > cfg.delays.bananaLife) {
             item.isDead = true;
         }
@@ -601,21 +495,16 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
         }
 
         if (item.spent) continue;
-        // Hitbox coupee sur toute la montee de la cloche.
+        // Pas de hitbox pendant la montee.
         if (item.rising) continue;
 
         for (let k = 0; k < kartsLen; k++) {
             const kart = state.karts[k];
-            // Un piege pose epargne celui qui l'a pose tant qu'il ne s'en est pas
-            // eloigne — carapace posee comprise : le kart foudroye glisse sur
-            // sa lancee, juste devant ce qu'il vient de lacher. Une fois arme,
-            // il le touche comme n'importe qui.
+            // Un piege epargne celui qui l'a pose tant qu'il ne s'en est pas eloigne.
             const trap = item.type === 'banana' || item.resting;
             if (trap && kart.id === item.shooterId && !item.armed) continue;
             if (!trap && item.type === 'redShell' && kart.id === item.shooterId) continue;
-            // Une verte epargne son lanceur — jusqu'a ce qu'un tuyau la lui
-            // renvoie. Elle ne revient pas par hasard : c'est lui qui a choisi de
-            // tirer de ce cote, et le mur etait visible.
+            // Une verte epargne son lanceur, sauf renvoyee par un tuyau.
             if (!trap && item.type === 'greenShell' && kart.id === item.shooterId && !item.pipeBounced) continue;
             if (kart.state !== 'running' && kart.state !== 'hit') continue;
 
@@ -646,8 +535,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
                      hitHeldItem = true;
                 }
             } else if (kart.heldItem && kart.heldItem.holdPosition === 'orbit') {
-                // Le bouclier encaisse le projectile : un seul orbe part, les
-                // autres gardent leur phase et continuent de tourner.
+                // Le bouclier encaisse : un seul orbe part.
                 const held = kart.heldItem;
                 for (let b = held.orbs.length - 1; b >= 0; b--) {
                     const pos = getOrbitItemPosition(cfg, kart, held.orbs[b], held.orbitAngle);
@@ -664,9 +552,7 @@ function stepPhysics(cfg, state, rng, now, deltaTime) {
 
             if (hitHeldItem) break;
 
-            // Le contact qui BLESSE, et le seul de cette boucle a mettre en jeu
-            // une carrosserie : les deux tests plus haut opposent l'objet a un
-            // autre objet.
+            // Contact objet-kart.
             const body = cfg.hitboxes.itemVsKart;
             const dk = Math.abs(getShortestDistance(cfg, item.worldX, kart.worldX));
             if (dk < shrunkReachX(cfg, body, kart, now)

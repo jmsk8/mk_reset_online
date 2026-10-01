@@ -1,13 +1,9 @@
-// Les reglages, en une seule struct de donnees.
+// Reglages, en une seule struct de donnees.
+// <- raceEngine/src/config/*.js
 //
-// <- raceEngine/src/config/*.js : sept fragments recolles par index.js. Ici un
-// seul fichier, mais la meme regle qu'en JS : ce sont des LITTERAUX, aucune
-// fonction de simulation, aucune reference croisee entre champs. Les seules
-// valeurs calculees sont posees a la fin par `derive_bodies`, qui a besoin de
-// l'objet entier.
-//
-// Couche la plus basse (cf. plan §4.1bis) : ce fichier n'inclut rien de
-// `engine/`, `protocol/` ni `service/`.
+// Uniquement des litteraux ; les valeurs calculees sont posees par
+// `derive_bodies`. Ce fichier n'inclut rien de `engine/`, `protocol/` ni
+// `service/`.
 
 #pragma once
 
@@ -16,32 +12,28 @@
 
 namespace config {
 
-// Demi-emprise d'un corps, ou ecart entre deux CENTRES selon l'usage. Le plan
-// §5.1 insiste sur la distinction : `hitboxes.*` sont des ecarts entre centres,
-// donc deja des sommes de deux corps, la ou `bodies.*` sont des demi-emprises.
+// Demi-emprise d'un corps, ou ecart entre deux centres selon l'usage :
+// `hitboxes.*` sont des sommes de deux corps, `bodies.*` des demi-emprises.
 struct Extent {
     double x = 0;
     double y = 0;
 };
 
-// Une boite ou un tuyau, tels que le CIRCUIT les pose : en px de monde et en
-// profondeur, plus en cellules.
+// Boite ou tuyau pose par le circuit : px de monde et profondeur, plus cellules.
 struct Placed {
     double x = 0;
     double y = 0;
-    // Tuyaux seulement : la couleur, qui ne sert qu'au decor.
+    // Tuyaux : couleur (decor seulement).
     bool red = false;
 };
 
 struct WorldCfg {
-    // Longueur du tour, ligne d'arrivee et decor : POSES PAR LE CIRCUIT
-    // (`apply_track`), jamais regles ici — chaque dessin a les siens. Les
-    // valeurs par defaut ne servent qu'a un monde sans circuit charge.
+    // Longueur du tour, ligne d'arrivee et decor : poses par `apply_track`.
+    // Valeurs par defaut pour un monde sans circuit.
     double width = 7680;
     double finishLineX = 1440;
 
-    // Le soleil, lui, n'est pas sur la piste : il est pose dans le fond en
-    // parallaxe, que le dessin ne decrit pas.
+    // Soleil dans le fond en parallaxe, hors du dessin.
     double sunX = 1920;
 
     std::vector<Placed> itemBoxes;
@@ -49,9 +41,7 @@ struct WorldCfg {
 };
 
 struct RoadCfg {
-    // La largeur de la piste reste ici : elle ne varie pas le long du tour, et
-    // ne depend pas du circuit dessine (cf. track.js, « les rangees se
-    // partagent la profondeur de la piste »).
+    // Largeur de piste fixe, independante du circuit.
     double minY = 0;
     double maxY = 35;
 };
@@ -59,10 +49,9 @@ struct RoadCfg {
 struct SpeedsCfg {
     double roadPPS = 250;
 
-    // Le regime d'ELAN : la vitesse visee vaut
-    // `topSpeed * (momentumMinRatio + (1 - momentumMinRatio) * momentum)`, ou
-    // `momentum` est retire toutes les `momentumDrift*` ms dans
-    // uniform(momentumFloor, 1) et rejoint a `momentumChangeSpeed`.
+    // Elan : vitesse visee = `topSpeed * (momentumMinRatio + (1 -
+    // momentumMinRatio) * momentum)`, `momentum` retire toutes les
+    // `momentumDrift*` ms dans uniform(momentumFloor, 1).
     double momentumMinRatio = 0.78;
     double momentumFloorBase = 0.70;
     double momentumFloorWeightGain = 0;
@@ -72,32 +61,27 @@ struct SpeedsCfg {
     double accelerationRate = 150;
 };
 
-// La loi du volant. `steer()` est la SEULE fonction qui ecrit `vy` — invariant
-// obtenu au prix fort (audit-decision-direction-2026-09-17.md §6), il ne se reperd pas.
+// Loi du volant. `steer()` est la seule fonction qui ecrit `vy`.
 struct SteerCfg {
     double response = 5;
 
-    // `drag` ce qu'on perd a FORCE d'aller vite, `bite` ce qu'on n'a pas encore
-    // FAUTE d'avancer. Deux mecaniques distinctes : sans `bite`, un kart
-    // IMMOBILE disposait de son volant maximum et repartait en crabe apres un
-    // choc.
+    // `drag` : perte de volant a haute vitesse ; `bite` : manque de volant a
+    // basse vitesse (un kart immobile ne braque pas).
     double paceDrag = 0.35;
     double paceCurve = 1.0;
     double paceBite = 0.5;
 
-    // Ce que les objets de vitesse rendent au volant.
+    // Gain de volant sous objet de vitesse.
     double boostGain = 1.0;
 
-    // Le profil d'errance, seul actif tant que `choose_lane` est vide.
+    // Profil d'errance, actif tant que `choose_lane` est vide.
     double wanderSpeed = 4;
     double wanderGain = 6;
     double wanderTolerance = 0.6;
 };
 
 struct WallCfg {
-    // Ce que le mur coute : la vitesse vers laquelle il tire, en fraction de la
-    // pointe du kart. Racler est plus cher que lever le pied, moins cher que se
-    // faire ecraser.
+    // Vitesse vers laquelle le mur tire, en fraction de la pointe du kart.
     double speedFactor = 0.55;
     double grip = 3;
 };
@@ -107,17 +91,14 @@ struct PhysicsCfg {
     WallCfg wall;
 };
 
-// L'errance : une profondeur cible tiree regulierement, en attendant que
-// `choose_lane` decide vraiment (plan §3).
+// Errance : profondeur cible tiree regulierement, en attendant `choose_lane`.
 struct WanderCfg {
     double intervalMin = 2000;
     double intervalMax = 6000;
-    // Marge gardee avec chaque bord : personne ne vise le rail.
+    // Marge gardee avec chaque bord.
     double margin = 8;
 
-    // Ce que l'errance regarde devant elle pour ne pas viser un tuyau, et le
-    // degagement qu'elle garde avec lui. Ce n'est PAS de la perception : la
-    // vraie vision et le choix de couloir sont le travail de `choose_lane`.
+    // Distance de regard et degagement pour ne pas viser un tuyau.
     double lookAhead = 1600;
     double pipeMargin = 2;
 };
@@ -134,10 +115,8 @@ struct RaceCfg {
     int laps = 5;
     GridCfg grid;
 
-    // Deux tours pleins plus cette marge : la camera ne sait que RALENTIR, il
-    // lui faut ce couloir pour se garer pile sur la ligne. La distance elle-meme
-    // est derivee de la longueur du tour par `apply_track`, jamais ecrite en dur
-    // — sinon chaque circuit d'une autre longueur redemanderait le calcul.
+    // Marge ajoutee a deux tours pour la camera d'approche (distance calculee
+    // par `apply_track`).
     double cameraApproachMargin = 40;
     double cameraApproachDistance = 0;
 
@@ -146,33 +125,30 @@ struct RaceCfg {
     double resultsDelayMs = 10000;
     double finalResultsDelayMs = 20000;
 
-    // Le tour d'honneur se court au ralenti.
+    // Vitesse du tour d'honneur.
     double finishedSpeedRatio = 0.6;
 
-    // Le depart : turbo, depart normal, et le reste est un moteur noye.
+    // Depart : turbo, normal, sinon moteur noye.
     double startTurboChance = 0.8;
     double startNormalChance = 0.1;
     double turboBoostMs = 1200;
     double failStallMs = 1000;
 
-    // Le decompte. Duree totale = countdownHoldMs + 2 * lightIntervalMs.
+    // Decompte : duree totale = countdownHoldMs + 2 * lightIntervalMs.
     double countdownHoldMs = 3000;
     double lightIntervalMs = 1500;
     double goSignMs = 5000;
 
-    // Le drapeau ne sort qu'a l'approche REELLE de la ligne, pas des le
-    // repositionnement de la camera : la camera se gare deux tours avant la fin
-    // et le laisserait sinon plante la une demi-course.
+    // Distance a la ligne a laquelle le drapeau sort.
     double flagDistance = 1400;
 
-    // La course se clot des que ce nombre de karts est arrive : le dernier ne
-    // fait pas attendre tout le monde.
+    // Course close des que ce nombre de karts est arrive.
     int stopAtFinisher = 7;
 
     double parkStartOffset = 0;
     double parkFinishOffset = -150;
 
-    // Les points d'une manche, dans l'ordre d'arrivee.
+    // Points d'une manche, dans l'ordre d'arrivee.
     std::vector<int> points = { 10, 8, 6, 5, 4, 3, 2, 1 };
 };
 
@@ -195,9 +171,7 @@ struct DelaysCfg {
     double hitDecelDuration = 1500;
     double hitPauseDuration = 500;
 
-    // Le cube se rallume au bout d'une seconde ; l'objet, lui, n'arrive dans les
-    // mains qu'au bout de trois — c'est ce delai qui laisse voir un kart
-    // traverser la zone avant d'etre arme.
+    // Cube rallume apres une seconde ; objet remis apres trois.
     double boxRespawn = 1000;
     double itemGrant = 3000;
 };
@@ -207,15 +181,14 @@ struct VisionCfg {
     double rangeBack = 1000;
     double pressureRange = 700;
     double threatLane = 12;
-    // Le DEGAGEMENT : `itemVsKart.y + vision.place.margin.item`. Derive, comme
-    // les hitboxes ci-dessous — pose par `derive_bodies`.
+    // Degagement : `itemVsKart.y + vision.place.margin.item`, pose par
+    // `derive_bodies`.
     double clear = 0;
     double marginItem = 2;
 };
 
-// Ecarts entre CENTRES. Seul `itemBox` se regle a la main : c'est une zone de
-// ramassage, pas une somme de corps. Les autres sont DERIVES des sprites par
-// `derive_bodies` — les laisser a zero ici est voulu.
+// Ecarts entre centres. Seul `itemBox` se regle a la main ; les autres sont
+// poses par `derive_bodies` (zero ici).
 struct HitboxesCfg {
     Extent kartVsKart;
     Extent itemVsKart;
@@ -224,37 +197,31 @@ struct HitboxesCfg {
 };
 
 struct PipeCfg {
-    // Demi-axes d'un DISQUE (le tuyau est le seul corps rond du moteur), et
-    // eux aussi derives de son dessin par `derive_bodies`.
+    // Demi-axes d'un disque, poses par `derive_bodies`.
     Extent hitbox;
     double drawW = 0;
     double drawH = 0;
 
-    // Passage libre minimal en profondeur, une fois les tuyaux poses. Un mur de
-    // tuyaux ne provoquerait aucune erreur a l'execution : les karts se
-    // cogneraient jusqu'au delai maximum et la course serait close sur un
-    // classement d'office, sans que rien dans les journaux n'accuse le circuit.
+    // Passage libre minimal en profondeur, verifie au chargement du circuit.
     double minPassageY = 4;  // aligne sur raceEngine/src/config/pipes.js
 
-    // Le choc : arret net, puis contrecoup. `immuneMs` evite qu'un kart colle au
-    // tuyau rejoue le choc a chaque tick.
+    // Choc : arret net, puis recul. `immuneMs` evite de rejouer le choc a
+    // chaque tick.
     double bumpMs = 600;
     double recoilPx = 90;
     double recoilMs = 250;
     double immuneMs = 700;
 
-    // De combien le kart est ecarte du tuyau, en profondeur : sans ca, un kart
-    // pousse par le peloton resterait plaque contre lui.
+    // Ecart en profondeur applique apres un choc.
     double slideAway = 18;
 
-    // Combien de temps la consigne d'ecartement tient avant que l'errance
-    // reprenne la main. Il faut couvrir le degagement du tuyau : plus court, le
-    // kart se recogne au meme endroit sans fin.
+    // Duree de la consigne d'ecartement avant que l'errance reprenne ; doit
+    // couvrir le degagement du tuyau.
     double clearWanderMs = 2500;
 };
 
-// La LOI des corps : rien ne se regle corps par corps, `derive_bodies` en tire
-// les nombres a partir de la taille reelle des sprites.
+// Loi des corps : `derive_bodies` en tire les emprises depuis la taille des
+// sprites.
 struct BodiesCfg {
     double kartDraw = 100;
     double fill = 0.75;
@@ -262,27 +229,23 @@ struct BodiesCfg {
     double depthPx = 3.6;
     double orbitSlack = 3;
 
-    // Le tuyau : sa longueur DESSINEE ne suit pas l'echelle commune (67.2 au
-    // lieu de 84) parce qu'a taille reelle il mangeait trop de piste. C'est un
-    // choix de trace, pas une erreur de mesure.
+    // Longueur dessinee du tuyau, reduite (67.2 au lieu de 84) pour laisser de
+    // la piste.
     double pipeDraw = 67.2;
     double pipeFill = 0.65;
     double spritePipeW = 95;
     double spritePipeH = 124;
 
-    // L'objet au sol ou en vol : demi-emprise prise directement, pas deduite
-    // par soustraction (cf. protocol.js, « a fill 0.75 une carapace se
-    // dessinait quatre fois trop petite »).
+    // Objet au sol ou en vol : demi-emprise directe.
     Extent item { 17, 5 };
 
-    // Les karts dont la moyenne fait le kart de reference, figes sur le plateau
-    // d'origine : `bodies.referenceKarts` du JS, meme raison. Un personnage
-    // ajoute, ou retire du tirage, ne redimensionne pas les autres.
+    // Karts de reference (moyenne), figes : ajouter ou retirer un personnage ne
+    // redimensionne pas les autres.
     std::vector<std::string> referenceKarts = {
         "bowser", "dk", "mario", "luigi", "yoshi", "peach", "toad", "koopa"
     };
 
-    // Posees par `derive_bodies`.
+    // Poses par `derive_bodies`.
     Extent ref;
     double refSpriteW = 0;
     double refSpritePx = 0;
@@ -300,21 +263,19 @@ struct LightningCfg {
     double scale = 0.5;
 };
 
-// Un personnage : ses trois axes bruts, et la mesure de son sprite. Le budget
-// est verifie au chargement — un total qui ne tombe pas juste est une erreur
-// d'auteur, pas un reglage.
+// Personnage : trois axes bruts et mesures du sprite. Budget verifie au
+// chargement.
 struct CharacterSpec {
     std::string name;
     int weight = 0;
     int power = 0;
     int handling = 0;
-    // Mesures du sprite (scripts/sprite-metrics.py) : largeur, hauteur, surface
-    // dessinee en pixels opaques.
+    // Mesures du sprite (scripts/sprite-metrics.py) : largeur, hauteur, pixels
+    // opaques.
     double spriteW = 0;
     double spriteH = 0;
     double spritePx = 0;
-    // Dans le tirage ou non : `roster.enabled` du JS. A false, le personnage
-    // garde ses stats et ses mesures mais n'est plus aligne.
+    // Dans le tirage (`roster.enabled` du JS).
     bool enabled = true;
 };
 
@@ -328,18 +289,15 @@ struct KartStatsCfg {
     int maxPoints = 10;
     int budget = 15;
 
-    // Les trois axes derives, et les lois qui les tirent des points bruts.
+    // Axes derives et leurs plages.
     Range mass  { 0.72, 1.25 };
     Range force { 0.85, 1.40 };
     Range grip  { 0.45, 1.32 };
 
-    // L'axe handling est COURBE, pas droit : un point de maniabilite rend plus
-    // en haut de plage qu'en bas.
+    // Axe handling courbe : un point rend plus en haut de plage qu'en bas.
     double gripCurve = 2.5;
 
-    // Pointe ADDITIVE : chaque axe apporte ses px/s, et les apporte seul. La
-    // forme multiplicative d'avant faisait dependre le rendement du poids de la
-    // puissance — il n'y avait plus de triangle, juste un axe fort.
+    // Pointe additive : chaque axe apporte ses px/s.
     double speedBase = 490;
     double speedPerWeight = 35;
     double speedPerPower = 10;
@@ -350,18 +308,13 @@ struct KartStatsCfg {
     double massDragAgility = 1.70;
     Range agilityClamp { 0.25, 1.70 };
 
-    // Ce qui tient un kart quand il tourne. Meme forme que ses deux voisines,
-    // mais avec ses PROPRES exposants : elle ne se deduit d'aucune autre stat.
+    // Tenue en virage, avec ses propres exposants.
     double cornerGripGain = 1.0;
     double cornerPowerGain = 1.0;
     double cornerMassDrag = 5.0;
 
-    // L'ordre compte : c'est celui du roster avant tirage. Il reprend l'ordre
-    // de `Object.keys` du JS (`kartStats.characters` et `bodies.sprite.kart`
-    // de raceEngine/src/config/bodies.js).
-    //
-    // Derniere colonne : l'interrupteur du tirage, miroir de `roster.enabled`.
-    // Chaque course aligne `kartCount` karts tires parmi les `true`.
+    // Ordre du roster (celui du JS, raceEngine/src/config/bodies.js). Derniere
+    // colonne : present dans le tirage.
     std::vector<CharacterSpec> characters = {
         { "bowser", 9, 5, 1, 111, 124, 10451, true },
         { "dk",     8, 5, 2, 119, 124, 10497, true },
@@ -376,8 +329,7 @@ struct KartStatsCfg {
     };
 };
 
-// Emprise d'un kart, deduite de son sprite. Ce qui part dans
-// `hello.karts[].body`.
+// Emprise d'un kart, deduite de son sprite (`hello.karts[].body`).
 struct KartBody {
     double x = 0;
     double y = 0;
@@ -404,28 +356,21 @@ struct Config {
     PhysicsCfg physics;
     WanderCfg wander;
 
-    // Nombre de karts au depart : `roster.perRace` du JS. Tires parmi les
-    // personnages actives ; s'il y en a moins, la course se fait avec eux.
-    //
-    // `--karts=N` le change entre 1 et 12 pour le developpement (plan §3), et
-    // lui seul RECYCLE les personnages au-dela du roster (`kartCountForced`).
-    // Ce n'est PAS un reglage de production : docker-compose.yml ne l'expose
-    // sur aucune variable d'environnement.
+    // Nombre de karts au depart (`roster.perRace` du JS), tires parmi les
+    // personnages actives. `--karts=N` (developpement) le change et recycle
+    // les personnages au-dela du roster (`kartCountForced`).
     int kartCount = 8;
     bool kartCountForced = false;
 
-    // Posees par `derive_bodies`, dans l'ordre de `kartStats.characters`.
+    // Poses par `derive_bodies`, dans l'ordre de `kartStats.characters`.
     std::vector<KartBody> bodiesByCharacter;
 };
 
-// Ce que `deriveBodies` fait en JS : les emprises reelles, deduites de la
-// taille des sprites. A appeler une fois la config complete — d'ou sa place
-// hors des litteraux ci-dessus. Sans cet appel, toutes les hitboxes valent
-// zero et les corps se traverseraient sans qu'aucune erreur ne le dise.
+// Emprises reelles deduites des sprites (`deriveBodies` en JS). A appeler une
+// fois la config complete, sinon toutes les hitboxes valent zero.
 void derive_bodies(Config& cfg);
 
-// Borne le nombre de karts a [1, 12] (plan §3). Rend `false` et laisse la
-// config intacte si la valeur demandee est hors bornes.
+// Borne le nombre de karts a [1, 12] ; false (config intacte) hors bornes.
 bool set_kart_count(Config& cfg, int requested);
 
 } // namespace config

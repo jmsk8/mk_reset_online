@@ -10,8 +10,7 @@ void clamp_kart_to_road(const config::Config& cfg, Kart& kart, double deltaTime)
 
     if (kart.yPercent >= road.maxY) {
         kart.yPercent = road.maxY;
-        // La consigne de volant est annulee DANS le sens du mur seulement : un
-        // kart plaque doit pouvoir s'en decoller.
+        // Consigne annulee dans le sens du mur seulement.
         if (kart.vy > 0) kart.vy = 0;
         atWall = true;
     } else if (kart.yPercent <= road.minY) {
@@ -22,8 +21,7 @@ void clamp_kart_to_road(const config::Config& cfg, Kart& kart, double deltaTime)
 
     if (!atWall) return;
 
-    // Meme forme que le volant : un taux en 1/s, borne a 1 pour qu'une frame
-    // longue arrive pile sur le plancher plutot que de le depasser.
+    // Taux en 1/s, borne a 1.
     const config::WallCfg& wall = cfg.physics.wall;
     const double floor = kart.stats ? kart.stats->topSpeed * wall.speedFactor : 0;
     if (kart.absoluteVelocity > floor) {
@@ -32,13 +30,8 @@ void clamp_kart_to_road(const config::Config& cfg, Kart& kart, double deltaTime)
     }
 }
 
-// VIDE : c'est le plan de travail, pas une lacune (plan §2). La signature est
-// la vraie, l'appel est deja au bon endroit du tick — il ne manque que le corps.
-//
-// Ce qu'elle devra faire : separer deux carrosseries qui se recouvrent, en
-// repartissant la poussee selon les masses, et pousser dans `bumpVx`/`bumpVy`
-// plutot que dans `vy` — sans quoi le volant effacerait le choc avant que les
-// karts se soient decolles.
+// Pas encore implemente. A faire : separer deux carrosseries qui se recouvrent
+// selon les masses, via `bumpVx`/`bumpVy` (pas `vy`).
 void resolve_kart_contacts(const config::Config& cfg, WorldState& state,
                            double now, double deltaTime, std::vector<Event>& events) {
     (void)cfg; (void)state; (void)now; (void)deltaTime; (void)events;

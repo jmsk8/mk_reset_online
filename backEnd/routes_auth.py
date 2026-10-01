@@ -33,10 +33,9 @@ auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/auth/discord/exchange', methods=['POST'])
 def discord_exchange():
-    """Echange le code OAuth contre une session. Appele par le frontend seul.
+    """Echange le code OAuth contre une session (appele par le frontend).
 
-    Le frontend doit utiliser un timeout DEDIE (>= 15 s) : deux appels reseau vers
-    Discord se cachent derriere.
+    Prevoir un timeout d'au moins 15 s cote frontend : deux appels a Discord.
     """
     data = request.get_json(silent=True) or {}
     code = data.get('code')
@@ -53,7 +52,7 @@ def discord_exchange():
     except DiscordAuthError as e:
         return jsonify({"error": e.message, "code": e.code}), e.status
     except Exception as e:
-        # Jamais le detail : une exception requests peut contenir le code OAuth.
+        # Pas de detail : l'exception peut contenir le code OAuth.
         logger.error("Echec de l'echange OAuth (%s)", type(e).__name__)
         return jsonify({"error": "Erreur serveur", "code": "erreur_serveur"}), 500
 
@@ -102,9 +101,7 @@ def me():
         "joueur_nom": nom_joueur,
         "statut": compte['statut'],
         "role": compte['role'],
-        # Ce que l'interface a le droit d'AFFICHER, jamais ce qu'elle autorise :
-        # le backend relit role et permissions en base a chaque requete protegee.
-        # Cette liste peut donc etre perimee, c'est assume (plan B.0).
+        # Pour l'affichage uniquement : le backend reverifie a chaque requete.
         "permissions": sorted(_permissions_effectives(compte)),
         "cgu_a_accepter": compte.get('cgu_version') != CGU_VERSION,
     })
@@ -113,28 +110,11 @@ def me():
 @auth_bp.route('/auth/check-session', methods=['GET'])
 @player_required_sans_cgu
 def check_session():
-    """Sonde « ma session est-elle encore valide ? ». Miroir de /admin/check-token.
+    """Verifie la session a chaque page du frontend.
 
-    Appelee par le before_request du frontend a CHAQUE page : elle ne doit donc
-    rien lire de plus que la verification de session deja faite par
-    player_required. C'est pourquoi elle ne renvoie PAS le profil -- /auth/me
-    ferait une requete de plus pour le nom du joueur, payee sur toutes les pages.
-
-    Elle rend en revanche le role et les permissions depuis le 2026-09-17, et
-    c'est gratuit : `player_required` les a deja lus en base pour authentifier.
-    Sans ca, le frontend devait appeler /auth/me EN PLUS a chaque rendu pour
-    savoir ce qu'il avait le droit d'afficher -- deux appels reseau synchrones
-    par page, sur 2 workers gunicorn, d'ou les 503 observes le 2026-09-17.
-
-    Referme au passage la limite que cette docstring annoncait : un admin
-    retrograde, ou a qui on vient d'accorder un droit, le voyait a sa prochaine
-    visite sur /mon-compte seulement. La frontiere de privilege reste le
-    backend, qui relit role et permissions a chaque requete protegee : cette
-    liste ne sert qu'a decider ce que l'interface AFFICHE.
-
-    Sans exigence de consentement (A-07) : c'est elle qui dit au frontend
-    d'afficher la page d'acceptation. Refuser la session ici la ferait purger,
-    et la personne retomberait sur le meme ecran apres un detour par Discord.
+    Renvoie role et permissions (deja lus par player_required) pour eviter un
+    appel a /auth/me. N'exige pas le consentement : c'est elle qui signale au
+    frontend la page d'acceptation a afficher.
     """
     return jsonify({
         "status": "valid",
@@ -147,16 +127,6 @@ def check_session():
 # ---------------------------------------------------------------------------
 # Mes sessions actives
 # ---------------------------------------------------------------------------
-# Referme A-03 de l'audit : le titulaire peut enfin voir et fermer ses propres
-# sessions, sans passer par un administrateur. Jusqu'ici, quelqu'un dont le
-# token avait fuite n'avait AUCUN recours seul -- et le reflexe naturel, se
-# reconnecter, n'invalide rien (une connexion ajoute une session sans toucher
-# aux precedentes). Le token vole restait vivant jusqu'a 30 jours.
-#
-# `player_required` n'expose que g.compte : ni le token, ni son hash. Les deux
-# routes relisent donc l'en-tete elles-memes, comme logout() juste au-dessus.
-# `.get()` et non [] : derriere player_required l'en-tete est forcement la,
-# mais un 500 sur une page « securite » est le pire endroit pour un theoreme.
 
 def _hash_session_courante() -> str | None:
     """sha256 du token de la requete en cours, ou None s'il manque."""
@@ -169,13 +139,8 @@ def _hash_session_courante() -> str | None:
 def mes_sessions():
     """Liste les sessions actives du titulaire.
 
-    Le token_hash est lu pour la seule comparaison en memoire qui marque « cet
-    appareil », et n'est JAMAIS place dans la reponse : il est la cle primaire
-    de sessions_joueurs, c'est-a-dire le verificateur d'authentification
-    lui-meme. Le descendre dans le DOM publierait la moitie du mecanisme qui
-    protege la session, et offrirait a un XSS la liste exacte des cibles a
-    revoquer. C'est aussi pourquoi il n'y a pas de revocation par appareil :
-    il n'existe aucun identifiant exposable a mettre dans le bouton.
+    Le token_hash sert seulement a reperer la session courante et n'est jamais
+    renvoye.
     """
     courante = _hash_session_courante()
     try:
@@ -193,17 +158,11 @@ def mes_sessions():
         logger.error("Lecture des sessions impossible: %s", e)
         return jsonify({"error": "Service indisponible", "code": "indisponible"}), 503
 
-    # `expires_at > now()` est indispensable : les lignes mortes ne sont purgees
-    # qu'a leur prochaine presentation. Sans ce filtre l'ecran afficherait des
-    # fantomes et le compteur mentirait.
+    # Les sessions expirees ne sont purgees qu'a leur prochaine utilisation.
     return jsonify({"sessions": [{
         "appareil": resumer_appareil(r[3]),
         "ouverte_le": r[0].isoformat(),
         "expire_le": r[1].isoformat(),
-        # Nullable : une session creee mais jamais representee depuis. Le
-        # frontend affiche « jamais utilisee » -- c'est informatif, et une
-        # session jamais utilisee sur un compte qu'on croit compromis est
-        # precisement le signal qu'on cherche.
         "derniere_activite": r[2].isoformat() if r[2] else None,
         "courante": bool(courante) and r[4] == courante,
     } for r in lignes]})
@@ -212,18 +171,10 @@ def mes_sessions():
 @auth_bp.route('/auth/mes-sessions', methods=['DELETE'])
 @player_required
 def fermer_mes_sessions():
-    """Ferme les sessions du titulaire. Epargne la courante par defaut.
+    """Ferme les sessions du titulaire, sauf la courante par defaut.
 
-    Le geste utile est « expulse tous les autres, je reste » : se deconnecter
-    soi-meme en prime est une punition gratuite qui pousse a ne pas cliquer.
-    `inclure_courante` existe pour l'appareil qu'on est en train d'abandonner.
-
-    Pas d'ecriture dans audit_admin : cette table trace ce qu'un ADMINISTRATEUR
-    fait a autrui (elle porte acteur_compte_id + cible_id). Un titulaire qui
-    agit sur son propre compte n'y a pas sa place, et l'y mettre brouillerait
-    la lecture du registre RGPD. Un logger.info sans donnee personnelle suffit
-    -- consequence assumee : le geste ne laisse aucune trace consultable par
-    l'utilisateur ni par le support.
+    Pas d'entree dans audit_admin : elle ne trace que les actions d'un admin
+    sur autrui.
     """
     corps = request.get_json(silent=True) or {}
     inclure_courante = corps.get('inclure_courante') is True
@@ -232,10 +183,7 @@ def fermer_mes_sessions():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # La clause compte_id est la frontiere de cloisonnement : la
-                # meme requete sans elle viderait sessions_joueurs pour tout le
-                # monde. Trois routes admin portent deja ce DELETE, celle-ci
-                # est la seule ouverte a un joueur.
+                # Le filtre compte_id est indispensable.
                 if inclure_courante or courante is None:
                     cur.execute(
                         "DELETE FROM sessions_joueurs WHERE compte_id = %s",
@@ -252,25 +200,17 @@ def fermer_mes_sessions():
         logger.error("Fermeture des sessions impossible: %s", e)
         return jsonify({"error": "Service indisponible", "code": "indisponible"}), 503
 
-    # Sans donnee personnelle : un identifiant de compte et un compteur.
     logger.info("Sessions fermees par le titulaire (compte %s): %s", g.compte['id'], fermees)
     return jsonify({
         "status": "success",
         "sessions_fermees": fermees,
-        # Le frontend s'en sert pour purger son cookie : sans ca, le navigateur
-        # garderait une session serveur pointant vers une session detruite et
-        # decouvrirait le probleme par une erreur.
+        # Indique au frontend de purger son cookie.
         "session_fermee": inclure_courante or courante is None,
     })
 
 
 def _permissions_effectives(compte: dict) -> set:
-    """Permissions dont ce compte dispose reellement, role compris.
-
-    chef_admin et superadmin recoivent le catalogue entier : leur socle EST le
-    catalogue, et l'interface doit le refleter sans reimplementer la regle.
-    Un admin n'a que ses lignes permissions_admin ; un player, rien.
-    """
+    """Permissions dont ce compte dispose reellement, role compris."""
     if ROLE_HIERARCHY.get(compte['role'], 0) >= ROLE_HIERARCHY[ROLE_CHEF_ADMIN]:
         return set(PERMISSIONS_CATALOGUE)
     if compte['role'] != ROLE_ADMIN:
@@ -282,12 +222,10 @@ def _permissions_effectives(compte: dict) -> set:
                     "SELECT permission FROM permissions_admin WHERE compte_id = %s",
                     (compte['id'],),
                 )
-                # Filtre les sous-permissions orphelines : les exposer ferait
-                # afficher un bouton que le backend refuse.
+                # Ignore les sous-permissions orphelines.
                 return permissions_effectives(r[0] for r in cur.fetchall())
     except Exception as e:
-        # Renvoyer une liste vide degrade l'affichage (des onglets manquent),
-        # ca ne donne aucun droit : l'autorisation reste cote backend.
+        # Une liste vide degrade l'affichage sans donner de droit.
         logger.warning("Lecture des permissions du compte %s impossible: %s", compte['id'], e)
         return set()
 
@@ -304,11 +242,10 @@ def config():
 
 @auth_bp.route('/auth/invitation/<token>', methods=['GET'])
 def lire_invitation(token):
-    """Etat d'une invitation. STRICTEMENT idempotent : ne consomme rien.
+    """Etat d'une invitation, sans la consommer.
 
-    Coller le lien dans un salon declenche un GET du crawler Discord (Slack et
-    Signal font pareil) : un lien max_uses=1 serait brule avant le premier clic.
-    La consommation a lieu dans /auth/discord/exchange.
+    Les apercus de lien (Discord, Slack...) font un GET : la consommation a
+    lieu dans /auth/discord/exchange.
     """
     try:
         with get_db_connection() as conn:
@@ -349,7 +286,7 @@ def lire_invitation(token):
 @auth_bp.route('/admin/invitations', methods=['GET'])
 @permission_required('gestion_invitations')
 def lister_invitations():
-    """Liste les invitations. Ne renvoie JAMAIS de token : seul le hash existe."""
+    """Liste les invitations (sans token : seul le hash est stocke)."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -382,16 +319,11 @@ def lister_invitations():
 @auth_bp.route('/admin/invitations', methods=['POST'])
 @permission_required('gestion_invitations')
 def creer_invitation():
-    """Cree une invitation et renvoie le lien UNE SEULE FOIS.
-
-    Seul le sha256 part en base : un token qui fuirait dans les logs d'acces nginx
-    resterait inexploitable.
-    """
+    """Cree une invitation et renvoie le lien une seule fois (seul le hash est stocke)."""
     data = request.get_json(silent=True) or {}
     label = (data.get('label') or '')[:100] or None
     joueur_id = data.get('joueur_id')
-    # Meme garde que demander_liaison : un joueur_id non entier faisait un 500
-    # a la requete SQL. bool est un int en Python, d'ou son exclusion explicite.
+    # bool est un int en Python, d'ou son exclusion.
     if joueur_id is not None and (not isinstance(joueur_id, int) or isinstance(joueur_id, bool)):
         return jsonify({"error": "Paramètres invalides"}), 400
     try:
@@ -400,10 +332,7 @@ def creer_invitation():
     except (TypeError, ValueError):
         return jsonify({"error": "Paramètres invalides"}), 400
 
-    # S-08 : un refus explicite plutot qu'un plafonnement silencieux -- l'admin
-    # doit savoir que le lien qu'il envoie ne vivra pas ce qu'il a demande. La
-    # borne haute sur `heures` evite aussi l'OverflowError de timedelta, qui
-    # sortait en 500 hors de tout try.
+    # Refus explicite plutot que plafonnement silencieux.
     if not (1 <= max_uses <= INVITATION_MAX_USES and 1 <= heures <= INVITATION_MAX_HOURS):
         return jsonify({
             "error": "Une invitation vaut au plus %d utilisations et %d jours."

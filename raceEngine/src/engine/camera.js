@@ -1,11 +1,9 @@
-// La camera de course. Elle ne suit personne en particulier : elle vise
-// une vitesse, celle qui garde le peloton dans le cadre.
+// Camera de course : vise la vitesse qui garde le peloton dans le cadre.
 
 import { forwardDistance, remainingDistance } from './geometry.js';
 import { getLeader } from './standings.js';
 
-// Recalculee a chaque pas : la camera vise l'instant ou le leader franchira
-// la ligne. Un leader percute en chemin change la donne, elle suit.
+// Recalculee a chaque pas : vise l'instant ou le leader franchira la ligne.
 function aimCameraSpeed(cfg, state) {
     const race = cfg.race;
     const leader = getLeader(state);

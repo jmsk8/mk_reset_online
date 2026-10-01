@@ -5,13 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 
-# Clés sans lesquelles la stack ne démarre pas. En ajouter une ici ne réécrit
-# PAS le fichier : seule la clé manquante est demandée et ajoutée.
+# Clés obligatoires ; seules les clés manquantes sont demandées et ajoutées.
 REQUIRED_VARS=(POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB SECRET_KEY)
 
-# Clés FACULTATIVES : jamais demandées, jamais bloquantes, et elles ont le
-# droit de rester vides — le compose les interpole en `${VAR:-à renseigner}`,
-# dont le `:-` couvre aussi bien l'absence que la valeur vide.
+# Clés facultatives : jamais demandées, peuvent rester vides (le compose
+# utilise `${VAR:-à renseigner}`).
 OPTIONAL_VARS=(SITE_EDITEUR SITE_CONTACT SITE_HEBERGEUR SITE_RETENTION_LOGS)
 
 if [ -t 1 ]; then
@@ -19,8 +17,7 @@ if [ -t 1 ]; then
 else
   C_GREEN=''; C_YELLOW=''; C_RED=''; C_RESET=''
 fi
-# Tous les diagnostics partent sur stderr : value_for_key() capture stdout pour
-# en faire la valeur écrite dans le .env.
+# Diagnostics sur stderr : value_for_key() capture stdout.
 info()  { printf "${C_GREEN}[env]${C_RESET} %s\n" "$1" >&2; }
 warn()  { printf "${C_YELLOW}[env]${C_RESET} %s\n" "$1" >&2; }
 err()   { printf "${C_RED}[env]${C_RESET} %s\n" "$1" >&2; }
@@ -37,11 +34,6 @@ missing_vars() {
     [ -n "$(read_env_value "$k" "$ENV_FILE")" ] || printf '%s\n' "$k"
   done
 }
-
-# ADMIN_PASSWORD_HASH et son `bcrypt_hash()` ont disparu le 2026-09-23 avec
-# l'authentification par mot de passe. Un `git revert` du commit de coupure les
-# rend tels quels : ce script est alors de nouveau capable de redemander le mot
-# de passe (runbook-admin.md 3.2b).
 
 escape_for_compose() {
   printf '%s' "$1" | sed 's/\$/$$/g'
@@ -88,8 +80,7 @@ prompt_value() {
   fi
 }
 
-# Demande la valeur d'une clé manquante. Ne renvoie QUE la valeur sur stdout :
-# les messages partent sur stderr, sinon ils atterrissent dans le .env.
+# Demande la valeur d'une clé manquante ; seule la valeur sort sur stdout.
 value_for_key() {
   local key="$1"
   case "$key" in
@@ -102,8 +93,7 @@ value_for_key() {
       prompt_password 'POSTGRES_PASSWORD'
       printf '%s' "$PROMPT_RESULT" ;;
     SECRET_KEY)
-      # Jamais demandée : générée, et jamais régénérée si déjà présente — une
-      # rotation déconnecte toutes les sessions (R-29).
+      # Générée une seule fois : une rotation déconnecte toutes les sessions.
       info "SECRET_KEY absente — génération d'une nouvelle clé."
       gen_secret ;;
     DISCORD_CLIENT_ID)
@@ -113,8 +103,7 @@ value_for_key() {
       prompt_password 'DISCORD_CLIENT_SECRET'
       printf '%s' "$(escape_for_compose "$PROMPT_RESULT")" ;;
     DISCORD_REDIRECT_URI)
-      # Plusieurs possibles, separees par des virgules. En dev, localhost et le
-      # nom .local ne bougent pas quand l'IP change : les preferer a l'IP.
+      # Plusieurs URI possibles. En dev, preferer localhost ou le nom .local a l'IP.
       echo "  Une ou plusieurs URI, separees par des virgules. Chacune doit etre" >&2
       echo "  declaree dans le portail Discord (OAuth2 > Redirects)." >&2
       prompt_value 'DISCORD_REDIRECT_URI' 'https://mkreset.fr/auth/discord/callback' ;;
@@ -123,8 +112,7 @@ value_for_key() {
   esac
 }
 
-# Ajoute les clés manquantes SANS toucher au reste : commentaires, ordre et
-# variables hors REQUIRED_VARS sont préservés à l'octet près.
+# Ajoute les clés manquantes sans toucher au reste du fichier.
 merge_into_env() {
   local -n _keys="$1"
   local -n _vals="$2"
@@ -156,8 +144,7 @@ merge_into_env() {
   mv "$tmp" "$ENV_FILE"
 }
 
-# Ajoute les clés facultatives ABSENTES du fichier, vides. Absentes et non
-# vides : une clé laissée à `KEY=` doit le rester.
+# Ajoute vides les clés facultatives absentes ; une clé `KEY=` reste vide.
 seed_optional_vars() {
   local k manquantes=()
   [ -f "$ENV_FILE" ] || return 0
@@ -213,9 +200,8 @@ main() {
   local keys=() vals=() v
   for k in "${missing[@]}"; do
     v="$(value_for_key "$k")"
-    # value_for_key tourne dans un $( ) : un `exit 1` interne ne tue que le
-    # sous-shell et renverrait une valeur vide. Sans ce garde-fou, on écrirait un
-    # .env d'apparence complète avec un hash vide.
+    # value_for_key tourne dans un sous-shell : un `exit 1` y rend une valeur
+    # vide, qu'on refuse ici.
     if [ -z "$v" ]; then
       err "Impossible d'obtenir une valeur pour $k — abandon, le .env n'est pas modifié."
       exit 1

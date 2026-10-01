@@ -1,16 +1,4 @@
-"""Textes de l'IP : une seule source, et aucun chiffre recopie a la main.
-
-Phase 1 de docs/affichage-ip-plan-redaction.md. Avant, l'explication de l'IP
-citait « 40% » et « +0,3 pt » en dur dans un litteral JS de recap.html :
-changer la constante rendait le texte faux sans aucun signal. Ce fichier est ce
-signal. Il verifie que :
-
-  - chaque chiffre affiche SUIT sa constante (on la change, le texte change) ;
-  - v1 et v2 se distinguent par leur nom et leur explication ;
-  - le minimum de tournois annonce (N) est EXACTEMENT celui que le classement
-    applique -- un N calcule autrement afficherait une regle fausse ;
-  - les nombres sont au format francais (virgule), jamais « 0.3 ».
-"""
+"""Textes de l'IP : chaque chiffre affiche suit sa constante, format francais."""
 from harness import *
 import importlib
 import re
@@ -23,7 +11,7 @@ import textes_ip
 
 
 def tout_le_texte(bloc):
-    """Toutes les chaines d'un bloc, a plat : c'est ce que voit le joueur."""
+    """Toutes les chaines d'un bloc, a plat."""
     morceaux = [bloc['nom'], bloc['badge'], bloc['infobulle_colonne'],
                 bloc['resume_admin'], bloc['ligne_version'], bloc['note_rouge']]
     for p in bloc['explication']:
@@ -34,11 +22,7 @@ def tout_le_texte(bloc):
 
 
 def avec_constantes(**valeurs):
-    """Recharge textes_ip avec des constantes modifiees, puis rend le module.
-
-    Le module lit ses constantes a l'import : c'est ce chemin reel qu'on
-    exerce, pas une fonction qu'on appellerait avec d'autres arguments.
-    """
+    """Recharge textes_ip avec des constantes modifiees et renvoie le module."""
     anciennes = {k: getattr(constants, k) for k in valeurs}
     for k, v in valeurs.items():
         setattr(constants, k, v)
@@ -121,7 +105,7 @@ check("seuils deplaces -> legende deplacee",
 check("seuils deplaces -> seuils du payload deplaces",
       b['seuils'] == {'etoile': 120, 'bon': 110, 'moyen': 90}, b['seuils'])
 
-importlib.reload(textes_ip)   # retour aux vraies constantes pour la suite
+importlib.reload(textes_ip)  # retour aux vraies constantes
 
 
 print("\n--- Le N annonce est celui que le classement applique ---")

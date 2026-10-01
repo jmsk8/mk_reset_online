@@ -1,11 +1,8 @@
-{# Contenu du menu compte. Deux exemplaires existent dans le DOM (celui
-   colle au burger en mobile, celui du navbar-end en desktop) : la macro evite
-   qu'une entree ajoutee plus tard n'arrive que dans l'un des deux. #}
+{# Entrees du menu compte, presentes deux fois (mobile et desktop). #}
 {% macro entrees_compte() %}
   <a class="navbar-item" href="/mon-compte">
     <i class="fas fa-id-card mr-2"></i> Mon compte
   </a>
-  {# Sans fiche rattachee, il n'y a pas de profil a montrer. #}
   {% if compte_joueur.joueur_id %}
     <a class="navbar-item" href="/joueur/{{ compte_joueur.joueur_id }}">
       <i class="fas fa-id-badge mr-2"></i> Mon profil
@@ -16,8 +13,7 @@
     </a>
   {% endif %}
   <hr class="navbar-divider">
-  {# POST + CSRF (S-17) : en GET, une simple image sur un autre site suffisait
-     à déconnecter le visiteur. #}
+  {# POST + CSRF : une image sur un autre site ne doit pas pouvoir déconnecter. #}
   <form class="form-en-ligne" method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="navbar-item bouton-lien">
@@ -38,10 +34,7 @@
             color: #e2e8f0 !important;
         }
 
-        /* Bulma ne donne un fond aux dropdowns qu'a partir de 1024px : sous
-           cette largeur, le seul fond est celui pose ici. Un translucide
-           laissait voir la page defiler derriere le menu deroule. On garde
-           l'assombrissement voulu, mais en couleur pleine. */
+        /* Fond opaque des dropdowns sous 1024px (Bulma n'en pose pas). */
         .navbar-item.has-dropdown .navbar-dropdown {
             background-color: #18212f !important;
             border: none !important;
@@ -51,14 +44,8 @@
             border-color: #e2e8f0 !important;
         }
 
-        /* Sous-menus replies par defaut.
-           Bulma ne pose `display:none` sur .navbar-dropdown qu'au-dessus de
-           1024px : en dessous il reste dans le flux, deplie en permanence, et
-           le menu s'ouvrait sur toutes les entrees a la fois. On le replie, et
-           c'est le clic sur l'en-tete qui le deroule.
-
-           `.zone-cloche` et `.zone-compte` sont exclues : elles vivent hors du
-           menu burger et ont deja leur propre mecanique d'ouverture. */
+        /* Sous-menus replies par defaut sous 1024px, deplies au clic (hors
+           cloche et compte, qui ont leur propre mecanique). */
         #navbarMenu .navbar-item.has-dropdown:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
             display: none;
         }
@@ -67,44 +54,24 @@
             display: block;
         }
 
-        /* Le chevron dit dans quel sens ira le prochain clic : vers le bas
-           replie, vers le haut deploye.
-
-           Bulma le masque en mobile (`.navbar-link::after{display:none}` dans
-           son bloc <=1023px) : la ou il ne servait a rien, sur un sous-menu
-           toujours ouvert, il devient le seul indice qu'il y a quelque chose
-           a deplier. On le reaffiche donc.
-
-           `display:block` reprend la valeur du mixin d'origine, que la regle
-           mobile ecrase. */
+        /* Chevron reaffiche en mobile : il indique le sens du prochain clic. */
         #navbarMenu .has-dropdown:not(.zone-cloche):not(.zone-compte) > .navbar-link:not(.is-arrowless)::after {
             display: block;
             transition: transform 0.2s ease;
         }
 
-        /* La meme transformation que Bulma applique a `.has-dropdown-up` : le
-           `translate` recentre la fleche, qui pivote autour de son coin. */
+        /* Meme rotation que .has-dropdown-up de Bulma. */
         #navbarMenu .has-dropdown.est-ouverte > .navbar-link:not(.is-arrowless)::after {
             transform: rotate(135deg) translate(0.25em, -0.25em);
         }
 
-        /* Retrait des entrees de sous-menu : sans lui, « Par Joueur » s'aligne
-           sur « Statistiques » et rien ne dit qu'il en depend. */
+        /* Retrait des entrees de sous-menu. */
         #navbarMenu .navbar-dropdown .navbar-item {
             padding-left: 2.5rem !important;
         }
     }
 
-    /* Ecran large : les menus s'ouvrent au CLIC, jamais au survol.
-       `is-hoverable` a ete retire des quatre dropdowns pour cette raison --
-       un menu qui se deroule en passant la souris s'ouvre aussi quand on ne
-       lui demande rien, en traversant la navbar pour aller ailleurs.
-
-       Plus de distinction souris/tactile ici : le clic vaut pour les deux, et
-       la regle `hover: none` qui doublait ce bloc n'avait plus d'objet.
-
-       La cloche et le compte SONT inclus cette fois (pas de `:not()`) : eux
-       aussi s'ouvraient au survol sur desktop. */
+    /* Ecran large : les menus s'ouvrent au clic, jamais au survol. */
     @media screen and (min-width: 1024px) {
         #navbarMenu .navbar-item.has-dropdown > .navbar-dropdown {
             display: none;
@@ -114,23 +81,19 @@
             display: block;
         }
 
-        /* Bulma remonte le dropdown de 5px et le rend transparent tant qu'il
-           n'est pas ouvert, en comptant sur `:hover` pour l'animer. Sans
-           survol, il resterait invisible une fois deroule. */
+        /* Annule le decalage et la transparence que Bulma anime au survol. */
         #navbarMenu .navbar-item.has-dropdown.est-ouverte > .navbar-dropdown {
             opacity: 1;
             transform: translateY(0);
             pointer-events: auto;
         }
 
-        /* Le chevron suit l'etat, comme en mobile. */
         #navbarMenu .has-dropdown.est-ouverte > .navbar-link:not(.is-arrowless)::after {
             transform: rotate(135deg) translate(0.25em, -0.25em);
         }
     }
 
-    /* Position fixe : un message qui pousse la page deplace ce que la
-       personne est en train de lire. z-index au-dessus de la navbar (1000). */
+    /* Position fixe, au-dessus de la navbar (z-index 1000). */
     #messages-flash {
         position: fixed;
         top: 4.25rem;
@@ -138,7 +101,7 @@
         z-index: 1100;
         width: 22rem;
         max-width: calc(100vw - 2rem);
-        pointer-events: none;   /* la zone vide laisse passer les clics */
+        pointer-events: none; /* la zone vide laisse passer les clics */
     }
 
     #messages-flash .notification {
@@ -162,7 +125,6 @@
         to   { opacity: 0; transform: translateX(1.5rem); }
     }
 
-    /* Sur telephone, la zone occupe toute la largeur sous la navbar. */
     @media screen and (max-width: 768px) {
         #messages-flash {
             top: 4.75rem;
@@ -172,7 +134,6 @@
         }
     }
 
-    /* Mouvement reduit : on retire le glissement, pas la disparition. */
     @media (prefers-reduced-motion: reduce) {
         #messages-flash .notification,
         #messages-flash .notification.sortant {
@@ -180,15 +141,7 @@
         }
     }
 
-    /* Cloche mobile, collee au burger.
-       Bulma donne au burger son propre `margin-left:auto`. Tant qu'il le
-       garde, un second `auto` sur la cloche ne colle rien : deux marges auto
-       se partagent l'espace libre a parts egales, ce qui laisse la cloche au
-       milieu de la navbar. On annule donc celui du burger et la cloche reste
-       seule a pousser : elle vient alors buter contre lui. */
-    /* Pilule de connexion Discord, mobile (navbar-brand) et bureau (navbar-end) :
-       une seule apparence pour le meme geste. Le bleu Discord et le logo disent
-       ou l'on va, le mot dit ce qu'on y fait. */
+    /* Pilule de connexion Discord (mobile et bureau). */
     .pilule-discord {
         display: inline-flex;
         align-items: center;
@@ -210,22 +163,14 @@
     }
 
     @media screen and (max-width: 1023px) {
-        /* Cible par le frere precedent : sans cloche (visiteur non connecte)
-           la regle ne s'applique pas, le burger garde son auto et reste a
-           droite au lieu de remonter contre le logo.
-           Le burger occupe 4rem pour trois barres larges de 1rem : le reste
-           est du vide dans sa zone de clic, qui creusait un ecart avant lui.
-           On le ramene a la largeur de ses freres et l'espacement revient au
-           gap, seul a le decider pour les trois. */
+        /* Avec la cloche, le burger perd sa marge auto et sa largeur excessive. */
         .cloche-mobile ~ .navbar-burger,
         .connexion-mobile ~ .navbar-burger {
             margin-left: 0;
             width: 2.75rem !important;
         }
 
-        /* Visiteur : la pilule de connexion tient la place de la cloche (elle
-           pousse) et de l'avatar (meme hauteur, meme bordure). Largeur libre :
-           c'est le mot qui la fixe. */
+        /* Visiteur : la pilule de connexion remplace cloche et avatar. */
         .connexion-mobile {
             margin-left: auto;
             display: flex !important;
@@ -235,25 +180,20 @@
             background: transparent;
         }
 
-        /* La pilule elle-meme est commune (hors media query) : ici, sa seule
-           taille mobile, calee sur l'avatar de compte-mobile. */
+        /* Taille mobile de la pilule, calee sur l'avatar. */
         .connexion-mobile .pilule-discord {
             height: 1.75rem;
             padding: 0 0.7rem 0 0.55rem;
             font-size: 0.85rem;
         }
 
-        /* Un gap unique plutot que des paddings poses un par un : les trois
-           gardent le meme ecart. Sans cloche (visiteur non connecte) il ne
-           reste que le logo et le burger, que leur marge auto separe deja :
-           le gap ne change alors rien. */
+        /* Meme ecart entre logo, cloche, avatar et burger. */
         .navbar-brand {
             align-items: center;
             gap: 0.4rem;
         }
 
-        /* Seule la cloche pousse : la PP et le burger la suivent, colles.
-           Un auto sur chacun les eparpillerait a intervalles egaux. */
+        /* Seule la cloche pousse vers la droite. */
         .compte-mobile {
             margin-left: 0;
             display: flex !important;
@@ -261,11 +201,10 @@
             padding: 0 !important;
         }
 
-        /* Meme emprise pour la cloche et l'avatar : un bloc homogene demande
-           des elements de meme taille, pas seulement des ecarts egaux. */
+        /* Meme taille pour la cloche et l'avatar. */
         .cloche-mobile > .navbar-link,
         .compte-mobile > .navbar-link {
-            position: relative;   /* ancre la pastille du compteur */
+            position: relative; /* ancre la pastille du compteur */
             height: 2.5rem;
             width: 2.5rem;
             display: flex;
@@ -277,8 +216,7 @@
             font-size: 0.95rem !important;
         }
 
-        /* L'avatar porte le geste : une bordure le detache du fond sombre et
-           dit qu'il se clique, sans le chevron qu'on a retire. */
+        /* Bordure sur l'avatar pour montrer qu'il est cliquable. */
         .compte-mobile figure.image {
             height: 1.75rem;
             width: 1.75rem;
@@ -301,15 +239,11 @@
             margin-left: auto;
             display: flex !important;
             align-items: center;
-            /* !important : la regle generique .navbar-item du bloc <=768px
-               impose 1rem de padding vertical, qui decalerait la cloche par
-               rapport au burger. */
+            /* !important contre le padding vertical de .navbar-item en mobile. */
             padding: 0 !important;
         }
 
         .cloche-mobile .icon {
-            /* L'icone suit la taille reduite du lien plutot que le 1.5rem que
-               Bulma fixe en dur sur .icon. */
             height: 1.5rem;
             width: 1.5rem;
         }
@@ -320,23 +254,19 @@
             min-width: 1.1rem;
             padding: 0 0.3rem;
             margin-left: 0 !important;
-            /* En haut a droite DANS le carre du lien : posee a cote de
-               l'icone elle elargissait la cloche, debordante elle mordait sur
-               l'ecart qui la separe de la PP. */
+            /* Pastille dans le coin du lien. */
             position: absolute;
             top: 0.15rem;
             right: 0.05rem;
-            pointer-events: none;   /* le clic revient a la cloche */
+            pointer-events: none;
         }
 
-        /* Sur mobile Bulma affiche les dropdowns en pleine largeur dans le
-           flux : hors du menu deroulant, il faut le reposer en flottant. */
+        /* Panneau flottant (Bulma l'affiche dans le flux en mobile). */
         .cloche-mobile .navbar-dropdown,
         .compte-mobile .navbar-dropdown {
             display: none;
             position: fixed;
-            /* fixe, pas absolu : la cloche est devenue le repere de sa
-               pastille, un panneau ancre sur elle ferait 2rem de large. */
+            /* fixed : ancre sur la cloche, le panneau serait trop etroit. */
             top: 4rem;
             right: 0.5rem;
             left: auto;
@@ -349,7 +279,6 @@
             z-index: 30;
         }
 
-        /* Trois liens : la largeur des notifications serait demesuree ici. */
         .compte-mobile .navbar-dropdown {
             width: auto;
             min-width: 13rem;
@@ -392,36 +321,15 @@
         }
     }
 
-    /* La liste des notifications defile au-dela de ~4 entrees.
-       Hors media query : la regle vaut pour les DEUX cloches, celle du
-       desktop et celle collee au burger.
-
-       21rem ~ 4 entrees : une notification empile un titre, un corps de deux
-       lignes en is-size-7 et sa date, soit environ 5.2rem avec les marges.
-       C'est une approximation assumee -- un corps plus long fait une ligne de
-       plus, et on en verra 3 ou 4 selon les textes. La valeur est la pour
-       COUPER a peu pres la, pas pour cadrer au pixel.
-
-       `min(21rem, 60vh)` : sur un ecran bas (portable en paysage, mobile) la
-       borne en rem depasserait la fenetre et le panneau sortirait de l'ecran,
-       emportant la fin de la liste hors de portee. La borne en vh reprend
-       alors la main.
-
-       Pas de `height` : une liste d'une seule notification garde sa taille
-       naturelle au lieu de reserver du vide sous elle.
-
-       `overscroll-behavior` arrete le defilement a la fin de la liste : sans
-       lui, continuer a faire tourner la molette emporte la page en dessous,
-       et on perd de vue le panneau qu'on etait en train de lire. */
+    /* Liste des notifications : environ 4 entrees visibles, bornee par la
+       hauteur de l'ecran ; overscroll-behavior evite de faire defiler la page. */
     .liste-notifs {
         max-height: min(21rem, 60vh);
         overflow-y: auto;
         overscroll-behavior: contain;
     }
 
-    /* Le defilement doit se voir, sinon rien ne dit qu'il y a plus bas.
-       Firefox prend `scrollbar-*`, les moteurs WebKit passent par le
-       pseudo-element -- les deux sont necessaires pour couvrir les deux. */
+    /* Barre de defilement visible (Firefox et WebKit). */
     .liste-notifs {
         scrollbar-width: thin;
         scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
@@ -441,15 +349,8 @@
     }
 </style>
 
-{# Le jeton CSRF vit ICI et pas dans une <meta> du <head> : la cloche est
-   servie par la navbar sur TOUTES les pages, alors que <meta name="csrf-token">
-   n'etait pose que dans une poignee de gabarits (mon_compte, admin_*...).
-   Ailleurs, le marquage « tout lu » partait sans jeton et flask-wtf le
-   rejetait en 400 : la pastille s'eteignait a l'ecran, mais rien n'etait
-   enregistre, et le compteur revenait au rechargement.
-
-   Sur le <nav> parce que la navbar s'insere dans le <body> : une <meta> y
-   serait hors spec. #}
+{# Jeton CSRF porte par la navbar, presente sur toutes les pages (utilise par
+   la cloche). #}
 <nav class="navbar is-dark" role="navigation" aria-label="main navigation"
      data-csrf="{{ csrf_token() }}">
   <div class="container">
@@ -458,9 +359,7 @@
         <i class="fas fa-gamepad"></i>
         <strong class="ml-2">MK Reset</strong>
       </a>
-      {# Cloche mobile : hors du menu burger, collee a sa gauche. Le menu se
-         replie sur un clic ailleurs, une notification qu'il faut deplier pour
-         voir n'alerte plus personne. #}
+      {# Cloche mobile, hors du menu burger. #}
       {% if compte_joueur %}
         <div class="navbar-item has-dropdown zone-cloche cloche-mobile is-hidden-desktop">
           <a class="navbar-link is-arrowless" title="Notifications" aria-expanded="false">
@@ -471,9 +370,7 @@
             <div class="navbar-item has-text-grey">Chargement…</div>
           </div>
         </div>
-        {# Compte mobile : seul l'avatar, le pseudo prendrait la largeur que le
-           burger et la cloche laissent. Meme logique que la cloche, hors du
-           menu deroulant. #}
+        {# Compte mobile : avatar seul, hors du menu deroulant. #}
         <div class="navbar-item has-dropdown zone-compte compte-mobile is-hidden-desktop">
           <a class="navbar-link is-arrowless" title="{{ compte_joueur.pseudo }}"
              aria-label="Menu du compte" aria-expanded="false">
@@ -483,8 +380,7 @@
                      alt="" referrerpolicy="no-referrer" data-repli-avatar>
               </figure>
             {% else %}
-              {# Sans avatar Discord, une silhouette : un trou laisserait un
-                 bouton invisible a cote du burger. #}
+              {# Silhouette sans avatar Discord. #}
               <span class="icon"><i class="fas fa-user-circle"></i></span>
             {% endif %}
           </a>
@@ -493,12 +389,7 @@
           </div>
         </div>
       {% endif %}
-      {# Connexion mobile : hors du burger, dans une pilule a la place de
-         l'avatar une fois connecte -- meme hauteur, meme bordure. Le logo
-         seul disait « Discord » mais pas « se connecter » : le mot est la. Replie dans le menu, le seul geste utile
-         a un visiteur demandait deux taps, et rien ne disait qu'il existait.
-         Memes conditions que le bouton de bureau (navbar-end), qui passe
-         lui en is-hidden-touch : un seul des deux est visible a la fois. #}
+      {# Connexion mobile, hors du burger (le bouton de bureau est is-hidden-touch). #}
       {% if not compte_joueur and discord_configure %}
         <a class="navbar-item connexion-mobile is-hidden-desktop" href="/auth/discord/login"
            title="Se connecter avec Discord" aria-label="Se connecter avec Discord">
@@ -547,11 +438,9 @@
       </div>
 
       <div class="navbar-end">
-        {# Compte joueur Discord. Indépendant de la session admin : les deux
-           cohabitent dans le même cookie pendant la bascule. #}
+        {# Compte joueur Discord. #}
         {% if compte_joueur %}
-          {# Cloche des notifications, remplie par fetch apres le rendu : la
-             calculer cote serveur imposerait un appel backend a chaque page. #}
+          {# Cloche des notifications, remplie par fetch. #}
           <div class="navbar-item has-dropdown zone-cloche is-hidden-touch">
             <a class="navbar-link is-arrowless" title="Notifications">
               <span class="icon"><i class="fas fa-bell"></i></span>
@@ -586,50 +475,45 @@
               <span class="tag is-danger is-rounded ml-2 is-hidden" id="badge-admin">0</span>
             </a>
             
-            {# Chaque entrée est gatée par SA permission : sans ça, un admin sans
-               droits verrait un menu complet dont chaque lien répond 403. Les
-               capacités de rôle (annuler un tournoi) se testent par rôle, elles
-               ne sont pas déléguables. Voir hierarchie-admin-plan.md, annexe B.4. #}
+            {# Chaque entrée dépend de sa permission ; les capacités de rôle se
+               testent par rôle. #}
             <div class="navbar-dropdown is-right">
-              {# 1 — Tournois : permission propre depuis le 2026-09-13, séparée
-                 de la gestion des fiches joueurs. #}
+              {# 1. Tournois #}
               {% if peut('gestion_tournois') %}
                 <a class="navbar-item" href="/admin/tournois">
                   <i class="fas fa-trophy mr-2"></i> Gestion tournois
                 </a>
               {% endif %}
 
-              {# 2 — Réglages : gestion_config seule. Le reset global qu'héberge
-                 la page relève désormais de cette même permission. #}
+              {# 2. Réglages (dont le reset global) #}
               {% if peut('gestion_config') %}
                 <a class="navbar-item" href="/admin/reglages">
                   <i class="fas fa-sliders mr-2"></i> Réglages TrueSkill
                 </a>
               {% endif %}
 
-              {# 3 — Fiches joueurs #}
+              {# 3. Fiches joueurs #}
               {% if peut('gestion_joueurs') %}
                 <a class="navbar-item" href="/admin/joueurs-fiches">
                   <i class="fas fa-id-card mr-2"></i> Fiches joueurs
                 </a>
               {% endif %}
 
-              {# 4 — Ligues #}
+              {# 4. Ligues #}
               {% if peut('gestion_ligues') %}
                 <a class="navbar-item" href="/admin/ligues">
                   <i class="fas fa-shield-alt mr-2"></i> Gestion Ligues
                 </a>
               {% endif %}
 
-              {# 5 — Saisons #}
+              {# 5. Saisons #}
               {% if peut('gestion_saisons') %}
                 <a class="navbar-item" href="/admin/saisons-gestion">
                   <i class="fas fa-calendar-alt mr-2"></i> Gestion Saisons
                 </a>
               {% endif %}
 
-              {# 6 — Comptes. Onglet composite : trois zones déléguables
-                 séparément, chaque sous-onglet porte son gate dans la page. #}
+              {# 6. Comptes (une permission par onglet) #}
               {% if peut('gestion_comptes') or peut('gestion_liaisons') or peut('gestion_invitations') %}
                 <a class="navbar-item" href="/admin/comptes">
                   <i class="fas fa-users-gear mr-2"></i> Gestion Comptes
@@ -637,39 +521,21 @@
                 </a>
               {% endif %}
 
-              {# 7 — Matchmaking #}
+              {# 7. Matchmaking #}
               {% if peut('gestion_matchmaking') %}
                 <a class="navbar-item" href="/admin/matchmaking">
                   <i class="fas fa-random mr-2"></i> Matchmaking
                 </a>
               {% endif %}
 
-              {# « Annuler le dernier tournoi » a rejoint la page Gestion tournois :
-                 un geste irréversible accessible
-                 depuis toutes les pages admin invite au clic accidentel, et il
-                 n'a de sens qu'à côté de la liste des tournois. #}
-
-              {# Plus de « Déconnexion » ici depuis le 2026-09-23 : elle ne
-                 fermait que la session par mot de passe. La déconnexion se fait
-                 désormais depuis /mon-compte, pour tout le monde. #}
             </div>
           </div>
         {% endif %}
 
-        {# Le bouton « Admin » vers /admin avait été retiré le 2026-09-13,
-           l'écran de mot de passe qu'il ouvrait ne donnant plus accès à rien.
-           La route elle-même a disparu le 2026-09-23 (étape 6 de la phase 4) :
-           il n'existe plus qu'une entrée, le bouton Discord ci-dessous. #}
-
-        {# Retour d'un joueur déjà inscrit. Sans ce bouton, le seul chemin vers
-           la connexion Discord était la page d'invitation — or l'invitation est
-           consommée : après une déconnexion ou l'expiration de la session, plus
-           personne ne pouvait revenir. Le bouton n'ouvre AUCUNE inscription :
-           créer un compte exige toujours une invitation valide, refusée côté
-           backend. #}
+        {# Connexion d'un joueur déjà inscrit (la création de compte exige
+           toujours une invitation). #}
         {% if not compte_joueur and discord_configure %}
-          {# is-hidden-touch : sur mobile, c'est la pilule de la navbar-brand.
-             Meme pilule ici, en un peu plus grand : la barre a la place. #}
+          {# Version bureau de la pilule (sur mobile, voir navbar-brand). #}
           <div class="navbar-item connexion-bureau is-hidden-touch">
             <a class="pilule-discord" href="/auth/discord/login" title="Se connecter avec Discord">
               <i class="fab fa-discord"></i><span>Se connecter</span>
@@ -681,16 +547,12 @@
   </div>
 </nav>
 
-{# Messages flash, affiches ICI et nulle part ailleurs : un flash reste en
-   session tant qu'aucun rendu ne le consomme, et la navbar est la seule chose
-   que toutes les pages incluent. #}
+{# Messages flash, affiches ici car la navbar est incluse partout. #}
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
-    {# Un echec doit rester lisible plus longtemps qu'une confirmation : on ne
-       relit pas « Enregistre » deux fois, on relit un message d'erreur. #}
+    {# Les erreurs restent affichees plus longtemps. #}
     {% set delais = {'success': 4000, 'info': 4000, 'warning': 6000, 'danger': 8000} %}
-    {# aria-live=polite : le lecteur d'ecran annonce le message sans couper la
-       parole, et role=status evite qu'il le prenne pour une alerte urgente. #}
+    {# aria-live=polite et role=status : annonce sans interrompre. #}
     <div id="messages-flash" role="status" aria-live="polite">
       {% for category, message in messages %}
         <div class="notification is-{{ category }} is-light"
@@ -705,15 +567,11 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    // Partagé par les appels de données de la navbar (notifications joueur et
-    // admin). Un `fetch()` sans `Accept` envoie « */* », que le serveur doit
-    // traiter comme une navigation : il revalidait alors la session pour chacun
-    // de ces appels. Voir _est_navigation et docs/audit-503-zone-admin.md.
+    // Accept explicite pour les appels de données de la navbar (pas de
+    // revalidation de session).
     const HEADERS_JSON = { headers: { 'Accept': 'application/json' } };
 
-    // Jeton CSRF porte par le <nav> : il est le seul element present sur
-    // toutes les pages, la <meta> du <head> ne l'etant que sur certaines.
-    // Le repli sur la <meta> sert les gabarits qui la posent deja.
+    // Jeton CSRF porte par le <nav>, avec repli sur la <meta>.
     const JETON_CSRF = document.querySelector('.navbar[data-csrf]')?.dataset.csrf
                        || document.querySelector('meta[name="csrf-token"]')?.content
                        || '';
@@ -730,9 +588,7 @@
       });
     }
 
-    // Cloche et avatar vivent hors du menu burger : Bulma n'ouvre leur
-    // dropdown qu'au survol, absent sur tactile. On les bascule au clic, et
-    // un seul reste ouvert a la fois — deux panneaux superposes se masquent.
+    // Cloche et avatar mobiles : ouverture au clic, un seul panneau a la fois.
     const panneauxMobiles = document.querySelectorAll('.cloche-mobile, .compte-mobile');
     panneauxMobiles.forEach(panneau => {
       const lien = panneau.querySelector('.navbar-link');
@@ -754,29 +610,13 @@
       });
     }
 
-    // Un clic ailleurs referme : sans ca le panneau masque la page.
     document.addEventListener('click', ev => {
       if (ev.target.closest('.cloche-mobile, .compte-mobile')) return;
       fermerPanneaux();
     });
 
-    // Sous-menus du burger (Statistiques, Admin). Bulma les laisse deplies
-    // sous 1024px : le menu s'ouvrait sur toutes les entrees a la fois. Le
-    // CSS les replie, ce clic les deroule.
-    //
-    // Regles differentes de celles des panneaux ci-dessus, parce que le geste
-    // n'est pas le meme : ils vivent DANS le menu, alors plusieurs peuvent
-    // rester ouverts ensemble (on compare deux sections), et un clic ailleurs
-    // dans le menu ne les referme pas — seul un nouveau clic sur l'en-tete le
-    // fait. Fermer au clic exterieur reviendrait a refermer le burger.
-    // Les sous-menus s'ouvrent au CLIC, sur tous les ecrans. Plus de garde
-    // `hover: none` : un menu qui se deroule au survol s'ouvre aussi quand on
-    // traverse la navbar pour aller ailleurs, et c'est ce qu'on ne veut plus.
-    //
-    // La cloche et le compte du DESKTOP entrent ici aussi (`.is-hidden-touch`),
-    // parce qu'eux non plus ne doivent plus s'ouvrir au survol. Leurs jumeaux
-    // mobiles gardent leur propre mecanique, plus haut : deux panneaux
-    // superposes s'y masqueraient, donc un seul reste ouvert a la fois.
+    // Sous-menus : ouverture au clic sur tous les ecrans (cloche et compte du
+    // desktop compris). Dans le burger, plusieurs peuvent rester ouverts.
     const sectionsMenu = document.querySelectorAll(
       '#navbarMenu .navbar-item.has-dropdown:not(.cloche-mobile):not(.compte-mobile)'
     );
@@ -800,43 +640,31 @@
         const ouvert = section.classList.toggle('est-ouverte');
         lien.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
 
-        // Sur ecran large les menus flottent cote a cote : en laisser deux
-        // ouverts les ferait se chevaucher. Dans le burger ils s'empilent
-        // dans le flux, et on peut vouloir comparer deux sections -- c'est
-        // pourquoi on ne referme les autres qu'au-dessus de 1024px.
+        // Au-dessus de 1024px, un seul menu ouvert a la fois.
         if (ouvert && window.matchMedia('(min-width: 1024px)').matches) {
           fermerSections(section);
         }
       });
     });
 
-    // Ecran large : un clic hors du menu le referme -- c'est le second geste
-    // demande, « si on reclique a cote, ca le ferme ». En mobile on s'en
-    // abstient (cf. plus haut : ce serait refermer le burger), mais ici le
-    // menu flotte au-dessus de la page et masquerait ce qu'on vient de viser.
-    //
-    // Sans distinction souris/tactile : avec l'ouverture au clic, un menu
-    // laisse ouvert le reste au survol comme au doigt.
+    // Ecran large : un clic hors du menu le referme.
     document.addEventListener('click', ev => {
       if (!window.matchMedia('(min-width: 1024px)').matches) return;
       if (ev.target.closest('#navbarMenu .navbar-item.has-dropdown')) return;
       fermerSections(null);
     });
 
-    // Echap referme aussi : au clavier, le clic exterieur n'est pas un geste
-    // disponible, et le menu resterait ouvert sans moyen de le replier.
+    // Echap referme aussi.
     document.addEventListener('keydown', ev => {
       if (ev.key === 'Escape') fermerSections(null);
     });
 
-    // Refermer le burger remet ses sous-menus a plat : les rouvrir sur l'etat
-    // laisse au dernier passage donnerait un menu different a chaque ouverture.
+    // Refermer le burger replie ses sous-menus.
     document.querySelectorAll('.navbar-burger').forEach(burger => {
       burger.addEventListener('click', () => fermerSections(null));
     });
 
-    // Avatar Discord injoignable (lien expire, image bloquee) : sans repli,
-    // le bouton du compte serait invisible a cote du burger.
+    // Repli si l'avatar Discord ne charge pas.
     document.querySelectorAll('img[data-repli-avatar]').forEach(img => {
       img.addEventListener('error', () => {
         const silhouette = document.createElement('span');
@@ -846,8 +674,7 @@
       });
     });
 
-    // Disparition automatique. Le compte a rebours se suspend au survol :
-    // un message qui s'evapore pendant qu'on le lit est pire que rien.
+    // Disparition automatique, suspendue au survol.
     document.querySelectorAll('#messages-flash .notification').forEach(bulle => {
       const delai = parseInt(bulle.dataset.delai, 10) || 5000;
       let minuteur;
@@ -855,8 +682,7 @@
       const fermer = () => {
         clearTimeout(minuteur);
         bulle.classList.add('sortant');
-        // Repli si l'animation ne joue pas : sans lui, animationend ne
-        // vient jamais et la bulle reste a l'ecran.
+        // Repli si l'animation ne joue pas.
         const retrait = setTimeout(() => bulle.remove(), 400);
         bulle.addEventListener('animationend', () => {
           clearTimeout(retrait);
@@ -872,13 +698,10 @@
       armer();
     });
 
-    // Notifications. textContent partout : ces textes citent des noms de
-    // fiche et des motifs de refus saisis par des humains.
+    // Notifications (textContent : textes saisis par des humains).
     {% if compte_joueur %}
     (async function () {
-      // Deux cloches dans le DOM : celle du menu (desktop) et celle collee au
-      // burger (mobile). Une seule est visible a la fois, mais les deux sont
-      // remplies : un redimensionnement ne doit pas vider la cloche affichee.
+      // Deux cloches (desktop et mobile), toutes deux remplies.
       const badges = document.querySelectorAll('.badge-notifs');
       const listes = document.querySelectorAll('.liste-notifs');
       if (!badges.length || !listes.length) return;
@@ -897,19 +720,12 @@
         reset_global_annule: 'fa-rotate-right has-text-grey'
       };
 
-      // Solde TOUT ce que la pastille comptait, et eteint les deux cloches.
-      // Appele a l'ouverture de la cloche : ce qui vient d'etre montre a ete
-      // vu, garder la pastille allumee sur des lignes qu'on a sous les yeux
-      // n'apprend plus rien.
-      //
-      // `deja` evite de rappeler l'endpoint a chaque ouverture : le compteur
-      // est deja a zero, il n'y a plus rien a solder.
+      // Marque tout comme lu a l'ouverture de la cloche (une seule fois).
       let deja = false;
       async function toutMarquerLu() {
         if (deja) return;
         deja = true;
-        // L'affichage part en premier : la pastille doit s'eteindre au geste,
-        // pas au retour du reseau.
+        // La pastille s'eteint immediatement.
         badges.forEach(badge => badge.classList.add('is-hidden'));
         listes.forEach(l => {
           l.querySelectorAll('.navbar-item').forEach(i => i.classList.add('has-text-grey'));
@@ -919,14 +735,10 @@
             method: 'POST',
             headers: {'X-CSRFToken': JETON_CSRF}
           });
-          // `fetch` ne leve PAS sur une reponse d'erreur : sans ce test, un
-          // 400 (jeton refuse) ou un 500 passait pour un succes, la pastille
-          // restait eteinte a l'ecran et le compteur revenait au rechargement.
+          // fetch ne leve pas sur une reponse d'erreur.
           if (!r.ok) throw new Error('HTTP ' + r.status);
         } catch (e) {
-          // Rien n'a ete enregistre : on rallume, plutot que de laisser croire
-          // que c'est lu. La pastille reviendrait de toute facon au prochain
-          // chargement -- autant etre franc tout de suite.
+          // Echec : on rallume la pastille.
           deja = false;
           badges.forEach(badge => {
             if (badge.textContent && badge.textContent !== '0') {
@@ -937,15 +749,7 @@
       }
 
       function ligne(n) {
-        // Un <a> seulement si la notification mene quelque part : les accuses
-        // de reception (promotion acceptee/refusee) n'ont pas de cible, et un
-        // lien mort se signale mieux par son absence que par un clic sans effet.
-        //
-        // `lien` vient du backend, qui le construit lui-meme a l'emission --
-        // jamais d'une saisie humaine, contrairement au titre et au corps, qui
-        // restent en textContent pour cette raison. On verifie tout de meme
-        // qu'il est bien interne : un `href` absolu pose ici ouvrirait le site
-        // a une redirection si cette colonne venait un jour d'ailleurs.
+        // Lien seulement si la notification en a un, et seulement interne.
         const cliquable = typeof n.lien === 'string'
                           && n.lien.startsWith('/') && !n.lien.startsWith('//');
         const item = document.createElement(cliquable ? 'a' : 'div');
@@ -953,8 +757,6 @@
         item.style.whiteSpace = 'normal';
         item.style.alignItems = 'flex-start';
         if (cliquable) {
-          // Pas de marquage ici : pour atteindre ce lien il a fallu ouvrir la
-          // cloche, qui a deja tout soldé.
           item.href = n.lien;
         }
 
@@ -983,11 +785,9 @@
 
       let res;
       try {
-        // `Accept` explicite : dit au frontend que c'est un appel de données et
-        // non l'ouverture d'une page, donc qu'il n'a pas à revalider la session
-        // pour lui (cf. _est_navigation, docs/audit-503-zone-admin.md).
+        // Accept explicite : appel de données.
         res = await (await fetch('/me/notifications', HEADERS_JSON)).json();
-      } catch (e) { return; }   // navbar muette plutôt que cassée
+      } catch (e) { return; } // navbar muette plutôt que cassée
 
       if (res.non_lues > 0) {
         badges.forEach(badge => {
@@ -1009,19 +809,11 @@
 
       });
 
-      // OUVRIR la cloche vaut lecture : tout ce que la pastille comptait est
-      // sous les yeux, donc solde. Remplace le bouton « Tout marquer comme
-      // lu », qui demandait un second geste pour dire ce que l'ouverture
-      // disait deja.
-      //
-      // Les deux cloches sont cablees (desktop et mobile) : elles montrent le
-      // meme compteur, et l'une ne doit pas rester allumee quand l'autre a
-      // ete ouverte. Le declencheur est pose sur l'en-tete plutot que sur la
-      // section entiere, sinon un clic DANS la liste le redeclencherait.
+      // Ouvrir la cloche (desktop ou mobile) vaut lecture. Declencheur sur
+      // l'en-tete, pas sur la liste.
       document.querySelectorAll('.zone-cloche > .navbar-link').forEach(lien => {
         lien.addEventListener('click', () => {
-          // Seulement a l'ouverture : sur la cloche desktop le meme clic sert
-          // aussi a refermer, et refermer n'est pas lire.
+          // Seulement a l'ouverture (le meme clic referme sur desktop).
           const section = lien.closest('.zone-cloche');
           if (section && section.classList.contains('est-ouverte')) toutMarquerLu();
         });
@@ -1031,7 +823,6 @@
 
     {% if est_admin %}
     (async function () {
-      // Une requête, deux pastilles : le total et le détail.
       let res;
       try {
         res = await (await fetch('/admin/notifications', HEADERS_JSON)).json();

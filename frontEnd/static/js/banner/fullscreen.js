@@ -1,22 +1,9 @@
-// Le plein ecran : le bandeau seul, telephone couche.
-//
-// Deux voies. La vraie — l'API Fullscreen — cache les barres du navigateur et
-// laisse verrouiller l'ecran en paysage : Android la connait, l'iPhone non (il la
-// reserve aux videos). A defaut, le bandeau recouvre la page : les barres
-// restent, mais Safari les reduit de lui-meme une fois le telephone couche.
-//
-// Le mode se lit sur UNE classe, `is-fullscreen`, quelle que soit la voie : la
-// feuille de style et `applyStageScale()` n'ont pas a savoir laquelle a servi.
-// Le plein ecran ne demande rien au serveur : c'est un cadrage, comme la camera.
-//
-// Ce qui passe en plein ecran n'est pas le bandeau mais son cadre
-// (`#bannerFrame`) : le navigateur force l'element plein ecran a la taille de
-// l'ecran, et le bandeau doit pouvoir etre moins haut — c'est ce qui garde une
-// longueur de piste minimale a l'ecran, quitte a laisser des bandes noires
-// (banner.css, `--fullscreen-min-units`). Le cadre porte la classe aussi.
+// Plein ecran du bandeau (telephone couche). API Fullscreen si possible, sinon
+// le bandeau recouvre la page ; dans les deux cas la classe `is-fullscreen` est
+// posee. C'est le cadre (#bannerFrame) qui passe en plein ecran, pour que le
+// bandeau puisse etre moins haut que l'ecran (--fullscreen-min-units).
 
 const fullscreenState = {
-    // Voie de repli en cours : le bandeau recouvre la page.
     pseudo: false,
     bound: false,
     hintEl: null
@@ -39,9 +26,8 @@ function isBannerFullscreen() {
     return !!frame && (fullscreenState.pseudo || nativeFullscreenElement() === frame);
 }
 
-// Un navigateur peut exposer l'API et la refuser quand meme — iPhone compris,
-// selon les versions. Le refus arrive en promesse rejetee, ou en exception pour
-// les implementations prefixees : les deux menent a la voie de repli.
+// L'API peut etre exposee puis refusee (promesse rejetee ou exception) : on
+// passe alors a la voie de repli.
 function enterBannerFullscreen() {
     const frame = bannerFrame();
     if (!frame) return;
@@ -84,9 +70,7 @@ function setPseudoFullscreen(on) {
     syncBannerFullscreen();
 }
 
-// Le verrou n'est accepte qu'en vrai plein ecran, et seulement la ou il existe.
-// Un refus n'empeche rien : le spectateur tourne son telephone lui-meme, et le
-// message du portrait le lui demande. Le navigateur le leve seul a la sortie.
+// Verrou paysage, en vrai plein ecran seulement ; un refus est sans consequence.
 function lockLandscape() {
     const orientation = screen.orientation;
     if (!orientation || !orientation.lock) return;
@@ -95,8 +79,7 @@ function lockLandscape() {
     } catch (e) { /* pas de verrou ici */ }
 }
 
-// Tout changement d'etat passe par ici, y compris ceux que le navigateur decide
-// seul : le geste retour d'Android sort du plein ecran sans nous demander.
+// Synchronise l'etat, y compris quand le navigateur sort seul du plein ecran.
 function syncBannerFullscreen() {
     const hero = bannerHero();
     const frame = bannerFrame();
@@ -110,8 +93,7 @@ function syncBannerFullscreen() {
 
     renderFullscreenButton();
 
-    // Le cadre vient de changer de taille : echelle, largeur visible et hauteur
-    // de piste sont a remesurer.
+        // Le cadre a change de taille : tout est a remesurer.
     onViewportChange();
 }
 
@@ -124,10 +106,8 @@ function renderFullscreenButton() {
     el.title = on ? 'Quitter le plein ecran' : 'Plein ecran (telephone couche)';
 }
 
-// Plein ecran tenu droit : la scene, calee sur la largeur, ne serait qu'une
-// mince bande au milieu de l'ecran. Un voile demande de tourner le telephone, et
-// offre la sortie — le bouton du classement est dessous. Il couvre le cadre, pas
-// le bandeau : c'est tout l'ecran qu'il doit cacher.
+// Plein ecran en portrait : un voile demande de tourner le telephone et
+// propose la sortie.
 function ensureRotateHint(frame) {
     if (fullscreenState.hintEl) return;
 
@@ -153,13 +133,11 @@ function initFullscreen() {
 
     document.addEventListener('fullscreenchange', syncBannerFullscreen);
     document.addEventListener('webkitfullscreenchange', syncBannerFullscreen);
-    // Le refus d'une implementation prefixee n'arrive que par ici : son appel
-    // ne rend pas de promesse.
+    // Refus d'une implementation prefixee (sans promesse).
     document.addEventListener('fullscreenerror', () => setPseudoFullscreen(true));
     document.addEventListener('webkitfullscreenerror', () => setPseudoFullscreen(true));
 
-    // La voie de repli n'a pas de touche de sortie a elle : on lui donne celle
-    // du vrai plein ecran.
+    // Echap pour sortir de la voie de repli.
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && fullscreenState.pseudo) setPseudoFullscreen(false);
     });

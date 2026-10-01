@@ -1,12 +1,5 @@
--- Reference de l'IP v2 : mu moyen de la grille des joueurs, fige par journee.
--- La grille complete est sauvegardee juste avant la generation du premier
--- tournoi du jour, et tous les tournois de cette journee (session de
--- matchmaking scindee en plusieurs lobbies) partagent la meme reference.
---
--- La grille est stockee joueur par joueur, et non sous forme de moyenne
--- pre-calculee, pour deux raisons : le leave-one-out doit pouvoir retirer le
--- mu du joueur juge, et le critere d'inclusion (cf IP_V2_REF_* dans
--- constants.py) doit rester modifiable sans avoir a re-figer l'historique.
+-- Reference de l'IP v2 : grille des joueurs figee avant le premier tournoi du
+-- jour, stockee joueur par joueur (leave-one-out, critere d'inclusion modifiable).
 
 CREATE TABLE IF NOT EXISTS public.grille_snapshots (
     date date NOT NULL,

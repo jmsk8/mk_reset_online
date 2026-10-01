@@ -1,17 +1,12 @@
-// Le compte des spectateurs et le vote de redemarrage, contre un service en marche.
+// Compte des spectateurs et vote de redemarrage, contre un service en marche
+// (par le protocole seul, valable pour les moteurs JS et C++).
 //
-// Un spectateur est un NAVIGATEUR qui regarde, pas une connexion : deux onglets
-// font un spectateur et une voix, un onglet cache cesse de compter apres un
-// delai (server.js, « Spectateurs »). Cet outil le verifie de l'exterieur, par le
-// seul protocole — il vaut donc pour les deux moteurs, JS et C++.
-//
-//   node tools/spectators.js                  scenarios courts (quelques secondes)
+//   node tools/spectators.js                  scenarios courts
 //   node tools/spectators.js --grace          plus l'expiration d'un onglet cache (~65 s)
 //   node tools/spectators.js --url ws://...   autre serveur
 //
-// A lancer contre un service A SOI : le dernier scenario vote un redemarrage.
-// Si quelqu'un d'autre regarde deja, l'outil s'arrete sans rien faire — sauf
-// --force, et le redemarrage ne peut alors pas aboutir.
+// A lancer contre son propre service : le dernier scenario vote un redemarrage
+// (arret si quelqu'un d'autre regarde, sauf --force).
 
 import WebSocket from 'ws';
 
@@ -28,8 +23,7 @@ const FORCE = args.includes('--force');
 // Doit suivre HIDDEN_GRACE_MS (server.js, server.cpp).
 const HIDDEN_GRACE_MS = 60000;
 
-// Plus que l'intervalle entre deux snapshots (100 ms) : le temps qu'un geste se
-// voie dans le compteur.
+// Delai pour qu'un geste se voie dans le compteur.
 const SETTLE_MS = 400;
 
 let failures = 0;
@@ -47,7 +41,7 @@ function randomNav() {
     return `essai-${process.pid}-${serial}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// Une connexion, et ce qu'elle a recu : le dernier compteur, sa voix, ses hello.
+// Une connexion et ce qu'elle a recu.
 function open(hi) {
     return new Promise((resolve, reject) => {
         const ws = new WebSocket(URL);
@@ -82,7 +76,6 @@ async function closeAll(conns) {
     await sleep(SETTLE_MS);
 }
 
-// L'observateur compte pour un : c'est par lui qu'on lit le compteur.
 async function tally(observer) {
     await sleep(SETTLE_MS);
     return observer.vt || [0, 0];
@@ -193,7 +186,7 @@ async function main() {
         const a2 = await open({ nav });
         const t0 = observer.t0;
 
-        // L'observateur est un navigateur lui aussi : il vote pour completer.
+        // L'observateur vote aussi.
         send(a1, { t: 'vote' });
         await sleep(SETTLE_MS);
         check(observer.t0 === t0, 'une voix sur deux navigateurs ne relance rien');

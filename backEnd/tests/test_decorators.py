@@ -71,11 +71,7 @@ r = cli.get('/protege', headers={'X-Session-Token':'x'})
 check("suspendu refusé malgré le rôle admin", r.status_code == 403 and r.get_json()['code'] == 'compte_suspendu', r.get_json())
 
 print("\n=== Etape 6 : il n'existe plus qu'une voie d'authentification ===")
-# Ces deux decorateurs testaient la cohabitation mot de passe / Discord (R-43,
-# un OU et pas un ET). Ils ont ete supprimes le 2026-09-23 avec l'etape 6 de la
-# phase 4. Ce qui reste a verifier, c'est leur ABSENCE : un import qui survit,
-# et une route peut se retrouver protegee par un secret partage qu'on croyait
-# parti. Le `revert` du runbook 3.2b les rend tous les deux d'un coup.
+# Les decorateurs d'authentification par mot de passe ont ete supprimes.
 cli, auth = app_avec(SESSION_OK('admin'), lambda a: a.role_required('admin'))
 check("admin_required n'existe plus", not hasattr(auth, 'admin_required'))
 check("admin_or_role_required n'existe plus", not hasattr(auth, 'admin_or_role_required'))

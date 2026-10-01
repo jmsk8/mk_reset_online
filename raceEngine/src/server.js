@@ -1,17 +1,13 @@
-// Moteur de course autoritatif du banner SMK.
-//
-// Une seule course tourne ici, et c'est elle que tous les navigateurs
-// regardent : les clients ne simulent rien, ils affichent. L'architecture
-// complete est dans docs/banner/architecture.md.
+// Moteur de course autoritatif du banner : une seule course, regardee par tous
+// les navigateurs, qui ne font qu'afficher.
 //
 //   node src/server.js                  service normal (HTTP + WebSocket)
 //   node src/server.js --duration 600   soak de 10 minutes, course forcee, puis bilan
 //   node src/server.js --always-on      simule meme sans spectateur
 //   node src/server.js --quiet          pas de rapport periodique
 //
-// Cycle de vie : la course demarre a la premiere connexion et s'arrete 30 s
-// apres le depart du dernier spectateur. Personne devant l'ecran, aucun CPU
-// consomme. Le delai de grace evite qu'un simple F5 ne reparte de zero.
+// La course demarre a la premiere connexion et s'arrete 30 s apres le depart
+// du dernier spectateur.
 
 import http from 'node:http';
 import { WebSocketServer } from 'ws';
@@ -21,21 +17,15 @@ import * as track from './track.js';
 import * as PH from './engine/index.js';
 import CFG from './config/index.js';
 
-// Les circuits sont des dessins, pas du code : ils vivent dans tracks/, monte
-// en lecture seule dans le conteneur — le moteur, lui, y est copie. Charges une
-// fois au demarrage, puis relus a chaque redemarrage a chaud : dessiner un
-// circuit et faire `make restart-race` suffit a le voir tourner, sans
-// reconstruire l'image.
+// Circuits de tracks/ (monte dans le conteneur), relus a chaque redemarrage a
+// chaud (`make restart-race`).
 const TRACKS_DIR = track.resolveTracksDir(import.meta.dirname);
 
 let TRACKS;
 try {
     TRACKS = track.loadTracks(TRACKS_DIR, CFG);
 } catch (err) {
-    // Un dessin faux est une erreur d'auteur, pas un plantage : le message dit
-    // quoi corriger, la pile d'appels ne dirait rien de plus. Et l'arret a lieu
-    // ici, avant meme d'ecouter — plutot qu'au depart d'une course, ou le
-    // conteneur relancerait le service en boucle a chaque spectateur.
+    // Dessin faux : message d'erreur et arret avant d'ecouter.
     console.error(`[circuits] ${err.message}`);
     console.error('[circuits] `make race-tracks` verifie les dessins sans rien demarrer.');
     process.exit(1);
@@ -46,8 +36,7 @@ function announceTracks() {
         + TRACKS.map(t => `${t.name} (${t.columns} col, ${t.pipes.length} pipes)`).join(', '));
 }
 
-// Relecture du dossier. Un dessin faux ne doit pas emporter le service : on
-// garde ceux qui tournaient et on dit ou regarder.
+// Relecture du dossier ; en cas d'erreur, on garde les circuits courants.
 function reloadTracks() {
     try {
         TRACKS = track.loadTracks(TRACKS_DIR, CFG);
@@ -66,36 +55,25 @@ const TICK_HZ = 30;
 const DT = 1 / TICK_HZ;
 const DT_MS = DT * 1000;
 
-// La simulation tourne a 30 Hz, la diffusion a 10 : le client interpole entre
-// deux snapshots, il n'a pas besoin de tous les pas. Diffuser plus vite double
-// la bande passante par spectateur sans rien changer a ce qu'il voit.
+// Simulation a 30 Hz, diffusion a 10 Hz (le client interpole).
 const SEND_HZ = 10;
 const TICKS_PER_SEND = Math.round(TICK_HZ / SEND_HZ);
 
-// Plafond de rattrapage : sans lui, une pause GC ou un gel de l'hote declenche
-// une spirale ou chaque tick rejoue le retard accumule, ce qui sature le CPU —
-// d'autant plus avec la limite a 0.25 cpu prevue pour ce service. Au-dela, on
-// abandonne le retard : mieux vaut une course qui saute que l'hote a genoux.
+// Pas de rattrapage maximum par tick (au-dela, le retard est abandonne).
 const MAX_CATCHUP_STEPS = 5;
 
 // Delai de grace avant l'arret de la course quand plus personne ne regarde.
 const IDLE_GRACE_MS = 30000;
 
-// Taille maximale d'un message entrant. Le client n'envoie que `hi`, `ping`,
-// `vis`, `vote` et `watch`, quelques dizaines d'octets : ce qui depasse est une
-// tentative.
+// Taille maximale d'un message entrant (le client n'envoie que quelques dizaines
+// d'octets).
 const MAX_PAYLOAD = 512;
 
-// Un onglet cache cesse de compter comme spectateur apres ce delai. Le meme que
-// HIDDEN_DISCONNECT_MS (frontEnd/static/js/banner/net.js), au bout duquel le
-// navigateur rend lui-meme sa connexion : l'appliquer ici aussi couvre les
-// onglets qui ne le font jamais — minuteries gelees par le systeme, ancien
-// net.js reste en cache. Pas zero : un simple changement d'onglet ne doit pas
-// completer l'unanimite, et relancer la course de quelqu'un qui revient.
+// Un onglet cache cesse de compter comme spectateur apres ce delai (identique a
+// HIDDEN_DISCONNECT_MS dans frontEnd/static/js/banner/net.js).
 const HIDDEN_GRACE_MS = 60000;
 
-// L'identifiant de navigateur envoye par `hi` : tire au hasard cote client.
-// Tout le reste est ignore, et la connexion compte alors pour elle seule.
+// Identifiant de navigateur envoye par `hi` ; sinon la connexion compte seule.
 const NAV_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 // Sonde applicative : une connexion qui ne repond plus au ping est fermee.
@@ -103,9 +81,7 @@ const HEARTBEAT_MS = 30000;
 
 const REPORT_INTERVAL_MS = 5000;
 
-// Un kart en course dont la distance ne bouge pas pendant ce delai est
-// considere comme bloque. Large : un kart percute reste immobile le temps du
-// malus (au plus 2 s, `hits` de la config).
+// Delai sans progression apres lequel un kart en course est considere bloque.
 const STUCK_TIMEOUT_MS = 10000;
 
 const args = process.argv.slice(2);
@@ -117,9 +93,7 @@ const DURATION_S = Number(argValue('--duration')) || 0;
 const QUIET = args.includes('--quiet');
 const ALWAYS_ON = args.includes('--always-on') || DURATION_S > 0 || process.env.ALWAYS_ON === '1';
 
-// Origines autorisees a ouvrir le flux. Vide = tout le monde, ce qui convient
-// en local mais jamais en production : sans ce controle, n'importe quel site
-// peut ouvrir une connexion permanente sur ce service (§6.12).
+// Origines autorisees a ouvrir le flux (vide = toutes, a eviter en production).
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
     .split(',')
     .map(o => o.trim())
@@ -133,24 +107,17 @@ let race = null;
 let idleTimer = null;
 let totalRaces = 0;
 
-// Grille de la course suivante, vainqueur en pole. A null, elle est tiree au
-// sort : c'est ce qui ouvre chaque grand prix. Conserve y compris quand le
-// service se met au repos faute de spectateurs.
+// Grille de la course suivante, vainqueur en pole ; null = tirage au sort.
 let lastFinishOrder = null;
 
-// Grand prix en cours : { round, points }. Il court sur plusieurs courses, donc
-// il vit ici et non dans l'etat du monde, refait a chaque depart. A null, la
-// prochaine course ouvre un bloc neuf.
+// Grand prix en cours : { round, points } ; null = nouveau bloc.
 let grandPrix = null;
 
 function startRace() {
     const now = Date.now();
 
-    // Une manche, un circuit : le grand prix parcourt le dossier dans l'ordre
-    // des noms de fichiers. Le choix se fait ici et pas plus bas parce que le
-    // circuit est dans la config — la longueur du tour, la ligne et les boites
-    // en font partie — et que la config doit etre complete avant que le monde
-    // ne soit construit.
+    // Un circuit par manche, dans l'ordre des fichiers ; il fait partie de la
+    // config, complete avant la construction du monde.
     const round = (grandPrix && grandPrix.round) || 1;
     const circuit = track.forRound(TRACKS, round);
     const cfg = track.applyTrack(CFG, circuit);
@@ -160,14 +127,11 @@ function startRace() {
     }
 
     race = {
-        // Horloge de simulation : elle n'avance que par pas fixes, jamais par
-        // le temps reel. C'est elle qui date les snapshots.
+        // Horloge de simulation, par pas fixes (date des snapshots).
         simTime: now,
         t0: now,
 
-        // La config de cette course-ci, circuit compris. Toute la course s'y
-        // refere : `CFG` seule ne decrit aucun tour, et deux manches d'un meme
-        // grand prix ne tournent pas sur la meme piste.
+        // Config de cette course, circuit compris.
         cfg: cfg,
         track: circuit,
 
@@ -203,8 +167,7 @@ function stopRace() {
     race = null;
 }
 
-// Sans le `hello`, les spectateurs garderaient les identites et la grille de la
-// course precedente.
+// Nouvelle course, annoncee par un `hello` a tous les spectateurs.
 function beginNewRace() {
     if (race) {
         clearInterval(race.loop);
@@ -216,9 +179,7 @@ function beginNewRace() {
         return;
     }
 
-    // Une voix porte sur le grand prix EN COURS : elle ne survit pas a la
-    // course. Le client efface la sienne au `hello` d'une course neuve
-    // (wipeSceneElements) ; sans ceci, le compteur la gardait.
+    // Les voix ne survivent pas a la course.
     clearVotes();
     startRace();
     for (const [ws] of clients) {
@@ -226,14 +187,10 @@ function beginNewRace() {
     }
 }
 
-// Redemarrage a chaud demande de l'exterieur (`make restart-race`). Il repart
-// de zero et pas seulement d'une course neuve : grand prix efface, scores
-// remis a zero, grille tiree au sort. C'est ce qu'on attend d'un redemarrage —
-// reprendre le bloc en cours a la troisieme manche n'aurait aucun sens.
+// Redemarrage a chaud (`make restart-race`) : grand prix efface, grille tiree
+// au sort, circuits relus.
 function restartRace() {
     console.log('[course] redemarrage demande — grand prix remis a zero.');
-    // Le dossier est relu au passage : c'est ce qui fait d'un circuit un
-    // dessin qu'on retouche, et non un fichier qui demande un rebuild.
     reloadTracks();
     grandPrix = null;
     lastFinishOrder = null;
@@ -256,8 +213,7 @@ function scheduleIdleStop() {
     }, IDLE_GRACE_MS);
 }
 
-// Classement lu a la console a la fin de chaque course : la manche qui vient de
-// finir, puis le general du bloc.
+// Classement a la console a la fin de chaque course : manche, puis general.
 function logStandings(ev) {
     const board = Object.entries(ev.gpPoints)
         .sort((a, b) => b[1] - a[1])
@@ -276,8 +232,7 @@ function tick() {
     let elapsed = (now - race.lastRealTime) / 1000;
     race.lastRealTime = now;
 
-    // Un ecart absurde (mise en veille de la machine, debogueur) ne doit pas
-    // entrer dans l'accumulateur.
+    // Ecart absurde (veille, debogueur) ignore.
     if (elapsed > 1) elapsed = 1;
     race.accumulator += elapsed;
 
@@ -295,9 +250,7 @@ function tick() {
             if (ev.type === 'raceOver') {
                 finishedOrder = ev.order.map(id => race.state.kartsById[id].charName);
 
-                // Bloc termine : scores remis a zero et grille tiree au sort au
-                // depart suivant. Sinon on reporte le cumul et on avance d'une
-                // manche.
+                // Bloc termine : nouveau grand prix ; sinon manche suivante.
                 nextGrandPrix = ev.gpComplete
                     ? { round: 1, points: {} }
                     : { round: ev.gpRound + 1, points: ev.gpPoints };
@@ -317,8 +270,7 @@ function tick() {
     }
 
     if (finishedOrder) {
-        // Un grand prix neuf repart d'une grille au hasard : `lastFinishOrder` a
-        // null fait tirer createWorldState.
+        // Nouveau grand prix : grille au hasard.
         lastFinishOrder = (nextGrandPrix.round === 1) ? null : finishedOrder;
         grandPrix = nextGrandPrix;
         beginNewRace();
@@ -326,7 +278,7 @@ function tick() {
     }
 
     if (race.accumulator >= DT) {
-        // Retard non rattrape : on le jette plutot que de le trainer.
+        // Retard non rattrape : abandonne.
         race.droppedSteps += Math.floor(race.accumulator / DT);
         race.accumulator = 0;
     }
@@ -343,9 +295,7 @@ function tick() {
     race.sinceBroadcast += steps;
     if (race.sinceBroadcast >= TICKS_PER_SEND) {
         race.sinceBroadcast = 0;
-        // Un onglet cache sort du compte a l'expiration de son delai, sans
-        // qu'aucun message ne l'annonce : c'est ici que se constate
-        // l'unanimite qu'il bloquait.
+        // L'expiration d'un onglet cache peut completer l'unanimite.
         if (checkVotes()) return;
         broadcast();
     }
@@ -356,16 +306,9 @@ function tick() {
 // ws -> { nav, hidden, hiddenSince, alive, voted, watch }
 const clients = new Map();
 
-// ── Spectateurs ─────────────────────────────────────────────────────────────
-//
-// Un spectateur est un NAVIGATEUR qui regarde, pas une connexion. Deux onglets
-// ouverts comptaient pour deux (constate le 28/09 : trois spectateurs affiches
-// pour deux personnes), et un onglet oublie en arriere-plan pour un de plus.
-//
-// Le navigateur se designe par `nav`, tire au hasard et partage par ses onglets
-// (net.js). Le service ne le garde que le temps de la connexion, ne le journalise
-// pas, et ne le rapproche de rien. Une connexion qui ne l'envoie pas (ancien
-// net.js, stockage refuse) compte pour elle seule, comme avant.
+// ── Spectateurs ───────────────────────────────────────────────
+// Un spectateur est un navigateur (`nav`, partage par ses onglets), garde le
+// temps de la connexion seulement. Sans `nav`, la connexion compte seule.
 
 function navKey(meta) {
     return meta.nav || meta;
@@ -375,17 +318,11 @@ function isWatching(meta, now) {
     return !meta.hidden || now - meta.hiddenSince < HIDDEN_GRACE_MS;
 }
 
-// ── Vote de redemarrage ─────────────────────────────────────────────────────
-//
-// Chaque spectateur peut poser une voix, et la retirer. Quand ils l'ont tous
-// posee, la course repart de zero — grand prix compris. L'unanimite plutot
-// qu'une majorite : a deux spectateurs, une majorite laisserait l'un des deux
-// relancer seul la course de l'autre.
-//
-// Une voix par NAVIGATEUR, tenue a l'identique sur toutes ses connexions.
+// ── Vote de redemarrage ────────────────────────────────────────────
+// Une voix par navigateur ; a l'unanimite des spectateurs, la course repart de
+// zero (grand prix compris).
 
-// [voix, spectateurs]. La voix d'un navigateur qui ne regarde plus ne compte
-// pas : elle ne peut completer une unanimite dont il ne fait plus partie.
+// [voix, spectateurs] ; seules les voix des navigateurs qui regardent comptent.
 function voteTally() {
     const now = Date.now();
     const watching = new Set();
@@ -407,9 +344,7 @@ function navVoted(key) {
     return false;
 }
 
-// Pose ou retire la voix d'un navigateur sur CHACUNE de ses connexions, et le
-// dit a chacune : l'onglet voisin doit afficher le meme bouton, et une voix
-// retiree depuis l'un ne doit pas survivre dans l'autre.
+// Pose ou retire la voix d'un navigateur sur toutes ses connexions, et le leur dit.
 function setNavVote(key, voted) {
     const message = JSON.stringify({ t: 'vote', v: voted });
     for (const [ws, meta] of clients) {
@@ -419,15 +354,12 @@ function setNavVote(key, voted) {
     }
 }
 
-// Les clients ne sont pas prevenus : chacun efface sa voix au `hello` d'une
-// course neuve, qui suit toujours cet appel.
+// Pas de message : chaque client efface sa voix au `hello` suivant.
 function clearVotes() {
     for (const meta of clients.values()) meta.voted = false;
 }
 
-// Une voix de plus, un spectateur de moins, un onglet cache depuis trop
-// longtemps : les trois completent le quorum. Renvoie true si la course est
-// repartie.
+// Verifie le quorum ; true si la course est repartie.
 function checkVotes() {
     const [count, total] = voteTally();
     if (total === 0 || count < total) return false;
@@ -437,8 +369,8 @@ function checkVotes() {
     return true;
 }
 
-// Visibilite d'une connexion. Renvoie true si l'onglet revient au premier plan :
-// il a rate tout ce qui s'est passe, et il lui faut une scene complete.
+// Visibilite d'une connexion ; true si l'onglet revient au premier plan (il lui
+// faut une scene complete).
 function setHidden(meta, hidden) {
     const wasHidden = meta.hidden;
     meta.hidden = hidden;
@@ -460,15 +392,12 @@ function broadcast() {
 
     const payload = JSON.stringify(snapshot);
 
-    // Le releve de vision du kart suivi, pour les seules connexions qui l'ont
-    // demande : il pese cent fois l'entier de decision et ne concerne qu'un kart.
-    // D'ou cette seconde serialisation, et son prix bien delimite — une par
-    // spectateur qui regarde, zero quand personne ne regarde.
+    // Releve de vision du kart suivi, pour les seules connexions qui l'ont
+    // demande (serialise une fois par kart regarde).
     let watched = null;
 
     for (const [ws, meta] of clients) {
-        // Onglet en arriere-plan : le client a demande qu'on lui coupe le flux.
-        // La course continue sans lui, il redemandera l'etat en revenant.
+        // Onglet en arriere-plan : flux coupe.
         if (meta.hidden) continue;
         if (ws.readyState !== ws.OPEN) continue;
 
@@ -477,16 +406,14 @@ function broadcast() {
             continue;
         }
 
-        // Le kart demande a pu disparaitre entre deux courses : on retombe alors
-        // sur le flux commun plutot que d'inventer une vue vide.
+        // Kart disparu : flux commun.
         const kart = race.state.karts.find(k => k.id === meta.watch);
         if (!kart) {
             ws.send(payload);
             continue;
         }
 
-        // Un seul spectateur par kart, le plus souvent : la vue se serialise une
-        // fois et se reutilise pour les suivants qui regardent le meme.
+        // Vue reutilisee pour les spectateurs du meme kart.
         if (!watched || watched.id !== meta.watch) {
             watched = {
                 id: meta.watch,
@@ -514,18 +441,13 @@ const httpServer = http.createServer((req, res) => {
             ok: true,
             racing: !!race,
             track: race ? race.track.name : null,
-            // Les connexions, et ce que le banner affiche : les navigateurs qui
-            // regardent. L'ecart entre les deux est ce qui se diagnostique.
+            // Connexions et navigateurs spectateurs.
             clients: clients.size,
             spectators: voteTally()[1],
             ticks: race ? race.ticks : 0,
             races: totalRaces,
             uptime: Math.round(process.uptime()),
-            // Quel moteur repond vraiment. `make engine` dit ce qui est CHOISI
-            // dans .engine ; ce champ dit ce qui TOURNE. Les deux divergent tant
-            // qu'un `make re-race` n'a pas eu lieu — et un `docker compose up`
-            // tape a la main, hors du Makefile qui exporte RACE_CONTEXT, retombe
-            // sur ce moteur-ci sans le dire.
+            // Moteur qui tourne reellement (`make engine` donne celui qui est choisi).
             engine: 'js'
         }));
         return;
@@ -535,11 +457,8 @@ const httpServer = http.createServer((req, res) => {
     res.end('not found\n');
 });
 
-// Deux snapshots consecutifs se ressemblent enormement : c'est le cas ideal pour
-// deflate, a condition de garder le contexte de compression d'un message a
-// l'autre. La fenetre est reduite a 4 Ko : elle couvre l'historique utile a des
-// messages de quelques centaines d'octets tout en bornant la memoire par
-// connexion, qui compte avec la limite a 128 Mo du conteneur.
+// Compression deflate avec contexte conserve (fenetre de 4 Ko pour borner la
+// memoire par connexion).
 const wss = new WebSocketServer({
     noServer: true,
     maxPayload: MAX_PAYLOAD,
@@ -585,9 +504,7 @@ wss.on('connection', ws => {
     sendHello(ws);
 
     ws.on('message', data => {
-        // Le service repond a `ping`, note `hi`, `vis` et `watch`, compte
-        // `vote`. Tout le reste est ignore en silence : c'est un flux de
-        // lecture, il n'existe aucune raison legitime de lui envoyer autre chose.
+        // Messages acceptes : `ping`, `hi`, `vis`, `watch`, `vote` ; le reste est ignore.
         let msg;
         try {
             msg = JSON.parse(data.toString());
@@ -604,27 +521,23 @@ wss.on('connection', ws => {
             return;
         }
 
-        // Premier message du client, a l'ouverture : quel navigateur, et s'il
-        // regarde. `vis` ne part pas tant que la connexion s'ouvre — un onglet
-        // ouvert en arriere-plan passait donc pour visible.
+        // Premier message : identifiant du navigateur et visibilite.
         if (msg.t === 'hi') {
-            // Une seule fois par connexion : un identifiant ne change pas en
-            // cours de route.
+            // Une seule fois par connexion.
             if (!meta.nav && typeof msg.nav === 'string' && NAV_PATTERN.test(msg.nav)) {
                 meta.nav = msg.nav;
-                // Un onglet de plus d'un navigateur qui a deja vote porte sa voix.
+                // Un nouvel onglet d'un navigateur qui a vote porte sa voix.
                 if (navVoted(meta.nav)) {
                     meta.voted = true;
                     ws.send(JSON.stringify({ t: 'vote', v: true }));
                 }
             }
             if (setHidden(meta, !!msg.hidden) && race) sendHello(ws);
-            // Deux connexions devenues un seul navigateur : le quorum a baisse.
+            // Deux connexions devenues un navigateur : le quorum a baisse.
             checkVotes();
             return;
         }
 
-        // Une bascule, a l'echelle du navigateur.
         if (msg.t === 'vote') {
             const key = navKey(meta);
             setNavVote(key, !navVoted(key));
@@ -632,15 +545,10 @@ wss.on('connection', ws => {
             return;
         }
 
-        // Le releve de vision d'UN kart, pour la carte de debug ; `id` absent
-        // rend la connexion au flux commun. Seule demande qui fasse travailler le
-        // service pour un spectateur, d'ou sa forme : un identifiant, rien qui
-        // touche a la course. Un client qui ment sur `id` obtient au pire la vue
-        // d'un autre kart.
+        // Releve de vision d'un kart pour la carte de debug ; `id` absent rend la
+        // connexion au flux commun.
         if (msg.t === 'watch') {
-            // `null` explicite : le client rend la connexion au flux commun.
-            // A ne surtout pas passer par `Number`, qui rend 0 — soit le kart
-            // 0, donc l'inverse exact de ce qui est demande.
+            // null ou absent (et non Number(), qui donnerait le kart 0).
             if (msg.id === null || msg.id === undefined) {
                 meta.watch = null;
                 return;
@@ -651,8 +559,7 @@ wss.on('connection', ws => {
         }
 
         if (msg.t === 'vis') {
-            // Au retour d'un onglet, le client a besoin d'une scene complete :
-            // il a rate tout ce qui s'est passe, exactement comme un arrivant.
+            // Retour au premier plan : scene complete.
             if (setHidden(meta, !!msg.hidden) && race) sendHello(ws);
         }
     });
@@ -675,9 +582,7 @@ wss.on('connection', ws => {
     });
 });
 
-// Une connexion peut mourir sans que la pile TCP le signale (reseau mobile,
-// proxy qui disparait). Sans cette sonde, le service accumulerait des
-// spectateurs fantomes — et ne s'arreterait donc jamais faute de public.
+// Sonde des connexions mortes sans signal TCP (reseau mobile, proxy).
 const heartbeat = setInterval(() => {
     for (const [ws, meta] of clients) {
         if (!meta.alive) {
@@ -697,9 +602,7 @@ function isBroken(value) {
     return typeof value !== 'number' || !isFinite(value);
 }
 
-// Un NaN n'apparait jamais seul : il se propage a tout ce qu'il touche, et une
-// course qui en contient un est perdue. On le signale des la premiere
-// occurrence, avec de quoi remonter a sa source.
+// Signale le premier NaN, avec de quoi remonter a sa source.
 function checkIntegrity() {
     if (!race) return true;
 
@@ -725,9 +628,7 @@ function checkIntegrity() {
     return true;
 }
 
-// Un kart immobile trop longtemps est soit coince contre une bordure, soit
-// victime d'un etat 'hit' qui ne se termine jamais. Les deux passeraient
-// inapercus sur un rapport de distances qui, globalement, continue de monter.
+// Signale un kart immobile trop longtemps (bloque, ou etat 'hit' sans fin).
 function checkStuck() {
     if (!race) return;
     const now = Date.now();
@@ -763,8 +664,7 @@ function report() {
         return;
     }
 
-    // Copie : trier le tableau du monde changerait l'ordre d'iteration de la
-    // simulation.
+    // Copie : ne pas modifier l'ordre des karts de la simulation.
     const board = race.state.karts.slice()
         .sort((a, b) => a.rank - b.rank)
         .map(k => `${k.rank}.${k.charName}${k.finished ? '!' : (k.heldItem ? '*' : '')}`)
@@ -832,7 +732,7 @@ if (DURATION_S > 0) {
     }, DURATION_S * 1000);
 }
 
-// Redemarrage a chaud, sans arreter le conteneur : `make restart-race`.
+// Redemarrage a chaud sans arreter le conteneur (`make restart-race`).
 process.on('SIGHUP', () => {
     console.log('[course] SIGHUP recu.');
     restartRace();

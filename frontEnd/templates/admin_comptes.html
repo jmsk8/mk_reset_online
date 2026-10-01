@@ -15,20 +15,14 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <style>
-        /* Tout ce qui s'affiche ici est saisi par un utilisateur : un « mot »
-           de 500 caractères sans espace pousse la carte hors de l'écran.
-           `anywhere` et non `break-word` : lui seul entre dans le calcul de la
-           largeur minimale, sans quoi une cellule reste large. */
+        /* Contenu saisi par les utilisateurs : coupure n'importe ou (anywhere
+           compte dans la largeur minimale, contrairement a break-word). */
         #vue-liaisons, #vue-comptes, #vue-invitations, #vue-bots, #vue-logs {
             overflow-wrap: anywhere;
         }
 
-        /* Téléphone et tablette : chaque ligne de tableau devient une carte,
-           chaque cellule précédée du titre de sa colonne (recopié par
-           etiqueter()). Sans ça, `anywhere` ci-dessus laisse les colonnes se
-           réduire à une lettre de large : le tableau tenait dans l'écran, mais
-           se lisait verticalement. 1023px et non 768 : sous la largeur du
-           container Bulma, la table des comptes commence déjà à se tasser. */
+        /* Sous 1023px, chaque ligne devient une carte et chaque cellule porte
+           le titre de sa colonne (recopié par etiqueter()). */
         @media screen and (max-width: 1023px) {
             .table-cartes, .table-cartes tbody, .table-cartes td { display: block; }
             .table-cartes thead { display: none; }
@@ -40,8 +34,7 @@
                 padding: .5rem .75rem;
                 border: 1px solid var(--border-color, rgba(59, 130, 246, .3));
                 border-radius: 10px;
-                /* Toutes les cartes du même fond : `is-striped` en éclaircirait
-                   une sur deux. */
+                /* Meme fond pour toutes les cartes. */
                 background-color: rgba(255, 255, 255, 0.04) !important;
             }
             .table-cartes td {
@@ -62,28 +55,25 @@
                 color: #94a3b8;
             }
             .table-cartes td:empty { display: none; }
-            /* Colonne sans titre (avatar, bouton) : ni étiquette ni retrait. */
             .table-cartes td[data-label=""] { padding-left: 0 !important; }
             .table-cartes td[data-label=""]::before { content: none; }
-            /* Comptes : l'avatar et le pseudo forment l'en-tête de la carte. */
             .table-cartes td.cellule-avatar { flex: none; }
             .table-cartes td.cellule-titre { flex: 1 1 0; padding-left: 0 !important; font-weight: 600; }
             .table-cartes td.cellule-titre::before { content: none; }
-            .table-cartes td.cellule-titre > span { font-weight: normal; }   /* le @handle */
+            .table-cartes td.cellule-titre > span { font-weight: normal; } /* le @handle */
         }
 
-        /* Un message reste un message, pas un mur : au-delà, il défile. */
+        /* Message long : defilement. */
         #vue-liaisons blockquote {
             max-height: 9rem;
             overflow-y: auto;
             border-left: 3px solid var(--border-color, rgba(59, 130, 246, .3));
             padding-left: .75rem;
-            white-space: pre-wrap;   /* les retours à la ligne saisis comptent */
+            white-space: pre-wrap; /* conserve les retours a la ligne */
         }
 
-        /* Fenêtre des actions d'un compte (§13.6) : petite, et hors de toute
-           carte -- `.glass-card` ferait d'un ancêtre le repère du
-           `position: fixed` de la modale. */
+        /* Modale des actions d'un compte (hors de toute carte, a cause du
+           position: fixed). */
         #modale-actions .modal-background { backdrop-filter: blur(3px); }
         #modale-actions .modal-content {
             width: 380px;
@@ -115,8 +105,7 @@
         }
         #modale-actions .actions-groupe-titre.sensible { color: #f87171; }
         #modale-actions .actions-groupe { display: flex; flex-direction: column; gap: .3rem; }
-        /* Des lignes de menu plutôt qu'une pile de boutons colorés : la
-           couleur ne reste que sur l'icône, le danger se lit sans crier. */
+        /* Lignes de menu : la couleur reste sur l'icône. */
         #modale-actions .actions-groupe .button {
             justify-content: flex-start; width: 100%; height: auto;
             padding: .55rem .75rem; margin: 0 !important;
@@ -152,13 +141,7 @@
             <h1 class="title"><i class="fas fa-users-gear mr-2"></i> Gestion des comptes</h1>
             <div id="alerte"></div>
 
-            {# Chaque onglet correspond à UNE permission, et n'apparaît que si on
-               la porte : la page s'ouvre dès qu'on a l'une des trois, mais ce
-               qu'on ne peut pas faire ne doit pas s'afficher. Sans ces gates, un
-               admin sans `gestion_invitations` voyait l'onglet, cliquait, et se
-               retrouvait sur la page d'accueil sans explication.
-               Le premier onglet visible est marqué actif côté JS, pas ici : en
-               dur, il aurait pu être un onglet auquel on n'a pas droit. #}
+            {# Un onglet par permission ; l'onglet actif est choisi en JS. #}
             <div class="tabs is-boxed">
                 <ul>
                     {% if peut('gestion_liaisons') %}
@@ -170,10 +153,7 @@
                     {% if peut('gestion_invitations') %}
                         <li data-onglet="invitations"><a>Invitations</a></li>
                     {% endif %}
-                    {# Logs : le journal COMPLET, indépendamment du rôle actuel
-                       des acteurs -- il reste lisible même pour un compte qui
-                       n'est plus admin, ou qui n'existe plus. Le filtre de rang
-                       est appliqué côté backend, pas ici. #}
+                    {# Logs : journal complet, filtré par rang côté backend. #}
                     {% if role_admin in ('chef_admin', 'superadmin') %}
                         <li data-onglet="logs"><a>Logs</a></li>
                     {% endif %}
@@ -201,8 +181,7 @@
         </div>
     </section>
 
-    {# Actions d'un compte : une seule modale pour toute la table, remplie à
-       l'ouverture par ouvrirActions(). #}
+    {# Modale unique des actions d'un compte, remplie par ouvrirActions(). #}
     <div class="modal" id="modale-actions" role="dialog" aria-modal="true"
          aria-labelledby="modale-actions-titre">
         <div class="modal-background" data-fermer></div>
@@ -216,39 +195,25 @@
     <script>
     const EST_SUPERADMIN = {{ 'true' if est_superadmin else 'false' }};
     const MON_COMPTE_ID = {{ mon_compte_id if mon_compte_id else 'null' }};
-    // Rangs des rôles, MÊME table que ROLE_HIERARCHY côté backend (constants.py).
-    // Sert à ne pas afficher un contrôle voué au 403 : le backend refuse d'agir
-    // sur un compte de rang égal ou supérieur (auth.compte_cible_protegee).
+    // Rangs des rôles, identiques à ROLE_HIERARCHY (constants.py).
     const RANGS = {player: 0, admin: 1, chef_admin: 2, superadmin: 3};
     const MON_RANG = RANGS[{{ role_admin | tojson }}] ?? 0;
-    // Un rôle inconnu compte comme le rang le plus HAUT : on n'affiche pas un
-    // bouton parce qu'on n'a pas su lire la cible. Même défaut fermé qu'en back.
+    // Un rôle inconnu compte comme le rang le plus haut.
     const estCibleProtegee = c =>
         MON_RANG <= (RANGS[c.role] ?? RANGS.superadmin);
-    // Changer un rôle est une capacité de rôle, pas une permission déléguable :
-    // elle se teste donc par le rôle, jamais par peut() (hierarchie-admin 2).
+    // Capacités de rôle, testées par le rôle.
     const PEUT_CHANGER_ROLE = {{ 'true' if role_admin in ('chef_admin', 'superadmin') else 'false' }};
-    // Lire le journal est une capacité de rôle (chef_admin et plus), comme
-    // l'onglet Logs : même condition, pour qu'un admin porteur de
-    // gestion_comptes ne voie pas un bouton qui le renverrait à l'accueil.
     const PEUT_LIRE_JOURNAL = {{ 'true' if role_admin in ('chef_admin', 'superadmin') else 'false' }};
     const PEUT_GERER_COMPTES = {{ 'true' if peut('gestion_comptes') else 'false' }};
-    // Sous-permissions (enfant -> parent), servies par le backend : affichage en
-    // retrait, case inactive tant que le parent manque, décochage en cascade.
-    // `tojson` échappe pour un contexte <script> ; l'autorité reste le backend,
-    // qui exige les deux permissions sur les routes concernées.
+    // Sous-permissions (enfant -> parent), servies par le backend.
     const SOUS_PERMISSIONS = {{ sous_permissions | tojson }};
 
     document.addEventListener('DOMContentLoaded', () => {
         const csrf = document.querySelector('meta[name="csrf-token"]').content;
         const alerte = document.getElementById('alerte');
 
-        // Toutes les valeurs affichées ici viennent de Discord (pseudo, avatar)
-        // ou d'un message libre saisi par un joueur. C'est la première surface
-        // de contenu non maîtrisé du site, et elle s'affiche chez un admin :
-        // on ne construit donc JAMAIS de HTML par concaténation. Chaque valeur
-        // passe par textContent, et les seules URL d'image acceptées sont
-        // celles du CDN Discord.
+        // Valeurs venues de Discord ou saisies par des joueurs : jamais de HTML
+        // par concaténation, tout passe par textContent.
         function txt(balise, contenu, classe) {
             const el = document.createElement(balise);
             el.textContent = contenu == null ? '' : String(contenu);
@@ -256,12 +221,7 @@
             return el;
         }
 
-        // Message d'échec d'un chargement. Passe par le message d'`api()` quand
-        // il y en a un -- sur un 429 du limiteur, il dit combien de temps
-        // attendre, ce que « Chargement impossible. » ne dit pas.
-        //
-        // Factorisé, et non répété sur chaque appelant : c'est ce qui évite que
-        // le prochain chargement ajouté réécrive le message générique en dur.
+        // Message d'échec d'un chargement, en reprenant celui d'api() (429).
         function echecChargement(conteneur, reponse) {
             const message = reponse && reponse.limite
                 ? (reponse.data || {}).error
@@ -269,8 +229,7 @@
             conteneur.appendChild(txt('p', message, 'has-text-danger'));
         }
 
-        // Icône Font Awesome sans innerHTML : la règle ci-dessus ne souffre pas
-        // d'exception « ce n'est qu'un littéral », sinon elle s'érode.
+        // Icône sans innerHTML.
         function icone(nom, classeSpan, classeIcone) {
             const span = document.createElement('span');
             span.className = classeSpan || 'icon';
@@ -295,9 +254,8 @@
             return fig;
         }
 
-        // Prépare un tableau à son affichage en cartes (`.table-cartes`, voir
-        // le style) : chaque cellule reçoit le titre de sa colonne. À rappeler
-        // après tout ajout de lignes -- la pagination des journaux.
+        // Ajoute le titre de colonne à chaque cellule (affichage en cartes).
+        // A rappeler après tout ajout de lignes.
         function etiqueter(table) {
             table.classList.add('table-cartes');
             const titres = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
@@ -305,10 +263,7 @@
                 [...tr.children].forEach((td, i) => { td.dataset.label = titres[i] || ''; }));
         }
 
-        // `discret` : afficher sans jamais bouger la page. Pour les gestes faits
-        // depuis un volet déplié plus bas (les cases de permissions), où
-        // remonter au bandeau fait perdre l'endroit où on travaillait -- il
-        // fallait redescendre pour cocher la case suivante.
+        // `discret` : afficher sans faire défiler la page.
         function afficher(type, texte, discret) {
             alerte.innerHTML = '';
             const d = document.createElement('div');
@@ -317,14 +272,10 @@
             alerte.appendChild(d);
 
             if (discret) return;
-            // Sinon on remonte : le bandeau vit en haut de page, et un message
-            // qu'on ne voit pas ne sert à rien.
             window.scrollTo({top: 0, behavior: 'smooth'});
         }
 
-        // Retour visuel SUR l'élément qu'on vient d'actionner, sans toucher au
-        // défilement. Sert aux gestes répétés (cocher plusieurs droits d'affilée)
-        // où un bandeau en haut de page oblige à faire l'aller-retour.
+        // Retour visuel sur l'élément actionné, sans défilement.
         function flash(hote, mot) {
             const ancien = hote.querySelector('.flash-droit');
             if (ancien) ancien.remove();
@@ -333,31 +284,20 @@
             hote.appendChild(t);
             setTimeout(() => {
                 t.style.opacity = '0';
-                // Retiré du DOM après le fondu : laisser des étiquettes mortes
-                // s'accumuler finirait par décaler la mise en page.
                 setTimeout(() => t.remove(), 400);
             }, 1600);
         }
 
-        // Confirmation avant tout changement de droits ou d'état d'un compte.
-        // Toujours nommer la cible : sur une liste de comptes, « Confirmer ? »
-        // ne dit pas sur QUI on est en train d'agir, et une ligne voisine se
-        // clique vite.
+        // Confirmation nommant la cible avant tout changement de droits ou d'état.
         function confirmer(action, cible, detail) {
             return confirm(action + '\n\nCompte : ' + (cible || '?')
                            + (detail ? '\n\n' + detail : ''));
         }
 
-        // Nom lisible d'un compte, pour les confirmations.
         const nomDe = c => c.pseudo || c.joueur_nom || ('compte #' + c.id);
 
         async function api(url, method = 'GET', body = null) {
-            // `Accept` explicite, comme apiCall() de gestion.js : il dit au
-            // frontend que c'est un appel de données, et non l'ouverture d'une
-            // page, donc qu'il n'a pas à revalider la session pour lui. Sans cet
-            // en-tête, `fetch()` envoie « */* », que le serveur doit traiter
-            // comme une navigation -- chaque appel de cette page repayait alors
-            // un aller-retour backend (docs/audit-503-zone-admin.md, §10.4).
+            // Accept explicite : appel de données, pas de revalidation de session.
             const opts = {method, headers: {'X-CSRFToken': csrf,
                                             'Accept': 'application/json'}};
             if (body !== null) {
@@ -368,15 +308,7 @@
             let data = null;
             try { data = await res.json(); } catch (e) { /* réponse vide */ }
 
-            // 429 = limiteur de débit nginx, pas une panne : la réponse est une
-            // page HTML, d'où le `data` vide. Message explicite plutôt que le
-            // « Chargement impossible. » générique, qui n'indique pas la seule
-            // chose utile -- attendre quelques secondes.
-            //
-            // Traité AVANT le 401/403, et surtout sans purger la session : un
-            // débit limité ne dit rien sur la validité de la session, et
-            // déconnecter ici ferait perdre son travail à quelqu'un qui a
-            // simplement cliqué trop vite.
+            // 429 (limiteur nginx) : message d'attente, sans purger la session.
             if (res.status === 429) {
                 const attente = parseInt(res.headers.get('Retry-After'), 10) || 5;
                 return {ok: false, status: 429, limite: true,
@@ -384,24 +316,17 @@
                                       + `${attente} secondes, puis rechargez.`}};
             }
 
-            // Session expirée pendant que la page était ouverte. Sans ce
-            // traitement, chaque appel affichait « Chargement impossible. » sans
-            // jamais dire pourquoi ni proposer de se reconnecter -- le serveur a
-            // déjà purgé la session, l'accueil affichera le message.
+            // Session expirée pendant que la page était ouverte.
             if (res.status === 401 || res.status === 403) {
                 window.location = '/';
-                // Laisse la navigation se faire : les appelants testent `ok`, et
-                // on ne veut pas qu'ils peignent une erreur au passage.
+                // Les appelants testent `ok`.
                 return {ok: false, status: res.status, data: {}, redirige: true};
             }
             return {ok: res.ok, status: res.status, data: data || {}};
         }
 
         // ---- Onglets ----
-        // Les onglets absents du gabarit sont ceux qu'on n'a pas le droit
-        // d'ouvrir : leur `<div>` de vue n'existe pas non plus. On travaille
-        // donc sur ce qui est RÉELLEMENT rendu -- un getElementById sur une vue
-        // absente renverrait null, et le TypeError casserait tout le script.
+        // Seules les vues rendues par le gabarit existent dans le DOM.
         const onglets = Array.from(document.querySelectorAll('.tabs li'))
                              .map(li => li.dataset.onglet);
 
@@ -431,8 +356,7 @@
         // ---- Demandes de liaison ----
         async function chargerLiaisons() {
             const vue = document.getElementById('vue-liaisons');
-            // Absente si la permission correspondante manque : la vue n'est
-            // alors pas rendue du tout (gates du gabarit).
+            // Vue absente sans la permission.
             if (!vue) return;
             const rep = await api('/admin/liaisons?statut=pending');
             const {ok, data} = rep;
@@ -463,7 +387,6 @@
 
                 const revend = document.createElement('p');
                 if (d.type === 'creation') {
-                    // Pas de fiche a montrer : c'est le nom propose qui compte.
                     revend.appendChild(txt('span', 'demande la '));
                     revend.appendChild(txt('strong', 'création'));
                     revend.appendChild(txt('span', ' de la fiche '));
@@ -499,8 +422,6 @@
                 actions.className = 'buttons mt-3';
                 const oui = txt('button', 'Approuver', 'button is-success is-small');
                 oui.addEventListener('click', async () => {
-                    // Ce geste rattache une identité Discord à une fiche joueur :
-                    // il valide une revendication que personne d'autre ne vérifie.
                     const creation = d.type === 'creation';
                     const fiche = creation ? d.nom_demande : (d.joueur && d.joueur.nom);
                     if (!confirmer(
@@ -522,19 +443,15 @@
                 });
                 const non = txt('button', 'Refuser', 'button is-danger is-light is-small');
                 non.addEventListener('click', async () => {
-                    // prompt() renvoie null sur « Annuler » et '' sur une
-                    // validation vide : le `|| ''` d'origine refusait la
-                    // demande dans les deux cas.
+                    // prompt() renvoie null sur « Annuler ».
                     const motif = prompt('Motif du refus (facultatif) :');
                     if (motif === null) return;
                     const r = await api('/admin/liaisons/' + d.id + '/reject', 'POST', {motif});
                     if (r.ok) { afficher('info', 'Demande refusée.'); chargerLiaisons(); }
                     else { afficher('danger', r.data.error || 'Échec.'); }
                 });
-                // Ce que le backend refuserait, grisé d'avance plutôt que
-                // découvert en 403 : sa propre demande (S-13), un compte de rang
-                // égal ou supérieur (S-11), un compte suspendu (S-04, approuver
-                // seulement : refuser reste possible pour vider la file).
+                // Boutons grisés d'avance : sa propre demande, rang égal ou
+                // supérieur, compte suspendu (approbation seulement).
                 const bloque = d.est_moi
                     ? 'On ne statue pas sur sa propre demande : un autre administrateur doit le faire.'
                     : d.hors_de_portee
@@ -559,10 +476,7 @@
         // ---- Comptes ----
         async function chargerComptes() {
             const vue = document.getElementById('vue-comptes');
-            // Absente si on n'a pas `gestion_comptes`. Approuver une liaison
-            // rafraîchit cette vue au passage : sans ce garde, un admin qui n'a
-            // que `gestion_liaisons` déclencherait une TypeError à chaque
-            // approbation, et le reste du script mourrait avec.
+            // Vue absente sans gestion_comptes.
             if (!vue) return;
             const rep = await api('/admin/api/comptes');
             const {ok, data} = rep;
@@ -587,8 +501,7 @@
                 tdAv.appendChild(avatar(c.avatar_url));
                 tr.appendChild(tdAv);
 
-                // Nom affiché, et en dessous le handle : c'est lui que le legs et
-                // la suppression font retaper, il doit se lire sur la ligne.
+                // Nom affiché, et le handle en dessous.
                 const tdD = txt('td', c.pseudo, 'cellule-titre');
                 if (c.handle) {
                     tdD.appendChild(document.createElement('br'));
@@ -611,15 +524,11 @@
                 tr.appendChild(txt('td', c.statut));
 
                 const tdR = document.createElement('td');
-                // Qui peut agir sur qui : une seule règle de rang, la même qu'en
-                // backend — on n'agit que sur un compte STRICTEMENT moins
-                // privilégié, et jamais sur soi. Le backend reste seul juge,
-                // ceci évite d'afficher un contrôle voué au 403.
+                // Même règle de rang qu'en backend, et jamais sur soi.
                 const cibleProtegee = estCibleProtegee(c);
                 if (PEUT_CHANGER_ROLE && !cibleProtegee && c.id !== MON_COMPTE_ID) {
                     const sel = document.createElement('select');
-                    // superadmin n'est jamais dans cette liste : il ne s'attribue
-                    // pas, il se lègue. chef_admin seulement pour le superadmin.
+                    // superadmin se lègue ; chef_admin réservé au superadmin.
                     const choix = EST_SUPERADMIN
                         ? ['player', 'admin', 'chef_admin']
                         : ['player', 'admin'];
@@ -630,25 +539,11 @@
                         sel.appendChild(o);
                     });
                     sel.addEventListener('change', async () => {
-                        // Deux chemins depuis le 2026-09-18, et ils ne font pas
-                        // la même chose :
-                        //
-                        //   - PROMOUVOIR (admin, chef_admin) → on PROPOSE. Le
-                        //     rôle n'est posé qu'à l'acceptation, par la
-                        //     personne elle-même : ses actions seront tracées
-                        //     nominativement et sans limite de durée.
-                        //   - RÉTROGRADER → inchangé, unilatéral. On n'a pas à
-                        //     accepter de PERDRE un rôle.
-                        //
-                        // Comparer les RANGS, pas « est-ce player » : un
-                        // chef_admin ramené à admin descend. Le backend refuse
-                        // désormais chaque chemin dans le mauvais sens
-                        // (promotion_par_proposition, pas_une_promotion).
+                        // Promotion -> proposition (acceptée par la personne) ;
+                        // rétrogradation -> changement direct.
                         const promotion = RANGS[sel.value] > RANGS[c.role];
 
-                        // Le sélecteur a DÉJÀ changé d'apparence quand on arrive
-                        // ici : annuler doit le remettre sur le rôle réel, sinon
-                        // l'écran affirme un rôle que la base n'a pas.
+                        // Annuler remet le sélecteur sur le rôle réel.
                         if (!confirmer(
                                 promotion
                                     ? 'Proposer le rôle ' + sel.value + ' ?'
@@ -665,9 +560,7 @@
                         if (promotion) {
                             const rp = await api('/admin/comptes/' + c.id + '/promotion',
                                                  'POST', {role: sel.value});
-                            // Le sélecteur ne doit PAS rester sur le rôle
-                            // proposé : la base porte toujours l'ancien, et
-                            // l'afficher ferait croire que c'est fait.
+                            // Le rôle reste l'ancien jusqu'à l'acceptation.
                             sel.value = c.role;
                             if (rp.ok) afficher('success', 'Proposition envoyée. En attente de sa réponse.');
                             else afficher('danger', rp.data.error || 'Échec.');
@@ -677,9 +570,7 @@
 
                         const corps = {role: sel.value};
                         let r = await api('/admin/comptes/' + c.id + '/role', 'POST', corps);
-                        // R-60 : retomber à zéro chef_admin retire le filet qui
-                        // protège d'un verrouillage du superadmin. Jamais un clic
-                        // silencieux -- on redemande, puis on renvoie le drapeau.
+                        // Dernier chef_admin : confirmation explicite.
                         if (!r.ok && r.data.code === 'dernier_chef_admin') {
                             if (confirm(r.data.error + '\n\nContinuer ?')) {
                                 corps.confirmer_dernier_chef_admin = true;
@@ -736,11 +627,9 @@
                 const actions = document.createElement('div');
                 const sensibles = document.createElement('div');
 
-                // Les quatre gestes ci-dessous passent tous par
-                // @compte_cible_protegee : sur une cible de rang égal ou
-                // supérieur, ils répondent 403. Les afficher quand même
-                // promettait une action impossible (plan §B.0). Agir sur SOI
-                // reste permis : le décorateur laisse passer ce cas.
+                // Ces actions passent par @compte_cible_protegee (403 sur une
+                // cible de rang égal ou supérieur) : on ne les affiche pas.
+                // Agir sur soi reste permis.
                 const peutAgir = PEUT_GERER_COMPTES
                     && (c.id === MON_COMPTE_ID || !cibleProtegee);
 
@@ -761,7 +650,7 @@
                     actions.appendChild(b);
                 }
 
-                // Désynchroniser : n'a de sens que sur un compte rattaché.
+                // Désynchroniser : compte rattaché seulement.
                 if (c.joueur_nom && peutAgir) {
                     const bDel = txt('button', 'Désynchroniser', 'button is-warning is-light is-small');
                     bDel.addEventListener('click', async () => {
@@ -795,8 +684,7 @@
                     const bSusp = txt('button', suspendu ? 'Réactiver' : 'Suspendre',
                                       'button is-small ' + (suspendu ? 'is-success is-light' : 'is-danger is-light'));
                     bSusp.addEventListener('click', async () => {
-                        // « actif » : le backend en déduit lié ou en attente
-                        // selon la fiche (S-17), plus de valeur à inventer ici.
+                        // « actif » : le backend choisit lié ou en attente.
                         const cible = suspendu ? 'actif' : 'suspended';
                         if (!confirmer(suspendu ? 'Réactiver ce compte ?' : 'Suspendre ce compte ?',
                                        nomDe(c),
@@ -811,39 +699,15 @@
                     sensibles.appendChild(bSusp);
                 }
 
-                // Permissions à la carte : n'ont de sens que sur un admin. Un
-                // player n'a rien à recevoir, un chef_admin a déjà tout le
-                // catalogue par son socle -- lui afficher des cases à cocher
-                // laisserait croire qu'on peut lui en retirer.
+                // Permissions à la carte : comptes admin seulement.
                 if (PEUT_CHANGER_ROLE && c.role === 'admin' && c.id !== MON_COMPTE_ID) {
                     const bPerm = txt('button', 'Permissions', 'button is-link is-light is-small');
                     bPerm.addEventListener('click', () => ouvrirPermissions(c));
                     actions.appendChild(bPerm);
                 }
 
-                // Logs : le bouton n'apparaît QUE si la lecture est permise.
-                //
-                // La règle (arbitrée le 2026-09-19) n'est PAS celle des autres
-                // boutons de cette ligne : un chef_admin peut LIRE le journal
-                // d'un pair, alors qu'il ne peut pas AGIR sur lui. Lire n'est
-                // pas agir, et c'est entre gens de même rang que la
-                // surveillance mutuelle a du sens. Seul le superadmin reste
-                // hors de portée.
-                //
-                // Rejouée ici pour ne jamais afficher un bouton menant à un
-                // refus prévisible (§B.0), et revérifiée côté backend -- c'est
-                // là qu'elle protège.
-                //
-                // Deux conditions de plus depuis le 2026-09-22 :
-                //
-                // - le LECTEUR doit être chef_admin ou superadmin. Sans elle, un
-                //   admin porteur de gestion_comptes voyait le bouton partout,
-                //   et le 403 de la route le renvoyait à l'accueil ;
-                // - le compte doit avoir AGI au moins une fois
-                //   (`a_un_journal`). Le volet ne montre que ses actions : sur
-                //   un joueur qui n'a jamais été admin, il était vide. Un
-                //   ancien admin redevenu player garde, lui, son bouton --
-                //   masquer ses lignes serait mentir.
+                // Logs : lecteur chef_admin ou superadmin, cible autre que le
+                // superadmin (pairs compris), et compte ayant déjà agi.
                 const lisible = PEUT_LIRE_JOURNAL && c.a_un_journal
                     && RANGS[c.role] !== undefined
                     && (EST_SUPERADMIN || c.role !== 'superadmin');
@@ -853,11 +717,8 @@
                     actions.appendChild(bLogs);
                 }
 
-                // Legs : seul le superadmin le propose, jamais sur sa propre
-                // ligne (auto-legs refusé côté backend, plan 6bis), et
-                // seulement vers un admin ou chef_admin : la cible doit avoir
-                // consenti à un rôle d'administration (R-68). Le backend
-                // vérifie en plus la version de la politique acceptée.
+                // Legs : superadmin seulement, vers un admin ou chef_admin,
+                // jamais sur sa propre ligne.
                 if (EST_SUPERADMIN && c.id !== MON_COMPTE_ID
                         && (c.role === 'admin' || c.role === 'chef_admin')) {
                     const bLegs = txt('button', 'Léguer le superadmin',
@@ -866,10 +727,8 @@
                     sensibles.appendChild(bLegs);
                 }
 
-                // Suppression : seul chemin d'effacement d'un compte depuis le
-                // 2026-09-22 -- le titulaire la demande par écrit, le
-                // superadmin l'exécute ici. Jamais sur sa propre ligne (refusé
-                // côté backend : le superadmin est unique).
+                // Suppression (sur demande écrite) : superadmin seulement,
+                // jamais sur sa propre ligne.
                 if (EST_SUPERADMIN && c.id !== MON_COMPTE_ID && c.role !== 'superadmin') {
                     const bSuppr = txt('button', 'Supprimer le compte',
                                        'button is-danger is-small');
@@ -898,11 +757,8 @@
         }
 
         // ---- Fenêtre des actions d'un compte ----
-        // Les boutons sont construits par chargerComptes(), handlers compris :
-        // on les déplace simplement dans la modale. Un clic sur l'un d'eux
-        // ferme d'abord la fenêtre (écouteur en phase de capture, donc avant
-        // le handler) : le confirm() qui suit, ou le volet déplié sous la
-        // table, ne doit pas s'afficher derrière elle.
+        // Les boutons de chargerComptes() y sont déplacés ; un clic ferme
+        // d'abord la fenêtre (écouteur en capture).
         const modaleActions = document.getElementById('modale-actions');
         function fermerActions() { modaleActions.classList.remove('is-active'); }
         modaleActions.querySelectorAll('[data-fermer]').forEach(el =>
@@ -911,8 +767,7 @@
             if (ev.key === 'Escape') fermerActions();
         });
 
-        // Icône et couleur de chaque geste, par libellé : les boutons sont
-        // construits ailleurs, on ne fait que les habiller.
+        // Icône et couleur de chaque action, par libellé.
         const HABIT_ACTION = {
             'Synchroniser le pseudo': ['fa-rotate', 'has-text-info'],
             'Désynchroniser': ['fa-link-slash', 'has-text-warning'],
@@ -979,20 +834,10 @@
             if (premier) premier.focus();
         }
 
-        // ---- Permissions à la carte ----
-        // Panneau déplié sous la ligne du compte plutôt qu'une modale : les
-        // cases se cochent une par une, chacune est un appel réseau, et voir la
-        // ligne d'origine pendant qu'on les manipule évite de se tromper de
-        // compte.
-        // -------------------------------------------------------------
-        // Journal d'audit : le volet d'une ligne
-        // -------------------------------------------------------------
-        // Même patron que `ouvrirPermissions()` : un volet déplié sous la
-        // ligne, pas une modale. Rien de neuf à inventer côté affichage.
+        // ---- Permissions à la carte et journal d'audit ----
+        // Volets dépliés sous la ligne du compte.
 
-        // Les actions en clair. Une table plutôt qu'un `replace('_',' ')` :
-        // `joueurs_irreversible` deviendrait « joueurs irreversible », et
-        // `reset_global_applique` ne dirait toujours pas ce qui s'est passé.
+        // Libellés des actions du journal.
         const LIBELLES_ACTION = {
             joueur_modifie: 'Fiche modifiée', joueur_cree: 'Fiche créée',
             joueur_supprime: 'Fiche supprimée', joueur_anonymise: 'Fiche anonymisée',
@@ -1027,13 +872,8 @@
                  hour: '2-digit', minute: '2-digit'});
         }
 
-        // Résume `details` en une phrase. Le JSON brut est consultable au
-        // survol : lisible pour qui cherche, discret pour qui parcourt.
-        // Les valeurs sont affichées telles quelles, sauf mu et sigma : TrueSkill
-        // produit 43.48509823646072, que personne ne lit. On arrondit à la
-        // précision de la modale (3 décimales), la même qui sert à décider
-        // qu'un champ a changé -- sinon la ligne dirait « 43.485 → 43.486 »
-        // pour l'un et afficherait 14 décimales pour l'autre.
+        // Résume `details` en une phrase (JSON brut au survol). mu et sigma
+        // arrondis à 3 décimales, comme dans la modale.
         function valeurLisible(champ, v) {
             if ((champ === 'mu' || champ === 'sigma') && typeof v === 'number') {
                 return v.toFixed(3);
@@ -1049,19 +889,14 @@
 
         function resumeDetails(l) {
             const d = l.details || {};
-            // La fiche concernée d'abord : « fiche 7 modifiée » oblige sinon à
-            // aller chercher qui est le joueur 7 -- ou à le deviner, si elle a
-            // été renommée depuis.
+            // Nom de la fiche concernée en premier.
             const sujet = d.joueur_nom ? d.joueur_nom + ' — ' : '';
             if (l.action === 'joueur_modifie' && d.avant && d.apres) {
                 return sujet + (d.champs || []).map(c =>
                     c + ' : ' + valeurLisible(c, d.avant[c]) + ' → ' + valeurLisible(c, d.apres[c])
                 ).join(', ');
             }
-            // Tier : ce qui a changé, pas seulement lequel. Les lignes d'avant
-            // le 2026-09-28 n'ont pas `changements` -- leur `champs` citait
-            // tout ce que le panneau envoyait, changé ou non : on s'en tient
-            // au nom plutôt que de le recopier.
+            // Tier : détail des changements (absent des lignes anciennes).
             if (l.action === 'tier_modifie' && d.changements) {
                 return d.nom + ' — ' + Object.entries(d.changements).map(([c, [a, b]]) =>
                     (CHAMPS_TIER[c] || c) + ' : ' + valeurTier(c, a) + ' → ' + valeurTier(c, b)
@@ -1084,9 +919,7 @@
 
                 const tdA = document.createElement('td');
                 tdA.appendChild(txt('span', libelleAction(l.action), 'has-text-weight-semibold'));
-                // `score_modifie` est le drapeau qui répond à la question
-                // d'origine : repérer une modification de score parmi les
-                // renommages, sans lire chaque ligne.
+                // Signale une modification de score.
                 if (l.details && l.details.score_modifie) {
                     tdA.appendChild(txt('span', 'score', 'tag is-warning is-light ml-2'));
                 }
@@ -1094,8 +927,6 @@
 
                 const tdQ = document.createElement('td');
                 tdQ.appendChild(document.createTextNode(l.acteur_pseudo || '—'));
-                // Le dire explicitement : sans ça on lit un pseudo sans savoir
-                // que le compte n'existe plus.
                 if (l.acteur_supprime) {
                     const tag = txt('span', 'compte supprimé', 'tag is-light ml-2');
                     tag.title = 'Le compte a été supprimé ; son identité est '
@@ -1122,9 +953,7 @@
 
             const boite = document.createElement('div');
             boite.id = 'panneau-journal';
-            // PAS de `fade-in` : elle pose opacity:0 et attend `visible`,
-            // ajoutée par gestion.js -- non chargé ici. Le panneau serait
-            // construit, inséré, et parfaitement invisible.
+            // Pas de `fade-in` : `visible` est ajoutée par gestion.js, absent ici.
             boite.className = 'card glass-card mt-5';
             boite.style.border = '1px solid rgba(59, 130, 246, 0.35)';
 
@@ -1160,8 +989,7 @@
                 etiqueter(table);
                 contenu.appendChild(table);
 
-                // Pagination par curseur : le bouton se supprime lui-même
-                // quand il n'y a plus rien après, plutôt que de rester grisé.
+                // Pagination par curseur.
                 if (r.data.avant_id) {
                     const plus = txt('button', 'Charger les suivantes',
                                      'button is-small is-light');
@@ -1199,14 +1027,11 @@
 
             const boite = document.createElement('div');
             boite.id = 'panneau-permissions';
-            // PAS de classe `fade-in` : elle pose opacity:0 et attend la classe
-            // `visible`, ajoutée par gestion.js -- qui n'est pas chargé sur cette
-            // page. Le panneau serait construit, inséré, et parfaitement
-            // invisible.
+            // Pas de `fade-in` : `visible` est ajoutée par gestion.js, absent ici.
             boite.className = 'card glass-card mt-5';
             boite.style.border = '1px solid rgba(59, 130, 246, 0.35)';
 
-            // -- En-tête : de qui parle-t-on, et combien de droits --------------
+            // En-tête
             const entete = document.createElement('div');
             entete.className = 'card-header';
             const titre = document.createElement('p');
@@ -1232,14 +1057,9 @@
             const accordees = new Set(r.data.permissions || []);
             const delegables = new Set(r.data.delegables || []);
 
-            // Le catalogue vient du backend : c'est lui qui fait autorité sur ce
-            // qui existe. Ce dictionnaire n'ajoute que du texte lisible -- une
-            // permission qu'il ne connaîtrait pas reste affichée, sous son nom
-            // technique, plutôt que de disparaître silencieusement.
-            // Chaque description dit ce que la personne POURRA FAIRE, pas de quel
-            // domaine elle relève : « Paramètres globaux du calcul TrueSkill »
-            // ne permet à personne de décider s'il faut cocher la case.
-            // 4e élément optionnel : l'avertissement des droits à effet large.
+            // Libellés des permissions (le catalogue vient du backend ; une
+            // permission inconnue reste affichée sous son nom technique).
+            // 4e élément optionnel : avertissement pour les droits à effet large.
             const LIBELLES = {
                 gestion_joueurs:     ['Fiches joueurs', 'fa-users-cog',
                                       'Ouvrir l\'onglet Fiches joueurs et consulter la liste.',
@@ -1299,62 +1119,39 @@
             };
             majCompteur();
 
-            // Accordées d'abord : on voit ce que le compte PEUT faire avant ce
-            // qu'il ne peut pas, plutôt qu'un ordre alphabétique qui les mélange.
-            //
-            // Une sous-permission est triée avec SON PARENT (même rang, puis
-            // juste après lui) : sinon « Fiches joueurs » accordée et sa
-            // sous-permission refusée se retrouveraient aux deux extrémités de
-            // la liste, et le retrait ne voudrait plus rien dire visuellement.
+            // Accordées d'abord ; une sous-permission reste juste après son parent.
             const rang = p => SOUS_PERMISSIONS[p] || p;
             const cle = p => (LIBELLES[rang(p)]?.[0] || rang(p));
-            // Épinglées en tête, accordées ou non : ce sont les droits qu'on
-            // vient chercher en premier en ouvrant ce panneau. Ordre du menu
-            // Admin, où « Gestion tournois » est aussi la première entrée.
+            // Épinglées en tête.
             const EPINGLEES = ['gestion_tournois'];
             const epingle = p => {
                 const i = EPINGLEES.indexOf(rang(p));
                 return i === -1 ? EPINGLEES.length : i;
             };
-            // `cle` vaut le libellé du PARENT pour une sous-permission : tout un
-            // groupe partage donc la même, et c'est ce qui le garde d'un seul
-            // tenant. Les deux derniers critères ordonnent l'intérieur du
-            // groupe -- sans eux, six enfants à clé identique se retrouvaient
-            // dans un ordre arbitraire, parent parfois au milieu.
+            // Tri à l'intérieur d'un groupe : le parent, puis ses enfants par libellé.
             const ordreInterne = p => SOUS_PERMISSIONS[p]
-                ? (LIBELLES[p]?.[0] || p) : '';   // '' trie le parent en tête
+                ? (LIBELLES[p]?.[0] || p) : ''; // '' place le parent en tête
             const toutes = Array.from(new Set([...delegables, ...accordees]))
                 .sort((a, b) => (epingle(a) - epingle(b))
                                 || (accordees.has(rang(b)) - accordees.has(rang(a)))
                                 || cle(a).localeCompare(cle(b))
-                                // Le parent avant ses enfants, puis les enfants
-                                // entre eux, par libellé.
                                 || ((SOUS_PERMISSIONS[a] ? 1 : 0) - (SOUS_PERMISSIONS[b] ? 1 : 0))
                                 || ordreInterne(a).localeCompare(ordreInterne(b)));
 
-            // Registre des cases rendues : le parent doit pouvoir agir sur la
-            // sienne quand on le décoche, sans relire le DOM.
             const cases = {};
-            // Rafraîchisseurs des compteurs « n/6 accordés ». Le panneau n'est
-            // jamais redessiné (cela ferait perdre l'endroit où l'on travaille),
-            // donc chaque compteur se met à jour lui-même.
+            // Compteurs « n/6 accordés », mis à jour sans redessiner le panneau.
             const compteursGroupe = {};
             const majGroupe = parent => compteursGroupe[parent]?.();
 
-            // Un groupe se referme dès que la ligne suivante ne lui appartient
-            // plus. Sans cette borne, six enfants alignés se lisent comme six
-            // droits indépendants qui se trouvent être décalés.
             const memeGroupe = (a, b) => b !== undefined && rang(a) === rang(b);
 
             toutes.forEach((p, idx) => {
                 const [nom, ic, desc, alerte] = LIBELLES[p] || [p, 'fa-circle-dot', ''];
                 const horsPortee = !delegables.has(p);
                 const parent = SOUS_PERMISSIONS[p];
-                // Une sous-permission n'est activable que si son parent l'est :
-                // le backend exige les deux, une case cochable sans effet serait
-                // exactement le bouton menant à un 403 prévisible qu'on évite.
+                // Sous-permission inactive tant que le parent manque.
                 const parentManquant = parent && !accordees.has(parent);
-                // Dernier enfant du groupe : sa ligne ferme le liseré par le bas.
+                // Dernier enfant du groupe : ferme le liseré.
                 const finDeGroupe = parent && !memeGroupe(p, toutes[idx + 1]);
 
                 const ligne = document.createElement('label');
@@ -1364,19 +1161,12 @@
                     'gap:.75rem; border-radius:6px; cursor:'
                     + (horsPortee || parentManquant ? 'not-allowed' : 'pointer')
                     + '; background:rgba(255,255,255,.03); border:1px solid transparent;'
-                    // Décalage et liseré : la sous-permission se lit comme
-                    // rattachée à la ligne du dessus, pas comme un droit de plus.
-                    // Coins carrés à gauche pour que le liseré des lignes
-                    // successives forme un trait continu, pas six segments.
+                    // Retrait et liseré continu pour les sous-permissions.
                     + (parent ? 'margin-left:2rem; border-left:2px solid rgba(59,130,246,.35);'
                               + 'border-top-left-radius:0; border-bottom-left-radius:0;' : '')
-                    // .75 et non .55 : une ligne hors de portée doit se voir comme
-                    // inactive, pas devenir illisible -- son intitulé reste une
-                    // information utile (« ce droit existe, mais pas pour vous »).
                     + (horsPortee || parentManquant ? 'opacity:.75;' : '');
                 if (!horsPortee && !parentManquant) {
-                    // Ne touche qu'aux bords haut/droite/bas : `borderColor` en
-                    // bloc écraserait le liseré gauche d'une sous-permission.
+                    // Ne pas écraser le liseré gauche.
                     ligne.addEventListener('mouseenter', () => {
                         ligne.style.background = 'rgba(59,130,246,.10)';
                         ligne.style.borderTopColor = 'rgba(59,130,246,.35)';
@@ -1395,15 +1185,11 @@
                 case_.type = 'checkbox';
                 case_.checked = accordees.has(p);
                 case_.style.marginTop = '.25rem';
-                // Grisée au-delà du plafond de l'acteur : défensif seulement,
-                // le backend refuserait de toute façon (plan 2, contrainte 5).
-                // Grisée aussi tant que le parent n'est pas accordé.
+                // Grisée au-delà du plafond de l'acteur ou si le parent manque.
                 case_.disabled = horsPortee || parentManquant;
                 cases[p] = case_;
                 case_.addEventListener('change', async () => {
-                    // Confirmation avant d'écrire : la case a déjà basculé
-                    // visuellement, annuler doit donc la remettre comme elle
-                    // était, sinon l'écran affiche un droit qui n'existe pas.
+                    // La case a déjà basculé : annuler doit la remettre.
                     const enfants = Object.keys(SOUS_PERMISSIONS)
                         .filter(e => SOUS_PERMISSIONS[e] === p && accordees.has(e));
                     if (!confirmer(
@@ -1429,9 +1215,7 @@
                     if (rep.ok) {
                         if (case_.checked) { accordees.add(p); } else { accordees.delete(p); }
 
-                        // Répercuter sur les sous-permissions : le backend les
-                        // emporte avec leur parent, l'affichage doit dire la
-                        // même chose sans exiger un rechargement.
+                        // Les sous-permissions partent avec leur parent.
                         let emportees = 0;
                         Object.keys(SOUS_PERMISSIONS).forEach(enfant => {
                             if (SOUS_PERMISSIONS[enfant] !== p || !cases[enfant]) return;
@@ -1443,22 +1227,16 @@
                             }
                         });
 
-                        // Le compteur du groupe : celui de ce parent s'il en est
-                        // un, celui de son parent si c'est un enfant qu'on vient
-                        // de cocher.
                         majGroupe(p);
                         if (parent) majGroupe(parent);
 
                         majCompteur();
-                        // Aucun bandeau en haut de page sur un succès : la case
-                        // cochée et le compteur du panneau disent déjà ce qui
-                        // s'est passé, et remonter ferait perdre l'endroit où on
-                        // travaille. Le retour se fait SUR la ligne.
+                        // Succès signalé sur la ligne, sans remonter la page.
                         flash(entete_l, case_.checked ? 'accordé' : 'retiré'
                               + (emportees ? ' (avec sa sous-autorisation)' : ''));
                     } else {
-                        case_.checked = !case_.checked;   // on rejoue l'état réel
-                        // Un échec, lui, doit se voir : on remonte au bandeau.
+                        case_.checked = !case_.checked; // retour à l'état réel
+                        // Un échec remonte au bandeau.
                         afficher('danger', rep.data.error || 'Échec.');
                     }
                 });
@@ -1472,9 +1250,7 @@
                 entete_l.style.gap = '.5rem';
                 entete_l.appendChild(icone(ic, 'icon is-small', 'has-text-link'));
                 entete_l.appendChild(txt('span', nom, 'has-text-weight-semibold'));
-                // Un parent annonce son groupe : « 2/6 accordés » dit d'un coup
-                // d'œil où en est le compte, là où six cases décalées obligent à
-                // les compter une par une.
+                // Compteur du groupe sur la ligne du parent.
                 const mesEnfants = Object.keys(SOUS_PERMISSIONS)
                     .filter(e => SOUS_PERMISSIONS[e] === p);
                 if (mesEnfants.length) {
@@ -1490,8 +1266,7 @@
                 if (horsPortee) {
                     entete_l.appendChild(txt('span', 'hors de votre portée', 'tag is-light'));
                 } else if (parentManquant) {
-                    // Dit POURQUOI la case est inactive : sans ça, elle passerait
-                    // pour un bug plutôt que pour une dépendance.
+                    // Explique pourquoi la case est inactive.
                     entete_l.appendChild(txt(
                         'span',
                         'nécessite « ' + (LIBELLES[parent]?.[0] || parent) + ' »',
@@ -1503,22 +1278,16 @@
                     bloc.appendChild(txt('p', desc, 'has-text-grey-light is-size-7 mt-1'));
                 }
 
-                // Les droits à portée large le disent : c'est au moment de cocher
-                // que l'information est utile, pas dans une documentation.
                 if (alerte) {
                     const av = document.createElement('p');
-                    // has-text-warning (et non -dark) : le fond est sombre, le
-                    // jaune foncé de Bulma y serait illisible.
+                    // has-text-warning : lisible sur fond sombre.
                     av.className = 'is-size-7 mt-1 has-text-warning';
                     av.appendChild(icone('fa-triangle-exclamation', 'icon is-small mr-1'));
                     av.appendChild(document.createTextNode(alerte));
                     bloc.appendChild(av);
                 }
 
-                // Le nom technique : c'est lui qu'on lit dans l'audit et les logs,
-                // il doit donc rester déchiffrable. Une pastille discrète le range
-                // sous le libellé sans le noyer -- l'atténuer par une opacité le
-                // rendait illisible sur ce fond sombre.
+                // Nom technique (celui des journaux).
                 const tech = txt('code', p, 'is-size-7 mt-2');
                 tech.style.cssText =
                     'display:inline-block; background:rgba(255,255,255,.07);'
@@ -1541,9 +1310,7 @@
 
         // ---- Legs du rôle superadmin ----
         async function leguerSuperadmin(c) {
-            // Deux confirmations, et la seconde n'est pas décorative : le pseudo
-            // retapé est vérifié par le backend contre discord_username. Un clic
-            // seul ne doit pas pouvoir transmettre le rôle.
+            // Double confirmation : le handle retapé est vérifié par le backend.
             const avertissement =
                 'Léguer le rôle superadmin à « ' + c.pseudo + ' » ?\n\n'
                 + 'Vous PERDREZ ce rôle et deviendrez chef_admin.\n'
@@ -1560,9 +1327,7 @@
             const r = await api('/admin/comptes/' + c.id + '/leguer-superadmin', 'POST',
                                 {confirmation_pseudo: saisi});
             if (r.ok) {
-                // Le backend a fermé nos sessions, celle-ci comprise (A-02) :
-                // tout appel suivant serait un 401. Le message attend au retour
-                // de Discord (déposé par le proxy).
+                // Le backend a fermé nos sessions : reconnexion.
                 window.location.href = '/auth/discord/login';
             } else {
                 afficher('danger', r.data.error || 'Échec.');
@@ -1571,9 +1336,7 @@
 
         // ---- Suppression d'un compte, sur demande écrite ----
         async function supprimerCompte(c) {
-            // Même double confirmation que le legs, pour la même raison : le
-            // pseudo retapé est vérifié par le backend contre discord_username.
-            // Un clic seul ne doit pas pouvoir effacer une identité.
+            // Double confirmation, comme pour le legs.
             if (!confirmer('Supprimer définitivement ce compte ?', nomDe(c),
                            'À faire UNIQUEMENT sur demande écrite de son titulaire, '
                            + 'après avoir vérifié qu\'elle vient bien de lui.\n\n'
@@ -1604,8 +1367,7 @@
         // ---- Invitations ----
         async function chargerInvitations() {
             const vue = document.getElementById('vue-invitations');
-            // Absente si la permission correspondante manque : la vue n'est
-            // alors pas rendue du tout (gates du gabarit).
+            // Vue absente sans la permission.
             if (!vue) return;
             vue.innerHTML = '';
 
@@ -1619,8 +1381,7 @@
 
             const champUses = document.createElement('input');
             champUses.className = 'input mb-2';
-            // Plafonds recopies de constants.py (INVITATION_MAX_*) pour guider la
-            // saisie ; le backend reste la frontiere et refuse au-dela (S-08).
+            // Plafonds de constants.py (INVITATION_MAX_*), verifies par le backend.
             champUses.type = 'number'; champUses.min = '1'; champUses.max = '50'; champUses.value = '1';
 
             const champHeures = document.createElement('input');
@@ -1694,8 +1455,7 @@
                 if (etat === 'active') {
                     const b = txt('button', 'Révoquer', 'button is-danger is-light is-small');
                     b.addEventListener('click', async () => {
-                        // Irréversible : le lien cesse de fonctionner, et celui
-                        // à qui on l'a envoyé ne pourra plus s'inscrire.
+                        // Irréversible : le lien cesse de fonctionner.
                         if (!confirmer('Révoquer cette invitation ?',
                                        i.label || ('invitation #' + i.id),
                                        'Le lien cessera immédiatement de fonctionner.')) return;
@@ -1716,10 +1476,7 @@
         // ---- Jetons de bot ----
         const SCOPES = ['read:joueurs', 'read:classement', 'matchmaking'];
 
-        // ---- Onglet Logs : le journal complet ----
-        // Réutilise la même requête que le volet d'une ligne, sans filtre
-        // d'acteur. Les lignes restent lisibles même si le compte n'est plus
-        // admin, ou n'existe plus -- c'est tout l'intérêt de cette vue.
+        // ---- Onglet Logs : journal complet ----
         async function chargerLogs() {
             const vue = document.getElementById('vue-logs');
             if (!vue) return;
@@ -1728,10 +1485,7 @@
             const r = await api('/admin/audit');
             if (!r.ok) { echecChargement(vue, r); return; }
 
-            // Le téléchargement est un <a> et non un fetch : le navigateur
-            // doit écrire le fichier au fil de l'eau. Un fetch le chargerait
-            // entièrement en mémoire avant de le rendre, ce qui annulerait le
-            // streaming côté serveur.
+            // Téléchargement par un lien (streaming), pas par fetch.
             const barre = document.createElement('div');
             barre.className = 'level mb-4';
             const gauche = document.createElement('div');
@@ -1792,8 +1546,7 @@
 
         async function chargerBots() {
             const vue = document.getElementById('vue-bots');
-            // Absente si la permission correspondante manque : la vue n'est
-            // alors pas rendue du tout (gates du gabarit).
+            // Vue absente sans la permission.
             if (!vue) return;
             vue.innerHTML = '';
 
@@ -1912,9 +1665,7 @@
             liste.appendChild(table);
         }
 
-        // Ouvre le premier onglet AUTORISÉ, pas « Demandes de liaison » en dur :
-        // un admin qui n'a que `gestion_invitations` chargeait sinon une vue
-        // absente du gabarit.
+        // Ouvre le premier onglet autorisé.
         if (onglets.length) montrer(onglets[0]);
     });
     </script>

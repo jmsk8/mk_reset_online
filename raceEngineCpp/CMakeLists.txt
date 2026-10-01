@@ -1,11 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
-# C ET CXX : uSockets, la couche reseau sous uWebSockets, est ecrite en C. Sans
-# le `C` ici, CMake ne sait pas quel compilateur employer pour ses .c et refuse
-# de lier la cible.
+# C et CXX : uSockets est ecrit en C.
 project(race_engine C CXX)
 
-# C++20 pour std::to_chars sur les doubles (representation decimale la plus
-# courte, cf. plan §5.4) et les designated initializers des structs de donnees.
+# C++20 pour std::to_chars sur les doubles et les designated initializers.
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -16,10 +13,8 @@ endif()
 
 include(FetchContent)
 
-# uWebSockets par FetchContent sur un tag fige, jamais en submodule : le depot
-# n'en a aucun, et le Dockerfile JS epingle ses dependances de la meme facon
-# (`npm install --omit=dev`). uSockets est la couche C sous uWS, livree dans le
-# meme depot et compilee a la main : elle n'a pas de CMakeLists.
+# uWebSockets par FetchContent sur un tag fige ; uSockets (couche C) est compile
+# a la main, faute de CMakeLists.
 FetchContent_Declare(
     uwebsockets
     GIT_REPOSITORY https://github.com/uNetworking/uWebSockets.git
@@ -28,26 +23,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(uwebsockets)
 
-# Les sources sont listees UNE PAR UNE, jamais par `file(GLOB)` : un glob
-# s'evalue a la configuration, avant meme que FetchContent ait telecharge quoi
-# que ce soit — la cible sortait vide, sans langage, et CMake refusait de la
-# lier. La liste explicite dit aussi ce qu'on N'EMBARQUE PAS : ni OpenSSL, ni
-# libuv, ni io_uring, ni gcd.
+# Sources listees explicitement (un glob serait evalue avant FetchContent).
+# Ni OpenSSL, ni libuv, ni io_uring, ni gcd.
 set(USOCKETS_SOURCES
     ${uwebsockets_SOURCE_DIR}/uSockets/src/bsd.c
     ${uwebsockets_SOURCE_DIR}/uSockets/src/context.c
     ${uwebsockets_SOURCE_DIR}/uSockets/src/loop.c
     ${uwebsockets_SOURCE_DIR}/uSockets/src/socket.c
     ${uwebsockets_SOURCE_DIR}/uSockets/src/udp.c
-    # L'evenementiel : epoll sous Linux, le seul systeme que ce service vise.
+    # epoll sous Linux.
     ${uwebsockets_SOURCE_DIR}/uSockets/src/eventing/epoll_kqueue.c
 )
 
 add_library(usockets STATIC ${USOCKETS_SOURCES})
 target_include_directories(usockets PUBLIC ${uwebsockets_SOURCE_DIR}/uSockets/src)
-# LIBUS_NO_SSL : le TLS est termine par nginx en amont, le service ne parle que
-# du HTTP clair sur le reseau `frontend`. Sans ce define, uSockets exige OpenSSL
-# dans l'image de build pour rien.
+# Pas de TLS : il est termine par nginx.
 target_compile_definitions(usockets PUBLIC LIBUS_NO_SSL=1)
 
 find_package(ZLIB REQUIRED)

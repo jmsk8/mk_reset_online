@@ -1,9 +1,4 @@
-"""Liaison compte <-> joueur, synchronisation des profils, gestion des roles.
-
-La revendication est declarative : n'importe qui disposant d'une invitation
-peut pretendre etre le meilleur joueur du classement. Le seul controle est
-la vigilance de l'admin, d'ou l'apercu avant validation.
-"""
+"""Liaison compte <-> joueur, synchronisation des profils, gestion des roles."""
 
 from __future__ import annotations
 
@@ -44,22 +39,14 @@ logger = logging.getLogger(__name__)
 comptes_bp = Blueprint('comptes', __name__)
 
 
-# Alias local vers le chemin d'ecriture unique (backEnd/audit.py). Le nom est
-# conserve parce qu'il porte plus de quarante appels dans ce fichier : les
-# renommer aurait fait un diff illisible pour un gain nul.
 _audit = audit.ecrire
 _acteur_id = audit.acteur_courant
 
 
 def notifier(cur, compte_id, type_notif, titre, corps=None, lien=None):
-    """Depose une notification. A appeler DANS la transaction de la decision.
+    """Depose une notification, dans la transaction de la decision.
 
-    Le texte est fige ici : une notification parle souvent d'une chose qui vient
-    de disparaitre, et une jointure a l'affichage donnerait « (null) ».
-
-    `lien` suit la meme regle : c'est l'URL construite maintenant, pas un
-    identifiant qu'on re-resoudrait a l'affichage. NULL quand la notification
-    n'appelle aucune action.
+    Le texte et le lien sont figes a la creation.
     """
     if compte_id is None:
         return
@@ -71,19 +58,14 @@ def notifier(cur, compte_id, type_notif, titre, corps=None, lien=None):
 
 
 def _pseudo(username, global_name):
-    """Discord expose deux noms ; global_name est absent des vieux comptes."""
+    """Nom affiche Discord, ou le handle a defaut."""
     return global_name or username
 
 
 def _confirmation_handle_valide(saisie, handle):
-    """La saisie designe-t-elle bien ce handle ? (legs, suppression de compte)
+    """Vrai si la saisie designe ce handle Discord (legs, suppression de compte).
 
-    Toujours le handle (discord_username), jamais le nom affiche : celui-ci est
-    libre, un homonyme viderait la confirmation de son sens. Tolere ce qu'un
-    humain ajoute en recopiant ce que la liste affiche (« @toto », espaces) et
-    la casse : les handles Discord sont uniques sans egard a la casse, en
-    minuscules depuis 2023. La confirmation sert a designer la cible
-    deliberement, pas a verifier un secret : ces tolerances n'en retirent rien.
+    Tolere un « @ » initial, les espaces et la casse.
     """
     if not isinstance(saisie, str) or not handle:
         return False
@@ -94,16 +76,11 @@ def _confirmation_handle_valide(saisie, handle):
 
 
 def _nom_creable(cur, nom):
-    """services.nom_creable, mis en reponse Flask pour les demandes de liaison.
-
-    Appele a la demande et de nouveau a l'approbation : add_tournament cree des
-    fiches a la volee, le nom a pu etre pris entre-temps.
-    """
+    """services.nom_creable en reponse Flask, pour les demandes de liaison."""
     nom, erreur = nom_creable(cur, nom)
     if erreur is None:
         return nom, None
     if erreur['code'] == 'nom_deja_pris':
-        # Ici le joueur demande une CREATION : la sortie utile est de revendiquer.
         erreur['error'] = ("La fiche « %s » existe déjà : revendiquez-la au lieu d'en créer une."
                            % erreur['joueur_en_conflit']['nom'])
     return None, (jsonify(erreur), 409)
@@ -114,11 +91,7 @@ def _nom_creable(cur, nom):
 # ---------------------------------------------------------------------------
 
 def notifier_tous(cur, type_notif, titre, corps=None, lien=None):
-    """Notifie tous les comptes non suspendus. Renvoie leur nombre.
-
-    Un compte suspendu ne peut plus ouvrir de session : lui deposer du
-    courrier n'aurait aucun sens.
-    """
+    """Notifie tous les comptes non suspendus. Renvoie leur nombre."""
     cur.execute(
         """INSERT INTO notifications (compte_id, type, titre, corps, lien)
            SELECT id, %s, %s, %s, %s FROM comptes WHERE statut <> 'suspended'""",
@@ -130,10 +103,7 @@ def notifier_tous(cur, type_notif, titre, corps=None, lien=None):
 @comptes_bp.route('/auth/joueurs-disponibles', methods=['GET'])
 @player_required
 def joueurs_disponibles():
-    """Fiches revendicables : sans compte, et non anonymisees.
-
-    Lister les autres publierait qui possede un compte Discord.
-    """
+    """Fiches revendicables : sans compte et non anonymisees."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -159,8 +129,7 @@ def demander_liaison():
     joueur_id = data.get('joueur_id')
     message = (data.get('message') or '')[:500] or None
 
-    # isinstance(True, int) vaut True : sans exclure les booleens, un corps
-    # {"joueur_id": true} viserait le joueur n°1.
+    # bool exclu : isinstance(True, int) est vrai.
     if not isinstance(joueur_id, int) or isinstance(joueur_id, bool):
         return jsonify({"error": "Joueur manquant", "code": "joueur_manquant"}), 400
 
@@ -189,7 +158,7 @@ def demander_liaison():
                             "code": "joueur_deja_pris",
                         }), 409
 
-                    # Les index uniques partiels transformeraient un doublon en 500.
+                    # Evite un 500 sur les index uniques partiels.
                     cur.execute(
                         "SELECT id FROM liaisons_demandes WHERE compte_id = %s AND statut = 'pending'",
                         (compte['id'],),
@@ -234,9 +203,7 @@ def demander_liaison():
 def demander_creation():
     """Demande la creation d'une fiche au nom du compte connecte.
 
-    Rejoint la file d'attente des revendications, avec joueur_id NULL et le nom
-    voulu dans nom_demande. Le nom est fige ici : l'admin approuve ce qu'il a
-    sous les yeux. Rien n'est cree avant son accord.
+    Le nom est fige dans nom_demande ; rien n'est cree avant l'accord d'un admin.
     """
     compte = g.compte
     if compte['joueur_id'] is not None:
@@ -254,7 +221,7 @@ def demander_creation():
                         conn.rollback()
                         return erreur
 
-                    # L'index unique partiel transformerait un doublon en 500.
+                    # Evite un 500 sur l'index unique partiel.
                     cur.execute(
                         "SELECT id FROM liaisons_demandes WHERE compte_id = %s AND statut = 'pending'",
                         (compte['id'],),
@@ -290,8 +257,7 @@ def ma_demande():
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    # LEFT JOIN : une demande de creation n'a pas de joueur,
-                    # un INNER JOIN la rendrait invisible a son auteur.
+                    # LEFT JOIN : une demande de creation n'a pas de joueur.
                     """SELECT d.id, d.joueur_id, j.nom, d.statut, d.message, d.created_at,
                               d.decided_at, d.nom_demande
                        FROM liaisons_demandes d
@@ -391,16 +357,11 @@ def lister_liaisons():
         },
         "type": 'creation' if r[11] is None else 'rattachement',
         "joueur": {"id": r[11], "nom": r[12]} if r[11] is not None else None,
-        # Nom de la fiche a creer, fige au moment de la demande.
         "nom_demande": r[14],
-        # Invitation nominative : l'admin voit si la revendication correspond au joueur
-        # vise. Sur une demande de creation, c'est la non-concordance qui informe.
+        # Joueur vise par l'invitation nominative, a comparer a la demande.
         "joueur_vise_par_invitation": r[13],
         "concordance_invitation": (r[13] is not None and r[13] == r[11]),
-        # Ce que approuver/refuser refuseraient (S-11, S-13) : l'ecran grise
-        # les boutons d'avance au lieu de laisser decouvrir un 403. Le
-        # superadmin, seul a pouvoir statuer sur sa propre demande
-        # (_statue_sur_soi), n'y voit rien de grise.
+        # Pour griser les boutons a l'avance.
         "hors_de_portee": (not superadmin or r[5] != g.compte['id'])
                           and hors_de_portee(g.compte['role'], r[15]),
         "est_moi": r[5] == g.compte['id'] and not superadmin,
@@ -408,16 +369,8 @@ def lister_liaisons():
 
 
 def _statue_sur_soi(compte_id: int):
-    """S-13 sur les liaisons : True si l'acteur statue sur SA demande et en a
-    le droit, False s'il statue sur celle d'un autre, None s'il doit etre refuse.
-
-    Le superadmin fait exception. Pour lui, S-13 et la regle de rang (S-11)
-    se cumulaient en impasse : il ne peut pas statuer sur soi, et personne
-    n'a de rang superieur au sien pour le faire a sa place. Sa demande
-    restait en attente pour toujours, et son compte sans fiche. Le second
-    regard que S-13 protege n'existe pas au sommet ; le journal garde la
-    trace (`sur_soi`).
-    """
+    """True si l'acteur statue sur sa propre demande (permis au superadmin
+    seulement), False s'il s'agit de celle d'un autre, None s'il doit etre refuse."""
     if compte_id != _acteur_id():
         return False
     return True if g.compte['role'] == ROLE_SUPERADMIN else None
@@ -428,14 +381,8 @@ def _statue_sur_soi(compte_id: int):
 def approuver_liaison(demande_id):
     """Approuve une revendication et rattache le compte au joueur.
 
-    SELECT ... FOR UPDATE : deux approbations concurrentes sur la meme fiche
-    violeraient la contrainte UNIQUE de comptes.joueur_id ; la seconde obtient
-    un 409 explicite.
-
-    Une demande visant une fiche a CREER la cree dans la meme transaction :
-    si le rattachement echoue, aucune fiche orpheline ne subsiste.
-
-    Ne synchronise RIEN : propager le pseudo est un geste separe (voir /sync).
+    Une fiche a creer l'est dans la meme transaction. Le pseudo n'est pas
+    synchronise (voir /sync).
     """
     try:
         with get_db_connection() as conn:
@@ -458,30 +405,20 @@ def approuver_liaison(demande_id):
                             "code": "deja_traitee",
                         }), 409
 
-                    # S-13 : revendiquer une fiche est declaratif, tout repose
-                    # sur un second regard. Approuver sa propre demande le
-                    # supprime -- sauf pour le superadmin (_statue_sur_soi).
+                    # On ne valide pas sa propre demande (sauf superadmin).
                     soi = _statue_sur_soi(compte_id)
                     if soi is None:
                         conn.rollback()
                         return refuse_auto_modification(_acteur_id(), compte_id)
 
-                    # S-04 : l'UPDATE ci-dessous pose statut = 'linked'. Sur un
-                    # compte suspendu, il levait la suspension -- par un admin
-                    # qui n'a que gestion_liaisons, donc pas le droit de
-                    # reactiver. Lu sous verrou : une suspension concurrente
-                    # passe avant ou apres, jamais entre la lecture et l'ecriture.
+                    # Lu sous verrou : l'approbation ne doit pas lever une suspension.
                     cur.execute("SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE",
                                 (compte_id,))
                     ligne_compte = cur.fetchone()
                     if ligne_compte is None:
                         conn.rollback()
                         return jsonify({"error": "Compte introuvable"}), 404
-                    # S-11 : approuver ecrit sur le COMPTE (joueur_id, statut).
-                    # La route ne recoit que l'id de la demande, d'ou la regle
-                    # de rang posee a la main plutot que par compte_cible_protegee.
-                    # Sur soi elle ne s'applique pas : refus_de_rang laisse ce
-                    # cas aux appelants, et il vient d'etre tranche.
+                    # Regle de rang sur le compte demandeur (sauf sur soi).
                     refus = None if soi else refus_de_rang(g.compte, compte_id, ligne_compte[1])
                     if refus is not None:
                         conn.rollback()
@@ -496,7 +433,7 @@ def approuver_liaison(demande_id):
 
                     creation = joueur_id is None
                     if creation:
-                        # Re-valide maintenant : add_tournament a pu creer la fiche entre-temps.
+                        # Revalide : la fiche a pu etre creee entre-temps.
                         nom, erreur = _nom_creable(cur, nom_demande)
                         if erreur is not None:
                             conn.rollback()
@@ -515,15 +452,13 @@ def approuver_liaison(demande_id):
                         ligne_nom = cur.fetchone()
                         nom_final = ligne_nom[0] if ligne_nom else '?'
 
-                    # Verrou sur la fiche joueur convoitee.
                     cur.execute(
                         "SELECT id FROM comptes WHERE joueur_id = %s FOR UPDATE",
                         (joueur_id,),
                     )
                     occupant = cur.fetchone()
                     if occupant is not None and occupant[0] != compte_id:
-                        # Relache le verrou pose sur la fiche joueur : sans ca on
-                        # s'en remet au rollback implicite de putconn().
+                        # Relache le verrou pose sur la fiche.
                         conn.rollback()
                         return jsonify({
                             "error": "Cette fiche vient d'être rattachée à un autre compte",
@@ -562,8 +497,7 @@ def approuver_liaison(demande_id):
         return jsonify({"error": "Erreur serveur"}), 500
 
     if creation:
-        # Le classement est en cache : sans ca, la fiche neuve n'apparait qu'a
-        # l'expiration, et l'admin croit que rien ne s'est passe.
+        # La nouvelle fiche doit apparaitre tout de suite au classement.
         invalidate_cache()
     return jsonify({"status": "success", "compte_id": compte_id,
                     "joueur_id": joueur_id, "fiche_creee": creation})
@@ -590,16 +524,13 @@ def refuser_liaison(demande_id):
                         conn.rollback()
                         return jsonify({"error": "Déjà traitée", "code": "deja_traitee"}), 409
 
-                    # S-13, par symetrie avec l'approbation : on ne statue pas
-                    # sur sa propre demande, dans un sens ou dans l'autre --
-                    # sauf le superadmin (_statue_sur_soi).
+                    # On ne statue pas sur sa propre demande (sauf superadmin).
                     soi = _statue_sur_soi(compte_id)
                     if soi is None:
                         conn.rollback()
                         return refuse_auto_modification(_acteur_id(), compte_id)
 
-                    # S-11, meme regle de rang que l'approbation : la demande
-                    # d'un rang egal ou superieur se tranche plus haut.
+                    # Meme regle de rang que l'approbation.
                     cur.execute("SELECT role FROM comptes WHERE id = %s", (compte_id,))
                     ligne_compte = cur.fetchone()
                     if ligne_compte is not None and not soi:
@@ -641,10 +572,7 @@ def refuser_liaison(demande_id):
 @comptes_bp.route('/admin/comptes', methods=['GET'])
 @permission_required('gestion_comptes')
 def lister_comptes():
-    """Liste des comptes, avec l'ecart entre pseudo Discord et nom du joueur.
-
-    C'est cet ecart qui declenche la proposition de resynchronisation.
-    """
+    """Liste des comptes, avec l'ecart entre pseudo Discord et nom du joueur."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -686,9 +614,7 @@ def lister_comptes():
         nom_joueur = r[11]
         comptes.append({
             "id": r[0], "discord_id": r[1], "pseudo": pseudo,
-            # Le handle, a cote du nom affiche : c'est lui que le legs et la
-            # suppression font retaper. Sans lui, la page demandait un nom
-            # qu'elle ne montrait nulle part.
+            # Handle Discord, demande en confirmation du legs et de la suppression.
             "handle": r[2],
             "avatar_url": "/avatar/compte/%d" % r[0],
             "joueur_id": r[5], "joueur_nom": nom_joueur,
@@ -696,16 +622,10 @@ def lister_comptes():
             "created_at": r[8].isoformat(),
             "last_login_at": r[9].isoformat() if r[9] else None,
             "profil_synced_at": r[10].isoformat() if r[10] else None,
-            # Vrai seulement si le compte est lie ET que les deux noms different.
             "desynchronise": bool(nom_joueur and pseudo and nom_joueur != pseudo),
-            # Role propose et non encore accepte, ou None. Le role ci-dessus
-            # reste l'ACTUEL : les confondre ferait croire la promotion faite.
+            # Role propose et non encore accepte, ou None.
             "promotion_en_attente": r[12],
-            # Au moins une ligne du journal dont ce compte est l'acteur -- et
-            # que CE lecteur a le droit de lire. Passe par la meme regle que la
-            # lecture (_peut_lire_journal) : cette liste est ouverte a tout
-            # porteur de gestion_comptes, un simple admin compris, qui n'a pas
-            # a apprendre qui a agi. Pour lui, c'est toujours faux.
+            # Ce compte a des lignes de journal que le lecteur peut consulter.
             "a_un_journal": bool(r[13]) and _peut_lire_journal(g.compte, r[7]),
         })
     return jsonify(comptes)
@@ -714,8 +634,7 @@ def lister_comptes():
 def _verifier_sync(cur, compte_id):
     """Prepare une synchronisation. Renvoie (donnees, reponse d'erreur).
 
-    Toutes les raisons de refuser sont evaluees ici : l'apercu et l'ecriture
-    doivent rendre le meme verdict.
+    Utilise par l'apercu et l'ecriture, pour un verdict identique.
     """
     cur.execute(
         """SELECT c.discord_username, c.discord_global_name, c.joueur_id, j.nom
@@ -740,13 +659,11 @@ def _verifier_sync(cur, compte_id):
             "error": "Le pseudo Discord est vide", "code": "pseudo_vide",
         }), 409)
 
-    # joueurs.nom est en varchar(255) ; un pseudo Discord tient toujours, mais
-    # on tronque plutot que de laisser la base trancher.
+    # joueurs.nom est en varchar(255).
     nouveau = nouveau[:255]
 
     if '/' in nouveau:
-        # L'URL publique est /stats/joueur/<nom> : Flask ne route pas un nom
-        # contenant un slash, la fiche deviendrait inatteignable.
+        # Flask ne route pas un nom contenant un slash (/stats/joueur/<nom>).
         return None, (jsonify({
             "error": "Le pseudo Discord contient un « / », incompatible avec l'URL publique",
             "code": "pseudo_invalide",
@@ -757,8 +674,7 @@ def _verifier_sync(cur, compte_id):
             "error": "Le nom du joueur est déjà à jour", "code": "deja_synchro",
         }), 409)
 
-    # S-05 : la synchronisation ecrit joueurs.nom, elle aussi. Sans ce refus, un
-    # pseudo Discord identique a une identite anonymisee la faisait revenir.
+    # Un pseudo identique a une identite anonymisee est refuse.
     cur.execute("SELECT 1 FROM noms_interdits WHERE nom_hash = %s", (empreinte_nom(nouveau),))
     if cur.fetchone() is not None:
         return None, (jsonify({
@@ -767,8 +683,7 @@ def _verifier_sync(cur, compte_id):
             "code": "nom_interdit",
         }), 409)
 
-    # joueurs.nom est UNIQUE mais sensible a la casse : "Mario" et "mario"
-    # coexisteraient tout en etant indiscernables a l'oeil.
+    # La contrainte UNIQUE est sensible a la casse.
     cur.execute(
         "SELECT id, nom FROM joueurs WHERE lower(nom) = lower(%s) AND id <> %s",
         (nouveau, joueur_id),
@@ -809,12 +724,7 @@ def apercu_sync(compte_id):
 @permission_required('gestion_comptes')
 @compte_cible_protegee
 def synchroniser_profil(compte_id):
-    """Propage le pseudo Discord vers joueurs.nom. Geste ADMIN, jamais automatique.
-
-    joueurs.nom est UNIQUE, circule dans une septantaine de innerHTML et sert
-    d'URL publique ; et un pseudo qui change tous les deux jours ferait bouger
-    le classement affiche sans que personne l'ait voulu.
-    """
+    """Propage le pseudo Discord vers joueurs.nom (geste admin, jamais automatique)."""
     try:
         with get_db_connection() as conn:
             try:
@@ -845,8 +755,7 @@ def synchroniser_profil(compte_id):
         logger.error("Synchronisation du compte %s impossible: %s", compte_id, e)
         return jsonify({"error": "Erreur serveur"}), 500
 
-    # Sans ca, le classement affiche l'ancien nom pendant 5 minutes et l'admin
-    # croit que le bouton n'a rien fait.
+    # Le classement doit afficher le nouveau nom tout de suite.
     invalidate_cache()
     return jsonify({"status": "success", **donnees})
 
@@ -855,29 +764,11 @@ def synchroniser_profil(compte_id):
 @role_required(ROLE_CHEF_ADMIN)
 @compte_cible_protegee
 def changer_role(compte_id):
-    """Retire un role, ou le fait descendre. Ouverte au chef_admin et au superadmin.
+    """Retire un role ou le fait descendre (chef_admin et superadmin).
 
-    Ne PROMEUT jamais (R-68, docs/audit-admin-plan.md) : une montee en rang est
-    une proposition (proposer_promotion), posee a l'acceptation par la personne
-    elle-meme (repondre_promotion). Ce partage entre les deux ecrivains est ce
-    qui garantit qu'aucun admin n'est trace sans y avoir consenti.
-
-    Frontiere de privilege de l'application. Le garde-fou du dernier superadmin
-    separe « je me suis trompe » de « plus personne ne peut administrer le
-    site ».
-
-    Cette route ne pose JAMAIS superadmin : ce role ne se transmet que par legs
-    (docs/hierarchie-admin-plan.md 6bis), une transaction unique qui retrograde
-    l'ancien et promeut le nouveau. La garde du dernier superadmin ci-dessous
-    est ce qui porte le « jamais zero » ICI ; le legs le porte autrement, par
-    son atomicite -- d'ou deux routes distinctes, a ne pas fusionner (6bis.1).
-
-    Portee par acteur : le superadmin fait descendre un chef_admin (vers admin
-    ou player) ou un admin (vers player) ; un chef_admin seulement un admin. Il
-    ne peut pas toucher une cible deja chef_admin : c'est compte_cible_protegee
-    qui l'en empeche, pas ce corps de fonction (R-56). Le refus « un chef_admin
-    ne designe pas un pair » ci-dessous est garde : il repond 403 avant toute
-    I/O, la ou le refus de promotion attend la lecture du role actuel.
+    Ne promeut jamais : une montee en rang passe par proposer_promotion et
+    l'acceptation de la personne. Ne pose jamais superadmin (voir le legs).
+    Le dernier superadmin ne peut pas etre retire.
     """
     acteur = g.compte
     acteur_est_superadmin = acteur['role'] == ROLE_SUPERADMIN
@@ -890,25 +781,21 @@ def changer_role(compte_id):
             "roles": sorted(ROLE_HIERARCHY, key=ROLE_HIERARCHY.get),
         }), 400
 
-    # Le role superadmin ne s'attribue pas : il se legue. Sans ce refus,
-    # ROLE_HIERARCHY (qui a gagne chef_admin) laisserait poser 'superadmin'
-    # ici et heurter idx_comptes_superadmin_unique.
+    # Le role superadmin se legue, il ne s'attribue pas.
     if nouveau == ROLE_SUPERADMIN:
         return jsonify({
             "error": "Le rôle superadmin ne s'attribue pas : il se lègue.",
             "code": "superadmin_non_attribuable",
         }), 400
 
-    # Un chef_admin ne designe pas un pair : seul le superadmin le fait
-    # (plan 2, contrainte 3).
+    # Seul le superadmin designe un chef_admin.
     if nouveau == ROLE_CHEF_ADMIN and not acteur_est_superadmin:
         return jsonify({
             "error": "Seul le super-administrateur peut désigner un chef d'administration.",
             "code": "droits_insuffisants",
         }), 403
 
-    # Auto-modification de role interdite, superadmin compris : sa seule sortie
-    # du role est le legs (plan 2, contrainte 4).
+    # Pas de modification de son propre role (le superadmin passe par le legs).
     erreur = refuse_auto_modification(_acteur_id(), compte_id)
     if erreur is not None:
         return erreur
@@ -927,21 +814,8 @@ def changer_role(compte_id):
                         conn.rollback()
                         return jsonify({"status": "success", "role": nouveau, "inchange": True})
 
-                    # R-68 : cette route ne fait plus que DESCENDRE. Toute
-                    # montee en rang (player -> admin, admin -> chef_admin...)
-                    # passe par une proposition que la personne accepte
-                    # (/promotion), parce que le consentement prealable a la
-                    # tracabilite nominative est une exigence RGPD, pas une
-                    # politesse : un tiers ne consent pas a la place de
-                    # quelqu'un. L'IHM routait deja ainsi, mais un lien cache
-                    # n'est pas un acces ferme -- sans ce refus, un POST a la
-                    # main promouvait sans rien demander.
-                    #
-                    # Le superadmin n'est pas concerne : il ne s'obtient ni ici
-                    # (refuse plus haut) ni par proposition, seulement par legs
-                    # ou par l'amorcage de DISCORD_SUPERADMIN_ID
-                    # (auth_discord.promote_bootstrap_superadmin), que ce refus
-                    # ne touche pas.
+                    # Cette route ne fait que descendre : une montee passe par une
+                    # proposition acceptee par la personne (/promotion).
                     if ROLE_HIERARCHY[nouveau] > ROLE_HIERARCHY[ancien]:
                         conn.rollback()
                         return jsonify({
@@ -950,16 +824,8 @@ def changer_role(compte_id):
                             "code": "promotion_par_proposition",
                         }), 409
 
-                    # CEINTURE. Depuis la hierarchie a 4 roles, ce cas n'est plus
-                    # atteignable par cette route : une cible superadmin est
-                    # arretee avant par compte_cible_protegee (403), et l'acteur
-                    # lui-meme par refuse_auto_modification (403). Un superadmin
-                    # ne quitte son role que par le legs.
-                    #
-                    # Conservee volontairement : elle ne coute qu'un SELECT dans
-                    # un cas qui ne se produit pas, et redeviendrait la derniere
-                    # barriere si l'un de ces deux gardes sautait. Ne pas la
-                    # retirer au motif qu'elle « ne sert jamais ».
+                    # Garde-fou : normalement deja bloque par compte_cible_protegee
+                    # et refuse_auto_modification.
                     if ancien == ROLE_SUPERADMIN and nouveau != ROLE_SUPERADMIN:
                         cur.execute(
                             "SELECT COUNT(*) FROM comptes WHERE role = %s AND id <> %s",
@@ -975,10 +841,7 @@ def changer_role(compte_id):
                                 "code": "dernier_superadmin",
                             }), 409
 
-                    # R-60 : retomber a zero chef_admin retire le filet sur lequel
-                    # R-47 s'appuie en cas de verrouillage du superadmin. Pas un
-                    # blocage -- le superadmin reste souverain -- mais jamais un
-                    # clic silencieux : la confirmation est un champ nomme.
+                    # Retirer le dernier chef_admin exige une confirmation explicite.
                     if ancien == ROLE_CHEF_ADMIN and nouveau != ROLE_CHEF_ADMIN:
                         cur.execute(
                             "SELECT COUNT(*) FROM comptes WHERE role = %s AND id <> %s",
@@ -999,15 +862,8 @@ def changer_role(compte_id):
                         "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
                         (nouveau, compte_id),
                     )
-                    # A-01/A-02 : la duree d'une session est figee a sa creation,
-                    # sur le role du moment (create_session). Changer de rang
-                    # oblige donc a se reconnecter, dans les deux sens : promu,
-                    # le compte garderait une session de joueur (30 jours) ;
-                    # retrograde, des sessions ouvertes sur un rang qu'il n'a
-                    # plus. Les droits, eux, suivaient deja : le role est relu a
-                    # chaque requete. La cible n'est jamais l'acteur
-                    # (refuse_auto_modification) : on ne ferme pas sa propre
-                    # session ici.
+                    # La duree de session depend du role : on ferme les sessions
+                    # de la cible pour forcer une reconnexion.
                     cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s",
                                 (compte_id,))
                     action = ('role_retire'
@@ -1016,9 +872,7 @@ def changer_role(compte_id):
                     _audit(cur, action, 'compte', compte_id,
                            {"ancien": ancien, "nouveau": nouveau, "origine": "ihm"})
 
-                    # R-53 : quitter le role admin purge les permissions a la
-                    # carte. Sans ca, un compte retrograde puis re-promu plus
-                    # tard retrouverait des droits que personne n'a redonnes.
+                    # Quitter le role admin purge les permissions a la carte.
                     if ancien == ROLE_ADMIN and nouveau != ROLE_ADMIN:
                         cur.execute("DELETE FROM permissions_admin WHERE compte_id = %s",
                                     (compte_id,))
@@ -1026,10 +880,7 @@ def changer_role(compte_id):
                             _audit(cur, 'permissions_purgees', 'compte', compte_id,
                                    {"motif": "sortie_role_admin", "nouveau_role": nouveau})
 
-                    # S-02 : cette route ne fait que descendre. Une proposition
-                    # recue avant la sanction la defairait a l'acceptation, et
-                    # celles que la cible a faites reposent sur un rang qu'elle
-                    # n'a plus.
+                    # Les propositions recues ou faites par la cible n'ont plus d'objet.
                     _annuler_promotions(cur, 'cible_retrogradee', cible=compte_id)
                     _annuler_promotions(cur, 'proposant_retrograde', proposant=compte_id)
                 conn.commit()
@@ -1045,42 +896,16 @@ def changer_role(compte_id):
 
 
 # ---------------------------------------------------------------------------
-# Permissions a la carte -- accordees a un compte role=admin, une par une.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 # Promotion : une proposition, pas un decret
 # ---------------------------------------------------------------------------
-# Phase 1bis de docs/audit-admin-plan.md. Le role d'admin ne s'impose plus, il
-# s'accepte -- et la raison est juridique avant d'etre courtoise.
+# Le role d'admin se propose et s'accepte : les actions d'un admin sont
+# tracees nominativement, il doit en etre informe avant.
 #
-# A partir de la phase 2, les actions d'un admin sont tracees NOMINATIVEMENT,
-# conservees sans limite de duree, et survivent a la suppression de son compte.
-# Le RGPD impose d'informer AVANT. Le consentement aux CGU, donne a la creation
-# du compte quand la personne etait `player`, ne peut pas couvrir un traitement
-# qui n'existait pas encore : un consentement ne vaut pas pour ce qu'on ne
-# pouvait pas connaitre en le donnant.
-#
-# D'ou trois etats et un seul chemin entre eux :
-#
-#   player --propose--> proposition EN ATTENTE --accepte--> admin/chef_admin
+#   player --propose--> proposition en attente --accepte--> admin/chef_admin
 #                                              --refuse---> player (inchange)
-#
-# Le role est pose A L'ACCEPTATION, jamais a la proposition. Un tiers ne peut
-# pas consentir a la place de quelqu'un.
-#
-# Le patron est celui de `liaisons_demandes`, deja eprouve ici : etat en
-# attente, decision, notification, index unique partiel. Les memes pieges s'y
-# appliquent -- notamment la course a l'approbation (R-07), d'ou les FOR UPDATE.
 
 def _promotion_en_attente(cur, compte_id, pour_update=False):
-    """Proposition `pending` NON EXPIREE de ce compte, ou None.
-
-    L'expiration est evaluee ICI plutot que par un balayage periodique : une
-    ligne expiree reste en base (l'historique a de la valeur) mais ne doit plus
-    rien ouvrir. Sans ce filtre, une proposition vieille de huit mois resterait
-    acceptable.
-    """
+    """Proposition en attente et non expiree de ce compte, ou None."""
     cur.execute(
         """SELECT id, role_propose, propose_par, created_at, expires_at
            FROM promotions_proposees
@@ -1094,16 +919,8 @@ def _promotion_en_attente(cur, compte_id, pour_update=False):
 def _annuler_promotions(cur, motif, cible=None, proposant=None, role_propose=None):
     """Annule les propositions en attente devenues sans objet. Renvoie leur nombre.
 
-    S-02 (audit du 24/09) : une proposition vit trente jours, et la situation
-    qui la justifiait peut changer entre-temps -- la cible est retrogradee ou
-    suspendue, le proposant perd le rang qui lui permettait de proposer. Sans
-    ce solde, la personne acceptait plus tard sur la foi d'un pouvoir qui
-    n'existait plus, et remontait parfois plus haut qu'avant sa sanction.
-
-    `cible` vise les propositions RECUES par un compte, `proposant` celles
-    qu'il a FAITES ; `role_propose` restreint a un role. Chaque annulation est
-    tracee avec son motif : la ligne disparait du badge « en attente », le
-    journal doit dire pourquoi.
+    `cible` vise les propositions recues par un compte, `proposant` celles qu'il
+    a faites ; `role_propose` restreint a un role. Chaque annulation est tracee.
     """
     conditions, params = ["statut = 'pending'", "expires_at > now()"], []
     if cible is not None:
@@ -1115,7 +932,7 @@ def _annuler_promotions(cur, motif, cible=None, proposant=None, role_propose=Non
     if role_propose is not None:
         conditions.append("role_propose = %s")
         params.append(role_propose)
-    # Jamais un UPDATE sans filtre de compte : il solderait toute la table.
+    # Toujours au moins un filtre de compte.
     if cible is None and proposant is None:
         raise ValueError("_annuler_promotions exige une cible ou un proposant")
     cur.execute(
@@ -1134,13 +951,7 @@ def _annuler_promotions(cur, motif, cible=None, proposant=None, role_propose=Non
 @role_required(ROLE_CHEF_ADMIN)
 @compte_cible_protegee
 def proposer_promotion(compte_id):
-    """Propose un role a un compte. Ne pose RIEN : la cible decide.
-
-    Reprend a l'identique les plafonds par acteur de `changer_role` -- un
-    chef_admin ne designe pas un pair, superadmin ne s'attribue pas -- parce
-    que proposer un role qu'on n'a pas le droit d'attribuer reviendrait a
-    contourner ces regles par un detour.
-    """
+    """Propose un role a un compte, qui decide. Memes plafonds que changer_role."""
     acteur = g.compte
     corps = request.get_json(silent=True) or {}
     role = corps.get('role')
@@ -1151,7 +962,6 @@ def proposer_promotion(compte_id):
             "code": "role_non_proposable",
         }), 400
 
-    # Meme plafond que changer_role : un chef_admin ne designe pas un pair.
     if role == ROLE_CHEF_ADMIN and acteur['role'] != ROLE_SUPERADMIN:
         return jsonify({
             "error": "Seul le super-administrateur peut désigner un chef d'administration.",
@@ -1166,9 +976,7 @@ def proposer_promotion(compte_id):
         with get_db_connection() as conn:
             try:
                 with conn.cursor() as cur:
-                    # FOR UPDATE des la lecture du compte : deux chef_admin qui
-                    # proposent simultanement doivent se serialiser ici, sinon
-                    # l'index unique partiel transforme le second en 500.
+                    # Verrou des la lecture : serialise deux propositions simultanees.
                     cur.execute("SELECT role, statut FROM comptes WHERE id = %s FOR UPDATE",
                                 (compte_id,))
                     row = cur.fetchone()
@@ -1184,11 +992,7 @@ def proposer_promotion(compte_id):
                             "code": "role_inchange",
                         }), 409
 
-                    # Pendant exact du refus de promotion de changer_role
-                    # (R-68) : descendre ne se propose pas, cela se fait par
-                    # /role. On n'a pas a accepter de PERDRE un role, et une
-                    # proposition de descente laisserait la personne garder
-                    # indefiniment un rang qu'on veut lui retirer.
+                    # Une descente ne se propose pas, elle passe par /role.
                     if ROLE_HIERARCHY[role] < ROLE_HIERARCHY[role_actuel]:
                         conn.rollback()
                         return jsonify({
@@ -1197,9 +1001,7 @@ def proposer_promotion(compte_id):
                             "code": "pas_une_promotion",
                         }), 409
 
-                    # Un compte suspendu ne peut pas se connecter, donc ne
-                    # pourra jamais accepter : la proposition resterait en
-                    # attente jusqu'a expiration, en bloquant l'index unique.
+                    # Un compte suspendu ne pourrait jamais accepter.
                     if statut == 'suspended':
                         conn.rollback()
                         return jsonify({
@@ -1214,8 +1016,7 @@ def proposer_promotion(compte_id):
                             "code": "promotion_deja_en_attente",
                         }), 409
 
-                    # Les propositions perimees encore 'pending' bloqueraient
-                    # l'index unique partiel. On les solde avant d'inserer.
+                    # Solde les propositions perimees, qui bloqueraient l'index unique.
                     cur.execute(
                         """UPDATE promotions_proposees SET statut = 'cancelled', decided_at = now()
                            WHERE compte_id = %s AND statut = 'pending' AND expires_at <= now()""",
@@ -1257,12 +1058,7 @@ def proposer_promotion(compte_id):
 @role_required(ROLE_CHEF_ADMIN)
 @compte_cible_protegee
 def annuler_promotion(compte_id):
-    """Retire une proposition en attente. Le proposant peut se retracter.
-
-    Sans cette route, la seule sortie d'une proposition serait que la personne
-    reponde -- et une proposition faite par erreur resterait affichee sur sa
-    ligne pendant trente jours.
-    """
+    """Retire une proposition en attente."""
     try:
         with get_db_connection() as conn:
             try:
@@ -1275,10 +1071,7 @@ def annuler_promotion(compte_id):
                             "code": "aucune_promotion",
                         }), 404
 
-                    # S-14 : un chef_admin ne defait pas le geste d'un rang
-                    # au-dessus du sien (une proposition chef_admin du
-                    # superadmin, typiquement). Un proposant parti n'a plus de
-                    # rang a proteger : sa proposition s'annule librement.
+                    # Un chef_admin n'annule pas la proposition d'un rang superieur.
                     if ligne[2] is not None:
                         cur.execute("SELECT role FROM comptes WHERE id = %s", (ligne[2],))
                         p = cur.fetchone()
@@ -1312,19 +1105,8 @@ def annuler_promotion(compte_id):
 @comptes_bp.route('/me/promotion', methods=['GET'])
 @player_required
 def ma_promotion():
-    """Ce que le titulaire doit accepter, s'il y a quelque chose.
-
-    Deux choses distinctes peuvent etre en attente, et l'ecran doit savoir
-    laquelle :
-
-      - une PROPOSITION de role, pour un compte qui n'est pas encore admin ;
-      - un CONSENTEMENT manquant, pour un admin promu AVANT cette mecanique
-        (migration du 18/09) ou dont la politique a change de version.
-
-    Le second cas est une regularisation, pas une punition : l'acces n'est pas
-    bloque entre-temps, mais la phase 2 ne tracera ses actions qu'une fois le
-    consentement donne.
-    """
+    """Ce que le titulaire doit accepter : une proposition de role, ou le
+    consentement manquant d'un admin deja en poste."""
     compte = g.compte
     try:
         with get_db_connection() as conn:
@@ -1359,12 +1141,10 @@ def ma_promotion():
 @comptes_bp.route('/me/promotion', methods=['POST'])
 @player_required
 def repondre_promotion():
-    """Accepte ou refuse la proposition. C'est ICI que le role est pose.
+    """Accepte ou refuse la proposition ; le role est pose a l'acceptation.
 
-    Le corps porte `accepte` (booleen) et, en cas d'acceptation,
-    `cgu_admin_version` -- l'acceptation du role et celle de la politique sont
-    un seul geste, et refuser de les separer est deliberé : accepter le role
-    sans la politique laisserait un admin trace sans l'avoir su.
+    L'acceptation porte aussi `cgu_admin_version` : role et politique admin
+    s'acceptent ensemble.
     """
     compte = g.compte
     corps = request.get_json(silent=True) or {}
@@ -1381,9 +1161,7 @@ def repondre_promotion():
         with get_db_connection() as conn:
             try:
                 with conn.cursor() as cur:
-                    # Verrou sur le COMPTE avant la proposition : meme ordre que
-                    # dans proposer_promotion, sinon deux transactions qui se
-                    # croisent s'interbloquent (R-07).
+                    # Verrou sur le compte d'abord, meme ordre que proposer_promotion.
                     cur.execute("SELECT role FROM comptes WHERE id = %s FOR UPDATE",
                                 (compte['id'],))
                     row = cur.fetchone()
@@ -1411,14 +1189,7 @@ def repondre_promotion():
                         )
                         _audit(cur, 'promotion_refusee', 'compte', compte['id'],
                                {"role_propose": role, "promotion_id": promotion_id})
-                        # Le proposant a pu partir entre-temps : notifier()
-                        # ignore un compte_id nul, rien a verifier ici.
-                        # Sans lien, volontairement : c'est un accuse de
-                        # reception, il n'y a rien a faire dessus -- et le
-                        # proposant a pu perdre l'acces a /admin/comptes.
-                        # Le pseudo est fige ici comme le reste du texte : le
-                        # proposant peut recevoir plusieurs reponses, et « le
-                        # compte » ne lui disait pas laquelle il lisait.
+                        # Pas de lien : simple accuse de reception.
                         notifier(
                             cur, proposant, 'promotion_refusee',
                             "Promotion refusée",
@@ -1430,26 +1201,9 @@ def repondre_promotion():
                         logger.info("Promotion %s refusee par le compte %s", role, compte['id'])
                         return jsonify({"status": "success", "accepte": False})
 
-                    # S-02 / S-03 (audit du 24/09) : la proposition doit
-                    # tenir AU MOMENT de l'acceptation, pas seulement a celui
-                    # ou elle a ete faite. Deux conditions :
-                    #
-                    #  - le proposant a encore le rang qu'il fallait pour
-                    #    proposer ce role (chef_admin pour admin, superadmin
-                    #    pour chef_admin), et n'est ni suspendu ni supprime.
-                    #    Un proposant parti ne peut plus etre verifie : la
-                    #    proposition tombe avec lui.
-                    #  - c'est toujours une MONTEE. Sans ca, un superadmin qui
-                    #    accepte une vieille proposition « chef_admin » (recue
-                    #    avant un legs) se retrogradait seul : zero superadmin,
-                    #    seul ecrivain de comptes.role sans cette garde.
-                    #
-                    # Lecture du proposant SANS verrou : le poser apres celui
-                    # de la proposition croiserait l'ordre de changer_role
-                    # (compte, puis propositions) et risquerait l'interblocage.
-                    # Une retrogradation concurrente attend de toute facon le
-                    # verrou de la ligne, et trouve ensuite la proposition
-                    # soldee : l'acceptation passe pour anterieure, ce qu'elle est.
+                    # La proposition doit encore etre valable a l'acceptation :
+                    # le proposant a toujours le rang requis, et c'est bien une
+                    # montee. Proposant lu sans verrou pour eviter un interblocage.
                     seuil = ROLE_SUPERADMIN if role == ROLE_CHEF_ADMIN else ROLE_CHEF_ADMIN
                     rang_proposant = None
                     if proposant is not None:
@@ -1460,7 +1214,7 @@ def repondre_promotion():
                             rang_proposant = ROLE_HIERARCHY.get(p[0], 0)
                     proposant_valide = (rang_proposant is not None
                                         and rang_proposant >= ROLE_HIERARCHY[seuil])
-                    # Role inconnu : 99, donc jamais une montee (defaut ferme).
+                    # Role inconnu : jamais une montee.
                     toujours_une_montee = (ROLE_HIERARCHY[role]
                                            > ROLE_HIERARCHY.get(role_actuel, 99))
                     if not (proposant_valide and toujours_une_montee):
@@ -1473,8 +1227,7 @@ def repondre_promotion():
                                {"role_propose": role, "promotion_id": promotion_id,
                                 "motif": ("proposant_sans_droit" if not proposant_valide
                                           else "plus_une_promotion")})
-                        # COMMIT et non rollback : la proposition est morte,
-                        # elle ne doit plus s'afficher ni se retenter.
+                        # Commit : la proposition est soldee.
                         conn.commit()
                         return jsonify({
                             "error": "Cette proposition n'est plus valable : la situation "
@@ -1482,7 +1235,6 @@ def repondre_promotion():
                             "code": "proposition_caduque",
                         }), 409
 
-                    # ACCEPTATION : le role est pose ici, et seulement ici.
                     cur.execute(
                         """UPDATE promotions_proposees
                            SET statut = 'accepted', decided_at = now() WHERE id = %s""",
@@ -1497,12 +1249,8 @@ def repondre_promotion():
                     )
                     _enregistrer_consentement(cur, compte['id'], 'cgu_admin',
                                               CGU_ADMIN_VERSION, 'acceptation_promotion')
-                    # A-01 : TOUTES les sessions, celle-ci comprise. C'est la
-                    # session de joueur qui vient d'accepter, ouverte pour 30
-                    # jours : la garder donnerait a un admin soixante fois la
-                    # duree que la regle lui destine. La personne se reconnecte
-                    # (le frontend purge son jeton et relance Discord) et
-                    # obtient une session d'admin, avec un jeton neuf.
+                    # Ferme toutes les sessions, y compris la courante : la
+                    # personne se reconnecte avec une session d'admin.
                     cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s",
                                 (compte['id'],))
                     _audit(cur, 'role_attribue', 'compte', compte['id'],
@@ -1510,20 +1258,14 @@ def repondre_promotion():
                             "origine": "acceptation", "promotion_id": promotion_id,
                             "propose_par": proposant})
 
-                    # R-53, comme dans changer_role : un admin qui accepte
-                    # chef_admin quitte le role admin, ses permissions a la
-                    # carte tombent. Depuis que changer_role ne promeut plus
-                    # (R-68), ce chemin est le SEUL par lequel admin devient
-                    # chef_admin -- sans la purge ici, un chef_admin retrograde
-                    # plus tard en admin retrouverait des droits que personne
-                    # ne lui a redonnes. Role relu sous verrou, pas g.compte.
+                    # Quitter le role admin purge les permissions a la carte.
                     if role_actuel == ROLE_ADMIN and role != ROLE_ADMIN:
                         cur.execute("DELETE FROM permissions_admin WHERE compte_id = %s",
                                     (compte['id'],))
                         if cur.rowcount:
                             _audit(cur, 'permissions_purgees', 'compte', compte['id'],
                                    {"motif": "sortie_role_admin", "nouveau_role": role})
-                    # Sans lien, pour la meme raison que le refus ci-dessus.
+                    # Pas de lien : simple accuse de reception.
                     notifier(
                         cur, proposant, 'promotion_acceptee',
                         "Promotion acceptée",
@@ -1540,8 +1282,7 @@ def repondre_promotion():
         return jsonify({"error": "Erreur serveur"}), 500
 
     logger.info("Promotion %s acceptee par le compte %s", role, compte['id'])
-    # `session_fermee`, meme nom que dans DELETE /auth/mes-sessions : le jeton
-    # qui a porte cette requete n'ouvre plus rien.
+    # La session courante est fermee.
     return jsonify({"status": "success", "accepte": True, "role": role,
                     "session_fermee": True})
 
@@ -1549,11 +1290,7 @@ def repondre_promotion():
 @comptes_bp.route('/me/cgu-admin', methods=['POST'])
 @player_required
 def accepter_cgu_admin():
-    """Consentement d'un admin DEJA en poste (regularisation).
-
-    Sert les admins promus avant cette mecanique, et le jour ou la politique
-    changera de version. Ne pose aucun role -- il est deja la.
-    """
+    """Consentement d'un admin deja en poste (nouvelle version de la politique)."""
     compte = g.compte
     if compte['role'] not in (ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN):
         return jsonify({
@@ -1591,85 +1328,49 @@ def accepter_cgu_admin():
 
 
 # ---------------------------------------------------------------------------
-# Journal d'audit : la lecture
+# Journal d'audit : lecture
 # ---------------------------------------------------------------------------
-# Phase 3 de docs/audit-admin-plan.md. Jusqu'ici la table ne recevait que des
-# INSERT : aucun SELECT nulle part, donc un journal que personne ne pouvait
-# lire. Ecrire sans jamais relire, c'est se donner bonne conscience.
-#
-# TROIS chemins de lecture, UNE seule requete. Le volet par compte, l'onglet
-# complet et l'export sont trois vues du meme filtre : les separer en trois
-# requetes les ferait diverger, et la premiere a oublier le garde de rang
-# deviendrait le contournement de la regle.
+# Le volet par compte, l'onglet complet et l'export partagent _lire_journal.
 
 AUDIT_PAGE = 50
 AUDIT_PAGE_MAX = 200
 
 
 def _peut_lire_journal(acteur, cible_role):
-    """Qui peut lire le journal de qui. Arbitre le 2026-09-19.
+    """Vrai si l'acteur peut lire le journal d'un compte de ce role.
 
         superadmin  -> tout le monde
-        chef_admin  -> tout le monde SAUF le superadmin (ses pairs compris)
-        admin       -> personne (la route lui est fermee)
-        player      -> personne
-
-    ⚠️ Cette regle N'EST PAS celle de `compte_cible_protegee`, et l'ecart est
-    delibere. Ce decorateur exige un rang STRICTEMENT superieur, parce qu'il
-    protege une ACTION : suspendre un pair, lui retirer un role. Ici on ne fait
-    que LIRE, et un chef_admin qui ne verrait pas les actions de ses pairs ne
-    pourrait pas exercer la surveillance qui justifie ce journal -- c'est
-    precisement entre gens de meme rang que le controle mutuel a du sens.
-    Le §6.2 du plan proposait le rang strict ; l'arbitrage l'a elargi.
-
-    Seul le superadmin reste hors de portee : il est le sommet, personne ne le
-    surveille par ce biais.
+        chef_admin  -> tout le monde sauf le superadmin (ses pairs compris)
+        admin       -> personne
     """
     if acteur['role'] == ROLE_SUPERADMIN:
         return True
     if acteur['role'] == ROLE_CHEF_ADMIN:
-        # Un role inconnu est traite comme superadmin : l'inconnu ne donne
-        # jamais d'acces, meme regle que partout ailleurs dans le projet.
+        # Un role inconnu ne donne jamais acces.
         return cible_role not in (ROLE_SUPERADMIN, None) and cible_role in ROLE_HIERARCHY
     return False
 
 
 def _lire_journal(cur, acteur, compte_id=None, avant_id=None, limite=AUDIT_PAGE):
-    """Les lignes du journal visibles par cet acteur, les plus recentes d'abord.
+    """Lignes du journal visibles par cet acteur, les plus recentes d'abord.
 
-    `compte_id` restreint a un acteur precis (le volet) ; sans lui, c'est le
-    journal complet (l'onglet). `avant_id` pagine par CURSEUR et non par
-    OFFSET : un OFFSET saute des lignes des qu'une nouvelle s'insere pendant
-    la consultation -- et sur un journal qui s'ecrit en continu, ca arrive.
-
-    Le filtre de rang est applique EN SQL et non a l'affichage : rendre les
-    lignes puis les masquer les aurait fait transiter, et la pagination
-    compterait des lignes invisibles -- une page de 50 en afficherait 12.
+    `compte_id` restreint a un acteur ; `avant_id` pagine par curseur. Le
+    filtre de rang est fait en SQL pour que la pagination reste juste.
     """
     conditions = []
     params = []
 
-    # Ses PROPRES lignes se lisent toujours, quel que soit son rang : c'est le
-    # droit d'acces (S-07, export « mes donnees »). Le filtre de rang protege
-    # les actions des AUTRES ; sans cette exception, un admin -- qui ne lit pas
-    # le journal -- ne pourrait pas obtenir copie de ce qu'on garde a son nom.
+    # Chacun peut toujours lire ses propres lignes.
     ses_propres_lignes = compte_id is not None and compte_id == acteur['id']
 
-    # Les roles que cet acteur a le droit de lire. Un superadmin lit tout, y
-    # compris les lignes dont l'acteur a ete supprime (acteur_compte_id NULL).
+    # Le superadmin lit tout, y compris les lignes d'acteurs supprimes.
     if acteur['role'] != ROLE_SUPERADMIN and not ses_propres_lignes:
         roles_lisibles = [r for r in ROLE_HIERARCHY
                           if _peut_lire_journal(acteur, r)]
         if not roles_lisibles:
             return []
-        # Le rang est relu EN BASE a chaque consultation, jamais pris dans
-        # details.acteur : une personne retrogradee depuis ne doit pas rester
-        # lisible au motif qu'elle etait admin au moment de l'action.
-        #
-        # ⚠️ Corollaire assume : les lignes d'un compte SUPPRIME (jointure
-        # nulle) ne sont visibles que du superadmin. Un chef_admin ne peut pas
-        # verifier le rang de quelqu'un qui n'existe plus, donc il ne le lit
-        # pas -- prudence plutot que fuite.
+        # Rang relu en base ; les lignes d'un compte supprime ne sont visibles
+        # que du superadmin.
         conditions.append("c.role = ANY(%s)")
         params.append(roles_lisibles)
 
@@ -1697,14 +1398,7 @@ def _lire_journal(cur, acteur, compte_id=None, avant_id=None, limite=AUDIT_PAGE)
 
 
 def _ligne_journal(r):
-    """Une ligne du journal, prete a afficher.
-
-    Le pseudo vient de la JOINTURE tant que le compte existe, et retombe sur
-    `details.acteur.pseudo` quand il a ete supprime -- c'est precisement ce
-    que la denormalisation du §6.3 sert a faire. Une ligne dont l'acteur a
-    disparu AVANT cette denormalisation (septembre) n'a ni l'un ni l'autre :
-    elle sort avec un acteur nul, et c'est la verite.
-    """
+    """Une ligne du journal prete a afficher (pseudo fige si le compte a ete supprime)."""
     details = r[5] or {}
     denorme = details.get('acteur') or {}
     return {
@@ -1712,15 +1406,11 @@ def _ligne_journal(r):
         "action": r[1],
         "acteur_compte_id": r[2],
         "acteur_pseudo": r[7] or denorme.get('pseudo'),
-        # Vrai quand le compte n'existe plus : l'ecran doit pouvoir le dire,
-        # sinon on lit « Jérémy » sans savoir que le compte a ete supprime.
         "acteur_supprime": r[2] is None,
         "acteur_role": denorme.get('role'),
         "cible_type": r[3],
         "cible_id": r[4],
-        # Le bloc `acteur` est retire des details affiches : il est deja
-        # remonte en colonnes ci-dessus, et le laisser ferait doublon dans
-        # chaque ligne de l'ecran.
+        # Le bloc `acteur` est deja remonte en colonnes.
         "details": {k: v for k, v in details.items() if k != 'acteur'},
         "created_at": r[6].isoformat(),
     }
@@ -1729,17 +1419,9 @@ def _ligne_journal(r):
 @comptes_bp.route('/admin/comptes/<int:compte_id>/audit', methods=['GET'])
 @role_required(ROLE_CHEF_ADMIN)
 def journal_du_compte(compte_id):
-    """Les actions d'administration d'UN compte (le volet de sa ligne).
+    """Actions d'administration d'un compte.
 
-    ⚠️ PAS de `compte_cible_protegee` ici, et c'est deliberé : ce decorateur
-    refuse le rang EGAL, ce qui interdirait a un chef_admin de lire le journal
-    d'un pair. Or lire n'est pas agir, et c'est entre gens de meme rang que la
-    surveillance mutuelle a du sens (arbitrage du 2026-09-19).
-
-    La regle de lecture vit donc dans `_lire_journal`, UNE SEULE FOIS, pour les
-    trois chemins. Un compte hors de portee -- le superadmin vu par un
-    chef_admin -- ressort avec une liste VIDE plutot qu'un 403 : la route ne
-    doit pas devenir un revelateur de rang pour qui la sonde.
+    Un compte hors de portee renvoie une liste vide plutot qu'un 403.
     """
     try:
         avant_id = request.args.get('avant_id', type=int)
@@ -1755,9 +1437,7 @@ def journal_du_compte(compte_id):
     sorties = [_ligne_journal(r) for r in lignes]
     return jsonify({
         "lignes": sorties,
-        # Le curseur de la page suivante, ou None. Calcule ici plutot que
-        # devine par le frontend : lui faire lire le dernier id supposerait
-        # qu'il connait l'ordre de tri.
+        # Curseur de la page suivante, ou None.
         "avant_id": sorties[-1]['id'] if len(sorties) == limite else None,
     })
 
@@ -1765,12 +1445,7 @@ def journal_du_compte(compte_id):
 @comptes_bp.route('/admin/audit', methods=['GET'])
 @role_required(ROLE_CHEF_ADMIN)
 def journal_complet():
-    """Le journal entier (l'onglet Logs), meme filtre de rang, sans cible.
-
-    Repond a « meme si le compte n'est plus admin, ou n'existe plus » : la
-    requete ne filtre pas sur le role ACTUEL de la cible d'une action, mais
-    sur celui de l'ACTEUR -- et les lignes restent la quoi qu'il arrive.
-    """
+    """Journal complet (onglet Logs), avec le meme filtre de rang."""
     try:
         avant_id = request.args.get('avant_id', type=int)
         limite = min(request.args.get('limite', AUDIT_PAGE, type=int), AUDIT_PAGE_MAX)
@@ -1788,10 +1463,7 @@ def journal_complet():
     })
 
 
-# Cellules commencant par ces caracteres : Excel et LibreOffice les
-# interpretent comme des FORMULES. Un pseudo Discord « =cmd » deviendrait donc
-# du code a l'ouverture du fichier. On prefixe d'une apostrophe, qui force le
-# texte et reste invisible a l'affichage.
+# Prefixes interpretes comme formules par les tableurs : on ajoute une apostrophe.
 _CSV_DANGEREUX = ('=', '+', '-', '@', '\t', '\r')
 
 
@@ -1806,21 +1478,9 @@ def _cellule_csv(valeur):
 @comptes_bp.route('/admin/audit/export', methods=['GET'])
 @role_required(ROLE_CHEF_ADMIN)
 def exporter_journal():
-    """Le journal entier en CSV, par streaming.
+    """Journal complet en CSV, en streaming (pagination par curseur).
 
-    EN STREAMING et non materialise : ce journal ne se purge jamais (§4), donc
-    un `SELECT *` chargerait un jour toute la table en memoire et tomberait --
-    le jour ou l'on cherche justement quelque chose. On pagine en interne par
-    curseur et on rend les lignes au fil de l'eau ; la memoire reste bornee a
-    une page quelle que soit la taille du journal.
-
-    CSV et non JSON : un export de journal sert a CHERCHER -- trier par date,
-    filtrer une action, retrouver qui a touche a un joueur. Ca se fait dans un
-    tableur. `details` reste du JSON dans sa propre colonne : rien n'est perdu,
-    et les colonnes qui portent l'essentiel des recherches sont triables.
-
-    MEME filtre de rang que les deux vues : l'export ne doit jamais montrer ce
-    que l'ecran masque.
+    Meme filtre de rang que les vues.
     """
     acteur = g.compte
 
@@ -1834,8 +1494,7 @@ def exporter_journal():
             tampon.truncate(0)
             return valeur
 
-        # BOM UTF-8 : sans lui, Excel lit le fichier en latin-1 et rend les
-        # accents illisibles. Inoffensif pour tout le reste.
+        # BOM UTF-8 pour qu'Excel lise correctement les accents.
         yield '﻿'
         ecrivain.writerow(['id', 'date', 'action', 'acteur_id', 'acteur_pseudo',
                            'acteur_supprime', 'cible_type', 'cible_id', 'details'])
@@ -1851,13 +1510,7 @@ def exporter_journal():
                         if not lignes:
                             break
 
-                        # Le curseur doit AVANCER strictement. Sans ce garde,
-                        # une source qui rend deux fois la meme page boucle a
-                        # l'infini -- et un export qui ne se termine jamais
-                        # tient la connexion ouverte jusqu'au timeout, sans
-                        # rien dire. Constate au premier jet contre un curseur
-                        # de test qui rejoue sa reponse ; le meme blocage
-                        # viendrait d'un ORDER BY perdu.
+                        # Le curseur doit avancer, sinon boucle infinie.
                         if avant_id is not None and lignes[-1][0] >= avant_id:
                             logger.error("Export du journal : curseur bloque a %s", avant_id)
                             break
@@ -1875,10 +1528,7 @@ def exporter_journal():
                             yield vider()
                         avant_id = lignes[-1][0]
         except Exception as e:
-            # Le flux a deja commence : impossible de renvoyer un 500 propre.
-            # On journalise et on ferme sur une ligne qui DIT que l'export est
-            # incomplet -- un fichier tronque en silence se lirait comme un
-            # journal qui s'arrete la.
+            # Le flux a commence : on signale l'interruption dans le fichier.
             logger.error("Export du journal interrompu: %s", e)
             ecrivain.writerow(['#', 'EXPORT INTERROMPU', 'fichier incomplet'])
             yield vider()
@@ -1895,11 +1545,7 @@ def exporter_journal():
 @comptes_bp.route('/admin/comptes/<int:compte_id>/permissions', methods=['GET'])
 @role_required(ROLE_CHEF_ADMIN)
 def lister_permissions(compte_id):
-    """Permissions d'un compte, plus le catalogue delegable par l'acteur.
-
-    Lecture seule : pas de compte_cible_protegee, voir un compte n'est pas agir
-    dessus (plan 4.4, point B).
-    """
+    """Permissions d'un compte, et le catalogue que l'acteur peut deleguer."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -1921,8 +1567,7 @@ def lister_permissions(compte_id):
         "compte_id": compte_id,
         "role": row[0],
         "permissions": accordees,
-        # Ce que l'acteur peut accorder, pour que l'IHM grise le reste. Le
-        # backend reste seul juge : ce champ informe, il n'autorise pas.
+        # Pour griser l'interface ; le backend reverifie.
         "delegables": sorted(permissions_delegables_par(g.compte)),
     })
 
@@ -1931,11 +1576,9 @@ def lister_permissions(compte_id):
 @role_required(ROLE_CHEF_ADMIN)
 @compte_cible_protegee
 def accorder_permission(compte_id, permission):
-    """Accorde une permission nommee a un compte role=admin.
+    """Accorde une permission du catalogue a un compte role=admin.
 
-    Trois refus distincts, a ne pas confondre : la permission n'existe pas
-    (catalogue), l'acteur ne la possede pas lui-meme (plafond, contrainte 5),
-    la cible n'est pas un admin (les autres roles n'en ont pas l'usage).
+    L'acteur ne peut accorder que ce qu'il peut deleguer.
     """
     if permission not in PERMISSIONS_CATALOGUE:
         return jsonify({
@@ -1943,7 +1586,6 @@ def accorder_permission(compte_id, permission):
             "permissions": sorted(PERMISSIONS_CATALOGUE),
         }), 400
 
-    # « Il ne peut pas donner des droits qu'il n'a pas » (plan 2, contrainte 5).
     if permission not in permissions_delegables_par(g.compte):
         return jsonify({
             "error": "Vous ne pouvez pas accorder un droit que vous n'avez pas.",
@@ -1971,11 +1613,7 @@ def accorder_permission(compte_id, permission):
                             "code": "cible_non_admin",
                         }), 409
 
-                    # Une sous-permission sans son parent ne donnerait aucun
-                    # droit (permission_required exige les deux) : l'accorder
-                    # afficherait une case cochee sans effet. Refus explicite
-                    # plutot qu'un 200 trompeur. Lu dans la transaction, apres le
-                    # FOR UPDATE : le parent ne peut pas disparaitre entre-temps.
+                    # Une sous-permission exige son parent (lu apres le verrou).
                     parent = SOUS_PERMISSIONS.get(permission)
                     if parent is not None:
                         cur.execute(
@@ -1992,7 +1630,7 @@ def accorder_permission(compte_id, permission):
                                 "parent": parent,
                             }), 409
 
-                    # accorde_par vient de la session, JAMAIS du corps (R-49).
+                    # accorde_par vient de la session, jamais du corps.
                     cur.execute(
                         "INSERT INTO permissions_admin (compte_id, permission, accorde_par) "
                         "VALUES (%s, %s, %s) ON CONFLICT (compte_id, permission) DO NOTHING",
@@ -2017,11 +1655,9 @@ def accorder_permission(compte_id, permission):
 @role_required(ROLE_CHEF_ADMIN)
 @compte_cible_protegee
 def retirer_permission(compte_id, permission):
-    """Retire une permission. Un DELETE, pas un drapeau : permissions_admin est
-    l'etat courant des droits, l'historique vit dans audit_admin (plan 3.3).
+    """Retire une permission (l'historique est dans audit_admin).
 
-    Le plafond s'applique aussi au retrait : sans ca, un acteur pourrait defaire
-    ce qu'il n'aurait pas pu faire.
+    Le plafond de delegation s'applique aussi au retrait.
     """
     if permission not in PERMISSIONS_CATALOGUE:
         return jsonify({
@@ -2038,10 +1674,7 @@ def retirer_permission(compte_id, permission):
     if erreur is not None:
         return erreur
 
-    # Retirer un parent emporte ses sous-permissions : laissees seules elles ne
-    # donneraient aucun droit (permission_required exige le parent), mais elles
-    # resteraient cochees dans l'interface et reviendraient a la vie au moindre
-    # re-octroi du parent -- un droit rendu sans que personne ne l'ait decide.
+    # Retirer un parent retire aussi ses sous-permissions.
     enfants = [e for e, p in SOUS_PERMISSIONS.items() if p == permission]
     a_retirer = [permission] + enfants
 
@@ -2072,38 +1705,18 @@ def retirer_permission(compte_id, permission):
 
 
 # ---------------------------------------------------------------------------
-# Legs du role superadmin -- geste unique, atomique, irreversible.
+# Legs du role superadmin
 # ---------------------------------------------------------------------------
 
 @comptes_bp.route('/admin/comptes/<int:compte_id>/leguer-superadmin', methods=['POST'])
 @role_required(ROLE_SUPERADMIN)
-# PAS de @compte_cible_protegee : ce decorateur refuse toute action sur un
-# superadmin, or l'acteur EST le superadmin et la cible ne l'est pas encore.
-# La protection equivalente est portee par role_required(SUPERADMIN) ci-dessus
-# (seul le superadmin appelle) et par le refus d'auto-legs plus bas.
+# Pas de @compte_cible_protegee : l'acteur est le superadmin.
 def leguer_superadmin(compte_id):
-    """Legue le role superadmin a un admin ou chef_admin qui a consenti.
+    """Legue le role superadmin a un admin ou chef_admin.
 
-    SECONDE route qui ecrit comptes.role, avec changer_role -- exception
-    deliberee et etroite a R-40. Ne JAMAIS fusionner les deux : la garde du
-    dernier superadmin de changer_role refuserait precisement la retrogradation
-    par laquelle ce legs commence. Chacune porte le « jamais zero » a sa facon,
-    l'une par un refus, l'autre par son atomicite (plan 6bis.1).
-
-    L'ancien superadmin devient chef_admin : il redevient touchable par le
-    nouveau, sans retomber a zero.
-
-    Cible restreinte depuis le 2026-09-23 (R-68). Le plan 6bis ouvrait le legs
-    a « n'importe quel compte, quel que soit son role », decide le 10/09 --
-    AVANT que le consentement a la politique administrateur existe (18/09).
-    Leguer a un player le faisait superadmin, trace nominativement, sans qu'il
-    ait rien accepte : le meme contournement que la promotion directe par
-    /role. La cible doit donc etre admin ou chef_admin (elle a accepte un role
-    d'administration) ET avoir accepte la politique en version courante. Pour
-    leguer a un player : lui proposer admin d'abord.
-
-    L'amorcage (DISCORD_SUPERADMIN_ID) n'est pas concerne : c'est la personne
-    elle-meme qui se connecte, et sa regularisation passe par /me/cgu-admin.
+    La cible doit avoir accepte la politique admin en version courante.
+    L'ancien superadmin devient chef_admin. Route distincte de changer_role,
+    dont la garde du dernier superadmin bloquerait le legs.
     """
     acteur_id = _acteur_id()
 
@@ -2117,9 +1730,7 @@ def leguer_superadmin(compte_id):
         with get_db_connection() as conn:
             try:
                 with conn.cursor() as cur:
-                    # Les deux lignes verrouillees en UNE requete, triees par id :
-                    # deux SELECT ... FOR UPDATE dans un ordre dependant des
-                    # parametres sont un interblocage en attente.
+                    # Verrouillage des deux lignes en une requete triee (evite l'interblocage).
                     cur.execute(
                         "SELECT id, role, discord_username, cgu_admin_version "
                         "FROM comptes WHERE id IN (%s, %s) "
@@ -2133,9 +1744,7 @@ def leguer_superadmin(compte_id):
                         conn.rollback()
                         return jsonify({"error": "Compte introuvable"}), 404
 
-                    # Role de l'acteur relu SOUS verrou : role_required l'a lu
-                    # avant la transaction, et deux legs concurrents ne doivent
-                    # pas reussir tous les deux.
+                    # Role de l'acteur relu sous verrou.
                     moi = lignes.get(acteur_id)
                     if moi is None or moi[1] != ROLE_SUPERADMIN:
                         conn.rollback()
@@ -2144,10 +1753,7 @@ def leguer_superadmin(compte_id):
                             "code": "plus_superadmin",
                         }), 409
 
-                    # Consentement de la cible, lu sous le meme verrou que son
-                    # role : entre l'affichage et le clic, elle a pu etre
-                    # retrogradee. Avant la confirmation, pour que le refus
-                    # dise le vrai blocage plutot qu'un pseudo a retaper.
+                    # Role et consentement de la cible relus sous verrou.
                     if (cible[1] not in (ROLE_ADMIN, ROLE_CHEF_ADMIN)
                             or cible[3] != CGU_ADMIN_VERSION):
                         conn.rollback()
@@ -2159,10 +1765,7 @@ def leguer_superadmin(compte_id):
                             "code": "legs_sans_consentement",
                         }), 409
 
-                    # Confirmation forte sur discord_username (le handle stable),
-                    # jamais sur le nom d'affichage : celui-ci est librement
-                    # modifiable et un homonyme rendrait la confirmation vide de
-                    # sens (plan 6bis.2).
+                    # Confirmation sur le handle Discord, pas sur le nom affiche.
                     if not _confirmation_handle_valide(confirmation, cible[2]):
                         conn.rollback()
                         return jsonify({
@@ -2172,9 +1775,7 @@ def leguer_superadmin(compte_id):
 
                     ancien_role_cible = cible[1]
 
-                    # ORDRE IMPOSE par l'index partiel non-deferrable (plan 3.2) :
-                    # retrograder l'ancien AVANT de promouvoir le nouveau.
-                    # L'inverse leve 23505 a chaque tentative.
+                    # Retrograder avant de promouvoir (index unique non differable).
                     cur.execute(
                         "UPDATE comptes SET role = %s, updated_at = now() WHERE id = %s",
                         (ROLE_CHEF_ADMIN, acteur_id),
@@ -2184,17 +1785,13 @@ def leguer_superadmin(compte_id):
                         (ROLE_SUPERADMIN, compte_id),
                     )
 
-                    # Deux roles changent, deux comptes se reconnectent (A-01/A-02,
-                    # voir changer_role). La cible surtout : si elle etait player,
-                    # elle deviendrait superadmin sur une session de 30 jours.
-                    # L'acteur aussi, session courante comprise -- meme regle,
-                    # sans exception a retenir : le frontend le reconnecte.
+                    # Les deux comptes doivent se reconnecter (duree de session liee au role).
                     cur.execute(
                         "DELETE FROM sessions_joueurs WHERE compte_id IN (%s, %s)",
                         (acteur_id, compte_id),
                     )
 
-                    # La cible quitte le role admin : meme purge qu'ailleurs (R-53).
+                    # La cible quitte le role admin : purge des permissions a la carte.
                     if ancien_role_cible == ROLE_ADMIN:
                         cur.execute("DELETE FROM permissions_admin WHERE compte_id = %s",
                                     (compte_id,))
@@ -2202,16 +1799,11 @@ def leguer_superadmin(compte_id):
                             _audit(cur, 'permissions_purgees', 'compte', compte_id,
                                    {"motif": "legs_superadmin"})
 
-                    # UNE seule ligne d'audit : c'est un seul geste (plan 3.4).
                     _audit(cur, 'superadmin_legue', 'compte', compte_id,
                            {"ancien": acteur_id, "nouveau": compte_id,
                             "ancien_role_cible": ancien_role_cible})
 
-                    # S-03 : une proposition encore en attente pour la cible
-                    # la ferait redescendre a l'acceptation (repondre_promotion
-                    # le refuse aussi, ceci est la ceinture). Et l'ancien
-                    # superadmin, desormais chef_admin, ne peut plus designer
-                    # de chef_admin : ses propositions de ce role tombent.
+                    # Annule les propositions devenues sans objet.
                     _annuler_promotions(cur, 'legs_superadmin', cible=compte_id)
                     _annuler_promotions(cur, 'proposant_retrograde', proposant=acteur_id,
                                         role_propose=ROLE_CHEF_ADMIN)
@@ -2232,15 +1824,7 @@ def leguer_superadmin(compte_id):
 @permission_required('gestion_comptes')
 @compte_cible_protegee
 def revoquer_sessions(compte_id):
-    """Ferme toutes les sessions d'un compte, sur tous ses appareils.
-
-    Pour un compte compromis. Un changement de role n'a plus besoin d'elle :
-    toute ecriture de comptes.role ferme deja les sessions du compte (A-01/A-02).
-
-    Le decorateur accepte les deux voies d'authentification : sur
-    `role_required` seul, un admin connecte par mot de passe voyait un bouton
-    mort.
-    """
+    """Ferme toutes les sessions d'un compte (compte compromis)."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -2262,20 +1846,15 @@ def revoquer_sessions(compte_id):
 @permission_required('gestion_comptes')
 @compte_cible_protegee
 def delier_compte(compte_id):
-    """Detache un compte de sa fiche joueur. L'inverse de /approve.
+    """Detache un compte de sa fiche joueur (inverse de /approve).
 
-    Rien n'est detruit : seul le lien saute, la fiche redevient revendicable
-    et la personne peut se rattacher de nouveau.
-
-    Nomme `delier` et non `sync` : /sync existe deja pour une tout autre
-    operation, la propagation du pseudo Discord vers joueurs.nom.
+    La fiche redevient revendicable.
     """
     try:
         with get_db_connection() as conn:
             try:
                 with conn.cursor() as cur:
-                    # FOR UPDATE : sans lui, un deliement concurrent d'une approbation laisse
-                    # joueur_id dans l'etat que l'ordre d'arrivee decide.
+                    # Verrou contre une approbation concurrente.
                     cur.execute(
                         "SELECT joueur_id, statut FROM comptes WHERE id = %s FOR UPDATE",
                         (compte_id,),
@@ -2293,11 +1872,9 @@ def delier_compte(compte_id):
                             "code": "non_lie",
                         }), 409
 
-                    # Une suspension est une decision independante du rattachement.
+                    # Une suspension reste en place.
                     nouveau_statut = 'pending' if statut == 'linked' else statut
 
-                    # profil_synced_at datait une propagation vers une fiche qui n'est plus la
-                    # sienne.
                     cur.execute(
                         """UPDATE comptes
                            SET joueur_id = NULL, statut = %s,
@@ -2325,41 +1902,20 @@ def delier_compte(compte_id):
         logger.error("Deliement du compte %s impossible: %s", compte_id, e)
         return jsonify({"error": "Erreur serveur"}), 500
 
-    # Meme raison : l'avatar disparait de /stats/joueurs des le deliement.
+    # L'avatar disparait de /stats/joueurs.
     invalidate_cache()
     logger.info("Compte %s delie du joueur %s (par %s)", compte_id, joueur_id, _acteur_id())
     return jsonify({"status": "success", "joueur_id": joueur_id, "statut": nouveau_statut})
 
 
 # ---------------------------------------------------------------------------
-# « Jamais zero superadmin » -- la regle, appliquee partout
+# Jamais zero superadmin
 # ---------------------------------------------------------------------------
-# Referme B-02 et B-03. La garde existait deja dans changer_role, mais elle
-# avait ete posee la ou on la CHERCHE : sur la route qui ecrit `role`. Or deux
-# autres chemins menent au meme resultat sans jamais toucher a cette colonne --
-# suspendre (ecrit `statut`) et supprimer (efface la ligne). C'est un angle
-# mort de repartition, pas une negligence.
-#
-# La suspension est le pire des deux, alors qu'elle parait la plus anodine :
-#
-#   - supprimer est RATTRAPABLE si DISCORD_SUPERADMIN_ID est encore renseigne,
-#     le compte n'existant plus, l'amorcage le laisse rentrer ;
-#   - suspendre ne l'est PAS : le compte existe toujours, donc l'amorcage n'est
-#     jamais consulte, et login() refuse en amont sur le statut. Seul un UPDATE
-#     SQL en production repare.
-#
-# D'ou une regle unique, et non deux gardes distinctes : un compte ne peut pas
-# se retirer a lui-meme la capacite d'administrer s'il est le dernier a la
-# detenir. Le superadmin qui veut vraiment partir LEGUE d'abord -- c'est
-# exactement le geste prevu pour ca.
+# Suspendre ou supprimer le dernier superadmin est refuse : il doit leguer
+# son role d'abord.
 
 def _dernier_de_son_role(cur, compte_id: int, role: str) -> bool:
-    """Vrai si ce compte est le dernier a porter ce role.
-
-    Meme requete que celle de changer_role, volontairement : une divergence
-    entre les deux donnerait deux definitions du « dernier », et c'est le genre
-    d'ecart qu'on ne decouvre qu'une fois dehors.
-    """
+    """Vrai si ce compte est le dernier a porter ce role."""
     cur.execute(
         "SELECT COUNT(*) FROM comptes WHERE role = %s AND id <> %s",
         (role, compte_id),
@@ -2368,10 +1924,9 @@ def _dernier_de_son_role(cur, compte_id: int, role: str) -> bool:
 
 
 def _refus_auto_verrouillage(cur, compte_id: int, role: str, geste: str):
-    """Renvoie une reponse 409 si ce geste laisserait le site sans superadmin.
+    """Reponse 409 si ce geste laisserait le site sans superadmin, sinon None.
 
-    `geste` est le verbe a afficher (« suspendre », « supprimer »). Renvoie
-    None quand il n'y a rien a empecher -- l'appelant continue.
+    `geste` est le verbe a afficher (« suspendre », « supprimer »).
     """
     if role != ROLE_SUPERADMIN or not _dernier_de_son_role(cur, compte_id, ROLE_SUPERADMIN):
         return None
@@ -2388,12 +1943,9 @@ def _refus_auto_verrouillage(cur, compte_id: int, role: str, geste: str):
 @permission_required('gestion_comptes')
 @compte_cible_protegee
 def changer_statut(compte_id):
-    """Suspend ou reactive un compte. Ne touche jamais au role ni au joueur lie.
+    """Suspend ou reactive un compte (`suspended` ou `actif`).
 
-    Deux choix seulement : `suspended` ou `actif` (S-17, audit du 24/09). La
-    route acceptait `linked` sur un compte sans fiche et `pending` sur un compte
-    lie -- des etats qu'aucun ecran ne sait lire. Reactiver rend l'etat que
-    dicte le rattachement : `linked` s'il y a une fiche, `pending` sinon.
+    La reactivation remet `linked` s'il y a une fiche, `pending` sinon.
     """
     demande = (request.get_json(silent=True) or {}).get('statut')
     if demande not in ('actif', 'suspended'):
@@ -2414,13 +1966,6 @@ def changer_statut(compte_id):
                 else:
                     nouveau = 'linked' if row[2] is not None else 'pending'
 
-                # B-02.2 / B-03. Suspendre est fonctionnellement AUSSI FORT que
-                # retrograder -- ca ferme les sessions et interdit la
-                # reconnexion -- mais c'etait traite comme un geste mineur.
-                # `compte_cible_protegee` laisse deliberement passer
-                # l'auto-action (« fermer ses propres sessions est legitime »),
-                # ce qui est juste pour les sessions et faux pour le statut :
-                # c'est precisement par la que le superadmin se mettait dehors.
                 if nouveau == 'suspended':
                     refus = _refus_auto_verrouillage(cur, compte_id, row[1], 'suspendre')
                     if refus is not None:
@@ -2432,12 +1977,9 @@ def changer_statut(compte_id):
                     (nouveau, compte_id),
                 )
                 if nouveau == 'suspended':
-                    # Sans fermer les sessions, la suspension ne serait qu'un libelle d'affichage.
+                    # Ferme les sessions du compte suspendu.
                     cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte_id,))
-                    # S-02 : une proposition en attente survivrait a la
-                    # suspension et s'accepterait a la reactivation. Celles que
-                    # le compte a faites tombent aussi : un proposant suspendu
-                    # n'engage plus personne.
+                    # Annule les propositions recues ou faites par le compte.
                     _annuler_promotions(cur, 'cible_suspendue', cible=compte_id)
                     _annuler_promotions(cur, 'proposant_suspendu', proposant=compte_id)
                 _audit(cur, 'statut_change', 'compte', compte_id,
@@ -2453,9 +1995,7 @@ def changer_statut(compte_id):
 # Profil joueur
 # ---------------------------------------------------------------------------
 
-# On stocke un IDENTIFIANT, jamais une URL : une URL complete saisie par le
-# joueur atterrirait dans un href, et un « javascript: » suffirait a executer
-# du script chez tous les visiteurs de sa fiche.
+# On stocke un identifiant, jamais une URL saisie (risque de « javascript: »).
 RESEAUX_CONNUS = {
     'twitch':  'https://twitch.tv/%s',
     'youtube': 'https://youtube.com/@%s',
@@ -2463,10 +2003,8 @@ RESEAUX_CONNUS = {
     'twitter': 'https://x.com/%s',
 }
 
-# Handles admis par les plateformes ci-dessus : lettres, chiffres, et quelques
-# separateurs. Volontairement strict -- on peut toujours elargir.
 _RE_HANDLE = re.compile(r'^[A-Za-z0-9_.\-]{1,50}$')
-_RE_COULEUR = RE_COULEUR   # une seule regex de couleur pour tout le backend (utils)
+_RE_COULEUR = RE_COULEUR
 
 
 def _reseaux_avec_urls(reseaux):
@@ -2538,15 +2076,7 @@ def lire_mon_profil():
 @comptes_bp.route('/me/profil', methods=['PUT'])
 @player_required
 def ecrire_mon_profil():
-    """Edite le profil du joueur connecte.
-
-    Liste blanche stricte des champs : ni le role, ni le statut, ni le joueur
-    rattache ne sont modifiables ici. Une route qui relaierait le corps JSON tel
-    quel vers un UPDATE serait une escalade de privilege -- le role est la seule
-    frontiere de l'application.
-
-    L'avatar n'est pas editable : il vient de Discord.
-    """
+    """Edite le profil du joueur connecte (liste blanche de champs)."""
     champs, erreur = _valider_profil(request.get_json(silent=True) or {})
     if erreur is not None:
         return jsonify({"error": erreur, "code": "profil_invalide"}), 400
@@ -2570,8 +2100,7 @@ def ecrire_mon_profil():
         logger.error("Ecriture du profil impossible: %s", e)
         return jsonify({"error": "Erreur serveur"}), 500
 
-    # La fiche publique n'est pas cachee (c'est /classement qui l'est), donc
-    # l'edition est visible immediatement : rien a invalider.
+    # La fiche publique n'est pas en cache : rien a invalider.
     return jsonify({"status": "success", **champs,
                     "reseaux_affichables": _reseaux_avec_urls(champs['reseaux'])})
 
@@ -2579,26 +2108,10 @@ def ecrire_mon_profil():
 def profil_public(cur, joueur_id):
     """Partie publique du profil d'un joueur, ou None.
 
-    Ne renvoie que ce qui est destine a etre lu par n'importe quel visiteur.
-    Le statut du compte et sa date de connexion restent internes.
-
-    Le role, lui, est public depuis le 2026-09-27, mais SEULEMENT s'il s'agit
-    d'un role d'administration (badge sur la fiche joueur) : un joueur ordinaire
-    renvoie `role: None`, pas « player ». C'est annonce dans la politique
-    administrateur (§4 bis de /confidentialite, CGU_ADMIN_VERSION 1.1) : on
-    l'accepte en acceptant le role.
-
-    A noter : l'URL d'avatar contient le snowflake Discord du joueur. C'est
-    inherent au choix « avatar servi par le CDN Discord, aucune copie stockee »,
-    et ca revient a publier son identifiant Discord. C'est assumable dans une
-    communaute qui se connait, mais ca doit figurer dans la politique de
-    confidentialite -- ce n'est pas une consequence evidente pour la personne
-    qui clique « se connecter avec Discord ».
+    Le role n'est expose que pour les roles d'administration (badge).
     """
     cur.execute(
-        # anonymise_at IS NULL : sans cette condition, une fiche anonymisee affichait
-        # encore l'avatar, la bio et les liens de son proprietaire -- et l'URL de
-        # l'avatar contenait l'identifiant Discord.
+        # Rien pour une fiche anonymisee.
         """SELECT c.discord_id, c.discord_avatar_hash, p.bio, p.couleur_accent, p.reseaux,
                   c.role
            FROM comptes c
@@ -2621,17 +2134,10 @@ def profil_public(cur, joueur_id):
 
 
 # ---------------------------------------------------------------------------
-# Avatars, relayes et jamais lies en direct : une <img> vers cdn.discordapp.com
-# donnerait a Discord l'IP de chaque visiteur et publierait le snowflake du
-# joueur dans la source de la page.
+# Avatars, relayes pour ne pas exposer l'IP des visiteurs ni le snowflake
 # ---------------------------------------------------------------------------
 
-# Partage entre threads depuis le passage aux workers gthread (2026-09-17), et
-# sans verrou volontairement : toutes les operations faites ici sont atomiques
-# (`get`, affectation, `clear`), sans sequence lire-puis-supprimer sur une meme
-# cle -- contrairement au cache de cache.py, qui a du en recevoir un. Le pire
-# cas est que deux threads telechargent le meme avatar en parallele : du travail
-# en double, jamais une reponse fausse.
+# Partage entre threads sans verrou : seules des operations atomiques du dict.
 _avatars = {}
 
 
@@ -2706,8 +2212,7 @@ def avatar_moi():
 @comptes_bp.route('/avatar/compte/<int:compte_id>', methods=['GET'])
 @role_required(ROLE_ADMIN)
 def avatar_compte(compte_id):
-    """Avatar d'un compte, quel que soit son statut : l'administration montre
-    aussi les comptes en attente et suspendus."""
+    """Avatar d'un compte, quel que soit son statut (administration)."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -2731,20 +2236,12 @@ def avatar_compte(compte_id):
 @comptes_bp.route('/admin/matchmaking', methods=['POST'])
 @permission_required('gestion_matchmaking')
 def matchmaking_admin():
-    """Compose les lobbies pour la page d'administration.
-
-    Appelle exactement le meme service que /api/bot/matchmaking. C'est tout
-    l'interet de l'avoir sorti du navigateur : deux implementations du meme
-    algorithme divergent toujours, et l'ecart ne se voit qu'au moment ou un
-    lobby est mal compose.
-    """
+    """Compose les lobbies (meme service que /api/bot/matchmaking)."""
     data = request.get_json(silent=True) or {}
     noms = data.get('noms')
     joueur_ids = data.get('joueur_ids')
 
-    # On exige exactement une liste, comme la route du bot : valider `noms` puis
-    # resoudre sur `joueur_ids` parce que le resolveur les teste en premier
-    # serait un piege silencieux.
+    # Exactement une liste, comme la route du bot.
     fournis = [x for x in (noms, joueur_ids) if x]
     if len(fournis) != 1 or not isinstance(fournis[0], list):
         return jsonify({
@@ -2781,7 +2278,7 @@ def matchmaking_admin():
 
 
 # ---------------------------------------------------------------------------
-# Jetons de service (bots) -- reserve au super-administrateur
+# Jetons de service (bots), reserve au superadmin
 # ---------------------------------------------------------------------------
 
 SCOPES_CONNUS = ('read:joueurs', 'read:classement', 'matchmaking')
@@ -2790,7 +2287,7 @@ SCOPES_CONNUS = ('read:joueurs', 'read:classement', 'matchmaking')
 @comptes_bp.route('/admin/service-tokens', methods=['GET'])
 @role_required(ROLE_SUPERADMIN)
 def lister_service_tokens():
-    """Liste les jetons. Ne renvoie JAMAIS de jeton : seul le hash existe."""
+    """Liste les jetons (seul le hash est stocke)."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -2815,12 +2312,7 @@ def lister_service_tokens():
 @comptes_bp.route('/admin/service-tokens', methods=['POST'])
 @role_required(ROLE_SUPERADMIN)
 def creer_service_token():
-    """Cree un jeton et le renvoie UNE SEULE FOIS.
-
-    Seul le sha256 part en base : le jeton est irrecuperable ensuite. C'est
-    aussi ce qui limite les degats d'un dump SQL -- contrairement a l'ancienne
-    table api_tokens, qui stockait ses jetons en clair.
-    """
+    """Cree un jeton et le renvoie une seule fois (seul le hash est stocke)."""
     data = request.get_json(silent=True) or {}
     nom = (data.get('nom') or '').strip()[:64]
     scopes = data.get('scopes') or []
@@ -2861,7 +2353,7 @@ def creer_service_token():
 
     return jsonify({
         "id": token_id, "nom": nom, "scopes": scopes,
-        "token": jeton,                  # visible une seule fois
+        "token": jeton,  # visible une seule fois
         "expires_at": expires_at.isoformat() if expires_at else None,
     }), 201
 
@@ -2892,16 +2384,10 @@ def revoquer_service_token(token_id):
 # ---------------------------------------------------------------------------
 
 def _enregistrer_consentement(cur, compte_id, politique, version, origine):
-    """Ajoute une acceptation a l'historique (table consentements, ajout seul).
+    """Ajoute une acceptation a l'historique (table consentements).
 
-    A appeler dans la MEME transaction que l'UPDATE des colonnes cgu_* de
-    comptes : l'etat courant et son histoire vivent ou meurent ensemble. Une
-    acceptation enregistree dans comptes sans ligne ici serait une preuve qui
-    disparait au prochain changement de version (lot F, audit du 24/09).
-
-    `origine` nomme le GESTE (page_consentement, acceptation_promotion,
-    regularisation_admin) : une ligne qui dit « accepte » sans dire comment
-    est ce que S-06 reprochait au lien cgu=1.
+    A appeler dans la meme transaction que la mise a jour des colonnes cgu_*.
+    `origine` nomme le parcours (page_consentement, acceptation_promotion...).
     """
     cur.execute(
         """INSERT INTO consentements (compte_id, politique, version, origine)
@@ -2913,11 +2399,7 @@ def _enregistrer_consentement(cur, compte_id, politique, version, origine):
 @comptes_bp.route('/me/cgu', methods=['POST'])
 @player_required_sans_cgu
 def accepter_cgu():
-    """Enregistre l'acceptation des conditions.
-
-    On garde la VERSION acceptee et pas seulement la date : sans elle, on sait
-    quand la personne a accepte, mais pas quoi -- ce qui ne demontre rien.
-    """
+    """Enregistre l'acceptation des conditions, avec leur version."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -2939,10 +2421,7 @@ def accepter_cgu():
 @comptes_bp.route('/me/notifications', methods=['GET'])
 @player_required
 def mes_notifications():
-    """Les 30 dernieres notifications du compte, et le nombre de non-lues.
-
-    Tout en une requete : la navbar l'appelle a chaque chargement de page.
-    """
+    """Les 30 dernieres notifications du compte et le nombre de non-lues."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -2991,8 +2470,7 @@ def marquer_notifications_lues():
 @comptes_bp.route('/admin/notifications', methods=['GET'])
 @role_required(ROLE_ADMIN)
 def compteur_admin():
-    """Ce qui attend une decision d'administrateur, pour les pastilles de la
-    navbar. Appelee a chaque chargement de page : elle reste un COUNT."""
+    """Compteurs des demandes en attente, pour les pastilles de la navbar."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -3009,22 +2487,9 @@ def compteur_admin():
 @comptes_bp.route('/me/export', methods=['GET'])
 @player_required_sans_cgu
 def exporter_mes_donnees():
-    """Droit d'acces et de portabilite (art. 15 et 20) : tout, en JSON.
+    """Export des donnees du compte en JSON (droit d'acces et de portabilite).
 
-    Inclut le dossier sportif en plus de l'identite. Il n'est pas supprime par
-    l'effacement du compte -- raison de plus pour que la personne puisse en
-    obtenir copie.
-
-    S-07 (audit du 24/09) : l'export oubliait les demandes de CREATION de fiche
-    (jointure interne sur une fiche qui n'existe pas encore), le consentement
-    administrateur, les propositions de role, les permissions et, pour un
-    admin, les lignes du journal dont il est l'auteur -- nominatives et
-    conservees sans limite, donc les premieres a devoir y figurer.
-
-    Ce qui n'y figure PAS, volontairement : l'identite des AUTRES comptes (qui
-    a propose un role, qui a accorde une permission). L'export donne les
-    donnees de la personne, pas celles des administrateurs qui ont agi sur
-    elle (art. 15.4 : ne pas porter atteinte aux droits d'autrui).
+    Inclut le dossier sportif, mais pas l'identite des autres comptes.
     """
     compte_id = g.compte['id']
     joueur_id = g.compte['joueur_id']
@@ -3051,8 +2516,7 @@ def exporter_mes_donnees():
                 )
                 c = cur.fetchone()
                 if c is None:
-                    # Le compte a pu etre supprime depuis la validation de la
-                    # session : mieux vaut un 404 qu'un TypeError en 500.
+                    # Compte supprime depuis la verification de session.
                     return jsonify({"error": "Compte introuvable"}), 404
                 export["compte"] = {
                     "discord_id": c[0], "discord_username": c[1],
@@ -3068,7 +2532,7 @@ def exporter_mes_donnees():
                     "politique_admin_version": c[15],
                 }
 
-                # Lot F : toutes les acceptations, pas seulement la derniere.
+                # Historique complet des acceptations.
                 cur.execute(
                     """SELECT politique, version, accepte_le, origine
                        FROM consentements WHERE compte_id = %s ORDER BY accepte_le, id""",
@@ -3100,9 +2564,7 @@ def exporter_mes_donnees():
                     "navigateur": r[3],
                 } for r in cur.fetchall()]
 
-                # LEFT JOIN : une demande de CREATION n'a pas encore de fiche.
-                # La jointure interne la faisait disparaitre de l'export, avec
-                # son message et le nom demande (le pseudo Discord).
+                # LEFT JOIN : une demande de creation n'a pas encore de fiche.
                 cur.execute(
                     """SELECT d.statut, d.message, d.created_at, d.decided_at, j.nom,
                               d.joueur_id, d.nom_demande
@@ -3137,13 +2599,9 @@ def exporter_mes_donnees():
                     "permission": r[0], "accordee_le": r[1].isoformat(),
                 } for r in cur.fetchall()]
 
-                # Les actions d'administration dont la personne est l'AUTEUR,
-                # toutes (limite=None : LIMIT NULL, sans borne). Par le lecteur
-                # partage, comme le volet, l'onglet et l'export admin : une
-                # seule requete lit ce journal. Vide pour qui n'a jamais administre.
+                # Actions d'administration dont la personne est l'auteur (sans limite).
                 export["journal_de_mes_actions"] = [
                     {k: v for k, v in _ligne_journal(r).items()
-                     # L'identite de l'auteur est deja dans « compte ».
                      if k not in ('acteur_compte_id', 'acteur_pseudo', 'acteur_supprime')}
                     for r in _lire_journal(cur, g.compte, compte_id=compte_id, limite=None)
                 ]
@@ -3209,92 +2667,47 @@ def exporter_mes_donnees():
 
 
 def _effacer_compte(cur, compte_id, joueur_id, discord_id, origine):
-    """Droit a l'effacement (art. 17), niveau 1 : efface un compte.
+    """Efface un compte : identite, profil, sessions, demandes, consentements.
 
-    Detruit l'IDENTITE -- compte, profil, sessions, demandes de liaison,
-    historique des consentements -- et
-    laisse INTACT le dossier sportif, qui appartient a une fiche joueur
-    pseudonyme.
-
-    Pourquoi le dossier sportif reste : le moteur TrueSkill est incremental.
-    Chaque tournoi part du mu/sigma courant des joueurs et l'ecrase ; il
-    n'existe aucune fonction de recalcul depuis zero. Retirer les
-    participations d'une personne rendrait le classement de TOUS les autres
-    definitivement faux, sans moyen de le reconstruire. Le pseudo de jeu, une
-    fois detache de tout identifiant Discord, ne permet plus d'identifier
-    raisonnablement la personne.
-
-    Qui veut aller plus loin demande l'anonymisation du pseudo (niveau 2), que
-    seul un administrateur peut faire.
-
-    A appeler dans une transaction, le compte deja verrouille (FOR UPDATE) et
-    les gardes deja passees : cette fonction n'arbitre rien, elle efface.
+    Le dossier sportif reste attache a la fiche joueur (calcul TrueSkill
+    incremental). A appeler dans une transaction, compte deja verrouille et
+    gardes passees.
     """
-    # L'audit AVANT la suppression : la ligne reference le compte, et
-    # acteur_compte_id est en ON DELETE SET NULL. On y consigne de quoi rejouer
-    # la suppression apres une restauration de sauvegarde (runbook §5), sans
-    # garder le snowflake EN CLAIR.
-    #
-    # ⚠️ S-16 (audit du 24/09) : l'empreinte est une PSEUDONYMISATION, pas une
-    # anonymisation. Un snowflake n'a rien de secret : face a la liste des
-    # membres du serveur Discord, sha256 de chacun retrouve le compte en une
-    # seconde. C'est donc encore une donnee personnelle, conservee sans limite
-    # avec le journal -- justifiee par le seul usage ci-dessous, et declaree
-    # comme telle dans la politique (§ journal d'administration).
+    # Audit avant la suppression (la ligne reference le compte). On garde une
+    # empreinte du snowflake, pas l'identifiant, pour pouvoir resupprimer le
+    # compte apres une restauration de sauvegarde. Cette empreinte reste une
+    # donnee personnelle (pseudonymisation), declaree dans la politique de
+    # confidentialite.
     _audit(
         cur, 'compte_supprime', 'compte', compte_id,
         {
              "joueur_id": joueur_id,
              "origine": origine,
-             # Empreinte et non identifiant en clair : permet de verifier apres
-             # restauration qu'un compte ressuscite doit etre resupprime.
-             # Pseudonyme, pas anonyme (voir plus haut).
+             # Empreinte, pas l'identifiant en clair.
              "discord_id_hash": hash_token(discord_id),
         },
     )
-    # Ordre explicite plutot que de s'en remettre aux CASCADE : le jour ou une
-    # contrainte change, on veut que ce soit ce code qui decide de ce qui
-    # disparait.
+    # Suppressions explicites plutot que de dependre des CASCADE.
     cur.execute("DELETE FROM sessions_joueurs WHERE compte_id = %s", (compte_id,))
     cur.execute("DELETE FROM profils WHERE compte_id = %s", (compte_id,))
     cur.execute("DELETE FROM liaisons_demandes WHERE compte_id = %s", (compte_id,))
-    # Lot F (decision du 25/09) : l'historique des consentements part avec le
-    # compte. Plus de traitement, plus rien a justifier ; le garder serait
-    # conserver une donnee personnelle sans raison.
+    # L'historique des consentements part avec le compte.
     cur.execute("DELETE FROM consentements WHERE compte_id = %s", (compte_id,))
-    # S-02 : les propositions RECUES partent par CASCADE avec le compte ; celles
-    # qu'il a FAITES passeraient a propose_par NULL et resteraient affichees en
-    # attente, alors que repondre_promotion les refuserait a l'acceptation.
+    # Les propositions faites par ce compte sont annulees.
     _annuler_promotions(cur, 'proposant_supprime', proposant=compte_id)
     cur.execute("DELETE FROM comptes WHERE id = %s", (compte_id,))
 
 
-# Il n'y a PLUS de `DELETE /me` : depuis le 2026-09-22, le titulaire ne supprime
-# plus son compte lui-meme. L'effacement direct etait juge trop dangereux --
-# irreversible, a un clic, et a la portee de quiconque tient une session ouverte
-# sur un poste partage ou vole. Le bouton de /mon-compte renvoie desormais vers
-# une demande ecrite a SITE_CONTACT, executee ici par le superadmin.
-#
-# Retirer la route et pas seulement le bouton : une route laissee en place reste
-# appelable a la main avec un jeton de joueur. L'acces direct serait cache, pas
-# ferme. test_rgpd.py verifie qu'aucune route /me n'accepte plus DELETE.
+# L'effacement se fait sur demande ecrite, par le superadmin (pas de DELETE /me).
 @comptes_bp.route('/admin/comptes/<int:compte_id>', methods=['DELETE'])
 @role_required(ROLE_SUPERADMIN)
 @compte_cible_protegee
 def supprimer_compte(compte_id):
-    """Execute une demande d'effacement recue par ecrit.
-
-    Capacite de ROLE, pas permission delegable, comme la purge RGPD : un geste
-    irreversible sur l'identite d'une personne n'a pas a se distribuer. Avant de
-    l'appeler, verifier que la demande vient bien du titulaire
-    (docs/runbook-admin.md §7) -- c'est ce qui la distingue d'une demande
-    ecrite par n'importe qui au nom de n'importe qui.
-    """
+    """Execute une demande d'effacement recue par ecrit (verifier qu'elle vient
+    du titulaire)."""
     acteur_id = _acteur_id()
 
-    # Le superadmin est unique : se supprimer laisserait le site sans
-    # administration. compte_cible_protegee laisse deliberement passer
-    # l'auto-action, d'ou ce refus explicite, comme pour le legs.
+    # Le superadmin ne peut pas se supprimer lui-meme.
     erreur = refuse_auto_modification(acteur_id, compte_id)
     if erreur is not None:
         return erreur
@@ -3316,20 +2729,13 @@ def supprimer_compte(compte_id):
                         return jsonify({"error": "Compte introuvable"}), 404
                     role, joueur_id, discord_id, discord_username = row
 
-                    # B-02.1 : jamais zero superadmin. Inatteignable en l'etat
-                    # -- la cible superadmin est arretee par
-                    # compte_cible_protegee, soi-meme par le refus ci-dessus --
-                    # mais c'est la seule garde qui ne depend pas de l'unicite
-                    # du role. Elle reste le jour ou il y en aura deux.
+                    # Garde-fou : jamais zero superadmin.
                     refus = _refus_auto_verrouillage(cur, compte_id, role, 'supprimer')
                     if refus is not None:
                         conn.rollback()
                         return refus
 
-                    # Confirmation forte sur discord_username, comme le legs :
-                    # le handle stable, jamais le nom d'affichage, librement
-                    # modifiable. Un clic seul ne doit pas pouvoir effacer une
-                    # identite.
+                    # Confirmation sur le handle Discord.
                     if not _confirmation_handle_valide(confirmation, discord_username):
                         conn.rollback()
                         return jsonify({
@@ -3347,8 +2753,7 @@ def supprimer_compte(compte_id):
         logger.error("Suppression du compte %s impossible: %s", compte_id, e)
         return jsonify({"error": "Erreur serveur"}), 500
 
-    # /stats/joueurs est en cache 5 minutes et publie les avatars : sans
-    # invalidation, celui d'un compte supprime lui survivrait a l'ecran.
+    # /stats/joueurs publie les avatars et est en cache.
     invalidate_cache()
     logger.warning("Compte %s supprime par %s, sur demande ecrite", compte_id, acteur_id)
     return jsonify({
@@ -3360,13 +2765,7 @@ def supprimer_compte(compte_id):
 @comptes_bp.route('/admin/purge-rgpd', methods=['POST'])
 @role_required(ROLE_CHEF_ADMIN)
 def declencher_purge():
-    """Lance la purge des donnees expirees.
-
-    Route manuelle et non tache planifiee : le projet n'a pas d'ordonnanceur,
-    et une purge qui s'execute toute seule sans que personne ne regarde son
-    bilan est une purge dont on ne sait rien. La page d'administration en
-    affiche le detail.
-    """
+    """Lance la purge des donnees expirees (declenchement manuel)."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:

@@ -1,21 +1,14 @@
--- Socle de l'authentification Discord et des comptes joueurs.
---
--- Principe : separer l'IDENTITE (le compte Discord) du DOSSIER SPORTIF (la
--- table joueurs, un competiteur pseudonyme). Supprimer un compte detruit la
--- premiere et laisse la seconde intacte -- c'est ce qui rend la suppression
--- RGPD possible sans casser un classement que TrueSkill ne sait pas recalculer.
---
--- Ces tables sont en TIMESTAMPTZ alors que l'existant est en TIMESTAMP naif :
--- cote Python, utiliser EXCLUSIVEMENT datetime.now(timezone.utc) pour elles.
+-- Authentification Discord et comptes joueurs. L'identite (comptes) est separee
+-- du dossier sportif (joueurs). Tables en TIMESTAMPTZ.
 
 BEGIN;
 
 -- ---------------------------------------------------------------------------
--- invitations : le seul moyen d'entrer. Le token brut n'est JAMAIS stocke.
+-- invitations (seul le hash du token est stocke)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.invitations (
     id          SERIAL PRIMARY KEY,
-    token_hash  CHAR(64) NOT NULL UNIQUE,   -- sha256(token) en hexadecimal
+    token_hash  CHAR(64) NOT NULL UNIQUE, -- sha256(token) en hexadecimal
     label       VARCHAR(100),
     joueur_id   INTEGER REFERENCES public.joueurs(id) ON DELETE SET NULL,
     max_uses    INTEGER NOT NULL DEFAULT 1,
@@ -32,7 +25,7 @@ COMMENT ON COLUMN public.invitations.joueur_id IS
     'Renseigne = invitation nominative (liaison pre-remplie). NULL = lien generique.';
 
 -- ---------------------------------------------------------------------------
--- comptes : la personne. Miroir Discord + role + rattachement au joueur.
+-- comptes : miroir Discord, role, rattachement au joueur
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.comptes (
     id                   SERIAL PRIMARY KEY,
@@ -55,8 +48,7 @@ CREATE TABLE IF NOT EXISTS public.comptes (
     CONSTRAINT comptes_statut_valide CHECK (statut IN ('pending', 'linked', 'rejected', 'suspended'))
 );
 
--- Index partiel : les comptes privilegies sont une poignee, on les liste souvent
--- (page d'administration, garde-fou "dernier superadmin").
+-- Index partiel sur les comptes privilegies.
 CREATE INDEX IF NOT EXISTS idx_comptes_role ON public.comptes(role) WHERE role <> 'player';
 
 COMMENT ON COLUMN public.comptes.discord_id IS
@@ -68,10 +60,8 @@ COMMENT ON COLUMN public.comptes.discord_synced_at IS
 COMMENT ON COLUMN public.comptes.profil_synced_at IS
     'Derniere propagation ADMIN du pseudo Discord vers joueurs.nom. Geste explicite, jamais automatique.';
 
--- Pas de colonne email : le scope OAuth demande est "identify" seul (minimisation).
-
 -- ---------------------------------------------------------------------------
--- liaisons_demandes : la file d'attente de rattachement compte <-> joueur.
+-- liaisons_demandes : demandes de rattachement compte <-> joueur
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.liaisons_demandes (
     id          SERIAL PRIMARY KEY,
@@ -85,17 +75,14 @@ CREATE TABLE IF NOT EXISTS public.liaisons_demandes (
     CONSTRAINT liaisons_statut_valide CHECK (statut IN ('pending', 'approved', 'rejected'))
 );
 
--- Une seule demande en cours par compte, et une seule par joueur revendique :
--- deux personnes ne peuvent pas etre en attente sur la meme fiche.
+-- Une seule demande en cours par compte et par joueur.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_liaison_pending_compte
     ON public.liaisons_demandes(compte_id) WHERE statut = 'pending';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_liaison_pending_joueur
     ON public.liaisons_demandes(joueur_id) WHERE statut = 'pending';
 
 -- ---------------------------------------------------------------------------
--- profils : tout le contenu genere par l'utilisateur, au meme endroit.
--- Purgeable en un seul DELETE lors d'une demande d'effacement.
--- Pas d'avatar : il vient du CDN Discord (comptes.discord_avatar_hash).
+-- profils : contenu saisi par l'utilisateur (l'avatar vient de Discord)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.profils (
     compte_id       INTEGER PRIMARY KEY REFERENCES public.comptes(id) ON DELETE CASCADE,
@@ -107,8 +94,7 @@ CREATE TABLE IF NOT EXISTS public.profils (
 );
 
 -- ---------------------------------------------------------------------------
--- sessions_joueurs : remplacante d'api_tokens. Contrairement a elle, le token
--- n'est stocke qu'en sha256, et l'expiration est ABSOLUE (non renouvelable).
+-- sessions_joueurs : token en sha256, expiration absolue
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.sessions_joueurs (
     token_hash    CHAR(64) PRIMARY KEY,
@@ -122,13 +108,8 @@ CREATE TABLE IF NOT EXISTS public.sessions_joueurs (
 CREATE INDEX IF NOT EXISTS idx_sessions_joueurs_compte  ON public.sessions_joueurs(compte_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_joueurs_expires ON public.sessions_joueurs(expires_at);
 
--- Pas de stockage d'IP : user_agent suffit a un ecran "vos sessions actives",
--- et c'est autant de donnees personnelles en moins a justifier.
-
 -- ---------------------------------------------------------------------------
--- audit_admin : l'art. 5.2 RGPD demande de pouvoir DEMONTRER le traitement.
--- Journalise aussi les changements de role et les synchronisations de profil,
--- les deux gestes que le modele par role rend sensibles.
+-- audit_admin : journal des actions d'administration
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.audit_admin (
     id               SERIAL PRIMARY KEY,
@@ -146,9 +127,7 @@ COMMENT ON COLUMN public.audit_admin.details IS
     'Contient l''avant/apres pour les gestes reversibles (renommage, changement de role).';
 
 -- ---------------------------------------------------------------------------
--- service_tokens : authentification machine pour les bots Discord.
--- Prefere a une cle en .env : revocation unitaire sans redeploiement,
--- plusieurs bots, tracabilite, et rotation sans toucher au fichier .env.
+-- service_tokens : jetons des bots Discord
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.service_tokens (
     id           SERIAL PRIMARY KEY,
@@ -162,10 +141,7 @@ CREATE TABLE IF NOT EXISTS public.service_tokens (
 );
 
 -- ---------------------------------------------------------------------------
--- joueurs.anonymise_at : empeche la resurrection d'une identite effacee.
--- add_tournament cree un joueur a la volee si le nom est inconnu ; sans ce
--- marqueur, ressaisir "Toto" apres son anonymisation recreerait une fiche
--- portant l'identite qu'on venait de retirer.
+-- joueurs.anonymise_at : marque une fiche anonymisee
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.joueurs ADD COLUMN IF NOT EXISTS anonymise_at TIMESTAMPTZ;
 

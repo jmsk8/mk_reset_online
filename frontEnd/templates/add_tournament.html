@@ -31,9 +31,7 @@
             overflow-y: auto;
         }
 
-        /* Joueur non classe ou inactif : presente en retrait, pas masque. Il
-           reste selectionnable — c'est un ordre de priorite, pas un filtre.
-           L'opacite se leve au survol pour que la cible reste franche. */
+        /* Joueur non classe ou inactif : en retrait mais selectionnable. */
         .player-item.joueur-secondaire {
             opacity: 0.6;
         }
@@ -157,14 +155,7 @@
                 </div>
             </div>
 
-            {# ---- Annuler le dernier tournoi -------------------------------
-               Déplacé depuis navbar.html : le bouton y était global, donc
-               présent sur toutes les pages admin alors qu'il n'a de sens qu'ici.
-               Un geste irréversible accessible partout invite au clic
-               accidentel.
-
-               Capacité de rôle, pas une permission déléguable : testée par le
-               rôle, jamais par peut(). #}
+            {# ---- Annuler le dernier tournoi (capacité de rôle) ------------ #}
             {% if role_admin in ('chef_admin', 'superadmin') %}
             <div class="card glass-card mb-6" id="bloc-annuler-tournoi"
                  style="border: 1px solid rgba(239, 68, 68, 0.45);">
@@ -192,11 +183,7 @@
             </div>
             {% endif %}
 
-            {# ---- Liste des tournois enregistrés ---------------------------
-               Alimentée par GET /stats/tournois, qui existait déjà : rien de
-               nouveau côté backend. Lecture seule -- la suppression d'un
-               tournoi ancien est hors périmètre tant que delete_tournament ne
-               restaure pas mu/sigma (R-37). #}
+            {# ---- Liste des tournois enregistrés --------------------------- #}
             <div class="card glass-card mb-6">
                 <div class="card-header">
                     <p class="card-header-title">
@@ -221,8 +208,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {# Le plus récent en tête : c'est celui que le bouton
-                                   d'annulation ci-dessus retirerait. #}
+                                {# Le plus récent en tête. #}
                                 {% for t in tournois %}
                                 <tr>
                                     <td>{{ t.date }}</td>
@@ -238,12 +224,7 @@
                                     <td class="has-text-centered">{{ t.nb_joueurs }}</td>
                                     <td>{{ t.vainqueur or '—' }}</td>
                                     <td class="has-text-right">
-                                        {# Liaison TARDIVE : rattacher ce tournoi à un autre déjà
-                                           enregistré. Le chemin normal est la modale à la saisie ;
-                                           ce bouton sert quand l'admin a cliqué « Passer » puis
-                                           change d'avis. Il défait aussi les absences comptées à
-                                           tort entre les deux tournois.
-                                           Voir docs/plan-sessions-tournois.md §19-20 #}
+                                        {# Liaison après coup avec un tournoi déjà enregistré. #}
                                         {% if t.nb_dans_session and t.nb_dans_session > 1 %}
                                         <span class="tag is-link is-light mr-1"
                                               title="Ce tournoi partage sa session avec {{ t.nb_dans_session - 1 }} autre(s)">
@@ -274,14 +255,8 @@
     </section>
 
     {# ---- Rattachement à une session -------------------------------------
-       S'ouvre APRÈS validation du formulaire mais AVANT tout enregistrement :
-       rien n'est écrit en base tant que l'admin n'a pas répondu. Si la liaison
-       demandée est refusée (joueur commun), le tournoi n'est pas créé du tout.
-
-       Les candidats qui partagent un joueur sont grisés : le conflit n'est même
-       pas proposable. Ce n'est qu'un confort — c'est le serveur qui refuse,
-       cette liste n'autorise rien.
-       Conception : docs/plan-sessions-tournois.md, décisions 9 et 10 #}
+       S'ouvre après validation du formulaire, avant tout enregistrement. Les
+       candidats en conflit de joueurs sont grisés ; le serveur tranche. #}
     <div class="modal" id="sessionModal">
         <div class="modal-background" onclick="fermerSessionModal()"></div>
         <div class="modal-card" style="width: 95%; max-width: 760px;">
@@ -318,9 +293,7 @@
         </div>
     </div>
 
-    {# ---- Liaison tardive de deux tournois déjà enregistrés ---------------
-       Distincte de la modale ci-dessus : ici les deux tournois existent déjà,
-       donc la liaison corrige en plus les absences comptées à tort entre eux. #}
+    {# ---- Liaison tardive de deux tournois déjà enregistrés --------------- #}
     <div class="modal" id="liaisonTardiveModal">
         <div class="modal-background" onclick="fermerLiaisonTardive()"></div>
         <div class="modal-card" style="width: 95%; max-width: 680px;">
@@ -345,10 +318,6 @@
     </div>
 
 <script>
-        {# Déplacée depuis navbar.html avec le bouton qu'elle sert : elle y était
-           chargée sur toutes les pages du site pour un geste qui n'a lieu qu'ici.
-           Sous le même gate que le bouton — inutile de servir le code d'une
-           action à qui ne peut pas la déclencher. #}
         {% if role_admin in ('chef_admin', 'superadmin') %}
         function revertLastTournament() {
             if (!confirm("⚠️ ATTENTION : Voulez-vous vraiment ANNULER le dernier tournoi enregistré ?\n\nLes scores des joueurs reviendront à leur état précédent.\nCette action est irréversible.")) {
@@ -399,10 +368,7 @@
             const btnSubmit = document.getElementById('btnSubmit');
             const selectLigue = document.getElementById('selectLigue');
 
-            // `Accept` explicite sur les appels de données de cette page : il
-            // dit au frontend qu'il n'ouvre pas une page et n'a donc pas à
-            // revalider la session. Sans lui, `fetch()` envoie « */* », traité
-            // comme une navigation (docs/audit-503-zone-admin.md, §10.4).
+            // Accept explicite : appels de données, pas de revalidation de session.
             const HEADERS_JSON = { headers: { 'Accept': 'application/json' } };
 
             try {
@@ -443,32 +409,19 @@
                 })
                 .catch(err => console.error(err));
 
-            /* Rang d'affichage d'un joueur dans le vivier.
-
-               Trois groupes, du plus courant au plus rare : on compose un
-               tournoi avec des joueurs classes et actifs, les autres sont la
-               par exception. Les faire remonter obligeait a passer devant eux
-               a chaque fois.
-
-               `tier` et `is_ranked` disent deux choses differentes :
-                 - tier 'U'        -> pas encore de rang (sigma trop haut)
-                 - is_ranked false -> trop de tournois manques d'affilee
-               Un joueur classe peut donc etre inactif, d'ou deux criteres et
-               non un seul. L'inactivite prime : c'est elle qui rend la
-               presence du joueur douteuse. */
+            /* Ordre d'affichage dans le vivier : classes actifs, puis non
+               classes (tier 'U'), puis inactifs (is_ranked false). */
             function rangAffichage(player) {
-                if (player.is_ranked === false) return 2;              // inactifs
-                if (!player.tier || player.tier.toUpperCase() === 'U') return 1;  // unranked
-                return 0;                                              // classes actifs
+                if (player.is_ranked === false) return 2; // inactifs
+                if (!player.tier || player.tier.toUpperCase() === 'U') return 1; // non classes
+                return 0; // classes actifs
             }
 
             function renderPool() {
                 const filterText = searchInput.value.toLowerCase();
                 poolContainer.innerHTML = '';
 
-                /* Tri stable : a groupe egal, l'ordre du backend est conserve
-                   (score_trueskill decroissant). `slice()` pour ne pas
-                   reordonner availablePlayers, que d'autres fonctions lisent. */
+                /* Tri stable ; slice() pour ne pas modifier availablePlayers. */
                 const joueursTries = availablePlayers.slice().sort(
                     (a, b) => rangAffichage(a) - rangAffichage(b)
                 );
@@ -485,8 +438,7 @@
                         if (ligueId !== currentLeagueId) return;
                     }
 
-                    /* Un intitule a chaque changement de groupe : sans lui,
-                       rien ne dit pourquoi un joueur se retrouve en bas. */
+                    /* Intitule a chaque changement de groupe. */
                     const groupe = rangAffichage(player);
                     if (groupe !== groupePrecedent) {
                         if (groupe > 0) {
@@ -506,9 +458,7 @@
                     poolContainer.appendChild(div);
                 });
 
-                // On compte les joueurs, pas les intitules de groupe : sans
-                // ce selecteur, un en-tete suffirait a faire croire que le
-                // vivier n'est pas vide.
+                // On compte les joueurs, pas les intitules.
                 if (poolContainer.querySelectorAll('.player-item').length === 0) {
                     poolContainer.innerHTML = '<p class="has-text-grey has-text-centered is-size-7 mt-2">Aucun joueur correspondant (vérifiez la ligue)</p>';
                 }
@@ -542,11 +492,7 @@
                         </button>
                     </td>
                 `;
-                // S-01 (audit du 24/09) : le nom ne passe plus par un onclick
-                // inline. Il y etait echappe pour le HTML avant de l'etre pour
-                // JavaScript, dans le mauvais ordre : une apostrophe dans un nom
-                // (un pseudo Discord suffit) fermait la chaine et le reste
-                // s'executait. La closure garde le nom tel quel, sans interpretation.
+                // Le nom est capture par la closure, jamais injecte dans un onclick.
                 tr.querySelector('.btn-retirer')
                   .addEventListener('click', (e) => removePlayer(nom, e.currentTarget));
                 tableBody.appendChild(tr);
@@ -628,9 +574,7 @@
                     return;
                 }
 
-                // Le formulaire est valide : on demande la session AVANT
-                // d'enregistrer quoi que ce soit. L'envoi réel a lieu dans
-                // confirmerSession(), une fois le choix fait.
+                // Choix de la session avant l'envoi (fait dans confirmerSession()).
                 ouvrirSessionModal({
                     date: date,
                     joueurs: joueursData,
@@ -638,9 +582,7 @@
                 });
             });
 
-            // Payload en attente du choix de session. Gardé côté client : le
-            // serveur ne conserve aucun état entre la question et l'envoi, il
-            // n'y a donc rien à nettoyer si l'admin ferme son onglet.
+            // Payload en attente du choix de session.
             let tournoiEnAttente = null;
 
             window.ouvrirSessionModal = (payload) => {
@@ -704,8 +646,7 @@
                 btnSubmit.classList.remove('is-loading');
             };
 
-            // Échappement minimal : ces valeurs viennent de la base (noms de
-            // joueurs saisis par un admin), donc jamais interpolées brutes.
+            // Échappement HTML.
             function escapeHtmlLocal(s) {
                 return String(s === null || s === undefined ? '' : s)
                     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -736,9 +677,7 @@
                 })
                 .then(async res => {
                     if (res.status === 401 || res.status === 403) {
-                        // Un 403 « droit manquant » ne doit PAS déconnecter :
-                        // cette branche déconnectait pour une permission non
-                        // accordée. Voir hierarchie-admin-plan.md, B.5.
+                        // Un 403 « droit manquant » ne déconnecte pas.
                         let code = null;
                         try { code = (await res.clone().json()).code; } catch (e) {}
                         if (res.status === 403 && code === 'permission_manquante') {
@@ -747,10 +686,7 @@
                             throw new Error("Droits insuffisants");
                         }
                         alert("Session expirée. Reconnectez-vous avec Discord.");
-                        // L'accueil, et non une page de déconnexion : celle-ci
-                        // n'existe plus, et la session est de toute façon déjà
-                        // refusée par le backend. Le before_request la purgera
-                        // du cookie à l'arrivée.
+                        // Session refusée : retour à l'accueil.
                         window.location.href = '/';
                         throw new Error("Session expirée");
                     }
@@ -762,9 +698,7 @@
                         alert("✅ Tournoi enregistré avec succès !");
                         window.location.href = '/classement';
                     } else if (data.code === 'conflit_session') {
-                        // Refus de liaison : le tournoi n'a PAS été créé. La
-                        // saisie est intacte, l'admin peut relancer et choisir
-                        // « Tournoi indépendant » ou corriger les joueurs.
+                        // Refus de liaison : rien n'a été enregistré, la saisie est intacte.
                         alert("❌ Liaison refusée — le tournoi n'a pas été enregistré.\n\n"
                               + data.error);
                     } else {
@@ -779,12 +713,7 @@
         });
 
         // ── Liaison tardive ───────────────────────────────────────────────
-        // Hors du DOMContentLoaded ci-dessus : ces fonctions sont appelées
-        // depuis les attributs onclick de la liste des tournois.
-        //
-        // La liste des tournois est déjà rendue côté serveur : on la sérialise
-        // ici plutôt que de rappeler /stats/tournois, qui renverrait la même
-        // chose.
+        // Hors du DOMContentLoaded : appelé depuis les onclick de la liste.
         const TOURNOIS = [
             {% for t in tournois %}
             { id: {{ t.id }},
@@ -803,9 +732,7 @@
                 'le tournoi du ' + dateLabel;
             document.getElementById('liaisonTardiveErreur').style.display = 'none';
 
-            // Seuls les tournois encore seuls dans leur session sont proposés :
-            // lier à un tournoi déjà regroupé marcherait côté serveur, mais
-            // l'intention serait ambiguë dans cette liste.
+            // Seuls les tournois encore seuls dans leur session sont proposés.
             const candidats = TOURNOIS.filter(t => t.id !== tournoiId && t.seul);
             const liste = document.getElementById('liaisonTardiveListe');
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reconstruit backEnd/dump.sql : jeu de démonstration entièrement fictif.
-# Les données sont générées, chargées dans un Postgres jetable puis ré-extraites
-# avec pg_dump, ce qui garantit le même format que les autres dumps.
+# Données générées, chargées dans un Postgres jetable puis extraites avec
+# pg_dump (même format que les autres dumps).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,15 +17,14 @@ info() { printf "${C_GREEN}[example]${C_RESET} %s\n" "$1"; }
 err()  { printf "${C_RED}[example]${C_RESET} %s\n" "$1" >&2; }
 
 OUT="backEnd/dump.sql"
-# Nom unique : le conteneur jetable vit hors du projet compose, ce suffixe
-# garantit qu'aucune autre exécution ni aucun conteneur existant n'est touché.
+# Nom unique : le conteneur jetable vit hors du projet compose.
 CONTAINER="mk_reset_example_build_$$_${RANDOM}"
 DATA="$(mktemp)"
-# -v : sans lui, le volume anonyme créé par l'image postgres resterait orphelin.
+# -v : supprime aussi le volume anonyme de l'image postgres.
 cleanup() { rm -f "$DATA"; docker rm -f -v "$CONTAINER" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-# trueskill n'est pas installé sur l'hôte : on emprunte l'image du backend.
+# trueskill n'est pas installé sur l'hôte : on utilise l'image du backend.
 info "Génération des données (moteur TrueSkill)…"
 docker compose run --rm --no-deps -T backend python - \
   < scripts/generate_example_data.py > "$DATA"
@@ -48,8 +47,7 @@ docker exec -i "$CONTAINER" psql -U example -d example -v ON_ERROR_STOP=1 -q -o 
 info "Extraction…"
 docker exec "$CONTAINER" pg_dump -U example -d example --clean --if-exists > "$OUT"
 sed -i -E 's/ OWNER TO [A-Za-z0-9_]+;/ OWNER TO CURRENT_USER;/g' "$OUT"
-# 644 obligatoire : postgres tourne en uid 70 dans le conteneur db et doit
-# pouvoir lire le fichier lors de l'initialisation.
+# 644 : lisible par postgres (uid 70) dans le conteneur db.
 chmod 644 "$OUT"
 
 info "Contenu :"

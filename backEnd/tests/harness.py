@@ -1,10 +1,4 @@
-"""Banc d'essai du flux d'authentification, sans Postgres ni Discord.
-
-Le curseur est scripte : on lui dit quelle ligne renvoyer pour chaque requete,
-et il enregistre tout ce qui a ete execute. Ca ne valide pas le SQL, mais ca
-valide ce qui compte ici : qui consomme quoi, dans quel ordre, et sous quelles
-conditions.
-"""
+"""Banc d'essai sans Postgres ni Discord : curseur scripte et API Discord simulee."""
 import os, re, sys, types
 from datetime import datetime, timedelta, timezone
 
@@ -15,24 +9,19 @@ os.environ.update({
 })
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
-# Dependances tierces neutralisees une fois pour toutes : les tests ne parlent
-# ni a Postgres ni au moteur TrueSkill, mais les modules testes les importent en
-# cascade. Les stubber ici plutot que dans chaque fichier evite qu'un nouvel
-# import dans le code de production ne casse des tests sans rapport -- ce qui
-# est exactement arrive quand routes_comptes s'est mis a importer services.
+# Dependances tierces neutralisees pour tous les tests.
 for _m in ('trueskill', 'numpy', 'bcrypt', 'psycopg2', 'psycopg2.extras'):
     sys.modules.setdefault(_m, types.ModuleType(_m))
 sys.modules['psycopg2'].extras = sys.modules['psycopg2.extras']
 
 # --- faux psycopg2/db -------------------------------------------------------
-# Sentinelle de plan : « cette requete n'a touche aucune ligne » (rowcount = 0).
-# Sert aux INSERT ... ON CONFLICT DO NOTHING et aux DELETE sans effet.
+# Entree de plan simulant une requete sans effet (rowcount = 0).
 ROWCOUNT_ZERO = object()
 
 
 class FakeCursor:
     def __init__(self, plan):
-        self.plan = plan          # liste de (motif regex, ligne renvoyee)
+        self.plan = plan  # liste de (motif regex, ligne renvoyee)
         self.executed = []
         self._row = None
         self.rowcount = 1
@@ -44,22 +33,15 @@ class FakeCursor:
         for motif, ligne in self.plan:
             if re.search(motif, norm, re.I):
                 self._row = ligne(params) if callable(ligne) else ligne
-                # ON CONFLICT DO NOTHING et DELETE distinguent « fait » de
-                # « rien a faire » par rowcount. Une entree de plan valant
-                # ROWCOUNT_ZERO simule le second cas.
                 if self._row is ROWCOUNT_ZERO:
                     self._row, self.rowcount = None, 0
                 break
     def fetchone(self):
-        # Une requete planifiee avec PLUSIEURS lignes (liste) rend sa premiere
-        # ligne a fetchone, comme le ferait psycopg2.
+        # Une liste planifiee rend sa premiere ligne.
         if isinstance(self._row, list):
             return self._row[0] if self._row else None
         return self._row
     def fetchall(self):
-        # Renvoie les lignes planifiees quand le plan en donne une liste. Les
-        # plans qui ne prevoient qu'un tuple (le cas majoritaire) gardent
-        # l'ancien comportement : fetchall n'a alors rien a rendre.
         return list(self._row) if isinstance(self._row, list) else []
     def __enter__(self): return self
     def __exit__(self, *a): return False
@@ -111,20 +93,14 @@ def recharger():
 FUTUR = datetime.now(timezone.utc) + timedelta(hours=1)
 PASSE = datetime.now(timezone.utc) - timedelta(hours=1)
 
-# Constructeurs de lignes. Les fixtures etaient des tuples positionnels ecrits
-# a la main : ajouter une colonne a une requete partagee cassait alors une
-# dizaine de tests d'un coup, avec des 500 illisibles. Passer par ces fonctions
-# concentre le changement en un seul endroit.
+# Constructeurs de lignes de fixtures.
 
 def ligne_session(compte_id=42, discord_id='123456789012345678', username='toto',
                   global_name='Toto', avatar='hash', joueur_id=None,
                   statut='linked', role='player', expires_at=None, cgu_version='1.0'):
-    """Ligne renvoyee par la jointure sessions_joueurs x comptes (auth.py).
+    """Ligne de la jointure sessions_joueurs x comptes (auth.py).
 
-    `cgu_version` vaut par defaut la version courante : depuis A-07, une
-    session sans consentement est refusee (428) par tous les decorateurs, et
-    chaque test devrait sinon le preciser. Le cas « pas accepte » se teste en
-    le passant explicitement (test_cgu_imposee.py).
+    `cgu_version` vaut par defaut la version courante.
     """
     return (compte_id, discord_id, username, global_name, avatar, joueur_id,
             statut, role, expires_at if expires_at is not None else FUTUR, cgu_version)

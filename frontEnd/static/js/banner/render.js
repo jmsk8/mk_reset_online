@@ -1,19 +1,7 @@
-// Le dessin d'une image, a partir de l'etat interpole.
-//
-// Une seule fonction, appelee soixante fois par seconde. Elle ne lit que
-// `worldState` et n'ecrit que dans le DOM.
+// Dessin d'une image a partir de l'etat interpole (lit `worldState`, ecrit le DOM).
 
-// Le cahot d'un kart, en px vers le haut. Deduit du seul temps de jeu, comme le
-// tete-a-queue : rien a memoriser, et tous les karts cahotent en phase.
-//
-// Il etait joue en CSS, une animation sur le kart et une autre sur l'objet
-// tenu. Deux horloges, qui se decalaient a la moindre occasion : la pause du
-// kart arrete retardait la sienne pour de bon, le bill la relancait a zero,
-// un objet cree ou repasse en main repartait de sa propre phase. Une seule
-// valeur, posee sur les deux dans la meme image, ne peut plus diverger.
-//
-// Cosinus et non sinus : le cycle part du sol, comme l'ancien `ease-in-out`
-// entre 0 et -3 px, dont il reprend la forme.
+// Cahot d'un kart en px vers le haut, deduit du temps de jeu. Applique au kart
+// et a son objet tenu dans la meme image pour qu'ils restent en phase.
 function kartBounceY(kart, gameNow) {
     if (kart.isBill) return 0;
     if (kart.state === 'hit' && kart.stopped) return 0;
@@ -22,22 +10,9 @@ function kartBounceY(kart, gameNow) {
     return b.amplitude * (1 - Math.cos(phase * 2 * Math.PI)) / 2;
 }
 
-// L'objet tenu EN MAIN s'aplatit avec son kart. Sans ca, un kart ecrase
-// laisse son objet flotter a hauteur de main, au-dessus d'une galette.
-//
-// L'echelle se pose sur l'img, pas sur l'element place, dont la `transform`
-// est reecrite a chaque image. Elle reprend le facteur, la duree et le point
-// d'appui de `.kart-scaler.is-flat` : le bas du kart, en son milieu. Sur l'img,
-// ce point se compte a partir de son coin haut-gauche. En x : du bord gauche
-// de l'objet au centre du kart. En y : sous le bas de l'img, de toute la
-// hauteur de main, plus l'interligne que l'img laisse sous elle dans son div
-// (image en ligne, posee sur la ligne de base). Il est mesure au moment de
-// l'ecrasement, et seulement la : une lecture de mise en page par ecrasement,
-// pas par image.
-//
-// La classe se pose dans la meme image que `is-flat` sur le kart
-// (reconcileShrink tourne juste avant, dans renderState) : les deux
-// transitions partent ensemble.
+// L'objet tenu en main s'aplatit avec son kart : l'echelle est posee sur l'img,
+// avec le point d'appui de `.kart-scaler.is-flat` (bas du kart, en son milieu),
+// mesure une seule fois au moment de l'ecrasement.
 function squashHeldItem(hel, kart, hOffset, s) {
     hel.classList.add('held-item-hands');
     const flat = !!kart.isFlat;
@@ -50,15 +25,11 @@ function squashHeldItem(hel, kart, hOffset, s) {
         const oy = img.offsetHeight + gap + hOffset.yShift * s;
         img.style.transformOrigin = `${ox}px ${oy}px`;
     }
-    // Au retour, le point d'appui reste celui de l'ecrasement : c'est autour de
-    // lui que l'objet doit se redresser.
+    // Au retour, l'objet se redresse autour du meme point d'appui.
     hel.classList.toggle('held-item-flat', flat);
 }
 
-// Traine ou lache, l'objet n'a plus rien a aplatir. Les deux classes tombent
-// ensemble : la transition n'est portee que par `.held-item-hands`, elle ne
-// s'applique donc pas, et l'objet reprend sa forme d'un coup. Sinon une banane
-// lancee par un kart ecrase se redresserait en vol.
+// Objet traine ou lache : il reprend sa forme d'un coup.
 function releaseHeldItemSquash(el) {
     el.classList.remove('held-item-hands', 'held-item-flat');
 }
@@ -66,8 +37,7 @@ function releaseHeldItemSquash(el) {
 function renderState(gameNow, screenWidth, frameMs) {
     const renderMargin = GAME_CONFIG.rendering.bufferZone;
 
-    // Avant la camera de rendu : elle suit le kart choisi ici, et le faire
-    // apres afficherait une image de retard a chaque changement de plan.
+    // Avant la camera de rendu, qui suit le kart choisi ici.
     raceDirector.update(gameNow);
     updateRenderCamera(gameNow, screenWidth);
     updateFocusHud(frameMs);
@@ -81,17 +51,13 @@ function renderState(gameNow, screenWidth, frameMs) {
         renderVote();
     }
 
-    // Hors du bloc ci-dessus : le compteur et le glissement vers le general
-    // doivent avancer a chaque frame, pas seulement quand un snapshot arrive.
+    // Avance a chaque frame, pas seulement a l'arrivee d'un snapshot.
     stepGrandPrixAnimation(gameNow);
 
     renderLakitu(gameNow, screenWidth);
     renderStorm(gameNow, screenWidth);
 
-    // Les trois calques de decor sont des textures, pas des elements places :
-    // ils ne passent pas par getScreenPosition et doivent donc appliquer le
-    // meme recentrage a la main. Le bord gauche de la fenetre, c'est le centre
-    // moins la moitie de la largeur visible.
+    // Calques de decor recentres a la main (bord gauche = centre - demi-largeur).
     const halfView = screenWidth / 2;
 
     if (cachedBg) {
@@ -103,13 +69,8 @@ function renderState(gameNow, screenWidth, frameMs) {
     }
 
     if (cachedMid) {
-        // Second plan (automne) : la moyenne des deux cameras, soit les trois
-        // quarts de la route. Tiree de valeurs que le serveur synchronise, elle
-        // est la meme pour tous les spectateurs.
-        //
-        // Quand une camera boucle, la moyenne saute d'un demi-tour. Tous les
-        // circuits font 7680 px : le saut vaut 3840, pile une texture, et ne se
-        // voit pas. Un tour qui ne serait pas multiple de 7680 le ferait voir.
+        // Second plan (automne) : moyenne des deux cameras (trois quarts de la
+        // route). Le saut au bouclage vaut une texture (3840 px) et ne se voit pas.
         const midX = (renderCameraX + renderBgCameraX) / 2;
         scrollLayer(cachedMid, halfView - midX, midScroll);
     }
@@ -123,10 +84,7 @@ function renderState(gameNow, screenWidth, frameMs) {
     }
 
     if (cachedGround) {
-        // Bordure de route : un motif de 80 px ancre sur le monde, decale du
-        // reste de la division. Modulo positif, un reste negatif donnerait une
-        // valeur CSS invalide. Pas de rattrapage a la `scrollLayer` : le pas EST
-        // la periode du motif.
+        // Bordure de route : motif de 80 px ancre sur le monde (modulo positif).
         const roadX = (((renderCameraX - halfView) % ROAD_PATTERN_WIDTH) + ROAD_PATTERN_WIDTH) % ROAD_PATTERN_WIDTH;
         cachedGround.style.setProperty('--road-offset', `${-roadX}px`);
     } else {
@@ -139,7 +97,7 @@ function renderState(gameNow, screenWidth, frameMs) {
     }
 
     if (worldState.sun && worldState.sun.element) {
-        // Solidaire du fond, pas de la route.
+        // Solidaire du fond.
         const sx = getScreenPosition(worldState.sun.worldX, renderBgCameraX, screenWidth);
         worldState.sun.element.style.transform = `translate3d(${sx}px, 0, 0)`;
     }
@@ -176,10 +134,8 @@ function renderState(gameNow, screenWidth, frameMs) {
         }
     }
 
-    // La demi-largeur du sprite se lit par kart (`kartDrawHalfWidth`) : deux
-    // personnages n'ont pas la meme longueur. `heldBehindX` est une position du
-    // monde publiee par le serveur — le moteur y teste l'emprise de l'objet
-    // traine, et la carte de debug l'y dessine.
+    // Demi-largeur du sprite propre a chaque kart ; `heldBehindX` est une
+    // position du monde fournie par le serveur.
     const wBoxes = WORLD.hitboxes || OFFLINE_WORLD.hitboxes;
     const heldBehindX = (wBoxes.heldBehindX !== undefined)
         ? wBoxes.heldBehindX : OFFLINE_WORLD.hitboxes.heldBehindX;
@@ -191,8 +147,7 @@ function renderState(gameNow, screenWidth, frameMs) {
         if (!els) continue;
         const wrapper = els.wrapper;
 
-        // Ne fige plus que l'arc-en-ciel de l'etoile : le cahot, lui, se
-        // coupe dans kartBounceY.
+        // Fige l'arc-en-ciel de l'etoile (le cahot est coupe dans kartBounceY).
         wrapper.classList.toggle('kart-stopped', kart.state === 'hit' && !!kart.stopped);
 
         const rx = getScreenPosition(kart.worldX, renderCameraX, screenWidth);
@@ -200,8 +155,7 @@ function renderState(gameNow, screenWidth, frameMs) {
         const isVisibleNow = (rx > -renderMargin && rx < screenWidth + renderMargin);
 
         if (isVisibleNow) {
-            // Pose sur le conteneur, et non sur le sprite : l'objet tenu en
-            // main recoit la meme valeur plus bas, au meme pixel pres.
+            // Meme valeur que l'objet tenu en main.
             const bounceY = kartBounceY(kart, gameNow);
             wrapper.style.display = 'block';
             wrapper.style.transform = `translate3d(${spriteX}px, ${depthToY(kart.yPercent) - bounceY}px, 0)`;
@@ -209,24 +163,19 @@ function renderState(gameNow, screenWidth, frameMs) {
             const zVal = (GAME_CONFIG.rendering.zIndexBase - kart.yPercent) | 0;
             if (wrapper.style.zIndex != zVal) wrapper.style.zIndex = zVal;
 
-            // Pendant le vol, le sprite du personnage cede la place au bill : plus
-            // de tete-a-queue, plus de miroir, plus de rebond. `spinFrame` est
-            // remis a -1 pour qu'au retour la frame courante soit forcement vue
-            // comme un changement et le personnage repose.
+            // En vol, le sprite du bill remplace le personnage ; spinFrame a -1
+            // force la remise du personnage au retour.
             if (kart.isBill) {
                 if (!els.billOn) {
                     els.billOn = true;
                     els.sprite.classList.remove('kart-mirrored');
                     els.wrapper.classList.add('kart-bill');
                     els.spinFrame = -1;
-                    // Le bill se dessine sur l'emprise du bill, pas sur celle du
-                    // personnage : sa largeur CSS se compte en pourcentage du
-                    // conteneur, qu'on ramene donc a la reference le temps du vol.
+                    // Largeur du bill calee sur le kart de reference.
                     els.wrapper.style.setProperty('--kart-length', 1);
                 }
 
-                // Trois images, cadencees par le temps de jeu comme les carapaces :
-                // rien a memoriser, et deux bills en vol restent en phase.
+                // Trois images cadencees par le temps de jeu.
                 const billFrame = (Math.floor(gameNow / WORLD.billAnimSpeed) % 3) + 1;
                 if (els.billFrame !== billFrame) {
                     els.billFrame = billFrame;
@@ -241,12 +190,8 @@ function renderState(gameNow, screenWidth, frameMs) {
                     els.wrapper.style.setProperty('--kart-length', kartDrawScale(kart));
                 }
 
-                // Le choc contre un tuyau ne touche PAS au sprite : le kart garde
-                // sa pose, et le choc se lit entierement dans ce qu'il fait —
-                // l'arret net, le recul, la glissade. La pose de face qu'il
-                // prenait avant donnait l'impression d'un bug plutot que d'un
-                // choc. Ne reste ici que le tete-a-queue, qui a bien ses frames a
-                // jouer.
+                // Choc contre un tuyau : le sprite ne change pas, seul le
+                // tete-a-queue a des frames.
                 const spinFrame = getSpinFrameIndex(kart, gameNow);
                 if (els.spinFrame !== spinFrame) {
                     els.spinFrame = spinFrame;
@@ -261,27 +206,18 @@ function renderState(gameNow, screenWidth, frameMs) {
                 if (hel) {
                     hel.style.display = 'block';
 
-                    // Un objet passe de la main au trainage pendant sa vie :
-                    // le cahot suit, il n'appartient qu'a l'objet tenu en main.
+                    // Le cahot ne concerne que l'objet tenu en main.
                     const inHands = kart.heldItem.holdPosition === 'hands';
 
-                    // Deux objets tenus, deux natures, deux placements.
-                    //
-                    // EN MAIN, l'objet n'a pas d'emprise : sa place est du dessin
-                    // pur, calee sur la silhouette. TRAINE, il a une emprise, et
-                    // c'est tout l'interet — le moteur la teste a `worldX +
-                    // heldBehindX`, une position du monde. La dessiner ailleurs,
-                    // c'est montrer une banane a cote de celle qui touche.
+                    // En main : place purement visuelle. Traine : a sa position
+                    // du monde (worldX + heldBehindX), la ou le moteur le teste.
                     let hx, hy;
                     if (inHands) {
-                        // L'ecart est cale sur le kart de reference : il suit
-                        // la taille du sprite, sinon l'objet flotte au-dessus
-                        // d'un koopa et s'enfonce dans un bowser.
+                        // Ecart proportionnel a la taille du sprite.
                         const hOffset = getHandsItemRenderOffset();
                         const s = kartDrawScale(kart);
                         hx = spriteX + hOffset.offset * s + (hel._halfW || 0);
-                        // Le cahot du porteur, le meme nombre : la main et
-                        // l'objet montent ensemble.
+                        // Meme cahot que le porteur.
                         hy = hOffset.yShift * s + bounceY;
                         squashHeldItem(hel, kart, hOffset, s);
                     } else {
@@ -289,9 +225,7 @@ function renderState(gameNow, screenWidth, frameMs) {
                         hy = 0;
                         releaseHeldItemSquash(hel);
                     }
-                    // `hy` monte l'objet par rapport a son porteur ; la
-                    // profondeur du porteur s'y ajoute, dans la meme
-                    // transformation.
+                    // Hauteur par rapport au porteur, plus sa profondeur.
                     hel.style.transform = `translate3d(${hx}px, ${depthToY(kart.yPercent) - hy}px, 0)`;
                     const itemZ = inHands ? zVal + 1 : zVal;
                     if (hel.style.zIndex != itemZ) hel.style.zIndex = itemZ;
@@ -321,12 +255,9 @@ function renderState(gameNow, screenWidth, frameMs) {
         const isVisible = (rx > -renderMargin && rx < screenWidth + renderMargin);
         if (isVisible) {
             el.style.display = 'block';
-            // `hop` souleve l'objet sans toucher a sa profondeur de piste : une
-            // banane en cloche passe au-dessus, elle ne change pas de couloir.
-            // Les deux se somment dans la transformation, le sol reste a zero.
+            // `hop` souleve l'objet sans changer sa profondeur.
             el.style.transform = `translate3d(${rx}px, ${depthToY(item.y) - item.hop}px, 0)`;
-            // Le souffle passe devant tout le monde : il doit recouvrir les
-            // karts qu'il emporte.
+            // Le souffle passe devant les karts.
             const zVal = item.type === 'blueBlast'
                 ? GAME_CONFIG.rendering.zIndexBase + 60
                 : (GAME_CONFIG.rendering.zIndexBase - item.y) | 0;

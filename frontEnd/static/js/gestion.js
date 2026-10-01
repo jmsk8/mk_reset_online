@@ -4,16 +4,8 @@ function escapeHtml(str) {
 }
 
 async function apiCall(endpoint, method = 'GET', body = null) {
-    // Pas d'en-tête d'auth : ces URL sont les routes proxy du frontend, qui
-    // injectent X-Session-Token depuis la session serveur.
-    //
-    // `Accept` est explicite et non décoratif : le frontend s'en sert pour
-    // distinguer l'ouverture d'une PAGE d'un appel de données fait par une page
-    // déjà ouverte, et ne revalider la session que dans le premier cas. Sans cet
-    // en-tête, `fetch()` envoie « */* », que le serveur doit alors traiter comme
-    // une navigation -- ce qui revalidait la session sur chacun de ces appels,
-    // soit 9 allers-retours backend pour ouvrir une page qui n'en vaut que 4
-    // (docs/audit-503-zone-admin.md).
+    // Routes proxy du frontend (l'en-tête d'auth est ajouté côté serveur).
+    // Accept explicite : appel de données, pas de revalidation de session.
     const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -32,11 +24,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
         const response = await fetch(endpoint, options);
         
         if (response.status === 401 || response.status === 403) {
-            // Tous les refus ne sont pas une session morte. Depuis la hiérarchie
-            // à 4 rôles, un 403 dit le plus souvent « ce droit ne vous a pas été
-            // accordé » : rediriger vers la connexion serait absurde, l'intéressé
-            // se reconnecterait pour retomber sur le même refus. On distingue
-            // donc sur le code renvoyé (hierarchie-admin-plan.md, B.5).
+            // Un 403 « droit manquant » ne déconnecte pas.
             let code = null;
             try { code = JSON.parse(await response.clone().text()).code; } catch (e) {}
 
@@ -56,11 +44,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
             return { error: "Non autorisé" };
         }
 
-        // 429 = le limiteur de débit de nginx a rejeté l'appel, et sa réponse
-        // est une page HTML. Sans ce cas, on tombait dans le catch du parse et
-        // l'utilisateur lisait « Erreur serveur (Réponse invalide) » -- un
-        // message qui accuse le serveur d'être cassé alors qu'il se protège, et
-        // qui n'indique pas la seule chose utile : attendre quelques secondes.
+        // 429 (limiteur nginx) : la réponse est du HTML.
         if (response.status === 429) {
             const attente = parseInt(response.headers.get('Retry-After'), 10) || 5;
             console.warn(`⏳ Débit limité par le serveur, réessayer dans ${attente}s`);
@@ -82,19 +66,12 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     }
 }
 
-// Couleurs des tiers dynamiques (Partie B) : chargees une fois depuis
-// /admin/tiers et mises en cache ici plutot que refaire un appel reseau par
-// ligne de tableau. `tiersColorCache` mappe nom -> couleur hex ; 'U' reste
-// hors de la table `tiers`, gere a part.
+// Couleurs des tiers (nom -> couleur), chargées une fois depuis /admin/tiers.
 let tiersColorCache = null;
-// La PROMESSE, pas seulement le résultat : loadPlayers() et loadTierLegend()
-// partent en parallèle au chargement de la page, et ne mémoriser que le
-// résultat laissait les deux appeler /admin/tiers avant qu'il n'existe. Deux
-// requêtes pour la même donnée, sur une zone nginx limitée à 30 r/min.
+// Promesse partagée : loadPlayers() et loadTierLegend() démarrent en parallèle.
 let tiersPromesse = null;
 
-// La réponse brute, que loadTierLegend réutilise : elle a besoin du `rang`,
-// que la table nom -> couleur ne garde pas.
+// Réponse brute (loadTierLegend a besoin du rang).
 async function loadTiers() {
     if (tiersPromesse) return tiersPromesse;
     tiersPromesse = apiCall('/admin/tiers', 'GET').then(res => {
@@ -102,16 +79,14 @@ async function loadTiers() {
         tiersColorCache = Object.fromEntries(liste.map(t => [t.nom, t.couleur]));
         return liste;
     }).catch(e => {
-        // Un échec ne doit pas figer le cache sur une promesse rejetée :
-        // le prochain appel doit pouvoir réessayer.
+        // Un échec permet de réessayer.
         tiersPromesse = null;
         throw e;
     });
     return tiersPromesse;
 }
 
-// Couleur de la pastille U (non classé) : hors de /admin/tiers, U n'étant pas
-// un tier. Promesse partagée, comme loadTiers().
+// Couleur de la pastille U (non classé), promesse partagée.
 let couleurUPromesse = null;
 
 async function loadCouleurU() {
@@ -121,9 +96,7 @@ async function loadCouleurU() {
     return couleurUPromesse;
 }
 
-// Après un enregistrement des tiers : sans ça, loadTiers() resservirait la
-// liste d'avant, et le panneau réafficherait des tiers que la base n'a plus --
-// qu'un second enregistrement supprimerait alors pour de bon.
+// Vide le cache après un enregistrement des tiers.
 function oublierTiers() {
     tiersPromesse = null;
     couleurUPromesse = null;
@@ -135,8 +108,7 @@ async function loadTiersColorCache() {
     return tiersColorCache;
 }
 
-// Noir ou blanc, selon ce qui se lit sur le fond `hex` : la pastille U peut
-// être claire, là où les autres tiers supposent tous un texte blanc.
+// Noir ou blanc selon le contraste avec `hex`.
 function texteLisible(hex) {
     let h = String(hex || '').replace('#', '');
     if (h.length === 3 || h.length === 4) h = h.slice(0, 3).split('').map(c => c + c).join('');
@@ -146,9 +118,7 @@ function texteLisible(hex) {
     return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0a0a0a' : '#ffffff';
 }
 
-// Renvoie {class, style} pour un badge de tier : `style` porte la couleur
-// dynamique (fond degrade non reproduit ici -- juste la couleur du tier),
-// `class` gere seulement les cas hors table (tier inconnu/vide).
+// {class, style} d'un badge de tier.
 function getTierColor(rank) {
     if (!rank) return { class: 'is-light', style: '' };
     const cleanedRank = rank.trim();
@@ -194,9 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Même règle qu'à l'édition : sans le droit, on n'envoie pas le
-            // champ, et le backend applique la valeur par défaut. Les champs
-            // sont déjà grisés côté gabarit, ceci ferme l'appel direct.
+            // Sans le droit, mu/sigma ne sont pas envoyés (valeurs par défaut).
             const data = { nom: nom };
             if (peutChamp('mu')) { data.mu = newMu; data.sigma = newSigma; }
             if (peutChamp('color')) data.color = newColor;
@@ -254,41 +222,27 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// Dernier chargement de /admin/joueurs, indexe par id : deletePlayer() ne
-// recoit qu'un id par son onclick.
+// Dernier chargement de /admin/joueurs, indexé par id.
 const joueursCharges = {};
 
-// S-11 : le backend marque `protegee` les fiches liées à un compte de rang égal
-// ou supérieur (fiche_cible_protegee les refuserait). Grisées, jamais masquées :
-// l'admin doit comprendre que c'est la hiérarchie qui l'arrête.
+// Fiches liées à un compte de rang égal ou supérieur : grisées.
 const TITRE_FICHE_PROTEGEE = "Fiche d'un compte de rang égal ou supérieur au vôtre : "
     + "seul un rang au-dessus peut la modifier.";
 
-/* Tri du tableau des joueurs.
-
-   `colonne` vaut null tant que l'utilisateur n'a rien demande : on affiche
-   alors la liste dans l'ordre du backend, sans la reordonner. */
+/* Tri du tableau des joueurs (colonne null : ordre du backend). */
 let triJoueurs = { colonne: null, ascendant: true };
 
-/* La derniere liste recue. On la garde pour pouvoir re-trier sans redemander
-   les joueurs au backend a chaque clic sur un en-tete. */
+/* Derniere liste recue, pour re-trier sans appel reseau. */
 let joueursListe = [];
 
-/* Valeur de comparaison d'un joueur pour une colonne donnee.
-
-   Chaque colonne renvoie un type homogene (nombre ou chaine), sans quoi la
-   comparaison melangerait les ordres. Les champs numeriques absents valent 0,
-   comme a l'affichage. */
+/* Valeur de comparaison d'un joueur pour une colonne (type homogene). */
 function valeurTri(player, colonne) {
     switch (colonne) {
-        // Un booleen se trie comme 0/1 : les actifs d'un cote, les inactifs
-        // de l'autre, sans etat intermediaire.
         case 'status': return player.is_ranked ? 1 : 0;
         case 'nom':    return (player.nom || '').toLowerCase();
         case 'mu':     return parseFloat(player.mu) || 0;
         case 'sigma':  return parseFloat(player.sigma) || 0;
-        // '?' plutot que chaine vide : un tier absent se range avec les
-        // autres valeurs textuelles au lieu de remonter en tete.
+        // '?' : un tier absent se range avec les valeurs textuelles.
         case 'tier':   return (player.tier || '?').toUpperCase();
         default:       return '';
     }
@@ -299,8 +253,7 @@ function comparerJoueurs(a, b) {
     const vb = valeurTri(b, triJoueurs.colonne);
     let ordre;
     if (typeof va === 'string') {
-        // `localeCompare` pour que les accents se rangent comme en francais :
-        // « Élodie » doit suivre « Edgar », pas finir apres « Zoe ».
+        // Tri alphabetique francais (accents).
         ordre = va.localeCompare(vb, 'fr', { sensitivity: 'base' });
     } else {
         ordre = va - vb;
@@ -308,8 +261,7 @@ function comparerJoueurs(a, b) {
     return triJoueurs.ascendant ? ordre : -ordre;
 }
 
-/* Bascule le tri sur une colonne. Premier clic : croissant. Clic suivant sur
-   la meme colonne : on inverse. */
+/* Premier clic : croissant ; clic suivant sur la meme colonne : inverse. */
 function trierJoueurs(colonne) {
     if (triJoueurs.colonne === colonne) {
         triJoueurs.ascendant = !triJoueurs.ascendant;
@@ -320,9 +272,7 @@ function trierJoueurs(colonne) {
     afficherJoueurs();
 }
 
-/* La fleche sur l'en-tete actif. Les autres en-tetes reviennent a leur icone
-   neutre : deux fleches affichees en meme temps ne diraient plus laquelle
-   gouverne. */
+/* Fleche sur l'en-tete actif seulement. */
 function majIndicateursTri() {
     document.querySelectorAll('th[data-tri]').forEach(th => {
         const icone = th.querySelector('.icone-tri');
@@ -358,15 +308,13 @@ async function loadPlayers() {
     afficherJoueurs();
 }
 
-/* Rend le tableau a partir de `joueursListe`. Separe du chargement : un clic
-   sur un en-tete re-trie la liste deja en memoire, sans appel reseau. */
+/* Rend le tableau a partir de `joueursListe`. */
 function afficherJoueurs() {
     const tbody = document.getElementById('playersTableBody');
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    // `slice()` : on ne reordonne pas la liste d'origine, qui garde l'ordre
-    // du backend pour le cas ou aucun tri n'est demande.
+    // slice() : la liste d'origine garde l'ordre du backend.
     const liste = triJoueurs.colonne
         ? joueursListe.slice().sort(comparerJoueurs)
         : joueursListe;
@@ -431,17 +379,13 @@ function afficherJoueurs() {
 }
 
 async function loadConfig() {
-    // Le formulaire de configuration ne vit plus que sur la page Réglages : ce
-    // script sert aussi les Fiches joueurs, qui ne le contient pas. Sortir tôt
-    // évite l'appel réseau inutile ET la TypeError sur un getElementById nul,
-    // qui interromprait tout le reste du script.
+    // Le formulaire de configuration n'existe que sur la page Réglages.
     if (!document.getElementById('configForm')) return;
 
     const res = await apiCall('/admin/config', 'GET');
     if (!res || res.error) return;
 
-    // Chaque champ est posé indépendamment : un id absent ne doit pas empêcher
-    // les suivants d'être remplis.
+    // Chaque champ est posé indépendamment.
     const poser = (id, valeur, propriete) => {
         if (valeur === undefined) return;
         const el = document.getElementById(id);
@@ -464,9 +408,7 @@ async function loadConfig() {
     poserTextesIp(res.ip_textes);
 }
 
-// Noms et resumes des versions de l'IP (« v1 · IP brute »...), tires de
-// backEnd/textes_ip.py via /admin/config : ce sont les memes que ceux affiches
-// aux joueurs. textContent, jamais innerHTML.
+// Noms et resumes des versions de l'IP, depuis /admin/config (textContent).
 function poserTextesIp(textes) {
     if (!textes) return;
     document.querySelectorAll('[data-ip-nom]').forEach(el => {
@@ -479,17 +421,13 @@ function poserTextesIp(textes) {
     });
 }
 
-// Legende des tiers (page Fiches joueurs) : tiers dynamiques (Partie B),
-// plus de S/A/B/C figes dans le gabarit -- voir
-// docs/tableau-seuils-tiers-plan.md. Le 'U' (non classe) reste dans le HTML,
-// hors de la table `tiers`, et sert de point d'ancrage pour l'insertion.
+// Legende des tiers (page Fiches joueurs) ; 'U' reste dans le HTML et sert
+// d'ancre pour l'insertion.
 async function loadTierLegend() {
     const list = document.getElementById('tierLegendList');
     if (!list) return; // page sans ce bloc
 
-    // Passe par le cache partagé : loadPlayers() demande la même liste au même
-    // moment, et deux appels pour une donnée identique épuisent pour rien le
-    // budget de la zone nginx `admin`.
+    // Cache partagé avec loadPlayers().
     const [res, couleurU] = await Promise.all([loadTiers(), loadCouleurU()]);
     if (!Array.isArray(res)) return;
 
@@ -519,7 +457,7 @@ async function loadTierLegend() {
 async function deletePlayer(id) {
     const joueur = joueursCharges[id];
 
-    // Fiche rattachee : ca merite mieux qu'un « Êtes-vous sûr ? » generique.
+    // Fiche rattachée à un compte : confirmation explicite.
     if (joueur && joueur.compte_lie) {
         if (!confirm(
             "⚠️ ATTENTION — cette fiche est rattachée à un compte Discord.\n\n"
@@ -544,8 +482,7 @@ async function deletePlayer(id) {
         return;
     }
 
-    // Le backend refuse de supprimer un joueur qui a un historique et propose
-    // l'anonymisation : encore faut-il pouvoir la déclencher d'ici.
+    // Joueur avec historique : on propose l'anonymisation.
     if (res.code === 'historique_non_vide') {
         if (!confirm(
             (res.error || "") + "\n\n"
@@ -568,16 +505,14 @@ async function deletePlayer(id) {
     alert("Erreur lors de la suppression: " + (res.error || ""));
 }
 
-// Droits de la session sur la fiche joueur, déclarés par le gabarit avant ce
-// script. Le `typeof` protège les autres pages qui chargent gestion.js sans
-// les définir : elles n'ouvrent pas cette modale, mais elles lisent le fichier.
+// Droits de la session sur la fiche joueur, déclarés par le gabarit (absents
+// sur les autres pages).
 function peutChamp(nom) {
     const drapeaux = (typeof PEUT_CHAMPS_JOUEUR !== 'undefined') ? PEUT_CHAMPS_JOUEUR : null;
     return drapeaux ? drapeaux[nom] === true : true;
 }
 
-// Grise un champ et explique pourquoi au survol, plutôt que de le masquer :
-// l'admin voit la valeur, comprend qu'un droit lui manque, et peut la demander.
+// Grise un champ et explique pourquoi au survol.
 function interdireChamp(idChamp, permission) {
     const champ = document.getElementById(idChamp);
     if (!champ) return;
@@ -587,13 +522,7 @@ function interdireChamp(idChamp, permission) {
     champ.title = "Vous n'avez pas la permission « " + permission + " ».";
 }
 
-// S-01 (audit du 24/09) : l'identifiant SEUL passe par l'attribut onclick, le
-// reste est relu dans joueursCharges. Le nom y passait entre apostrophes, échappé
-// pour le HTML (`'` -> `&#039;`) AVANT le `.replace(/'/g, …)` censé le protéger
-// pour JavaScript : le replace ne trouvait plus rien, le navigateur redécodait
-// `&#039;` en lisant l'attribut, et un pseudo Discord comme `x');alert(1);('`
-// devenait du code dans la page d'un admin. Ne jamais remettre de texte dans
-// un gestionnaire inline (test_audit_securite_0924.py y veille).
+// Seul l'identifiant passe dans l'onclick ; le reste est relu dans joueursCharges.
 function openEditModal(id) {
     const joueur = joueursCharges[id];
     if (!joueur) return;
@@ -610,9 +539,7 @@ function openEditModal(id) {
     document.getElementById('editMissed').value = missed !== undefined ? missed : 0;
     document.getElementById('editColor').value = color || '#ffffff';
 
-    // Chaque champ est réactivé avant d'être éventuellement réinterdit : la
-    // modale est réutilisée d'un joueur à l'autre, un état laissé collé
-    // interdirait un champ pour le reste de la session.
+    // Chaque champ est réactivé avant d'être éventuellement interdit (modale réutilisée).
     const btnRanked = document.getElementById('rankedToggleBtn');
     [['editNom', 'nom', 'Renommer'],
      ['editMu', 'mu', 'Corriger le score'],
@@ -639,8 +566,7 @@ function openEditModal(id) {
 }
 
 function toggleRankedStatus() {
-    // Sans le droit, le bouton reste inerte plutôt que de laisser croire au
-    // changement puis d'échouer à l'enregistrement.
+    // Sans le droit, le bouton reste inerte.
     const btn = document.getElementById('rankedToggleBtn');
     if (btn && btn.classList.contains('est-interdit')) return;
     const currentVal = document.getElementById('editIsRankedValue').value === 'true';
@@ -653,9 +579,7 @@ function updateRankedVisuals(isRanked) {
     const icon = document.getElementById('rankedIcon');
     const text = document.getElementById('rankedText');
 
-    // `est-interdit` est posée une fois à l'ouverture de la modale, alors que
-    // className est réécrit à chaque bascule : la relire ici évite qu'un simple
-    // rafraîchissement visuel ne rende le bouton cliquable.
+    // `est-interdit` est conservée quand className est réécrit.
     const interdit = btn.classList.contains('est-interdit') ? ' est-interdit' : '';
 
     if (isRanked) {
@@ -677,14 +601,8 @@ function closeModal() {
 async function saveEdit() {
     const id = document.getElementById('editId').value;
 
-    // Un champ désactivé n'est PAS envoyé. Le backend n'exige la
-    // sous-permission que sur les champs présents et réellement modifiés : lui
-    // renvoyer une valeur qu'on n'a pas le droit de changer produirait un 403,
-    // même sans y avoir touché.
-    //
-    // Ce n'est pas qu'une précaution : mu et sigma sont affichés arrondis à 3
-    // décimales alors que TrueSkill en produit bien plus, donc les renvoyer
-    // tels quels serait lu comme un vrai changement de valeur.
+    // Un champ désactivé n'est pas envoyé (mu/sigma affichés arrondis seraient
+    // lus comme modifiés).
     const data = {};
     const siActif = (idChamp, cle, lire) => {
         const champ = document.getElementById(idChamp);
@@ -695,14 +613,12 @@ async function saveEdit() {
     siActif('editMu', 'mu', c => parseFloat(c.value));
     siActif('editSigma', 'sigma', c => parseFloat(c.value));
     siActif('editColor', 'color', c => c.value);
-    // Le statut classé n'est pas un <input> : son état vit dans un champ caché,
-    // et c'est le bouton qui porte l'interdiction.
+    // Statut classé : champ caché, interdiction portée par le bouton.
     const btnRanked = document.getElementById('rankedToggleBtn');
     if (btnRanked && !btnRanked.classList.contains('est-interdit')) {
         data.is_ranked = document.getElementById('editIsRankedValue').value === 'true';
     }
-    // consecutive_missed déclenche la pénalité de sigma : capacité de rôle du
-    // superadmin, jamais une permission déléguable.
+    // consecutive_missed : superadmin seulement.
     siActif('editMissed', 'consecutive_missed', c => parseInt(c.value));
 
     if (('mu' in data && isNaN(data.mu)) || ('sigma' in data && isNaN(data.sigma))) {

@@ -55,26 +55,21 @@ void Writer::key(std::string_view k) {
 void Writer::number(double v) {
     separate();
 
-    // Un NaN ou un infini n'a pas de representation JSON. Le laisser passer
-    // produirait un message que le client rejetterait en bloc, sans dire
-    // pourquoi : `null` est au moins lisible, et le controle d'integrite du
-    // service, lui, criera.
+    // NaN et infini n'ont pas de representation JSON : `null`.
     if (!std::isfinite(v)) {
         buffer_ += "null";
         return;
     }
 
-    // Un entier s'ecrit en entier : `1.0` doit sortir `1`, comme en JS.
+    // Un entier s'ecrit sans decimale (`1`, pas `1.0`), comme en JS.
     if (v == static_cast<double>(static_cast<long long>(v))
         && std::abs(v) < 9e15) {
         integer_no_sep(static_cast<long long>(v));
         return;
     }
 
-    // `std::to_chars` SANS precision : representation decimale la plus courte
-    // qui relit a l'identique — le meme algorithme que
-    // `Number.prototype.toString` (plan §5.4). Avec une precision fixe, on
-    // ecrirait `0.30000000000000004` ou on perdrait des decimales utiles.
+    // `std::to_chars` sans precision : representation la plus courte qui se
+    // relit a l'identique, comme `Number.prototype.toString`.
     std::array<char, 32> tmp {};
     auto res = std::to_chars(tmp.data(), tmp.data() + tmp.size(), v);
     if (res.ec == std::errc()) {
@@ -141,9 +136,7 @@ void Writer::raw(std::string_view v) {
 
 // ── Lecture ─────────────────────────────────────────────────────────────────
 //
-// Un analyseur minimal, volontairement : le service accepte quatre messages
-// plats de quelques dizaines d'octets, plafonnes a 512. Y brancher une
-// bibliotheque generale serait une dependance de plus pour lire `{"t":"ping"}`.
+// Analyseur minimal : les messages clients sont plats et plafonnes a 512 octets.
 
 namespace {
 
@@ -151,9 +144,8 @@ void skip_spaces(std::string_view s, size_t& i) {
     while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r')) i++;
 }
 
-// Lit une chaine JSON a partir du guillemet ouvrant. Rend false si elle est
-// malformee ; les echappements autres que \" et \\ sont recopies tels quels,
-// ce qui suffit aux valeurs que le client envoie.
+// Lit une chaine JSON a partir du guillemet ouvrant ; false si elle est
+// malformee. Les echappements autres que \" et \\ sont recopies tels quels.
 bool read_string(std::string_view s, size_t& i, std::string& out) {
     if (i >= s.size() || s[i] != '"') return false;
     i++;
@@ -172,8 +164,7 @@ bool read_string(std::string_view s, size_t& i, std::string& out) {
                 case 'b': out += '\b'; break;
                 case 'f': out += '\f'; break;
                 case 'u': {
-                    // Les quatre chiffres sont ignores : aucun champ lu ici
-                    // n'est du texte affiche, et `t` ne contient que de l'ASCII.
+                    // Chiffres ignores : aucun champ lu ici n'est du texte affiche.
                     if (i + 4 >= s.size()) return false;
                     i += 4;
                     break;
@@ -189,15 +180,13 @@ bool read_string(std::string_view s, size_t& i, std::string& out) {
     return false;
 }
 
-// Lit un scalaire (nombre, bool, null) sans l'interpreter : la valeur brute
-// suffit a decider ensuite.
+// Lit un scalaire (nombre, bool, null) sans l'interpreter.
 void read_scalar(std::string_view s, size_t& i, std::string& out) {
     out.clear();
     while (i < s.size() && s[i] != ',' && s[i] != '}' && s[i] != ']') {
         out += s[i];
         i++;
     }
-    // Rogne les espaces de fin.
     while (!out.empty() && (out.back() == ' ' || out.back() == '\n'
                             || out.back() == '\t' || out.back() == '\r')) {
         out.pop_back();
@@ -237,8 +226,7 @@ ClientMessage parse_client_message(std::string_view payload) {
         if (payload[i] == '"') {
             if (!read_string(payload, i, value)) return ClientMessage {};
         } else if (payload[i] == '{' || payload[i] == '[') {
-            // Aucun message client n'a de valeur composee. En rencontrer une
-            // veut dire que ce n'est pas l'un des cinq : on abandonne.
+            // Aucun message client n'a de valeur composee.
             return ClientMessage {};
         } else {
             read_scalar(payload, i, value);
@@ -262,8 +250,7 @@ ClientMessage parse_client_message(std::string_view payload) {
         msg.type = ClientMessageType::Vote;
     } else if (type == "watch") {
         msg.type = ClientMessageType::Watch;
-        // `null` explicite, ou absent : le client rend la connexion au flux
-        // commun. Surtout pas une conversion qui rendrait 0.
+        // `null` ou absent : flux commun.
         if (!watchRaw.empty() && watchRaw != "null") {
             errno = 0;
             char* end = nullptr;
@@ -279,8 +266,7 @@ ClientMessage parse_client_message(std::string_view payload) {
     } else if (type == "hi") {
         msg.type = ClientMessageType::Hi;
         msg.hidden = (hiddenRaw == "true");
-        // Meme motif que NAV_PATTERN (server.js) : tout autre identifiant est
-        // ignore, jamais tronque ni corrige.
+        // Meme motif que NAV_PATTERN (server.js) ; sinon ignore.
         const bool valid = navRaw.size() >= 16 && navRaw.size() <= 64
             && std::all_of(navRaw.begin(), navRaw.end(), [](char c) {
                    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')

@@ -1,9 +1,4 @@
-"""Fidelite du portage de buildLobbies() depuis matchmaking.html.
-
-Aucun runtime JS n'etait disponible : les cas attendus ci-dessous ont donc ete
-derives A LA MAIN en deroulant le JS d'origine, et non produits par le code
-teste. Comparer une implementation a elle-meme ne prouverait rien.
-"""
+"""Repartition en lobbies (construire_lobbies), cas calcules a la main."""
 from harness import *
 import random
 
@@ -26,9 +21,7 @@ check("un seul joueur -> un lobby", tailles(construire_lobbies(j(50))) == [1])
 check("10 joueurs -> un seul lobby (pas de découpe)", tailles(construire_lobbies(j(*range(10)))) == [10])
 
 print("\n=== n=11 : le pivot reste dans le premier lobby ===")
-# Derive a la main : k=2, base=5, pivots=1, idx_pivot=5.
-# dessus=joueurs[4]=60, pivot=joueurs[5]=50, dessous=joueurs[6]=40
-# ecart_dessus=10, ecart_dessous=10 -> 10<=10 vrai -> il RESTE. tailles=[6,5]
+# k=2, base=5, pivots=1 : ecart_dessus=10, ecart_dessous=10 -> il reste. tailles=[6,5]
 r = construire_lobbies(j(100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0))
 check("égalité d'écart -> le pivot reste (<=)", tailles(r) == [6, 5], tailles(r))
 check("découpe contiguë et ordonnée",
@@ -39,8 +32,7 @@ r = construire_lobbies(j(100, 90, 80, 70, 60, 59, 40, 30, 20, 10, 0))
 check("pivot plus proche du dessus -> il reste", tailles(r) == [6, 5], tailles(r))
 
 print("\n=== n=11 : le pivot bascule dans le lobby suivant ===")
-# dessus=joueurs[4]=60, pivot=joueurs[5]=40, dessous=joueurs[6]=39
-# ecart_dessus=20, ecart_dessous=1 -> 20<=1 faux -> il BASCULE. tailles=[5,6]
+# ecart_dessus=20, ecart_dessous=1 -> il bascule. tailles=[5,6]
 r = construire_lobbies(j(100, 90, 80, 70, 60, 40, 39, 30, 20, 10, 0))
 check("pivot plus proche du dessous -> il bascule", tailles(r) == [5, 6], tailles(r))
 check("le pivot est bien en tête du second lobby",
@@ -80,8 +72,6 @@ for _ in range(400):
         ok_ecart = False
 
 check("chaque joueur apparaît exactement une fois", ok_partition)
-# Ces deux invariants ÉCHOUAIENT sur le JS d'origine : un lobby pouvait
-# atteindre base+2, soit 11 joueurs pour une limite de 10 (≈3 % des cas).
 check("aucun lobby ne dépasse 10 joueurs [corrigé vs le JS d'origine]", ok_taille)
 check("l'ordre décroissant global est préservé (tranches contiguës)", ok_ordre)
 check("le nombre de lobbies vaut toujours ceil(n/10)", ok_nb)

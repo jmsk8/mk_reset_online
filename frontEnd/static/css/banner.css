@@ -1,27 +1,18 @@
-/* Banner SMK — la feuille de style de la course affichee sur la page d'accueil.
-   
-   Le JS correspondant est decoupe sous static/js/banner/. Cette feuille reste UN
-   fichier : une feuille de style bloque le rendu, et une quinzaine de requetes
-   bloquantes retarderaient l'apparition du bandeau. L'ordre de la cascade est ici
-   un contrat.
-   
-   Sections, dans l'ordre : cadre et logo, decor defilant, tuyaux, corps sur la
-   piste, souffle de la bleue, Lakitu, classement final, tableau du grand prix,
-   rideau de depart, etat de la connexion, cartouche du kart suivi, neige, HUD de
-   debug, classement lateral, course figee, orage, Bill Ball, ecran de demarrage,
-   plein ecran.
-   
-   Regle qui vaut partout : le CSS decrit un ASPECT, jamais un deroule. Ce qui
-   avance dans le temps est pose image par image par le rendu, d'apres les dates
-   du snapshot. */
+/* Banner SMK : course affichee sur la page d'accueil (JS dans static/js/banner/).
+   Un seul fichier pour ne pas multiplier les feuilles bloquantes.
 
-/* ── Cadre, mise en page et logo ───────────────────────────────────────────────
-   Le bandeau lui-meme et ce qui le cadre. Tout le reste se pose dedans, en
-   coordonnees de monde traduites en pixels par static/js/banner/layout.js. */
+   Sections : cadre et logo, decor defilant, tuyaux, corps sur la piste, souffle
+   de la bleue, Lakitu, classement final, tableau du grand prix, rideau, etat de
+   la connexion, cartouche du kart suivi, neige, HUD de debug, classement
+   lateral, course figee, orage, Bill Ball, ecran de demarrage, plein ecran.
+
+   Le CSS decrit un aspect ; ce qui avance dans le temps est pose image par
+   image par le rendu. */
+
+/* ── Cadre, mise en page et logo ─────────────────────────────────────────────── */
 .hero.smk-snes-banner {
     position: relative;
-    /* 408 : 264 px de ciel + 144 px d'asphalte, dont 126 roulables. Les 18 px
-       ajoutes sont du bitume derriere la piste, la bordure ne bouge pas. */
+    /* 264 px de ciel + 144 px d'asphalte, dont 126 roulables. */
     height: 408px;
     overflow: visible;
     background-color: #f7ce8c;
@@ -30,14 +21,8 @@
     margin-bottom: 60px;
 }
 
-/* Ecran compact (le meme test que `compactQuery`, config.js) : la scene du PC,
-   reduite. La hauteur suit la LARGEUR de l'ecran, et c'est elle qui fixe
-   l'echelle (`--stage-scale`, posee par `applyStageScale()` dans layout.js) : a
-   47vw, chaque telephone voit ~870 unites de piste — la grille de depart entiere
-   et la ligne. Plafonnee a 246 px, soit l'echelle 0.6 d'avant (404 x 0.6 + 4 de
-   bordure) : un ecran large ne s'agrandit pas.
-   
-   Posee en CSS et non en JS : la page ne saute pas quand le script arrive. */
+/* Ecran compact (meme test que compactQuery, config.js) : la hauteur suit la
+   largeur de l'ecran (47vw, plafonnee a 246 px) et fixe l'echelle de la scene. */
 @media screen and (max-width: 768px), screen and (max-height: 500px) and (orientation: landscape) {
     .hero.smk-snes-banner {
         height: min(246px, 47vw);
@@ -52,36 +37,16 @@
     height: 100%;
     overflow: hidden;
 
-    /* LA PISTE, en % de la scene : ce que les karts peuvent atteindre. C'est
-       elle, et non l'asphalte, qui convertit une profondeur en pixels — 30.882 %
-       de 408 px = 126 px, soit les 3.6 px par unite de `bodies.depthPx`.
-       
-       Plus courte que l'asphalte, et c'est voulu : les karts du fond posaient
-       leurs roues sur la bordure. Les ~18 px d'ecart sont du bitume ou rien ne
-       roule.
-       
-       Declaree ici plutot que deduite d'une hauteur d'element : le JS la lit
-       telle quelle, la feuille de style reste seule a la decider. */
+    /* Piste roulable, en % de la scene : 30.882 % de 408 px = 126 px (3.6 px par
+       unite de bodies.depthPx). Lue telle quelle par le JS. */
     --road-band-pct: 30.882;
 
-    /* L'ASPHALTE, en % de la scene : ce qu'on VOIT de la route — la piste jouable
-       plus les ~18 px de bitume derriere elle. C'est la surface peinte, donc la
-       reference de tout ce qui se pose dessus, et son complement est la hauteur
-       du ciel.
-       
-       Recopiee a trois endroits, elle avait laisse la bande d'arrivee calee sur
-       la piste jouable au lieu de l'asphalte. */
+    /* Asphalte visible, en % de la scene : la piste plus ~18 px de bitume. */
     --ground-pct: 35.294;
 }
 
-/* La scene garde les dimensions du PC en mise en page et se reduit d'un bloc :
-   agrandie de 1/echelle, mise a l'echelle depuis son coin, elle couvre le
-   bandeau au pixel pres.
-   
-   Une classe et non un `@media` : l'echelle vaut sur ecran compact ET en plein
-   ecran, et c'est `applyStageScale()` (layout.js) qui sait lequel des deux
-   s'applique. Elle pose la classe avec la variable, jamais l'une sans l'autre.
-   Avant le script, le rideau couvre la scene. */
+/* La scene garde les dimensions du PC et se reduit d'un bloc. Classe posee par
+   applyStageScale() (layout.js) avec la variable, en compact comme en plein ecran. */
 .hero.is-staged .game-content-wrapper {
     transform: scale(var(--stage-scale));
     transform-origin: 0 0;
@@ -103,12 +68,7 @@
     pointer-events: none;
 }
 
-/* Le logo ne retrecit pas avec la scene : il vit dans `.game-content-wrapper`
-   pour se peindre au bon rang, mais ce wrapper est reduit sur mobile pour
-   montrer plus de piste — et le logo est du decor de page, pas de la piste.
-   
-   La boite reprend la taille du bandeau, et l'echelle inverse la remet a 1:1.
-   Tout ce qu'elle contient garde donc la valeur ecrite, sans compensation. */
+/* Le logo garde sa taille : l'echelle inverse annule la reduction du wrapper. */
 .hero.is-staged .hero-body-content {
     width: calc(100% * var(--stage-scale));
     height: calc(100% * var(--stage-scale));
@@ -132,20 +92,15 @@
     }
 }
 
-/* ── Decor defilant : fond, soleil, sol, ligne ─────────────────────────────────
-   Quatre couches, quatre vitesses. Le defilement passe par `transform` et non
-   par `background-position` : c'est la seule forme que le compositeur sait
-   animer sans repeindre. */
-/* `background-position` repeint la texture du calque entier a chaque image et
-   aucun moteur ne sait la compositer. Le calque est donc elargi d'un PAS
-   (LAYER_STEP, 480 px) et translate dans [-480, 0]. Voir `scrollLayer()`. */
+/* ── Decor defilant : fond, soleil, sol, ligne ──────────────────────────────────
+   Chaque calque est elargi d'un pas (LAYER_STEP, 480 px) et translate dans
+   [-480, 0] : transform plutot que background-position, pour rester compose. */
 .layer-scrolling-bg {
     position: absolute;
     top: 0;
     left: 0;
     width: calc(100% + 480px);
-    /* Complement de l'asphalte, deduit et non recopie. En pixels il ne bouge
-       pas — 264 px sur PC —, c'est le cadre qui a grandi sous lui. */
+    /* Complement de l'asphalte. */
     height: calc(100% - var(--ground-pct) * 1%);
     z-index: 1; 
     background-image: url('../img/banners/index-banner-winter.png');
@@ -163,13 +118,11 @@
     background-image: url('../img/banners/summer/index-banner-summer.png');
 }
 
-/* Automne : dessine par scripts/banner-autumn.py, qu'on relance pour retoucher. */
 .hero.smk-snes-banner[data-season="autumn"] .layer-scrolling-bg {
     background-image: url('../img/banners/autumn/index-banner-autumn.png');
 }
 
-/* Soleil (été uniquement) : suit .layer-scrolling-bg via bgCameraX, entre le
-   ciel et le reste des calques. */
+/* Soleil (ete uniquement), aligne sur .layer-scrolling-bg. */
 .layer-sun {
     position: absolute;
     top: 0%;
@@ -181,37 +134,21 @@
     will-change: transform;
 }
 
-/* Le disque n'est plus le fond de l'élément : il est passé sur `::after`, pour
-   que la lueur de `::before` puisse se peindre DESSOUS. Un z-index négatif
-   n'aurait rien donné — dans l'ordre de peinture, le fond de l'élément qui
-   forme le contexte d'empilement vient avant tous ses enfants, negatifs
-   compris. Deux pseudo-éléments, peints dans l'ordre de l'arbre : la lueur,
-   puis le soleil par-dessus. */
+/* Le disque est sur ::after pour que la lueur de ::before passe dessous. */
 .hero.smk-snes-banner[data-season="summer"] .layer-sun {
     display: block;
 }
 
-/* La lueur, sur son propre element et PLEINE jusqu'au centre.
-   
-   Elle etait un triple `drop-shadow()` anime en boucle : animer `filter` refait
-   la rasterisation du calque a chaque image. Le meme battement joue maintenant
-   sur `opacity` et `transform`, les deux seules proprietes qu'un compositeur sait
-   animer sans repeindre.
-   
-   Le degrade part du centre : un coeur transparent laissait un anneau detache. La
-   phase reste calee sur l'horloge du serveur (`--sun-phase`), un pseudo-element
-   n'acceptant pas de style inline. */
+/* Lueur animee par opacity et transform (pas de filter), phase calee sur
+   l'horloge du serveur (--sun-phase). */
 .hero.smk-snes-banner[data-season="summer"] .layer-sun::before {
     content: '';
     position: absolute;
-    /* Un debord d'un carre de chaque cote : la boite fait 300 % dans les deux
-       sens, et elle est centree. Pas de `margin: -150%` — une marge en
-       pourcentage se resout sur la LARGEUR du parent, `margin-top` comprise. */
+    /* Boite de 300 % centree (une marge en % se resout sur la largeur). */
     inset: -100%;
     border-radius: 50%;
     pointer-events: none;
-    /* Le disque occupe ~24 % du rayon : c'est là que la lueur doit être encore
-       franche, pour sortir de derrière lui sans marche. */
+    /* Lueur encore franche au bord du disque (~24 % du rayon). */
     background: radial-gradient(circle,
         rgba(255, 248, 205, 0.95) 0%,
         rgba(255, 235, 150, 0.85) 14%,
@@ -225,7 +162,6 @@
     animation-delay: var(--sun-phase, 0ms);
 }
 
-/* Le disque, par-dessus sa propre lueur. */
 .hero.smk-snes-banner[data-season="summer"] .layer-sun::after {
     content: '';
     position: absolute;
@@ -243,8 +179,7 @@
     50%      { opacity: 1;    transform: scale(1.16); }
 }
 
-/* Décor de premier plan (été et automne), défile à la vitesse de la route.
-   Même traitement que le fond : élargi d'un pas, translaté. */
+/* Premier plan (ete et automne), a la vitesse de la route. */
 .layer-scrolling-fg {
     position: absolute;
     top: 0;
@@ -266,9 +201,7 @@
     background-image: url('../img/banners/autumn/index-banner-autumn-foreground.png');
 }
 
-/* Second plan (automne uniquement) : un rang d'arbres plus petits, entre le fond
-   et le premier plan, aux trois quarts de la vitesse de la route. Absent des
-   autres saisons : pas de calque compose pour une texture vide. */
+/* Second plan (automne) : arbres plus petits, aux trois quarts de la vitesse. */
 .layer-scrolling-mid {
     position: absolute;
     top: 0;
@@ -288,16 +221,8 @@
     background-image: url('../img/banners/autumn/index-banner-autumn-midground.png');
 }
 
-/* L'asphalte n'est PLUS la piste, il la contient : la piste occupe ses 126 px du
-   bas (`--road-band-pct`), les ~18 px du haut sont du bitume que personne ne
-   foule. Sans eux, un kart du fond posait ses roues sur la bordure.
-   
-   Les deux ont longtemps ete la meme chose, ce qui rendait `bodies.depthPx` egal
-   a 1 % de la scene. Le client ne le suppose plus : il convertit avec la bande
-   roulable et ne se sert de cette hauteur que pour la neige.
-   
-   Monter ce pourcentage recule la bordure sans toucher a la piste ; il faut alors
-   monter la hauteur du hero d'autant, sinon c'est le ciel qui paie. */
+/* L'asphalte contient la piste (ses 126 px du bas, --road-band-pct) et ~18 px
+   de bitume au-dessus. */
 .layer-ground {
     position: absolute;
     bottom: 0;
@@ -312,19 +237,14 @@
     position: absolute;
     top: -10px;
     left: 0;
-    /* Un motif de plus que le cadre : le décalage tient alors toujours dans
-       [-80, 0] et la bande couvre la largeur visible quelle que soit sa phase. */
+    /* Un motif de plus que le cadre, pour couvrir toute phase de [-80, 0]. */
     width: calc(100% + 80px);
     height: 10px;
     background-image: repeating-linear-gradient(90deg, #cc0000 0px, #cc0000 40px, #ffffff 40px, #ffffff 80px);
     z-index: 5;
     box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-    /* Le defilement est pilote par la camera (`--road-offset`, posee a chaque
-       image) et non par une animation CSS libre : deux spectateurs verraient
-       sinon la route a des phases differentes. La variable alimente une
-       `transform`, seule propriete qu'un compositeur sait animer seul ; un
-       pseudo-element n'acceptant pas de style inline, c'est le parent qui la
-       porte. */
+    /* Defilement pilote par la camera (--road-offset), identique pour tous les
+       spectateurs. */
     transform: translate3d(var(--road-offset, 0px), 0, 0);
     will-change: transform;
 }
@@ -333,9 +253,7 @@
     position: absolute;
     bottom: 0;
     left: 0;
-    /* Toute la route VISIBLE, pas seulement la part roulable : c'est de la
-       peinture au sol, elle couvre l'asphalte d'un bord a l'autre. Calee sur la
-       piste jouable, il restait une bande de bitume nu au fond. */
+    /* Couvre toute la route visible. */
     height: calc(var(--ground-pct) * 1%);
     width: 60px;
     background-color: #ffffff;
@@ -349,16 +267,9 @@
     will-change: transform;
 }
 
-/* ── Tuyaux ────────────────────────────────────────────────────────────────────
-   Le seul obstacle fixe de la piste. Ancre par sa base a sa profondeur, comme
-   un kart : c'est ce qui le fait passer devant ou derriere au bon moment. */
-/* Le tuyau, plante sur la piste. Ancre par sa base a sa profondeur comme un kart
-   : le z-index pose par le JS le fait passer devant ou derriere.
-   
-   `--pipe-w` / `--pipe-h` sont la taille que le serveur envoie, posees en inline
-   par le rendu. Une seule taille pour tous les appareils : sur telephone, c'est
-   la scene entiere qui est reduite, et le dessin garde partout le rapport a son
-   emprise. */
+/* ── Tuyaux ──────────────────────────────────────────────────────────────────────
+   Ancre par sa base a sa profondeur, comme un kart. Taille envoyee par le
+   serveur (--pipe-w / --pipe-h). */
 .pipe {
     position: absolute;
     left: 0;
@@ -367,17 +278,15 @@
     will-change: transform;
     width: calc(var(--pipe-w, 67.2) * 1px);
     height: calc(var(--pipe-h, 87.71) * 1px);
-    /* Centré sur sa position : la moitié de la largeur ci-dessus. */
     margin-left: calc(var(--pipe-w, 67.2) * -0.5px);
 }
 
 
-/* Le dessin est dans l'enfant : le parent porte le défilement, et une
-   animation sur sa transform le figerait à l'écran. */
+/* Le dessin est dans l'enfant : le parent porte le defilement. */
 .pipe-sprite {
     width: 100%;
     height: 100%;
-    /* Il est planté dans le sol : c'est par là qu'il s'écrase et se détend. */
+    /* Origine au sol pour l'ecrasement. */
     transform-origin: 50% 100%;
     background-image: url('../img/decor/pipe-green.png');
     background-size: 100% 100%;
@@ -385,8 +294,7 @@
     image-rendering: pixelated;
 }
 
-/* Même tuyau, autre peinture. La couleur ne change rien au jeu : mêmes
-   priorités, même emprise, même choc — elle ne vit que dans cette règle. */
+/* Variante de couleur, sans effet sur le jeu. */
 .pipe-sprite.pipe-red {
     background-image: url('../img/decor/pipe-red.png');
 }
@@ -395,8 +303,7 @@
     animation: pipeShake 320ms ease-out;
 }
 
-/* Sursaut d'un tuyau traversé par une étoile. Il repart d'où il était : rien
-   ne bouge vraiment, l'obstacle reste au même endroit pour la simulation. */
+/* Sursaut d'un tuyau traverse par une etoile. */
 @keyframes pipeShake {
     0%   { transform: translate3d(0, 0, 0)     scale(1, 1); }
     18%  { transform: translate3d(0, -9px, 0)  scale(0.94, 1.08); }
@@ -405,11 +312,8 @@
     100% { transform: translate3d(0, 0, 0)     scale(1, 1); }
 }
 
-/* ── Corps sur la piste : boite, kart, objet tenu ──────────────────────────────
-   Ce qui roule et ce qui se ramasse. La largeur de base est celle du kart de
-   REFERENCE ; chaque personnage la multiplie par l'echelle de son sprite. */
-/* Ancree au sol comme les karts : sa profondeur passe par la `translate3d`
-   posee a chaque image, la seule qui suive la bande d'asphalte mesuree. */
+/* ── Corps sur la piste : boite, kart, objet tenu ───────────────────────────────
+   Profondeur posee dans la translate3d de chaque image. */
 .item-box {
     position: absolute;
     bottom: 0;
@@ -420,16 +324,7 @@
     will-change: transform;
 }
 
-/* La largeur de base est celle du kart de REFERENCE, et `--kart-length` dit ce
-   que ce kart-ci en fait : chaque personnage est dessine au prorata de son PNG,
-   et son emprise suit le meme rapport. Sans elle, le repli a 1 redonne la largeur
-   d'avant.
-   
-   Une variable et non une largeur en px calculee en JS : la feuille de style
-   garde la main sur la largeur de base. */
-/* Ancre au sol : la profondeur est pliee dans la `translate3d` posee a chaque
-   image, et non dans un `bottom` en pourcentage — propriete de mise en page, qui
-   relancait le calcul du conteneur entier. */
+/* Largeur de base du kart de reference, multipliee par --kart-length. */
 .kart-container-moving {
     position: absolute;
     left: 0;
@@ -438,17 +333,7 @@
     width: calc(100px * var(--kart-length, 1));
 }
 
-/* Porte le miroir du tête-à-queue : les orientations ouest n'existent pas en
-   asset, on retourne leur symétrique est. Élément dédié car le bill occupe
-   déjà `transform` sur l'img. */
-/* Porte le rapetissement de l'eclair, et lui seul. Element distinct de
-   `.kart-sprite` parce que celui-ci s'inverse a chaque image du tete-a-queue :
-   empiler l'echelle dessus ferait s'ecraser le kart a chaque changement de frame
-   au lieu de se retourner net. Origine au sol, pour qu'un kart reduit reste sur
-   ses roues. */
-/* L'ecrasement, en un seul endroit : le kart ET l'objet qu'il tient en main
-   s'en servent. Deux jeux de valeurs finiraient par diverger, et l'objet ne
-   tomberait plus pile sur la galette. */
+/* Valeurs d'ecrasement partagees par le kart et l'objet tenu. */
 .karts-layer {
     --flat-squash-x: 1.35;
     --flat-squash-y: 0.28;
@@ -463,18 +348,14 @@
     transition: transform var(--kart-scale-ms) ease-out;
 }
 
-/* Ecrase par un kart reste grand. Deuxieme facteur d'echelle et non un
-   remplacement du premier : un kart peut etre petit ET aplati. Le sprite
-   s'elargit un peu en meme temps — une galette, pas un kart retreci en hauteur. */
+/* Ecrase : second facteur d'echelle, un kart peut etre petit et aplati. */
 .kart-scaler.is-flat {
     --kart-flat-x: var(--flat-squash-x);
     --kart-flat-y: var(--flat-squash-y);
 }
 
-/* L'objet tenu en main s'aplatit avec son kart, au meme rythme. Son point
-   d'appui (le bas du kart) est pose en JS, cf. squashHeldItem dans render.js.
-   La transition n'existe qu'en main : un objet qui quitte la main reprend sa
-   forme d'un coup, au lieu de se redresser en vol. */
+/* L'objet tenu s'aplatit avec son kart (point d'appui pose en JS, voir
+   squashHeldItem dans render.js). */
 .held-item-hands img {
     transition: transform var(--kart-scale-ms) ease-out;
 }
@@ -496,22 +377,15 @@
     width: 100%;
     image-rendering: pixelated;
     filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4));
-    /* Pas d'animation de cahot ici : il se calcule en JS a chaque image et se
-       pose sur le conteneur, avec la meme valeur que sur l'objet tenu en main
-       (kartBounceY, render.js). Deux animations CSS finissaient toujours par se
-       decaler. */
+    /* Cahot calcule en JS (kartBounceY, render.js). */
 }
 
-/* Le parent est retourné : l'ombre doit l'être aussi pour rester en bas à
-   droite à l'écran, sinon elle saute d'un côté à l'autre pendant la toupie. */
+/* L'ombre suit le miroir du parent. */
 .kart-sprite.kart-mirrored .kart-static-png {
     filter: drop-shadow(-4px 4px 0px rgba(0,0,0,0.4));
 }
 
-/* `steps(1, end)` : la teinte tient sa valeur d'une image-cle a l'autre au lieu
-   d'etre interpolee. `starRainbow` anime `filter`, qui refait la rasterisation du
-   sprite a chaque changement — soixante fois par seconde en `linear`, quatre par
-   cycle en paliers. C'est aussi le cycle de palette du jeu d'origine. */
+/* steps(1, end) : palette par paliers, comme le jeu d'origine. */
 .kart-container-moving.star-active .kart-static-png {
     animation: starRainbow 0.3s steps(1, end) infinite;
 }
@@ -528,15 +402,11 @@
     100% { filter: drop-shadow(4px 4px 0px rgba(0,0,0,0.4)) hue-rotate(360deg) brightness(1.3); }
 }
 
-/* ── Souffle de la carapace bleue ──────────────────────────────────────────────
-   Aucun sprite : un halo qui s'ouvre et s'efface. Sa duree suit `blastMs` —
-   ce qu'on voit est exactement ce qui touche. */
-/* L'enveloppe ne porte que la position, ecrite en inline par le rendu ; c'est
-   l'element interieur qui est anime. Animer l'enveloppe ecraserait cette position
-   — dans la cascade, une animation l'emporte sur un style inline. */
+/* ── Souffle de la carapace bleue ───────────────────────────────────────────────
+   Duree egale a blastMs. L'enveloppe porte la position (inline), l'interieur
+   l'animation. */
 .blue-blast {
-    /* Un dôme, pas une bulle : posé sur la piste, et assez haut pour couvrir un
-       kart, qui fait 100 px. */
+    /* Dôme assez haut pour couvrir un kart (100 px). */
     aspect-ratio: 1.5;
 }
 
@@ -552,15 +422,12 @@
         rgba(14, 38, 152, 0.5) 92%,
         rgba(10, 25, 120, 0) 100%);
     box-shadow: 0 0 55px rgba(120, 190, 255, 0.9), 0 0 110px rgba(40, 90, 230, 0.6);
-    /* Il grandit depuis le sol, au rythme du front qui blesse côté serveur. */
     transform-origin: bottom center;
     animation: blueBlast 0.3s linear forwards;
     will-change: transform, opacity;
 }
 
-/* La durée suit `blastMs` : ce qu'on voit est ce qui touche. Départ à 0,3 —
-   l'impact fait déjà un cratère — et léger dépassement au sommet, pour que le
-   souffle claque au lieu de se déployer sagement. */
+/* Départ à 0,3 et léger dépassement au sommet. */
 @keyframes blueBlast {
     0%   { transform: scale(0.3);  opacity: 1; }
     55%  { transform: scale(1.05); opacity: 1; }
@@ -568,9 +435,8 @@
     100% { transform: scale(1.02); opacity: 0.2; }
 }
 
-/* ── Lakitu ───────────────────────────────────────────────────────────────
-   Ancré sur la ligne de départ, en unités monde : c'est la caméra qui le fait
-   entrer et sortir du cadre. Au-dessus des karts, sous le classement. */
+/* ── Lakitu ─────────────────────────────────────────────────────────────────────
+   Ancré sur la ligne de départ, en unités monde. */
 .lakitu {
     position: absolute;
     left: 0;
@@ -587,10 +453,8 @@
     filter: drop-shadow(3px 3px 0 rgba(0, 0, 0, 0.35));
 }
 
-/* Au départ et au dernier tour, il flotte sur son nuage : il monte et descend
-   doucement, sans pivoter. En pourcentage de sa hauteur, pour que l'amplitude suive
-   le gabarit de Lakitu. La période est reprise par
-   LAKITU_FLOAT_MS (scene.js), qui cale la phase sur l'horloge du serveur. */
+/* Flottement au départ et au dernier tour ; période reprise par LAKITU_FLOAT_MS
+   (scene.js). */
 .lakitu.is-floating img {
     animation: lakituFloat 1.8s ease-in-out infinite;
 }
@@ -604,9 +468,8 @@
     .lakitu.is-floating img { animation: none; }
 }
 
-/* ── Classement final ─────────────────────────────────────────────────────
-   Sous le rideau (z-index 700) : il reste visible jusqu'à ce que celui-ci
-   tombe sur la course suivante. */
+/* ── Classement final ───────────────────────────────────────────────────────────
+   Sous le rideau (z-index 700). */
 .race-results {
     position: absolute;
     top: 50%;
@@ -625,7 +488,6 @@
     transition: opacity 0.35s ease, transform 0.35s ease;
 }
 
-/* Entre par la droite, le premier en haut. */
 .race-results.is-visible {
     opacity: 1;
     transform: translate(0, -50%);
@@ -647,9 +509,7 @@
     text-align: right;
 }
 
-/* Huit lignes doivent tenir dans la hauteur du bandeau : 360 px sur écran
-   large, 230 px sur mobile. D'où des vignettes plus petites qu'au classement
-   live. */
+/* Huit lignes dans la hauteur du bandeau : vignettes plus petites. */
 .race-result img {
     width: 30px;
     height: 30px;
@@ -675,9 +535,8 @@
     .race-result-rank { font-size: 9px; }
 }
 
-/* ── Tableau des scores du grand prix ─────────────────────────────────────
-   Au centre de la scène entre deux courses. Il prend le relais du panneau
-   d'arrivées, qui s'efface : les deux ensemble surchargeraient le bandeau. */
+/* ── Tableau des scores du grand prix ───────────────────────────────────────────
+   Au centre de la scène entre deux courses. */
 .race-gp {
     position: absolute;
     top: 50%;
@@ -699,8 +558,7 @@
     transform: translate(-50%, -50%);
 }
 
-/* Le classement final est l'aboutissement des quatre courses : il se distingue
-   du simple point d'étape. */
+/* Classement final : distinct d'un point d'étape. */
 .race-gp.is-final {
     border-color: #ffcc00;
     box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55), 0 0 22px rgba(255, 204, 0, 0.35);
@@ -723,8 +581,7 @@
     gap: 3px;
 }
 
-/* Colonnes fixes : place, vignette, nom, points de la course, cumul. Les deux
-   colonnes de chiffres sont à largeur fixe pour que les unités s'alignent. */
+/* Colonnes : place, vignette, nom, points de la course, cumul (chiffres à largeur fixe). */
 .race-gp-row {
     display: grid;
     grid-template-columns: 16px 26px 1fr 30px 28px;
@@ -733,8 +590,7 @@
     font-family: monospace;
     font-size: 12px;
     color: #ffffff;
-    /* Le passage a l'ordre general glisse depuis l'ordre d'arrivee plutot que
-       de sauter : la transform est posee puis relachee en JS (technique FLIP). */
+    /* Transition FLIP vers l'ordre general (transform posee puis relachee en JS). */
     transition: transform 0.9s ease;
 }
 
@@ -758,9 +614,7 @@
     white-space: nowrap;
 }
 
-/* Ce que la course vient de rapporter, en retrait du cumul. Une fois digere
-   dans le total (classe is-settled posee par le compteur JS), il s'efface :
-   son role s'arrete la ou le cumul a fini de monter. */
+/* Points de la course, effaces une fois ajoutes au cumul (is-settled). */
 .race-gp-gained {
     text-align: right;
     color: #7ee787;
@@ -804,12 +658,8 @@
     }
 }
 
-/* Damier noir et blanc qui couvre la scene le temps qu'elle soit prete, puis se
-   leve. Il masque la reconstruction du decor et, plus tard, celle d'une course
-   deja commencee.
-   
-   La section est en `overflow: visible` (le classement deborde en dessous), d'ou
-   ce conteneur de decoupe : sans lui, le rideau leve irait recouvrir la navbar. */
+/* Rideau en damier : couvre la scene le temps qu'elle soit prete. Conteneur
+   de decoupe pour ne pas recouvrir la navbar (la section deborde). */
 .race-curtain-clip {
     position: absolute;
     top: 0;
@@ -834,24 +684,20 @@
     background-position: 0 0, 30px 30px;
     background-size: 60px 60px;
     box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
-    /* Levé par défaut : c'est l'état de repos, donc celui qu'on garde si le JS
-       ne tourne pas. -101% évite le liseré résiduel des arrondis. */
+    /* Levé par défaut (état sans JS) ; -101% évite un liseré. */
     transform: translateY(-101%);
     transition: transform 0.5s cubic-bezier(0.65, 0, 0.35, 1);
     will-change: transform;
 }
 
-/* La descente est un peu plus lente que la remontée : c'est elle qui marque la
-   fin d'une course, autant qu'on la voie tomber. */
+/* Descente un peu plus lente que la remontée. */
 .race-curtain.is-down {
     transform: translateY(0);
     transition: transform 0.7s cubic-bezier(0.4, 0, 0.5, 1);
 }
 
-/* Le rideau prend sa place sans la jouer : on arrive sur une scene deja couverte,
-   et le seul mouvement qu'on doit voir est sa levee. Posee puis retiree a l'image
-   suivante (index.html), donc jamais en travers d'une vraie descente. Apres
-   `.is-down` : meme specificite, c'est l'ordre qui tranche. */
+/* Placement sans transition (pose puis retire par index.html). Apres .is-down :
+   meme specificite, l'ordre tranche. */
 .race-curtain.is-instant {
     transition: none;
 }
@@ -867,8 +713,7 @@
     .race-curtain { transition: none; }
 }
 
-/* Le classement est hors du cadre du banner, le rideau ne peut donc pas le
-   couvrir : il s'efface avec lui. */
+/* Le classement est hors du cadre : il s'efface avec le rideau. */
 #race-leaderboard {
     transition: opacity 0.35s ease;
 }
@@ -877,8 +722,8 @@
     opacity: 0;
 }
 
-/* ── État de la connexion ─────────────────────────────────────────────────
-   Au-dessus du rideau : le spectateur voit pourquoi il attend. */
+/* ── État de la connexion ───────────────────────────────────────────────────────
+   Au-dessus du rideau. */
 .race-status {
     position: absolute;
     top: 8px;
@@ -897,9 +742,7 @@
     opacity: 0.85;
 }
 
-/* La latence, en retrait derriere l'etat : c'est une precision, pas une
-   annonce. Elle n'existe qu'en ligne — hors connexion l'element est vide, et
-   `:empty` le retire du flex pour qu'il n'y laisse pas son `gap`. */
+/* Latence, en retrait ; :empty la retire du flex hors connexion. */
 .race-status-ms {
     letter-spacing: 0;
     opacity: 0.55;
@@ -931,10 +774,8 @@
     box-shadow: 0 0 6px rgba(229, 83, 75, 0.9);
 }
 
-/* ── Cartouche du kart suivi ──────────────────────────────────────────────
-   Pendant de .race-status, dans le coin oppose : meme calque, meme typo, meme
-   retrait du pointeur. Masque par defaut — il n'apparait que quand la camera
-   suit un kart, et `is-on` est pose par le rendu. */
+/* ── Cartouche du kart suivi ────────────────────────────────────────────────────
+   Coin oppose a .race-status ; affiche avec is-on quand la camera suit un kart. */
 .race-focus-hud {
     position: absolute;
     bottom: 8px;
@@ -957,10 +798,8 @@
     opacity: 0.9;
 }
 
-/* ── Place du kart suivi ──────────────────────────────────────────────────
-   En haut a gauche, comme dans le jeu. Sous le rideau (700) : elle n'a rien a
-   dire avant que la scene soit prete. Les rotations et le rebond sont joues en
-   JS (position.js), sur l'image : le conteneur ne fait que la montrer. */
+/* ── Place du kart suivi ────────────────────────────────────────────────────────
+   Sous le rideau ; animations jouees en JS (position.js). */
 .race-position {
     position: absolute;
     top: 6px;
@@ -992,9 +831,7 @@
     }
 }
 
-/* Releve de decision du kart suivi, sous la banniere. Il n'appartient pas a la
-   scene : il l'explique, et il ne s'affiche qu'en mode debug. Une ligne par
-   sujet, largeur fixe, pour que rien ne saute quand un etat change. */
+/* Releve de decision du kart suivi (mode debug), sous la banniere. */
 .race-ai-hud {
     display: none;
     max-width: 640px;
@@ -1017,8 +854,7 @@
     white-space: nowrap;
 }
 
-/* Largeur fixe : l'oeil retrouve la valeur au meme endroit d'une frame a
-   l'autre, ce qui est toute la difference entre lisible et clignotant. */
+/* Largeur fixe pour que les valeurs ne sautent pas. */
 .race-ai-hud .ai-key {
     width: 92px;
     flex: none;
@@ -1040,8 +876,7 @@
 }
 
 
-/* ── Neige (hiver) ─────────────────────────────────────────────────────────────
-   Purement decoratif, et sans effet sur la course. */
+/* ── Neige (hiver) ─────────────────────────────────────────────────────────────── */
 .snow-container {
     position: absolute;
     top: 0;
@@ -1106,18 +941,9 @@
 }
 
 
-/* ── HUD de debug : carte, vision, emprises ────────────────────────────────────
-   Rien ici ne s'affiche hors de `GAME_CONFIG.debugMode`. C'est un instrument
-   d'observation : il lit l'etat, il ne l'ecrit jamais. */
-/* La carte de debug : une fenetre de piste vue de dessus, a l'ECHELLE 1 — un
-   pixel de monde pour un pixel de carte (cf. `banner/debug.js`).
-   
-   Sa HAUTEUR n'est donc pas une decision de mise en page : c'est la profondeur de
-   la piste en pixels, ecrite par `updateMapView()`. La valeur ci-dessous n'est
-   qu'un point de depart.
-   
-   Sa LARGEUR est prise aussi grande que la page le permet, et sans plafond : a
-   echelle fixe, chaque pixel gagne est un pixel de piste vu en plus. */
+/* ── HUD de debug : carte, vision, emprises ─────────────────────────────────────
+   Affiche seulement en mode debug, en lecture seule. Carte a l'echelle 1 : sa
+   hauteur est ecrite par updateMapView(), sa largeur prend toute la page. */
 #debug-hud {
     position: fixed;
     bottom: 10px;
@@ -1134,8 +960,7 @@
     display: none;
 }
 
-/* La couche de vision. Elle ne recoit aucun clic : c'est un calque de lecture
-   pose sous les entites, et rien de ce qu'elle dessine n'est cliquable. */
+/* Couche de vision, sans clic. */
 #debug-vision {
     position: absolute;
     inset: 0;
@@ -1148,10 +973,7 @@
     pointer-events: none;
 }
 
-/* Le champ du balayage : jusqu'ou porte le regard, du cote ou il regarde. */
-/* Le champ du balayage : jusqu'ou porte le regard, du cote ou il regarde. Il
-   etait a 7 % d'opacite — invisible sur fond noir, et plus encore sous les angles
-   morts peints par-dessus. */
+/* Champ du balayage. */
 .dv-cone {
     background: rgba(0, 255, 136, 0.18);
     border-left: 2px solid rgba(0, 255, 136, 0.85);
@@ -1159,7 +981,6 @@
     box-sizing: border-box;
 }
 
-/* Ce que la couche n'a pas pu dessiner, et pourquoi. */
 .dv-note {
     left: 8px;
     top: 6px;
@@ -1169,34 +990,25 @@
     white-space: nowrap;
 }
 
-/* L'angle mort : ce qu'un corps solide jette au sol depuis la camera. Il
-   s'elargit en s'eloignant et il S'ARRETE — c'est le trapeze qui le dit, pas la
-   couleur. Assez opaque pour manger le champ vert, sans cacher la scene. */
+/* Angle mort : trapeze projete par un corps solide depuis la camera. */
 .dv-shadow {
     background: rgba(0, 0, 0, 0.62);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
 }
 
-/* La ligne de tir partagee : portee du danger latent, bande d'alignement. */
+/* Ligne de tir : portee du danger latent, bande d'alignement. */
 .dv-press { background: rgba(255, 207, 77, 0.16); }
 
-/* Les objets, sur la carte. Couche a part : elle se reecrit d'un bloc a chaque
-   image, alors que les corps fixes gardent leur element. Posee AU-DESSUS de la
-   vue et SOUS les karts — un objet se lit sur le champ, un kart se lit sur
-   l'objet qu'il est en train de ramasser ou de prendre. */
+/* Objets : couche reecrite a chaque image, au-dessus de la vue et sous les karts. */
 #debug-items {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    /* Au-dessus des tuyaux (5), sous les karts (10) : une carapace qui rebondit
-       doit se lire SUR le tuyau qui la renvoie, et un kart sur l'objet qu'il
-       ramasse. */
+    /* Entre les tuyaux (5) et les karts (10). */
     z-index: 6;
 }
 
-/* Selecteur de CLASSE et non `#debug-items > div` : un selecteur d'ID l'aurait
-   emporte sur `.dv-item-inert` quoi qu'il arrive, et l'etat « sans emprise »
-   n'aurait jamais rien change. */
+/* Selecteur de classe (un id l'emporterait sur .dv-item-inert). */
 .dv-item {
     position: absolute;
     transform: translate(-50%, -50%);
@@ -1207,17 +1019,13 @@
 
 .dv-item-banana { background-color: rgba(255, 225, 77, 0.45); border-color: #ffe14d; }
 
-/* L'objet TRAINE derriere son porteur. Meme emprise qu'un objet largue, role
-   inverse : il encaisse un tir, il n'en inflige pas. D'ou le trait plein et le
-   fond vide — une boite qui arrete, pas une boite qui frappe. */
+/* Objet traine : trait plein, fond vide (il encaisse sans frapper). */
 .dv-item-held {
     background-color: rgba(120, 255, 160, 0.12);
     border: 2px solid #78ffa0;
 }
 
-/* SANS EMPRISE : la bleue, qui survole tout, et la banane tant qu'elle monte.
-   Reduites a un point, parce qu'elles n'ont a cet instant aucune boite — le
-   losange dit « il est la, il ne touche rien ». */
+/* Sans emprise (bleue, banane qui monte) : un simple point. */
 .dv-item-inert {
     width: 7px;
     height: 7px;
@@ -1226,9 +1034,7 @@
     transform: translate(-50%, -50%) rotate(45deg);
 }
 
-/* Le faisceau du regard, trace depuis l'oeil. Il porte les rayons obliques, que
-   les divs du reste de la couche ne savent pas dessiner — d'ou le SVG, qui n'est
-   pas une div et a donc besoin de son propre positionnement. */
+/* Faisceau du regard (SVG, pour les rayons obliques). */
 .dv-rays {
     position: absolute;
     inset: 0;
@@ -1241,31 +1047,25 @@
     vector-effect: non-scaling-stroke;
 }
 
-/* L'ouverture du faisceau : jusqu'aux deux rives, au bout de la portee. Un
-   repere de cadrage, discret par choix — il est toujours la. */
+/* Ouverture du faisceau, au bout de la portee. */
 .dv-ray-edge {
     stroke: rgba(0, 255, 136, 0.35);
     stroke-width: 1;
     stroke-dasharray: 3 4;
 }
 
-/* Les rayons RASANTS : ceux qui passent par les flancs d'un corps solide et
-   bornent son angle mort. Ce sont les seuls traits de la carte qui expliquent
-   une autre forme — d'ou le plein, et la couleur de l'ombre qu'ils delimitent. */
+/* Rayons rasants qui bornent un angle mort. */
 .dv-ray-graze {
     stroke: rgba(255, 255, 255, 0.45);
     stroke-width: 1;
 }
 
-/* Le bras qui relie le kart a sa camera : il dit d'ou part la vue, et pourquoi
-   les ombres ne convergent pas sur le kart. */
+/* Bras entre le kart et sa camera. */
 .dv-eyelink {
     border-top: 1px dotted rgba(0, 255, 136, 0.55);
     background: none;
 }
 
-/* La voie : la bande ou un objet est sur la route. Volontairement discrete —
-   c'est un repere, pas un evenement. */
 .dv-lane {
     left: 0;
     width: 100%;
@@ -1273,8 +1073,7 @@
     border-top: 1px dashed rgba(255, 255, 255, 0.18);
 }
 
-/* Ce qui ferme un passage. Un couloir libre se lit comme un trou entre deux
-   barres ; un mur dur ne se franchit pas, le reste se paie. */
+/* Ce qui ferme un passage : mur dur ou obstacle franchissable a un cout. */
 .dv-span {
     background: rgba(80, 160, 255, 0.28);
     border: 1px solid rgba(80, 160, 255, 0.55);
@@ -1286,8 +1085,7 @@
     border-color: rgba(255, 70, 70, 0.75);
 }
 
-/* Les profondeurs RETENUES : la menace qui commande, le porteur qu'on evite,
-   la consigne du plan. Trois traits, trois roles, jamais la meme couleur. */
+/* Profondeurs retenues : menace, porteur evite, consigne du plan. */
 .dv-threat, .dv-carrier, .dv-plan {
     left: 0;
     width: 100%;
@@ -1298,7 +1096,7 @@
 .dv-carrier { border-top: 2px dotted #ffcf4d; }
 .dv-plan { border-top: 2px solid #4dff9e; }
 
-/* Les points d'interet releves par la vue, poses a leur place dans le monde. */
+/* Points d'interet de la vue. */
 .dv-pin {
     width: 9px;
     height: 9px;
@@ -1312,7 +1110,7 @@
 .dv-pin-box { border-color: #ffe14d; }
 .dv-pin-red { border-color: #ff7ad9; }
 
-/* L'oeil : le kart suivi, a sa profondeur, tourne du cote qu'il balaie. */
+/* L'oeil : le kart suivi, tourne du cote qu'il balaie. */
 .dv-eye {
     width: 0;
     height: 0;
@@ -1339,8 +1137,7 @@
     z-index: 3;
 }
 
-/* Un corps se dessine a SON EMPRISE et non en pastille de taille fixe : largeur,
-   hauteur et rondeur arrivent en style inline. */
+/* Corps dessine a son emprise (dimensions en style inline). */
 .debug-entity {
     position: absolute;
     top: 50%;
@@ -1349,17 +1146,13 @@
     font-size: 11px;
     font-weight: bold;
     color: white;
-    /* L'initiale est un repere, pas un contenu : elle se centre sur la marque et
-       deborde plutot que de la deformer. A l'echelle 1 un kart fait 60 x 18 px
-       et la lettre y tient largement — la regle reste pour les corps etroits, et
-       parce que c'est la marque qui doit rester juste, jamais la lettre. */
+    /* L'initiale se centre et deborde plutot que de deformer la marque. */
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: visible;
     white-space: nowrap;
-    /* Au-dessus du calque de vision : c'est la scene qui se lit SUR la vue, pas
-       l'inverse. */
+    /* Au-dessus du calque de vision. */
     z-index: 2;
 }
 
@@ -1374,20 +1167,14 @@
     border: 1px solid #ffdd33;
 }
 
-/* Le seul corps rond du moteur, et le seul a se dessiner rond ici. */
 .debug-pipe {
     background-color: rgba(255, 77, 77, 0.7);
     border: 1px solid #ff8a8a;
     z-index: 5;
 }
 
-/* La ligne d'arrivee est une BANDE, et elle occupe toute la profondeur de piste.
-   Sa largeur arrive en style inline comme celle des corps — mesuree sur
-   `.layer-finish-line`, dont elle est le report a l'echelle 1 — mais elle se
-   pose par son bord GAUCHE : c'est la que le tour se compte, et c'est la que le
-   decor la cale. D'ou le `transform: none`, qui annule le centrage commun.
-
-   Translucide, pour qu'un kart qui la franchit reste lisible au travers. */
+/* Ligne d'arrivee : bande sur toute la profondeur, posee par son bord gauche
+   (transform: none annule le centrage commun). Translucide. */
 .debug-finish {
     height: 100%;
     background-color: rgba(255, 255, 255, 0.35);
@@ -1396,8 +1183,7 @@
     transform: none;
 }
 
-/* Le kart suivi, et ce qu'il ne voit pas. Un corps masque garde sa place : ce
-   qui change est qu'on sait desormais POURQUOI il n'a rien declenche. */
+/* Kart suivi, et corps masques a sa vue. */
 .debug-kart.is-watched { box-shadow: 0 0 0 2px #00ff88; }
 
 .debug-kart.is-masked {
@@ -1406,9 +1192,8 @@
 }
 
 
-/* ── Classement lateral, pause et vote ─────────────────────────────────────────
-   Hors du cadre du bandeau, donc hors de portee du rideau : c'est pourquoi il
-   porte son propre voile. */
+/* ── Classement lateral, pause et vote ──────────────────────────────────────────
+   Hors du cadre du bandeau : il porte son propre voile. */
 #race-leaderboard {
     position: absolute;
     top: 100%;
@@ -1440,15 +1225,13 @@
     background-color: #333;
 }
 
-/* Photos cliquables : elles verrouillent la caméra sur un kart. Le conteneur
-   reste transparent aux clics, seules les vignettes les captent. */
+/* Vignettes cliquables : verrouillent la caméra sur un kart. */
 .leaderboard-pp {
     pointer-events: auto;
     cursor: pointer;
 }
 
-/* Vue par défaut, à gauche des photos. Elle ne bouge jamais : sa place ne
-   dépend d'aucun classement. */
+/* Vue par défaut, à gauche des photos. */
 .leaderboard-camera {
     left: -46px;
     background-color: #111111;
@@ -1466,9 +1249,8 @@
     fill: #ffffff;
 }
 
-/* Pause, juste à gauche de la caméra, et vote à gauche de la pause. Trois
-   boutons de 40 px posés tous les 46 px : -46, -92, -138. Les décalages se
-   tiennent en série, déplacer l'un demande de reprendre les autres. */
+/* Pause puis vote à gauche de la caméra : boutons de 40 px tous les 46 px
+   (-46, -92, -138). */
 .leaderboard-pause {
     left: -92px;
     background-color: #111111;
@@ -1486,9 +1268,7 @@
     fill: #ffffff;
 }
 
-/* Les deux icônes sont posées ensemble dans le SVG : on ne montre que celle de
-   l'état courant. Barres tant que la course tourne — c'est ce que le clic va
-   faire — triangle une fois figée. */
+/* Icône selon l'état : barres en course, triangle une fois figée. */
 .leaderboard-pause .ico-play,
 .leaderboard-pause.is-paused .ico-pause {
     display: none;
@@ -1498,9 +1278,7 @@
     display: inline;
 }
 
-/* Course figée : le bouton s'allume, comme le vote posé. En rouge et non en
-   or : l'or est déjà pris par le repère de la caméra active, deux boutons
-   voisins allumés de la même couleur ne diraient plus rien. */
+/* Course figée : bouton allumé en rouge (l'or marque la caméra active). */
 .leaderboard-pause.is-paused {
     background-color: #6f1d1d;
     border-color: #ff7b72;
@@ -1522,8 +1300,7 @@
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
 }
 
-/* Hors mode debug, la pause n'est pas construite : le vote suit alors
-   directement la caméra dans le DOM, et prend sa place. */
+/* Sans mode debug, pas de pause : le vote prend sa place. */
 .leaderboard-camera + .leaderboard-vote {
     left: -92px;
 }
@@ -1534,7 +1311,6 @@
     fill: #ffffff;
 }
 
-/* Voix posée : le bouton s'allume, et un second clic la retire. */
 .leaderboard-vote.is-voted {
     background-color: #1d6f3f;
     border-color: #7ee787;
@@ -1567,17 +1343,13 @@
     display: none;
 }
 
-/* Repère discret sur la vue active : un liseré, rien de plus. */
 .leaderboard-pp.is-focused img,
 .leaderboard-camera.is-focused {
     border-color: #ffcc00;
     box-shadow: 0 0 6px rgba(255, 204, 0, 0.9);
 }
 
-/* Réalisation automatique en cours : l'icône passe au jaune. Elle le reste
-   pendant que la caméra est posée sur un kart — c'est justement là qu'il faut
-   pouvoir dire si la vue va bouger toute seule, le liseré ci-dessus ne parlant
-   que de la vue d'ensemble. */
+/* Réalisation automatique en cours : icône en jaune, même caméra posée sur un kart. */
 .leaderboard-camera.is-auto svg {
     fill: #ffcc00;
 }
@@ -1592,8 +1364,7 @@
         height: 15px;
     }
 
-    /* Vignettes à 28 px : la caméra tient de -32 à -4, la pause de -64 à -36,
-       le vote de -96 à -68. */
+    /* Vignettes de 28 px : caméra -32/-4, pause -64/-36, vote -96/-68. */
     .leaderboard-pause {
         left: -64px;
     }
@@ -1677,17 +1448,9 @@
     }
 }
 
-/* ── Course figée ──────────────────────────────────────────────────────────────
-   Le bouton pause arrête le rendu JS en cessant de peindre : les positions sont
-   posées à chaque frame par renderState(), il suffit de ne plus l'appeler. Les
-   animations CSS, elles, ne passent pas par nous — la toupie du kart touché, le
-   halo d'étoile, la neige, le sursaut d'un tuyau tourneraient sur une scène
-   arrêtée. Seul le navigateur peut les suspendre.
-
-   Le gel s'arrête à la scène et à son classement : le contenu de la bannière
-   (logo, boutons) n'est pas la course et continue de vivre. Le bouton pause
-   lui-même est dans le classement mais ne porte aucune animation, il reste donc
-   cliquable — c'est par lui qu'on repart. */
+/* ── Course figée ───────────────────────────────────────────────────────────────
+   Le rendu JS cesse de peindre ; ici on suspend les animations CSS de la scène
+   et du classement (le bouton pause reste cliquable). */
 .smk-snes-banner.is-paused .game-content-wrapper,
 .smk-snes-banner.is-paused .game-content-wrapper *,
 .smk-snes-banner.is-paused .game-content-wrapper *::before,
@@ -1698,18 +1461,12 @@
     animation-play-state: paused !important;
 }
 
-/* ── Orage de l'éclair ─────────────────────────────────────────────────────────
-   Un seul calque, sous les karts (z-index 400) : la scène s'assombrit, les
-   karts restent lisibles. L'opacité du calque est posée à chaque frame par
-   renderStorm() d'après les dates du snapshot ; le CSS ne décrit que l'aspect,
-   jamais le déroulé — sinon deux spectateurs verraient l'orage à des phases
-   différentes. */
+/* ── Orage de l'éclair ──────────────────────────────────────────────────────────
+   Opacité posée à chaque frame par renderStorm() d'après le snapshot. */
 .storm-layer {
     position: absolute;
     inset: 0;
-    /* Au-dessus du logo (200), sous les karts (365+) : l'orage est un effet de
-       COURSE, il passe donc devant la banniere comme le reste — mais il doit
-       rester derriere les karts, que son assombrissement ne doit pas manger. */
+    /* Devant le logo (200), derrière les karts (365+). */
     z-index: 210;
     display: none;
     opacity: 0;
@@ -1717,9 +1474,7 @@
     overflow: hidden;
 }
 
-/* Le ciel encaisse tout, la piste presque rien : c'est ce dégradé qui fait lire
-   l'assombrissement comme une couverture nuageuse et non comme un fondu au
-   noir. Le point de bascule suit la hauteur du calque de ciel. */
+/* Ciel très assombri, piste presque pas : effet de couverture nuageuse. */
 .storm-dim {
     position: absolute;
     inset: 0;
@@ -1750,9 +1505,7 @@
 }
 
 
-/* Halo jaune large sous un cœur blanc fin : c'est le décalage entre les deux
-   qui donne la brûlure. non-scaling-stroke parce que le SVG est étiré en
-   hauteur — sans lui l'épaisseur du trait s'écraserait avec. */
+/* Halo jaune sous un cœur blanc ; non-scaling-stroke car le SVG est étiré. */
 .storm-bolt-glow {
     fill: none;
     stroke: #ffd84d;
@@ -1773,8 +1526,7 @@
     vector-effect: non-scaling-stroke;
 }
 
-/* Les trois traits partent en cascade : un éclair unique ferait plat, trois
-   simultanés feraient guirlande. */
+/* Trois traits en cascade. */
 .storm-bolts.storm-firing .storm-bolt {
     animation: stormBolt 420ms ease-out both;
 }
@@ -1787,8 +1539,7 @@
     animation-delay: 210ms;
 }
 
-/* Le trait se déchire vers le bas, puis clignote : deux coupures franches, pas
-   un fondu — un éclair ne s'éteint pas doucement. */
+/* Déchirure vers le bas puis clignotement franc. */
 @keyframes stormBolt {
     0%   { opacity: 0;    transform: scaleY(0.35); }
     6%   { opacity: 1;    transform: scaleY(1); }
@@ -1799,8 +1550,7 @@
     100% { opacity: 0;    transform: scaleY(1); }
 }
 
-/* Le contrecoup lumineux de la frappe, sur toute la scène. Volontairement bref
-   et jamais tout à fait blanc : le banner tourne en fond de page d'accueil. */
+/* Flash de la frappe, bref et jamais tout à fait blanc. */
 .storm-flash {
     position: absolute;
     inset: 0;
@@ -1833,51 +1583,15 @@
     }
 }
 
-/* ── Bill Ball ─────────────────────────────────────────────────────────────────
-   Le kart n'est pas masqué : c'est son image qui est remplacée par celle du
-   bill, le temps du vol. Tout ce qui suit est de l'habillage — la vitesse, la
-   trajectoire et les dégâts sont côté serveur.
+/* ── Bill Ball ──────────────────────────────────────────────────────────────────
+   L'image du kart est remplacée par celle du bill pendant le vol. La taille se
+   règle ici, pas dans le PNG :
+   - max-width: none est indispensable (Bulma plafonne les img à 100 %) ;
+   - margin-left = -(width - 100) / 2 garde le sprite centré sur la hitbox, et
+     width doit rester cohérente avec bill.hitbox.x (N% <-> N/2) ;
+   - translateY ne dépend pas de la largeur : l'image est ancrée par le bas. */
 
-   Pas de traits de vitesse ici : la flamme est déjà dans l'asset (3 images,
-   animées par le rendu). En rajouter ferait doublon.
-
-   LA TAILLE À L'ÉCRAN SE RÈGLE ICI, PAS DANS LE PNG. La règle de base
-   .kart-static-png impose `width: 100%`, donc la largeur rendue vaut toujours
-   celle du conteneur du kart quelle que soit la définition du fichier :
-   redimensionner le PNG ne change que sa netteté.
-
-   TROIS RÈGLES, et une seule dépend de la taille :
-
-   - `max-width: none` N'EST PAS DÉCORATIF, c'est lui qui rend `width`
-     opérant. Bulma applique `img { max-width: 100% }` à toutes les images du
-     site ; sans ce garde-fou la largeur ci-dessous est plafonnée à celle du
-     conteneur du kart, et la changer n'a alors STRICTEMENT AUCUN EFFET, quel
-     que soit le chiffre écrit — le bill reste figé à la taille d'un kart.
-     Si un jour la taille cesse à nouveau de répondre, c'est ici qu'il faut
-     regarder avant de toucher au reste.
-   - `margin-left` vaut toujours -(width - 100) / 2. C'est ce qui garde le
-     sprite centré horizontalement sur le kart, donc sur sa hitbox. Les deux
-     pourcentages se comptent sur le CONTENEUR, dont la longueur varie d'un
-     personnage à l'autre : le rendu ramène donc `--kart-length` à 1 le temps
-     du vol, sans quoi huit porteurs donneraient huit tailles de bill pour une
-     seule hitbox.
-     La largeur elle-même se tient en face de `bill.hitbox.x` côté physique :
-     à `width: N%`, le dessin déborde de N/2 pixels de chaque côté du centre
-     du kart, et `hitbox.x` vaut exactement ce N/2. Les faire diverger donne
-     soit un bill qui touche dans le vide, soit un bill qui traverse sans
-     rien faire.
-   - `translateY` ne se recalcule JAMAIS quand la largeur change. L'image est
-     ancrée par le bas, comme le sprite du personnage : sa base EST la position
-     réelle lue par la physique. L'agrandir la fait monter, et c'est correct.
-     Compenser pour garder son centre fixe ferait descendre sa base sous la
-     piste, et le dessin ne correspondrait plus à la hitbox — c'est exactement
-     le bug qui a été observé.
-
-   Le léger relèvement n'est là que pour décoller le bill du sol : un projectile
-   vole, il ne roule pas. */
-
-/* Ni toupie ni arc-en-ciel : un projectile ne cahote pas (le cahot, lui, est
-   coupe en JS, cf. kartBounceY). */
+/* Ni toupie ni arc-en-ciel (le cahot est coupé en JS, voir kartBounceY). */
 .kart-container-moving.kart-bill .kart-static-png {
     animation: none;
     max-width: none;
@@ -1890,19 +1604,9 @@
 }
 
 
-/* ── Écran de démarrage ───────────────────────────────────────────────────
-   Voile noir plein écran à l'arrivée sur la page, façon logo de console : une
-   demi-seconde de noir, le badge MkReset qui s'allume, puis tout se dissipe sur
-   la course qui démarre.
-
-   Il couvre la fenêtre et non le document, et se pose au-dessus de tout (la
-   navbar est à 1000) : la page se charge derrière lui, en place, elle n'a rien
-   à recomposer quand il s'efface.
-
-   Le voile est peint par le CSS seul, donc dès la première image — un écran
-   d'accueil qui arrive après le contenu qu'il doit cacher ne sert à rien. Seule
-   sa sortie est décidée en JS (événement `race:ready`, écouté dans index.html),
-   pour que la page se découvre au moment où le rideau de la scène se lève. */
+/* ── Écran de démarrage ─────────────────────────────────────────────────────────
+   Voile noir plein écran peint par le CSS dès la première image, puis badge
+   MkReset ; la sortie est déclenchée en JS (race:ready, index.html). */
 .boot-splash {
     position: fixed;
     inset: 0;
@@ -1912,30 +1616,22 @@
     justify-content: center;
     background-color: #000;
     opacity: 1;
-    /* Long et symetrique : en 0.7 s le voile s'arrachait, la page apparaissait
-       d'un coup. `ease-in-out` retient le debut du fondu, c'est ce qui fait la
-       difference entre un rideau qu'on leve et un interrupteur. */
+    /* Fondu long en ease-in-out. */
     transition: opacity 1.2s ease-in-out;
 }
 
-/* Deja vu dans cet onglet : l'ecran n'est jamais rendu, meme pas une image.
-   La classe est posee dans le <head> (index.html), donc avant le premier
-   rendu — un `display: none` decide en JS de fin de page laisserait passer un
-   eclair de noir a chaque rechargement. */
+/* Déjà vu dans cet onglet : classe posée dans le <head> (index.html). */
 html.boot-seen .boot-splash {
     display: none;
 }
 
-/* La sortie. `pointer-events` part dès le début du fondu et non à sa fin : le
-   voile devenu translucide ne doit plus intercepter un clic. */
+/* Sortie : plus de clic intercepté dès le début du fondu. */
 .boot-splash.is-gone {
     opacity: 0;
     pointer-events: none;
 }
 
-/* Le badge : un anneau blanc, le nom dedans. Dessiné plutôt qu'importé — c'est
-   du texte, il reste net à toutes les tailles et n'ajoute pas une image à
-   attendre avant de pouvoir s'afficher, alors qu'il doit paraître à 0.5 s. */
+/* Badge dessiné en CSS (texte net, pas d'image à charger). */
 .boot-logo {
     display: flex;
     align-items: center;
@@ -1953,19 +1649,13 @@ html.boot-seen .boot-splash {
     line-height: 1;
     white-space: nowrap;
 
-    /* Il s'allume une demi-seconde après le noir, et pas avant : c'est cette
-       attente-là qui fait l'effet de démarrage. */
+    /* S'allume une demi-seconde après le noir. */
     opacity: 0;
     animation: boot-logo-in 0.5s ease-out 0.5s forwards;
 }
 
-/* Le mot est descendu a l'oeil dans l'anneau. Centrer sa ligne de texte ne
-   suffit pas : sous la derniere lettre, la police reserve la place des jambages
-   (p, g, y) que « MkReset » n'a pas, et ce vide-la tirait le mot vers le haut.
-   Le decalage rend cette place, il ne corrige pas une marge.
-
-   C'est le bouton a tourner si le mot parait trop haut ou trop bas ; il se lit
-   en em, donc il suit la taille du logo. */
+/* Décalage vertical du mot dans l'anneau (la police réserve la place des
+   jambages). En em, il suit la taille du logo. */
 .boot-logo-word {
     display: block;
     transform: translateY(0.06em);
@@ -1976,28 +1666,17 @@ html.boot-seen .boot-splash {
     to   { opacity: 1; transform: scale(1); }
 }
 
-/* Sans animation : le logo est là d'emblée et le voile s'en va vite, mais il
-   passe quand même — c'est lui qui cache l'assemblage de la scène. */
+/* Sans animation : le voile part vite mais cache toujours l'assemblage. */
 @media (prefers-reduced-motion: reduce) {
     .boot-logo { animation: none; opacity: 1; }
     .boot-splash { transition: opacity 0.2s linear; }
 }
 
 
-/* ── Plein ecran ───────────────────────────────────────────────────────────────
-   Le bandeau seul, telephone couche (fullscreen.js). Une classe pour les deux
-   voies — l'API Fullscreen et le repli qui recouvre la page — : ce qui suit ne
-   sait pas laquelle a servi.
-   
-   C'est le CADRE qui prend l'ecran, en noir ; le bandeau s'y pose, pleine
-   largeur, a une hauteur plafonnee pour montrer au moins
-   `--fullscreen-min-units` de piste. Caler la scene sur la hauteur de l'ecran
-   ne montrait qu'un bout de route sur un PC (~720 unites en 16:9) : on prefere
-   une piste moins epaisse et des bandes noires. Un telephone couche, plus
-   allonge, remplit l'ecran ou presque.
-   
-   L'echelle de la scene se deduit ensuite de cette hauteur, et la place des
-   bandes du classement (`applyStageScale()`, `placeInFrame()`, layout.js). */
+/* ── Plein ecran ────────────────────────────────────────────────────────────────
+   Classe commune a l'API Fullscreen et au repli (fullscreen.js). Le cadre prend
+   l'ecran en noir ; le bandeau est en pleine largeur, a une hauteur plafonnee
+   pour montrer au moins --fullscreen-min-units de piste (layout.js). */
 .banner-frame.is-fullscreen {
     position: fixed;
     top: 0;
@@ -2007,33 +1686,26 @@ html.boot-seen .boot-splash {
     height: 100dvh;
     z-index: 10000;
     background-color: #000;
-    /* Longueur de piste minimale visible, en unites du monde. 1200 : la grille
-       de depart, la ligne et de quoi voir le peloton s'etirer. Plus haut, la
-       piste s'amincit et les bandes grandissent. */
+    /* Longueur de piste minimale visible, en unites du monde. */
     --fullscreen-min-units: 1200;
 }
 
 .hero.smk-snes-banner.is-fullscreen {
     width: 100%;
-    /* 404 : la scene PC. Sa hauteur pour une largeur donnee, a l'echelle ou
-       elle montre exactement le minimum de piste. */
+    /* Largeur de la scene PC. */
     height: min(100%, calc(100vw * 404 / var(--fullscreen-min-units)));
-    /* Pose par `placeInFrame()` : la bande du haut. Sans script, la scene reste
-       en haut du cadre. */
+    /* Bande du haut, posee par placeInFrame(). */
     margin: var(--frame-top, 0px) 0 0;
     border-bottom: 0;
 }
 
-/* Repli : la page reste dessous, elle ne doit plus defiler. */
 html.banner-pseudo-fullscreen,
 html.banner-pseudo-fullscreen body {
     overflow: hidden;
 }
 
-/* Le classement vit sous le bandeau. En plein ecran, la bande du bas le loge
-   s'il y a la place (`has-board-room`, layout.js) ; sinon il n'y a plus de
-   dessous et il remonte dans le ciel, en haut a droite. L'etat de la
-   connexion, qui tenait ce coin, descend dans celui d'en bas. */
+/* Classement dans la bande du bas s'il y a la place (has-board-room), sinon en
+   haut a droite ; l'etat de la connexion descend alors en bas. */
 .hero.is-fullscreen:not(.has-board-room) #race-leaderboard {
     top: 8px;
     margin-top: 0;
@@ -2044,8 +1716,7 @@ html.banner-pseudo-fullscreen body {
     bottom: 8px;
 }
 
-/* Le bouton, a gauche du vote : meme serie de decalages que la camera, la pause
-   et le vote (46 px, 32 sur ecran compact), dont il prolonge la suite. */
+/* Bouton a gauche du vote (meme serie de decalages). */
 .leaderboard-fullscreen {
     left: -184px;
     background-color: #111111;
@@ -2091,16 +1762,14 @@ html.banner-pseudo-fullscreen body {
     }
 }
 
-/* Un geste de telephone : a la souris, le bouton n'a rien a faire la. */
+/* Bouton reserve au tactile. */
 @media (hover: hover) and (pointer: fine) {
     .leaderboard-fullscreen {
         display: none;
     }
 }
 
-/* Plein ecran tenu droit : la scene, calee sur la largeur, ne serait qu'une
-   mince bande. Le voile couvre tout le cadre, bouton de sortie compris — d'ou
-   le sien. */
+/* Plein ecran en portrait : voile sur tout le cadre. */
 .race-rotate-hint {
     display: none;
 }

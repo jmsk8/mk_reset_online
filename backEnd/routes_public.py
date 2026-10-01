@@ -28,20 +28,16 @@ logger = logging.getLogger(__name__)
 public_bp = Blueprint('public', __name__)
 
 
-# Le lien d'invitation finit dans un href : on n'accepte que la forme que
-# Discord renvoie, jamais une URL quelconque.
+# Seule la forme d'invitation Discord est acceptee (le lien finit dans un href).
 _INVITATION_DISCORD = re.compile(r'^https://discord\.(?:com/invite|gg)/[A-Za-z0-9-]+$')
 
 
 @public_bp.route('/discord/widget')
 def discord_widget():
-    """Membres en ligne et lien d'invitation du serveur, pour l'accueil.
+    """Membres en ligne et lien d'invitation du serveur Discord, pour l'accueil.
 
-    Relaye plutot qu'appele depuis le navigateur : Discord ne voit plus que
-    l'IP du serveur, jamais celle des visiteurs, et la CSP n'a plus a autoriser
-    discord.com. Seuls les deux champs affiches sortent. Un echec est mis en
-    cache comme une reussite (valeurs nulles) : si Discord ne repond pas, on ne
-    le relance pas a chaque visite, l'accueil affiche son repli.
+    Relaye cote serveur pour ne pas exposer l'IP des visiteurs a Discord. Les
+    echecs sont aussi mis en cache.
     """
     cached = get_cached("discord_widget", ttl=DISCORD_WIDGET_CACHE_TTL)
     if cached is not None:
@@ -420,8 +416,7 @@ def get_recap(slug):
                 "is_league_recap": is_league_recap if is_league_recap else False,
                 "include_league_stats": include_league_stats if include_league_stats else False,
                 "include_league_moves": include_league_moves if include_league_moves else False,
-                # Version figee a la creation du recap, et tout ce que la page
-                # en dit (docs/affichage-ip-plan-redaction.md §8).
+                # Version IP figee a la creation du recap.
                 "ip": bloc_ip(ip_version, global_stats["total_tournois"], "recap"),
             }
 
@@ -573,23 +568,7 @@ def dernier_tournoi():
                     tournois_to_fetch.sort(key=lambda x: x['date_sort'], reverse=True)
 
                 else:
-                    # Les tournois de la SESSION du dernier tournoi : une carte si
-                    # le tournoi etait seul, plusieurs s'il partageait sa soiree
-                    # avec d'autres lobbies.
-                    #
-                    # Remplace un regroupement par semaine calendaire, qui etait
-                    # une troisieme heuristique de « meme occasion de jeu » --
-                    # distincte de celles de la penalite et des awards. Sur tout
-                    # l'historique reel, les deux donnaient le meme resultat
-                    # (jamais deux dates de jeu dans une meme semaine) : la
-                    # bascule ne change donc rien a l'affichage, elle remplace
-                    # une coincidence par la donnee explicite.
-                    #
-                    # Le filtre de ligue devient redondant avec le filtre de
-                    # session (une session ne contient que des tournois de meme
-                    # ligue). Conserve volontairement : il documente l'intention
-                    # de cette branche et protege si cet invariant changeait.
-                    # Conception : docs/plan-sessions-tournois.md
+                    # Tournois de la session du dernier tournoi.
                     cur.execute("""
                         SELECT id, date
                         FROM Tournois
@@ -656,11 +635,8 @@ def classement():
         joueurs = []
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # Normalisation AVANT la clé de cache : construite sur la saisie
-                # brute, elle laisserait n'importe qui faire grossir _cache_store
-                # depuis internet (?tier=<aléa> en boucle), chaque entrée copiant
-                # le classement complet. Les noms valides ne sont plus S/A/B/C en
-                # dur (tiers dynamiques, Partie B) mais lus depuis la table `tiers`.
+                # Filtre normalise avant la cle de cache, pour ne pas laisser
+                # n'importe quelle valeur creer une entree.
                 noms_tiers_valides = {t["nom"] for t in load_tiers(cur)}
                 tier_filtre = (
                     tier_raw.upper() if tier_raw and tier_raw.upper() in noms_tiers_valides else None
@@ -865,8 +841,7 @@ def classement_saison():
                 "nb_participants": len([p for p in stats["classement_moyenne"] if p["matchs"] > 0]),
                 "leader": leader,
             },
-            # Version du reglage en cours : la cle de cache n'a pas besoin de
-            # la porter, enregistrer les reglages vide tout le cache.
+            # Pas besoin dans la cle de cache : enregistrer les reglages vide le cache.
             "ip": bloc_ip(ip_version, stats["total_tournois"], "classement"),
         }
         if is_league:
@@ -882,13 +857,9 @@ def classement_saison():
 
 @public_bp.route('/tier-seuils')
 def tier_seuils():
-    """Seuils ET metadonnees (nom, couleur, rang) de chaque tier.
+    """Seuils et metadonnees de chaque tier, par rang decroissant.
 
-    Depuis les tiers dynamiques (Partie B), la forme de reponse est une LISTE
-    ordonnee par rang decroissant plutot qu'un objet {"S":.., "A":..} fige --
-    tout consommateur (classement.html, recap.html) doit boucler dessus au
-    lieu de referencer S/A/B/C en dur. `seuil` est le score-frontiere calcule
-    pour la distribution actuelle (None pour le plancher).
+    `seuil` vaut None pour le plancher.
     """
     try:
         with get_db_connection() as conn:
@@ -919,12 +890,7 @@ def tier_seuils():
 
 @public_bp.route('/tiers/unranked')
 def couleur_tier_u():
-    """Couleur de la pastille U (non classe).
-
-    A part de /tier-seuils, et non en entree de plus dans sa liste : ses
-    lecteurs la parcourent comme des tiers (legende, seuils), et U n'en est pas
-    un. Publique comme elle : la couleur se voit deja sur le classement.
-    """
+    """Couleur de la pastille U (non classe)."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -1001,16 +967,8 @@ def get_joueur_stats(nom):
                 """, (nom,))
                 raw_ghosts = cur.fetchall()
 
-                # Depuis le plafond (2026-09-17_reset_global_plafond.sql), un
-                # reset ne touche plus tout le monde ni du meme montant : le
-                # detail par joueur dit qui a bouge, et de combien. Sans ce
-                # filtre, un joueur exclu par le plafond verrait quand meme la
-                # ligne, avec un impact qu'il n'a jamais subi.
-                #
-                # LEFT JOIN + COALESCE pour les resets ANTERIEURS a la migration,
-                # qui n'ont aucun detail : ils etaient uniformes et sans plafond,
-                # donc value_applied vaut pour tout le monde. Un INNER JOIN les
-                # effacerait de l'historique de tous les profils.
+                # Detail par joueur (reset plafonne) ; les resets anterieurs,
+                # uniformes et sans detail, retombent sur value_applied.
                 cur.execute("""
                     SELECT g.date, COALESCE(d.delta_applied, g.value_applied)
                     FROM global_resets g
@@ -1077,8 +1035,7 @@ def get_joueur_stats(nom):
                         "type": "reset", "date": r_date_only.strftime("%d/%m/%Y"),
                         "date_sort": r_date_only.strftime("%Y-%m-%d"),
                         "score": 0, "position": "-", "score_trueskill": round(reset_ts, 3),
-                        # delta_applied est une soustraction de flottants
-                        # (2.0 - 1.7), donc 0.2999999999999998 a l'affichage.
+                        # Arrondi : delta_applied est une difference de flottants.
                         "valeur": round(val_float, 3), "ligue": "-"
                     })
 
@@ -1124,9 +1081,7 @@ def get_joueur_stats(nom):
                 awards_list = []
                 award_groups = {}
                 for r in cur.fetchall():
-                    # award_nom et non nom : `nom` est le parametre de la
-                    # route, celui qui titre la fiche. L'ecraser ici renommait
-                    # le joueur avec son dernier trophee.
+                    # award_nom : `nom` est deja le nom du joueur.
                     emoji, award_nom, description, code, saison_nom, is_yearly = r[:6]
                     is_league_award, a_ligue_nom, a_ligue_couleur, a_ligue_id, cur_couleur, cur_nom = r[6:]
 
@@ -1331,14 +1286,10 @@ def get_joueur_stats(nom):
                 "color": color if color else "#FFFFFF",
                 "ligue": {"nom": ligue_nom, "couleur": ligue_color} if ligue_nom else None
             },
-            # Le nom fait partie de la charge utile : /joueur/<id> delegue ici et n'a
-            # aucune autre source pour le titre de la fiche.
+            # Utilise par /joueur/<id> pour le titre de la fiche.
             "nom": nom,
-            # Cette route n'est pas cachee (c'est /classement qui l'est) :
-            # une edition de profil est donc visible immediatement.
             "profil": profil,
-            # URL canonique : joueurs.nom bouge, et tout lien construit sur le nom meurt
-            # avec lui.
+            # Le nom peut changer : URL stable par identifiant.
             "url_canonique": "/joueur/%d" % jid,
             "historique": historique_data,
             "awards": awards_list,
@@ -1353,11 +1304,7 @@ def get_joueur_stats(nom):
 
 @public_bp.route('/joueur/<int:joueur_id>')
 def get_joueur_stats_par_id(joueur_id):
-    """Fiche joueur par identifiant : l'URL qui survit a un renommage.
-
-    Delegue a la route par nom plutot que de dupliquer trois cents lignes de
-    calcul, au prix d'un detour.
-    """
+    """Fiche joueur par identifiant (stable apres un renommage)."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -1374,7 +1321,7 @@ def get_joueur_stats_par_id(joueur_id):
 
 @public_bp.route('/joueurs/resolve/<nom>')
 def resolve_joueur(nom):
-    """Nom -> identifiant. Sert la redirection 301 des anciennes URL."""
+    """Nom -> identifiant, pour la redirection 301 des anciennes URL."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -1392,14 +1339,8 @@ def get_joueur_names():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # `tier` et `is_ranked` servent au tri du vivier de joueurs
-                # dans add_tournament : les deux notions sont distinctes et ne
-                # se deduisent pas l'une de l'autre. `tier = 'U'` dit qu'un
-                # joueur n'a pas encore de rang (sigma trop haut pour le
-                # classer) ; `is_ranked = false` dit qu'il a manque assez de
-                # tournois d'affilee pour etre considere inactif
-                # (GHOST_MISSED_THRESHOLD). Un joueur classe peut donc devenir
-                # inactif sans perdre son tier.
+                # tier = 'U' : pas encore de rang ; is_ranked = false : inactif.
+                # Les deux sont independants.
                 cur.execute("""
                     SELECT nom, ligue_id, score_trueskill, tier, is_ranked
                     FROM Joueurs
@@ -1430,15 +1371,13 @@ def stats_joueurs():
             with conn.cursor() as cur:
                 cur.execute("SELECT tier FROM joueurs")
                 tier_rows = cur.fetchall()
-                # Comptage dynamique (Partie B) : plus de cles S/A/B/C figees,
-                # un tier renomme ou ajoute par l'admin doit aussi compter.
+                # Comptage par tier, les tiers etant definis en base.
                 dist: dict[str, int] = {}
                 for tr in tier_rows:
                     t = tr[0] if tr[0] and tr[0] not in ['Unranked', '?', ''] else 'U'
                     dist[t] = dist.get(t, 0) + 1
 
-                # Avatar : memes conditions que profil_public -- compte lie,
-                # fiche non anonymisee.
+                # Avatar : compte lie et fiche non anonymisee.
                 cur.execute("""
                     SELECT
                         j.nom, j.mu, j.sigma, j.tier,
@@ -1511,9 +1450,7 @@ def get_tournois_list():
                     "ligue_nom": r[3] if r[3] else "N/A",
                     "ligue_couleur": r[4] if r[4] else None,
                     "vainqueur": r[5],
-                    # Sert au bouton « Lier » de la page Gestion tournois : un
-                    # tournoi deja accompagne dans sa session s'affiche comme
-                    # tel, pour que l'admin voie ce qu'il a deja regroupe.
+                    # Pour le bouton « Lier » de la page Gestion tournois.
                     "session_id": r[6],
                     "nb_dans_session": r[7],
                 } for r in cur.fetchall()]

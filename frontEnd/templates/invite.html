@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    {# Un lien d'invitation n'a rien à faire dans un index de moteur de recherche. #}
     <meta name="robots" content="noindex, nofollow">
-    {# Aperçu neutre : le chemin contient le token, on ne le met pas en vitrine. #}
+    {# Aperçu neutre : le chemin contient le token. #}
     <meta property="og:title" content="MK Reset — invitation">
     <meta property="og:description" content="Rejoignez le classement MK Reset.">
     <title>Invitation - MK Reset</title>
@@ -66,10 +65,7 @@
                                     </p>
                                 </div>
 
-                                {# S-06 : plus de case ici. Elle ne faisait que griser un
-                                   lien qui portait cgu=1 en dur, et le consentement
-                                   s'enregistrait sans geste réel. Il se donne à l'étape
-                                   suivante, sur /consentement (formulaire POST). #}
+                                {# Le consentement se donne à l'étape suivante, sur /consentement. #}
                                 <p class="is-size-7 mb-3">
                                     Après la connexion, vous serez invité à lire et accepter la
                                     <a href="/confidentialite" target="_blank"

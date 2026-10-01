@@ -4,25 +4,18 @@
     python3 scripts/colorize-positions.py
 
 Source et sortie
-    assets-src/positions/<n>.png       les originaux en gris, JAMAIS modifies
-    frontEnd/static/img/pos/<n>.png    ce que sert le site
+    assets-src/positions/<n>.png       originaux en gris, jamais modifies
+    frontEnd/static/img/pos/<n>.png    sortie servie par le site
 
-Les originaux sont dessines en quatre gris : le contour noir (0), l'ombre du
-relief (~85), sa face eclairee (~150) et la face du chiffre, blanche (255).
-Chaque gris est remplace par la teinte correspondante de la palette -- une
-table de correspondance en degrade, pas un filtre de couleur : le modele est
-garde a l'identique, les bords restent francs, et chaque teinte est exactement
-celle qu'on a choisie. Les gris intermediaires (l'anticrenelage entre deux
-niveaux) sont interpoles entre les deux teintes voisines.
+Les originaux utilisent quatre gris : contour (0), ombre (~85), relief (~150)
+et face (255). Chaque gris est remplace par la teinte de la palette ; les gris
+intermediaires sont interpoles entre les deux teintes voisines. La face suit un
+degrade vertical en trois teintes, comme dans le jeu.
 
-La face du chiffre n'est pas unie : elle suit un degrade vertical en trois
-teintes, clair en haut et soutenu en bas, comme a l'ecran dans Mario Kart.
+Palettes relevees sur des captures : or, argent et bronze pour 1st a 3rd,
+l'orange du 7th pour 4 a 8.
 
-Palettes relevees sur des captures du jeu : l'orange du 7th vaut pour toutes
-les places de 4 a 8 ; l'or, l'argent et le bronze sont ceux de 1st, 2nd et
-3rd. Pour retoucher une couleur, c'est ici qu'on la change, puis on relance.
-
-Aucune dependance, comme resize-karts.py dont on reprend l'encodage.
+Aucune dependance (encodage repris de resize-karts.py).
 """
 
 import importlib.util
@@ -62,7 +55,7 @@ PALETTES = {
 PLACES = {1: 'or', 2: 'argent', 3: 'bronze',
           4: 'orange', 5: 'orange', 6: 'orange', 7: 'orange', 8: 'orange'}
 
-# Les gris de l'original, dans l'ordre. Ce sont eux que la palette remplace.
+# Gris de l'original, dans l'ordre, remplaces par la palette.
 GRIS = (0, 85, 150, 255)
 
 _spec = importlib.util.spec_from_file_location(
@@ -97,8 +90,7 @@ def coloriser(path, palette):
     if channels != 4:
         raise ValueError(f'{path} : RGBA attendu, {channels} canaux')
 
-    # Le degrade de la face court sur la hauteur DESSINEE, pas sur celle du
-    # fichier : les marges transparentes l'ecraseraient sinon vers le milieu.
+    # Degrade sur la hauteur dessinee, sans les marges transparentes.
     lignes = [y for y in range(h)
               if any(px[(y * w + x) * 4 + 3] for x in range(w))]
     haut, bas = lignes[0], lignes[-1]

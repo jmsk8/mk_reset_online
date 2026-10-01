@@ -1,4 +1,4 @@
-// La neige, l'hiver seulement. Purement decoratif.
+// Neige (hiver seulement), decorative.
 
 function initSnow() {
     const banner = document.querySelector('.hero.smk-snes-banner');
@@ -43,11 +43,7 @@ function createFallingSnowflake(container, containerHeight, containerWidth) {
     const startX = Math.random() * (110 + maxDriftPercent) - 10;
     snowflake.style.left = `${startX}%`;
 
-    // Un flocon s'arrete SUR le bitume, jamais au-dessus : la borne haute de sa
-    // chute est le bord haut de la piste, la part de scene occupee par le ciel.
-    // Elle etait recopiee a la main (0.65, l'ancien decoupage 65/35) et pointait
-    // dans le vide des que le cadre a grandi sans que la piste s'allonge. Elle
-    // se mesure maintenant, comme tout le reste de la profondeur.
+    // Les flocons s'arretent sur le bitume : borne haute = bord haut de la piste.
     const skyPart = (containerHeight > 0 && viewMetrics.groundHeight > 0)
         ? 1 - (viewMetrics.groundHeight / containerHeight)
         : 0.65;
@@ -75,11 +71,8 @@ function createLandedSnowflake(container, containerWidth) {
     snowflake.style.width = `${size}px`;
     snowflake.style.height = `${size}px`;
 
-    // Une PROFONDEUR de piste, comme n'importe quel corps de la scene : le
-    // flocon pose est sur le bitume. Ecrite en pourcentage de scene, elle
-    // remontait dans le ciel des que le cadre grandissait sans que la piste
-    // s'allonge. Elle ne passe pas par `depthToY` parce que l'animation de
-    // derive occupe deja la `transform` de l'element.
+    // Profondeur de piste du flocon (pas de depthToY : la derive occupe deja
+    // la transform).
     const depth = Math.random() * 32 + 1;
     snowflake.style.bottom = `${(depth * depthToWorldPx()).toFixed(1)}px`;
 

@@ -1,27 +1,7 @@
-"""Un droit accordé se voit au rafraîchissement, sans reconnexion.
+"""Un droit accordé ou retiré se voit au rafraîchissement, sans reconnexion.
 
-Avant : la session portait une copie des permissions figée à la CONNEXION, et
-toutes les pages la lisaient. Accorder « Corriger le score » à un admin ne
-changeait rien pour lui -- il devait se déconnecter et se reconnecter, sans
-qu'aucun écran ne le lui dise.
-
-Le correctif passe par la sonde de session déjà appelée à chaque requête
-(`/auth/check-session`, before_request) : elle rend désormais `role` et
-`permissions`, que `player_required` a de toute façon lus en base pour
-authentifier. Rien ne coûte un appel réseau de plus.
-
-⚠️ Une version intermédiaire appelait `/auth/me` séparément depuis le context
-processor. Ça marchait, mais ajoutait un aller-retour synchrone par rendu de
-page : sur les 2 workers gunicorn du frontend, deux pages simultanées les
-bloquaient tous les deux et nginx répondait **503** (observé le 2026-09-17).
-Ne pas y revenir -- un rendu de page ne doit pas faire d'appel réseau.
-
-Ce que ces tests verrouillent :
-  - un droit accordé apparaît sans reconnexion, et un droit retiré disparaît ;
-  - le rôle suit les permissions (sinon un rétrogradé garde son menu) ;
-  - AUCUN appel réseau supplémentaire n'est fait pour ça ;
-  - une panne backend ne déconnecte pas et ne vide pas les droits connus ;
-  - un corps de réponse inattendu ne casse pas la page.
+La sonde /auth/check-session rend role et permissions : aucun appel réseau
+supplémentaire par page. Une panne backend ne déconnecte pas.
 """
 from harness import *
 
@@ -49,10 +29,7 @@ def _get(url, **kw):
     appels.append(url)
     if url.endswith('/auth/check-session'):
         return _Rep(reponse['status'], reponse['payload'])
-    # Un backend reel refuse TOUTES les routes protegees d'une session revoquee,
-    # pas seulement la sonde. Repondre 200 ici ferait passer pour sur un
-    # frontend qui laisse fuir des donnees des qu'il ne sonde plus : le test
-    # mesurerait la complaisance du stub, pas le comportement de l'appli.
+    # Comme un vrai backend : une session revoquee est refusee partout.
     if reponse['status'] in (401, 403) and '/admin/' in url:
         return _Rep(reponse['status'], {'error': 'session expiree'})
     return _Rep(200, {})
@@ -80,8 +57,7 @@ frontend.app.config['WTF_CSRF_ENABLED'] = False
 frontend.app.config['TESTING'] = True
 
 
-# Sonde : rend ce que le context processor expose. C'est le chemin reel --
-# inject_est_admin tourne avant chaque rendu de template.
+# Expose ce que le context processor fournit aux gabarits.
 @frontend.app.route('/__sonde__')
 def _sonde_page():
     from flask import render_template_string
@@ -110,8 +86,7 @@ def sonde(cli):
 print("\n=== Un droit accordé apparaît sans reconnexion ===")
 
 cli = frontend.app.test_client()
-# La session ne connaît que gestion_joueurs ; le backend, lui, a déjà la
-# nouvelle permission -- c'est exactement l'état après un octroi.
+# Etat juste apres un octroi : la session ne connait que gestion_joueurs.
 session_admin(cli, {'gestion_joueurs'})
 reponse['status'] = 200
 reponse['payload'] = valide(permissions=['gestion_joueurs', 'edition_mu_sigma'])
@@ -135,8 +110,7 @@ check("  ni l'autre", not vus['nom'], vus)
 
 
 print("\n=== Le rôle suit les permissions ===")
-# N'en rafraîchir qu'une laisserait un chef_admin rétrogradé garder son menu
-# complet jusqu'à sa déconnexion.
+# Le role est rafraichi avec les permissions.
 
 cli = frontend.app.test_client()
 session_admin(cli, {'gestion_joueurs'}, role='chef_admin')
@@ -146,8 +120,7 @@ check("une rétrogradation est prise en compte", vus['role'] == 'admin', vus)
 
 
 print("\n=== AUCUN appel réseau de plus : c'est tout l'objet du correctif ===")
-# La panne du 2026-09-17 : un /auth/me en plus par rendu de page saturait les
-# 2 workers gunicorn du frontend, et nginx répondait 503.
+# Aucun appel a /auth/me pendant le rendu.
 
 cli = frontend.app.test_client()
 session_admin(cli, {'gestion_joueurs'})
@@ -159,16 +132,14 @@ check("aucun appel à /auth/me", not [u for u in appels if u.endswith('/auth/me'
 check("  la sonde de session suffit",
       len([u for u in appels if u.endswith('/auth/check-session')]) == 1, appels)
 
-# Le timeout de la sonde doit rester court : elle est dans le chemin de CHAQUE
-# requête. C'est ce qui borne le risque de saturation.
+# La sonde est sur le chemin de chaque requete : timeout court.
 import inspect
 src_sonde = inspect.getsource(frontend._sonde_session)
 check("la sonde garde un timeout court", 'timeout=1' in src_sonde, src_sonde[:200])
 
 
 print("\n=== Une panne backend ne déconnecte pas et ne vide pas les droits ===")
-# R-55 : purger la session sur un 503 déconnecterait tout le monde au premier
-# hoquet de la base.
+# Un 503 ne purge pas la session.
 
 for code in (503, 500):
     cli = frontend.app.test_client()
@@ -180,8 +151,7 @@ for code in (503, 500):
     with cli.session_transaction() as s:
         check("  la session n'est pas purgée", s.get('compte') is not None)
 
-# 401/403 : la session est refusée, et là on déconnecte bien (comportement
-# antérieur à ce chantier, porté par _sonde_session).
+# 401/403 : deconnexion.
 cli = frontend.app.test_client()
 session_admin(cli, {'gestion_joueurs'})
 reponse['status'] = 401
@@ -194,9 +164,7 @@ reponse['status'] = 200
 
 
 print("\n=== Un corps inattendu ne casse jamais la page ===")
-# _maj_droits_session tourne dans un before_request : une exception y ferait
-# tomber TOUTE page, et les routes proxy renverraient du HTML là où le JS
-# attend du JSON (« Erreur serveur (Réponse invalide) »).
+# Une reponse inattendue ne doit pas faire tomber la page.
 
 for corps in (None, [], 'texte', {'status': 'valid'}, {'role': None},
               {'permissions': None}):
@@ -207,8 +175,7 @@ for corps in (None, [], 'texte', {'status': 'valid'}, {'role': None},
     check("corps %r -> la page se rend quand même" % (corps,),
           r.status_code == 200, r.status_code)
 
-# Un backend plus ancien (sans role/permissions dans la sonde) ne doit pas
-# effacer les droits connus : sinon un déploiement partiel viderait les menus.
+# Une sonde sans role/permissions conserve les droits connus.
 cli = frontend.app.test_client()
 session_admin(cli, {'gestion_joueurs', 'edition_mu_sigma'})
 reponse['payload'] = {'status': 'valid'}
@@ -217,8 +184,7 @@ check("un backend sans ces champs laisse la copie intacte", vus['mu_sigma'], vus
 
 
 print("\n=== Le cookie n'est réécrit que si quelque chose a changé ===")
-# session.modified force un Set-Cookie. Le poser à chaque requête alourdirait
-# toutes les réponses du site pour rien.
+# Pas de Set-Cookie inutile.
 
 cli = frontend.app.test_client()
 session_admin(cli, {'gestion_joueurs'})
@@ -237,19 +203,14 @@ print("\n=== Sans session, aucune sonde ===")
 cli = frontend.app.test_client()
 appels.clear()
 sonde(cli)
-# La page appelle /saisons pour sa navbar : c'est hors sujet ici. Seule la
-# sonde de session doit rester silencieuse sans jeton.
+# Seule la sonde de session doit rester silencieuse sans jeton.
 check("un visiteur anonyme ne déclenche aucune sonde",
       not [u for u in appels if 'check-session' in u or u.endswith('/auth/me')],
       appels)
 
 
 print("\n=== La sonde ne part plus sur les appels JSON d'une page ouverte ===")
-# Ouvrir une page admin, c'est un document puis trois appels JSON. Sonder les
-# quatre revalidait quatre fois la meme session en quelques millisecondes : 9
-# allers-retours backend pour une page qui n'en vaut que 4, sur 2 workers
-# gunicorn qui bloquent pendant l'attente. D'ou les 503 et les « Erreur
-# Backend » intermittents du 2026-09-17 (docs/audit-503-zone-admin.md).
+# Une page admin = un document + des appels JSON : seul le document est sonde.
 
 cli = frontend.app.test_client()
 session_admin(cli, {'gestion_joueurs'})
@@ -268,11 +229,7 @@ check("un fetch JSON ne sonde plus", not sondes_json, appels)
 check("  mais relaie bien l'appel utile au backend",
       any(u.endswith('/admin/joueurs') for u in appels), appels)
 
-# Le repli doit pencher du BON cote. `fetch()` sans `Accept` envoie « */* » :
-# tant qu'un appel oublie l'en-tete, il doit etre revalide, pas exempte. Se
-# tromper coute une sonde de trop ; l'inverse laisserait une session morte
-# servir des donnees. Les appels du depot posent l'en-tete (apiCall, navbar),
-# cette assertion protege ceux qu'on ajoutera plus tard.
+# Sans en-tete Accept (« */* »), l'appel est revalide.
 appels.clear()
 cli.get('/admin/joueurs', headers={'Accept': '*/*'})
 check("un appel sans Accept explicite est revalide (repli sur)",
@@ -280,40 +237,30 @@ check("un appel sans Accept explicite est revalide (repli sur)",
 
 
 print("\n=== Et les appels du depot posent bien cet en-tete ===")
-# Le gain ci-dessus n'existe que si les appelants annoncent « application/json ».
-# Le repli (revalider) est sur, mais SILENCIEUX : un fetch qui oublie l'en-tete
-# refait payer une sonde par appel, sans qu'aucune erreur ne le signale. C'est
-# exactement ce qui est arrive apres le premier correctif -- gestion.js et la
-# navbar avaient ete traites, mais le helper api() de admin_comptes.html, non :
-# la page Comptes retombait en 503 (rapporte le 2026-09-17).
-#
-# D'ou un balayage de TOUT le frontend plutot que quelques fichiers nommes :
-# c'est la seule forme qui attrape aussi les pages qu'on ajoutera plus tard.
+# Tous les fetch() de chargement du frontend doivent annoncer application/json,
+# sinon chaque appel repaye une sonde.
 import re as _re2
 
-_IGNORE_HOTE_EXTERNE = ('http://', 'https://', '`http')   # widget Discord & co.
+_IGNORE_HOTE_EXTERNE = ('http://', 'https://', '`http')  # widget Discord, etc.
 
 
 def _fetchs_de_chargement(source):
-    """(ligne, extrait) des fetch() qui chargent des donnees, sans en-tete.
+    """(ligne, extrait) des fetch() de chargement sans en-tete Accept.
 
-    Ecarte : les ecritures (POST/PUT/DELETE, declenchees par un clic, hors du
-    chemin de chargement), les appels a un hote externe (ils ne passent ni par
-    nginx ni par le frontend), et ceux dont les options viennent d'une variable
-    (`opts`/`options`) -- c'est la forme des helpers, verifies a part.
+    Ignore les ecritures, les hotes externes et les helpers (options en variable).
     """
     trouves = []
     for m in _re2.finditer(r'fetch\(', source):
         extrait = ' '.join(source[m.start():m.start() + 230].split())
         if extrait.startswith('fetch()`'):
-            continue                      # occurrence citee dans un commentaire
+            continue  # occurrence dans un commentaire
         cible = extrait[len('fetch('):].lstrip()
         if any(cible.startswith(h) for h in _IGNORE_HOTE_EXTERNE):
             continue
         if _re2.search(r"method:\s*'(POST|DELETE|PUT)'", extrait):
             continue
         if _re2.search(r'\b(opts|options)\b', extrait):
-            continue                      # helper : porte l'en-tete ailleurs
+            continue  # helper, verifie a part
         if 'Accept' in extrait or 'HEADERS_JSON' in extrait:
             continue
         trouves.append((source[:m.start()].count('\n') + 1, extrait[:90]))
@@ -334,9 +281,7 @@ for _dossier, _, _fichiers in os.walk(FRONT):
 check("aucun fetch de chargement n'oublie Accept", not _oublis,
       ' | '.join(_oublis))
 
-# Les trois helpers centraux, verifies nommement : le balayage ci-dessus les
-# ignore (leurs options passent par une variable), et ce sont eux qui portent
-# l'en-tete pour la grande majorite des appels.
+# Les helpers centraux portent l'en-tete.
 _HELPERS = [
     ('gestion.js', 'static/js/gestion.js', 'async function apiCall'),
     ('admin_comptes.html', 'templates/admin_comptes.html', 'async function api('),
@@ -355,17 +300,11 @@ check("  et les fetch de la navbar aussi",
 
 
 print("\n=== Et le 429 du limiteur reste lisible a l'ecran ===")
-# Meme famille de defaut silencieux que ci-dessus, cote affichage : `api()`
-# compose « Patientez N secondes » sur un 429, mais les appelants ecrasaient ce
-# message par un « Chargement impossible. » generique -- le seul indice pointant
-# vers le limiteur etait calcule puis jete.
-#
-# Balayage plutot qu'assertions nominatives, pour la meme raison qu'au-dessus :
-# le prochain chargement ajoute doit echouer ici s'il reintroduit le motif.
+# Les chargements ne doivent pas remplacer le message du 429 par un message generique.
 _src_comptes = open(os.path.join(FRONT, 'templates', 'admin_comptes.html'),
                     encoding='utf-8').read()
 
-# La forme fautive : une garde d'echec qui peint le message generique en dur.
+# Garde d'echec qui affiche le message generique en dur.
 _generiques = [
     (_src_comptes[:m.start()].count('\n') + 1,
      ' '.join(_src_comptes[m.start():m.start() + 100].split()))
@@ -375,9 +314,7 @@ _generiques = [
 check("aucune garde de chargement n'ecrase le message du limiteur",
       not _generiques, ' | '.join("l.%d %s" % g for g in _generiques))
 
-# Et le helper qui le remplace doit lire le drapeau ET relayer le message
-# d'`api()`. Verifier la seule presence de `.limite` ne suffirait pas : elle
-# reste vraie d'un helper qui teste le drapeau puis jette le message.
+# echecChargement lit le drapeau et relaie le message d'api().
 _i = _src_comptes.find('function echecChargement')
 _fin_h = _src_comptes.find('function ', _i + 30) if _i >= 0 else -1
 _zone_helper = _src_comptes[_i:_fin_h] if _i >= 0 and _fin_h > _i else ''
@@ -386,13 +323,7 @@ check("  le helper d'echec lit le drapeau `limite`",
 check("  et relaie le message porte par la reponse",
       '.error' in _zone_helper, _zone_helper[:160])
 
-# Enfin, la source du drapeau : api() doit continuer de le poser sur un 429,
-# et de rendre la main AVANT toute deconnexion -- un debit limite ne dit rien
-# sur la validite d'une session.
-#
-# La zone s'arrete a la fonction suivante, et non a un nombre de caracteres :
-# une borne fixe se decalerait au premier commentaire ajoute, et les deux
-# assertions passeraient au vert sans rien verifier.
+# api() pose le drapeau sur un 429 et rend la main avant toute deconnexion.
 _i = _src_comptes.find('async function api(')
 _fin = _src_comptes.find('function ', _i + 30) if _i >= 0 else -1
 _zone_api = _src_comptes[_i:_fin] if _i >= 0 and _fin > _i else ''
@@ -405,9 +336,7 @@ check("  et traite le 429 AVANT le 401 (pas de deconnexion sur un debit limite)"
 
 
 print("\n=== Mais une session revoquee reste refusee sur les DEUX chemins ===")
-# C'est le risque du raccourci ci-dessus : sans sonde, le refus doit venir du
-# backend lui-meme, relaye tel quel. Le frontend n'est pas une frontiere de
-# privilege -- c'est ce qui rend l'optimisation sure, et c'est verifie ici.
+# Sans sonde, le refus vient du backend et est relaye tel quel.
 
 cli = frontend.app.test_client()
 session_admin(cli, {'gestion_joueurs'})

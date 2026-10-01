@@ -1,9 +1,6 @@
-// Lecture des circuits dessines.
-//
-// Un circuit est un dessin dans tracks/, relu au demarrage. Le format tient en
-// quelques caracteres — `X` pour les bords, `x` pour la ligne, `B` pour une
-// boite, un carre de `P` ou de `p` pour un tuyau — et le reste du fichier est de
-// la prose : c'est un .md qui se lit sur GitHub.
+// Lecture des circuits dessines dans tracks/ (fichiers .md avec un bloc `track`) :
+// `X` pour les bords, `x` pour la ligne, `B` pour une boite, un carre de `P` ou
+// de `p` pour un tuyau.
 //
 //     ```track
 //     XXXXXXXXXXXXXXXX
@@ -13,20 +10,14 @@
 //     XXXXXXXXXXXXXXXX
 //     ```
 //
-// Vu de dessus, la course allant vers la droite, la derniere colonne touchant la
-// premiere. Une colonne vaut CELL_PX px de monde ; les rangees se partagent la
-// profondeur de la piste, qui reste une constante de physique. Un `X` au milieu
-// du dessin est donc refuse : une piste qui se resserre demanderait un profil de
-// bords transmis au client, ce que le bandeau CSS ne sait pas faire.
-//
-// Ce fichier ne connait pas la physique : il rend des cellules. C'est
-// `applyTrack` qui les pose sur une config.
+// Vue de dessus, course vers la droite, la derniere colonne rejoignant la
+// premiere. Une colonne vaut CELL_PX px ; les rangees se partagent la profondeur
+// de la piste. `applyTrack` pose le resultat sur une config.
 
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Un caractere = un motif rouge/blanc de la bordure, l'unite visible la plus fine
-// du decor.
+// Une colonne = un motif de la bordure.
 const CELL_PX = 80;
 
 const FENCE_OPEN = /^\s*```+\s*track\s*$/;
@@ -38,8 +29,7 @@ function fail(source, line, message) {
     throw new Error(`${where} — ${message}`);
 }
 
-// Le dessin, extrait de sa cloture. Le reste du fichier est ignore : on n'y
-// cherche qu'un titre.
+// Extrait le bloc du dessin (et le titre) du fichier.
 function extractBlock(text, source) {
     const lines = text.split(/\r?\n/);
 
@@ -62,19 +52,9 @@ function extractBlock(text, source) {
     fail(source, 0, 'aucun bloc ```track. Un circuit se dessine entre ```track et ```.');
 }
 
-// Les cases de tuyau regroupees en pipes. Un pipe se dessine en carre de 2×2 —
-// `PP` au-dessus de `PP` pour un vert, `pp` au-dessus de `pp` pour un rouge —
-// et deux pipes peuvent se toucher.
-//
-// Le decoupage parcourt le dessin dans le sens de lecture. La premiere case
-// libre rencontree est forcement le coin haut-gauche de son pipe : toute autre
-// case du meme carre serait plus haut ou plus a gauche, donc deja lue. Le
-// decoupage est ainsi impose case apres case, et un dessin n'a qu'une lecture —
-// ou aucune, et il est refuse.
-//
-// Deux couleurs, un seul obstacle : `P` plante un tuyau vert, `p` un rouge, et
-// c'est TOUTE la difference — meme emprise, meme choc, meme place dans les
-// priorites. La couleur ne voyage que jusqu'au decor.
+// Regroupe les cases de tuyau en carres de 2x2 (`PP`/`PP` vert, `pp`/`pp`
+// rouge, sans difference de jeu). La premiere case libre lue est le coin
+// haut-gauche de son tuyau : un dessin n'a qu'une lecture, ou il est refuse.
 function assemblePipes(inner, cells, columns, lineNo, source) {
     const at = (row, col) => (inner[row] || '')[col] || ' ';
     const used = new Set();
@@ -107,20 +87,17 @@ function assemblePipes(inner, cells, columns, lineNo, source) {
             used.add(key(r, c));
         }
 
-        // La case du coin haut-gauche : c'est `applyTrack` qui en fait le centre
-        // du carre, avec le reste des conversions.
+        // Coin haut-gauche ; `applyTrack` en deduit le centre.
         pipes.push({ col: col, row: row, kind: (ch === 'p') ? 'red' : 'green' });
     }
 
     return pipes;
 }
 
-// Le dessin en coordonnees de cellules, sans notion de pixel ni de profondeur.
-// `source` ne sert qu'aux messages d'erreur.
+// Dessin en coordonnees de cellules (`source` pour les messages d'erreur).
 function parseTrack(text, source) {
     const block = extractBlock(text, source);
 
-    // Les lignes vides d'entree et de sortie sont du confort de redaction.
     const rows = block.lines.map(line => line.replace(/\s+$/, ''));
     let first = 0;
     let last = rows.length - 1;
@@ -141,8 +118,7 @@ function parseTrack(text, source) {
         }
     }
 
-    // Les deux bords donnent la longueur du tour. Ils sont pleins et de meme
-    // longueur, sans quoi la piste n'aurait ni debut ni fin nets.
+    // Les deux bords, pleins et de meme longueur, donnent la longueur du tour.
     const columns = rows[first].length;
     for (const i of [first, last]) {
         if (!/^X+$/.test(rows[i])) {
@@ -156,9 +132,7 @@ function parseTrack(text, source) {
     }
 
     const boxes = [];
-    // Les cases de tuyau, relevees au passage et assemblees en blocs une fois
-    // le dessin entier lu : un bloc s'etale sur deux rangees, il ne se juge pas
-    // ligne par ligne.
+    // Cases de tuyau assemblees une fois le dessin entier lu.
     const pipeCells = [];
     let finishColumn = -1;
     let finishLine = 0;
@@ -226,21 +200,14 @@ function parseTrack(text, source) {
         rows: inner,
         finishColumn: finishColumn,
         boxes: boxes,
-        // Les pipes sont facultatifs : un circuit sans obstacle reste un
-        // circuit. Une ligne et une boite, elles, ne se negocient pas.
+        // Tuyaux facultatifs ; ligne et boite obligatoires.
         pipes: pipes,
         warnings: []
     };
 }
 
-// Le passage le plus etroit de la piste, une fois les tuyaux poses.
-//
-// Deux tuyaux voisins sans etre alignes se recouvrent partiellement, et c'est
-// cette zone qui decide du passage : il faut balayer la piste, pas seulement
-// regarder chaque colonne dessinee. Le pas vaut la demi-emprise d'un tuyau.
-//
-// Les intervalles sont en position de CENTRE de kart : `kartVsPipe` porte deja la
-// demi-carrosserie, et `minPassageY` demande la marge.
+// Passage le plus etroit une fois les tuyaux poses (balayage au pas d'une
+// demi-emprise de tuyau), en positions de centre de kart.
 function narrowestPassage(cfg, pipes, width) {
     const hx = cfg.hitboxes.kartVsPipe.x;
     const hy = cfg.hitboxes.kartVsPipe.y;
@@ -279,16 +246,12 @@ function narrowestPassage(cfg, pipes, width) {
     return { free: worst, x: worstX };
 }
 
-// Le dessin pose sur une config de physique : seul endroit ou une colonne devient
-// une distance et une rangee une profondeur. Rend une config neuve plutot que de
-// modifier celle recue — deux courses d'un grand prix ne tournent pas sur le meme
-// circuit.
+// Pose le dessin sur une copie de la config (colonnes en distances, rangees en
+// profondeurs).
 function applyTrack(cfg, track) {
     const width = track.columns * CELL_PX;
 
-    // La grille se deploie en amont de la ligne. Si le tour est plus court que ce
-    // qu'elle occupe, le fond de grille depasse la ligne par l'arriere et les
-    // karts partent avec un tour d'avance sur eux-memes.
+    // Le tour doit etre plus long que la grille.
     const grid = cfg.race.grid;
     const gridDepth = grid.backOffset + 3 * grid.rowGap + grid.colStagger;
     if (width < gridDepth * 2) {
@@ -299,9 +262,7 @@ function applyTrack(cfg, track) {
 
     const finishLineX = track.finishColumn * CELL_PX;
 
-    // Rangee du haut = fond de piste = `road.maxY`, `yPercent` etant une hauteur
-    // a l'ecran. Une seule rangee dessinee ne designe aucun bord : donc le
-    // milieu.
+    // Rangee du haut = fond de piste (`road.maxY`) ; une seule rangee = milieu.
     const depth = cfg.road.maxY - cfg.road.minY;
     const rowY = row => (track.rows > 1)
         ? cfg.road.maxY - row * (depth / (track.rows - 1))
@@ -312,22 +273,15 @@ function applyTrack(cfg, track) {
         y: rowY(box.row)
     }));
 
-    // Un pipe couvre deux colonnes et deux rangees : il se pose au milieu du
-    // carre, entre deux rangees. Ce sont ces demi-rangees qui donnent au dessin
-    // sa finesse de placement — et le milieu exact de la piste, a condition de
-    // dessiner un nombre pair de rangees.
+    // Un tuyau se pose au milieu de son carre, entre deux rangees.
     const pipes = track.pipes.map(pipe => ({
         x: (pipe.col + 0.5) * CELL_PX,
         y: rowY(pipe.row + 0.5),
-        // Elle ne sert qu'au dessin. Rien de ce qui suit — passage le plus
-        // etroit, avertissements, priorites — ne la regarde.
+        // Couleur, pour le dessin seulement.
         kind: pipe.kind
     }));
 
-    // Un mur de pipes ne provoquerait aucune erreur : les karts se cogneraient
-    // jusqu'au delai maximum, et la course serait close sur un classement
-    // d'office. Rien dans les journaux ne dirait que le circuit est en cause —
-    // d'ou ce refus au chargement, seul endroit ou le probleme est visible.
+    // Refus au chargement d'un circuit infranchissable.
     if (pipes.length) {
         const passage = narrowestPassage(cfg, pipes, width);
         if (passage.free < cfg.pipe.minPassageY) {
@@ -338,13 +292,10 @@ function applyTrack(cfg, track) {
         }
     }
 
-    // Ce qui se dessine sans etre faux, mais qui se joue mal. Un avertissement
-    // et non un refus : c'est un choix de trace, pas une erreur de dessin.
+    // Avertissements de trace (pas des erreurs).
     track.warnings = [];
 
-    // Une boite posee dans l'ombre de la grille est ramassee par le peloton dans
-    // la seconde qui suit le depart, avant meme que qui que ce soit ait pu
-    // manoeuvrer pour l'avoir.
+    // Boite dans la zone de la grille : ramassee des le depart.
     for (const box of itemBoxes) {
         let gap = finishLineX - box.x;
         if (gap < 0) gap += width;
@@ -355,8 +306,7 @@ function applyTrack(cfg, track) {
     }
 
     for (const pipe of pipes) {
-        // Un pipe dans la grille, c'est huit karts a l'arret qui se le
-        // partagent au feu vert — voire un kart qui demarre dedans.
+        // Tuyau dans la grille.
         let gap = finishLineX - pipe.x;
         if (gap < 0) gap += width;
         if (gap > 0 && gap < gridDepth) {
@@ -364,8 +314,7 @@ function applyTrack(cfg, track) {
                 + `dans la grille de depart : le peloton le prendra au feu vert.`);
         }
 
-        // Un pipe pose devant une boite la rend inatteignable : le kart qui la
-        // vise doit precisement passer la ou le tuyau ne le laisse pas.
+        // Tuyau devant une boite : boite inatteignable.
         for (const box of itemBoxes) {
             let ahead = box.x - pipe.x;
             if (ahead < -width * 0.5) ahead += width;
@@ -386,17 +335,13 @@ function applyTrack(cfg, track) {
             pipes: pipes
         }),
         race: Object.assign({}, cfg.race, {
-            // Deux tours pleins, plus la marge de la config : la camera ne
-            // sait que ralentir, il lui faut ce couloir pour se garer pile sur
-            // la ligne. Derivee et non ecrite en dur, sinon chaque circuit
-            // d'une autre longueur redemanderait le calcul a la main.
+            // Deux tours plus la marge, pour que la camera se gare sur la ligne.
             cameraApproachDistance: 2 * width + cfg.race.cameraApproachMargin
         })
     });
 }
 
-// Le dossier des circuits, cherche la ou il se trouve selon qu'on tourne dans le
-// conteneur (monte en /app/tracks) ou dans le depot.
+// Dossier des circuits (/app/tracks dans le conteneur, ou dans le depot).
 function resolveTracksDir(base) {
     const candidates = [
         process.env.TRACKS_DIR,
@@ -415,19 +360,9 @@ function resolveTracksDir(base) {
         + 'copie, les circuits non, pour se retoucher sans reconstruire l\'image.');
 }
 
-// Tous les circuits du dossier, dans l'ordre des noms de fichiers : c'est cet
-// ordre qui devient celui des manches d'un grand prix, donc il se pilote en
-// nommant les fichiers 01-, 02-, ...
-//
-// Un dessin faux arrete le chargement au lieu d'etre saute : un circuit qui
-// disparait en silence de la rotation se remarquerait trois courses plus tard.
-//
-// `cfg` sert a valider la geometrie ici et pas plus tard. Le dessin seul ne dit
-// pas si la piste est franchissable : il faut les hitbox pour le savoir. Poser
-// cette verification au chargement, et non au depart d'une course, est ce qui
-// fait la difference entre un service qui refuse de demarrer avec un message et
-// un service qui tourne puis meurt a la premiere connexion — en boucle, parce
-// que le conteneur le relance.
+// Charge tous les circuits, dans l'ordre des noms de fichiers (ordre des
+// manches). Un dessin faux ou infranchissable arrete le chargement (`cfg` sert
+// a verifier la geometrie).
 function loadTracks(dir, cfg) {
     const files = fs.readdirSync(dir)
         .filter(name => name.toLowerCase().endsWith('.md'))
@@ -442,16 +377,13 @@ function loadTracks(dir, cfg) {
     return files.map(name => {
         const full = path.join(dir, name);
         const parsed = parseTrack(fs.readFileSync(full, 'utf8'), name);
-        // Le resultat est jete : seules les erreurs qu'il leve nous interessent.
-        // Chaque course refera le calcul sur sa propre config.
+        // Verification seulement ; chaque course refait le calcul.
         applyTrack(cfg, parsed);
         return parsed;
     });
 }
 
-// Le circuit d'une manche. Le grand prix compte ses courses a partir de 1, et la
-// rotation reboucle : quatre manches sur deux circuits alternent, ce qui reste
-// un grand prix jouable.
+// Circuit d'une manche (manches comptees a partir de 1, rotation en boucle).
 function forRound(tracks, round) {
     return tracks[((round - 1) % tracks.length + tracks.length) % tracks.length];
 }

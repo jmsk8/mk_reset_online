@@ -1,30 +1,5 @@
-"""Sessions de tournois : l'invariant « tout tournoi porte une session ».
-
-Phase 1 de docs/plan-sessions-tournois.md (2026-09-15).
-
-Ce que ce fichier protege, et pourquoi ca compte :
-
-1. `tournois.session_id` est NOT NULL. Tout le code aval en depend -- c'est ce
-   qui permet d'ecrire la regle de presence comme un filtre sur session_id, sans
-   branche « tournoi sans session ». Si add_tournament oublie de creer la
-   session, la contrainte fait echouer chaque creation de tournoi : panne totale
-   et immediate. Le test ci-dessous mord donc sur un mode d'echec grave.
-
-2. Une session videe est supprimee. Une session orpheline ne casse rien
-   visiblement, mais fausse tout comptage de sessions -- or c'est precisement ce
-   que ce chantier rend fiable (classement de saison, recaps, seuils d'awards).
-   C'est le mode d'echec DISCRET, celui qui se decouvre des mois plus tard sur un
-   ratio de participation legerement faux.
-
-3. La migration respecte ses propres invariants (backfill rejouable, sequence
-   recalee, regroupement par (date, ligue_id) et non par date seule).
-
-Limite du banc d'essai : psycopg2 est neutralise, le curseur est scripte. Le SQL
-n'est pas valide contre Postgres -- d'ou les verifications statiques sur le texte
-de la migration, qui attrapent les erreurs de conception plutot que de syntaxe.
-La verification reelle du backfill se fait sur une copie locale du dump
-(plan, section 11.3).
-"""
+"""Sessions de tournois : tout tournoi porte une session, une session videe est
+supprimee, et la migration respecte ses invariants (verification statique)."""
 from harness import *
 from flask import Flask
 
@@ -70,12 +45,7 @@ def sql_joints(cur):
 
 
 def avant(texte, premier, second):
-    """`premier` apparait-il avant `second` dans `texte` ?
-
-    Renvoie False si l'un des deux manque, plutot que de lever : une assertion
-    d'ordre ne doit pas faire planter le fichier quand le morceau a disparu --
-    sinon un defaut masque toutes les verifications suivantes.
-    """
+    """Vrai si `premier` apparait avant `second` dans `texte` (False si l'un manque)."""
     i, j = texte.find(premier), texte.find(second)
     return i != -1 and j != -1 and i < j
 
@@ -88,9 +58,7 @@ mig = open(MIGRATION, encoding='utf-8').read()
 check("la table s'appelle sessions_tournois, pas sessions",
       'CREATE TABLE IF NOT EXISTS public.sessions_tournois' in mig, None)
 
-# `sessions_joueurs` porte l'authentification. Une table nommee `sessions` tout
-# court serait confondue avec elle a la lecture -- et le nom est ce qu'on lit le
-# plus souvent.
+# Pas de confusion possible avec `sessions_joueurs`.
 check("aucune table nommee simplement « sessions »",
       'CREATE TABLE IF NOT EXISTS public.sessions (' not in mig
       and 'CREATE TABLE public.sessions (' not in mig, None)
@@ -107,9 +75,7 @@ check("l'invariant est verrouille par SET NOT NULL",
 
 print("\n=== Le backfill regroupe par (date, ligue_id), jamais par date seule ===")
 
-# Deux tournois de ligues differentes le meme jour sont deux occasions de jeu
-# distinctes (plan, section 14). Un GROUP BY date seul les fusionnerait a tort et
-# reinterpreterait l'historique.
+# Deux ligues le meme jour = deux sessions.
 check("le groupement porte sur date ET ligue_id",
       mig.count('GROUP BY t.date, t.ligue_id') >= 1
       and 'GROUP BY date, ligue_id' in mig, None)
@@ -117,9 +83,7 @@ check("le groupement porte sur date ET ligue_id",
 check("aucun regroupement par date seule",
       'GROUP BY t.date\n' not in mig and 'GROUP BY date\n' not in mig, None)
 
-# « ligue_id = ligue_id » vaut NULL quand les deux sont NULL : sans traitement
-# explicite, les 69 tournois hors mode ligue resteraient sans session et le
-# SET NOT NULL echouerait.
+# ligue_id NULL doit etre traite explicitement (NULL = NULL est NULL).
 check("le cas ligue_id NULL est traite explicitement",
       'IS NULL AND ancre.ligue_id IS NULL' in mig, None)
 
@@ -129,8 +93,7 @@ print("\n=== La migration est rejouable sans effet de bord ===")
 check("les INSERT de session tolerent un rejeu",
       'ON CONFLICT (id) DO NOTHING' in mig, None)
 
-# Sans ce garde, un rejeu apres des liaisons faites depuis l'interface les
-# ecraserait par le regroupement (date, ligue_id) d'origine.
+# Un rejeu ne doit pas ecraser les liaisons faites depuis.
 check("le rattachement ne touche jamais une liaison existante",
       'WHERE t.session_id IS NULL' in mig, None)
 
@@ -140,9 +103,7 @@ check("la table est creee en IF NOT EXISTS",
 
 print("\n=== La sequence est recalee apres les INSERT a id explicite ===")
 
-# Le backfill insere des id explicites (celui du tournoi-ancre). Sans setval, le
-# premier INSERT ... DEFAULT VALUES de add_tournament repart de 1 et heurte une
-# cle primaire existante -- panne qui n'apparait qu'au tournoi SUIVANT.
+# Le backfill insere des id explicites : la sequence doit etre recalee.
 check("setval est appele sur sessions_tournois_id_seq",
       "setval('public.sessions_tournois_id_seq'" in mig, None)
 
@@ -160,9 +121,7 @@ check("SET NOT NULL vient APRES le backfill",
 
 print("\n=== Le controle d'integrite de la decision 9 est present ===")
 
-# Un joueur ne peut pas etre dans deux tournois d'une meme session : deux
-# lobbies simultanes. Verifie a 0 sur l'historique, ce bloc transforme cette
-# regularite observee en invariant verifie.
+# Un joueur ne peut pas etre dans deux tournois d'une meme session.
 check("la migration refuse un joueur present deux fois dans une session",
       'HAVING count(*) > 1' in mig and 'RAISE EXCEPTION' in mig, None)
 
@@ -181,7 +140,6 @@ check("session_id est passee a l'INSERT du tournoi",
       'INSERT INTO Tournois (date, ligue_id, ligue_nom, ligue_couleur, session_id)' in src_admin,
       None)
 
-# L'ordre importe : la session doit exister avant d'etre referencee.
 check("la session est creee AVANT l'INSERT du tournoi",
       avant(src_admin, 'INSERT INTO sessions_tournois DEFAULT VALUES',
             'INSERT INTO Tournois (date, ligue_id'), None)
@@ -196,8 +154,7 @@ check("elle est appelee deux fois (revert + delete)",
       src_admin.count('drop_session_if_orphan(cur') == 2,
       src_admin.count('drop_session_if_orphan(cur'))
 
-# La session_id doit etre lue avant le DELETE du tournoi : apres, elle est
-# introuvable et le nettoyage ne peut plus avoir lieu.
+# session_id doit etre lue avant le DELETE.
 check("revert lit session_id dans son SELECT initial",
       'SELECT id, date, session_id, ligue_id FROM Tournois ORDER BY id DESC' in src_admin, None)
 
@@ -213,8 +170,7 @@ def corps_fonction(src, nom):
     return src[debut:suite if suite != -1 else len(src)]
 
 
-# Verifie route par route : chercher dans le fichier entier ferait correspondre
-# l'appel de l'AUTRE route, et l'assertion passerait pour de mauvaises raisons.
+# Verifie route par route.
 for route, lecture in (('revert_last_tournament', 'session_id, ligue_id FROM Tournois'),
                        ('delete_tournament', 'session_id, ligue_id FROM Tournois WHERE id')):
     corps = corps_fonction(src_admin, route)
@@ -235,8 +191,7 @@ corps = corps[:corps.index('\n\n\n')] if '\n\n\n' in corps else corps
 check("elle tolere une session_id absente",
       'if session_id is None' in corps, None)
 
-# Le garde est l'essentiel : sans lui, la fonction supprimerait une session qui
-# porte encore d'autres tournois -- et le NOT NULL ferait echouer l'annulation.
+# Ne supprime que si plus aucun tournoi n'y pointe.
 check("elle ne supprime que si plus aucun tournoi n'y pointe",
       'SELECT 1 FROM Tournois WHERE session_id' in corps
       and 'if cur.fetchone():' in corps
@@ -248,8 +203,7 @@ check("elle cible la bonne table",
 
 print("\n=== sync_sequences couvre sessions_tournois ===")
 
-# La fonction est le filet qui rattrape un decalage de sequence au demarrage.
-# Sans cette entree, le decalage cree par le backfill ne serait jamais rattrape.
+# sync_sequences doit rattraper la sequence de sessions_tournois.
 check("sessions_tournois est dans la liste des sequences",
       "'sessions_tournois'" in src_services, None)
 
@@ -262,17 +216,14 @@ check("un echec de synchronisation est trace, pas avale en silence",
 
 print("\n=== La creation de tournoi fonctionne de bout en bout ===")
 
-# Le scenario complet : la session est creee, le tournoi la reference, et la
-# transaction est validee. Si add_tournament oubliait la session, le NOT NULL
-# ferait echouer chaque creation en production.
+# Scenario complet : session creee, referencee, transaction validee.
 cli, cur, conn, lots = monter([
     (r"FROM global_resets WHERE date >=", (0,)),
     (r"key = 'league_mode_enabled'", ('false',)),
     (r"FROM grille_snapshots WHERE date", None),
     (r"INSERT INTO sessions_tournois DEFAULT VALUES", (501,)),
     (r"INSERT INTO Tournois", (777,)),
-    # Une fiche par nom, retrouvee sans tenir compte de la casse (25/09) :
-    # une meme fiche pour deux joueurs serait refusee (joueur_en_double).
+    # Fiche retrouvee sans tenir compte de la casse.
     (r"SELECT id, nom, mu, sigma FROM Joueurs WHERE lower\(nom\)",
      lambda p: (10 + sum(map(ord, p[0])), p[0], 25.0, 8.333)),
     (r"key IN \('ghost_enabled'", [('ghost_enabled', 'false'),
@@ -282,8 +233,7 @@ cli, cur, conn, lots = monter([
     (r"FROM ghost_log g", []),
     (r"key = 'tau'", ('0.083',)),
 ])
-# Deux joueurs : un tournoi en exige deux (27/09), et TrueSkill ne classe pas
-# un joueur seul.
+# Deux joueurs minimum.
 r = cli.post('/add-tournament', headers=H, json={
     "date": "2026-09-15",
     "joueurs": [{"nom": "A", "score": 100}, {"nom": "B", "score": 80}],
@@ -305,15 +255,6 @@ i_tournoi = next((i for i, s in enumerate(executes)
 check("la session est creee avant le tournoi qui la reference",
       i_session is not None and i_tournoi is not None and i_session < i_tournoi,
       "session=%s tournoi=%s" % (i_session, i_tournoi))
-
-
-print("\n=== La doc de conception reste la reference ===")
-
-check("la migration renvoie a la doc",
-      'docs/plan-sessions-tournois.md' in mig, None)
-
-check("le code renvoie a la doc",
-      'plan-sessions-tournois' in src_admin, None)
 
 
 print("\n" + "=" * 60)

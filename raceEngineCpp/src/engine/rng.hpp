@@ -1,12 +1,5 @@
-// Le hasard, reproductible.
-// <- raceEngine/tools/simulate.js : mulberry32
-//
-// Le moteur est PUR : `step_physics` ne lit ni l'horloge, ni le hasard global,
-// ni l'appareil — tout arrive en parametre. C'est ce qui rend le banc
-// d'equilibrage possible, et il faut que ca le reste (architecture.md §6).
-//
-// Exception a la regle « struct, pas de classe » du plan §4.1ter : ce type
-// n'encode aucune regle de gameplay, seulement une mecanique technique.
+// Hasard reproductible (mulberry32, comme raceEngine/tools/simulate.js). Le
+// moteur ne lit ni horloge ni hasard global : tout arrive en parametre.
 
 #pragma once
 
@@ -18,9 +11,8 @@ class Rng {
 public:
     explicit Rng(uint32_t seed = 0x9E3779B9u) : state_(seed) {}
 
-    // mulberry32 : meme suite que le JS a graine egale. La parite flottante bit
-    // a bit avec le JS n'est pas un objectif (piege P-5) — mais la SUITE de
-    // nombres, elle, l'est : c'est ce qui permet de comparer deux courses.
+    // Meme suite que le JS a graine egale (la parite flottante bit a bit n'est
+    // pas visee).
     double next() {
         state_ += 0x6D2B79F5u;
         uint32_t t = state_;

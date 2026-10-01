@@ -1,22 +1,5 @@
-"""Annulation d'un tournoi : la penalite d'absence doit se defaire proprement.
-
-Phase 0 de docs/plan-sessions-tournois.md (2026-09-14). Zone jusqu'ici NON
-COUVERTE : aucun test ne touchait revert_last_tournament ni delete_tournament.
-
-Le defaut corrige : revert_last_tournament faisait
-    UPDATE Joueurs SET consecutive_missed = GREATEST(0, consecutive_missed - 1)
-sans aucun WHERE. Toute la base etait decrementee -- y compris les joueurs hors
-perimetre de ligue, exclus du calcul de penalite -- et l'erreur etait CUMULATIVE :
-chaque annulation faisait deriver la base d'un cran. is_ranked n'etait par
-ailleurs jamais restaure, laissant hors classement un joueur repasse sous le seuil.
-
-delete_tournament, lui, faisait deja le bon geste. Les deux routes partagent
-desormais annuler_absences() : ce fichier verifie que les deux appellent la meme
-regle, et qu'aucune ne retombe sur un UPDATE global.
-
-Limite du banc d'essai : le curseur est scripte, le SQL n'est pas valide contre
-Postgres. Ce qui est verifie ici, c'est QUI est touche et avec quelles valeurs.
-"""
+"""Annulation d'un tournoi : la penalite d'absence se defait sans toucher aux
+participants ni aux joueurs hors perimetre."""
 from harness import *
 from flask import Flask
 
@@ -30,12 +13,7 @@ SESSION = lambda role: (
 
 
 def monter(plan, role='chef_admin'):
-    """Monte routes_admin sur un curseur scripte, avec execute_values capture.
-
-    Le harness neutralise psycopg2 : execute_values n'existe pas. On l'installe
-    ici pour enregistrer les lots ecrits -- c'est exactement la donnee que ces
-    tests inspectent (qui est decremente, et a quelle valeur).
-    """
+    """Monte routes_admin sur un curseur scripte, en capturant execute_values."""
     cur, conn = install_db(list(plan) + [SESSION(role)])
     recharger()
     for m in ('routes_admin', 'cache', 'services'):
@@ -73,12 +51,8 @@ def sql_execute(cur):
     return [s for s, _ in cur.executed]
 
 
-# Trois joueurs, le triplet qui revele le defaut :
-#   10 = participant au tournoi annule      -> a NE PAS toucher
-#   20 = absent penalise (missed 5, non classe) -> doit redescendre a 4 et revenir classe
-#   30 = joueur hors perimetre (autre ligue, missed 2) -> etait decremente a tort
-#
-# La requete de selection des absents renvoie (id, consecutive_missed, is_ranked).
+# 10 = participant (inchange), 20 = absent penalise (5 -> 4, reclasse),
+# 30 = hors perimetre de ligue. Lignes : (id, consecutive_missed, is_ranked).
 ABSENTS_SANS_PARTICIPANT = [(20, 5, False), (30, 2, True)]
 ABSENTS_TOUS = [(10, 3, True), (20, 5, False), (30, 2, True)]
 
@@ -123,16 +97,13 @@ check("transaction validee", conn.committed, None)
 
 
 print("\n=== Le compteur d'un participant n'est jamais decremente ===")
-# Un participant a missed > 0 ne doit pas etre repris : add_tournament l'a remis
-# a 0, la valeur d'avant est perdue (aucun old_missed en base). Le decrementer
-# le ferait passer SOUS sa valeur reelle.
+# Un participant n'est pas decremente (son compteur a ete remis a 0).
 cli, cur, conn, lots = monter([
     (r"SELECT id, date, session_id, ligue_id FROM Tournois ORDER BY id DESC", (77, '2026-09-01', 501, None)),
     (r"SELECT joueur_id, old_mu, old_sigma FROM Participations", [(10, 25.0, 8.0)]),
     (r"SELECT joueur_id, old_sigma FROM ghost_log", []),
     (r"key = 'unranked_threshold'", ('5',)),
-    # Le curseur renvoie sciemment le participant : si la route ne l'excluait
-    # pas de sa requete, il se retrouverait dans le lot.
+    # Le participant est renvoye : la route doit l'exclure.
     (r"SELECT id, consecutive_missed, is_ranked FROM Joueurs", ABSENTS_TOUS),
 ])
 r = cli.post('/api/admin/revert-last-tournament', headers=H)
@@ -215,16 +186,13 @@ check("exactement deux appels a annuler_absences (un par route)",
 check("plus aucun UPDATE global de consecutive_missed dans le source",
       'UPDATE Joueurs SET consecutive_missed = GREATEST' not in src, None)
 
-# Le calcul ne doit vivre qu'a un seul endroit : si quelqu'un recopie la boucle
-# dans une route, ce test le signale avant que les regles ne divergent a nouveau.
+# Une seule implementation du calcul.
 check("la boucle de decrement n'est pas dupliquee dans routes_admin",
       'new_m = missed - 1' not in src and 'missed - 1' not in src, None)
 
 src_services = open(os.path.join(RACINE, 'services.py'), encoding='utf-8').read()
 check("annuler_absences est definie dans services.py",
       'def annuler_absences(' in src_services, None)
-check("elle documente pourquoi les participants restent a 0",
-      'old_missed' in src_services, None)
 
 
 print("\n" + "=" * 60)

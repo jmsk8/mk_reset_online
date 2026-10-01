@@ -1,27 +1,5 @@
-{# ============================================================================
-   Décor de fond : motifs Mario Kart semés en filigrane.
-
-   À inclure juste après l'ouverture de <body>, sur toute page qui charge
-   `css/decor-mk.css` :
-
-       {% include 'decor.html' %}
-
-   Un seul exemplaire par page : les formes sont définies avec des `id`, que
-   deux inclusions rendraient ambigus.
-
-   Tout le reste — la bibliothèque des formes et le semis — vit dans
-   `js/decor-mk.js`. En ligne ici, il pesait ~80 Ko recopiés dans le HTML de
-   chaque page et jamais mis en cache ; en fichier statique, il n'est
-   téléchargé qu'une fois pour tout le site.
-
-   `defer` : le script attend la fin de l'analyse du HTML, sans bloquer
-   l'affichage. Il ne rate pas pour autant le signal `mkr:scene-visible` de la
-   page d'accueil : sans voile, il sème aussitôt (`data-voile="non"`) ; avec,
-   le signal ne part qu'à la levée du voile, au moins 1,8 s plus tard.
-
-   `aria-hidden` et `role=presentation` : c'est un ornement, il n'a rien à
-   annoncer à un lecteur d'écran.
-   ========================================================================= #}
+{# Décor de fond (formes et semis dans js/decor-mk.js). Une seule inclusion par
+   page, juste après <body> : les formes utilisent des id. #}
 
 <div class="decor-mk" aria-hidden="true" role="presentation"></div>
 <script src="{{ url_for('static', filename='js/decor-mk.js') }}?v={{ app_version }}" defer></script>

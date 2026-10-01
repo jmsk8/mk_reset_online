@@ -1,8 +1,5 @@
-{# Page servie quand la cible demandee n'existe pas ou plus.
-   Elle existe d'abord pour les notifications : leur texte est fige a
-   l'emission, donc une notification survit a ce dont elle parle. Cliquer
-   dessus apres coup doit l'expliquer, pas ejecter vers l'accueil avec un
-   bandeau qui disparait en trois secondes. #}
+{# Page servie quand la cible demandee n'existe pas ou plus (notamment depuis
+   une notification). #}
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -11,11 +8,7 @@
     <title>{{ titre|default("Page introuvable") }} - MK Reset</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
-    {# url_for et non « ../static/... » : un chemin relatif se resout depuis
-       l'URL de la page, et cette page-ci est servie sous des profondeurs
-       differentes. Depuis /stats/tournoi/<id>, « ../static » pointait sur
-       /stats/static/... -> 404, et la page s'affichait SANS son theme, donc
-       en blanc sur un site sombre. #}
+    {# url_for : la page est servie a des profondeurs differentes. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
@@ -25,9 +18,7 @@
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <style>
-        /* Le Boo flotte : c'est un fantome, et ca occupe l'attente d'un
-           visiteur qui vient de tomber sur du vide. Respecte
-           prefers-reduced-motion, comme le reste du site. */
+        /* Boo flottant (desactive avec prefers-reduced-motion). */
         .boo-flottant {
             width: 180px;
             max-width: 45vw;
@@ -42,8 +33,7 @@
             .boo-flottant { animation: none; }
         }
 
-        /* Halo froid derriere le fantome : rattache la page a la palette du
-           site (--primary-color) au lieu d'un blanc qui flotterait seul. */
+        /* Halo dans la couleur principale du site. */
         .boo-halo {
             display: inline-block;
             position: relative;
@@ -82,8 +72,7 @@
             color: var(--text-color);
             opacity: 0.75;
         }
-        /* Le code d'erreur est une indication technique : present pour qui le
-           cherche, mais il ne doit pas concurrencer le message. */
+        /* Code d'erreur discret. */
         .code-erreur {
             letter-spacing: 0.35em;
             font-size: 0.75rem;
@@ -103,8 +92,7 @@
                 <p class="code-erreur mb-4">Erreur 404</p>
 
                 <span class="boo-halo">
-                    {# alt vide : l'image est decorative, le titre juste en
-                       dessous porte deja l'information. #}
+                    {# Image decorative. #}
                     <img src="{{ url_for('static', filename='img/decor/boo.png') }}"
                          alt="" class="boo-flottant">
                 </span>

@@ -106,20 +106,13 @@
     border-color: rgba(255, 255, 255, 0.4);
 }
 
-/* Badge de tier dynamique (Partie B, docs/tableau-seuils-tiers-plan.md) :
-   la couleur vient des donnees (tiers geres par l'admin), plus de classes
-   tier-s/a/b/c figees par lettre. Le fond exact est pose en style inline
-   (background: <couleur du tier>) par chaque gabarit/script ; cette classe
-   ne porte plus que l'habillage commun (texte blanc, leger relief). */
+/* Badge de tier : fond posé en style inline selon la couleur du tier. */
 .tag.tier-tag {
     color: white !important;
     box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
 }
 
-/* Badges de rôle d'administration (partiels/badge_role.html). Couleurs hors de
-   celles des autres badges de la fiche (rouge victoires, jaune Top %, bleu
-   clair absences) ; le rang monte en intensité. Texte blanc : `.tag` le met
-   sombre par défaut, illisible sur ces fonds. */
+/* Badges de rôle d'administration (partiels/badge_role.html), texte blanc. */
 .tag.role-tag {
     color: #ffffff !important;
     border-color: rgba(255, 255, 255, 0.35);

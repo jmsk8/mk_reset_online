@@ -1,31 +1,8 @@
-"""Changer de role ferme les sessions du compte (A-01/A-02, 2026-09-22).
-
-La duree d'une session est figee a sa creation, sur le role du moment
-(create_session), et rien ne la revisite. La regle qui la tient : toute
-ecriture de comptes.role ferme les sessions du compte concerne, dans les deux
-sens. Promu, un compte garderait sinon sa session de joueur de 30 jours --
-soixante fois les 12 heures destinees a un admin ; retrograde, des sessions
-ouvertes sur un rang qu'il n'a plus.
-
-Ce que ce fichier verrouille :
-
-  1. LE FILET : toute fonction du backend qui ecrit comptes.role ferme aussi
-     des sessions. Un cinquieme ecrivain qui l'oublierait rougit ici, par
-     analyse du source -- c'est le cas que les quatre tests suivants, ecrits
-     pour les ecrivains connus, ne verraient pas.
-  2. Les quatre ecrivains, par execution : changer_role, l'acceptation d'une
-     promotion, le legs (DEUX comptes changent de role), l'amorcage.
-  3. Ce qui ne doit PAS fermer : un refus, un role inchange, une connexion
-     ordinaire (A-06 reste un choix acte).
-  4. Le frontend : le jeton purge et la reconnexion relancee, plutot qu'une
-     deconnexion muette que la personne lirait comme une panne.
-
-Aucun Postgres : le curseur est scripte.
-"""
+"""Toute ecriture de comptes.role ferme les sessions du compte concerne
+(la duree d'une session depend du role a sa creation)."""
 from harness import *
 from flask import Flask
-# Version courante de la politique admin, lue et non recopiee : la passer
-# de 1.0 a 1.1 (badge de role public, 27/09) cassait ces tests.
+# Version lue plutot que recopiee.
 from constants import CGU_ADMIN_VERSION as V_ADMIN
 import ast
 import glob
@@ -43,12 +20,7 @@ def lire(*chemin):
 
 
 def fonctions(source):
-    """{nom: source} de chaque fonction, delimitee par ast.
-
-    Pas de fenetre de taille fixe : c'est une fenetre de 6000 caracteres qui a
-    failli laisser VERTE l'assertion defaut() de A-02 une fois le defaut
-    corrige (test_audit_auth_discord.py, fonction()).
-    """
+    """{nom: source} de chaque fonction, delimitee par ast."""
     lignes = source.splitlines(keepends=True)
     return {n.name: ''.join(lignes[n.lineno - 1:n.end_lineno])
             for n in ast.walk(ast.parse(source))
@@ -72,7 +44,7 @@ def index_de(cur, motif):
 
 
 def monter(plan, role='superadmin', compte_id=1):
-    """Blueprint des comptes, avec une session au role voulu (calque test_hierarchie_routes)."""
+    """Blueprint des comptes, avec une session au role voulu."""
     plan = list(plan) + [
         (r"FROM sessions_joueurs s JOIN comptes c",
          ligne_session(compte_id=compte_id, discord_id='111', username='chef',
@@ -97,16 +69,14 @@ CIBLE = lambda role: (r"SELECT role FROM comptes WHERE id", (role,))
 # ===========================================================================
 print("\n=== 1. Le filet : toute ecriture de comptes.role ferme des sessions ===")
 # ===========================================================================
-# Tout le backend, pas une liste de fichiers : un ecrivain ajoute dans un
-# nouveau module doit tomber dans le filet comme les autres.
+# Tout le backend est analyse.
 ecrivains = {}
 for chemin in sorted(glob.glob(os.path.join(RACINE, '*.py'))):
     for nom, corps in fonctions(lire(chemin)).items():
         if ECRIT_ROLE.search(corps):
             ecrivains[nom] = (os.path.basename(chemin), corps)
 
-# Un filet qui ne trouverait aucun ecrivain passerait a vide : on verifie
-# d'abord qu'il voit bien ceux qu'on connait.
+# Le filet doit au moins trouver les ecrivains connus.
 ATTENDUS = {'changer_role', 'repondre_promotion', 'leguer_superadmin',
             'promote_bootstrap_superadmin'}
 check("le filet voit les quatre ecrivains connus", ATTENDUS <= set(ecrivains),
@@ -121,7 +91,6 @@ for nom, (fichier, corps) in sorted(ecrivains.items()):
 print("\n=== 2a. changer_role : la cible se reconnecte, dans les deux sens ===")
 # ===========================================================================
 
-# Retrogradation admin -> player (A-02).
 cli, cur, conn = monter([CIBLE('admin')])
 r = cli.post('/admin/comptes/5/role', json={'role': 'player'}, headers=H)
 f = fermetures(cur)
@@ -134,9 +103,7 @@ check("fermees dans la transaction du changement de role, apres l'UPDATE",
       bool(f) and bool(_maj) and f[0][0] > _maj[0] and conn.committed,
       (f, _maj, conn.committed))
 
-# Retrogradation chef_admin -> admin : l'autre sens de A-02, sur le seul chemin
-# qui reste a changer_role depuis R-68 (la promotion directe y est refusee, et
-# c'est l'acceptation, section 2b, qui ferme les sessions du promu).
+# Retrogradation chef_admin -> admin.
 cli, cur, conn = monter([
     CIBLE('chef_admin'),
     (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (2,)),
@@ -146,7 +113,7 @@ check("chef_admin -> admin -> 200", r.status_code == 200, r.get_json())
 check("  les sessions de la cible sont fermees aussi",
       [p for _, p in fermetures(cur)] == [(5,)], fermetures(cur))
 
-# Promotion directe refusee (R-68) : rien n'est ecrit, donc rien n'est ferme.
+# Promotion directe refusee : rien n'est ferme.
 cli, cur, conn = monter([CIBLE('admin')])
 r = cli.post('/admin/comptes/5/role', json={'role': 'chef_admin'}, headers=H)
 check("promotion directe refusee -> 409 promotion_par_proposition",
@@ -154,7 +121,6 @@ check("promotion directe refusee -> 409 promotion_par_proposition",
       r.get_json())
 check("  aucune session fermee", not fermetures(cur), fermetures(cur))
 
-# Ce qui ne change aucun role ne ferme rien.
 cli, cur, conn = monter([CIBLE('player')])
 r = cli.post('/admin/comptes/5/role', json={'role': 'player'}, headers=H)
 check("role inchange -> 200 inchange", (r.get_json() or {}).get('inchange') is True,
@@ -180,13 +146,12 @@ check("  aucune session fermee", not fermetures(cur), fermetures(cur))
 # ===========================================================================
 print("\n=== 2b. Accepter une promotion : TOUTES les sessions, la courante comprise ===")
 # ===========================================================================
-# C'est le chemin de toute promotion depuis la phase 1bis : on devient admin en
-# acceptant DEPUIS sa session de joueur, ouverte pour 30 jours.
+# On accepte depuis sa session de joueur.
 PROMO = (7, 'admin', 1, PASSE, FUTUR)
 PLAN_PROMO = [
     (r"SELECT role FROM comptes WHERE id = %s FOR UPDATE", ('player',)),
     (r"FROM promotions_proposees", PROMO),
-    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant (S-02)
+    (r"SELECT role, statut FROM comptes WHERE id = %s$", ('chef_admin', 'linked')),  # proposant
 ]
 
 cli, cur, conn = monter(PLAN_PROMO, role='player', compte_id=5)
@@ -230,8 +195,7 @@ DEUX_LIGNES = lambda acteur, cible: (
     r"SELECT id, role, discord_username, cgu_admin_version\s+FROM comptes WHERE id IN",
     [acteur, cible])
 
-# Cible admin : sans la fermeture, elle deviendrait superadmin sur une session
-# d'admin ouverte avant le legs. (Une cible player n'est plus leguable, R-68.)
+# Cible admin.
 cli, cur, conn = monter([DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN),
                                      (5, 'admin', 'vraipseudo', V_ADMIN))])
 r = cli.post('/admin/comptes/5/leguer-superadmin',
@@ -259,9 +223,7 @@ check("  aucune session fermee", not fermetures(cur), fermetures(cur))
 # ===========================================================================
 print("\n=== 2d. Amorcage : les anciennes sessions de joueur tombent, pas la nouvelle ===")
 # ===========================================================================
-# Le compte designe par DISCORD_SUPERADMIN_ID existait en player, avec une
-# session sur un autre appareil. Il se connecte ici et devient superadmin : la
-# session de l'autre appareil garderait 30 jours de superadmin.
+# Le compte d'amorcage avait une session player sur un autre appareil.
 os.environ['DISCORD_SUPERADMIN_ID'] = '123456789012345678'
 recharger(); install_discord()
 cur, conn = install_db([
@@ -282,8 +244,7 @@ _duree = (datetime.fromisoformat(res['expires_at']) - datetime.now(timezone.utc)
 check("et la nouvelle a la duree d'un superadmin (12 h)",
       _duree.total_seconds() / 3600 < 12.1, _duree)
 
-# Connexion ordinaire : aucun role ne change, aucune session ne tombe. Se
-# reconnecter n'invalide pas les autres sessions -- A-06, choix acte (D5).
+# Connexion ordinaire : aucune session ne tombe.
 os.environ.pop('DISCORD_SUPERADMIN_ID')
 recharger(); install_discord()
 cur, conn = install_db([
@@ -307,8 +268,6 @@ check("le helper purge le jeton ET la copie du compte",
       "session.pop('player_token'" in _purge and "session.pop('compte'" in _purge)
 check("  et depose un message, pour que la deconnexion ne se lise pas comme une panne",
       'flash(' in _purge)
-# Pas de `admin_token` : c'est le mot de passe partage, sans lien avec le
-# compte, et il disparait avec l'etape 6.
 check("le proxy d'acceptation purge sur `session_fermee`",
       "_session_fermee_par_changement_de_role(" in _fns.get('repondre_promotion', '')
       and "session_fermee" in _fns.get('repondre_promotion', ''))

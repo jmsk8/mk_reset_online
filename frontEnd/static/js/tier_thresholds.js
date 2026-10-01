@@ -1,42 +1,23 @@
-// Tableau de reglage des tiers (page Reglages TrueSkill).
-//
-// Tiers dynamiques (Partie B, docs/tableau-seuils-tiers-plan.md) : la liste
-// des tiers (nom, couleur, seuil en ecart-type, rang) est geree par l'admin
-// via /admin/tiers/* (GET/POST/PUT/DELETE + /reorder + /reset), plus figee a
-// S/A/B/C. Ce fichier affiche :
-//   - un graphique (courbe normale + joueurs + lignes de seuil glissables),
-//     genere pour un nombre quelconque de tiers ;
-//   - un panneau liste ou chaque tier se renomme, se recolore (fenetre de
-//     choix avec « Confirmer »), se regle (en sigma) et se supprime, avec
-//     ajout d'un nouveau tier et bouton Reinitialiser (restaure S/A/B/C par
-//     defaut, /admin/tiers/reset).
-//
-// Le graphique reste en score TrueSkill brut sur son axe (c'est la
-// distribution reelle du jour) ; le panneau liste et les seuils du plugin de
-// lignes travaillent en ecart-type (l'unite stockee en base), convertis a la
-// volee via mean/stdev de la distribution chargee.
+// Reglage des tiers (page Reglages TrueSkill) : graphique de la distribution
+// avec lignes de seuil glissables, et panneau ou chaque tier se renomme, se
+// recolore, se regle et se supprime (/admin/tiers/*). Le graphique est en
+// score brut ; les seuils sont stockes en ecart-type et convertis via
+// mean/stdev de la distribution.
 
 (function () {
     let chart = null;
     let mean = 0, stdev = 1;
-    // tiersState : [{id, nom, couleur, seuil_k, rang}], trie rang DESC (le
-    // meilleur en premier). seuil_k est null pour le plancher (rang le plus
-    // bas de la liste) -- toujours vrai par construction cote backend.
+    // [{id, nom, couleur, seuil_k, rang}], trie rang DESC ; seuil_k null pour le plancher.
     let tiersState = [];
-    // U (non classe) : hors de tiersState, ce n'est pas un tier -- ni seuil,
-    // ni rang, ni nom modifiable. Seule sa couleur se regle, et ne part au
-    // serveur que si elle a change : chaque envoi laisse une ligne au journal.
+    // U (non classe) : seule sa couleur se regle, envoyee si elle a change.
     let couleurU = '#FFFFFF';
     let couleurUServeur = '#FFFFFF';
-    let playersRaw = [];       // points {nom,x,y,color} venus du backend
-    // INDEX (et non id) du tier en cours de glisse, -1 si aucun : un tier
-    // ajoute mais pas encore enregistre n'a pas d'id serveur, et deux ids
-    // absents se confondraient.
+    let playersRaw = []; // points {nom,x,y,color} venus du backend
+    // Index (pas id) du tier en cours de glisse, -1 si aucun : un tier non
+    // enregistre n'a pas d'id.
     let draggingIdx = -1;
 
-    // Un tier existe en base s'il porte un id numerique strictement positif.
-    // Tout le reste (null pour une ligne ajoutee dans le panneau, undefined si
-    // le serveur omet le champ) signifie « pas encore cree ».
+    // Vrai si le tier existe en base (id numerique > 0).
     function estIdServeur(id) {
         return typeof id === 'number' && Number.isFinite(id) && id > 0;
     }
@@ -52,8 +33,7 @@
         return tier.seuil_k === null || tier.seuil_k === undefined ? null : scoreFromK(tier.seuil_k);
     }
 
-    // tiersState est trie rang DESC : le premier tier dont le score-frontiere
-    // est depasse gagne ; le dernier (plancher, seuil_k null) sert de secours.
+    // Premier tier dont le score-frontiere est depasse, sinon le plancher.
     function tierForScore(score) {
         for (const t of tiersState) {
             const seuil = scoreSeuil(t);
@@ -92,15 +72,13 @@
         });
     }
 
-    // Zones : une bande par tier, entre son seuil et celui du tier juste
-    // au-dessus (rang+1). tiersState est deja trie rang DESC donc l'element
-    // precedent dans le tableau EST le tier du dessus.
+    // Une zone par tier, entre son seuil et celui du tier precedent (au-dessus).
     function zonesFromState() {
         return tiersState.map((t, i) => ({
             nom: t.nom,
             couleur: t.couleur,
-            from: scoreSeuil(t),                    // borne basse (null = -infini)
-            to: i > 0 ? scoreSeuil(tiersState[i - 1]) : null, // borne haute (null = +infini, sommet)
+            from: scoreSeuil(t), // borne basse (null = -infini)
+            to: i > 0 ? scoreSeuil(tiersState[i - 1]) : null, // borne haute (null = +infini)
         }));
     }
 
@@ -143,8 +121,6 @@
                 ctx.stroke();
                 ctx.restore();
 
-                // Poignee : petite languette en haut, plus facile a attraper
-                // qu'un trait de 1px.
                 ctx.save();
                 ctx.fillStyle = t.couleur;
                 ctx.beginPath();
@@ -179,10 +155,8 @@
         return playersRaw.map(p => colorForTierName(tierForScore(p.x)));
     }
 
-    // Graphique et legende seulement. C'est ce qu'appellent les champs du
-    // panneau pendant la saisie : reconstruire le panneau a chaque frappe
-    // detruisait le champ en cours d'edition (focus perdu, clavier du
-    // telephone referme, selecteur de couleur detache de son champ).
+    // Graphique et legende seulement (pendant la saisie, pour ne pas detruire
+    // le champ en cours d'edition).
     function redrawGraphique() {
         if (!chart) return;
         chart.data.datasets[1].backgroundColor = colorsForPoints();
@@ -190,23 +164,19 @@
         renderLegend();
     }
 
-    // Graphique ET panneau : reserve aux changements de structure (ajout,
-    // suppression, deplacement, couleur confirmee), jamais pendant une saisie.
+    // Graphique et panneau, pour les changements de structure.
     function redraw() {
         redrawGraphique();
         renderTiersPanel();
     }
 
-    // Pendant un glisse : on redessine le graphique a chaque pixel, mais PAS
-    // le panneau -- le reconstruire en continu detruirait les champs a chaque
-    // mousemove (perte du focus, saisie en cours annulee). Seule la valeur du
-    // champ de seuil concerne est rafraichie, sans toucher au DOM alentour.
+    // Pendant un glisse : graphique redessine a chaque frame, seul le champ de
+    // seuil concerne est mis a jour dans le panneau.
     let frameDemandee = false;
 
     function redrawPendantDrag() {
         if (!chart || frameDemandee) return;
-        // Un mousemove peut arriver plusieurs fois par frame : on ne redessine
-        // qu'une fois par rafraichissement ecran, sinon le glisse saccade.
+        // Une seule mise a jour par frame.
         frameDemandee = true;
         requestAnimationFrame(() => {
             frameDemandee = false;
@@ -219,13 +189,9 @@
         });
     }
 
-    // Renvoie l'INDEX du tier dont la ligne est la plus proche, ou -1. On
-    // travaille par index et non par id : l'id peut etre absent (tier pas
-    // encore cree en base) et deux `undefined` se confondraient -- c'est
-    // exactement le bug de recette du 13/09, ou seul le premier tier bougeait.
+    // Index du tier dont la ligne est la plus proche, ou -1.
     function nearestHandle(pixelX, x) {
-        // Tolerance large : viser un trait de 2px a la souris est penible, et
-        // la valeur est de toute facon ajustable au clavier dans le tableau.
+        // Tolerance large (valeur ajustable au clavier dans le panneau).
         const THRESH_PX = 18;
         let best = -1, bestDist = Infinity;
         tiersState.forEach((t, i) => {
@@ -238,8 +204,7 @@
         return bestDist <= THRESH_PX ? best : -1;
     }
 
-    // Ecart minimal entre deux lignes voisines, en unites de score : assez
-    // pour qu'elles restent visuellement (et donc cliquablement) distinctes.
+    // Ecart minimal entre deux lignes voisines, en unites de score.
     function ecartMinimalEnScore() {
         const MIN_PX = 6;
         if (!chart || !chart.scales || !chart.scales.x) return 0.01;
@@ -250,19 +215,13 @@
         return (etendue / largeur) * MIN_PX;
     }
 
-    // Contraint le seuil deplace a rester strictement entre les seuils des
-    // tiers voisins (rang+1 au-dessus, rang-1 en dessous) -- l'ordre des
-    // rangs ne change jamais par un simple drag, seule la valeur bouge.
+    // Garde le seuil deplace entre ceux des tiers voisins (l'ordre ne change pas).
     function clampToNeighbors(idx, scoreValue) {
-        // Ecart minimal exprime en PIXELS puis converti en score : un epsilon
-        // numerique (1e-6) laissait deux lignes se superposer a l'ecran, et
-        // elles devenaient alors impossibles a separer a la souris (le clic
-        // attrapait toujours la meme).
+        // Ecart minimal exprime en pixels puis converti en score.
         const EPS = ecartMinimalEnScore();
         if (idx < 0 || idx >= tiersState.length) return scoreValue;
-        const above = idx > 0 ? scoreSeuil(tiersState[idx - 1]) : null;   // rang superieur
-        // Le voisin du dessous : le prochain tier dans la liste QUI A un
-        // seuil (le plancher n'en a pas, donc pas de borne basse dans ce cas).
+        const above = idx > 0 ? scoreSeuil(tiersState[idx - 1]) : null; // rang superieur
+        // Voisin du dessous : prochain tier ayant un seuil.
         let below = null;
         for (let j = idx + 1; j < tiersState.length; j++) {
             const s = scoreSeuil(tiersState[j]);
@@ -281,27 +240,20 @@
         dragHandlersAttached = true;
         const area = document.getElementById('tierChartArea');
 
-        // Coordonnee X dans le repere INTERNE du graphique (celui des
-        // `scales`), qui n'est pas celui de l'ecran : Chart.js dessine dans un
-        // canvas dont la taille de rendu (attribut width) differe de la taille
-        // CSS affichee des que le layout le redimensionne. Un simple
-        // `clientX - rect.left` melangeait les deux reperes -- les lignes
-        // etaient alors decalees de plusieurs dizaines de pixels, d'ou
-        // l'impossibilite de les attraper.
+        // X dans le repere interne du graphique (taille de rendu du canvas,
+        // differente de sa taille CSS).
         function pixelXFromEvent(evt) {
             const source = evt.touches && evt.touches.length ? evt.touches[0] : evt;
-            // Loupe (chart_zoom.js) : le canvas peut etre deplace ou agrandi par
-            // un transform CSS. Au doigt, getRelativePosition passe alors par
-            // clientX en coordonnees ecran agrandies et rate la poignee ;
-            // depuisEcran rapporte la position a la taille reelle du canvas.
+            // Loupe : le canvas peut etre transforme, depuisEcran le rapporte
+            // a sa taille reelle.
             if (window.ChartZoom) {
                 return ChartZoom.depuisEcran(chart, source.clientX, source.clientY).x;
             }
             if (window.Chart && Chart.helpers && Chart.helpers.getRelativePosition) {
-                // API officielle : gere le ratio rendu/CSS et le devicePixelRatio.
+                // Gere le ratio rendu/CSS et le devicePixelRatio.
                 return Chart.helpers.getRelativePosition(source, chart).x;
             }
-            // Repli si l'API bouge : meme calcul, ratio applique a la main.
+            // Repli, ratio applique a la main.
             const rect = canvas.getBoundingClientRect();
             const ratio = rect.width ? (canvas.width / rect.width) : 1;
             return (source.clientX - rect.left) * ratio;
@@ -321,8 +273,7 @@
             if (!chart) return;
             const px = pixelXFromEvent(evt);
             if (draggingIdx < 0) {
-                // '' plutot que 'default' : hors poignee, le curseur de la loupe
-                // (main ouverte une fois zoome) reprend la main.
+                // '' : hors poignee, le curseur de la loupe reprend la main.
                 area.style.cursor = nearestHandle(px, chart.scales.x) >= 0 ? 'ew-resize' : '';
                 return;
             }
@@ -368,8 +319,7 @@
         return d;
     }
 
-    // Une ligne par tier (div en grille, plus un tableau) : au telephone elle
-    // passe sur deux rangees au lieu de deborder de l'ecran (CSS de la page).
+    // Une ligne par tier (deux rangees au telephone).
     function renderTiersPanel() {
         const body = document.getElementById('tiersListBody');
         if (!body) return;
@@ -382,8 +332,7 @@
             ligne.dataset.idx = String(idx);
             ligne.style.setProperty('--tier-couleur', couleurSure(t.couleur));
 
-            // Pastille : ouvre la fenetre de choix, la couleur n'est appliquee
-            // qu'a « Confirmer ».
+            // Pastille : ouvre la fenetre de choix de couleur.
             const zCouleur = zone('couleur');
             const pastille = bouton('tier-pastille', 'fa-palette',
                 `Changer la couleur de ${t.nom || 'ce tier'}`, () => ouvrirChoixCouleur(idx));
@@ -421,7 +370,7 @@
                     const v = parseFloat(seuilInput.value);
                     if (!isNaN(v)) { t.seuil_k = v; redrawGraphique(); }
                 };
-                // Champ laisse vide ou illisible : on y remet la valeur retenue.
+                // Champ vide ou illisible : on remet la valeur retenue.
                 seuilInput.onchange = () => {
                     if (isNaN(parseFloat(seuilInput.value)) && typeof t.seuil_k === 'number') {
                         seuilInput.value = t.seuil_k.toFixed(3);
@@ -451,8 +400,7 @@
             body.appendChild(ligne);
         });
 
-        // U, toujours en dernier : ni deplacable, ni supprimable, ni
-        // renommable. Seule la pastille est active.
+        // U, toujours en dernier : seule la pastille est active.
         const ligneU = document.createElement('div');
         ligneU.className = 'tier-ligne tier-ligne-u';
         ligneU.style.setProperty('--tier-couleur', couleurSure(couleurU));
@@ -480,12 +428,7 @@
     }
 
     // --- Choix de la couleur ------------------------------------------------
-    //
-    // Remplace le <input type="color"> natif. Au telephone, il ne proposait
-    // qu'une poignee de teintes ; et partout, le premier changement
-    // reconstruisait le panneau, ce qui detruisait le champ et refermait le
-    // selecteur des le premier clic. Ici : une palette, trois curseurs pour
-    // affiner, un code hexadecimal, et rien n'est applique avant « Confirmer ».
+    // Palette, curseurs et code hexadecimal ; applique a « Confirmer ».
 
     const HEX6 = /^#[0-9a-fA-F]{6}$/;
 
@@ -530,7 +473,7 @@
         return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
     }
 
-    // Texte lisible sur la couleur : noir sur fond clair, blanc sur fond fonce.
+    // Noir sur fond clair, blanc sur fond fonce.
     function texteSur(hex) {
         const n = parseInt(versHex6(hex).slice(1), 16);
         const r = n >> 16, g = (n >> 8) & 255, b = n & 255;
@@ -542,25 +485,24 @@
         el.style.color = texteSur(couleur);
     }
 
-    // Palette : 8 teintes en colonnes, de la plus claire a la plus foncee,
-    // puis une rangee de neutres et de metaux. Les couleurs par defaut
-    // (S/A/B/C) en font partie, pour pouvoir y revenir d'un geste.
+    // Palette : 8 teintes en nuances, puis neutres et metaux (avec les couleurs
+    // par defaut S/A/B/C).
     const PALETTE = (() => {
         const teintes = [0, 28, 48, 125, 172, 205, 265, 320];
         const nuances = [[90, 82], [85, 70], [80, 58], [75, 46], [70, 34]];
         const couleurs = [];
         nuances.forEach(([s, l]) => teintes.forEach(h => couleurs.push(hslVersHex(h, s, l))));
-        couleurs.push('#F77B7B', '#9CDA74', '#7FE6EE', '#AE6CE4',   // S/A/B/C par defaut
-                      '#FFD700', '#C0C0C0', '#CD7F32', '#FFFFFF',   // or, argent, bronze, blanc
-                      '#F1F5F9', '#CBD5E1', '#94A3B8', '#64748B',   // gris, du clair...
-                      '#475569', '#334155', '#1E293B', '#000000');  // ...au noir
+        couleurs.push('#F77B7B', '#9CDA74', '#7FE6EE', '#AE6CE4', // S/A/B/C par defaut
+                      '#FFD700', '#C0C0C0', '#CD7F32', '#FFFFFF', // or, argent, bronze, blanc
+                      '#F1F5F9', '#CBD5E1', '#94A3B8', '#64748B', // gris, du clair...
+                      '#475569', '#334155', '#1E293B', '#000000'); // ...au noir
         return couleurs;
     })();
 
-    const CHOIX_U = 'U';        // choixIdx de la pastille U, hors de tiersState
-    let choixIdx = -1;          // tier dont on choisit la couleur
+    const CHOIX_U = 'U'; // choixIdx de la pastille U
+    let choixIdx = -1; // tier dont on choisit la couleur
     let choixCouleur = '#FFFFFF';
-    let choixDeclencheur = null; // pastille a qui rendre le focus en sortant
+    let choixDeclencheur = null; // pastille a qui rendre le focus
 
     function elChoix(id) { return document.getElementById(id); }
 
@@ -568,8 +510,7 @@
         return idx === CHOIX_U ? { nom: 'U', couleur: couleurU } : tiersState[idx];
     }
 
-    // Met a jour toute la fenetre depuis `choixCouleur`. `source` evite de
-    // reecrire le champ qu'on est en train de manipuler.
+    // Met a jour la fenetre depuis `choixCouleur` (`source` : champ a ne pas reecrire).
     function afficherChoix(source) {
         const c = choixCouleur;
         const apercu = elChoix('tierCouleurApercu');
@@ -591,7 +532,6 @@
             elChoix('tierCurseurSaturation').value = s;
             elChoix('tierCurseurClarte').value = l;
         }
-        // Pistes degradees calees sur les deux autres reglages.
         const h = +elChoix('tierCurseurTeinte').value;
         const s = +elChoix('tierCurseurSaturation').value;
         const l = +elChoix('tierCurseurClarte').value;
@@ -631,7 +571,7 @@
         if (choixIdx === CHOIX_U) {
             couleurU = choixCouleur;
             fermerChoixCouleur();
-            renderTiersPanel();   // U n'est pas sur le graphique
+            renderTiersPanel(); // U n'est pas sur le graphique
             const p = document.querySelector('#tiersListBody .tier-ligne-u .tier-pastille');
             if (p) p.focus();
             return;
@@ -639,9 +579,7 @@
         const t = tiersState[choixIdx];
         if (t) {
             t.couleur = choixCouleur;
-            // Le panneau peut etre reconstruit : la fenetre est au premier plan,
-            // aucun champ n'y est en cours d'edition. On rend ensuite le focus
-            // a la NOUVELLE pastille, l'ancienne n'existant plus.
+            // Panneau reconstruit : le focus revient a la nouvelle pastille.
             const idx = choixIdx;
             fermerChoixCouleur();
             redraw();
@@ -667,8 +605,7 @@
             b.setAttribute('aria-label', c);
             palette.appendChild(b);
         });
-        // Un clic dans la palette ne fait que CHOISIR : rien ne se ferme, rien
-        // n'est applique au tier avant « Confirmer ».
+        // Un clic dans la palette choisit seulement.
         palette.addEventListener('click', e => {
             const b = e.target.closest('button[data-couleur]');
             if (!b) return;
@@ -693,7 +630,7 @@
             hex.classList.toggle('is-danger', !ok && v.length >= 7);
             if (ok) { choixCouleur = v.toUpperCase(); afficherChoix('hex'); }
         });
-        // Entree dans le champ code = Confirmer, comme on s'y attend au clavier.
+        // Entree dans le champ code = Confirmer.
         hex.addEventListener('keydown', e => {
             if (e.key === 'Enter') { e.preventDefault(); confirmerChoixCouleur(); }
         });
@@ -709,8 +646,7 @@
         if (to < 0 || to >= tiersState.length) return;
         const [moved] = tiersState.splice(from, 1);
         tiersState.splice(to, 0, moved);
-        // Le plancher (dernier de la liste) n'a jamais de seuil bas ; un
-        // echange peut faire glisser un tier avec seuil vers cette position.
+        // Le plancher (dernier de la liste) n'a pas de seuil.
         appliquerPlancherLocal();
         redraw();
     }
@@ -724,16 +660,13 @@
     }
 
     function appliquerPlancherLocal() {
-        // Miroir cote client de _appliquer_plancher() (routes_admin.py) :
-        // seul le dernier tier de la liste (rang le plus bas) doit avoir
-        // seuil_k == null, tous les autres doivent en avoir un.
+        // Equivalent client de _appliquer_plancher() (routes_admin.py).
         tiersState.forEach((t, i) => {
             const isPlancher = i === tiersState.length - 1;
             if (isPlancher) {
                 t.seuil_k = null;
             } else if (t.seuil_k === null || t.seuil_k === undefined) {
-                // Un ancien plancher promu tier normal : lui donner une valeur
-                // de depart raisonnable (juste sous son voisin du dessus).
+                // Ancien plancher promu : seuil de depart juste sous son voisin.
                 const above = i > 0 ? tiersState[i - 1].seuil_k : null;
                 t.seuil_k = above !== null ? above - 1 : 0;
             }
@@ -743,7 +676,7 @@
     function addTierRow() {
         const top = tiersState[0];
         const nouveauK = top && top.seuil_k !== null && top.seuil_k !== undefined ? top.seuil_k + 1 : 1;
-        // id null : la ligne n'existe pas encore en base, saveTiers la creera.
+        // id null : tier a creer par saveTiers.
         tiersState.unshift({ id: null, nom: 'Nouveau', couleur: '#cccccc', seuil_k: nouveauK, rang: 0 });
         appliquerPlancherLocal();
         redraw();
@@ -783,15 +716,13 @@
         if (new Set(noms.map(n => n.toUpperCase())).size !== noms.length) {
             return "Deux tiers ne peuvent pas porter le même nom.";
         }
-        // Seul le dernier tier (le plancher) peut ne pas avoir de seuil.
         for (let i = 0; i < tiersState.length - 1; i++) {
             const k = tiersState[i].seuil_k;
             if (k === null || k === undefined || isNaN(k)) {
                 return `Le tier « ${tiersState[i].nom} » n'a pas de seuil valide.`;
             }
         }
-        // Ordre strict des seuils : chaque tier (sauf le plancher) doit avoir
-        // un seuil strictement superieur a celui du tier juste en dessous.
+        // Seuils strictement decroissants (hors plancher).
         for (let i = 0; i < tiersState.length - 2; i++) {
             const cur = tiersState[i].seuil_k, next = tiersState[i + 1].seuil_k;
             if (!(cur > next)) {
@@ -809,27 +740,16 @@
         const saveBtn = document.getElementById('tierSaveBtn');
         saveBtn.classList.add('is-loading');
         try {
-            // Ordre des operations, important : suppressions, puis creations,
-            // puis REORDONNANCEMENT, et seulement ensuite les seuils.
-            //
-            // Le reorder doit passer AVANT les PUT : tant que l'ordre final
-            // n'est pas etabli, le serveur considere comme plancher un tier
-            // qui ne le sera plus, et efface le seuil qu'on vient de lui
-            // ecrire (bug du 14/09 : le tier se retrouvait sans seuil, puis
-            // avec une valeur incoherente, et le classement partait de
-            // travers). Une fois les rangs poses, chaque PUT porte sur un
-            // tier dont la position est definitive.
+            // Ordre : suppressions, creations, reordonnancement, puis seuils
+            // (le serveur doit connaitre l'ordre final avant les PUT).
             const original = await apiCall('/admin/tiers', 'GET');
             if (!Array.isArray(original)) throw new Error("Lecture des tiers existants impossible");
-            // Un tier venu du serveur SANS id est anormal : plutot que de
-            // supprimer toute la table par erreur (ce que faisait le filtre
-            // `t.id > 0` quand l'id manquait), on s'arrete net.
+            // Tier serveur sans id : on s'arrete plutot que de tout supprimer.
             if (original.some(t => !estIdServeur(t.id))) {
                 throw new Error("Le serveur n'a pas renvoyé l'identifiant des tiers existants");
             }
             const idsConserves = new Set(tiersState.filter(t => estIdServeur(t.id)).map(t => t.id));
 
-            // 1. Suppressions des tiers retires du tableau.
             for (const t of original) {
                 if (!idsConserves.has(t.id)) {
                     const res = await apiCall(`/admin/tiers/${t.id}`, 'DELETE');
@@ -837,8 +757,7 @@
                 }
             }
 
-            // 2. Creations. Le nom et la couleur suffisent ici : le seuil sera
-            //    pose par le PUT de l'etape 4, une fois les rangs definitifs.
+            // 2. Creations (seuil pose a l'etape 4).
             for (const t of tiersState) {
                 if (!estIdServeur(t.id)) {
                     const res = await apiCall('/admin/tiers', 'POST', {
@@ -850,16 +769,13 @@
                 }
             }
 
-            // 3. Ordre definitif, AVANT d'ecrire les seuils.
+            // 3. Ordre definitif.
             const ordre = tiersState.map(t => t.id);
             const resOrdre = await apiCall('/admin/tiers/reorder', 'PUT', { ordre });
             if (resOrdre.error) throw new Error(resOrdre.error);
 
-            // 4. Nom, couleur et seuil de chaque tier, a sa place definitive.
-            //    seuil_k est toujours transmis, `null` pour le plancher :
-            //    l'omettre laissait un ancien plancher promu sans seuil.
-            //    Seulement les tiers crees ou modifies : chaque PUT recalcule
-            //    le tier de tous les joueurs.
+            // 4. Nom, couleur et seuil des tiers crees ou modifies (seuil_k null
+            //    pour le plancher).
             const lus = new Map(original.map(t => [t.id, t]));
             for (const t of tiersState) {
                 const o = lus.get(t.id);
@@ -873,7 +789,7 @@
                 if (res.error) throw new Error(res.error);
             }
 
-            // 5. Couleur de U, a part : ce n'est pas un tier.
+            // 5. Couleur de U.
             if (couleurU !== couleurUServeur) {
                 const res = await apiCall('/admin/tiers/unranked', 'PUT', { couleur: couleurU });
                 if (res.error) throw new Error(res.error);
@@ -891,7 +807,7 @@
 
     async function initTierChart() {
         const canvasEl = document.getElementById('tierChart');
-        if (!canvasEl) return; // page/permission sans ce bloc
+        if (!canvasEl) return; // bloc absent (page ou permission)
 
         const loading = document.getElementById('tierChartLoading');
         const wrapper = document.getElementById('tierChartWrapper');
@@ -900,15 +816,8 @@
         wrapper.style.display = 'none';
         empty.style.display = 'none';
 
-        // `loadTiers()` (gestion.js) plutot qu'un apiCall direct : les deux
-        // scripts vivent sur la meme page et voulaient tous deux la liste des
-        // tiers au chargement, soit DEUX requetes pour la meme donnee. Le cache
-        // de gestion.js mutualise la promesse, donc une seule part sur le
-        // reseau. Sur une page qui en emet deja 7, c'en est une de moins dans
-        // le budget du limiteur nginx (docs/audit-503-zone-admin.md, §11).
-        //
-        // Le repli garde la page fonctionnelle si gestion.js n'est pas charge :
-        // ce script sert aussi ailleurs.
+        // loadTiers() (gestion.js) mutualise la requete ; repli sur un appel
+        // direct si gestion.js n'est pas charge.
         const [dist, tiersData, couleurUData] = await Promise.all([
             apiCall('/admin/config/tier-distribution', 'GET'),
             (typeof loadTiers === 'function')
@@ -930,23 +839,11 @@
         }
 
         playersRaw = dist.players;
-        // mean/stdev renvoyes tels quels par le backend (build_distribution) :
-        // les reconstruire depuis min/max de la courbe etait fragile, la
-        // boucle qui genere la courbe n'atteint pas toujours exactement sa
-        // borne haute (accumulation flottante), ce qui decalait legerement
-        // les lignes de seuil affichees par rapport a la vraie distribution
-        // (bug du 14/09).
+        // mean/stdev fournis par le backend (build_distribution).
         mean = dist.mean;
         stdev = dist.stdev || 1;
-        // Bornes de l'axe calees sur mean/stdev (meme demi-largeur que le
-        // backend pour generer la courbe, cf _CURVE_SPREAD dans services.py),
-        // PAS relues depuis les points de dist.curve : cette derniere est
-        // tronquee de facon asymetrique par l'accumulation flottante de la
-        // boucle qui la genere (son dernier point n'atteint jamais tout a
-        // fait x_max). Un axe cale sur cette plage tronquee restait legerement
-        // decentre par rapport a mean, donc les graduations en sigma (0, ±1...)
-        // ne tombaient pas exactement ou la ligne de seuil glissee semblait
-        // pointer (bug persistant du 14/09, constate lors du drag).
+        // Bornes de l'axe calculees depuis mean/stdev (comme _CURVE_SPREAD de
+        // services.py), pas depuis les points de la courbe.
         const CURVE_SPREAD = 3.5; // doit suivre _CURVE_SPREAD dans services.py
         const xMin = mean - CURVE_SPREAD * stdev, xMax = mean + CURVE_SPREAD * stdev;
 
@@ -1002,16 +899,9 @@
                         grid: { color: 'rgba(255,255,255,0.05)' },
                         min: xMin, max: xMax,
                         afterBuildTicks: axis => {
-                            // Axe affiche en ecart-type (0, ±1, ±2...) plutot
-                            // qu'en score TrueSkill brut, pour rester lisible
-                            // independamment de l'echelle du jour. `ticks.values`
-                            // n'impose PAS de positions exactes sur un axe
-                            // lineaire (Chart.js le fusionne avec son propre
-                            // generateur et peut en sauter -- le -1σ manquant
-                            // constate malgre autoSkip:false). afterBuildTicks
-                            // est l'API qui remplace vraiment la liste des ticks :
-                            // un par multiple entier de sigma dans la plage
-                            // visible, mean (0σ) toujours inclus.
+                            // Axe en ecart-type : afterBuildTicks impose un tick
+                            // par multiple entier de sigma (ticks.values ne
+                            // garantit pas les positions).
                             const kMin = Math.ceil(kFromScore(xMin));
                             const kMax = Math.floor(kFromScore(xMax));
                             const vals = [];
@@ -1032,8 +922,7 @@
         attachDragHandlers(canvasEl);
         if (window.ChartZoom) {
             ChartZoom.brancher(chart, {
-                // Le doigt reste reserve au graphique, comme avant la loupe :
-                // attraper une poignee ne doit jamais faire defiler la page.
+                // Le doigt reste reserve au graphique (poignees).
                 touchActionAuRepos: 'none',
                 // Un appui sur une poignee deplace le seuil, pas la vue.
                 glisserPermis: (clientX, clientY) =>

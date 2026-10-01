@@ -5,35 +5,25 @@ maintenance (nginx/maintenance/page.html).
     python3 scripts/mario-builder.py
 
 Source et sortie
-    assets-src/mario-builder/1-3.png        les originaux, JAMAIS modifiés
-    assets-src/mario-builder/bloc.png       le bloc du sol, opaque
+    assets-src/mario-builder/1-3.png        originaux, jamais modifiés
+    assets-src/mario-builder/bloc.png       bloc du sol, opaque
     frontEnd/static/img/mario-builder/
         1.png, 2.png, 3.png                 les mêmes, détourés
         marteau.png                         les trois poses en bande, calées
-        bloc.png                            le bloc, recopié tel quel
+        bloc.png                            le bloc, recopié
 
-La taille du bloc, leur nombre et la vitesse du marteau ne se règlent PAS ici
-mais dans la page (variables CSS en tête du <style>) : ce sont des choix
-d'affichage, et ils se retouchent sans relancer le script.
+Taille et nombre de blocs, vitesse du marteau : variables CSS de la page.
 
-Les poses, dans l'ordre du coup : 2 marteau levé, 1 élan, 3 frappe.
+Poses, dans l'ordre du coup : 2 marteau levé, 1 élan, 3 frappe.
 
-Le détourage
-    Le fond est un bleu uni (#00ACFF) et le dessin n'a pas d'anticrénelage :
-    on retire ce bleu par remplissage depuis les bords, pixel exact, sans
-    tolérance. Remplir depuis les bords plutôt que remplacer la couleur partout
-    protège un pixel de ce bleu qui ferait partie du dessin (il n'y en a pas
-    aujourd'hui). Le script échoue s'il reste du fond enfermé dans le dessin :
-    ce serait un trou à traiter à la main, pas à deviner.
+Détourage : le fond bleu uni (#00ACFF) est retiré par remplissage depuis les
+bords, sans tolérance. Le script échoue s'il reste du fond enfermé dans le
+dessin.
 
-Le calage
-    Les trois images sont recadrées chacune au plus près : empilées telles
-    quelles, Mario sauterait d'une pose à l'autre. On les cale sur le pied
-    d'appui, dont la semelle est le seul morceau de la dernière rangée commun
-    aux trois poses. Bas des images alignés, bord gauche de la semelle aligné.
-    ANCRE donne ce bord, relevé sur chaque original.
+Calage : chaque pose est recadrée au plus près, puis alignée en bas et sur le
+bord gauche de la semelle du pied d'appui (ANCRE, relevé sur chaque original).
 
-Le plus proche voisin partout : aucun pixel n'est recalculé.
+Plus proche voisin partout : aucun pixel n'est recalculé.
 """
 from collections import deque
 from pathlib import Path
@@ -107,8 +97,7 @@ def main():
     bande.save(SORTIE / "marteau.png", optimize=True)
     print(f"marteau.png : {len(POSES)} poses de {largeur} x {hauteur}")
 
-    # Le bloc n'a pas de fond à retirer : on le recopie, réécrit par Pillow
-    # pour que la sortie ne dépende que du script.
+    # Bloc recopié via Pillow : la sortie ne dépend que du script.
     bloc = Image.open(SOURCE / "bloc.png").convert("RGBA")
     bloc.save(SORTIE / "bloc.png", optimize=True)
     print(f"bloc.png : {bloc.width} x {bloc.height}")

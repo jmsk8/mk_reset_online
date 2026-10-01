@@ -60,10 +60,8 @@ info "Extraction de la base…"
 docker compose exec -T db sh -c \
   'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' > "$TMP"
 
-# Garde le dump indépendant du nom de rôle, comme schema.sql.
-# Un rôle avec une majuscule (« postgresU ») sort ENTRE GUILLEMETS de pg_dump :
-# sans la seconde forme, il restait tel quel et la restauration sous un autre
-# rôle s'arrêtait sur « role "postgresU" does not exist » (constaté le 27/09).
+# Dump indépendant du nom de rôle, comme schema.sql. Un rôle avec une
+# majuscule sort entre guillemets de pg_dump, d'où la seconde forme.
 sed -i -E 's/ OWNER TO ("[^"]+"|[A-Za-z0-9_]+);/ OWNER TO CURRENT_USER;/g' "$TMP"
 
 if ! grep -q '^COPY public\.joueurs ' "$TMP"; then
@@ -72,8 +70,7 @@ if ! grep -q '^COPY public\.joueurs ' "$TMP"; then
   exit 1
 fi
 
-# 644 obligatoire : le dump est monté dans le conteneur db, où postgres
-# tourne en uid 70 et doit pouvoir le lire pour l'initialisation.
+# 644 : lisible par postgres (uid 70) dans le conteneur db.
 chmod 644 "$TMP"
 mv "$TMP" "$OUT"
 trap - EXIT

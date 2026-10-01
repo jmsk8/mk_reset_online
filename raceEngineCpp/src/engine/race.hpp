@@ -1,4 +1,4 @@
-// Le deroulement d'une course : la grille, le depart, les tours, l'arrivee.
+// Deroulement d'une course : grille, depart, tours, arrivee.
 // <- raceEngine/src/engine/race.js
 
 #pragma once

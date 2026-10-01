@@ -1,13 +1,5 @@
-{# Affichage d'une valeur d'IP : cellule du tableau et legende des couleurs.
-
-   Partage par recap.html et classement_saison.html, qui en portaient deux
-   copies. Les seuils ne sont plus ecrits ici : ils arrivent dans le bloc `ip`
-   du payload (backEnd/textes_ip.py, constantes IP_SEUIL_*), si bien que la
-   cellule et la legende ne peuvent plus diverger.
-
-   Sans bloc `ip` (backend plus ancien que le frontend, le temps d'un
-   redemarrage), la valeur s'affiche sans couleur plutot que de faire planter
-   la page. #}
+{# Valeur d'IP (cellule et legende), avec les seuils du bloc `ip` du payload.
+   Sans bloc `ip`, la valeur s'affiche sans couleur. #}
 
 {% macro niveau_ip(score, seuils) -%}
     {%- if score >= seuils.etoile %}etoile
@@ -16,8 +8,7 @@
     {%- else %}bas{% endif -%}
 {%- endmacro %}
 
-{# Le rendu de chaque palier. La legende passe ici elle aussi : chaque palier y
-   est ecrit dans la couleur de la cellule qu'il decrit. #}
+{# Rendu d'un palier, aussi utilise par la legende. #}
 {% macro valeur_ip(niveau, texte) -%}
     {%- if niveau == 'etoile' -%}
         <span class="has-text-warning has-text-weight-bold">★ {{ texte }}</span>
@@ -37,8 +28,7 @@
     {% if j.score_gm is not none %}
         {% set texte = '%0.2f'|format(j.score_gm|float) %}
         {% if j.is_eligible_gm == false %}
-            {# Pas de `title` : invisible au doigt. La ligne sous le tableau
-               dit ce que veut dire le rouge. #}
+            {# Pas de `title` : la note sous le tableau explique le rouge. #}
             <span class="has-text-danger" style="opacity: 0.9;">{{ texte }}</span>
         {% elif ip and ip.seuils %}
             {{ valeur_ip(niveau_ip(j.score_gm, ip.seuils), texte) }}
@@ -58,8 +48,7 @@
     {%- endfor -%}
 {%- endmacro %}
 
-{# Sous le tableau : la legende, puis ce que veut dire le rouge. Visible sans
-   survol, donc aussi sur mobile. #}
+{# Sous le tableau : legende et signification du rouge. #}
 {% macro notes_tableau_ip(ip) %}
 {% if ip %}
 <div class="px-3 pb-2 notes-tableau-ip">
@@ -71,8 +60,7 @@
 {% endif %}
 {% endmacro %}
 
-{# Badge de version, a cote du titre du tableau. Un vrai bouton : il se
-   declenche au doigt comme au clavier, contrairement a une infobulle. #}
+{# Badge de version (bouton, pour le doigt et le clavier). #}
 {% macro badge_ip(ip) %}
 {% if ip %}
 <button type="button" class="tag is-info is-light badge-ip ml-2" aria-haspopup="dialog"

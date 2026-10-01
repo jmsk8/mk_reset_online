@@ -24,10 +24,7 @@
         <div class="container">
             <div class="columns is-centered">
                 <div class="column is-6">
-                    {# Proposition de rôle ou consentement à régulariser. Rempli en
-                       fetch, et placé AVANT la carte du compte : c'est la seule
-                       chose de cette page qui attend une décision. Enfoui plus
-                       bas, il se lirait comme une information de plus. #}
+                    {# Proposition de rôle ou consentement à régulariser, rempli en fetch. #}
                     <div id="bloc-promotion"></div>
 
                     <div class="card glass-card fade-in">
@@ -35,20 +32,16 @@
                             <div class="media">
                                 <div class="media-left">
                                     <figure class="image is-64x64">
-                                        {# referrerpolicy : un <img> vers le CDN Discord
-                                           transmettrait sinon l'URL de la page visitée. #}
+                                        {# referrerpolicy : ne pas transmettre l'URL de la page au CDN. #}
                                         <img class="is-rounded" src="{{ moi.avatar_url }}"
                                              alt="" referrerpolicy="no-referrer"
                                              onerror="this.style.visibility='hidden'">
                                     </figure>
                                 </div>
                                 <div class="media-content">
-                                    {# Jamais |safe : le pseudo vient de Discord,
-                                       il est librement modifiable par son porteur. #}
+                                    {# Jamais |safe : le pseudo vient de Discord. #}
                                     <p class="title is-4">{{ moi.pseudo }}</p>
                                     <p class="subtitle is-6 has-text-grey">
-                                        {# Macro partagée avec la fiche joueur : chef_admin
-                                           y manquait, faute d'une liste unique. #}
                                         {{ badge_role(moi.role, long=true) }}
                                     </p>
                                 </div>
@@ -59,7 +52,6 @@
                             <div class="content">
                                 <p><strong>Fiche joueur</strong></p>
                                 {% if moi.joueur_nom %}
-                                    {# Le nom de la fiche n'est pas repete : « Mon profil » y mene. #}
                                     <p>
                                         <span class="icon has-text-success">
                                             <i class="fas fa-circle-check"></i></span>
@@ -112,10 +104,7 @@
                                     <span>Supprimer mon compte</span>
                                 </button>
                             </div>
-                            {# La suppression se demande par écrit depuis le 2026-09-22 :
-                               un effacement direct, irréversible et à un clic, était jugé
-                               trop dangereux. Le bouton reste, pour que le droit se
-                               trouve là où on le cherche ; il n'efface plus rien. #}
+                            {# La suppression se demande par écrit ; le bouton affiche la marche à suivre. #}
                             <div id="demande-suppression" class="notification is-warning is-light mt-2 is-hidden">
                                 <p>
                                     La suppression d'un compte se fait <strong>sur demande
@@ -138,9 +127,7 @@
                             <hr>
 
                             <p class="has-text-weight-semibold">Vos appareils connectés</p>
-                            {# Rempli en fetch au chargement : /mon-compte fait déjà deux
-                               appels backend, un troisième synchrone ralentirait une page
-                               que tout le monde visite pour un bloc que peu regardent. #}
+                            {# Rempli en fetch au chargement. #}
                             <div id="liste-sessions" class="content is-small mt-2">
                                 <p class="has-text-grey">Chargement…</p>
                             </div>
@@ -189,38 +176,17 @@
         // -------------------------------------------------------------
         // Promotion proposée / consentement administrateur
         // -------------------------------------------------------------
-        // Le rôle d'admin ne s'impose pas : il s'accepte. La raison est
-        // juridique — les actions d'un admin sont tracées nominativement,
-        // conservées sans limite de durée, et survivent à la suppression du
-        // compte. La personne doit le savoir AVANT, pas le découvrir après.
-        //
-        // Deux cas distincts arrivent ici, et l'écran ne doit pas les
-        // confondre : une PROPOSITION de rôle (le compte n'est pas encore
-        // admin), ou un CONSENTEMENT manquant (admin promu avant cette
-        // mécanique, ou politique qui a changé de version).
         (function () {
             const zone = document.getElementById('bloc-promotion');
-            // Lue depuis le thème, pas recopiée : une couleur en dur ici
-            // divergerait le jour où le site change de bleu.
+            // Couleur lue depuis le thème.
             const ACCENT = getComputedStyle(document.documentElement)
                 .getPropertyValue('--primary-color').trim() || '#3b82f6';
 
-            // Même habillage que le reste de la page : une `glass-card`, comme
-            // la carte du compte juste en dessous. Le `message is-warning` de
-            // Bulma utilisé au premier jet jurait — jaune vif sur un fond
-            // sombre, et un cadre qui n'existe nulle part ailleurs sur le site.
-            // L'accent de couleur passe par une icône et une barre latérale,
-            // assez pour distinguer sans crier.
             function carte(accent, icone, titre, corps, boutons) {
                 zone.innerHTML = '';
                 const art = document.createElement('div');
-                // `visible` POSÉ ICI, et pas seulement `fade-in` : la classe
-                // `.fade-in` vaut `opacity: 0`, et c'est `.visible` qui la
-                // révèle. Le balayage qui l'ajoute (plus haut dans ce fichier)
-                // ne tourne qu'au chargement de la page — un élément créé
-                // après coup, comme celui-ci, reste donc INVISIBLE dans le DOM
-                // sans la moindre erreur. Le défaut est silencieux par nature :
-                // la carte existe, elle est juste transparente.
+                // `visible` est posé ici : `.fade-in` vaut opacity 0, et le
+                // balayage qui ajoute `visible` ne tourne qu'au chargement.
                 art.className = 'card glass-card fade-in visible mb-4';
                 art.style.borderLeft = '3px solid ' + accent;
 
@@ -261,9 +227,7 @@
                 return p;
             }
 
-            // Ce que la personne accepte VRAIMENT, dit en clair. Une case à
-            // cocher renvoyant vers une politique que personne n'ouvre ne vaut
-            // pas consentement : les trois points qui l'engagent sont ici.
+            // Ce qui engage la personne, dit en clair.
             function consequences() {
                 const bloc = document.createElement('div');
                 bloc.className = 'content is-small mt-3';
@@ -321,8 +285,6 @@
             function afficherProposition(p, version) {
                 const expire = new Date(p.expire_le)
                     .toLocaleDateString('fr-FR', {day: '2-digit', month: 'long', year: 'numeric'});
-                // `--primary-color` plutôt qu'une couleur en dur : le bloc
-                // suivra le thème si celui-ci change, comme le reste du site.
                 carte(ACCENT, 'user-shield',
                     'Proposition : devenir ' + p.role_propose,
                     [
@@ -332,8 +294,6 @@
                         para('Cette proposition expire le ' + expire + '.',
                              'is-size-7 has-text-grey'),
                         consequences(),
-                        // Dit AVANT le clic : être déconnecté de tous ses
-                        // appareils sans l'avoir su se lirait comme une panne.
                         para('Accepter vous déconnecte de tous vos appareils, puis '
                              + 'vous reconnecte ici par Discord : une session '
                              + 'd’administrateur dure 12 heures.',
@@ -344,11 +304,7 @@
                             const d = await envoyer('/mon-compte/promotion',
                                 {accepte: true, cgu_admin_version: version}, b);
                             if (!d) return;
-                            // Le backend a fermé toutes les sessions du compte,
-                            // celle-ci comprise (A-01) : elle était de joueur,
-                            // donc de 30 jours. La reconnexion Discord ouvre la
-                            // session d'admin, sans écran à valider pour qui a
-                            // déjà autorisé l'application.
+                            // Le backend a fermé les sessions : reconnexion Discord.
                             if (d.session_fermee) { window.location.href = '/auth/discord/login'; return; }
                             window.location.reload();
                         }),
@@ -382,14 +338,11 @@
                 try {
                     const res = await fetch('/mon-compte/promotion',
                                             {headers: {'Accept': 'application/json'}});
-                    if (!res.ok) return;          // silencieux : ce bloc est l'exception
+                    if (!res.ok) return; // silencieux : rien en attente dans la plupart des cas
                     const d = await res.json();
                     if (d.proposition) afficherProposition(d.proposition, d.cgu_admin_version);
                     else if (d.consentement_requis) afficherConsentement(d.cgu_admin_version);
                 } catch (err) {
-                    // Pas de message d'erreur : la grande majorité des comptes
-                    // n'a rien en attente ici, et un bandeau rouge sur une page
-                    // qui n'attendait rien inquiète pour rien.
                 }
             })();
         })();
@@ -410,8 +363,7 @@
                 alerteSessions.appendChild(d);
             }
 
-            // « il y a 3 minutes » se comprend d'un coup d'œil, une date ISO non.
-            // La date absolue reste en title, pour qui veut vérifier.
+            // Date relative (date absolue en title).
             function depuis(iso) {
                 const secondes = Math.floor((Date.now() - new Date(iso)) / 1000);
                 if (secondes < 60) return "à l'instant";
@@ -462,10 +414,7 @@
 
                 const detail = document.createElement('p');
                 detail.className = 'is-size-7 has-text-grey ml-4';
-                // derniere_activite est nullable : une session créée mais jamais
-                // représentée depuis. Le dire est informatif — une session jamais
-                // utilisée sur un compte qu'on croit compromis est le signal qu'on
-                // cherche. Surtout, ne pas afficher une date d'epoch à la place.
+                // derniere_activite peut etre null (session jamais réutilisée).
                 const vue = s.derniere_activite
                     ? 'vue ' + depuis(s.derniere_activite)
                     : 'jamais utilisée';
@@ -486,8 +435,7 @@
                     const data = await res.json();
                     afficherListe(data.sessions || []);
                 } catch (err) {
-                    // Jamais une liste vide en cas d'échec : elle se lirait
-                    // « aucune session », ce qui est faux et rassurant à tort.
+                    // Pas de liste vide en cas d'échec (se lirait « aucune session »).
                     liste.innerHTML = '';
                     const p = document.createElement('p');
                     p.className = 'has-text-grey';
@@ -502,8 +450,7 @@
                 zoneBouton.innerHTML = '';
                 sessions.forEach(s => liste.appendChild(ligne(s)));
 
-                // Proposer « déconnecter les autres » quand il n'y en a pas est
-                // une fausse action : le bouton n'apparaît qu'à partir de deux.
+                // Le bouton n'apparaît qu'à partir de deux sessions.
                 if (sessions.length < 2) return;
 
                 const btn = document.createElement('button');
@@ -538,8 +485,7 @@
                     });
                     const d = await res.json();
                     if (!res.ok) { signaler('danger', d.error || 'La déconnexion a échoué.'); return; }
-                    // Le backend peut avoir fermé la session courante (cas limite :
-                    // en-tête illisible côté serveur). Il le dit, on le suit.
+                    // Le backend peut avoir fermé la session courante.
                     if (d.session_fermee) { window.location.href = '/'; return; }
                     const n = d.sessions_fermees || 0;
                     signaler('success', n > 0
@@ -557,9 +503,7 @@
             charger();
         })();
 
-        // N'appelle plus rien : il déplie la marche à suivre. La route
-        // d'effacement n'est plus ouverte au titulaire (supprimer_compte,
-        // backend, réservée au superadmin).
+        // Affiche la marche à suivre (l'effacement est fait par le superadmin).
         document.getElementById('btn-supprimer').addEventListener('click', (e) => {
             const zone = document.getElementById('demande-suppression');
             const ouvert = zone.classList.toggle('is-hidden') === false;

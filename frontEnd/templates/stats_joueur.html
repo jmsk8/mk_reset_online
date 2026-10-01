@@ -45,9 +45,7 @@
         .detail-stat-table th, .detail-stat-table td { padding: 4px 8px; font-size: 0.92rem; }
         .detail-stat-table thead th { color: #9fb3c8; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.12); text-align: right; }
         .detail-stat-table thead th:first-child { text-align: left; }
-        /* tbody : Bulma pose `table td:not([align]) { text-align: inherit }`,
-           plus specifique qu'un simple `.detail-stat-table td` ; les valeurs
-           se retrouvaient a gauche sous des en-tetes alignes a droite. */
+        /* Bulma impose text-align: inherit avec une specificite plus forte. */
         .detail-stat-table tbody td { color: #e6edf3; text-align: right; font-variant-numeric: tabular-nums; }
         .detail-stat-table td:first-child { text-align: left; color: #c8d3de; }
         .detail-stat-table tr.detail-total-row td { font-weight: bold; border-top: 1px solid rgba(255,255,255,0.12); color: #fff; }
@@ -97,9 +95,7 @@
     {% from 'partiels/badge_role.html' import badge_role %}
     
     {% if profil and (profil.bio or profil.reseaux) %}
-        {# Contenu rédigé par le joueur : jamais |safe, jamais dans un attribut
-           d'événement. Les liens sont construits côté serveur à partir d'un
-           identifiant validé, ce qui rend impossible un href « javascript: ». #}
+        {# Contenu saisi par le joueur : jamais |safe ; liens construits côté serveur. #}
         <section class="section pb-0">
             <div class="container">
                 <div class="notification"
@@ -127,8 +123,7 @@
             <div class="container">
                 <h1 class="title is-2 has-text-centered glow-text">
                     {% if profil and profil.avatar_url %}
-                        {# referrerpolicy : sans ça, un <img> vers le CDN Discord
-                           transmettrait l'URL de la page visitée. #}
+                        {# referrerpolicy : ne pas transmettre l'URL de la page au CDN. #}
                         <img src="{{ profil.avatar_url }}" alt=""
                              referrerpolicy="no-referrer"
                              style="width:48px;height:48px;border-radius:50%;vertical-align:middle;margin-right:.5rem"
@@ -139,14 +134,9 @@
                     {{ nom }}
                 </h1>
                 <h2 class="subtitle has-text-centered">
-                    {# Rôle d'administration du compte rattaché (profil_public ne le
-                       renvoie que pour admin, chef_admin et superadmin). TOUJOURS le
-                       premier badge, à gauche de tous les autres : d'où `mr-2` et
-                       non `ml-2`, le Tier qui suit n'ayant pas de marge propre. #}
+                    {# Badge de rôle d'administration, toujours en premier. #}
                     {% if profil and profil.role %}{{ badge_role(profil.role, classes='mr-2') }}{% endif %}
 
-                    {# Couleur portee par les donnees (tiers dynamiques, Partie B) --
-                       plus de branches S/A/B/C figees, voir docs/tableau-seuils-tiers-plan.md. #}
                     {% if tiers_couleurs.get(stats.tier) %}
                         <span class="tag" style="background: {{ tiers_couleurs[stats.tier] }}; color: white;">Tier {{ stats.tier }}</span>
                     {% elif stats.tier == 'U' and couleur_u %}
@@ -530,8 +520,7 @@
                 return h + '</tr>';
             };
             league.tailles.forEach(t => { html += rowHtml(t.nb_joueurs + ' joueurs', t, ''); });
-            // Pas « Total » : sur cette ligne, Meilleur est un max et les
-            // colonnes « moy. » des moyennes, pas des sommes des lignes du dessus.
+            // « Meilleur » est un max et « moy. » des moyennes, pas des sommes.
             if (league.tailles.length > 1) {
                 html += rowHtml('Toutes tailles', league.total, 'detail-total-row');
             }

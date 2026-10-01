@@ -1,26 +1,17 @@
 <!DOCTYPE html>
 <!--
-    Page de maintenance, servie par nginx SEUL -- jamais par le frontend.
+    Page de maintenance, servie par nginx seul (nginx/snippets/app.conf) :
+    `make maintenance-on`, ou frontend injoignable (502/504).
 
-    Elle s'affiche dans deux cas (nginx/snippets/app.conf) :
-      - `make maintenance-on` : le public la voit, le détenteur du passe voit
-        le vrai site ;
-      - le frontend ne répond pas (502/504), par exemple pendant un rebuild.
-
-    Comme le frontend peut être éteint, rien ici ne passe par lui :
-      - les couleurs sont recopiées de css/dark-mode.css plutôt que chargées ;
-      - le décor et Mario viennent de /_maintenance/, que nginx sert
-        directement depuis frontEnd/static (monté en lecture seule). S'ils
-        manquent, la page reste lisible, simplement sans décor.
-
-    Retoucher les couleurs ici si la palette du site change.
+    Rien ne passe par le frontend : couleurs recopiées de css/dark-mode.css
+    (à reporter si la palette change), décor servi par nginx sous
+    /_maintenance/ depuis frontEnd/static.
 -->
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Recharge seule : le visiteur retrouve le site sans rien faire. Une
-         minute suffit, la page ne coûte rien à nginx. -->
+    <!-- Rechargement automatique toutes les minutes. -->
     <meta http-equiv="refresh" content="60">
     <meta name="robots" content="noindex">
     <title>Maintenance - MK Reset</title>
@@ -98,10 +89,9 @@
                         transparent 70%);
             z-index: -1;
         }
-
+        /* ── Réglages de la scène ─────────────────────────────────────────
         /* ── RÉGLAGES DE LA SCÈNE ─────────────────────────────────────────
-           Les seules valeurs à retoucher à la main. Rien d'autre à changer :
-           le reste de la page en dépend.
+           Valeurs réglables :
              --mario-hauteur  hauteur de l'image de Mario, marteau levé
                               compris ; min() la réduit sur téléphone
              --bloc-ratio     taille d'un bloc, en fraction de --mario-hauteur
@@ -126,30 +116,18 @@
             filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.55));
         }
 
-        /* Mario bâtisseur tape au marteau : trois poses dans une seule bande
-           (img/mario-builder/marteau.png, produite par
-           scripts/mario-builder.py), calées sur le pied d'appui, qui touche
-           le bas de l'image : le sol se pose juste dessous. `pixelated` garde
-           le pixel art net une fois agrandi.
+        /* Coup de marteau : trois poses dans une bande
+           (img/mario-builder/marteau.png, scripts/mario-builder.py), calées
+           sur le pied d'appui. `marteau` change de pose sans fondu, `bascule`
+           fait pencher Mario autour du pied, en continu ; mêmes durée et départ.
 
-           Deux animations de même durée, lancées ensemble :
-             - `marteau` change de pose, sans fondu (`step-end`), comme un
-               sprite de jeu ;
-             - `bascule` fait pencher Mario autour de son pied d'appui, en
-               continu. C'est elle qui lie les poses entre elles : trois images
-               seules donneraient un geste saccadé.
+             0 %   frappe
+             22 %  levé
+             40 %  élan (lent)
+             86 %  levé (abattage rapide)
+             92 %  frappe
 
-           Le geste suit un vrai coup de marteau, et c'est le temps passé sur
-           chaque pose qui le rend crédible :
-             0 %   frappe      le marteau touche le bloc, on tient l'impact
-             22 %  levé        il le remonte au-dessus de la tête
-             40 %  élan        il l'emmène loin derrière et se penche en
-                               arrière, lentement : on sent qu'il prend son élan
-             86 %  levé        l'abattage est rapide, le marteau ne fait que
-                               passer au-dessus de la tête
-             92 %  frappe      impact
-           Pour accélérer tout le geste, changer --duree-marteau (réglages
-           plus haut) plutôt que ces pourcentages. */
+           Pour changer la vitesse, modifier --duree-marteau. */
         .mario-marteau {
             height: var(--mario-hauteur);
             aspect-ratio: 208 / 156;
@@ -157,8 +135,7 @@
             image-rendering: pixelated;
             /* Le pied d'appui : 45 % de la largeur, au ras du sol. */
             transform-origin: 45% 100%;
-            /* Devant le sol : quand le bloc frappé rebondit, c'est lui qui
-               passe sous la tête du marteau, pas l'inverse. */
+            /* Au-dessus du sol : le bloc frappé passe sous le marteau. */
             position: relative;
             z-index: 1;
             animation: marteau var(--duree-marteau) step-end infinite,
@@ -173,10 +150,8 @@
             92%  { background-position: 100% 0; }  /* frappe */
             100% { background-position: 100% 0; }
         }
-        /* Quelques degrés suffisent : au-delà, le pixel art se crénèle. Vers
-           l'avant, rester sous ~1° : la tête du marteau est loin du pied
-           d'appui, et chaque degré de plus l'enfonce d'environ 1,5 px dans le
-           bloc au moment de la frappe. */
+        /* Rotation limitée (crénelage) ; vers l'avant, rester sous ~1° pour que
+           le marteau ne s'enfonce pas dans le bloc. */
         @keyframes bascule {
             0%   { transform: rotate(0.6deg); }   /* reste penché sur l'impact */
             22%  { transform: rotate(0deg); }
@@ -190,10 +165,8 @@
             .sol::after { animation: none; }
         }
 
-        /* Le sol : --nb-blocs blocs. Le fond n'en peint que les premiers,
-           limité à la zone de contenu ; le dernier, sous le marteau, est un
-           ::after posé dans le padding droit, pour pouvoir bouger seul. Peint
-           deux fois, le bloc immobile se verrait dans le creux du rebond. */
+        /* Le sol : --nb-blocs blocs. Le fond peint les premiers ; le dernier,
+           sous le marteau, est un ::after pour pouvoir rebondir seul. */
         .sol {
             position: relative;
             width: calc((var(--nb-blocs) - 1) * var(--bloc));
@@ -217,11 +190,8 @@
             animation: bump var(--duree-marteau) linear infinite;
         }
 
-        /* Le bloc frappé : même durée que le marteau et lancé en même temps,
-           donc toujours calé sur l'impact (92 %, voir `marteau`). Il s'enfonce
-           sous le coup, remonte un peu plus haut que sa place, puis s'y pose.
-           Le rebond déborde sur le début du cycle suivant : 0 % et 100 % sont
-           le même instant. */
+        /* Bloc frappé, calé sur l'impact (92 %, voir `marteau`) : il s'enfonce,
+           remonte un peu, puis se pose. Le rebond déborde sur le cycle suivant. */
         @keyframes bump {
             0%   { transform: translateY(calc(var(--bloc) * var(--bump) * -0.35));
                    animation-timing-function: ease-in; }

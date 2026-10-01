@@ -1,6 +1,5 @@
-// Les caracteristiques d'un pilote, et les vitesses qui en decoulent.
-// Le budget de points se lit une fois par configuration et se garde en cache :
-// c'est une derivation pure, elle ne depend pas de la course en cours.
+// Caracteristiques d'un pilote et vitesses qui en decoulent (budget de points
+// mis en cache par configuration).
 
 import { clamp, lerp, ramp, randomRange } from './math.js';
 
@@ -39,7 +38,7 @@ function deriveCharacterStats(cfg) {
 
         const mass  = lerp(spec.mass.min, spec.mass.max, norm.weight);
         const force = lerp(spec.force.min, spec.force.max, norm.power);
-        // L'axe handling est courbe, pas droit : cf. `gripCurve` en config.
+        // Axe handling courbe (voir `gripCurve`).
         const grip  = lerp(spec.grip.min, spec.grip.max,
                            Math.pow(norm.handling, spec.gripCurve));
 
@@ -47,11 +46,7 @@ function deriveCharacterStats(cfg) {
             raw: raw,
             norm: norm,
             mass: mass,
-            // Pointe additive : chaque axe apporte ses px/s, et les apporte
-            // seul. La forme multiplicative d'avant faisait dependre le
-            // rendement du poids de la puissance du kart, si bien qu'un
-            // point lache sur la puissance devaluait les deux autres axes en
-            // meme temps — il n'y avait plus de triangle, juste un axe fort.
+            // Pointe additive : chaque axe apporte ses propres px/s.
             topSpeed: spec.speedBase
                 + spec.speedPerWeight * norm.weight
                 + spec.speedPerPower * norm.power,
@@ -60,16 +55,8 @@ function deriveCharacterStats(cfg) {
             agility: clamp(grip / Math.pow(mass, spec.massDragAgility),
                            spec.agilityClamp.min, spec.agilityClamp.max),
 
-            // Ce qui tient un kart quand il tourne, donc ce que braquer lui coute
-            // en vitesse (`steerCost`). Meme forme que ses deux voisines — les
-            // trois axes bruts, le poids au denominateur — mais avec ses PROPRES
-            // exposants : elle ne se deduit d'aucune autre stat.
-            //
-            // Batie sur `agility`, elle laissait `massDragAgility` gouverner deux
-            // choses a la fois : la vitesse a laquelle un lourd tourne, ET ce que
-            // tourner lui coute. Aux valeurs livrees elle rend exactement ce que
-            // rendait `agility * force` — le decouplage ne change rien tant qu'on
-            // ne s'en sert pas.
+            // Tenue en virage, qui fixe le cout du braquage (`steerCost`), avec
+            // ses propres exposants.
             cornering: Math.pow(grip, spec.cornerGripGain)
                 * Math.pow(force, spec.cornerPowerGain)
                 / Math.pow(mass, spec.cornerMassDrag)
@@ -80,14 +67,8 @@ function deriveCharacterStats(cfg) {
     return table;
 }
 
-// Agilite moyenne du plateau. Sert d'etalon partout ou il faut juger une
-// situation et non un personnage — elle suit automatiquement le plateau,
-// sans constante a retoucher quand les stats bougent.
-//
-// Le plateau de REFERENCE (`bodies.referenceKarts`), et non tous les
-// personnages : meme raison que pour les corps. Un personnage ajoute, ou retire
-// du tirage, ne doit pas recaler en silence les fenetres d'attention des autres
-// (D-6 a ete mesure contre cet etalon).
+// Agilite moyenne du plateau de reference (`bodies.referenceKarts`), etalon
+// pour juger une situation independamment du personnage.
 const referenceAgilityCache = new WeakMap();
 
 function referenceAgility(cfg) {
@@ -121,8 +102,7 @@ function getInitialKartSpeed(rng, stats) {
     return stats.topSpeed * variation;
 }
 
-// Meilleure pointe qu'un objet autre que le bill permet d'atteindre, tous
-// personnages confondus.
+// Meilleure pointe atteignable avec un objet autre que le bill.
 function fastestBoostedSpeed(cfg) {
     const table = deriveCharacterStats(cfg);
     const names = Object.keys(table);
@@ -138,19 +118,14 @@ function fastestBoostedSpeed(cfg) {
     return best;
 }
 
-// Vitesse de croisiere du bill : le multiplicateur du porteur, releve au
-// plancher commun quand celui-ci est plus haut.
+// Vitesse de croisiere du bill : multiplicateur du porteur, au moins le plancher commun.
 function getBillSpeed(cfg, state, kart) {
     return Math.max(kart.stats.topSpeed * cfg.speeds.boosts.bill.multiplier,
                     state.billFloorSpeed);
 }
 
-// La pointe qu'un kart sous objet vise, et la vivacite avec laquelle il y monte.
-// Un seul modele pour les trois objets (`speeds.boosts`).
-//
-// Rend null quand aucun n'est actif — c'est ce null qui fait basculer la vitesse
-// entre le regime « elan » et le regime « objet ». Quand deux se cumulent, la
-// pointe la plus haute gagne ; le bill prime sur tout, rien ne le module.
+// Pointe visee sous objet et vivacite de la montee (`speeds.boosts`). null si
+// aucun objet n'est actif ; en cas de cumul la plus haute gagne, le bill prime.
 function getActiveBoost(cfg, state, kart, now) {
     const boosts = cfg.speeds.boosts;
 

@@ -57,8 +57,7 @@ struct Block {
     int offset = 0;
 };
 
-// Le dessin, extrait de sa cloture. Le reste du fichier est ignore : on n'y
-// cherche qu'un titre.
+// Dessin extrait de son bloc ; le reste du fichier ne sert qu'au titre.
 Block extract_block(const std::string& text, const std::string& source) {
     std::vector<std::string> lines;
     {
@@ -111,18 +110,11 @@ std::string lower(std::string s) {
     return s;
 }
 
-// Les cases de tuyau regroupees en pipes. <- assemblePipes
+// Regroupe les cases de tuyau en carres de 2x2. <- assemblePipes
 //
-// Un pipe se dessine en carre de 2×2 — `PP` au-dessus de `PP` pour un vert,
-// `pp` au-dessus de `pp` pour un rouge — et deux pipes peuvent se toucher.
-//
-// Le decoupage parcourt le dessin dans le sens de lecture. La premiere case
-// libre rencontree est forcement le coin haut-gauche de son pipe : toute autre
-// case du meme carre serait plus haut ou plus a gauche, donc deja lue. Le
-// decoupage est ainsi impose case apres case, et un dessin n'a qu'une lecture —
-// ou aucune, et il est refuse.
-//
-// `cells` doit donc arriver dans le sens de lecture, ce que fait `parse_track`.
+// Parcours dans le sens de lecture : la premiere case libre est le coin
+// haut-gauche de son carre, donc le decoupage est unique (ou impossible, et le
+// dessin est refuse). `cells` doit arriver dans cet ordre.
 template <typename LineNo>
 std::vector<PipeCell> assemble_pipes(const std::vector<std::string>& inner,
                                      const std::vector<Cell>& cells, int columns,
@@ -173,8 +165,7 @@ std::vector<PipeCell> assemble_pipes(const std::vector<std::string>& inner,
         used[key(row, col)] = true;
         for (const auto& rc : rest) used[key(rc[0], rc[1])] = true;
 
-        // La case du coin haut-gauche : c'est `apply_track` qui en fait le
-        // centre du carre, avec le reste des conversions.
+        // Coin haut-gauche ; `apply_track` le convertit en centre.
         pipes.push_back({ col, row, ch == 'p' });
     }
 
@@ -188,7 +179,7 @@ Track parse_track(const std::string& text, const std::string& source) {
 
     std::vector<std::string> rows = block.lines;
 
-    // Les lignes vides d'entree et de sortie sont du confort de redaction.
+    // Lignes vides ignorees en debut et fin.
     int first = 0;
     int last = static_cast<int>(rows.size()) - 1;
     while (first <= last && rows[static_cast<size_t>(first)].empty()) first++;
@@ -208,8 +199,7 @@ Track parse_track(const std::string& text, const std::string& source) {
         }
     }
 
-    // Les deux bords donnent la longueur du tour. Ils sont pleins et de meme
-    // longueur, sans quoi la piste n'aurait ni debut ni fin nets.
+    // Les deux bords, pleins et de meme longueur, donnent la longueur du tour.
     const int columns = static_cast<int>(rows[static_cast<size_t>(first)].size());
     for (int i : { first, last }) {
         const std::string& row = rows[static_cast<size_t>(i)];
@@ -228,9 +218,8 @@ Track parse_track(const std::string& text, const std::string& source) {
     }
 
     Track track;
-    // Les cases de tuyau, relevees au passage et assemblees en blocs une fois
-    // le dessin entier lu : un bloc s'etale sur deux rangees, il ne se juge pas
-    // ligne par ligne.
+    // Cases de tuyau assemblees une fois le dessin lu (un bloc couvre deux
+    // rangees).
     std::vector<Cell> pipeCells;
     int finishColumn = -1;
     int finishLine = 0;
@@ -313,9 +302,8 @@ Passage narrowest_passage(const config::Config& cfg,
     Passage worst { cfg.road.maxY - cfg.road.minY, 0 };
 
     for (double x = 0; x < width; x += step) {
-        // Deux tuyaux voisins sans etre alignes se recouvrent partiellement, et
-        // c'est cette zone qui decide du passage : il faut BALAYER la piste, pas
-        // seulement regarder chaque colonne dessinee.
+        // Des tuyaux voisins non alignes se recouvrent : on balaie la piste
+        // plutot que colonne par colonne.
         std::vector<std::pair<double, double>> blocked;
         for (const auto& pipe : pipes) {
             double d = pipe.first - x;
@@ -348,9 +336,8 @@ Passage narrowest_passage(const config::Config& cfg,
 config::Config apply_track(const config::Config& cfg, Track& track) {
     const double width = track.columns * CELL_PX;
 
-    // La grille se deploie EN AMONT de la ligne. Si le tour est plus court que
-    // ce qu'elle occupe, le fond de grille depasse la ligne par l'arriere et les
-    // karts partent avec un tour d'avance sur eux-memes.
+    // La grille se deploie en amont de la ligne : le tour doit etre plus long
+    // qu'elle.
     const config::GridCfg& grid = cfg.race.grid;
     const double gridDepth = grid.backOffset + 3 * grid.rowGap + grid.colStagger;
     if (width < gridDepth * 2) {
@@ -366,9 +353,7 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
     out.world.width = width;
     out.world.finishLineX = track.finishColumn * CELL_PX;
 
-    // Rangee du haut = fond de piste = `road.maxY`, `yPercent` etant une hauteur
-    // a l'ecran. Une seule rangee dessinee ne designe aucun bord : donc le
-    // milieu.
+    // Rangee du haut = `road.maxY` ; une seule rangee = milieu de piste.
     const double depth = cfg.road.maxY - cfg.road.minY;
     const auto rowY = [&](double row) {
         return (track.rows > 1)
@@ -381,20 +366,14 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
         out.world.itemBoxes.push_back({ box.col * CELL_PX, rowY(box.row), false });
     }
 
-    // Un pipe couvre deux colonnes et deux rangees : il se pose au milieu du
-    // carre, entre deux rangees. Ce sont ces demi-rangees qui donnent au dessin
-    // sa finesse de placement — et le milieu exact de la piste, a condition de
-    // dessiner un nombre pair de rangees.
+    // Tuyau pose au centre de son carre, donc entre deux rangees.
     out.world.pipes.clear();
     for (const PipeCell& pipe : track.pipes) {
         out.world.pipes.push_back({ (pipe.col + 0.5) * CELL_PX, rowY(pipe.row + 0.5), pipe.red });
     }
 
-    // Un mur de tuyaux ne provoquerait aucune erreur a l'execution : les karts se
-    // cogneraient jusqu'au delai maximum et la course serait close sur un
-    // classement d'office. Rien dans les journaux ne dirait que le circuit est en
-    // cause — d'ou ce refus au CHARGEMENT, seul endroit ou le probleme est
-    // visible.
+    // Un mur de tuyaux bloquerait la course jusqu'au delai maximum : refuse
+    // au chargement.
     if (!out.world.pipes.empty()) {
         std::vector<std::pair<double, double>> flat;
         flat.reserve(out.world.pipes.size());
@@ -416,9 +395,7 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
 
     track.warnings.clear();
 
-    // Une boite posee dans l'ombre de la grille est ramassee par le peloton dans
-    // la seconde qui suit le depart, avant meme que qui que ce soit ait pu
-    // manoeuvrer pour l'avoir.
+    // Boite dans la zone de la grille : ramassee des le depart.
     for (const config::Placed& box : out.world.itemBoxes) {
         double gap = out.world.finishLineX - box.x;
         if (gap < 0) gap += width;
@@ -431,8 +408,7 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
     }
 
     for (const config::Placed& pipe : out.world.pipes) {
-        // Un tuyau dans la grille, c'est le peloton a l'arret qui se le partage
-        // au feu vert — voire un kart qui demarre dedans.
+        // Pas de tuyau dans la grille.
         double gap = out.world.finishLineX - pipe.x;
         if (gap < 0) gap += width;
         if (gap > 0 && gap < gridDepth) {
@@ -442,8 +418,7 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
                   "prendra au feu vert.");
         }
 
-        // Un tuyau pose devant une boite la rend inatteignable : le kart qui la
-        // vise doit precisement passer la ou le tuyau ne le laisse pas.
+        // Un tuyau devant une boite la rend inatteignable.
         for (const config::Placed& box : out.world.itemBoxes) {
             double ahead = box.x - pipe.x;
             if (ahead < -width * 0.5) ahead += width;
@@ -459,10 +434,8 @@ config::Config apply_track(const config::Config& cfg, Track& track) {
         }
     }
 
-    // Deux tours pleins, plus la marge de la config : la camera ne sait que
-    // ralentir, il lui faut ce couloir pour se garer pile sur la ligne. Derivee
-    // et non ecrite en dur, sinon chaque circuit d'une autre longueur
-    // redemanderait le calcul a la main.
+    // Deux tours plus la marge : distance necessaire a la camera pour ralentir
+    // et se garer sur la ligne.
     out.race.cameraApproachDistance = 2 * width + cfg.race.cameraApproachMargin;
 
     return out;
@@ -510,7 +483,7 @@ std::vector<Track> load_tracks(const std::string& dir, const config::Config& cfg
             "dessine. Voir tracks/README.md pour le format.");
     }
 
-    // L'ordre des noms de fichiers EST l'ordre des manches.
+    // Ordre des fichiers = ordre des manches.
     std::sort(files.begin(), files.end());
 
     std::vector<Track> tracks;
@@ -522,9 +495,8 @@ std::vector<Track> load_tracks(const std::string& dir, const config::Config& cfg
         buffer << in.rdbuf();
 
         Track parsed = parse_track(buffer.str(), name);
-        // Le resultat est jete : seules les erreurs qu'il leve nous interessent,
-        // et les avertissements qu'il pose sur le circuit. Chaque course refera
-        // le calcul sur sa propre config.
+        // Pour les erreurs et avertissements seulement : chaque course refait
+        // le calcul sur sa config.
         apply_track(cfg, parsed);
         tracks.push_back(std::move(parsed));
     }

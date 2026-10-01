@@ -1,16 +1,11 @@
-// Moteur de course autoritatif du banner SMK — version C++.
+// Moteur de course du banner SMK, version C++.
 // <- raceEngine/src/server.js : arguments, signaux, boucle, enchainement GP.
 //
 //   race_engine                     service normal (HTTP + WebSocket)
 //   race_engine --karts 4           4 karts au lieu de 8 (dev seulement, 1 a 12)
 //   race_engine --always-on         simule meme sans spectateur
 //
-// Une seule course tourne ici, et c'est elle que tous les navigateurs
-// regardent : les clients ne simulent rien, ils affichent. L'architecture
-// complete est dans docs/banner/architecture.md.
-//
-// SEUL fichier autorise a connaitre toutes les couches a la fois (plan §4.1bis) :
-// c'est lui qui les assemble, rien d'autre.
+// Une seule course, regardee par tous les navigateurs.
 
 #include <algorithm>
 #include <cstdio>
@@ -29,7 +24,7 @@ namespace {
 
 std::string arg_value(const std::vector<std::string>& args, const std::string& name) {
     for (size_t i = 0; i < args.size(); i++) {
-        // Deux formes acceptees : `--karts 4` et `--karts=4`.
+        // `--karts 4` ou `--karts=4`.
         if (args[i] == name && i + 1 < args.size()) return args[i + 1];
         const std::string prefix = name + "=";
         if (args[i].rfind(prefix, 0) == 0) return args[i].substr(prefix.size());
@@ -67,9 +62,7 @@ int main(int argc, char** argv) {
 
     config::Config cfg;
 
-    // Le nombre de karts : reglage de DEVELOPPEMENT, borne a [1, 12] (plan §3).
-    // docker-compose.yml ne l'expose sur aucune variable d'environnement — le
-    // service en conteneur reste a 8.
+    // Nombre de karts, reglage de developpement borne a [1, 12].
     const std::string kartsArg = arg_value(args, "--karts");
     if (!kartsArg.empty()) {
         const int requested = std::atoi(kartsArg.c_str());
@@ -81,10 +74,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Le nombre de tours, meme esprit que `--karts` : un reglage de
-    // DEVELOPPEMENT. Une course de 5 tours dure ~154 s, ce qui rend un grand
-    // prix entier penible a observer quand on travaille sur l'enchainement des
-    // manches. Absent de docker-compose.yml, comme `--karts`.
+    // Nombre de tours, reglage de developpement comme `--karts`.
     const std::string lapsArg = arg_value(args, "--laps");
     if (!lapsArg.empty()) {
         const int requested = std::atoi(lapsArg.c_str());
@@ -97,9 +87,7 @@ int main(int argc, char** argv) {
         cfg.race.laps = requested;
     }
 
-    // Les emprises se deduisent des sprites, une fois la config complete. Sans
-    // cet appel, toutes les hitboxes valent zero et les corps se traverseraient
-    // sans qu'aucune erreur ne le dise.
+    // Emprises deduites des sprites, une fois la config complete.
     try {
         config::derive_bodies(cfg);
     } catch (const std::exception& err) {
@@ -107,17 +95,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Les outils tournent et rendent la main : ils ne demarrent aucun service.
+    // Outils : pas de service demarre.
     if (has_flag(args, "--tracks")) {
         return tools::run_tracks(cfg, has_flag(args, "--order"));
     }
 
-    // Les circuits sont des dessins, pas du code : ils vivent dans tracks/,
-    // monte en lecture seule dans le conteneur. Charges UNE FOIS au demarrage.
-    //
-    // Un dessin faux arrete ici, avant meme d'ecouter — plutot qu'au depart
-    // d'une course, ou le conteneur relancerait le service en boucle a chaque
-    // spectateur.
+    // Circuits charges une fois au demarrage depuis tracks/. Un dessin invalide
+    // arrete ici, avant l'ecoute.
     std::vector<track::Track> tracks;
     try {
         const std::string dir = track::resolve_tracks_dir(".");
@@ -135,7 +119,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Le banc et le soak : ils tournent hors horloge et hors reseau.
+    // Banc et soak, hors horloge et hors reseau.
     if (has_flag(args, "--simulate")) {
         tools::SimulateOptions sim;
         const std::string races = arg_value(args, "--races");

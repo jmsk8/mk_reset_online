@@ -125,8 +125,6 @@
     </section>
 
 <script>
-        // L'algorithme vit dans services.py : la page d'administration et le bot
-        // Discord appellent le même code.
         function escapeHtml(str) {
             if (str == null) return '';
             return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
@@ -144,10 +142,7 @@
             const btnGenerate = document.getElementById('btnGenerate');
             const resultBox = document.getElementById('lobbies-result');
 
-            // `Accept` explicite : appel de données, pas ouverture de page --
-            // le frontend n'a donc pas à revalider la session pour lui. Sans
-            // lui, `fetch()` envoie « */* », traité comme une navigation
-            // (docs/audit-503-zone-admin.md, §10.4).
+            // Accept explicite : appel de données, pas de revalidation de session.
             fetch('/joueurs/noms', { headers: { 'Accept': 'application/json' } })
                 .then(res => res.json())
                 .then(data => {
@@ -230,8 +225,7 @@
                 btnGenerate.classList.add('is-loading');
                 let data;
                 try {
-                    // On n'envoie que les noms : les scores sont relus en base, sinon un client
-                    // composerait les lobbies à sa guise.
+                    // Seuls les noms sont envoyés : les scores sont relus en base.
                     const res = await fetch('/admin/matchmaking/generer', {
                         method: 'POST',
                         headers: {

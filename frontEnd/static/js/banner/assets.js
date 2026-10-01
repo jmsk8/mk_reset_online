@@ -1,8 +1,7 @@
-// Le prechargement des images et le choix d'une frame de sprite.
+// Prechargement des images et choix d'une frame de sprite.
 
-// Rend une promesse tenue quand toutes les images sont decodees : c'est l'une
-// des conditions de levee du rideau (§ bannerLink). Une image qui manque ne doit
-// pas bloquer le banner, d'ou le catch — au pire elle apparaitra en retard.
+// Promesse tenue quand toutes les images sont decodees (condition de levee du
+// rideau). Une image manquante ne bloque pas.
 function preloadImages() {
     const waits = [];
 
@@ -22,12 +21,11 @@ function preloadImages() {
         cache(`bill_${i}`, GAME_CONFIG.resources.paths.bill(i));
     }
 
-    // Lakitu : feux de depart, panneaux de tour, drapeau a damier.
     LAKITU_SPRITES.forEach(([group, frame]) => {
         cache(`lakitu_${group}_${frame}`, GAME_CONFIG.resources.paths.lakitu(group, frame));
     });
 
-    // Les huit places : un changement de place ne doit pas attendre son image.
+// Les huit places.
     for (let n = 1; n <= 8; n++) {
         cache(`position_${n}`, GAME_CONFIG.resources.paths.position(n));
     }
@@ -39,8 +37,7 @@ function preloadImages() {
     GAME_CONFIG.resources.characters.forEach(charName => {
         cache(`pp_${charName}`, GAME_CONFIG.resources.paths.pp(charName));
 
-        // Toutes les orientations, sinon le premier tête-à-queue clignote
-        // le temps que les frames se téléchargent.
+        // Toutes les orientations, pour que le tête-à-queue ne clignote pas.
         GAME_CONFIG.resources.kartDirections.forEach(dir => {
             cache(`kart_${charName}_${dir}`, GAME_CONFIG.resources.paths.charFrame(charName, dir));
         });

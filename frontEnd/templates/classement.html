@@ -169,9 +169,7 @@
                                         </a>
                                     </li>
                                     {% endfor %}
-                                    {# Tiers dynamiques (Partie B) : `tiers` vient de /tier-seuils, deja
-                                       trie par rang decroissant (le meilleur en premier). Plus de S/A/B/C
-                                       en dur -- voir docs/tableau-seuils-tiers-plan.md. #}
+                                    {# `tiers` est trie par rang decroissant. #}
                                     {% for t in tiers %}
                                     <li class="{{ 'is-active' if tier_actif == t.nom else '' }}">
                                         <a href="/classement?tier={{ t.nom }}" style="border-bottom: 3px solid {{ t.couleur }};">
@@ -249,12 +247,8 @@
                                                         </div>
                                                     </td>
                                                     <td>
-                                                        {# Couleur portee par les donnees (tiers_couleurs, Partie B) --
-                                                           plus de classes tier-s/a/b/c figees en CSS. #}
                                                         {% if joueur.tier in ['U', '?', 'Unranked'] %}
-                                                            {# Couleur reglable (panneau des tiers), donc texte
-                                                               noir ou blanc selon le fond. `!important` : il
-                                                               doit passer devant le blanc impose a .tier-tag. #}
+                                                            {# Texte noir ou blanc selon la couleur reglee ; !important passe devant .tier-tag. #}
                                                             <span class="tag tier-tag" style="background: {{ couleur_u }}; color: {{ couleur_u|texte_lisible }} !important;">U</span>
                                                         {% elif tiers_couleurs.get(joueur.tier) %}
                                                             <span class="tag tier-tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: white;">{{ joueur.tier }}</span>
@@ -391,11 +385,8 @@
                 legendDist.appendChild(item);
             });
 
-            // Tiers dynamiques (Partie B) : `tiers` vient de /tier-seuils, deja
-            // trie par rang decroissant (le meilleur en premier). Chaque tier
-            // avec un seuil non-nul devient une ligne ; les zones se dessinent
-            // entre deux tiers consecutifs (le plancher n'a pas de borne basse,
-            // le sommet pas de borne haute). Voir docs/tableau-seuils-tiers-plan.md.
+            // `tiers` est trie par rang decroissant : chaque tier avec un seuil
+            // donne une ligne, et une zone entre deux tiers consecutifs.
             const tiersRaw = {{ tiers | tojson }};
             const tierThresholds = tiersRaw
                 .filter(t => t.seuil !== null && t.seuil !== undefined)

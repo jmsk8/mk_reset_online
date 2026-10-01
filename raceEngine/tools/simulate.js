@@ -1,6 +1,5 @@
-// Banc d'essai d'equilibrage. Enchaine des courses hors horloge : la meme
-// physique que le service, avancee en boucle serree. Une course de 77 secondes
-// simulees passe en quelques millisecondes.
+// Banc d'equilibrage : enchaine des courses hors horloge avec la meme physique
+// que le service.
 //
 //   node tools/simulate.js                    200 courses, grille au hasard
 //   node tools/simulate.js --races 5000       plus d'echantillon
@@ -9,21 +8,19 @@
 //   node tools/simulate.js --csv              une ligne par course, pour tableur
 //   node tools/simulate.js --track anneau     un seul circuit au lieu de tous
 //
-// Grille au hasard (defaut) : chaque course repart d'un tirage neuf, ce qu'il
-// faut pour juger les statistiques des karts. `--chain` reproduit le grand prix,
-// mais l'avantage de grille s'y cumule et masque la part des statistiques.
+// La grille au hasard isole l'effet des statistiques ; `--chain` cumule
+// l'avantage de grille comme un grand prix.
 
 import * as PH from '../src/engine/index.js';
 import CFG from '../src/config/index.js';
 import * as track from '../src/track.js';
 
-// Meme cadence que le service : changer l'une sans l'autre ferait mesurer une
-// physique qui n'est pas celle qui tourne.
+// Meme cadence que le service.
 const TICK_HZ = 30;
 const DT = 1 / TICK_HZ;
 const DT_MS = DT * 1000;
 
-// Garde-fou : une course qui n'aboutit pas ne doit pas figer le banc.
+// Une course qui n'aboutit pas ne fige pas le banc.
 const MAX_TICKS = Math.ceil((CFG.race.maxRaceMs + 60000) / DT_MS);
 
 const args = process.argv.slice(2);
@@ -37,11 +34,7 @@ const CHAIN = args.includes('--chain');
 const CSV = args.includes('--csv');
 const SEED = Number(argValue('--seed', 0)) || 0;
 
-// Les circuits du service, dessines dans tracks/. Par defaut le banc les
-// enchaine comme le fait un grand prix : la campagne mesure alors le jeu tel
-// qu'il se joue, tous circuits confondus. `--track` en isole un — c'est ce
-// qu'il faut pour juger un trace en particulier, sans que les autres diluent la
-// mesure.
+// Circuits de tracks/, enchaines comme un grand prix (`--track` en isole un).
 let TRACKS;
 try {
     TRACKS = track.loadTracks(track.resolveTracksDir(import.meta.dirname), CFG);
@@ -66,16 +59,12 @@ function selectTracks() {
     return found;
 }
 
-// Les configs sont construites une fois pour toutes : une campagne de plusieurs
-// milliers de courses n'a pas a reposer le meme circuit sur la meme config a
-// chaque tour de boucle.
+// Configs construites une fois pour toute la campagne.
 const RUNNING = selectTracks();
 const RACE_CFGS = RUNNING.map(t => track.applyTrack(CFG, t));
 
-// Generateur reproductible (mulberry32) : deux campagnes lancees avec la meme
-// graine donnent le meme resultat, ce qui permet de comparer deux reglages sans
-// que le hasard s'en mele. Sans `--seed`, on tire une graine au depart et on
-// l'affiche, pour pouvoir rejouer la campagne telle quelle.
+// Generateur reproductible (mulberry32) ; sans `--seed`, la graine tiree est
+// affichee.
 function makeRng(seed) {
     let a = seed >>> 0;
     return function () {
@@ -91,48 +80,26 @@ const seed = SEED || (Math.random() * 0xFFFFFFFF) >>> 0;
 const rng = makeRng(seed);
 
 const STATS = PH.deriveCharacterStats(CFG);
-// Les personnages qui PEUVENT courir (`roster.enabled`) : ceux que le tirage de
-// la prod aligne. Chaque course en prend `roster.perRace`, si bien qu'un
-// personnage ne court pas toutes les courses — ses taux se rapportent a ses
-// propres participations (`stat[nom].races`), jamais au total.
+// Personnages pouvant courir ; les taux se rapportent a leurs propres
+// participations.
 const ROSTER = Object.keys(STATS).filter(name => CFG.roster.enabled[name]);
 
-// En dessous de cette fraction de sa propre pointe, un kart est considere comme
-// hors rythme. Rapporte a sa pointe et non a une vitesse absolue : sinon un kart
-// lent serait compte en retard en permanence, et la mesure ne dirait plus rien
-// du temps perdu. La croisiere tourne autour de 0.94, d'ou ce seuil juste en
-// dessous : il attrape l'arret et la relance, pas les creux d'elan ordinaires.
+// Fraction de sa propre pointe sous laquelle un kart est hors rythme (la
+// croisiere tourne autour de 0.94).
 const SLOW_RATIO = 0.90;
-// Karts par course, donc nombre de places.
+// Karts par course.
 const N = Math.min(CFG.roster.perRace, ROSTER.length);
 const LAPS = CFG.race.laps;
 
-// Types distribuables, dans l'ordre de la config. `blueShell` a son propre
-// tirage. Les triples sont retires : ils annoncent le type de leur enfant, si
-// bien qu'un triple banane arrive comme trois bananes — c'est la bonne mesure,
-// mais le type « triple » resterait a zero et donnerait une ligne trompeuse.
+// Types distribuables ; les triples sont retires (comptes via leur enfant).
 const ORBIT_TYPES = Object.keys(CFG.orbitItems || {});
 const ITEM_TYPES = Object.keys(CFG.itemDistribution.items)
     .filter(t => !(CFG.disabledItems || []).includes(t) && !ORBIT_TYPES.includes(t))
     .concat(['blueShell']);
 
-// Tour reel du premier, recalcule ici au lieu de lire `state.leaderLap`.
-//
-// Un banc de mesure ne doit pas recopier le compteur qu'il observe : c'est
-// exactement ainsi qu'un compteur fige passe inapercu. En le derivant des
-// distances, une derive du moteur devient visible au lieu d'etre reproduite —
-// le controle de coherence plus bas s'en sert.
-//
-// Le tour se compte en franchissements de ligne, et non en distance parcourue :
-// la grille place les karts en amont de la ligne, si bien que leur premiere
-// traversee ne couvre pas un tour mais seulement ce bout de piste. Compter en
-// distance decalait le changement de tour de 392 unites en moyenne, soit 4 %
-// de la course — assez pour declencher l'alerte de coherence a chaque campagne.
-// `finishDistance` porte cet ecart, on l'y retrouve sans avoir a le transporter.
-//
-// La longueur du tour vient de la config de la course et non de `CFG` : elle
-// change d'un circuit a l'autre, et la lire au mauvais endroit ferait compter
-// les tours d'une piste sur la longueur d'une autre.
+// Tour reel du premier, derive des franchissements de ligne (et non de
+// `state.leaderLap`) pour detecter une derive du compteur du moteur. La
+// longueur du tour vient de la config de la course.
 function trueLap(cfg, state) {
     let leader = null;
     for (const kart of state.karts) {
@@ -145,43 +112,18 @@ function trueLap(cfg, state) {
     return Math.min(LAPS, Math.max(1, crossings));
 }
 
-// Un pas « tranquille » : le kart roule, et rien d'autre que son elan ne decide
-// de sa vitesse. C'est le regime du `else` de la branche moteur — celui ou
-// `momentum` seul fixe la vitesse visee — debarrasse de tout ce qui vient
-// ensuite la rogner ou la doper.
-//
-// Les drapeaux sont lus sur le kart plutot que deduits : `getActiveBoost` n'est
-// pas exporte, mais ses trois entrees (bill, etoile, champignon) le sont, et le
-// bord de piste se lit sur `yPercent` comme le fait `clampKartToRoad`.
-//
-// Un reste de choc longitudinal disqualifie le pas : `bumpVx` s'amortit de
-// facon continue et ne retombe jamais a zero exactement, d'ou le seuil — sous
-// un pixel par seconde, la poussee ne pese plus rien face a une pointe qui se
-// compte en centaines.
+// Pas « tranquille » : seule l'elan decide de la vitesse (pas d'objet, de bord
+// ni de choc ; `bumpVx` sous 1 px/s est ignore).
 const CALM_BUMP_EPS = 1;
 
-// Un pas tranquille se scinde en deux, et les distinguer est tout l'objet de la
-// decomposition : le kart peut rouler SUR sa cible d'elan — c'est la croisiere —
-// ou EN DESSOUS, en train d'y remonter.
-//
-// Le second cas n'a aucun drapeau pour le signaler : apres un tete-a-queue le
-// moteur remet la vitesse a zero et rend la main, si bien que la remontee depuis
-// l'arret se presente exactement comme une croisiere ordinaire. C'est la cible
-// qui les separe, et elle seule.
-//
-// Le kart peut aussi se trouver AU-DESSUS de sa cible : quand elle redescend, la
-// deceleration est quatre fois plus lente que la relance. C'est de la croisiere
-// aussi — d'ou un seuil et non une egalite.
+// Un pas tranquille est de la croisiere (sur ou au-dessus de la cible d'elan,
+// a CRUISE_EPS pres) ou une remontee (en dessous).
 const CRUISE_EPS = 0.02;
 
-// En dessous de la moitie de sa cible, le kart ne rattrape plus un ecart d'elan :
-// il repart d'un arret. Le seuil ne separe pas deux mecanismes — c'est le meme
-// rattrapage — mais deux ordres de grandeur, et c'est ce qui permet de dire si
-// le retard vient des chocs ou du suivi ordinaire.
+// Sous la moitie de sa cible, le kart repart d'un arret.
 const DEEP_RATIO = 0.5;
 
-// Meme formule que `getMomentumSpeed` dans le moteur. Recopiee ici faute d'etre
-// exportee : si elle change la-bas, cette decomposition ment sans rien signaler.
+// Meme formule que `getMomentumSpeed` dans le moteur (non exportee).
 function targetSpeedOf(cfg, kart) {
     const minRatio = cfg.speeds.momentumMinRatio;
     return kart.stats.topSpeed * (minRatio + (1.0 - minRatio) * kart.momentum);
@@ -205,52 +147,34 @@ function isCalm(cfg, kart, now) {
 
 // ── Une course ──────────────────────────────────────────────────────────────
 
-// Rendue des que le classement est complet : les secondes de tableau des scores
-// qui suivent ne produisent plus rien a mesurer.
-//
-// Deux moments distincts sont releves pour chaque objet — celui ou il est
-// ramasse, et celui ou il part. Pour la bleue et l'eclair l'ecart entre les deux
-// n'est pas anecdotique : c'est le temps que le porteur le garde en main.
+// Une course, rendue des que le classement est complet. Ramassage et lancer
+// sont releves separement.
 function runRace(startOrder, cfg) {
     const state = PH.createWorldState(cfg, rng, 0, startOrder, null);
     let simTime = 0;
 
-    const got = {};      // type -> nombre ramasse
-    const gotLap = {};   // type -> [tour] pour chaque ramassage
-    const fired = {};    // type -> nombre lance
+    const got = {}; // type -> nombre ramasse
+    const gotLap = {}; // type -> [tour] pour chaque ramassage
+    const fired = {}; // type -> nombre lance
     const firedLap = {};
     const typeOfItem = new Map(); // itemId -> type, pour relier launchItem
-    let lapDrift = 0;             // pas ou le compteur du moteur diverge du reel
+    let lapDrift = 0; // pas ou le compteur du moteur diverge du reel
 
-    // Ce que la course coute a chaque kart. `hits` compte les tete-a-queue,
-    // `slowMs` mesure le temps passe loin de sa vitesse de croisiere : l'arret
-    // lui-meme, puis la relance jusqu'a retrouver son rythme. C'est cette
-    // seconde valeur qui dit ce que vaut vraiment l'acceleration, l'arret etant
-    // de duree fixe pour tout le monde.
+    // Tete-a-queue (`hits`) et temps passe hors rythme (`slowMs`) par kart.
     const hits = {};
-    // Chocs contre un pipe. Compte a part des tete-a-queue : ils ne coutent pas
-    // la meme chose, et c'est en les separant qu'on voit si un trace punit
-    // surtout les lourds — ce sont eux qui redemarrent le plus lentement.
+    // Chocs contre un tuyau, comptes a part.
     const bumps = {};
     const slowMs = {};
     const raceMs = {};
-    // Distance reellement couverte pendant que le kart court, relevee pas a pas
-    // sur `totalDistance` plutot que sur `absoluteVelocity` : la vitesse affichee
-    // par le moteur n'est pas toujours celle a laquelle le kart avance (blocage
-    // derriere un autre, tete-a-queue, recul). Rapportee a `raceMs`, elle donne
-    // la vitesse moyenne observee — ce que le kart tient vraiment en course, par
-    // opposition a sa pointe theorique.
+    // Distance reellement couverte (sur `totalDistance`), pour la vitesse
+    // moyenne observee.
     const dist = {};
     const prevDist = {};
-    // Meme mesure, restreinte aux pas tranquilles. Le pas n'est retenu que si le
-    // kart etait deja tranquille au pas precedent : le deplacement releve ici a
-    // eu lieu pendant l'intervalle, et l'encadrer des deux cotes evite de lui
-    // attribuer la fin d'un boost ou le debut d'un choc.
+    // Meme mesure sur les pas tranquilles encadres des deux cotes.
     const calmDist = {};
     const calmMs = {};
     const prevCalm = {};
-    // La scission du temps tranquille. `cruiseMs + catchMs` vaut exactement
-    // `calmMs` : la decomposition ne perd ni ne double aucun pas.
+    // Scission du temps tranquille : `cruiseMs + catchMs = calmMs`.
     const cruiseDist = {};
     const cruiseMs = {};
     const catchMs = {};
@@ -273,10 +197,8 @@ function runRace(startOrder, cfg) {
         prevSettled[kart.charName] = false;
     }
 
-    // Place de chaque kart a la fin de chaque tour. Le releve se fait au moment
-    // ou le premier entame le tour suivant, et le dernier tour est renseigne par
-    // l'ordre d'arrivee : la trajectoire se lit ainsi d'un bout a l'autre, du
-    // premier tour boucle jusqu'au drapeau.
+    // Place de chaque kart a la fin de chaque tour (le dernier par l'ordre
+    // d'arrivee).
     const lapRanks = [];
     let seenLap = 0;
 
@@ -300,12 +222,9 @@ function runRace(startOrder, cfg) {
             seenLap = lap;
         }
 
-        // La grille et le tour d'honneur sont hors sujet : avant le depart tout
-        // le monde est a l'arret, apres l'arrivee tout le monde est bride.
+        // Grille et tour d'honneur exclus.
         for (const kart of state.karts) {
-            // Le repere avance meme pour les karts hors mesure : sans cela, la
-            // distance parcourue en grille ou apres l'arrivee retomberait d'un
-            // bloc dans le premier pas compte.
+            // Le repere avance aussi pour les karts hors mesure.
             const moved = kart.totalDistance - prevDist[kart.charName];
             prevDist[kart.charName] = kart.totalDistance;
 
@@ -317,9 +236,7 @@ function runRace(startOrder, cfg) {
                 calmDist[kart.charName] += moved;
                 calmMs[kart.charName] += DT_MS;
 
-                // Encadre des deux cotes, comme le pas tranquille lui-meme : le
-                // deplacement a eu lieu pendant l'intervalle, il ne revient a la
-                // croisiere que si les deux bouts y sont.
+                // Encadre des deux cotes.
                 if (settled && prevSettled[kart.charName]) {
                     cruiseDist[kart.charName] += moved;
                     cruiseMs[kart.charName] += DT_MS;
@@ -352,8 +269,7 @@ function runRace(startOrder, cfg) {
                 continue;
             }
             if (ev.type === 'spawnHeldItem') {
-                // Les identifiants sont uniques dans une course : ce garde-fou
-                // n'est la que pour ne jamais compter deux fois le meme objet.
+                // Garde-fou contre un double comptage.
                 if (typeOfItem.has(ev.itemId)) continue;
                 typeOfItem.set(ev.itemId, ev.itemType);
                 note(got, gotLap, ev.itemType, lap);
@@ -363,15 +279,12 @@ function runRace(startOrder, cfg) {
                 if (type) note(fired, firedLap, type, lap);
 
             } else if (ev.type === 'lightningCast') {
-                // L'eclair est le seul objet a ne pas passer par `launchItem` :
-                // il declenche un orage au lieu de mettre quoi que ce soit en
-                // piste, et sort par `lightningCast` + `removeHeldItem`. Sans ce
-                // cas, il serait compte comme recu mais jamais comme lance.
+                // L'eclair sort par `lightningCast` + `removeHeldItem`, pas par
+                // `launchItem`.
                 note(fired, firedLap, 'lightning', lap);
 
             } else if (ev.type === 'raceFinished') {
-                // Le dernier tour n'a pas de « tour suivant » pour declencher un
-                // releve : c'est l'arrivee qui le fournit.
+                // Releve du dernier tour, a l'arrivee.
                 const finalSnap = {};
                 state.finishOrder.forEach((id, i) => {
                     finalSnap[state.kartsById[id].charName] = i + 1;
@@ -386,8 +299,7 @@ function runRace(startOrder, cfg) {
                     got, gotLap, fired, firedLap, lapDrift, ticks: tick + 1,
                     hits, bumps, slowMs, raceMs, dist, calmDist, calmMs,
                     cruiseDist, cruiseMs, catchMs, deepMs,
-                    // Compteur tenu par le moteur : la distance que la
-                    // contrainte de virage a coutee, mesuree et non estimee.
+                    // Distance perdue en virage, mesuree par le moteur.
                     cornerPx: Object.fromEntries(state.karts.map(k => [k.charName, k.cornerLostPx]))
                 };
             }
@@ -404,9 +316,7 @@ for (const name of ROSTER) {
         cruiseDist: 0, cruiseMs: 0, catchMs: 0, deepMs: 0, cornerPx: 0 };
 }
 
-// Places tour par tour. `lapSum` sert la trajectoire moyenne, `lapDist` la
-// repartition complete : un kart peut tenir une moyenne honnete en alternant
-// tete et fond de peloton, ce que la moyenne seule ne montrerait pas.
+// Places tour par tour : moyenne (`lapSum`) et repartition (`lapDist`).
 const lapSum = {}, lapCount = {}, lapDist = {};
 for (const name of ROSTER) {
     lapSum[name] = new Array(LAPS + 1).fill(0);
@@ -415,27 +325,23 @@ for (const name of ROSTER) {
 }
 
 // Objets, agreges sur toute la campagne.
-const itemTotal = {};                 // type -> total ramasse
-const itemFiredTotal = {};            // type -> total lance
-const itemPerRace = {};               // type -> [compte par course]
-const lapHist = {};                   // type -> tour -> nombre (au ramassage)
-const lapHistFired = {};              // type -> tour -> nombre (au lancer)
+const itemTotal = {}; // type -> total ramasse
+const itemFiredTotal = {}; // type -> total lance
+const itemPerRace = {}; // type -> [compte par course]
+const lapHist = {}; // type -> tour -> nombre (au ramassage)
+const lapHistFired = {}; // type -> tour -> nombre (au lancer)
 for (const t of ITEM_TYPES) {
     itemTotal[t] = 0; itemFiredTotal[t] = 0; itemPerRace[t] = [];
     lapHist[t] = new Array(LAPS + 1).fill(0);
     lapHistFired[t] = new Array(LAPS + 1).fill(0);
 }
 
-// Ecart entre place de depart et place d'arrivee, pour mesurer ce que vaut la
-// grille elle-meme. Une correlation forte dirait que la course se joue au
-// depart, ce qui rendrait toute lecture des statistiques trompeuse.
+// Ecart entre place de depart et d'arrivee (poids de la grille).
 const gridPairs = [];
 let aborted = 0;
 let totalMs = 0;
 
-// Controles de coherence entre le moteur et ce que le harnais croit observer.
-// Ils ne mesurent pas l'equilibrage : ils disent si la mesure elle-meme est
-// encore valable apres une modification du jeu.
+// Controles de coherence entre le moteur et le banc.
 let lapDriftTicks = 0;
 let totalTicks = 0;
 
@@ -446,10 +352,8 @@ if (CSV) console.log('course,' + Array.from({ length: N }, (_, i) => 'p' + (i + 
     + ',bleues,eclairs');
 
 for (let r = 0; r < RACES; r++) {
-    // Le tirage de la prod : `perRace` karts parmi les actives. Enchainee, la
-    // grille reprend l'arrivee precedente A L'INTERIEUR d'un grand prix et se
-    // retire a son ouverture, comme le service — sans quoi les memes karts
-    // courraient toute la campagne.
+    // Tirage de production ; en mode enchaine, la grille reprend l'arrivee
+    // precedente a l'interieur d'un grand prix.
     const cfg = RACE_CFGS[r % RACE_CFGS.length];
     const opensGrandPrix = r % CFG.grandPrix.races === 0;
     const grid = CHAIN && startOrder && !opensGrandPrix
@@ -521,9 +425,7 @@ for (let r = 0; r < RACES; r++) {
 const done = RACES - aborted;
 const elapsed = (Date.now() - started) / 1000;
 
-// Aucune course close : le rapport n'aurait que des NaN a montrer. Mieux vaut
-// dire ce qui ne va pas — c'est le symptome d'une course qui n'atteint jamais sa
-// condition d'arret, pas d'un desequilibre.
+// Aucune course close : une course n'atteint pas sa condition d'arret.
 if (done === 0) {
     console.error(`\nAucune des ${RACES} courses n'a abouti en ${MAX_TICKS} pas simules.`);
     console.error('La condition d\'arret n\'est jamais atteinte : verifier race.stopAtFinisher');
@@ -541,24 +443,17 @@ function pad(s, w) { return String(s).padEnd(w); }
 function padL(s, w) { return String(s).padStart(w); }
 
 const p0 = 1 / N;
-// Ecart-type attendu d'un taux de victoire si tous les karts se valaient. Sans
-// ce repere, on lit un ecart de deux points comme un desequilibre alors qu'il
-// n'est que du bruit d'echantillonnage. Pris sur les courses que CE kart a
-// courues : tire parmi plus de personnages qu'il n'y a de places, chacun en
-// court moins que la campagne.
+// Ecart-type attendu d'un taux de victoire si tous les karts se valaient, sur
+// les courses courues par ce kart.
 const sigmaOf = runs => Math.sqrt(p0 * (1 - p0) / Math.max(runs, 1)) * 100;
 const meanRuns = done * N / Math.max(ROSTER.length, 1);
 const sigma = sigmaOf(meanRuns);
-// Par course COURUE : diviser par `done` ferait passer une absence au tirage
-// pour une contre-performance.
+// Par course courue.
 const per = (v, s) => v / Math.max(s.races, 1);
 
 const grandTotal = ITEM_TYPES.reduce((s, t) => s + itemTotal[t], 0);
 
-// Coherence entre le moteur et ce que le harnais croit observer. Ces controles
-// ne mesurent pas l'equilibrage : ils disent si la mesure elle-meme tient encore
-// apres une modification du jeu. Un tableau vide se lit trop facilement comme un
-// resultat, alors qu'il ne signale qu'un evenement renomme.
+// Controles de coherence (validite de la mesure).
 const health = [];
 if (grandTotal === 0) {
     health.push('Aucun objet compte : l\'evenement `spawnHeldItem` a disparu ou change de nom.');
@@ -577,9 +472,7 @@ if (health.length) {
 console.log(`Banc d'equilibrage — ${done} courses` + (aborted ? ` (${aborted} abandonnees)` : ''));
 console.log(`grille : ${CHAIN ? 'enchainee (vainqueur en pole)' : 'tiree au sort a chaque course'}`
     + `   graine : ${seed}`);
-// Le nombre de pipes figure ici parce que c'est lui qui explique le plus gros
-// des ecarts d'une campagne a l'autre : un tuyau de plus, et les lourds perdent
-// du terrain a chaque tour sans qu'aucun reglage de kart n'ait bouge.
+// Nombre de tuyaux affiche : principal facteur d'ecart entre campagnes.
 console.log(`circuits : ${RUNNING.map(t => `${t.name} (${t.columns} col, `
     + `${t.pipes.length} pipe${t.pipes.length > 1 ? 's' : ''})`).join(', ')}`
     + (RUNNING.length > 1 ? '   enchaines a tour de role' : ''));
@@ -602,7 +495,7 @@ for (const name of rows) {
     const s = stat[name];
     const c = STATS[name];
     const winPct = pct(s.wins, s.races || 1);
-    // Ecart a l'attendu, en ecarts-types : au-dela de 2, ce n'est plus du bruit.
+    // Ecart a l'attendu en ecarts-types (au-dela de 2 : significatif).
     const sig = sigmaOf(s.races);
     const z = sig > 0 ? (winPct - 100 * p0) / sig : 0;
     const flag = Math.abs(z) >= 2 ? (z > 0 ? ' ++' : ' --') : '   ';
@@ -628,10 +521,7 @@ console.log('  tenue : `stats.cornering`, ce qui tient le kart quand il tourne �
 console.log('  plus c\'est HAUT, moins tourner lui coute. C\'est un diviseur, pas une');
 console.log('  perte. Ce que le virage coute vraiment se lit plus bas, colonne `virage`.');
 
-// Ce que la course coute. Sans ces deux colonnes, impossible de dire si
-// l'agilite sert a quelque chose : un kart peut perdre parce qu'il est lent, ou
-// parce qu'il se fait toucher deux fois plus souvent. Les taux de victoire seuls
-// ne les distinguent pas.
+// Couts de course : chocs et temps hors rythme.
 console.log('');
 console.log('Ce que la course coute a chaque kart');
 console.log(pad('kart', w) + padL('agi', 6) + padL('touches', 10) + padL('pipes', 8)
@@ -676,17 +566,7 @@ console.log('  que l\'elan ne decide de la vitesse — ni objet, ni choc, ni bor
 console.log('  piste, ni freinage. C\'est le rythme de croisiere nu, celui que');
 console.log('  `momentum` produit a lui seul. part tranq. : la part de la course');
 console.log('  passee dans ce regime — un kart souvent bouscule la voit fondre.');
-// Le regime tranquille, decompose. La colonne `vit. tranq.` melange deux choses
-// que rien ne distingue de l'exterieur : rouler a son rythme, et y remonter
-// apres un arret. Les separer repond a une question precise — l'ecart de croisiere
-// entre karts vient-il du regime lui-meme, ou seulement du temps passe a le
-// rejoindre ?
-//
-// La cible d'elan est tiree dans le meme intervalle pour tous les karts, et
-// `momentumChangeSpeed` ne depend d'aucune statistique : si la croisiere pure se
-// tient sur une seule valeur, c'est que le regime est bien identique pour tous et
-// que tout l'ecart vit dans le rattrapage. Sinon, le suivi de cible coute
-// vraiment quelque chose, et l'acceleration est une seconde stat de vitesse.
+// Decomposition du regime tranquille : croisiere pure et remontee apres arret.
 console.log('');
 console.log('Le regime tranquille, decompose');
 console.log(pad('kart', w) + padL('acc', 6) + padL('croisiere', 11) + padL('% pointe', 10)
@@ -727,13 +607,7 @@ console.log(`bruit d'echantillonnage a ${Math.round(meanRuns)} courses courues p
     + `(${N} places, ${ROSTER.length} personnages) : +/- ${sigma.toFixed(1)} point (1 ecart-type)`);
 console.log('  ++ / -- signale un ecart d\'au moins 2 ecarts-types, soit ce qui ne s\'explique plus par le hasard');
 
-// La repartition des places a l'arrivee n'est pas reprise ici : elle figure en
-// bas, comme dernier tour du releve par tour, ou elle se lit dans la continuite
-// du chemin parcouru plutot qu'isolee.
-
-// Trajectoire : la place moyenne tour apres tour. C'est ici qu'un schema se
-// voit — un kart qui part devant et recule, ou l'inverse, alors que sa place
-// finale ne dit rien du chemin parcouru.
+// Trajectoire : place moyenne tour apres tour.
 console.log('');
 console.log('Place moyenne a la fin de chaque tour');
 console.log(pad('kart', w) + Array.from({ length: LAPS }, (_, i) => padL('T' + (i + 1), 8)).join('')
@@ -780,8 +654,7 @@ for (const t of ITEM_TYPES.slice().sort((a, b) => itemTotal[b] - itemTotal[a])) 
         + padL((itemFiredTotal[t] / done).toFixed(2), 9));
 }
 
-// Les deux objets de course : ils sont rares, uniques ou presque, et leur
-// moment d'arrivee est un reglage a part entiere. D'ou un traitement separe.
+// Bleue et eclair, rares, traites a part.
 const RARE = ['blueShell', 'lightning'].filter(t => ITEM_TYPES.includes(t));
 
 if (RARE.length) {

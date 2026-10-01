@@ -136,28 +136,10 @@
             transform: rotate(-45deg);
         }
 
-        /* ------------------------------------------------------------------
-           SEUIL DU MODE TELEPHONE : 1023px.
+        /* Mode telephone sous 1023px (largeur des deux champs date). Seuil repete
+           dans les @media ci-dessous et dans .visible-mode-tel. */
 
-           Plus large que les 768px de Bulma, parce que ce n'est pas la taille
-           de l'ecran qui decide ici mais celle du contenu : deux cartes cote
-           a cote, dont un formulaire dense, restent a l'etroit bien au-dessus
-           du seuil « tablette » standard.
-
-           900px ne suffisait pas : vers 930px la colonne du formulaire
-           tombait a ~350px et les deux champs date (~160px chacun, largeur
-           plancher du champ natif) debordaient de la carte. 1023px est la
-           limite `touch`/`desktop` de Bulma : au-dela, le `.container` passe
-           a 960px fixes et la colonne tient les deux dates.
-
-           Ce seuil est repete dans les trois @media ci-dessous et dans
-           `.visible-mode-tel` — les quatre doivent bouger ensemble.
-           ------------------------------------------------------------------ */
-
-        /* Boutons propres au mode telephone (le « + » et la croix).
-           `is-hidden-tablet` de Bulma ne convenait pas : il est fige a 769px,
-           et les aurait masques entre 769 et 1023px, la ou on en a justement
-           besoin. */
+        /* Boutons du mode telephone (is-hidden-tablet est fige a 769px). */
         .visible-mode-tel {
             display: none;
         }
@@ -168,36 +150,19 @@
             }
         }
 
-        /* ------------------------------------------------------------------
-           Telephone : la liste devient la vue principale, la creation passe
-           en modale.
-
-           Deux cartes cote a cote sur 360px donnent deux colonnes trop
-           etroites pour l'une comme pour l'autre. La liste est ce qu'on vient
-           consulter ; creer une saison est un geste ponctuel, qui a sa place
-           derriere un bouton.
-
-           Le formulaire n'est PAS duplique : c'est le meme markup, sorti du
-           flux et repositionne. Un second exemplaire aurait dedouble les
-           `id` du formulaire et casse le JS qui les lit.
-           ------------------------------------------------------------------ */
+        /* Telephone : la liste devient la vue principale et le formulaire de
+           creation passe en modale (meme markup, repositionne). */
         @media screen and (max-width: 1023px) {
-            /* Replie par defaut. `display:none` plutot qu'une simple
-               transparence : les champs ne doivent etre ni tabulables ni lus
-               par un lecteur d'ecran tant que la modale est fermee. */
+            /* Masque : ni tabulable ni lu tant que la modale est fermee. */
             #blocNouvelleSaison {
                 display: none;
             }
 
-            /* Ouvert : le bloc se comporte comme une modale Bulma. */
             #blocNouvelleSaison.est-ouvert {
                 display: block;
                 position: fixed;
                 inset: 0;
-                /* Au-dessus de la navbar, que dark-mode.css pousse a 1000.
-                   Le 40 de Bulma suppose une navbar a 30 : ici elle serait
-                   passee par-dessus le haut de la modale, donc par-dessus sa
-                   croix de fermeture. */
+                /* Au-dessus de la navbar (z-index 1000). */
                 z-index: 1100;
                 padding: 0;
                 overflow-y: auto;
@@ -208,20 +173,15 @@
                 position: fixed;
                 inset: 0;
                 background-color: rgba(10, 10, 10, 0.86);
-                z-index: 0;   /* sous la carte, au-dessus du reste */
+                z-index: 0;
             }
 
-            /* La carte flotte au-dessus du voile, avec une marge pour que le
-               voile reste cliquable sur les bords. */
+            /* Marge autour de la carte pour garder le voile cliquable. */
             #blocNouvelleSaison.est-ouvert > .card {
                 position: relative;
                 z-index: 1;
                 margin: 1rem;
-                /* Le formulaire est long : il defile dans la fenetre plutot
-                   que de deborder sous le pli. En colonne flex, seul le corps
-                   defile — l'en-tete reste en place, sinon la croix de
-                   fermeture disparaitrait des qu'on descend dans le
-                   formulaire. */
+                /* Seul le corps defile ; l'en-tete et sa croix restent visibles. */
                 display: flex;
                 flex-direction: column;
                 max-height: calc(100vh - 2rem);
@@ -237,8 +197,7 @@
                 -webkit-overflow-scrolling: touch;
             }
 
-            /* Le voile n'existe que dans ce mode : en desktop le bloc est une
-               colonne ordinaire, et un fond noir la recouvrirait. */
+            /* Voile present dans ce mode seulement. */
             #blocNouvelleSaison > .modal-background {
                 display: none;
             }
@@ -247,18 +206,13 @@
                 display: block;
             }
 
-            /* La liste prend toute la largeur rendue disponible. `flex` en
-               plus de `width` : entre 769 et 1023px Bulma met encore les
-               colonnes en ligne (son seuil a lui), et la base flex de `is-7`
-               l'aurait laissee a 58%. */
+            /* Pleine largeur (flex en plus de width entre 769 et 1023px). */
             .column.is-7 {
                 width: 100%;
                 flex: none;
             }
 
-            /* Le card-header est un flex en `align-items: stretch` : sans
-               marge automatique, ses boutons s'etirent sur toute la hauteur.
-               On les centre et on les decolle du bord. */
+            /* Boutons centres verticalement dans le card-header. */
             .card-header {
                 align-items: center;
             }
@@ -266,11 +220,10 @@
             .fermer-formulaire,
             .bouton-ajout {
                 margin-right: 0.75rem;
-                flex-shrink: 0;   /* un titre long ne doit pas les ecraser */
+                flex-shrink: 0;
             }
 
-            /* Cible tactile confortable pour la croix : le `.delete` de Bulma
-               fait 20px par defaut, en dessous des 44px recommandes. */
+            /* Croix agrandie pour le doigt. */
             .fermer-formulaire {
                 height: 2.5rem;
                 width: 2.5rem;
@@ -278,35 +231,21 @@
                 max-width: 2.5rem;
             }
 
-            /* ---- Tableau des saisons -------------------------------------
-               Trois defauts se cumulaient sur telephone : le tableau debordait
-               de sa carte (« Actions » coupe), les dates s'enroulaient sur
-               deux lignes, et les trois boutons d'action s'empilaient a la
-               verticale faute de largeur.
-
-               `is-fullwidth` contraint le tableau a 100% de son parent : ses
-               colonnes se compriment alors jusqu'a ce que le contenu deborde.
-               On le laisse prendre la largeur qu'il lui faut et c'est le
-               `.table-container` qui defile — la page, elle, ne bouge pas. */
+            /* ---- Tableau des saisons : largeur naturelle, defilement dans
+               .table-container. */
             .tableau-saisons {
                 width: auto !important;
                 min-width: 100%;
             }
 
-            /* Le conteneur porte le defilement. `touch` pour l'inertie iOS. */
+            /* Defilement avec inertie iOS. */
             .table-container {
                 overflow-x: auto;
                 -webkit-overflow-scrolling: touch;
             }
 
-            /* ---- Indice de defilement -----------------------------------
-               Un voile sombre au bord droit, qui laisse deviner que le
-               tableau continue. Il s'efface quand on atteint la fin.
-
-               Pose sur le parent fixe : sur le conteneur lui-meme, il aurait
-               defile avec le tableau et se serait promene au milieu des
-               colonnes. Le gradient part de transparent pour ne rien masquer
-               de lisible — seul le dernier centimetre s'assombrit. */
+            /* ---- Indice de defilement : voile au bord droit tant qu'il reste
+               du tableau a voir (pose sur le parent fixe). */
             .zone-defilante {
                 position: relative;
             }
@@ -318,50 +257,39 @@
                 right: 0;
                 bottom: 0;
                 width: 2.5rem;
-                pointer-events: none;   /* le doigt atteint le tableau dessous */
+                pointer-events: none;
                 background: linear-gradient(
                     to right,
                     rgba(15, 23, 42, 0) 0%,
                     rgba(15, 23, 42, 0.75) 100%
                 );
-                /* Masque par defaut : le JS l'allume s'il y a vraiment de
-                   quoi defiler. Afficher d'abord puis corriger aurait fait
-                   clignoter une ombre sur un tableau vide, le temps que les
-                   saisons arrivent. */
+                /* Masque par defaut, allume par le JS. */
                 opacity: 0;
                 transition: opacity 0.2s ease;
             }
 
-            /* Il reste du tableau a droite : c'est le seul cas ou le voile
-               a quelque chose a annoncer. */
             .zone-defilante.peut-defiler::after {
                 opacity: 1;
             }
 
-            /* Les 1.5rem de Bulma coutent 3rem de largeur utile sur un ecran
-               de 360 : autant de moins pour le tableau. */
+            /* Padding reduit. */
             .card-content {
                 padding: 1rem 0.75rem;
             }
 
-            /* Rien ne s'enroule : une date coupee en deux lignes fait grimper
-               la hauteur de ligne sans rien gagner en largeur. */
+            /* Pas de retour a la ligne, sauf pour le nom. */
             .tableau-saisons th,
             .tableau-saisons td {
                 white-space: nowrap;
                 vertical-align: middle;
             }
 
-            /* Seul le nom peut s'enrouler : c'est la colonne au texte libre,
-               et la seule qui gagne vraiment a passer a la ligne. */
             .tableau-saisons td:first-child {
                 white-space: normal;
                 min-width: 11rem;
             }
 
-            /* Les trois actions restent sur une ligne. `.buttons` de Bulma est
-               un flex qui passe a la ligne : sur une colonne etroite il
-               empilait les boutons les uns sous les autres. */
+            /* Actions sur une seule ligne. */
             .tableau-saisons .buttons {
                 flex-wrap: nowrap;
                 justify-content: flex-end;
@@ -371,9 +299,7 @@
                 margin-bottom: 0;
             }
 
-            /* Le badge de ligue passe sous le nom : colle a sa suite, il
-               imposait a la colonne la largeur « nom + badge » et cassait le
-               nom en deux lignes. */
+            /* Badge de ligue sous le nom. */
             .tableau-saisons .nom-saison {
                 display: block;
             }
@@ -383,16 +309,14 @@
                 margin-top: 0.25rem;
             }
 
-            /* La date tient sur une ligne, en un peu plus petit. */
             .tableau-saisons .dates-saison {
                 white-space: nowrap;
                 font-size: 0.7rem;
             }
         }
 
-        /* A partir de 1024px le bloc redevient une colonne : on neutralise tout
-           etat laisse par un passage en mode telephone (rotation de l'ecran,
-           redimensionnement), sinon la carte resterait en position fixe. */
+        /* Au-dela de 1023px, on neutralise l'etat du mode telephone (rotation,
+           redimensionnement). */
         @media screen and (min-width: 1024px) {
             #blocNouvelleSaison.est-ouvert {
                 position: static;
@@ -403,13 +327,9 @@
                 display: none;
             }
         }
-        /* Versions de l'IP : une par ligne, leur resume dessous. */
         .choix-ip { display: block; margin: 0 0 0.6rem 0 !important; }
 
-        /* Debut / Fin : les colonnes de Bulma refusent de descendre sous la
-           largeur plancher d'un champ date natif, et debordent de la carte
-           au lieu de passer a la ligne. On autorise le retour a la ligne des
-           qu'une date n'a plus sa place. */
+        /* Debut / Fin : retour a la ligne quand les dates n'ont plus la place. */
         .ligne-dates {
             flex-wrap: wrap;
         }
@@ -428,11 +348,7 @@
             <h1 class="title has-text-white">Gestion des Saisons & Awards</h1>
 
             <div class="columns">
-                {# Sur telephone ce bloc sort du flux et devient une modale,
-                   ouverte par le bouton « + » de la liste : garder les deux
-                   cartes cote a cote sur 360px donnait deux colonnes trop
-                   etroites pour l'une comme pour l'autre. Le markup reste
-                   unique — c'est le CSS qui le repositionne. #}
+                {# Devient une modale sur telephone (ouverte par le bouton « + »). #}
                 <div class="column is-5" id="blocNouvelleSaison">
                     <div class="modal-background" onclick="fermerFormulaireSaison()"></div>
                     <div class="card glass-card">
@@ -482,8 +398,7 @@
 
                                 <div class="field mt-4 type-selector">
                                     <label class="label mb-3">Version de l'IP de ce récap</label>
-                                    {# Noms et resumes remplis depuis /admin/config (ip_textes),
-                                       comme la page Reglages. #}
+                                    {# Noms et resumes remplis depuis /admin/config (ip_textes). #}
                                     <div class="control">
                                         <label class="radio has-text-white choix-ip">
                                             <input type="radio" name="ipVersionCreate" value="v1" id="ipVersionV1Radio">
@@ -581,7 +496,6 @@
                     <div class="card glass-card">
                         <header class="card-header">
                             <p class="card-header-title">Saisons Existantes</p>
-                            {# Visible seulement quand le formulaire est masque. #}
                             <button class="button is-success bouton-ajout visible-mode-tel"
                                     type="button" title="Nouvelle saison"
                                     aria-label="Créer une nouvelle saison"
@@ -590,9 +504,7 @@
                             </button>
                         </header>
                         <div class="card-content">
-                            {# Le voile de defilement se pose sur CE bloc, pas
-                               sur le conteneur : un pseudo-element ancre sur
-                               un element qui defile glisserait avec lui. #}
+                            {# Le voile de defilement se pose sur ce bloc fixe. #}
                             <div class="zone-defilante">
                             <div class="table-container">
                             <table class="table is-fullwidth has-background-transparent has-text-light tableau-saisons">
@@ -686,14 +598,10 @@
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
     async function api(url, method, body=null) {
-        // Pas d'en-tête d'auth ici : ces URL sont les routes proxy du frontend,
-        // qui ajoutent X-Session-Token depuis la session serveur.
+        // Routes proxy du frontend : l'en-tete d'auth est ajoute cote serveur.
         const opts = {
             method: method,
-            // `Accept` explicite : dit au frontend que c'est un appel de
-            // données et non l'ouverture d'une page, donc qu'il n'a pas à
-            // revalider la session. Sans lui, `fetch()` envoie « */* », traité
-            // comme une navigation (docs/audit-503-zone-admin.md, §10.4).
+            // Accept explicite : appel de données, pas de revalidation de session.
             headers: {'Accept': 'application/json'}
         };
         if (csrfToken) opts.headers['X-CSRFToken'] = csrfToken;
@@ -702,9 +610,7 @@
             opts.body = JSON.stringify(body);
         }
         return fetch(url, opts).then(res => {
-            // 429 = limiteur de débit nginx : la réponse est une page HTML, et
-            // un res.json() direct levait une exception non rattrapée qui
-            // laissait l'écran figé sans le moindre message.
+            // 429 (limiteur nginx) : la réponse est du HTML.
             if (res.status === 429) {
                 const attente = parseInt(res.headers.get('Retry-After'), 10) || 5;
                 return { error: `Trop de requêtes d'un coup. Patientez ${attente} `
@@ -860,11 +766,7 @@ async function loadAwardTypes() {
                 ligueBadge += '<span class="tag ml-1 is-info is-light"><i class="fas fa-exchange-alt mr-1"></i>Mouvements</span>';
             }
 
-            // S-01 (audit du 24/09) : l'identifiant SEUL dans l'onclick, le
-            // reste est relu dans saisonsParId. Le nom de ligue y passait entre
-            // apostrophes, echappe pour le HTML avant de l'etre pour JavaScript :
-            // l'ordre inverse de celui qui protege, et un nom de ligue piege
-            // s'executait dans la page d'un rang superieur.
+            // Seul l'identifiant passe dans l'onclick ; le reste est relu dans saisonsParId.
             saisonsParId[s.id] = s;
             let publishBtn = s.is_active
                 ? ''
@@ -895,31 +797,22 @@ async function loadAwardTypes() {
             `;
         });
 
-        // Le tableau vient de changer de largeur : l'indice de defilement
-        // doit etre reevalue, sinon il promet un defilement qui n'existe
-        // peut-etre plus (ou l'inverse).
+        // Largeur du tableau modifiee : reevaluer l'indice de defilement.
         majIndiceDefilement();
     }
 
-    /* Indice de defilement du tableau.
-
-       Le voile s'affiche quand deux conditions tiennent : le tableau est
-       plus large que son cadre, et on n'a pas encore atteint la droite.
-       Appele apres chaque remplissage, a chaque defilement et sur
-       redimensionnement. */
+    /* Affiche le voile de defilement si le tableau deborde et que la droite
+       n'est pas atteinte. */
     function majIndiceDefilement() {
         const zone = document.querySelector('.zone-defilante');
         const conteneur = zone && zone.querySelector('.table-container');
         if (!conteneur) return;
 
-        // 1px de tolerance : les navigateurs rendent des largeurs
-        // fractionnaires, et scrollLeft n'atteint jamais exactement le max.
+        // Tolerance de 1px (largeurs fractionnaires).
         const defilable = conteneur.scrollWidth - conteneur.clientWidth > 1;
         const auBout = conteneur.scrollLeft + conteneur.clientWidth
                        >= conteneur.scrollWidth - 1;
 
-        // Une seule classe, posee quand il reste quelque chose a voir :
-        // ni au bout, ni trop etroit pour defiler.
         zone.classList.toggle('peut-defiler', defilable && !auBout);
     }
 
@@ -960,8 +853,7 @@ async function loadAwardTypes() {
             document.getElementById('triggerContent').innerText = "Choisir l'objectif de saison...";
             loadAwardTypes();
             loadSaisons();
-            // Sur telephone, rester sur le formulaire masquerait la liste ou
-            // la saison vient d'apparaitre. Sans effet en desktop.
+            // Sur telephone, ferme le formulaire pour montrer la liste.
             fermerFormulaireSaison();
             if (res.message) {
                 alert(res.message);
@@ -992,8 +884,7 @@ async function loadAwardTypes() {
 
         leagueModeEnabled = config.league_mode_enabled;
         interLeagueMovesCount = config.inter_league_moves || 0;
-        // Les mouvements sont calcules avec la version du recap, pas celle du
-        // reglage en cours (routes_admin, publication) : on nomme la bonne.
+        // Les mouvements utilisent la version IP du recap.
         const textesPublication = config.ip_textes && config.ip_textes[ipVersion];
         document.getElementById('publishIpBadge').textContent =
             textesPublication ? `(${textesPublication.badge})` : `(${ipVersion})`;
@@ -1032,15 +923,10 @@ async function loadAwardTypes() {
         document.getElementById('noMovesNote').style.display = enabled ? 'none' : 'block';
     }
 
-    /* Formulaire « Nouvelle Saison » en modale sur telephone.
-
-       Les deux fonctions restent sans effet en desktop : la classe qu'elles
-       posent n'est lue que par la media query <=1023px, ou le bloc est une
-       colonne ordinaire. Inutile donc de tester la largeur ici — le CSS
-       decide seul, et une rotation d'ecran ne laisse rien d'incoherent. */
+    /* Formulaire « Nouvelle Saison » en modale sur telephone (classe lue
+       uniquement par la media query). */
     function ouvrirFormulaireSaison() {
         document.getElementById('blocNouvelleSaison').classList.add('est-ouvert');
-        // Le fond ne defile plus derriere la modale.
         document.documentElement.classList.add('is-clipped');
     }
 
@@ -1049,8 +935,7 @@ async function loadAwardTypes() {
         document.documentElement.classList.remove('is-clipped');
     }
 
-    // Le voile suit le doigt, et se reevalue si la largeur change (rotation
-    // de l'ecran, passage en mode telephone).
+    // Voile de defilement : reevalue au defilement et au redimensionnement.
     document.addEventListener('DOMContentLoaded', () => {
         const conteneur = document.querySelector('.zone-defilante .table-container');
         if (conteneur) {
@@ -1060,7 +945,6 @@ async function loadAwardTypes() {
         majIndiceDefilement();
     });
 
-    // Echap referme, comme pour n'importe quelle modale.
     document.addEventListener('keydown', ev => {
         if (ev.key === 'Escape') fermerFormulaireSaison();
     });
@@ -1136,8 +1020,7 @@ async function loadAwardTypes() {
         r.addEventListener('change', checkLeagueTournaments);
     });
 
-    // Noms des versions de l'IP (backEnd/textes_ip.py, via /admin/config) :
-    // boutons radio du formulaire et infobulle du badge de la liste.
+    // Noms des versions de l'IP, depuis /admin/config.
     let textesIp = null;
 
     function poserTextesIp(textes) {
@@ -1163,7 +1046,6 @@ async function loadAwardTypes() {
 
     document.addEventListener('DOMContentLoaded', async () => {
         loadAwardTypes();
-        // La liste nomme la version de chaque recap : elle attend les textes.
         await prefillIpVersionDefault();
         loadSaisons();
     });

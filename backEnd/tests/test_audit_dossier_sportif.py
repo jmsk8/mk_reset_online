@@ -1,23 +1,5 @@
-"""Phase 2 du journal d'audit : le dossier sportif est trace.
-
-Pendant executable de docs/audit-admin-plan.md, phase 2. Avant elle, le coeur
-du site -- celui qui PRODUIT le classement -- n'avait aucune trace : on pouvait
-changer le mu d'un joueur a la main sans que rien ne dise qui, quand, ni depuis
-quelle valeur. C'etait le constat 3.1, le seul 🔴 du plan.
-
-Ce que ce fichier verrouille :
-
-  1. Les dix gestes du §3.1 ecrivent bien leur ligne d'audit.
-  2. Le vocabulaire FIGE le 2026-09-18 (§5.2bis) est respecte a la lettre.
-     Renommer une action apres coup laisse des lignes orphelines qu'aucun
-     filtre ne retrouve : ce test est ce qui rend ce gel executable.
-  3. L'AVANT/APRES est consigne pour ce qui se modifie, et la trace est ecrite
-     AVANT ce qui disparait -- une suppression qui s'audite apres coup n'a plus
-     rien a consigner.
-
-Aucun Postgres : le curseur est scripte. Ce fichier ne valide donc pas le SQL,
-mais qui ecrit quoi, avec quel contenu, et dans quel ordre.
-"""
+"""Journal d'audit du dossier sportif : chaque action ecrit sa ligne, avec le
+vocabulaire fige et l'avant/apres, avant toute suppression."""
 from harness import *
 from flask import Flask
 import json as _json
@@ -83,9 +65,7 @@ def ordre(cur, fragment):
 
 # ===========================================================================
 print("\n=== Le vocabulaire fige le 2026-09-18 est respecte (§5.2bis) ===")
-# Le gel n'a de valeur que s'il est verifiable. Une action renommee apres coup
-# laisse en base des lignes que plus aucun filtre ne ramene -- les anciennes
-# gardent l'ancien nom, les nouvelles portent le nouveau.
+# Une action renommee laisserait des lignes introuvables par filtre.
 RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _src = open(os.path.join(RACINE, 'routes_admin.py'), encoding='utf-8').read()
 
@@ -93,33 +73,26 @@ VOCABULAIRE_PHASE_2 = [
     'joueur_modifie', 'joueur_supprime', 'tournoi_ajoute', 'tournoi_supprime',
     'tournoi_annule', 'reset_global_applique', 'reset_global_annule',
     'config_modifiee', 'ligues_configurees',
-    # Ajoute le 2026-09-19 : la creation d'un recap en brouillon est une
-    # action d'administration comme une autre, et n'etait pas tracee.
     'recap_cree',
 ]
 for _action in VOCABULAIRE_PHASE_2:
     check("l'action « %s » est ecrite" % _action, "'%s'" % _action in _src, _action)
 
-# `joueur_cree` EXISTAIT DEJA (routes_comptes.py, creation a l'approbation
-# d'une liaison). La phase 2 devait le REUTILISER, pas en creer un homonyme :
-# deux actions du meme nom tracant deux gestes differents sont indemelables.
+# joueur_cree existe deja (routes_comptes) : pas d'homonyme.
 check("joueur_cree est reutilise, pas redefini sous un autre nom",
       "'joueur_cree'" in _src)
-# Des synonymes concurrents rendraient le filtre par action incomplet : une
-# moitie des lignes porterait un nom, l'autre moitie un autre.
+# Pas de synonymes concurrents.
 for _interdit in ('joueur_ajoute', 'fiche_creee', 'joueur_edite', 'tournoi_cree'):
     check("aucun synonyme concurrent : « %s »" % _interdit,
           "'%s'" % _interdit not in _src, _interdit)
 
-# La convention <objet>_<participe> rend un filtre par prefixe utilisable :
-# `joueur_%` ramene tout le domaine d'un coup.
+# Convention <objet>_<participe> pour filtrer par prefixe.
 for _a in VOCABULAIRE_PHASE_2:
     check("« %s » suit la convention <objet>_<participe>" % _a, '_' in _a, _a)
 
 
 # ===========================================================================
 print("\n=== mu/sigma : la trace qui repond a la question d'origine ===")
-# « Qui a mis ce joueur a 32.5, et quelle etait sa valeur avant ? »
 
 FICHE = ('Alice', 50.0, 8.333333333, True, '#FF0000', 2)
 PLAN_JOUEUR = [
@@ -140,20 +113,14 @@ check("  elle vise la bonne fiche",
 check("  l'AVANT est consigne", _l and _l['details']['avant'].get('mu') == 50.0, _l)
 check("  l'APRES aussi", _l and _l['details']['apres'].get('mu') == 32.5, _l)
 check("  le drapeau score_modifie est leve", _l and _l['details']['score_modifie'] is True, _l)
-# Sans le nom, la ligne dit « fiche 7 modifiee » et il faut aller chercher qui
-# est le joueur 7 -- ou le deviner, si la fiche a ete renommee depuis.
 check("  la FICHE CONCERNEE est nommee", _l and _l['details'].get('joueur_nom') == 'Alice', _l)
 check("  et l'acteur est nomme", _l and _l['acteur'] == 1, _l)
 
-# Le sigma revient de la modale arrondi a 3 decimales (8.333333333 -> 8.333).
-# La route ne le compte PAS comme une modification -- sinon elle exigerait
-# `edition_mu_sigma` d'un admin qui n'a touche a rien. Le journal doit suivre
-# exactement le meme predicat, sinon les deux divergent.
+# Un sigma revenu arrondi a 3 decimales n'est pas une modification.
 check("  un sigma revenu arrondi n'est pas compte comme modifie",
       _l and 'sigma' not in _l['details']['champs'], _l)
 
-# Un simple renommage ne doit PAS lever score_modifie : c'est tout l'interet du
-# drapeau, filtrer les modifications de score parmi les gestes anodins.
+# Un simple renommage ne leve pas score_modifie.
 cli, cur, conn = monter(PLAN_JOUEUR)
 cli.put('/admin/joueurs/7', json={
     'nom': 'Bob', 'mu': 50.0, 'sigma': 8.333, 'is_ranked': True, 'color': '#FF0000',
@@ -163,7 +130,6 @@ check("un renommage seul est trace", _l is not None)
 check("  mais score_modifie reste FAUX", _l and _l['details']['score_modifie'] is False, _l)
 check("  et le champ nom est nomme", _l and _l['details']['champs'] == ['nom'], _l)
 
-# Renvoyer la fiche inchangee n'est pas une modification : aucune ligne.
 cli, cur, conn = monter(PLAN_JOUEUR)
 cli.put('/admin/joueurs/7', json={
     'nom': 'Alice', 'mu': 50.0, 'sigma': 8.333, 'is_ranked': True, 'color': '#FF0000',
@@ -209,7 +175,7 @@ _l = une(cur, 'joueur_supprime')
 check("supprimer une fiche ecrit joueur_supprime", _l is not None, r.get_json())
 check("  le nom y est consigne -- seule trace qui en restera",
       _l and _l['details']['nom'] == 'Alice', _l)
-# L'ordre compte : apres le DELETE, la fiche n'existe plus et son nom non plus.
+# Avant le DELETE, sinon le nom n'existe plus.
 check("  et la ligne est ecrite AVANT le DELETE",
       ordre(cur, 'INSERT INTO audit_admin') < ordre(cur, 'DELETE FROM Joueurs'),
       (ordre(cur, 'INSERT INTO audit_admin'), ordre(cur, 'DELETE FROM Joueurs')))
@@ -231,16 +197,13 @@ check("  il vise l'id du reset, pour le retrouver", _l and _l['cible_id'] == 42,
 check("  la valeur appliquee est consignee", _l and _l['details']['valeur'] == 2.0, _l)
 check("  ainsi que le nombre de joueurs touches",
       _l and _l['details']['joueurs_touches'] == 2, _l)
-# Le detail par joueur vit dans global_reset_details : le dupliquer ferait
-# grossir le journal sans rien apprendre.
 check("  mais PAS le detail par joueur (il vit dans global_reset_details)",
       _l and 'joueurs' not in _l['details'], _l)
 
 
 # ===========================================================================
 print("\n=== Ce que les gestes irreversibles doivent consigner ===")
-# delete_tournament ne restaure PAS les mu/sigma (R-37), contrairement a
-# l'annulation. Le journal le dit, faute de pouvoir le corriger ici.
+# delete_tournament ne restaure pas les mu/sigma : le journal le dit.
 check("tournoi_supprime consigne que les scores ne sont PAS restaures",
       "'scores_restaures': False" in _src or '"scores_restaures": False' in _src)
 
@@ -258,9 +221,7 @@ for _fn, _del in (('def api_delete_joueur', 'DELETE FROM Joueurs'),
 
 # ===========================================================================
 print("\n=== Configuration : deux domaines, deux actions ===")
-# update_config sert gestion_config ET gestion_ligues. Les confondre dans le
-# journal rendrait impossible de filtrer « qui a touche aux ligues » sans
-# relire chaque ligne de details.
+# Une action par domaine (config et ligues).
 _conf = _src[_src.index('def update_config'):]
 _conf = _conf[:_conf.index('\n@admin_bp.route')]
 check("update_config distingue config_modifiee et ligues_configurees",
@@ -268,16 +229,12 @@ check("update_config distingue config_modifiee et ligues_configurees",
 check("et setup_ligues reutilise ligues_configurees, meme domaine",
       _src.count("'ligues_configurees'") >= 2)
 
-# Le declassement rejoue touche TOUS les joueurs d'un coup : le signaler evite
-# de lire la ligne comme un reglage anodin.
 check("un declassement rejoue est signale dans les details",
       'declassement_rejoue' in _conf)
 
 
 # ===========================================================================
 print("\n=== Non-regression : un seul chemin d'ecriture (phase 1) ===")
-# La phase 2 ajoute beaucoup d'appels : aucun ne doit rouvrir un second chemin
-# d'ecriture vers la table.
 _n = sum(1 for _l in _src.splitlines()
          if 'INSERT INTO audit_admin' in _l and 'acteur_compte_id' in _l
          and not _l.strip().startswith('#'))

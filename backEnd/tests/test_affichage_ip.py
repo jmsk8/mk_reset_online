@@ -1,21 +1,5 @@
-"""La version de l'IP arrive jusqu'a l'ecran, et chaque page dit la bonne.
-
-Phases 2 et 3 de docs/affichage-ip-plan-redaction.md. Le defaut d'origine : ni
-le recap ni le classement ne disaient quelle version de l'IP ils affichaient --
-les payloads ne transmettaient meme pas `ip_version` -- et l'explication ne
-decrivait que la v1, fausse pour un recap v2.
-
-Ce fichier verifie :
-  - payloads : un recap v1, un recap v2 et le classement live portent chacun
-    le bloc `ip` de LEUR version (la version du recap n'est pas celle du
-    reglage, et inversement) ; /admin/config porte les textes des deux ;
-  - gabarits : plus aucun chiffre de l'IP ecrit en dur, plus de seuil
-    95/105/115 recopie, plus d'information confiee a une infobulle seule
-    (invisible au doigt), et v1/v2 jamais affichees cote a cote.
-
-Limite : le curseur est scripte, le calcul de l'IP est remplace par des
-bouchons. Ce qui est verifie ici, c'est le cheminement de la version.
-"""
+"""La version de l'IP est transmise jusqu'a l'ecran (recap, classement, admin)
+et les gabarits ne recopient aucun chiffre en dur."""
 from harness import *
 from datetime import date
 from flask import Flask
@@ -31,8 +15,8 @@ def lire(nom):
 
 # --- montage de routes_public, calcul bouchonne -----------------------------
 def monter_public(plan):
-    """routes_public sur un curseur scripte. Le calcul de l'IP est bouchonne :
-    on enregistre la version qu'il recoit, c'est elle qu'on suit."""
+    """routes_public sur un curseur scripte ; le calcul de l'IP est bouchonne
+    pour enregistrer la version recue."""
     cur, conn = install_db(plan)
     recharger()
     for m in ('routes_public', 'routes_comptes', 'cache', 'services', 'textes_ip'):
@@ -72,7 +56,7 @@ print("\n--- Recap : la version du recap, pas celle du reglage ---")
 for version_base, attendue in (('v1', 'v1'), ('v2', 'v2'), (None, 'v1')):
     cli, appels = monter_public([
         (r"FROM saisons WHERE slug", ligne_saison(version_base)),
-        # Le reglage live dit l'inverse : s'il fuitait dans le recap, ca se verrait.
+        # Reglage live inverse, pour detecter une fuite dans le recap.
         (r"key = 'ip_version_live'", ('v1' if attendue == 'v2' else 'v2',)),
     ])
     r = cli.get('/stats/recap/printemps')
@@ -112,8 +96,7 @@ for live in ('v1', 'v2'):
 
 
 print("\n--- Graphe d'evolution : la version de la page, et elle seule ---")
-# Le calcul parallele v1/v2 nourrissait une comparaison cote a cote retiree le
-# 22/08 (e7f8482). S'il revenait, l'autre version repartirait dans le payload.
+# Seule la version demandee doit etre calculee.
 tournois = [(1, date(2026, 6, 1), None, 10), (2, date(2026, 6, 8), None, 11)]
 parts = [(1, 1, 'A', '#fff', 80, 1, 60.0), (1, 2, 'B', '#fff', 40, 2, 45.0),
          (1, 3, 'C', '#fff', 30, 3, 40.0), (2, 1, 'A', '#fff', 70, 1, 61.0),
@@ -293,9 +276,7 @@ check("Saisons : plus de garde « Indicateur de Performance »",
 
 
 print("\n=== Condition de victoire IP : un seul nom depuis le 2026-09-23 ===")
-# L'ancien synonyme 'grand_master' de saisons.victory_condition est retire
-# (absent de tous les dumps de prod). La cle INTERNE candidates['grand_master']
-# reste : c'est le classement IP, et c'est elle qui doit continuer a servir.
+# La cle interne candidates['grand_master'] reste le classement IP.
 _cands = {'grand_master': [{'id': 1, 'nom': 'A', 'final_score': 110, 'eligible': True},
                            {'id': 2, 'nom': 'B', 'final_score': 90, 'eligible': False}]}
 _top, _ = services._determine_winners(_cands, 'Indice de Performance', [], 10)

@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
-# Tests de fumee du parcours d'authentification et de l'API de service.
-#
-# Ni Postgres ni Discord : le curseur est scripte et l'API Discord simulee.
-# Ca ne valide pas le SQL, mais ca valide ce qui casse en silence -- qui
-# consomme quelle invitation, quel code d'erreur sort quand la base tombe,
-# qui a le droit de faire quoi, et comment les lobbies sont composes.
-# Seul flask est requis.
+# Lance les tests backend, sans Postgres ni Discord (seul flask est requis).
 set -uo pipefail
 cd "$(dirname "$0")"
 export PYTHONPATH="$PWD:$PWD/..:${PYTHONPATH:-}"
@@ -27,8 +21,7 @@ echo "────────────────────────�
 if [ "$rc" -eq 0 ]; then
   echo "✅ $fichiers fichiers, tous verts"
 else
-  # Un fichier qui plante a l'import n'affiche aucun decompte : sans cette
-  # ligne, son absence passe inapercue au milieu des autres.
+  # Liste les fichiers en echec (un plantage a l'import n'affiche aucun decompte).
   echo "❌ en echec : ${plantes[*]}"
 fi
 exit $rc

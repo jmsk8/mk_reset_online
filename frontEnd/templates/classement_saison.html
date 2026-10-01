@@ -74,7 +74,6 @@
     {% set classement = saison.classement_ip or [] %}
     {% set evo = saison.ip_evolution or {} %}
     {% set stats = saison.recap_stats or {} %}
-    {# Version du reglage en cours, textes et seuils : backEnd/textes_ip.py. #}
     {% set ip = saison.ip %}
     {% import 'partiels/cellule_ip.html' as ipm %}
     {% set ns = namespace(ip_leader=None) %}

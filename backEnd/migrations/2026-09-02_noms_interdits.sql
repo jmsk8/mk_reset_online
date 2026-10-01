@@ -1,11 +1,4 @@
--- Empeche la resurrection d'une identite anonymisee.
---
--- add_tournament cree un joueur a la volee quand le nom saisi est inconnu :
--- apres une anonymisation, ressaisir "Toto" recreerait la fiche qu'on venait
--- de retirer.
---
--- On stocke un SHA256 du nom en minuscules, jamais le nom : la table repond
--- « ce nom est-il interdit ? » sans conserver l'identite effacee.
+-- Empeche la recreation d'une identite anonymisee : sha256 du nom en minuscules.
 
 BEGIN;
 

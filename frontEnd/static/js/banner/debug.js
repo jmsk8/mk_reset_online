@@ -1,26 +1,9 @@
-// Le HUD de debug : la carte de piste, la couche de vision, les emprises.
-//
-// Rien ici ne tourne hors de `GAME_CONFIG.debugMode`. C'est un instrument
-// d'observation : il lit l'etat, il ne l'ecrit jamais.
+// HUD de debug (mode debug uniquement, lecture seule) : carte de piste vue de
+// dessus, couche de vision et emprises. Fenetre centree sur le kart observe,
+// a l'echelle 1 (un pixel de monde pour un pixel de carte) ; tout ce qui est
+// dessine vient du serveur (`visionTuple`).
 
-// La carte de debug : une portion de piste vue de dessus, l'abscisse en longueur,
-// l'ordonnee en PROFONDEUR. Ce qui s'y dessine vient du serveur et de lui seul
-// (`visionTuple`) — le client ne refait aucun calcul de perception.
-//
-// Une FENETRE et non le tour entier : un tour fait 3840 px de long pour 126 de
-// profondeur, soit 30 : 1 contre 6 : 1 pour le cadre. Les deux axes ne
-// partageaient donc pas la meme echelle et aucune forme ne ressemblait a
-// elle-meme. Mettre les axes a la meme echelle sur un tour entier ne laisse que
-// 22 px de profondeur, ou un kart mesure un pixel.
-//
-// La fenetre est donc centree sur le kart observe et dessinee a l'ECHELLE 1 : un
-// pixel de monde pour un pixel de carte. Ca coute la hauteur de la piste en page,
-// et une partie du champ du kart sort du dessin — en echange, une distance
-// mesuree a l'ecran est la vraie distance.
-
-// La profondeur dans le SENS DE LA SCENE : le fond de piste en haut, le bord
-// proche en bas, comme la banniere le montre. Les extremites sont rentrees de
-// quelques pour cent, les marques etant centrees sur leur point.
+// Fond de piste en haut, bord proche en bas ; marge en % aux extremites.
 const DEPTH_PAD = 7;
 
 function depthPct(y) {
@@ -32,74 +15,44 @@ function depthPct(y) {
     return Math.max(0, Math.min(100, DEPTH_PAD + (1 - t) * inner));
 }
 
-// La fenetre : le bord gauche et la largeur, en px de monde. Recalcules a chaque
-// image — elle suit le kart observe.
+// Fenetre : bord gauche et largeur en px de monde, recalcules a chaque image.
 let mapView = { start: 0, span: 1 };
 
 let mapHudHeight = 0;
 
-// Combien de px de monde vaut UNE unite de profondeur, ici et maintenant.
-//
-// Le moteur n'a pas cette constante et n'en veut pas : la banniere n'a pas la
-// meme hauteur sur mobile et sur PC. Elle se mesure donc la ou la scene la
-// definit — un kart se pose a `bottom: yPercent%` de son conteneur.
+// Px de monde par unite de profondeur, selon la hauteur reelle de la scene.
 function depthToWorldPx() {
-    // Mesuree par `refreshLayoutMetrics()`, jamais ici : cette fonction est
-    // appelee depuis le rendu, et une lecture du DOM a cet endroit serait la pire
-    // de toutes.
-    //
-    // La bande ROULABLE, et non la scene ni l'asphalte : la scene a grandi quand
-    // la bordure mordait sur le decor, l'asphalte deborde derriere la piste. Les
-    // trois ont rendu le meme nombre longtemps, ce qui rendait la confusion
-    // invisible.
+    // Hauteur de la bande roulable, mesuree par refreshLayoutMetrics().
     const band = WORLD.roadMaxY - WORLD.roadMinY;
     const h = viewMetrics.roadBandHeight;
-    // Repli : la valeur PC, celle que `bodies.depthPx` pose en config moteur et
-    // dont descendent l'aplatissement du kart et la rondeur du tuyau.
+    // Repli : valeur PC (bodies.depthPx).
     return (h > 0 && band > 0) ? h / band : 3.6;
 }
 
-// Largeur de la bande d'arrivee, en px de monde. Mesuree sur l'element du decor
-// plutot que recopiee : c'est le CSS qui la decide, et une copie finirait par
-// mentir. La mesure se prend dans `refreshLayoutMetrics()` — c'est une largeur de
-// mise en page, prise avant la mise a l'echelle mobile, donc bien en px de MONDE.
+// Largeur de la bande d'arrivee en px de monde, mesuree sur le decor par
+// refreshLayoutMetrics().
 function finishBandWidth() {
-    // Repli sur la valeur du CSS, le temps que le decor soit mesurable.
+    // Repli sur la valeur du CSS.
     return cachedFinishBand > 0 ? cachedFinishBand : 60;
 }
 
-// Recentre la fenetre et remet le cadre a l'echelle.
-//
-// L'ECHELLE EST UN, et c'est elle la donnee : un kart mesure sur la carte les 60
-// x 18 px qu'il occupe au sol. Tout le reste en decoule — la largeur du cadre se
-// choisit en CSS, la fenetre vaut cette largeur, la hauteur vaut la profondeur de
-// piste.
-//
-// C'est l'inverse de la version precedente, qui fixait la fenetre sur la portee
-// de vue et en deduisait une echelle de 0.58 : tout le champ tenait dans le
-// cadre, mais les corps y faisaient la moitie de leur taille.
+// Recentre la fenetre et met le cadre a l'echelle 1 (largeur choisie en CSS,
+// hauteur = profondeur de piste).
 function updateMapView(hud) {
     const vis = WORLD.vision;
 
-    // Largeur prise dans le cache, jamais relue ici : `clientWidth` tombe apres
-    // les ecritures de style de `renderState`, et le navigateur doit alors
-    // recalculer toute la mise en page. La carte etait le premier outil fausse
-    // par la mesure qu'elle declenchait.
+    // Largeur en cache (une lecture ici forcerait une mise en page).
     const frame = viewMetrics.hudWidth || WORLD.width;
     const span = Math.max(1, Math.min(frame, WORLD.width));
 
-    // Le kart observe fait le centre — c'est sa vue qu'on lit. Sans lui, la
-    // camera.
+    // Centre : le kart observe, sinon la camera.
     let centre = renderCameraX;
     if (focusedKartId !== null) {
         const watched = worldState.kartsById[focusedKartId];
         if (watched) centre = watched.worldX;
     }
 
-    // Le cadre penche du cote ou le kart REGARDE : il voit 1400 px devant pour
-    // 1000 derriere, et a echelle 1 ce qu'on sacrifie doit etre l'arriere. Le
-    // decalage est borne au quart de la fenetre pour que le kart ne se retrouve
-    // jamais sur un bord.
+    // Cadre decale du cote ou le kart regarde (borne au quart de la fenetre).
     const quarter = span / 4;
     let bias = vis ? (vis.rangeFront - vis.rangeBack) / 2 : 0;
     if (bias > quarter) bias = quarter;
@@ -108,52 +61,41 @@ function updateMapView(hud) {
     mapView.span = span;
     mapView.start = centre - span / 2 + bias;
 
-    // Echelle 1 : la bande vaut la profondeur de piste, en px de monde. Pas
-    // d'arrondi — le cadre porte `DEPTH_PAD` % de marge, et arrondir sa hauteur
-    // decale la bande utile d'autant.
+    // Hauteur de la bande en px de monde, sans arrondi.
     const band = (WORLD.roadMaxY - WORLD.roadMinY) * depthToWorldPx();
     const height = band / ((100 - DEPTH_PAD * 2) / 100);
 
-    // Ecrite seulement quand elle change : la poser a chaque image forcerait un
-    // recalcul de mise en page soixante fois par seconde.
+    // Ecrite seulement si elle change.
     if (height > 0 && height !== mapHudHeight) {
         mapHudHeight = height;
         hud.style.height = `${height.toFixed(2)}px`;
     }
 }
 
-// Ou tombe un point du monde dans la fenetre, en px depuis son bord gauche. Le
-// tour boucle : ce qui PRECEDE la fenetre se lit en negatif, sans quoi un corps
-// qui entre par la gauche serait confondu avec un corps qui sort par la droite.
+// Position d'un point du monde dans la fenetre, en px depuis son bord gauche
+// (negative pour ce qui precede la fenetre, le tour bouclant).
 function mapOffset(worldX) {
     const w = WORLD.width;
     let d = worldX - mapView.start;
     if (w > 0) {
         d = ((d % w) + w) % w;
-        // Le partage se fait au milieu de ce qui RESTE hors du cadre, et non au
-        // demi-tour : la fenetre peut couvrir plus de la moitie d'un tour, et
-        // basculer a w/2 renverrait sa propre moitie droite du cote des negatifs.
+        // Partage au milieu de ce qui reste hors du cadre.
         if (d > (w + mapView.span) / 2) d -= w;
     }
     return d;
 }
 
-// Vrai quand un point tombe dans le cadre. Ce qui n'y est pas ne se dessine
-// pas : une marque repliee sur un bord mentirait sur une position.
+// Vrai si le point tombe dans le cadre.
 function inMapView(pct) {
     return pct >= 0 && pct <= 100;
 }
 
-// Un corps se dessine a son emprise reelle et non en pastille de taille fixe. Les
-// deux axes portant la meme echelle, une largeur et une profondeur s'y comparent
-// : un tuyau est visiblement plus large qu'un kart.
-
+// Les corps se dessinent a leur emprise reelle (memes echelles sur les deux axes).
 function spanXPct(halfX) {
     return (halfX * 2 / mapView.span) * 100;
 }
 
-// La profondeur ne dispose que de la bande interieure, celle que `depthPct`
-// remplit : les marges du cadre n'en font pas partie.
+// Hauteur en % de la bande interieure.
 function spanYPct(halfY) {
     const lo = WORLD.roadMinY;
     const hi = WORLD.roadMaxY;
@@ -161,16 +103,14 @@ function spanYPct(halfY) {
     return (halfY * 2 / (hi - lo)) * (100 - DEPTH_PAD * 2);
 }
 
-// Pose une marque a sa taille reelle. `round` pour le seul corps qui l'est.
+// Pose une marque a sa taille reelle (`round` pour le seul corps rond).
 function sizeEntity(el, half) {
     el.style.width = `${spanXPct(half.x)}%`;
     el.style.height = `${spanYPct(half.y)}%`;
     el.style.borderRadius = half.round ? '50%' : '0';
 }
 
-// Un segment du monde ramene a la fenetre et coupe a ses bords. `len` est signe —
-// negatif pour un regard vers l'arriere. Un segment y est d'un seul tenant, la
-// fenetre ne faisant jamais le tour.
+// Segment du monde ramene a la fenetre et coupe a ses bords (`len` signe).
 function worldSegments(from, len) {
     const span = mapView.span;
 
@@ -188,7 +128,6 @@ function xPct(worldX) {
     return (mapOffset(worldX) / mapView.span) * 100;
 }
 
-// Une bande horizontale : un morceau de monde sur une tranche de profondeur.
 function bandHtml(cls, from, len, loY, hiY, title) {
     const top = depthPct(loY);
     const bottom = depthPct(hiY);
@@ -201,21 +140,14 @@ function bandHtml(cls, from, len, loY, hiY, title) {
     ).join('');
 }
 
-// Un trait de profondeur, sur toute la largeur de la carte.
 function ruleHtml(cls, y, title) {
     return `<div class="${cls}" style="top:${depthPct(y).toFixed(2)}%;"${title ? ` title="${title}"` : ''}></div>`;
 }
 
-// Une OMBRE : un trapeze au sol, entre deux ecarts au kart, avec sa propre
-// profondeur a chaque bout. Elle s'elargit en s'eloignant de l'oeil et s'arrete
-// net — c'est tout le modele de la vue a la troisieme personne.
-//
-// Le rectangle qui la porte couvre son enveloppe, `clip-path` y taille le
-// trapeze. Coupee au bord du cadre, ses profondeurs se reinterpolent a la coupe.
+// Angle mort : trapeze au sol entre deux ecarts au kart, avec une profondeur a
+// chaque bout (clip-path sur le rectangle englobant, reinterpole a la coupe).
 function shadowHtml(from, to, loA, hiA, loB, hiB) {
-    // Un coup d'oeil arriere projette l'ombre dans le sens des x decroissants :
-    // on remet le proche a gauche AVEC ses profondeurs, sans quoi le trapeze se
-    // dessine a l'envers.
+    // Regard vers l'arriere : on remet le proche a gauche avec ses profondeurs.
     if (to < from) {
         const x = from; from = to; to = x;
         const l = loA; loA = loB; loB = l;
@@ -224,8 +156,7 @@ function shadowHtml(from, to, loA, hiA, loB, hiB) {
 
     const span = to - from;
 
-    // Bornee a la piste : au-dela elle ne cache plus rien de reel, et un
-    // trapeze qui deborde de dix fois la hauteur ecrase le dessin.
+    // Borne a la piste.
     const clampY = y => Math.max(WORLD.roadMinY - 1, Math.min(WORLD.roadMaxY + 1, y));
 
     const at = x => {
@@ -233,8 +164,7 @@ function shadowHtml(from, to, loA, hiA, loB, hiB) {
         return [clampY(loA + (loB - loA) * t), clampY(hiA + (hiB - hiA) * t)];
     };
 
-    // Coupee aux bords de la fenetre, profondeurs reinterpolees a la coupe : sans
-    // ca le morceau visible porterait la largeur du bout reste dehors.
+    // Coupe aux bords de la fenetre, profondeurs reinterpolees.
     const view = mapView.span;
     const head = mapOffset(from);
 
@@ -251,8 +181,7 @@ function shadowHtml(from, to, loA, hiA, loB, hiB) {
     const left = ((head + (x0 - from)) / view) * 100;
     const width = ((x1 - x0) / view) * 100;
 
-    // Les quatre coins, en pourcentage de la boite : haut-gauche, haut-droit,
-    // bas-droit, bas-gauche.
+    // Coins en % : haut-gauche, haut-droit, bas-droit, bas-gauche.
     const yTopA = depthPct(a[1]);
     const yBotA = depthPct(a[0]);
     const yTopB = depthPct(b[1]);
@@ -269,33 +198,20 @@ function shadowHtml(from, to, loA, hiA, loB, hiB) {
            `100% ${pc(yBotB)}%,0% ${pc(yBotA)}%);"></div>`;
 }
 
-// COUPE POUR L'INSTANT. Passer a true rend le faisceau, rien d'autre a toucher :
-// le dessin ne depend que du releve de vue, deja transmis.
+// Faisceau desactive pour l'instant.
 const SHOW_RAY_FAN = false;
 
-// Le FAISCEAU, trace depuis l'oeil — le point de vue en arriere du kart
-// (`vision.eye.back`). C'est de la que tout le modele d'occlusion se mesure :
-// `shadowHides` compare des PENTES rapportees a l'oeil, et un angle mort est la
-// projection d'un corps depuis ce point. Les trapezes le montraient deja, mais
-// amputes de leur sommet.
-//
-// Deux familles de traits : les rayons de BORD donnent l'ouverture du faisceau
-// meme quand rien ne masque ; les rayons d'ARETE, deux par corps solide, bornent
-// son ombre et montrent que le trapeze EST une projection.
-//
-// En SVG et non en div : un trait oblique se decrit par deux points.
+// Faisceau trace depuis l'oeil (`vision.eye.back`) : rayons de bord (ouverture)
+// et rayons d'arete (deux par corps solide, bornes de son ombre). En SVG.
 function rayFanHtml(v, dir, lo, hi) {
     const span = mapView.span;
 
-    // Tous les points se reperent PAR RAPPORT A L'OEIL, jamais chacun pour soi :
-    // le tour boucle, et deux `mapOffset` independants peuvent tomber de part et
-    // d'autre de la couture.
+    // Points reperes par rapport a l'oeil (le tour boucle).
     const eyeOff = mapOffset(v.x - v.eyeBack * dir);
     const px = dw => (((eyeOff + dw) / span) * 100).toFixed(3);
     const py = y => depthPct(y).toFixed(2);
 
-    // Un point a `look` du kart est a `look + eyeBack` de l'oeil, du cote
-    // balaye. C'est la seule conversion du dessin, et elle vaut pour tout.
+    // Un point a `look` du kart est a `look + eyeBack` de l'oeil.
     const reach = look => (look + v.eyeBack) * dir;
 
     const x0 = px(0);
@@ -307,8 +223,7 @@ function rayFanHtml(v, dir, lo, hi) {
     const lines = [ray('dv-ray dv-ray-edge', v.range, lo),
                    ray('dv-ray dv-ray-edge', v.range, hi)];
 
-    // `sh[1]` est le bout de l'ombre, `sh[4]`/`sh[5]` ses deux profondeurs la —
-    // donc exactement les deux points ou aboutissent les rayons rasants.
+    // sh[1] : bout de l'ombre ; sh[4]/sh[5] : ses deux profondeurs.
     for (let i = 0; i < v.shadows.length; i++) {
         const sh = v.shadows[i];
         lines.push(ray('dv-ray dv-ray-graze', sh[1], sh[4]));
@@ -318,8 +233,7 @@ function rayFanHtml(v, dir, lo, hi) {
     return `<svg class="dv-rays" width="100%" height="100%">${lines.join('')}</svg>`;
 }
 
-// Un point pose a un endroit precis du monde. Hors fenetre, il ne se dessine
-// pas : replie sur un bord, il mentirait sur une position.
+// Point du monde ; rien hors fenetre.
 function pinHtml(cls, worldX, y, label) {
     const left = xPct(worldX);
     if (!inMapView(left)) return '';
@@ -327,12 +241,7 @@ function pinHtml(cls, worldX, y, label) {
            `${label ? ` title="${label}"` : ''}></div>`;
 }
 
-// Le dessin de la vue, refait a chaque releve neuf — un balayage tourne douze
-// fois par seconde, l'affichage soixante.
-//
-// La fenetre, elle, DEFILE : le meme releve ne tombe pas au meme endroit d'une
-// image a l'autre. Le cadrage entre donc dans ce qui declenche un redessin, sans
-// quoi la couche de vision se fige pendant que la piste glisse dessous.
+// Dessin de la vue, refait a chaque releve neuf ou quand la fenetre defile.
 let visionDrawn = null;
 let visionDrawnAt = null;
 let visionNote = '';
@@ -343,15 +252,10 @@ function renderVisionLayer() {
 
     const v = worldState.vision;
 
-    // Pourquoi il n'y a rien a dessiner, quand il n'y a rien a dessiner. Un
-    // `return` muet est ce qui a laisse cette carte vide sans que personne ne
-    // s'en apercoive : chaque cause a sa phrase, et elle s'affiche a la place du
-    // dessin.
+    // Raison affichee quand il n'y a rien a dessiner.
     let note = '';
     if (!WORLD.vision) {
-        // Le `hello` ne porte pas les distances de vue : le service tourne sur
-        // une version anterieure du protocole. Recharger la page n'y changera
-        // rien.
+        // `hello` sans distances de vue : service sur une ancienne version.
         note = 'service de course a redemarrer (hello sans bloc vision)';
     } else if (focusedKartId === null) {
         note = 'aucun kart suivi — clique un kart dans le classement';
@@ -379,50 +283,36 @@ function renderVisionLayer() {
     const hi = WORLD.roadMaxY;
     const html = [];
 
-    // 1. LE CHAMP. Jusqu'ou porte CE balayage-la, dans le sens ou il a eu lieu.
-    //    La portee vient du serveur : elle n'est pas la meme devant et derriere,
-    //    et la choisir ici serait deja une deduction.
+    // 1. Le champ : portee du balayage (fournie par le serveur).
     html.push(bandHtml('dv-cone', v.x, v.range * dir, lo, hi,
         `${v.scanBack ? 'arriere' : 'avant'} ${v.range}px`));
 
-    // 1 bis. LES ANGLES MORTS. Ce que les corps solides jettent au sol depuis
-    //    la camera de poursuite. Chacun s'elargit en s'eloignant et S'ARRETE :
-    //    la ou il s'arrete, le kart revoit la piste. C'est la lecture qui
-    //    manquait — un trou noir dans le champ vert, avec un bord.
+    // 1 bis. Les angles morts projetes par les corps solides.
     for (let i = 0; i < v.shadows.length; i++) {
         const sh = v.shadows[i];
         html.push(shadowHtml(v.x + sh[0] * dir, v.x + sh[1] * dir,
                              sh[2], sh[3], sh[4], sh[5]));
     }
 
-    // 1 ter. LE FAISCEAU : d'ou partent ces ombres, et pourquoi elles ont cette
-    // forme.
-    //    Pose apres elles pour que les rayons se lisent PAR-DESSUS le noir. Coupe pour
-    //    l'instant, cf. `SHOW_RAY_FAN`.
+    // 1 ter. Le faisceau, par-dessus les ombres (voir SHOW_RAY_FAN).
     if (SHOW_RAY_FAN) html.push(rayFanHtml(v, dir, lo, hi));
 
-    // 2. LA LIGNE DE TIR qu'on partage : la portee du danger latent, sur la
-    //    seule bande ou l'alignement compte. Hors de cette bande, un porteur ne
-    //    peut rien contre le kart et se decaler ne veut rien dire.
+    // 2. La ligne de tir : portee du danger latent sur la bande d'alignement.
     html.push(bandHtml('dv-press', v.x, cfg.pressureRange * dir,
         v.y - cfg.clear, v.y + cfg.clear, `alignement ±${cfg.clear}`));
 
-    // 3. LA VOIE : plus large que le degagement, et elle doit l'etre — les deux
-    //    corps bougent en profondeur pendant le temps avant impact.
+    // 3. La voie (plus large que le degagement).
     html.push(ruleHtml('dv-lane', v.y - cfg.threatLane, 'voie'));
     html.push(ruleHtml('dv-lane', v.y + cfg.threatLane, 'voie'));
 
-    // 4. CE QUI FERME UN PASSAGE. C'est la lecture la plus utile de la carte :
-    //    un couloir libre est un trou entre deux barres. Un mur dur — un tuyau —
-    //    ne se franchit pas, le reste se paie.
+    // 4. Ce qui ferme un passage : murs durs et obstacles franchissables a un cout.
     for (let i = 0; i < v.spans.length; i++) {
         const s = v.spans[i];
         html.push(bandHtml(s[4] ? 'dv-span dv-hard' : 'dv-span', v.x, s[2],
             s[0], s[1], `${s[4] ? 'mur' : 'corps'} a ${Math.round(s[2])}px`));
     }
 
-    // 5. CE QUE LE MOTEUR A RETENU. Chaque marque est une decision de la vue,
-    //    pas une entite de la scene : c'est l'ecart entre les deux qu'on cherche.
+    // 5. Ce que le moteur a retenu.
     if (v.threat) {
         html.push(ruleHtml('dv-threat', v.threat[2],
             `menace ${v.threat[1]} · ${v.threat[3] < 0 ? 'jamais' : v.threat[3] + 'ms'}`));
@@ -439,14 +329,10 @@ function renderVisionLayer() {
     if (v.red) html.push(pinHtml('dv-pin dv-pin-red', v.x - v.red[0], v.red[1],
         `rouge derriere ×${v.red[3]}`));
 
-    // 6. LA CONSIGNE. La profondeur que le kart REJOINT, s'il a un plan. Une vue
-    //    sans le geste qu'elle a produit ne se juge pas.
+    // 6. La consigne : profondeur visee par le plan.
     if (v.plan) html.push(ruleHtml('dv-plan', v.plan[3], `${v.plan[0]}${v.plan[4] ? ' (approx.)' : ''}`));
 
-    // 7. L'OEIL. Il n'est PAS sur le kart : la camera le suit de `eyeBack`
-    //    pixels, du cote oppose au regard, et c'est de la que partent toutes
-    //    les ombres ci-dessus. La voir a sa place est la moitie de ce qui rend
-    //    le dessin comprehensible.
+    // 7. L'oeil, a `eyeBack` du kart du cote oppose au regard.
     const eyePct = xPct(v.x - v.eyeBack * dir);
     if (inMapView(eyePct)) {
         html.push(`<div class="dv-eye${v.scanBack ? ' dv-eye-back' : ''}" ` +
@@ -467,35 +353,26 @@ function initDebugHUD() {
     }
     hud.innerHTML = '';
     hud.style.display = 'block';
-    // La hauteur se recalcule : `updateMapView` ne la reecrit que lorsqu'elle
-    // change, et le cadre vient d'etre vide.
+    // Hauteur a recalculer (cadre vide).
     mapHudHeight = 0;
     visionDrawnAt = null;
 
-    // La couche de vision passe en premier : elle est le fond sur lequel les
-    // entites se lisent, jamais l'inverse.
+    // Couche de vision en premier (fond).
     const vision = document.createElement('div');
     vision.id = 'debug-vision';
     hud.appendChild(vision);
     visionDrawn = null;
 
-    // La ligne d'arrivee defile comme le reste : la fenetre bouge, elle ne
-    // reste pas a une fraction fixe du cadre. Sa position se pose donc a chaque
-    // image, avec celle des corps.
+    // Ligne d'arrivee, positionnee a chaque image.
     const finishLine = document.createElement('div');
     finishLine.className = 'debug-entity debug-finish';
     finishLine.id = 'debug-finish';
     hud.appendChild(finishLine);
 
-    // Chaque corps se dessine a son emprise, et le serveur seul la connait. Un
-    // vieux serveur qui ne l'enverrait pas laisse le repli hors ligne prendre le
-    // relais : la carte reste juste plutot que de disparaitre.
+    // Emprises du serveur, ou repli hors ligne.
     const hitboxes = WORLD.hitboxes || OFFLINE_WORLD.hitboxes;
 
-    // Les tuyaux : ils ne bougent pas dans le MONDE, mais la fenetre si. Leur
-    // emprise se pose une fois — elle ne change jamais — et leur position a
-    // chaque image, comme celle des karts. C'est le corps le plus structurant de
-    // la piste, le seul qu'on ne traverse pas.
+    // Tuyaux : emprise posee une fois, position a chaque image.
     worldState.pipes.forEach((pipe, i) => {
         const dPipe = document.createElement('div');
         dPipe.className = 'debug-entity debug-pipe';
@@ -519,22 +396,17 @@ function initDebugHUD() {
         dKart.className = 'debug-entity debug-kart';
         dKart.id = `debug-kart-${kart.id}`;
         dKart.innerText = GAME_CONFIG.resources.initials[kart.charName] || '?';
-        // Son emprise a lui, pas celle du kart de reference : c'est tout
-        // l'interet de la carte que d'y voir un long et un court n'occuper ni
-        // la meme longueur ni la meme profondeur.
+        // Emprise propre a ce kart.
         sizeEntity(dKart, kart.body || hitboxes.kart);
         hud.appendChild(dKart);
     });
 
-    // Les objets vont et viennent : leur couche se reecrit a chaque image, elle
-    // ne se peuple pas ici.
+    // Objets : couche reecrite a chaque image.
     const items = document.createElement('div');
     items.id = 'debug-items';
     hud.appendChild(items);
 
-    // Ce que la banniere montre, dans la fenetre. Un seul element : la carte ne
-    // fait plus le tour du monde, donc ce rectangle ne peut plus se couper en
-    // deux morceaux comme il le fallait du temps du tour complet.
+    // Zone montree par la banniere.
     const camView = document.createElement('div');
     camView.className = 'debug-camera-view';
     camView.id = 'debug-camera-view';
@@ -566,24 +438,13 @@ function initDebugHUD() {
     leaderboard.appendChild(list);
 
     document.body.appendChild(leaderboard);
-    // Le cadre vient d'apparaitre : on prend sa largeur maintenant, une fois,
-    // plutot qu'a chaque image depuis updateMapView().
+    // Largeur du cadre mesuree une fois.
     refreshLayoutMetrics();
 }
 
-// Les objets, redessines d'un bloc a chaque image : ils naissent et disparaissent
-// en pleine course, et une couche reecrite a moins d'etat qu'un pool a tenir a
-// jour.
-//
-// Deux corps se DESSINENT comme « sans emprise » plutot que d'etre passes sous
-// silence — un objet inoffensif au milieu de la piste est ce qu'on vient verifier
-// : la bleue, qui survole tout et dont le souffle a un rayon croissant, et la
-// banane en cloche tant qu'elle MONTE.
-//
-// L'objet TRAINE n'est pas dans `worldState.items` mais dans `kart.heldItem`, et
-// il a pourtant une emprise, testee a `worldX + heldBehindX` : c'est elle qui
-// fait du trainage un BOUCLIER, et qui blesse le poursuivant colle. Sans lui la
-// carte mentait par omission sur le cas le plus utile a verifier.
+// Couche des objets, reecrite a chaque image. Les objets sans emprise (bleue,
+// banane qui monte) sont dessines en point ; les objets traines (dans
+// kart.heldItem) a leur emprise worldX + heldBehindX.
 function renderItemLayer() {
     const layer = document.getElementById('debug-items');
     if (!layer) return;
@@ -611,8 +472,7 @@ function renderItemLayer() {
         const blue = item.type === 'blueShell' || item.type === 'blueBlast';
         const inert = blue || item.rising;
 
-        // Sans emprise, il reste un point : on marque OU il est, sans lui
-        // preter une boite qu'il n'a pas.
+        // Sans emprise : un simple point.
         const cls = 'dv-item' + (inert ? ' dv-item-inert' : '')
             + (item.type === 'banana' ? ' dv-item-banana' : '');
 
@@ -620,9 +480,7 @@ function renderItemLayer() {
              `${item.type}${inert ? ' — sans emprise' : ''}`, !inert);
     }
 
-    // Les objets traines, pris sur leur porteur. Meme emprise qu'un objet
-    // largue — c'est la meme constante qui les teste — mais une autre couleur :
-    // celui-ci encaisse, il ne blesse pas.
+    // Objets traines : meme emprise, autre couleur.
     for (let k = 0; k < worldState.karts.length; k++) {
         const kart = worldState.karts[k];
         const held = kart.heldItem;
@@ -635,8 +493,7 @@ function renderItemLayer() {
     layer.innerHTML = html.join('');
 }
 
-// Pose une marque a son abscisse dans la fenetre, ou l'efface si elle en sort.
-// Rend true quand elle est visible, pour que l'appelant s'epargne le reste.
+// Place une marque dans la fenetre ou l'efface ; renvoie true si elle est visible.
 function placeInView(el, worldX) {
     if (!el) return false;
 
@@ -655,23 +512,16 @@ function updateDebugHUD() {
     const hud = document.getElementById('debug-hud');
     if (!hud) return;
 
-    // Meme cache que la boucle. C'est ici que la lecture faisait le plus de
-    // degats : elle tombait APRES les ecritures de style de `renderState`, donc
-    // le navigateur devait recalculer toute la mise en page pour y repondre —
-    // le HUD faussait ainsi la mesure qu'il affiche.
+    // Largeur en cache (pas de lecture apres les ecritures de renderState).
     const screenWidth = viewMetrics.containerWidth || window.innerWidth;
 
-    // Le cadrage d'abord : tout ce qui suit se place dedans.
     updateMapView(hud);
 
     const camMain = document.getElementById('debug-camera-view');
 
-    // La fenetre de camera ne se dessine que LIBRE. Collee a un kart, elle est
-    // centree sur lui par construction et recouvre d'un aplat rouge la zone qu'on
-    // vient regarder — le seul moment ou sa position s'apprend est celui ou elle
-    // avance toute seule.
+    // Fenetre de camera dessinee seulement en camera libre.
     if (camMain) {
-        // camera = centre de la vue : le bord gauche est a mi-largeur en arriere.
+        // cameraX est le centre de la vue.
         const seg = (focusedKartId === null)
             ? worldSegments(renderCameraX - screenWidth / 2, screenWidth)
             : [];
@@ -685,13 +535,8 @@ function updateDebugHUD() {
         }
     }
 
-    // Les corps fixes du monde defilent sous la fenetre : leur abscisse se repose
-    // a chaque image, et ce qui sort du cadre disparait.
-    //
-    // La ligne d'arrivee est une BANDE, pas un trait, posee par son bord GAUCHE :
-    // c'est ainsi que le decor la place, et c'est exactement la que le tour se
-    // compte. Elle passe par `worldSegments` car elle peut n'etre qu'a moitie
-    // dans le cadre.
+    // Corps fixes repositionnes a chaque image. La ligne d'arrivee est une
+    // bande posee par son bord gauche, eventuellement coupee par le cadre.
     const finishEl = document.getElementById('debug-finish');
     if (finishEl) {
         const seg = worldSegments(WORLD.finishLineX, finishBandWidth());
@@ -710,9 +555,7 @@ function updateDebugHUD() {
         placeInView(document.getElementById(`debug-box-${i}`), worldState.itemBoxes[i].worldX);
     }
 
-    // Ce que le kart suivi n'a PAS vu au dernier balayage. C'est la moitie
-    // manquante de la carte : sans elle, un kart qui ignore une banane et un
-    // kart qui ne la voit pas se dessinent pareil.
+    // Ce que le kart suivi n'a pas vu au dernier balayage.
     const v = worldState.vision;
     const hidden = v ? v.hidden : null;
 
@@ -721,17 +564,14 @@ function updateDebugHUD() {
         if (el) {
             if (!placeInView(el, kart.worldX)) return;
             el.style.top = `${depthPct(kart.yPercent)}%`;
-            // Translucides comme le reste des marques : a taille reelle les
-            // corps se recouvrent, et un aplat opaque effacerait le tuyau
-            // contre lequel un kart est justement en train de se cogner.
+            // Translucides : a taille reelle, les corps se recouvrent.
             el.style.backgroundColor = (kart.state === 'hit')
                 ? 'rgba(255, 64, 64, 0.75)'
                 : 'rgba(64, 96, 255, 0.75)';
             if (kart.state === 'grid') el.style.backgroundColor = 'rgba(150, 150, 150, 0.7)';
             el.innerText = GAME_CONFIG.resources.initials[kart.charName] || '?';
 
-            // Meme convention de signe que le moteur : un kart s'identifie en
-            // negatif dans les releves de vue.
+            // Un kart s'identifie en negatif dans les releves (comme le moteur).
             const masked = !!hidden && hidden.indexOf(-1 - kart.id) !== -1;
             el.classList.toggle('is-masked', masked);
             el.classList.toggle('is-watched', v ? v.id === kart.id : false);
@@ -743,9 +583,7 @@ function updateDebugHUD() {
 
     const leaderboardList = document.getElementById('debug-leaderboard-list');
     if (leaderboardList) {
-        // Meme reference que la physique : rollItem() mesure l'ecart au premier
-        // via totalDistance, jamais via worldX. Trier ici sur autre chose
-        // afficherait des ecarts incoherents avec le tirage d'items.
+        // Tri sur totalDistance, comme rollItem() cote serveur.
         const sortedKarts = [...worldState.karts]
             .sort((a, b) => b.totalDistance - a.totalDistance);
 
@@ -754,9 +592,7 @@ function updateDebugHUD() {
         leaderboardList.innerHTML = sortedKarts.map((kart, index) => {
             const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
             const name = kart.charName.charAt(0).toUpperCase() + kart.charName.slice(1);
-            // Le nombre de tours n'est pas diffuse : il se deduit de la
-            // distance parcourue, qui l'est. Affiche en base 1 : on est dans
-            // le tour 1 des le depart, comme sur le panneau de Lakitu.
+            // Tour deduit de la distance, en base 1.
             const laps = Math.floor(kart.totalDistance / WORLD.width) + 1;
             const gap = (leader && leader.id !== kart.id)
                 ? `${Math.round(leader.totalDistance - kart.totalDistance)}px`

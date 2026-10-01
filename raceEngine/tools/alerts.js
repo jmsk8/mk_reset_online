@@ -1,17 +1,10 @@
-// Banc des alertes : ce qu'un kart ENTEND arriver dans son dos — un bill, une
-// rouge qui le vise, une bleue qui cherche le premier — et ce qu'il en fait.
-//
-// Des situations posees a la main, rejouees sur beaucoup de graines : le banc
-// rend un TAUX, alertes allumees puis eteintes, sur les memes graines. C'est ce
-// qui dit si une alerte COMPLETE le comportement ou le deregle.
+// Banc des alertes (ouie) : situations posees a la main, rejouees sur de
+// nombreuses graines avec et sans alertes (`vision.alerts.*.enabled`, sur une
+// copie de la config). Sort en erreur si un seuil attendu n'est pas tenu.
 //
 //     node tools/alerts.js                  les scenarios, avec et sans alertes
 //     node tools/alerts.js --seeds 400      plus d'echantillon par scenario
 //     node tools/alerts.js --campaign 200   en plus, des courses completes
-//
-// C'est un test autant qu'un banc : il sort en erreur quand un seuil attendu
-// n'est pas tenu. Comme les autres outils il n'ecrit rien dans le moteur — il ne
-// fait que basculer `vision.alerts.*.enabled`, sur une COPIE de la config.
 import * as PH from '../src/engine/index.js';
 import CFG from '../src/config/index.js';
 import * as track from '../src/track.js';
@@ -40,8 +33,7 @@ function makeRng(seed) {
     };
 }
 
-// La meme config, alertes allumees ou eteintes. Rien d'autre ne change : c'est
-// la seule difference entre les deux colonnes du banc.
+// Meme config, alertes allumees ou eteintes.
 const HAS_ALERTS = !!(BASE.vision && BASE.vision.alerts);
 
 function withAlerts(cfg, on) {
@@ -56,12 +48,9 @@ function withAlerts(cfg, on) {
     return { ...cfg, vision: { ...cfg.vision, alerts } };
 }
 
-// ── La mise en scene ────────────────────────────────────────────────────────
+// ── Mise en scene ────────────────────────────────────────────────
 
-// Les scenarios vont chercher leurs personnages par NOM, puis vident la piste :
-// il leur faut le plateau ENTIER, pas les `roster.perRace` karts que le tirage
-// de la prod aurait retenus. Sans ca, un scenario sur un personnage non tire
-// plantait sur un kart introuvable.
+// Plateau complet (les scenarios cherchent leurs personnages par nom).
 function fullRoster(cfg) {
     const names = Object.keys(cfg.roster.enabled);
     return {
@@ -70,9 +59,7 @@ function fullRoster(cfg) {
     };
 }
 
-// Une course sortie du decompte, videe de son decor et de ses karts : chaque
-// scenario ne remet en piste que ceux dont il a besoin. Les tuyaux et les boites
-// partent aussi — ils decideraient a la place de ce qu'on mesure.
+// Course sortie du decompte, videe de ses karts, tuyaux et boites.
 function stage(cfg, seed) {
     const rng = makeRng(seed);
     const state = PH.createWorldState(fullRoster(cfg), rng, 0, null, null);
@@ -88,9 +75,7 @@ function stage(cfg, seed) {
     return { rng, state, t };
 }
 
-// Un kart remis en piste, lance, sans rien dans les mains ni dans la tete. Le
-// turbo de depart est efface : un champignon residuel protegerait du souffle
-// et fausserait tout le banc de la bleue.
+// Kart remis en piste, lance, mains vides et sans turbo de depart residuel.
 function put(cfg, kart, x, y, dist) {
     const w = cfg.world.width;
     kart.state = 'running';
@@ -102,10 +87,7 @@ function put(cfg, kart, x, y, dist) {
     kart.bumpVx = 0;
     kart.absoluteVelocity = kart.stats.topSpeed * 0.95;
     kart.totalDistance = dist;
-    // Le classement se lit sur la distance RESTANTE, et la ligne d'arrivee est
-    // propre a chaque place de grille. En course les deux se compensent ; ici
-    // on pose la distance a la main, donc la ligne doit etre la meme pour tous
-    // — sinon un kart double a l'ecran resterait premier au classement.
+    // Meme ligne d'arrivee pour tous (distance posee a la main).
     kart.finishDistance = 10 * w;
     kart.heldItem = null;
     kart.throwTime = 0;
@@ -125,9 +107,8 @@ function put(cfg, kart, x, y, dist) {
     kart.sight.at = -1e9;
 }
 
-// Un objet en main. `natural` : il le lancera a une date tiree comme a la
-// reception (`ai.holdItemMin/Max`), faute de quoi il le garde indefiniment —
-// c'est ce qui isole une decision de tout le reste.
+// Objet en main ; `natural` : lance a une date tiree comme a la reception,
+// sinon garde indefiniment.
 function give(cfg, state, rng, t, kart, type, natural) {
     kart.heldItem = { id: state.nextItemId++, type: type, holdPosition: 'hands' };
     kart.shotDirection = 1;
@@ -149,11 +130,9 @@ function pct(n, total) {
     return `${((100 * (n || 0)) / total).toFixed(1).padStart(5)} %`;
 }
 
-// ── Les scenarios ───────────────────────────────────────────────────────────
+// ── Scenarios ────────────────────────────────────────────────────
 
-// Une carrosserie lancee a 900 px derriere un kart. Le bill file au milieu
-// (17.5) et balaie de 6.5 a 28.5 : il faut en SORTIR, pas seulement s'ecarter.
-// L'etoile part dans l'axe du kart, et se pilote ensuite comme un kart.
+// Etoile ou bill lance a 900 px derriere un kart (le bill balaie de 6.5 a 28.5).
 function ramCase(cfg, seed, charName, y, type) {
     const { rng, state, t: t0 } = stage(cfg, seed);
     let t = t0;
@@ -175,9 +154,7 @@ function ramCase(cfg, seed, charName, y, type) {
     return 'esquive';
 }
 
-// Une rouge tiree a `gap` px derriere un kart qui tient `held`. Un troisieme kart
-// file loin devant : le kart vise n'est pas en tete, il regarde derriere a la
-// frequence du peloton.
+// Rouge tiree a `gap` px derriere un kart qui tient `held` (pas en tete).
 function redCase(cfg, seed, gap, held) {
     const { rng, state, t: t0 } = stage(cfg, seed);
     let t = t0;
@@ -213,12 +190,8 @@ function redCase(cfg, seed, gap, held) {
     return 'perdue';
 }
 
-// Une bleue lancee a `launch` px derriere le premier, un poursuivant a
-// `follow` px derriere lui (0 : personne). Le premier tient `held`, qu'il lance a
-// une date naturelle.
-//
-// Ce qu'on releve : qui le souffle a pris, et si le premier en est sorti indemne
-// parce qu'il etait intouchable.
+// Bleue lancee a `launch` px derriere le premier, poursuivant a `follow` px
+// (0 : personne) ; le premier tient `held`. Releve qui le souffle a pris.
 function blueCase(cfg, seed, launch, follow, held) {
     const { rng, state, t: t0 } = stage(cfg, seed);
     let t = t0;
@@ -271,7 +244,7 @@ function blueCase(cfg, seed, launch, follow, held) {
     return { who, leaderHit, chaserHit, immune, yielded };
 }
 
-// ── Les tableaux ────────────────────────────────────────────────────────────
+// ── Tableaux ─────────────────────────────────────────────────────
 
 function columns(fn) {
     const off = [];
@@ -354,19 +327,10 @@ function blueTable() {
     return rows;
 }
 
-// ── La campagne ─────────────────────────────────────────────────────────────
-//
-// Les scenarios disent si une alerte FAIT ce qu'on attend d'elle. La campagne dit
-// si elle ne DEREGLE rien d'autre : des courses completes, grille et circuit tires
-// comme en production, rejouees alertes eteintes puis allumees sur les memes
-// graines.
-//
-// Ce qu'on y regarde :
-//   - les tete-a-queue par course, toutes causes confondues ;
-//   - la part du temps passee a regarder derriere, par place — c'est le prix de
-//     l'ouie, et la vue devant est ce qu'elle coute ;
-//   - l'issue de chaque rouge tiree sur une cible, et de chaque bleue ;
-//   - les victoires par personnage, pour voir si l'alerte avantage un gabarit.
+// ── Campagne ─────────────────────────────────────────────────────
+// Courses completes rejouees avec et sans alertes sur les memes graines :
+// tete-a-queue, temps passe a regarder derriere, issue des rouges et des
+// bleues, victoires par personnage.
 
 const ROSTER = Object.keys(PH.deriveCharacterStats(CFG));
 const RACE_CFGS = TRACKS.map(t => track.applyTrack(CFG, t));
@@ -374,7 +338,7 @@ const MAX_TICKS = Math.ceil((CFG.race.maxRaceMs + 60000) / DT_MS);
 
 function raceRun(cfg, seed) {
     const rng = makeRng(seed);
-    // Le tirage de la prod (`roster`) : `perRace` karts parmi les actives.
+    // Tirage de production (`roster`).
     const grid = PH.pickRoster(cfg, rng, null);
     const state = PH.createWorldState(cfg, rng, 0, grid, null);
     let t = 0;
@@ -389,9 +353,9 @@ function raceRun(cfg, seed) {
         grid: grid
     };
 
-    const reds = new Map();    // id -> cible
-    const blues = new Map();   // id -> { cible, premier au lancer }
-    const blasts = [];         // { until, cible, cibleTouchee, autres }
+    const reds = new Map(); // id -> cible
+    const blues = new Map(); // id -> { cible, premier au lancer }
+    const blasts = []; // { until, cible, cibleTouchee, autres }
 
     for (let tick = 0; tick < MAX_TICKS; tick++) {
         t += DT_MS;
@@ -414,8 +378,7 @@ function raceRun(cfg, seed) {
             }
         }
 
-        // Les rouges : la cible au premier pas ou elle en a une, l'issue au pas
-        // ou elle disparait.
+        // Rouges : cible au premier pas, issue a la disparition.
         const alive = new Set();
         for (const it of state.items) {
             if (it.isDead || it.spent) continue;
@@ -476,8 +439,7 @@ function campaign(races) {
             red: { touche: 0, bouclier: 0, etoile: 0, autre: 0 },
             blue: { n: 0, cible: 0, autres: 0, premier: 0 },
             wins: Object.fromEntries(ROSTER.map(n => [n, 0])),
-            // Courses courues par personnage : il n'est plus aligne a chaque
-            // course, ses victoires se rapportent a SES participations.
+            // Courses courues par personnage.
             runs: Object.fromEntries(ROSTER.map(n => [n, 0]))
         };
         for (let i = 0; i < races; i++) {
@@ -530,19 +492,15 @@ const blue = blueTable();
 
 const camp = (CAMPAIGN > 0 && HAS_ALERTS) ? campaign(CAMPAIGN) : null;
 
-// ── Les engagements ─────────────────────────────────────────────────────────
-//
-// Ce que les alertes promettent, et ce qu'elles promettent de NE PAS faire. Les
-// seuils laissent la place du hasard : `tol` vaut deux ecarts-types et demi de
-// l'ecart entre deux taux independants, au pire cas (p = 0.5). Ils sont a revoir
-// si l'on regle les alertes, jamais a elargir pour faire passer un banc.
+// ── Engagements ──────────────────────────────────────────────────
+// Seuils a 2,5 ecarts-types de l'ecart entre deux taux (p = 0.5).
 if (HAS_ALERTS) {
     const n = SEEDS;
     const tol = 2.5 * Math.sqrt(0.5 / n);
     const r = (count) => count / n;
     const f = (x) => `${(100 * x).toFixed(1)} %`;
 
-    // Etoile et bill : aucune situation n'empire, et l'ensemble s'ameliore.
+    // Etoile et bill : aucune situation n'empire, l'ensemble s'ameliore.
     for (const [type, rows] of [['bill', bill], ['star', star]]) {
         let off = 0;
         let on = 0;
@@ -555,8 +513,7 @@ if (HAS_ALERTS) {
         expect(`${type}, ensemble`, on < off, `${on} touches avec l'alerte, ${off} sans`);
     }
 
-    // La rouge entendue : couvert quand il en a le temps et de quoi se couvrir ;
-    // rien de change quand il n'a rien.
+    // Rouge entendue : couvert s'il en a le temps et de quoi se couvrir.
     for (const gap of [400, 700]) {
         for (const held of ['banana', 'greenShell']) {
             const row = red[`${held}@${gap}`];
@@ -574,7 +531,6 @@ if (HAS_ALERTS) {
             `touche ${f(r(row.on.touche || 0))} avec, ${f(r(row.off.touche || 0))} sans`);
     }
 
-    // La bleue.
     const hitRate = (list) => list.filter(x => x.leaderHit).length / list.length;
     const immuneRate = (list) => list.filter(x => x.immune).length / list.length;
     for (const launch of [1500, 3000]) {
@@ -583,22 +539,21 @@ if (HAS_ALERTS) {
             expect(`bleue, etoile en main (${launch}/${follow})`, hitRate(starRow.on) <= 0.15,
                 `1er touche ${f(hitRate(starRow.on))}, attendu 15 % au plus`);
 
-            // Le champignon est le geste DIFFICILE : il doit sauver souvent, sans
-            // devenir une assurance.
+            // Le champignon sauve souvent, sans etre une assurance.
             const shroomRow = blue[`shroom@${launch}@${follow}`];
             const im = immuneRate(shroomRow.on);
             expect(`bleue, champignon en main (${launch}/${follow})`, im >= 0.5 && im <= 0.9,
                 `intouchable ${f(im)}, attendu entre 50 et 90 %`);
         }
 
-        // Personne derriere : il ne freine jamais pour rien.
+        // Personne derriere : jamais de frein inutile.
         const alone = blue[`null@${launch}@0`];
         const braked = alone.on.filter(x => x.yielded).length;
         expect(`bleue, premier seul (${launch})`, braked === 0,
             `il a cede la tete ${braked} fois sans personne a qui la ceder`);
     }
 
-    // Ceder marche quand le temps le permet, et celui qui a cede sort du souffle.
+    // Ceder marche quand le temps le permet.
     const yieldRow = blue['null@3000@150'];
     expect('bleue, ceder la tete (3000/150)',
         hitRate(yieldRow.on) <= 0.75 && hitRate(yieldRow.on) <= hitRate(yieldRow.off) - 0.2,
@@ -610,7 +565,7 @@ if (HAS_ALERTS) {
             `${caught} pris par le souffle sur ${spared.length} qui avaient cede`);
     }
 
-    // La campagne : rien de deregle ailleurs.
+    // Campagne : rien de deregle ailleurs.
     if (camp) {
         const { off, on } = camp;
         expect('campagne, tete-a-queue', on.hits <= off.hits * 1.03,

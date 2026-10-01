@@ -1,4 +1,4 @@
-// Les objets a l'ecran : celui qu'un kart tient, ceux qui lui tournent autour.
+// Objets a l'ecran : objet tenu et objets en orbite.
 
 function getItemVisualConfig(itemType) {
     switch (itemType) {
@@ -20,9 +20,7 @@ function getItemVisualConfig(itemType) {
                 src: imageCache['banana'] ? imageCache['banana'].src : GAME_CONFIG.resources.paths.banana,
                 holdPosition: 'behind'
             };
-        // Les triples n'ont pas de sprite propre : ils reprennent celui de
-        // l'objet qu'ils larguent. Ce cas ne sert qu'aux appels directs, le
-        // rendu de l'orbite interrogeant deja le type enfant.
+        // Les triples reprennent le sprite de l'objet largue.
         case 'tripleBanana':
             return Object.assign(getItemVisualConfig('banana'), { holdPosition: 'orbit' });
         case 'tripleGreenShell':
@@ -35,8 +33,7 @@ function getItemVisualConfig(itemType) {
                 src: imageCache['blueShell_1'] ? imageCache['blueShell_1'].src : GAME_CONFIG.resources.paths.blueShell(1),
                 holdPosition: 'hands'
             };
-        // Le souffle n'a pas de sprite : il est dessine en CSS, et sa taille
-        // vient du rayon reellement utilise par le serveur.
+        // Souffle dessine en CSS, taille selon le rayon du serveur.
         case 'blueBlast':
             return { size: WORLD.blastRadius * 2, src: null, holdPosition: 'behind' };
         case 'shroom':
@@ -68,12 +65,8 @@ function getItemVisualConfig(itemType) {
     }
 }
 
-// Ou se pose l'objet TENU EN MAIN, en ecart au bord gauche du sprite. Du dessin
-// et rien d'autre : en main, un objet n'a aucune emprise. Il peut donc se caler a
-// l'oeil.
-//
-// L'objet TRAINE n'a pas son pendant ici : sa place est une position du monde
-// (`heldBehindX`), pas un reglage de rendu.
+// Decalage de l'objet tenu en main, par rapport au bord gauche du sprite (rendu
+// seulement ; l'objet traine a une position du monde).
 function getHandsItemRenderOffset() {
     const r = GAME_CONFIG.offsets.render.heldItemHands;
 
@@ -93,24 +86,16 @@ function createHeldItemElement(itemType, holdPosition) {
     const visual = getItemVisualConfig(itemType);
     itemDiv.style.width = `${visual.size}px`;
 
-    // Pose par son MILIEU, comme tous les corps de la scene : `worldX` est un
-    // centre pour le moteur — ses hitboxes sont des ecarts entre centres — et
-    // un element pose par son coin gauche se retrouve une demi-largeur trop a
-    // droite de l'emprise qui le fait toucher. Le souffle de la bleue etait
-    // seul a le faire ; ce qui valait pour lui vaut pour tout le monde.
+    // Pose par son milieu : worldX est un centre pour le moteur.
     itemDiv.style.marginLeft = `${-visual.size / 2}px`;
 
-    // Ancre au sol une fois pour toutes : la profondeur passe par la
-    // transformation posee a chaque image (cf. depthToY), et non plus par un
-    // `bottom` en pourcentage qui relancait la mise en page a chaque fois.
+    // Profondeur posee par la transform de chaque image (depthToY).
     itemDiv.style.bottom = '0px';
 
-    // La demi-largeur reste attachee a l'element : elle sert a replacer un
-    // objet TENU, qui se cale sur la silhouette du kart et non sur un centre.
-    // La relire ici evite de reconstruire une config par objet a chaque frame.
+    // Demi-largeur gardee pour replacer un objet tenu.
     itemDiv._halfW = visual.size / 2;
 
-    // Le souffle de la bleue est un element sans image, anime en CSS.
+    // Souffle de la bleue : sans image, anime en CSS.
     if (!visual.src) {
         itemDiv.classList.add('blue-blast');
 
@@ -131,10 +116,8 @@ function createHeldItemElement(itemType, holdPosition) {
     return { div: itemDiv, img: img };
 }
 
-// Les carapaces tournent sur elles-memes. La frame est derivee du temps de jeu
-// plutot que stockee, comme le tete-a-queue : rien a maintenir, et les trois
-// orbes ne peuvent pas se desynchroniser entre eux. Rend null pour un objet
-// sans animation, la banane par exemple.
+// Frame d'une carapace en rotation, derivee du temps de jeu (null si l'objet
+// n'est pas anime).
 function getOrbitFrameSrc(childType, gameNow) {
     if (childType !== 'greenShell' && childType !== 'redShell') return null;
 
@@ -143,18 +126,13 @@ function getOrbitFrameSrc(childType, gameNow) {
     return cached ? cached.src : GAME_CONFIG.resources.paths[childType](frame);
 }
 
-// Un objet en orbite reste visible sur toute sa rotation : quand sa phase le
-// place au loin, il passe sous le z-index du kart et c'est le sprite opaque qui
-// l'occulte. La bascule se joue aux extremites laterales de l'ellipse, la ou
-// l'objet est hors de la silhouette — le changement d'ordre y passe inapercu.
+// Objets en orbite : ils passent derriere le kart quand ils sont au loin, la
+// bascule se faisant aux extremites de l'ellipse.
 function renderOrbitItems(kart, rx, gameNow) {
     const held = kart.heldItem;
     const orbit = WORLD.orbit;
 
-    // L'orbite tourne autour du kart, donc autour de `rx` : les objets se
-    // posent par leur milieu et le kart est centre sur sa position. Il n'y a
-    // plus rien a recentrer — ce calcul valait du temps ou les deux etaient
-    // ancres par leur coin gauche, avec deux largeurs differentes a rattraper.
+    // Orbite centree sur le kart.
     const cx = rx;
 
     const drop = GAME_CONFIG.offsets.render.orbitDrop;
@@ -175,17 +153,12 @@ function renderOrbitItems(kart, rx, gameNow) {
         const sin = Math.sin(angle);
         const by = kart.yPercent + sin * orbit.radiusY;
 
-        // getZIndex suit la profondeur reelle, ce qui garde l'objet bien
-        // ordonne vis-a-vis des autres karts. Mais son arrondi entier peut
-        // l'egaler au kart porteur quand sin frole 0 : a egalite c'est l'ordre
-        // du DOM qui tranche, et l'objet scintillerait devant/derriere. D'ou
-        // l'ecart d'au moins un cran force du bon cote.
+        // Au moins un cran d'ecart avec le kart porteur, pour eviter le scintillement.
         const bz = (sin > 0) ? Math.min(getZIndex(by), kartZ - 1)
                              : Math.max(getZIndex(by), kartZ + 1);
 
         el.style.display = 'block';
-        // Y positif = vers le bas : l'orbite entiere descend de `drop`, et la
-        // profondeur de l'orbe se plie dans la meme transformation.
+        // Orbite decalee de `drop` vers le bas.
         el.style.transform = `translate3d(${cx + Math.cos(angle) * orbit.radiusX}px, ${depthToY(by) + drop}px, 0)`;
         if (el.style.zIndex != bz) el.style.zIndex = bz;
     }
@@ -199,9 +172,7 @@ function hideOrbitItems(kart) {
     }
 }
 
-// itemEls n'a pas d'entree pour l'id de groupe d'un objet en orbite, les acces
-// generiques a itemEls[heldItem.id] sont donc des no-op sur ces types : ce
-// wrapper est le seul chemin qui masque reellement un bouclier.
+// Seul chemin qui masque reellement un bouclier (pas d'entree itemEls pour son groupe).
 function hideHeldItem(kart) {
     if (!kart.heldItem) return;
     if (kart.heldItem.holdPosition === 'orbit') {

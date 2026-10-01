@@ -5,9 +5,7 @@ import re
 import unicodedata
 from typing import Any
 
-# Couleur saisie par un admin (fiche, ligue) ou un joueur (profil). Toujours
-# #RRGGBB : la valeur finit dans des attributs style, et rien d'autre qu'une
-# couleur ne doit pouvoir y entrer.
+# Les couleurs finissent dans des attributs style : format #RRGGBB strict.
 RE_COULEUR = re.compile(r'^#[0-9A-Fa-f]{6}$')
 
 
@@ -22,13 +20,7 @@ def nombre_fini(valeur: Any, minimum: float, maximum: float,
                 min_exclu: bool = False) -> float | None:
     """Le nombre s'il est fini et dans [minimum, maximum], sinon None.
 
-    S-10 (audit du 24/09) : `float()` accepte « nan » et « inf », et le parseur
-    JSON de Flask les litteraux NaN et Infinity. Un sigma a NaN, ou un tau, se
-    propage au tournoi suivant dans le calcul de TOUS les joueurs, et le moteur
-    etant incremental, rien ne permet de recalculer apres coup.
-
-    `min_exclu` : borne basse stricte (un sigma nul n'a pas de sens).
-    Un booleen n'est pas un nombre ici, bien que Python le traite comme tel.
+    Rejette NaN, l'infini et les booleens. min_exclu rend la borne basse stricte.
     """
     if isinstance(valeur, bool):
         return None

@@ -19,8 +19,7 @@ double bite_at(const config::Config& cfg, double pace) {
     return (pace >= bite) ? 1 : pace / bite;
 }
 
-// Ou le kart se posera s'il lache le volant maintenant. Viser depuis cette
-// position et non depuis la position brute evite le depassement systematique.
+// Point ou le kart se poserait volant lache (evite le depassement).
 double steer_settle(const config::Config& cfg, const Kart& kart) {
     return kart.yPercent + kart.vy / cfg.physics.steer.response;
 }
@@ -30,8 +29,7 @@ double steer_settle(const config::Config& cfg, const Kart& kart) {
 double steer_pace(const Kart& kart) {
     const double top = kart.stats ? kart.stats->topSpeed : 0;
     if (!(top > 0)) return 1;
-    // `contactSpeed` est le deplacement REELLEMENT effectue au tick precedent :
-    // boosts, frottement et chocs y sont deja.
+    // `contactSpeed` : deplacement reel du tick precedent.
     const double pace = kart.contactSpeed / top;
     return pace < 0 ? 0 : (pace > 1 ? 1 : pace);
 }
@@ -56,7 +54,7 @@ void steer(const config::Config& cfg, Kart& kart, double deltaTime,
     const double diff = laneY - steer_settle(cfg, kart);
 
     if (std::abs(diff) <= tolerance) {
-        // Cible tenue : il ne corrige plus, sinon il tremble autour.
+        // Cible tenue.
         kart.targetVy = 0;
     } else {
         const double cap = steer_cap(cfg, kart, speed);
@@ -64,9 +62,7 @@ void steer(const config::Config& cfg, Kart& kart, double deltaTime,
         kart.targetVy = std::max(-cap, std::min(cap, seek));
     }
 
-    // La reponse du volant. Le facteur est BORNE a 1 : sur une frame longue —
-    // onglet en arriere-plan, machine qui peine — le lissage non borne
-    // depassait la consigne et faisait osciller le kart.
+    // Reponse du volant, facteur borne a 1.
     const double k = response * deltaTime;
     kart.vy += (kart.targetVy - kart.vy) * (k > 1 ? 1 : k);
 }

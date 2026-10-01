@@ -1,9 +1,6 @@
 """Droits RGPD : acces, portabilite, effacement, purges.
 
-L'assertion qui compte : supprimer un compte ne doit toucher NI joueurs, NI
-participations, NI awards. Le moteur TrueSkill etant incremental et non
-recalculable, y toucher fausserait le classement de tout le monde sans moyen de
-le reconstruire.
+Supprimer un compte ne doit toucher ni joueurs, ni participations, ni awards.
 """
 from harness import *
 import re
@@ -25,9 +22,8 @@ def monter(plan, joueur_id=9, role='player'):
 
 H = {'X-Session-Token': 'tok'}
 
-# Depuis le 2026-09-22, l'effacement d'un compte se demande par ecrit et le
-# superadmin l'execute : DELETE /admin/comptes/<id>. Acteur 1 (superadmin),
-# cible 42, dont le handle Discord est 'toto' et le nom affiche 'Toto le Grand'.
+# Effacement execute par le superadmin (1) sur la cible 42 (handle 'toto',
+# nom affiche 'Toto le Grand').
 SUPERADMIN = ligne_session(compte_id=1, role='superadmin')
 
 def monter_suppression(acteur=SUPERADMIN, role_cible='player', joueur_id=9, cible=None):
@@ -61,7 +57,6 @@ check("la reponse dit que le dossier sportif est conserve",
       (r.get_json() or {}).get('dossier_sportif_conserve') is True, r.get_json())
 
 tables_effacees = {s.split('DELETE FROM ')[1].split()[0].lower() for s in deletes(cur)}
-# consentements depuis le lot F (25/09) : l'historique part avec le compte.
 check("efface sessions, profil, demandes, consentements et compte",
       tables_effacees == {'sessions_joueurs', 'profils', 'liaisons_demandes',
                           'consentements', 'comptes'},
@@ -84,8 +79,6 @@ check("l'audit est écrit AVANT la suppression du compte", idx_audit < idx_delet
 params_audit = [p for s, p in cur.executed if 'INSERT INTO audit_admin' in s][0]
 check("l'action est nommée", 'compte_supprime' in str(params_audit))
 check("l'origine dit que c'est une demande écrite", 'demande_ecrite' in str(params_audit))
-# Avant le 22/09, l'acteur etait le titulaire lui-meme : sa ligne perdait donc
-# son acteur des la suppression (ON DELETE SET NULL). Le superadmin, lui, reste.
 check("l'acteur consigné est le superadmin qui exécute, pas le compte effacé",
       params_audit[1] == 1, params_audit[1])
 check("le snowflake Discord n'est PAS conservé en clair dans l'audit",
@@ -94,9 +87,7 @@ check("une empreinte permet quand même de rejouer la suppression après restaur
       'discord_id_hash' in str(params_audit))
 check("transaction validée", conn.committed)
 
-# §6.4 du plan d'audit : le journal survit au compte. La ligne `compte_supprime`
-# est ce qui permet de rejouer l'effacement apres une restauration (runbook §5) ;
-# la supprimer au passage rendrait la suppression irreversible... a l'envers.
+# Le journal survit au compte.
 check("la suppression n'efface ni ne réécrit aucune ligne du journal",
       not any(('audit_admin' in s_.lower()) and not s_.startswith('INSERT INTO audit_admin')
               for s_ in sqls), [s_ for s_ in sqls if 'audit_admin' in s_.lower()])
@@ -107,8 +98,7 @@ check("  et le schéma détache l'acteur au lieu d'emporter ses lignes (ON DELET
                 _schema) is not None)
 
 print("\n=== Le titulaire ne supprime plus son compte lui-même ===")
-# Retirer le bouton ne suffisait pas : une route laissee en place reste
-# appelable a la main avec un jeton de joueur.
+# Plus de route de suppression ouverte au titulaire.
 cli, cur, conn, app = monter_suppression(acteur=ligne_session(compte_id=42, role='player'))
 check("aucune route /me n'accepte plus DELETE",
       not [r_ for r_ in app.url_map.iter_rules()
@@ -121,8 +111,7 @@ check("un joueur ne passe pas par la route admin, même sur son propre compte ->
 check("  et rien n'est effacé", not deletes(cur), deletes(cur))
 
 print("\n=== Garde-fous de la route superadmin ===")
-# Capacite de ROLE : ni un chef_admin, ni un admin, quelles que soient ses
-# permissions.
+# Capacite de role : refusee au chef_admin et a l'admin.
 for role in ('chef_admin', 'admin'):
     cli, cur, conn, _ = monter_suppression(acteur=ligne_session(compte_id=1, role=role))
     r = cli.delete('/admin/comptes/42', json=OUI, headers=H)
@@ -134,33 +123,25 @@ r = cli.delete('/admin/comptes/42', headers=H)
 check("sans confirmation -> 400 confirmation_invalide",
       r.status_code == 400 and (r.get_json() or {}).get('code') == 'confirmation_invalide',
       r.get_json())
-# `committed` ne dirait rien ici : auth.py valide sa propre ecriture de
-# last_seen_at sur la meme fausse connexion. Ce qui compte : ni effacement, ni
-# ligne d'audit annoncant un effacement qui n'a pas eu lieu.
+# Ni effacement, ni ligne d'audit.
 check("  et rien n'est effacé ni journalisé, transaction annulée",
       not deletes(cur) and conn.rolledback
       and not any('INSERT INTO audit_admin' in s for s, _ in cur.executed))
 
-# Le nom AFFICHE est librement modifiable : un homonyme viderait la
-# confirmation de son sens. Seul le handle compte. (Jusqu'au 2026-09-24, le nom
-# affiche de ce test etait 'Toto' : il ne differait du handle que par la casse,
-# que la comparaison ignore desormais -- voir plus bas.)
+# Seul le handle compte, pas le nom affiche.
 cli, cur, conn, _ = monter_suppression()
 r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': 'Toto le Grand'}, headers=H)
 check("le nom affiché ne vaut pas confirmation -> 400",
       r.status_code == 400 and not deletes(cur), r.get_json())
 
-# Ce que la liste affiche depuis le 2026-09-24 est « @toto » : le recopier tel
-# quel, avec une espace de copier-coller ou une majuscule, doit confirmer. Les
-# handles Discord sont uniques sans egard a la casse : rien n'est affaibli.
+# Tolere « @ », espaces et casse.
 for _saisie in ('@toto', '  toto  ', 'Toto', '@ TOTO '):
     cli, cur, conn, _ = monter_suppression()
     r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': _saisie}, headers=H)
     check("le handle recopié %r confirme -> 200" % _saisie,
           r.status_code == 200 and bool(deletes(cur)), r.get_json())
 
-# Ces tolerances n'ouvrent rien d'autre : un prefixe, un suffixe, un « @ » seul
-# ou une valeur qui n'est pas du texte restent refuses -- sans 500.
+# Mais refuse tout le reste, sans 500.
 for _saisie in ('tot', 'toto2', '@', '   ', 'to to', 123, ['toto'], None):
     cli, cur, conn, _ = monter_suppression()
     r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': _saisie}, headers=H)
@@ -169,7 +150,6 @@ for _saisie in ('tot', 'toto2', '@', '   ', 'to to', 123, ['toto'], None):
           and (r.get_json() or {}).get('code') == 'confirmation_invalide'
           and not deletes(cur), (r.status_code, r.get_json()))
 
-# Le superadmin est unique : se supprimer laisserait le site sans administration.
 cli, cur, conn, _ = monter_suppression(role_cible='superadmin')
 r = cli.delete('/admin/comptes/1', json=OUI, headers=H)
 check("le superadmin ne peut pas supprimer son propre compte -> 403 auto_modification",
@@ -212,8 +192,7 @@ check("la politique ne promet plus une suppression « immédiate » depuis Mon c
 check("  elle dit comment la demander, et en combien de temps",
       'faire supprimer' in _conf and 'un mois' in _conf)
 
-# Le bouton admin ne doit jamais mener a un 403 previsible (§B.0) : la route est
-# une capacite du superadmin, le bouton aussi.
+# Le bouton est reserve au superadmin, comme la route.
 _i = _ac.find("'Supprimer le compte'")
 check("l'admin des comptes propose « Supprimer le compte »", _i > 0)
 check("  au seul superadmin, jamais sur sa propre ligne",
@@ -222,8 +201,7 @@ _h = _ac[_ac.find('async function supprimerCompte('):]
 _h = _h[:_h.find('\n        }\n')]
 check("  avec confirmation nommée puis pseudo retapé",
       'confirmer(' in _h and 'prompt(' in _h and 'confirmation_pseudo' in _h)
-# Le handle retape doit se lire sur la page : sans lui, on demandait un nom
-# que la page ne montrait nulle part (constat du 2026-09-22, §13.1).
+# Le handle a retaper est affiche.
 check("  la demande de saisie cite le handle attendu",
       "@' + c.handle" in _h[_h.find('prompt('):], _h[_h.find('prompt('):][:200])
 _lg = _ac[_ac.find('async function leguerSuperadmin('):]
@@ -280,8 +258,7 @@ purge_comptes = [s for s in sqls2 if 'DELETE FROM comptes' in s][0]
 check("un compte lié à un joueur n'est jamais purgé", 'joueur_id IS NULL' in purge_comptes, purge_comptes)
 check("un compte porteur d'un rôle n'est jamais purgé", "role = 'player'" in purge_comptes)
 check("seuls les comptes 'pending' sont concernés", "statut = 'pending'" in purge_comptes)
-# On cible la TABLE et pas la sous-chaîne : « sessions_joueurs » contient
-# « joueurs », et l'assertion naïve tombait dessus.
+# On cible la table (« sessions_joueurs » contient « joueurs »).
 import re as _re
 _tables = {m.group(1).lower()
            for s in sqls2

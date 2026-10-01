@@ -1,15 +1,7 @@
-// Le rideau de depart et la pastille d'etat de la connexion.
-//
-// Le rideau ne se leve que lorsque la scene est reellement affichable. Un
-// bandeau masque est le seul echec vraiment visible : tout ici est ecrit pour
-// qu'il se leve quoi qu'il arrive.
+// Rideau de depart et pastille d'etat de la connexion.
 
-// Le rideau ne se leve que sur une scene complete : images decodees, `hello`
-// recu, et deux snapshots en tampon — avec un seul, l'interpolation demarre a
-// vide et la premiere seconde saccade.
-//
-// L'indicateur dit au spectateur ce qu'il regarde : une course en direct, ou le
-// decor seul faute de connexion.
+// Le rideau se leve sur une scene complete : images decodees, `hello` recu et
+// deux snapshots en tampon (ou certitude qu'il n'y aura pas de course).
 const bannerLink = {
     curtainEl: null,
     statusEl: null,
@@ -17,13 +9,10 @@ const bannerLink = {
     msEl: null,
     leaderboardEl: null,
 
-    // Derniere latence mesuree, ou null quand il n'y a rien a montrer : hors
-    // ligne, un chiffre fige decrirait un lien qui n'existe plus.
+    // Derniere latence mesuree, null hors ligne.
     pingMs: null,
 
-    // Le rideau se leve quand les deux verrous sont ouverts : les images
-    // decodees, et le flux en etat de fournir une scene — soit deux snapshots
-    // en tampon, soit la certitude qu'il n'y aura pas de course.
+    // Les deux verrous de levee du rideau.
     gates: { assets: false, stream: false },
     loweredAt: 0,
 
@@ -31,7 +20,7 @@ const bannerLink = {
         this.gates[gate] = true;
         if (!this.gates.assets || !this.gates.stream) return;
 
-        // Sans plancher, le rideau clignoterait entre deux courses.
+        // Duree minimale, sinon le rideau clignote entre deux courses.
         const shown = Date.now() - this.loweredAt;
         if (shown < CURTAIN_MIN_MS) {
             setTimeout(() => this.raiseCurtain(), CURTAIN_MIN_MS - shown);
@@ -59,9 +48,7 @@ const bannerLink = {
         if (this.curtainEl) this.curtainEl.classList.remove('is-down');
         if (this.leaderboardEl) this.leaderboardEl.classList.remove('is-veiled');
 
-        // L'ecran de demarrage (index.html) attend ce signal pour se dissiper :
-        // la page se decouvre quand la scene est prete a etre regardee, pas
-        // avant. Emis a chaque levee, mais il n'est ecoute qu'une fois.
+        // Signal attendu par l'ecran de demarrage (index.html).
         document.dispatchEvent(new CustomEvent('race:ready'));
     },
 
@@ -74,15 +61,12 @@ const bannerLink = {
                                      : state === 'offline' ? 'offline'
                                      : 'connexion';
         }
-        // La latence n'accompagne que l'etat en direct : elle survivrait sinon
-        // a la coupure qu'elle est censee documenter.
+        // La latence n'est affichee qu'en ligne.
         if (state !== 'online') this.pingMs = null;
         this.renderPing();
     },
 
-    // Le dernier aller-retour, pas le meilleur : celui que garde bannerNet sert
-    // a caler l'horloge, ou une mesure propre vaut mieux qu'une recente. Ici on
-    // decrit le lien tel qu'il est maintenant, ralentissements compris.
+    // Dernier aller-retour (bannerNet garde le meilleur pour l'horloge).
     setPing(ms) {
         this.pingMs = ms;
         if (this.statusEl && this.statusEl.classList.contains('is-online')) this.renderPing();

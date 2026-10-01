@@ -1,10 +1,5 @@
-// La loi de braquage : ce qu'un kart PEUT faire du volant.
-// <- raceEngine/src/engine/steering.js
-//
-// `steer()` est la SEULE fonction qui ecrit `vy`. Invariant obtenu au prix fort
-// (audit-decision-direction-2026-09-17.md §6) : il ne se reperd pas. Tout ce qui veut
-// deplacer un kart lateralement passe par une CONSIGNE (`laneY`), jamais par
-// une ecriture directe.
+// Loi de braquage. `steer()` est la seule fonction qui ecrit `vy` : un
+// deplacement lateral passe toujours par une consigne (`laneY`).
 
 #pragma once
 
@@ -13,22 +8,17 @@
 
 namespace engine {
 
-// Allure du kart, en fraction de SA propre pointe. Rapportee a la sienne et non
-// a une vitesse absolue : ce qui compte n'est pas de rouler vite dans l'absolu
-// mais d'etre lance pour soi.
+// Allure du kart en fraction de sa propre pointe.
 double steer_pace(const Kart& kart);
 
-// Ce qu'il reste de volant a l'allure du moment (`drag`), et ce que le volant
-// MORD faute d'avancer (`bite`). Deux mecaniques distinctes : sans `bite`, un
-// kart IMMOBILE disposerait de son volant maximum et repartirait en crabe apres
-// un choc.
+// Volant restant a l'allure du moment (`drag`), et mordant faute d'avancer
+// (`bite`).
 double steer_grip(const config::Config& cfg, const Kart& kart);
 double steer_bite(const config::Config& cfg, const Kart& kart);
 
 double steer_cap(const config::Config& cfg, const Kart& kart, double base);
 
-// La consigne de volant, puis son integration. C'est ICI et nulle part ailleurs
-// que `vy` change.
+// Consigne de volant puis integration.
 void steer(const config::Config& cfg, Kart& kart, double deltaTime,
            double laneY, double speed, double gain, double tolerance);
 

@@ -2,13 +2,8 @@ from harness import *
 from flask import Flask
 
 def monter(plan, role='chef_admin'):
-    """Monte le blueprint des comptes avec une session au role voulu.
-
-    chef_admin par defaut : depuis la hierarchie a 4 roles, un compte admin
-    n'a AUCUNE permission tant qu'on ne lui en accorde pas. Le socle du
-    chef_admin couvre tout le catalogue, ce qui donne ici l'equivalent de
-    l'ancien « admin » sans avoir a scripter une ligne permissions_admin
-    dans chaque plan."""
+    """Monte le blueprint des comptes avec une session au role voulu (chef_admin
+    par defaut, qui dispose de tout le catalogue)."""
     plan = list(plan) + [
         (r"FROM sessions_joueurs s JOIN comptes c",
          ligne_session(compte_id=1, discord_id='111', username='admin',
@@ -64,10 +59,7 @@ check("demande déjà en cours -> 409 (pas une 500 d'index unique)",
       r.status_code == 409 and r.get_json()['code'] == 'demande_en_cours', r.get_json())
 
 print("\n=== R-07 : course à l'approbation ===")
-# La demande porte 4 colonnes depuis que la liaison peut CREER une fiche :
-# (compte_id, joueur_id, statut, nom_demande). Le 3-uplet d'avant faisait
-# echouer le depaquetage, et la route repondait « Erreur serveur » -- toute
-# cette section ne testait donc plus rien. C'est le constat B-05.
+# Demande : (compte_id, joueur_id, statut, nom_demande).
 cli, cur, conn, _ = monter([
     (r"FROM liaisons_demandes d WHERE d.id", (5, 9, 'pending', None)),
     (r"SELECT statut, role FROM comptes WHERE id = %s FOR UPDATE", ('pending', 'player')),
@@ -144,8 +136,7 @@ print("\n--- l'aperçu donne le même verdict que l'écriture ---")
 cli, cur, conn, _ = monter(plan_sync('Mario', 'toto', 'Toto', collision=(4, 'toto')))
 ra = cli.get('/admin/comptes/5/sync-preview', headers=H)
 check("aperçu refuse aussi la collision", ra.status_code == 409 and ra.get_json()['code'] == 'collision_nom')
-# On exclut le UPDATE de last_seen_at : c'est la comptabilité de session du
-# décorateur, pas l'aperçu.
+# Hors mise a jour de last_seen_at par le decorateur.
 check("l'aperçu n'écrit rien",
       not any('UPDATE' in s and 'sessions_joueurs' not in s for s, _ in cur.executed),
       [s for s, _ in cur.executed if 'UPDATE' in s])
@@ -155,11 +146,7 @@ cli, cur, conn, _ = monter([(r"SELECT role FROM comptes WHERE id", ('player',))]
 r = cli.post('/admin/comptes/5/role', json={'role': 'superadmin'}, headers=H)
 check("un admin ne peut PAS attribuer de rôle -> 403", r.status_code == 403, r.status_code)
 
-# Depuis la hierarchie a 4 roles, changer_role ne touche PLUS un superadmin :
-# compte_cible_protegee l'arrete avant la garde du dernier superadmin, et le
-# role ne se quitte que par legs. Ce que ces deux cas verifiaient (« on ne
-# tombe pas a zero superadmin ») est desormais porte par la structure, pas par
-# un compteur.
+# Le superadmin n'est pas modifiable par changer_role.
 cli, cur, conn, _ = monter([
     (r"SELECT role FROM comptes WHERE id", ('superadmin',)),
 ], role='superadmin')
@@ -168,7 +155,6 @@ check("un superadmin est intouchable par changer_role -> 403",
       r.status_code == 403 and r.get_json()['code'] == 'cible_protegee', r.get_json())
 check("aucune écriture du rôle", not any('UPDATE comptes SET role' in s for s, _ in cur.executed))
 
-# Le role superadmin ne s'attribue pas non plus : il se legue.
 cli, cur, conn, _ = monter([
     (r"SELECT role FROM comptes WHERE id", ('admin',)),
 ], role='superadmin')
@@ -176,8 +162,7 @@ r = cli.post('/admin/comptes/5/role', json={'role': 'superadmin'}, headers=H)
 check("poser 'superadmin' par changer_role -> 400",
       r.status_code == 400 and r.get_json()['code'] == 'superadmin_non_attribuable', r.get_json())
 
-# Retrogradation ordinaire : un admin redevient player, et ses permissions a la
-# carte sont purgees dans la foulee (R-53).
+# Retrogradation : les permissions a la carte sont purgees.
 cli, cur, conn, _ = monter([
     (r"SELECT role FROM comptes WHERE id", ('admin',)),
 ], role='superadmin')
@@ -192,9 +177,7 @@ r = cli.post('/admin/comptes/5/role', json={'role': 'root'}, headers=H)
 check("rôle inconnu -> 400", r.status_code == 400 and r.get_json()['code'] == 'role_invalide')
 
 print("\n=== Suspension : fermer les sessions, pas seulement l'étiquette ===")
-# La cible est un 'player' : la garde « dernier superadmin » (B-02/B-03) ne la
-# concerne pas, et aucun COUNT n'est fait. C'est bien la fermeture des sessions
-# qu'on teste ici, pas le verrouillage.
+# Cible 'player' : on teste la fermeture des sessions.
 cli, cur, conn, _ = monter([
     (r"SELECT statut, role, joueur_id FROM comptes WHERE id", ('linked', 'player', 9)),
 ])

@@ -1,18 +1,7 @@
 """Decorateurs d'authentification et d'autorisation.
 
-L'authentification passe uniquement par la session Discord.
-
-Deux facons d'autoriser :
-
-  - capacite de role : cablee via `role_required`, jamais delegable (jetons de
-    bot, reset global, designation d'un chef_admin, legs du superadmin) ;
-  - permission delegable : une entree de PERMISSIONS_CATALOGUE, verifiee par
-    `permission_required`, accordee a un admin par un chef_admin ou le
-    superadmin.
-
-Le frontend purge la session sur 401/403 : une base indisponible doit donc
-repondre 503, jamais 401/403 (d'ou `_DbIndisponible`). Le consentement manquant
-repond 428 pour la meme raison : la session reste valide.
+Le frontend purge la session sur 401/403 : une base indisponible repond donc
+503, et un consentement manquant 428.
 """
 
 from __future__ import annotations
@@ -45,11 +34,8 @@ def _erreur(message: str, status: int, code: str):
 def _charger_compte_session(exiger_cgu: bool = True):
     """Resout le token de session en compte. Renvoie (compte, reponse d'erreur).
 
-    Le role est relu en base a chaque requete, pour qu'un droit retire prenne
-    effet immediatement. Ne pas le mettre en cache dans la session.
-
-    `exiger_cgu` impose le consentement a la politique en version courante.
-    Seul `player_required_sans_cgu` le leve.
+    Le role est relu en base a chaque requete pour qu'un retrait de droit soit
+    immediat.
     """
     token = request.headers.get(SESSION_HEADER, None)
     if not token:
@@ -81,9 +67,7 @@ def _charger_compte_session(exiger_cgu: bool = True):
                 if row[6] == 'suspended':
                     return None, _erreur("Compte suspendu", 403, 'compte_suspendu')
 
-                # Apres la suspension (un compte suspendu doit l'apprendre),
-                # avant last_seen_at (accepter seulement ne compte pas comme
-                # une activite).
+                # Apres la suspension, avant la mise a jour de last_seen_at.
                 if exiger_cgu and row[9] != CGU_VERSION:
                     return None, _erreur(
                         "Politique de confidentialité à accepter", 428, 'cgu_a_accepter')
@@ -118,12 +102,8 @@ def player_required(f):
 
 
 def player_required_sans_cgu(f):
-    """Comme `player_required`, sans exiger le consentement.
-
-    Reserve aux routes qui servent a accepter la politique ou a exercer un
-    droit qui n'en depend pas : /auth/check-session, /me/cgu, /me/export,
-    /avatar/moi. Liste figee par `test_cgu_imposee.py`.
-    """
+    """Comme `player_required`, sans exiger le consentement (liste figee par
+    test_cgu_imposee.py)."""
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
         compte, erreur = _charger_compte_session(exiger_cgu=False)
@@ -135,10 +115,7 @@ def player_required_sans_cgu(f):
 
 
 def role_required(role_minimum: str):
-    """Exige une session et un role au moins egal a `role_minimum`.
-
-    Les roles sont ordonnes : un superadmin satisfait une exigence d'admin.
-    """
+    """Exige une session et un role au moins egal a `role_minimum`."""
     seuil = ROLE_HIERARCHY[role_minimum]
 
     def decorateur(f):
@@ -160,17 +137,11 @@ def role_required(role_minimum: str):
 
 
 class _DbIndisponible(Exception):
-    """La base n'a pas repondu pendant une verification de droits.
-
-    Distingue « pas la permission » (403) de « impossible de savoir » (503).
-    """
+    """La base n'a pas repondu pendant une verification de droits (503)."""
 
 
 def _a_permission(compte_id: int, permission: str) -> bool:
-    """Vrai si ce compte porte cette permission nommee.
-
-    Leve _DbIndisponible sur une panne plutot que de renvoyer False.
-    """
+    """Vrai si ce compte porte cette permission. Leve _DbIndisponible en cas de panne."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -185,13 +156,8 @@ def _a_permission(compte_id: int, permission: str) -> bool:
 
 
 def permission_required(permission: str):
-    """Exige une session, et soit un role >= chef_admin, soit la permission nommee.
-
-    chef_admin et superadmin passent toujours : leur socle est le catalogue
-    entier.
-    """
+    """Exige une session, et soit un role >= chef_admin, soit la permission nommee."""
     if permission not in PERMISSIONS_CATALOGUE:
-        # raise plutot qu'assert, qui disparait sous -O.
         raise ValueError(f"Permission inconnue du catalogue : {permission!r}")
 
     seuil_chef = ROLE_HIERARCHY[ROLE_CHEF_ADMIN]
@@ -243,11 +209,9 @@ def permission_required(permission: str):
 
 
 def compte_a_permission(compte: dict, permission: str):
-    """Verification secondaire d'une permission, a l'interieur d'une route.
+    """Verification d'une permission a l'interieur d'une route.
 
-    Renvoie (accordee, reponse d'erreur | None) ; la reponse est un 503 si la
-    base n'a pas repondu. Sert aux routes qui melangent deux permissions
-    (update_config, add_tournament).
+    Renvoie (accordee, reponse d'erreur | None).
     """
     if permission not in PERMISSIONS_CATALOGUE:
         raise ValueError(f"Permission inconnue du catalogue : {permission!r}")
@@ -257,7 +221,6 @@ def compte_a_permission(compte: dict, permission: str):
     if compte['role'] != ROLE_ADMIN:
         return False, None
 
-    # Meme regle que permission_required : une sous-permission exige son parent.
     requises = [permission]
     parent = SOUS_PERMISSIONS.get(permission)
     if parent is not None:
@@ -270,19 +233,14 @@ def compte_a_permission(compte: dict, permission: str):
 
 
 def permissions_delegables_par(compte: dict) -> frozenset:
-    """Ce qu'un compte peut accorder a un admin : le catalogue entier pour
-    chef_admin et superadmin, rien pour les autres.
-    """
+    """Permissions qu'un compte peut accorder a un admin."""
     if ROLE_HIERARCHY.get(compte['role'], ROLE_HIERARCHY[ROLE_PLAYER]) >= ROLE_HIERARCHY[ROLE_CHEF_ADMIN]:
         return frozenset(PERMISSIONS_CATALOGUE)
     return frozenset()
 
 
 def refuse_auto_modification(acteur_id: int, cible_id: int):
-    """Refuse d'agir sur son propre compte. Renvoie une reponse d'erreur ou None.
-
-    Appelee a la main par changer_role, l'octroi de permission et le legs.
-    """
+    """Refuse d'agir sur son propre compte. Renvoie une reponse d'erreur ou None."""
     if acteur_id == cible_id:
         return _erreur("Action impossible sur son propre compte.", 403, 'auto_modification')
     return None
@@ -291,13 +249,7 @@ def refuse_auto_modification(acteur_id: int, cible_id: int):
 def compte_cible_protegee(f):
     """Interdit d'agir sur un compte de rang egal ou superieur au sien.
 
-        rang(acteur) >  rang(cible)  -> autorise
-        rang(acteur) <= rang(cible)  -> 403 cible_protegee
-
-    Agir sur son propre compte reste permis ; les routes ou cela n'a pas de
-    sens appellent refuse_auto_modification.
-
-    A poser sous role_required/permission_required : g.compte doit deja exister.
+    A poser sous role_required/permission_required (g.compte doit exister).
     """
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
@@ -316,7 +268,6 @@ def compte_cible_protegee(f):
             logger.error("Verification de cible protegee impossible: %s", e)
             return _erreur("Service indisponible", 503, 'indisponible')
 
-        # Compte inexistant : la route repondra 404.
         if row is not None:
             refus = refus_de_rang(acteur, cible_id, row[0])
             if refus is not None:
@@ -327,30 +278,19 @@ def compte_cible_protegee(f):
 
 
 def _rangs(role_acteur: str, role_cible: str) -> tuple[int, int]:
-    """(rang de l'acteur, rang de la cible).
-
-    Un role inconnu vaut le rang le plus bas pour l'acteur et le plus haut pour
-    la cible.
-    """
+    """(rang de l'acteur, rang de la cible) ; un role inconnu est defavorable."""
     return (ROLE_HIERARCHY.get(role_acteur, ROLE_HIERARCHY[ROLE_PLAYER]),
             ROLE_HIERARCHY.get(role_cible, ROLE_HIERARCHY[ROLE_SUPERADMIN]))
 
 
 def hors_de_portee(role_acteur: str, role_cible: str) -> bool:
-    """Vrai si la regle de rang interdit a l'acteur d'agir sur cette cible.
-
-    Sert a griser les boutons ; refus_de_rang reste la verification.
-    """
+    """Vrai si la regle de rang interdit a l'acteur d'agir sur cette cible."""
     rang_acteur, rang_cible = _rangs(role_acteur, role_cible)
     return not rang_acteur > rang_cible
 
 
 def refus_de_rang(acteur: dict, cible_id: int, role_cible: str, objet: str = 'compte'):
-    """La regle de rang. Renvoie une reponse 403 ou None.
-
-    Le cas « soi-meme » est ecarte par l'appelant. `objet` ne change que le
-    message : « compte » ou « fiche ».
-    """
+    """La regle de rang. Renvoie une reponse 403 ou None."""
     rang_acteur, rang_cible = _rangs(acteur['role'], role_cible)
     if rang_acteur > rang_cible:
         return None
@@ -375,13 +315,9 @@ def refus_de_rang(acteur: dict, cible_id: int, role_cible: str, objet: str = 'co
 
 
 def fiche_cible_protegee(f):
-    """compte_cible_protegee, pour les routes qui visent une fiche joueur.
+    """compte_cible_protegee pour une fiche joueur (rang du compte lie).
 
-    La fiche prend le rang du compte qui lui est lie ; une fiche sans compte
-    vaut une fiche de player, et sa propre fiche reste accessible.
-
-    Lit l'identifiant dans le parametre d'URL `id`. A poser sous
-    permission_required.
+    Lit l'identifiant dans le parametre d'URL `id`.
     """
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
@@ -400,7 +336,6 @@ def fiche_cible_protegee(f):
             logger.error("Verification de fiche protegee impossible: %s", e)
             return _erreur("Service indisponible", 503, 'indisponible')
 
-        # Aucun compte lie, ou la sienne : rien a proteger.
         if row is not None and row[0] != acteur['id']:
             refus = refus_de_rang(acteur, row[0], row[1], objet='fiche')
             if refus is not None:
@@ -411,7 +346,7 @@ def fiche_cible_protegee(f):
 
 
 def service_required(scope: str):
-    """Authentification machine pour les bots. Lecture seule, portee restreinte."""
+    """Authentification des bots par jeton de service."""
     def decorateur(f):
         @functools.wraps(f)
         def decorated_function(*args, **kwargs):

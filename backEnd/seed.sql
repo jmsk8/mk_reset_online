@@ -1,19 +1,5 @@
--- Fixture de developpement : donnees FICTIVES (univers Mario).
---
--- Ce fichier ne contenait auparavant que des donnees reelles -- vrais pseudos
--- et historique complet des matchs -- alors qu'il est versionne dans un depot
--- public. Il est desormais aligne sur dump.sql, dont c'etait deja le bon
--- reflexe.
---
--- DONNEES SEULES, volontairement : la version precedente faisait ses propres
--- DROP + CREATE et, montee en 02_, ecrasait donc integralement ce que
--- 01_schema.sql venait de creer. Toute table ajoutee au schema disparaissait a
--- la premiere installation propre. schema.sql redevient ici la SEULE reference
--- de structure, et ce fichier ne fait qu'y verser des lignes.
---
--- schema.sql amorce deja `configuration` et `types_awards` : on les vide avant
--- de les recharger, pour que la fixture soit deterministe et n'entre pas en
--- conflit avec la contrainte UNIQUE sur types_awards.code.
+-- Fixture de developpement : donnees fictives, sans structure (voir schema.sql).
+-- configuration et types_awards sont vides avant rechargement.
 
 BEGIN;
 

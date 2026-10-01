@@ -18,8 +18,7 @@ namespace {
 constexpr double DT = 1.0 / 30.0;
 constexpr double DT_MS = DT * 1000.0;
 
-// Au-dela, la course est declaree bloquee : sans ce garde-fou, un bug de
-// physique ferait tourner le banc jusqu'a la fin des temps.
+// Au-dela, la course est declaree bloquee.
 constexpr long long MAX_TICKS = 30 * 60 * 10;
 
 struct Tally {
@@ -35,9 +34,7 @@ bool is_broken(double v) {
     return !std::isfinite(v);
 }
 
-// Un NaN n'apparait jamais seul : il se propage a tout ce qu'il touche, et une
-// course qui en contient un est perdue. On le signale des la premiere
-// occurrence, avec de quoi remonter a sa source.
+// Signale le premier NaN, avec de quoi remonter a sa source.
 bool check_integrity(const engine::WorldState& state, std::string& why) {
     for (const engine::Kart& kart : state.karts) {
         if (is_broken(kart.worldX) || is_broken(kart.yPercent)
@@ -50,8 +47,7 @@ bool check_integrity(const engine::WorldState& state, std::string& why) {
     return true;
 }
 
-// Une course entiere, hors horloge : on avance a pas fixes jusqu'a ce que la
-// machine a phases la declare close.
+// Une course entiere hors horloge, a pas fixes jusqu'a sa cloture.
 bool simulate_one(const config::Config& cfg, engine::Rng& rng,
                   const std::vector<std::string>& startOrder,
                   engine::WorldState& out, std::string& why) {
@@ -65,8 +61,7 @@ bool simulate_one(const config::Config& cfg, engine::Rng& rng,
 
         if (!check_integrity(state, why)) return false;
 
-        // La course est close quand la machine a phases a distribue les points
-        // et pose sa date de resultats.
+        // Close une fois les points distribues et la date de resultats posee.
         if (state.phase == engine::Phase::Results && state.resultsAt > 0) {
             out = std::move(state);
             return true;
@@ -86,8 +81,7 @@ int run_simulate(const config::Config& cfg, const std::vector<track::Track>& tra
         return 1;
     }
 
-    // Les circuits retenus. `--track` n'en garde qu'un, pour juger un trace en
-    // particulier sans que les autres diluent la mesure.
+    // Circuits retenus ; `--track` n'en garde qu'un.
     std::vector<const track::Track*> selected;
     for (const track::Track& t : tracks) {
         if (opts.trackFilter.empty()
@@ -111,10 +105,7 @@ int run_simulate(const config::Config& cfg, const std::vector<track::Track>& tra
         track::Track circuit = *selected[static_cast<size_t>(i) % selected.size()];
         const config::Config raceCfg = track::apply_track(cfg, circuit);
 
-        // Un grand prix neuf repart d'un tirage, comme dans le service
-        // (`advance_grand_prix`). Sans ca, depuis que chaque course aligne
-        // `kartCount` karts parmi davantage de personnages, les memes karts
-        // couraient toute la campagne et les autres jamais.
+        // Nouveau grand prix : grille tiree au sort, comme dans le service.
         if (i % cfg.grandPrix.races == 0) startOrder.clear();
 
         engine::WorldState finished;
@@ -125,8 +116,7 @@ int run_simulate(const config::Config& cfg, const std::vector<track::Track>& tra
         }
         completed++;
 
-        // L'ordre d'arrivee devient la grille de la manche suivante, comme en
-        // course reelle : le banc mesure le jeu tel qu'il se joue.
+        // L'ordre d'arrivee donne la grille suivante, comme en course reelle.
         startOrder.clear();
         for (int id : finished.finishOrder) {
             startOrder.push_back(finished.karts[static_cast<size_t>(id)].charName);
@@ -144,7 +134,7 @@ int run_simulate(const config::Config& cfg, const std::vector<track::Track>& tra
         }
     }
 
-    // Le classement du banc : par points, comme un grand prix.
+    // Classement par points, comme un grand prix.
     std::vector<std::pair<std::string, Tally>> rows(byChar.begin(), byChar.end());
     std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) {
         if (a.second.points != b.second.points) return a.second.points > b.second.points;
@@ -177,20 +167,9 @@ int run_simulate(const config::Config& cfg, const std::vector<track::Track>& tra
                     t.races ? static_cast<double>(t.rankSum) / t.races : 0.0);
     }
 
-    // CE QUE CE BANC NE MESURE PAS ENCORE.
-    //
-    // En v0 les karts ne se touchent pas (`resolve_kart_contacts` est vide) et
-    // ne recoivent aucun objet (`roll_item` rend « rien »). Il ne reste donc que
-    // la pointe pour departager, et l'ecart entre le plus rapide et le plus lent
-    // du plateau vaut 5 % — moins que ce que la grille donne d'avance. Le
-    // classement REPRODUIT donc l'ordre de depart, et les colonnes ci-dessus
-    // disent surtout qui est parti devant.
-    //
-    // Ce n'est pas un defaut d'equilibrage : c'est ce qu'une course sans
-    // interaction PEUT produire. Les chiffres deviendront lisibles quand
-    // `items.cpp` et `road.cpp::resolve_kart_contacts` seront ecrits — d'ici la,
-    // ce banc verifie que la simulation TIENT (aucun NaN, toutes les courses
-    // arrivent au bout), pas que le plateau est juste.
+    // Sans contacts entre karts ni objets, seule la pointe departage et le
+    // classement reproduit surtout l'ordre de depart. Le banc verifie pour
+    // l'instant que la simulation tient (aucun NaN, courses terminees).
     std::printf("\n✓ campagne terminee, aucun NaN.\n");
     std::printf("  Note : sans objets ni contacts entre karts (v0), le classement\n"
                 "  suit l'ordre de grille — l'ecart de pointe du plateau (5 %%) ne\n"
@@ -229,8 +208,7 @@ int run_soak(const config::Config& cfg, const std::vector<track::Track>& tracks,
 
         for (const engine::Event& e : events) {
             if (e.type == engine::EventType::RaceOver) {
-                // Le soak enchaine, comme le service : c'est la duree qui
-                // decide, pas le nombre de courses.
+                // Le soak enchaine les courses ; seule la duree compte.
                 races++;
                 std::vector<std::string> order;
                 for (int id : state.finishOrder) {

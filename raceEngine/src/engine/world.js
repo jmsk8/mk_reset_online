@@ -1,5 +1,4 @@
-// La fabrique d'un monde : grille de depart, karts, decor, circuit.
-// Tout ce qu'une course a besoin de savoir avant son premier pas.
+// Creation d'un monde : grille de depart, karts, decor, circuit.
 
 import { randomRange, shuffleArray } from './math.js';
 import { parkPosition } from './geometry.js';
@@ -8,21 +7,14 @@ import { laneY } from './driving.js';
 import { shadowCount, shadowFrom, shadowHi, shadowLo, shadowTo } from './vision.js';
 import { countdownDuration } from './race.js';
 
-// Les personnages de la course, dans l'ordre de la grille.
-//
-// `startOrder` est l'ordre d'arrivee de la manche precedente : il est repris tel
-// quel, ce qui garde les MEMES karts sur tout un grand prix — les points s'y
-// cumulent par personnage. Absent ou devenu invalide (un personnage retire du
-// tirage entre-temps, une taille de plateau changee), on tire au sort
-// `roster.perRace` karts parmi les personnages actives : c'est ce qui ouvre un
-// grand prix. Un seul melange fait les deux, le choix des karts et la grille.
+// Personnages de la course, dans l'ordre de la grille. `startOrder` (arrivee de
+// la manche precedente) est repris tel quel pendant un grand prix ; absent ou
+// invalide, on tire `roster.perRace` karts au sort.
 function pickRoster(cfg, rng, startOrder) {
     const spec = cfg.roster;
     const known = Object.keys(deriveCharacterStats(cfg));
 
-    // L'interrupteur doit couvrir exactement les personnages en config. Un
-    // personnage ajoute sans y figurer ne serait jamais tire, sans que rien ne
-    // dise pourquoi ; un nom inconnu y serait une faute de frappe.
+    // L'interrupteur doit couvrir exactement les personnages en config.
     if (!spec || !spec.enabled) {
         throw new Error('cfg.roster.enabled manquant : raceEngine/src/config/bodies.js');
     }
@@ -55,18 +47,13 @@ function pickRoster(cfg, rng, startOrder) {
     return shuffleArray(enabled, rng).slice(0, size);
 }
 
-// `startOrder` et `grandPrix` : voir `pickRoster` pour le premier. `grandPrix`
-// reporte le bloc en cours ({ round, points }) ; absent, la course ouvre un bloc
-// neuf.
+// `grandPrix` : bloc en cours ({ round, points }) ; absent, nouveau bloc.
 function createWorldState(cfg, rng, now, startOrder, grandPrix) {
     const roadHeight = cfg.road.maxY - cfg.road.minY;
     const race = cfg.race;
     const countdownMs = countdownDuration(race);
 
-    // Le circuit vient du dessin, pose sur la config par
-    // raceEngine/src/track.js. Sans lui il n'y a pas de monde a construire :
-    // autant le dire ici plutot que de faire tourner une course sur un tour
-    // de largeur NaN, ou personne ne croise jamais de boite.
+    // Le circuit (src/track.js) est obligatoire.
     const drawnBoxes = cfg.world.itemBoxes;
     if (!cfg.world.width || !drawnBoxes || !drawnBoxes.length) {
         throw new Error('cfg.world sans circuit : appeler track.applyTrack(cfg, circuit) '
@@ -80,17 +67,11 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
         reactivateTime: 0
     }));
 
-    // Les pipes ne connaissent aucun etat : ni actifs, ni repris, ni
-    // detruits. Ils sont recopies ici quand meme, pour que tout le contenu
-    // du monde se lise au meme endroit que le reste — et parce qu'un jour
-    // l'un d'eux voudra peut-etre bouger.
+    // Tuyaux recopies dans l'etat avec le reste du monde.
     const pipes = (cfg.world.pipes || []).map(pipe => ({
         worldX: pipe.x,
         y: pipe.y,
-        // Sa couleur, et elle s'arrete la : le moteur ne la lit nulle part.
-        // Elle est recopiee pour la meme raison que le reste — tout le
-        // contenu du monde se lit au meme endroit, et le decor se dessine
-        // depuis l'etat, jamais depuis le tracé.
+        // Couleur, pour le decor seulement.
         kind: pipe.kind || 'green'
     }));
 
@@ -126,28 +107,18 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
             momentumTarget: getNewMomentumTarget(rng, cfg, stats),
             nextMomentumChange: now + randomRange(rng, cfg.speeds.momentumDriftMin, cfg.speeds.momentumDriftMax),
 
-            // Elan mis de cote pendant un objet de vitesse, et ce qu'il
-            // restait a son compte a rebours. -1 veut dire « rien en
-            // attente » : c'est le seul etat qui autorise la mise de cote,
-            // et le seul que produit un incident, qui refait l'elan et n'a
-            // donc rien a rendre.
+            // Elan mis de cote pendant un objet de vitesse (-1 : rien en attente).
             preBoostMomentum: -1,
             preBoostDriftLeft: 0,
             vy: 0,
             targetVy: 0,
 
-            // Canaux de choc, tenus a l'ecart du pilotage et du moteur.
-            // `bumpVy` est en profondeur/s, `bumpVx` en pixels/s. Les deux
-            // s'ajoutent au deplacement puis s'amortissent seuls : ecrire un
-            // choc dans `vy` le faisait effacer par le volant avant que
-            // les karts se soient decolles.
+            // Canaux de choc, separes du volant : `bumpVy` en profondeur/s,
+            // `bumpVx` en px/s, amortis seuls.
             bumpVy: 0,
             bumpVx: 0,
 
-            // Vitesse le long de la piste sur le tick ecoule, en pixels/s.
-            // Relevee a la fin du deplacement et lue par la passe de contact,
-            // qui a besoin d'une vitesse de rapprochement reelle — recul de
-            // pipe et tete-a-queue compris — et non de la consigne moteur.
+            // Vitesse reelle le long de la piste sur le tick (px/s), pour les contacts.
             contactSpeed: 0,
 
             state: 'grid',
@@ -156,36 +127,26 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
             aiState: 'cruising',
 
             hitEndTime: 0,
-            // Duree, vitesse gardee et sursis du dernier coup (`hits` de la
-            // config).
+            // Duree, vitesse gardee et sursis du dernier coup (`hits`).
             hitDuration: 0,
             hitKeepSpeed: 0,
             hitInvincibleMs: 0,
 
-            // Choc contre un pipe. `bumpEndTime` porte l'arret net,
-            // `bumpRecoilLeft` ce qu'il reste a reculer. Le sursis est
-            // retenu par tuyau : un kart qui vient d'en heurter un doit
-            // pouvoir se cogner au suivant.
+            // Choc contre un tuyau : arret net, recul restant, sursis par tuyau.
             bumpEndTime: 0,
             bumpRecoilLeft: 0,
             bumped: false,
 
-            // Ecrase par un kart reste grand. Date et drapeau, comme le
-            // reste. La date ne depasse jamais celle du rapetissement : un
-            // kart redevenu grand n'est plus plat.
+            // Ecrase par un kart reste grand (jamais au-dela du rapetissement).
             flatEndTime: 0,
             isFlat: false,
 
-            // Contact en cours avec un tuyau pendant un tete-a-queue : la
-            // toupie est bloquee tant qu'il tient, sans que ce soit un choc.
+            // Toupie bloquee contre un tuyau.
             pipeBlocked: false,
             pipeImmuneUntil: 0,
             lastPipeIndex: -1,
 
-            // Tuyau en cours de contournement, et couloir choisi pour le
-            // passer. L'index tient jusqu'a ce que le tuyau soit derriere :
-            // c'est ce qui donne une trajectoire au lieu d'une suite
-            // d'ecarts.
+            // Tuyau en cours de contournement et couloir choisi.
             pipeTargetIndex: -1,
             pipeLaneY: 0,
 
@@ -198,13 +159,11 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
             isInvincible: false,
             hitInvincibleUntil: 0,
 
-            // Rapetissement par l'eclair. La date pilote la simulation, le
-            // booleen part dans le snapshot.
+            // Rapetissement par l'eclair (date pour la simulation, booleen pour le snapshot).
             shrinkEndTime: 0,
             isShrunk: false,
 
-            // Bill Ball. `billAhead` retient qui reste a doubler : la vider
-            // est ce qui raccourcit le vol.
+            // Bill : `billAhead` = karts restant a doubler.
             isBill: false,
             billStartedAt: 0,
             billEndTime: 0,
@@ -214,52 +173,39 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
             trailTime: 0,
             brakeUntil: 0,
 
-            // Quand il a traverse une zone de boxes — le coup d'oeil
-            // arriere en depend (cf. `vision.boxGlanceMs`) — et l'episode de
-            // danger pour lequel il a deja tranche entre bouclier et tir.
+            // Dernier passage dans une zone de boites (`vision.boxGlanceMs`) et
+            // episode de danger deja tranche.
             boxPassedAt: -Infinity,
             shieldAt: -Infinity,
             shieldHold: false,
 
-            // Severite du frein en cours, et prochaine occasion de decider
-            // de se laisser doubler (cf. `vision.giveWay`).
+            // Severite du frein en cours et prochaine decision de ceder (`vision.giveWay`).
             brakeFactor: 0,
             giveWayRetryAt: 0,
             shotDirection: 1,
-            // Le plan de tir a-t-il ete fait en tete ? Il ne vaut plus rien
-            // si le kart s'est fait doubler depuis.
+            // Plan de tir fait en tete.
             shotAsLeader: false,
             lobbing: false,
             aimError: 0,
 
-            // Le releve d'un tir vers l'arriere : la profondeur vue lors du
-            // coup d'oeil, et sa date. Il se perime (`vision.aimMemoryMs`),
-            // et c'est voulu — viser de memoire, c'est viser ou l'autre
-            // ETAIT.
+            // Releve d'un tir vers l'arriere : profondeur et date (`vision.aimMemoryMs`).
             aimTargetY: 0,
             aimTargetAt: -Infinity,
 
-            // Tout ce que le kart a percu au dernier balayage, et rien d'autre :
-            // le pilotage ne lit plus le monde. Les deux dates de depart sont
-            // decalees kart par kart pour qu'ils ne balayent ni ne tournent la
-            // tete tous ensemble.
+            // Perception du dernier balayage ; dates de depart decalees par kart.
             sight: {
                 at: now - cfg.vision.scanIntervalMs
                     + Math.round(index * cfg.vision.scanIntervalMs / names.length),
                 back: false,
                 backUntil: 0,
 
-                // Sens du dernier balayage effectue, a distinguer de `back`
-                // qui est l'attention du moment (cf. `perceive`).
+                // Sens du dernier balayage (`back` : attention du moment).
                 scanBack: false,
 
                 nextGlance: now
                     + Math.round(index * cfg.vision.glanceIntervalMs / names.length),
 
-                // Date du dernier coup d'oeil en arriere. C'est elle qui
-                // autorise a viser derriere : avoir regarde, et non regarder
-                // pendant. Loin dans le passe au depart — personne n'a encore
-                // rien vu.
+                // Dernier coup d'oeil arriere (autorise la visee arriere).
                 seenKartY: 0,
                 seenKartDist: -1,
 
@@ -272,35 +218,25 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
                 spans: [],
                 spanCount: 0,
 
-                // Ce que le balayage a vu passer sans le voir : ce qui
-                // tombait dans l'ombre d'un corps plus proche. Purement
-                // observable — aucune decision ne le lit. Cf. `perceive`.
+                // Corps caches par l'ombre d'un plus proche (observation seulement).
                 hiddenIds: [],
                 hiddenCount: 0,
 
-                // Les ombres elles-memes, telles que la marche les a
-                // empilees : deux pentes depuis l'oeil, et les deux
-                // distances entre lesquelles elles portent. Observable
-                // aussi — la decision les a deja consommees.
+                // Ombres du balayage : pentes depuis l'oeil et distances (observation).
                 shadowLo: [],
                 shadowHi: [],
                 shadowFrom: [],
                 shadowTo: [],
                 shadowCount: 0,
 
-                // Ou etait la camera pendant ce balayage. Sans elle, les
-                // pentes ci-dessus ne se rattachent a rien.
+                // Position de la camera pendant le balayage.
                 eyeBack: 0,
                 eyeY: 0,
 
-                // La portee du balayage courant, avant ou arriere. Elle se
-                // deduit du sens et de `vision.range`, mais l'observateur
-                // n'a pas a refaire ce choix : ce qui s'affiche doit etre ce
-                // que le moteur a regarde.
+                // Portee du balayage courant.
                 scanRange: 0,
 
-                // Les profondeurs des karts qui roulent avec lui — cf.
-                // `vision.crowd` et l'encombrement dans `laneRisk`.
+                // Profondeurs des karts voisins (`vision.crowd`).
                 crowdY: [],
                 crowdCount: 0,
 
@@ -315,67 +251,45 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
                 pressure: false,
                 pressureY: 0,
                 pressureId: 0,
-                // De quel cote vient le releve ci-dessus : un porteur dans
-                // le dos qui peut tirer, ou un porteur devant qui peut
-                // lacher. Meme perception, deux decisions.
+                // Porteur dans le dos (peut tirer) ou devant (peut lacher).
                 pressureBack: false,
-                // Et a quelle distance, dans le sens du regard.
+                // Distance dans le sens du regard.
                 pressureDist: 0,
 
-                // Le porteur qui NOUS SUIT, et depuis quand : l'autre moitie
-                // du danger latent, qui n'avait pas de souvenir. Seul un
-                // balayage ARRIERE le pose ou le leve ; la distance et la
-                // profondeur vieillissent ensuite, et c'est assume.
+                // Porteur qui nous suit, et depuis quand (pose par un balayage arriere).
                 carrierAt: -Infinity,
                 carrierY: 0,
                 carrierId: 0,
                 carrierDist: 0,
 
-                // Le porteur qu'on SUIT, et depuis quand. Meme souvenir
-                // date que `dangerAt` plus bas, meme peremption, pour la
-                // meme raison : un coup d'oeil arriere ne doit pas effacer
-                // ce que le kart a devant lui. Seul un balayage AVANT pose
-                // ou leve ce souvenir.
+                // Porteur qu'on suit, et depuis quand (pose par un balayage avant).
                 frontAt: -Infinity,
                 frontY: 0,
                 frontId: 0,
 
-                // Le danger APERCU DERRIERE, et depuis quand. C'est un souvenir
-                // et non un etat : le tirage du coup d'oeil n'a jamais lieu
-                // pendant un coup d'oeil, donc il ne peut lire que ce qu'on a vu.
-                // Sans lui, le kart oublierait la carapace entre deux
-                // clignements.
-                //
-                // `dangerAt` est rafraichi a chaque coup d'oeil qui le revoit ;
-                // `dangerSince` marque le debut de l'EPISODE, ce qui evite de
-                // rejouer le choix du bouclier.
-                //
-                //   'shot'    une carapace en vol, deja lancee
-                //   'carrier' quelqu'un derriere qui en porte une
-                //   'ram'     une etoile ou un bill : rien a lui opposer
+                // Danger apercu derriere, et depuis quand (`dangerSince` : debut
+                // de l'episode) :
+                //   'shot'    carapace en vol
+                //   'carrier' porteur derriere
+                //   'ram'     etoile ou bill
                 dangerAt: -Infinity,
                 dangerSince: -Infinity,
                 dangerKind: '',
 
-                // Les rouges apercues derriere : la plus proche, et combien.
-                // Cf. `vision.giveWay`.
+                // Rouges apercues derriere : la plus proche, et combien (`vision.giveWay`).
                 redBehindDist: -1,
                 redBehindY: 0,
                 redBehindId: 0,
                 redBehindCount: 0,
 
-                // Et leur souvenir, sans lequel le releve ci-dessus
-                // n'existait que pendant le coup d'oeil. Meme peremption
-                // que `dangerAt`, et pose par le seul balayage arriere.
+                // Souvenir des rouges, meme peremption que `dangerAt`.
                 redMemAt: -Infinity,
                 redMemDist: -1,
                 redMemY: 0,
                 redMemId: 0,
                 redMemCount: 0,
 
-                // Le kart le plus proche DERRIERE, vu, et ce qu'il gagne sur
-                // lui en px/s. Il ne sert qu'a ceder la tete devant une bleue.
-                // Meme souvenir que la rouge, pose par le seul balayage arriere.
+                // Kart le plus proche derriere et ce qu'il gagne en px/s (bleue).
                 rearKartDist: -1,
                 rearKartY: 0,
                 rearKartId: 0,
@@ -387,14 +301,10 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
                 rearMemRel: 0
             },
 
-            // Ce qu'il ENTEND, et qu'il n'a pas besoin d'avoir vu : quoi arrive,
-            // et si c'est pour lui — jamais ou. Cf. `hear`.
+            // Ce qu'il entend (voir `hear`).
             alert: {
-                // Une etoile ou un bill dans le dos, a ce pas : le plus pressant,
-                // et dans combien de temps il sera au contact. La derniere fois
-                // qu'on l'a entendu borne l'episode — un seul sursaut par
-                // approche. `watch` : il le regarde venir, et ne le lache plus
-                // tant que l'esquive n'est pas decidee.
+                // Etoile ou bill dans le dos : le plus pressant et son delai ;
+                // `watch` : suivi du regard jusqu'a la decision.
                 ram: false,
                 ramTtc: Infinity,
                 ramId: -1,
@@ -402,39 +312,30 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
                 ramStartled: false,
                 watch: false,
 
-                // Un coup d'oeil a jouer tout de suite, sans attendre la
-                // prochaine occasion. Consomme par `updateGlance`.
+                // Coup d'oeil immediat (consomme par `updateGlance`).
                 startle: false,
 
-                // La rouge qui le vise, jugee a la premiere ecoute : quand le
-                // reflexe sera passe, et s'il l'a laissee filer. `red` : il la
-                // sait, et c'est tout ce que lit `updateShield`.
+                // Rouge qui le vise, jugee a la premiere ecoute.
                 redId: 0,
                 redReactAt: 0,
                 redIgnored: false,
                 red: false,
 
-                // La bleue qui le concerne — il est en tete, ou elle l'a
-                // choisi — jugee a la premiere ecoute : reflexe, inattention,
-                // erreur d'appreciation sur l'echeance, et s'il a le reflexe de
-                // ceder la tete. Cf. `hearBlue`.
+                // Bleue qui le concerne, jugee a la premiere ecoute (`hearBlue`).
                 blueId: 0,
                 blueReactAt: 0,
                 blueIgnored: false,
                 blueBias: 1,
                 blueYield: false,
                 blueStartled: false,
-                // Ce qu'il en sait a ce pas : qu'elle arrive, dans combien de
-                // temps il CROIT qu'elle choisira sa cible, si c'est deja lui, et
-                // ou elle en est quand c'est lui.
+                // Etat de la bleue a ce pas.
                 blue: false,
                 blueEta: Infinity,
                 blueOnMe: false,
                 bluePhase: '',
                 blueLook: false,
-                // Ce qu'il en fait (cf. `updateBlue`) : '' rien, 'cover' il
-                // garde l'objet qui le rendra intouchable, 'yield' il leve le
-                // pied pour ceder la tete, 'hang' il reste en retrait du souffle.
+                // Reaction : '' rien, 'cover' garde l'objet, 'yield' cede la tete,
+                // 'hang' reste en retrait (`updateBlue`).
                 blueMode: '',
                 blueFireAt: 0,
                 savedThrowTime: 0,
@@ -444,9 +345,7 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
                 hangUntil: 0
             },
 
-            // Le plan d'evitement en cours. Il survit a la perte de vue :
-            // seule son echeance, ou le constat que la menace est passee,
-            // le ferme. Cf. `updatePlan`.
+            // Plan d'evitement en cours (`updatePlan`).
             plan: {
                 kind: '',
                 threatId: 0,
@@ -462,59 +361,44 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
                 crossing: false
             },
 
-            // Menaces deja jugees : reflexe tire et verdict d'inattention,
-            // retenus le temps qu'elles passent. Ecrase le premier
-            // emplacement libre ou perime, sinon le plus ancien — cf.
-            // `vision.memorySlots` et `vision.memoryMs`. Zero ne designe
-            // aucune menace : les objets s'identifient a partir de 1, les
-            // karts en negatif.
+            // Menaces deja jugees (`vision.memorySlots`, `vision.memoryMs`) ;
+            // 0 = aucune, objets a partir de 1, karts en negatif.
             judgedId: new Array(cfg.vision.memorySlots).fill(0),
             judgedSeenAt: new Array(cfg.vision.memorySlots).fill(-Infinity),
             judgedReactAt: new Array(cfg.vision.memorySlots).fill(0),
             judgedIgnored: new Array(cfg.vision.memorySlots).fill(false),
 
-            // Prochaine chance de prendre une decision de securite, UNE PAR
-            // COTE. Ce qui se retente est la decision et non la perception
-            // de celui qui la provoque — mais se ranger devant un porteur
-            // et se ranger derriere un porteur sont deux decisions, prises
-            // sur deux dangers. Un compteur commun les faisait s'annuler
-            // l'une l'autre (cf. `updatePlan`).
+            // Prochaine decision de securite, une par cote.
             safetyRetryFrontAt: 0,
             safetyRetryBackAt: 0,
-            // Prochaine reprise du couloir de tuyau. Zero : le premier
-            // couloir choisi est aussitot revisable (cf. steerAroundPipes).
+            // Prochaine revision du couloir de tuyau.
             pipeReviewAt: 0,
 
             nextWanderTime: now + randomRange(rng, 1000, 5000),
             wanderEndTime: 0,
             wanderY: 0,
 
-            // Gain de volant sous objet de vitesse. Neutre au depart, repose
-            // a chaque tick (cf. `stepPhysics`).
+            // Gain de volant sous objet de vitesse (pose a chaque tick).
             steerBoost: 1,
 
-            // Distance perdue a la contrainte de virage depuis le depart, en
-            // pixels de monde. Compteur d'observation, jamais lu par le jeu.
+            // Distance perdue en virage, en px (observation).
             cornerLostPx: 0,
 
             lapCount: 0,
             hasPassedFinishLine: false,
             stopped: false,
 
-            // Cinq tours pleins, plus le bout de piste qui separe la place
-            // de grille de la ligne. Ce segment initial ne compte pas comme
-            // un tour : il vaut moins d'une seconde.
+            // Cinq tours plus la distance de la grille a la ligne.
             finishDistance: race.laps * cfg.world.width + gapToLine,
             finished: false,
-            // Dans sa zone de dernier tour (race.js) : part en FLAG_FINAL_LAP.
+            // Zone de dernier tour (race.js).
             finalLapSign: false,
             finishRank: 0,
             startStallUntil: 0,
 
             currentSpinFrame: 0,
 
-            // Dernier objet recu, lu par le tirage suivant pour freiner
-            // deux fois de suite le meme.
+            // Dernier objet recu, pour eviter deux fois le meme.
             lastItem: null
         };
 
@@ -542,26 +426,21 @@ function createWorldState(cfg, rng, now, startOrder, grandPrix) {
         flagShown: false,
         finishOrder: [],
 
-        // Grand prix. `gpRound` est le numero de cette course dans le bloc,
-        // `gpPoints` le cumul par personnage a l'entree, `racePoints` ce que
-        // cette course rapporte — vide tant qu'elle n'est pas close.
+        // Grand prix : numero de la course, cumul par personnage, points de la course.
         gpRound: (grandPrix && grandPrix.round) || 1,
         gpPoints: Object.assign({}, (grandPrix && grandPrix.points) || null),
         racePoints: {},
         cameraSpeed: cfg.speeds.roadPPS,
-        // Panneau tenu par Lakitu : { group, frame, until }.
+        // Panneau de Lakitu : { group, frame, until }.
         sign: { group: 'start', frame: 1, until: now + countdownMs + race.goSignMs },
 
         nextItemId: 1,
-        // Decotes en cours, par type d'objet : absent vaut 1, c'est-a-dire
-        // intact. Un type n'y entre qu'une fois sorti au moins une fois.
+        // Decotes par type d'objet (absent = 1).
         itemDecay: {},
-        // Garde-fou de delai propre a la bleue, arme des le depart pour ne
-        // rien bloquer au premier tour.
+        // Delai de la bleue, arme des le depart.
         blueShellLastAt: now - cfg.blueShell.cooldownMs,
-        // Plancher de vitesse du bill : ne depend que de la config.
         billFloorSpeed: fastestBoostedSpeed(cfg) * cfg.bill.minLeadRatio,
-        // Orage en cours, ou null. Un seul a la fois.
+        // Orage en cours, ou null.
         storm: null,
         previousRanking: [],
         lastLeaderboardUpdate: 0

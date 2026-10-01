@@ -1,51 +1,43 @@
-// Le TIRAGE d'un objet : qui a droit a quoi, et a quelle frequence.
-// L'usage de l'objet une fois tire est dans `weapons.js` — ici on ne fait que
-// peser les chances et entretenir l'usure qui evite les rafales.
+// Tirage des objets (l'usage est dans weapons.js) : poids et usure.
 
 import { clamp01, curve, ramp } from './math.js';
 import { remainingDistance } from './geometry.js';
 import { getDistanceToLeader, getKartByRank, getRaceStage, getRacingTail } from './standings.js';
 
-// Interrupteur global : un type present dans cfg.disabledItems ne sort
-// jamais d'une boite, son poids etant force a 0 dans tous les paliers.
+// Un type present dans cfg.disabledItems ne sort jamais d'une boite.
 function isItemEnabled(cfg, itemType) {
     const disabled = cfg.disabledItems;
     return !disabled || disabled.indexOf(itemType) === -1;
 }
 
-// Renvoie la description d'orbite d'un type triple, ou null si l'objet n'en
-// est pas un. `child` est l'objet reellement largue a chaque activation.
+// Description d'orbite d'un type triple, ou null (`child` : objet largue).
 function getOrbitSpec(cfg, itemType) {
     const specs = cfg.orbitItems;
     return (specs && specs[itemType]) ? specs[itemType] : null;
 }
 
-// Retire avec un sursis : l'objet reste affiche le temps qu'on voie le choc,
-// sans plus rien pouvoir heurter.
+// Retrait differe : l'objet reste affiche le temps du choc, sans pouvoir heurter.
 function spendItem(cfg, item, now) {
     if (item.spent) return;
     item.spent = true;
     item.deadAt = now + cfg.delays.itemLingerMs;
 }
 
-// Rang minimal exige ; `lastRanks` se compte depuis la fin de grille et
-// l'emporte s'il est plus restrictif.
+// Rang minimal exige (`lastRanks` compte depuis la fin de grille).
 function minRankFor(profile, kartCount) {
     let min = profile.minRank || 1;
     if (profile.lastRanks) min = Math.max(min, kartCount - profile.lastRanks + 1);
     return min;
 }
 
-// Decote : chaque exemplaire distribue divise le poids du suivant, pour
-// tout le monde, resorbee tour apres tour. La bleue suit la meme regle via
-// son propre bloc de config.
+// Decote : chaque exemplaire distribue divise le poids du suivant, resorbee au
+// fil des tours.
 function decaySpecFor(cfg, itemType) {
     if (itemType === 'blueShell') return cfg.blueShell;
     const profile = cfg.itemDistribution.items[itemType];
     return (profile && profile.decay) ? profile : null;
 }
 
-// 1 tant qu'aucun exemplaire n'a ete distribue.
 function itemDecayOf(state, itemType) {
     const value = state.itemDecay[itemType];
     return (value === undefined) ? 1 : value;
@@ -57,7 +49,6 @@ function applyItemDecay(cfg, state, itemType) {
     state.itemDecay[itemType] = itemDecayOf(state, itemType) * spec.decay;
 }
 
-// A chaque tour entame par le premier.
 function regenItemDecay(cfg, state) {
     for (const itemType in state.itemDecay) {
         const spec = decaySpecFor(cfg, itemType);
@@ -66,12 +57,8 @@ function regenItemDecay(cfg, state) {
     }
 }
 
-// Reflux de fin de course. Les objets rares se concentrent naturellement sur le
-// dernier tour — c'est la que les ecarts sont les plus grands — et une bleue
-// quasi certaine au dernier tour tue le suspense.
-//
-// Ce terme ne corrige pas la pression : il s'applique par-dessus, et seulement
-// sur la fin. Un objet sans `lateFade` n'est pas concerne.
+// Reflux de fin de course pour les objets rares (`lateFade`), applique par-dessus
+// la pression.
 function lateFadeFactor(spec, stage) {
     const fade = spec && spec.lateFade;
     if (!fade) return 1;
@@ -88,8 +75,7 @@ function isSingletonFree(state, itemType) {
     return true;
 }
 
-// Poids d'un objet pour ce kart, dans cette situation. Zero se lit « pas
-// lui, pas ici, pas maintenant » : desactive, verrouille, ou courbe eteinte.
+// Poids d'un objet pour ce kart (0 : desactive, verrouille ou courbe eteinte).
 function itemWeight(cfg, state, kart, itemType, profile, axes) {
     if (!isItemEnabled(cfg, itemType)) return 0;
     if (profile.minStage && axes.s < profile.minStage) return 0;
@@ -100,7 +86,6 @@ function itemWeight(cfg, state, kart, itemType, profile, axes) {
     let weight = profile.base;
 
     if (profile.power) {
-        // Les objets puissants ne lisent que la pression.
         weight *= ramp(axes.pressure, profile.power.open, profile.power.full);
     } else {
         weight *= curve(profile.rank, axes.p);
@@ -117,7 +102,7 @@ function itemWeight(cfg, state, kart, itemType, profile, axes) {
     return weight > 0 ? weight : 0;
 }
 
-// Les mesures dont depend toute la distribution, calculees a la demande.
+// Mesures dont depend la distribution.
 function computeItemAxes(cfg, state, kart) {
     const spec = cfg.itemDistribution;
     const count = state.karts.length;
@@ -142,14 +127,12 @@ function computeItemAxes(cfg, state, kart) {
     return { p: p, d: d, s: s, g: g, i: i, pressure: pressure };
 }
 
-// Tirage a part, joue avant les poids : declenche par l'echappee du
-// premier, pas par le retard du tireur.
+// Tirage de la bleue, avant les poids, declenche par l'echappee du premier.
 function rollBlueShell(cfg, state, rng, now, kart) {
     const spec = cfg.blueShell;
     if (!isItemEnabled(cfg, 'blueShell')) return false;
     if (now - state.blueShellLastAt < spec.cooldownMs) return false;
 
-    // Un rang absent de la table n'en recoit jamais.
     const rankWeight = spec.rankWeights[kart.rank] || 0;
     if (rankWeight <= 0) return false;
 
@@ -181,8 +164,7 @@ function rollItem(cfg, state, rng, now, kart) {
     const profiles = cfg.itemDistribution.items;
     const axes = computeItemAxes(cfg, state, kart);
 
-    // Seuls les poids non nuls entrent dans le tirage : un objet verrouille
-    // ne peut donc pas etre choisi par un rng() rendant exactement 0.
+    // Seuls les poids non nuls entrent dans le tirage.
     const pool = [];
     let total = 0;
     for (const itemType in profiles) {
@@ -192,8 +174,7 @@ function rollItem(cfg, state, rng, now, kart) {
         total += weight;
     }
 
-    // Tout peut etre verrouille au meme instant : dans ce cas le kart repart
-    // sans objet plutot que d'en recevoir un que la config interdit.
+    // Tout verrouille : pas d'objet.
     if (total <= 0) return null;
 
     let roll = rng() * total;

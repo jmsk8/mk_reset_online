@@ -21,33 +21,21 @@
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
 
     <script>
-        /* L'ecran de demarrage ne se joue qu'a la premiere arrivee sur le site.
-           Un rechargement, ou un aller-retour par une autre page, retombent sur
-           le meme onglet : `sessionStorage` est exactement cette memoire-la —
-           il survit aux navigations, pas a la fermeture de l'onglet.
-
-           Decide ici, dans le <head>, parce que le voile est peint par le CSS
-           des la premiere image : le cacher plus tard, ce serait le montrer. */
+        /* Ecran de demarrage joue une fois par onglet (sessionStorage). Decide
+           dans le <head> : le voile est peint par le CSS des la premiere image. */
         (function () {
-            /* `data-voile` dit au decor de fond qu'un ecran va masquer la page,
-               et qu'il doit attendre avant de se semer. Pose ICI parce que le
-               script du decor s'execute avant que le voile n'existe dans le
-               DOM : il ne peut pas le chercher lui-meme.
-
-               Mis a « oui » par defaut : si le stockage echoue, l'ecran se joue
-               (voir plus bas), et le decor doit l'attendre. */
+            /* `data-voile` previent le decor de fond qu'il doit attendre la
+               levee du voile ; « oui » par defaut si le stockage echoue. */
             document.documentElement.dataset.voile = 'oui';
             try {
                 if (sessionStorage.getItem('mkr-boot-seen')) {
                     document.documentElement.classList.add('boot-seen');
-                    // Deja vu : aucun voile, le decor peut partir tout de suite.
                     document.documentElement.dataset.voile = 'non';
                 } else {
                     sessionStorage.setItem('mkr-boot-seen', '1');
                 }
             } catch (e) {
-                /* Navigation privee, stockage refuse : on joue l'ecran. Le
-                   montrer une fois de trop vaut mieux que casser la page. */
+                /* Stockage refuse : on joue l'ecran. */
             }
         })();
     </script>
@@ -76,27 +64,19 @@
                 --tag-height: 1.5em;
                 --score-height: 10px;
                 --score-text: 9px;
-                /* Assez pour les trois colonnes, pas au-dela. Sous la largeur
-                   d'un telephone courant (~22rem utiles), sinon le plafond ne
-                   joue jamais et le nom reste loin de son score. */
+                /* Plafond de largeur, sous celle d'un telephone courant. */
                 --largeur-resultat: 20rem;
             }
 
-            /* Carte de resultat resserree en hauteur : en-tete, pied et ecart
-               entre cartes gardaient leurs marges de bureau. La marge `mb-5`
-               s'ajoutait a celle de la colonne ; la colonne suffit. */
+            /* Carte de resultat resserree en hauteur. */
             .card.carte-resultat { margin-bottom: 0 !important; }
             .carte-resultat .card-header-title { padding: 0.5rem 0.75rem; }
             .carte-resultat .card-header-title .title { font-size: 1.1rem; }
             .carte-resultat .card-footer-item { padding: 0.4rem; font-size: 0.85rem; }
         }
 
-        /* Carte de resultat de tournoi.
-           `is-12-mobile` l'etire sur toute la largeur, mais son contenu est un
-           tableau de trois colonnes etroites (rang, nom, score) : au-dela d'une
-           certaine largeur, la ligne s'etale et l'oeil doit traverser l'ecran
-           pour relier un nom a son score. On la plafonne et on la centre — les
-           colonnes Bulma restent inchangees, seule la carte est bridee. */
+        /* Carte de resultat de tournoi : largeur plafonnee et centree pour
+           garder le nom pres de son score. */
         .colonne-resultat {
             max-width: var(--largeur-resultat, none);
             margin-left: auto;
@@ -132,9 +112,7 @@
     </style>
 </head>
 <body>
-    {# Écran de démarrage : la page entière est cachée par un voile noir, le
-       badge MkReset s'allume, puis tout se dissipe sur la scène prête. En tête
-       de <body> pour couvrir la navbar comme le reste. #}
+    {# Écran de démarrage : voile noir, logo, puis fondu sur la scène. #}
     {% include 'decor.html' %}
 
 
@@ -143,34 +121,24 @@
     </div>
 
     <script>
-        /* La sortie du voile, pilotée ici et non dans banner/curtain.js : ce script
-           s'exécute avec le HTML, donc bien avant que la course puisse se dire
-           prête, et il reste debout même si le banner tombe. Cacher toute la
-           page est justement ce qu'on ne veut pas rater. */
+        /* Sortie du voile, independante du banner (qui peut tomber). */
         (function () {
             const splash = document.getElementById('boot-splash');
             if (!splash) return;
 
-            // Deja vu dans cet onglet : on retire le voile, aucune minuterie ne part.
             if (document.documentElement.classList.contains('boot-seen')) {
                 splash.remove();
-                // Rien ne masque la page : le decor peut se semer aussitot.
                 document.dispatchEvent(new CustomEvent('mkr:scene-visible'));
                 return;
             }
 
-            // Le noir (0.5 s), le logo (0.5 s), puis le temps de le lire.
             const SPLASH_MIN_MS = 1800;
 
-            // Filet : serveur muet ou images bloquées, le voile s'en va quand même.
-            // Sous le failsafe du rideau (5 s).
+            // Le voile part quoi qu'il arrive (sous le failsafe du rideau, 5 s).
             const SPLASH_MAX_MS = 4000;
 
-            // Retard du semis du decor sur la levee du voile : sans lui, les
-            // motifs surgissaient des le debut du fondu, encore dans le noir, et
-            // l'on voyait mal leur « pop ». Reste sous le fondu (1.2 s) pour
-            // qu'il n'y ait pas de temps mort. Filet de decor-mk.js a tenir
-            // au-dessus de SPLASH_MAX_MS + ce retard.
+            // Retard du semis du decor apres la levee du voile, sous la duree du
+            // fondu (1.2 s).
             const DECOR_RETARD_MS = 500;
 
             const startedAt = Date.now();
@@ -181,21 +149,12 @@
                 dismissed = true;
                 splash.classList.add('is-gone');
 
-                /* Le decor de fond attend ce signal pour se semer : lance des
-                   le chargement, son animation d'apparition se jouerait en
-                   entier derriere le voile (jusqu'a 4 s) et la page
-                   s'afficherait avec un fond deja en place.
-
-                   Emis peu apres la LEVEE du voile (DECOR_RETARD_MS), pas a
-                   son retrait complet : le fondu dure 1,2 s, les motifs
-                   surgissent donc pendant qu'il s'efface, et non apres un
-                   temps mort. */
+                /* Signal attendu par le decor de fond pour se semer. */
                 setTimeout(() => {
                     document.dispatchEvent(new CustomEvent('mkr:scene-visible'));
                 }, DECOR_RETARD_MS);
 
-                // Retiré du DOM une fois le fondu fini. À tenir au-dessus de la transition
-                // de `.boot-splash` (1.2 s).
+                // Retiré après la transition de `.boot-splash` (1.2 s).
                 setTimeout(() => splash.remove(), 1400);
             }
 
@@ -203,7 +162,7 @@
                 setTimeout(dismiss, Math.max(0, SPLASH_MIN_MS - (Date.now() - startedAt)));
             }
 
-            // Émis quand le rideau se lève (banner/curtain.js) : voile et rideau se croisent.
+            // Émis à la levée du rideau (banner/curtain.js).
             document.addEventListener('race:ready', onReady, { once: true });
             setTimeout(onReady, SPLASH_MAX_MS);
         })();
@@ -211,9 +170,7 @@
 
     {% include 'navbar.html' %}
     
-    {# Le cadre du plein ecran (banner/fullscreen.js) : c'est lui qui prend
-       l'ecran, en noir, et le bandeau s'y centre. Sans plein ecran il n'a
-       aucun effet sur la page. #}
+    {# Cadre du plein écran (banner/fullscreen.js). #}
     <div class="banner-frame" id="bannerFrame">
     <section class="hero smk-snes-banner" id="bannerSection" data-season="{{ banner_season }}">
         <div class="game-content-wrapper">
@@ -224,15 +181,8 @@
             <div class="layer-ground"></div>
             <div class="layer-finish-line"></div>
 
-            {# Le logo, DANS la scene et non a cote : il doit se peindre entre le
-               decor et les corps de course (z-index 200, entre les calques 1-6
-               et les karts 365-500). Hors du wrapper c'etait impossible sur
-               mobile — le `scale(0.6)` y forme un contexte d'empilement, et tout
-               ce qu'il contient se peint d'un bloc, sous le logo. Seul ce qui
-               monte a la hauteur du logo le montrait : la carapace bleue.
-
-               Purement decoratif (`pointer-events: none`), donc rien a perdre a
-               le poser ici. Le CSS annule le retrecissement mobile pour lui. #}
+            {# Le logo est dans la scene pour se peindre entre le decor et les karts
+               (le scale mobile cree un contexte d'empilement). #}
             <div class="hero-body-content">
                 <div class="container has-text-centered">
                     <div class="mb-2 fade-in">
@@ -245,27 +195,16 @@
             <div id="karts-container" class="karts-layer"></div>
         </div>
 
-        {# Rideau de départ : couvre la scène tant qu'elle n'est pas prête à être
-           montrée (assets chargés, état reçu, DOM reconstruit). Levé par défaut,
-           pour qu'un JS mort laisse le banner visible plutôt que masqué. #}
+        {# Rideau de départ : couvre la scène jusqu'à ce qu'elle soit prête. Levé
+           par défaut, pour qu'un JS mort laisse le banner visible. #}
         <div class="race-curtain-clip" aria-hidden="true">
             <div id="race-curtain" class="race-curtain"></div>
         </div>
 
         <script>
-            /* Le rideau descend ici, contre l'élément qu'on vient d'écrire et
-               non au `DOMContentLoaded` : à ce moment-là la page est déjà
-               peinte, et on le voyait tomber sur une scène qu'il devait avoir
-               couverte depuis le début.
-
-               Il reste levé dans le HTML, et c'est ce script — donc la présence
-               de JS — qui le baisse : sans JS, personne ne le relèvera, autant
-               qu'il ne masque rien.
-
-               `is-instant` coupe la transition pour ce placement, et part à
-               l'image suivante : si le navigateur avait déjà peint le rideau en
-               haut (HTML reçu en plusieurs morceaux), il se met en place d'un
-               coup au lieu de tomber en 0.7 s. */
+            /* Le rideau est baissé ici, juste après son élément, pour qu'il
+               couvre la scène dès la première image. `is-instant` coupe la
+               transition pour ce placement. */
             (function () {
                 const curtain = document.getElementById('race-curtain');
                 if (!curtain) return;
@@ -280,30 +219,23 @@
             <span class="race-status-ms" id="race-status-ms"></span>
         </div>
 
-        {# Ordre d'arrivée : rempli au fil des arrivées, effacé quand le tableau
-           des scores prend le relais. #}
+        {# Ordre d'arrivée, effacé quand le tableau des scores prend le relais. #}
         <div id="race-results" class="race-results"></div>
 
-        {# Tableau des scores du grand prix, au centre : points de la course qui
-           vient de finir et cumul du bloc. Affiché pendant la phase 'results'. #}
+        {# Tableau des scores du grand prix (phase 'results'). #}
         <div id="race-gp" class="race-gp" aria-hidden="true"></div>
 
-        {# Place du kart suivi, en haut a gauche (1st, 2nd...). Masquee sur la
-           vue d'ensemble, qui ne suit personne. #}
+        {# Place du kart suivi. #}
         <div id="race-position" class="race-position" aria-hidden="true"><img alt=""></div>
 
-        {# Cartouche du kart suivi, en bas a gauche : le tour, plus la vitesse en
-           mode debug. Vide et masque tant que la camera reste sur la vue
-           d'ensemble. #}
+        {# Tour du kart suivi (et vitesse en mode debug). #}
         <div id="race-focus-hud" class="race-focus-hud" aria-hidden="true"></div>
 
         <div id="race-leaderboard"></div>
     </section>
     </div>
 
-    {# Releve de decision du kart suivi. Sous la banniere et non dedans : il ne
-       fait pas partie de la scene, il l'explique. Vide et masque hors du mode
-       debug ou sans kart suivi. #}
+    {# Relevé de décision du kart suivi (mode debug). #}
     <div id="race-ai-hud" class="race-ai-hud" aria-hidden="true"></div>
 
     <section class="section">
@@ -459,20 +391,9 @@
     {% include 'footer.html' %}
     <script src="{{ url_for('static', filename='vendor/jquery-3.6.0/jquery.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    {# Le banner, découpé en scripts classiques chargés DANS CET ORDRE.
-
-       Des scripts classiques et non des modules ES, faute d'étape de build : un
-       `import` échapperait au cache-buster `?v=`, et un déploiement laisserait des
-       morceaux de banner en cache (nginx sert les .js avec expires 7d). Chargés
-       ainsi, ils partagent la même portée globale que le fichier unique qu'ils
-       remplacent — le découpage ne change rien à la sémantique.
-
-       Seul `main.js` exécute quelque chose au chargement, d'où sa place en fin de
-       liste ; les autres se contentent de déclarer et pourraient venir dans
-       n'importe quel ordre.
-
-       Aucune physique n'est chargée ici : le moteur vit dans raceEngine/src/engine/,
-       côté serveur, et le client ne fait qu'afficher ce qu'il reçoit. #}
+    {# Scripts du banner, chargés dans cet ordre (scripts classiques plutôt que
+       modules ES, pour que `?v=` invalide le cache). main.js, qui démarre le
+       tout, vient en dernier. #}
     {% for module in [
         'config', 'state', 'layout', 'assets', 'camera', 'focus', 'position', 'director',
         'controls', 'fullscreen', 'leaderboard', 'scene', 'items', 'curtain', 'reconcile',
@@ -483,8 +404,7 @@
     {% endfor %}
 
     <script>
-        // Relayé par le serveur (/discord/widget) : appelé d'ici, discord.com
-        // recevait l'IP de chaque visiteur de l'accueil.
+        // Relayé par le serveur (/discord/widget).
         document.addEventListener('DOMContentLoaded', () => {
             const lien = document.getElementById('discordWidgetLink');
             const enLigne = document.getElementById('onlineCount');

@@ -1,19 +1,10 @@
 """Routes de la hierarchie admin : roles, permissions a la carte, legs.
 
-Complement de test_permissions.py, qui couvre les decorateurs. Ici ce sont les
-ROUTES : changer_role reecrite, l'octroi/retrait de permissions, et surtout le
-legs du superadmin -- le geste le plus irreversible du systeme, et celui dont
-un echec a mi-chemin laisserait la base sans superadmin ou avec deux.
-
-Limite assumee du banc d'essai : FakeCursor ne simule ni contrainte SQL, ni
-verrou, ni rollback reel. Ces tests verifient QUI passe, QUELLES requetes
-partent et DANS QUEL ORDRE -- pas que Postgres tienne ses promesses. L'unicite
-du superadmin se verifie sur une vraie base.
+Verifie qui passe, quelles requetes partent et dans quel ordre.
 """
 from harness import *
 from flask import Flask
-# Version courante de la politique admin, lue et non recopiee : la passer
-# de 1.0 a 1.1 (badge de role public, 27/09) cassait ces tests.
+# Version lue plutot que recopiee.
 from constants import CGU_ADMIN_VERSION as V_ADMIN
 
 
@@ -38,8 +29,7 @@ def monter(plan, role='superadmin', compte_id=1):
 
 H = {'X-Session-Token': 'tok'}
 CIBLE = lambda role: (r"SELECT role FROM comptes WHERE id", (role,))
-# Le legs lit DEUX lignes d'un coup : (id, role, discord_username,
-# cgu_admin_version). La version sert au consentement de la cible (R-68).
+# Le legs lit deux lignes : (id, role, discord_username, cgu_admin_version).
 DEUX_LIGNES = lambda acteur, cible: (
     r"SELECT id, role, discord_username, cgu_admin_version\s+FROM comptes WHERE id IN",
     [acteur, cible])
@@ -51,23 +41,21 @@ sql_de = lambda cur: [s for s, _ in cur.executed]
 print("\n=== changer_role : plafond selon l'acteur ===")
 # ===========================================================================
 
-# Un chef_admin ne designe pas un pair : seul le superadmin le fait (2, contrainte 3).
+# Un chef_admin ne designe pas un pair.
 cli, cur, conn = monter([CIBLE('admin')], role='chef_admin')
 r = cli.post('/admin/comptes/5/role', json={'role': 'chef_admin'}, headers=H)
 check("chef_admin ne peut pas créer un chef_admin -> 403",
       r.status_code == 403 and r.get_json()['code'] == 'droits_insuffisants', r.get_json())
 check("  aucune écriture", not any('UPDATE comptes SET role' in s for s in sql_de(cur)))
 
-# Le superadmin non plus ne designe pas un chef_admin PAR CETTE ROUTE : il le
-# propose (R-68, section suivante). Le plafond ci-dessus reste le premier refus
-# pour un chef_admin, avant toute I/O.
+# Le superadmin non plus par cette route : il propose.
 cli, cur, conn = monter([CIBLE('admin')], role='superadmin')
 r = cli.post('/admin/comptes/5/role', json={'role': 'chef_admin'}, headers=H)
 check("le superadmin ne pose pas non plus chef_admin par /role -> 409",
       r.status_code == 409 and r.get_json()['code'] == 'promotion_par_proposition',
       r.get_json())
 
-# Le role superadmin ne s'attribue pas : il se legue (6bis).
+# Le role superadmin se legue.
 for role in ('superadmin', 'chef_admin'):
     cli, cur, conn = monter([CIBLE('admin')], role=role)
     r = cli.post('/admin/comptes/5/role', json={'role': 'superadmin'}, headers=H)
@@ -75,7 +63,7 @@ for role in ('superadmin', 'chef_admin'):
           r.status_code == 400 and r.get_json()['code'] == 'superadmin_non_attribuable',
           r.get_json())
 
-# Auto-modification interdite, superadmin compris (2, contrainte 4).
+# Auto-modification interdite, superadmin compris.
 cli, cur, conn = monter([CIBLE('superadmin')], role='superadmin', compte_id=5)
 r = cli.post('/admin/comptes/5/role', json={'role': 'chef_admin'}, headers=H)
 check("le superadmin ne peut pas changer SON PROPRE rôle -> 403",
@@ -91,10 +79,7 @@ check("rôle hors hiérarchie -> 400",
 # ===========================================================================
 print("\n=== R-68 : changer_role ne promeut plus, il ne fait que descendre ===")
 # ===========================================================================
-# Le consentement prealable a la tracabilite nominative est un argument RGPD :
-# toute montee en rang passe par /promotion, posee a l'acceptation. Avant le
-# 23/09, seule l'IHM routait ainsi -- un POST a la main sur /role promouvait
-# sans rien demander.
+# Toute montee passe par /promotion.
 
 for acteur, ancien, nouveau in (('superadmin', 'player', 'admin'),
                                 ('superadmin', 'player', 'chef_admin'),
@@ -111,16 +96,14 @@ for acteur, ancien, nouveau in (('superadmin', 'player', 'admin'),
                   or 'INSERT INTO audit_admin' in s for s in sql_de(cur)))
     check("  transaction annulée", conn.rolledback)
 
-# Le refus se decide sur le role LU SOUS VERROU, pas sur ce que l'IHM croyait :
-# une cible retrogradee entre l'affichage et le clic est bien une promotion.
+# Refus decide sur le role lu sous verrou.
 cli, cur, conn = monter([CIBLE('player')], role='superadmin')
 cli.post('/admin/comptes/5/role', json={'role': 'admin'}, headers=H)
-# (La premiere lecture sans verrou est celle de compte_cible_protegee.)
+# La premiere lecture sans verrou est celle de compte_cible_protegee.
 _lecture = [s for s in sql_de(cur) if 'SELECT role FROM comptes WHERE id' in s]
 check("  le rôle actuel est lu FOR UPDATE avant de juger",
       any('FOR UPDATE' in l for l in _lecture), _lecture)
 
-# Les descentes, elles, passent toutes.
 for acteur, ancien, nouveau in (('superadmin', 'chef_admin', 'admin'),
                                 ('superadmin', 'chef_admin', 'player'),
                                 ('superadmin', 'admin', 'player'),
@@ -147,7 +130,7 @@ check("admin -> player : 200", r.status_code == 200, r.get_json())
 check("  permissions purgées", any('DELETE FROM permissions_admin' in s for s in sql_de(cur)))
 check("  purge auditée", any("permissions_purgees" in str(p) for _, p in cur.executed))
 
-# Une purge sans effet ne doit pas ecrire de ligne d'audit mensongere.
+# Une purge sans effet n'ecrit pas d'audit.
 cli, cur, conn = monter([
     CIBLE('admin'),
     (r"DELETE FROM permissions_admin", ROWCOUNT_ZERO),
@@ -156,9 +139,7 @@ cli.post('/admin/comptes/5/role', json={'role': 'player'}, headers=H)
 check("aucune ligne d'audit si rien n'était à purger",
       not any("permissions_purgees" in str(p) for _, p in cur.executed))
 
-# Un chef_admin ramene a admin n'avait pas de permissions a la carte (son
-# socle EST le catalogue) : rien a purger. La purge ne vise que la SORTIE du
-# role admin. (L'ancien cas « player -> admin » passe par /promotion, R-68.)
+# Un chef_admin ramene a admin n'a rien a purger.
 cli, cur, conn = monter([
     CIBLE('chef_admin'),
     (r"SELECT COUNT\(\*\) FROM comptes WHERE role = %s AND id <> %s", (2,)),
@@ -220,7 +201,6 @@ check("  R-49 : accorde_par vient de la session, pas du corps",
       any(p and 1 in p for s, p in cur.executed if 'INSERT INTO permissions_admin' in s))
 check("  octroi audité", any("permission_accordee" in str(p) for _, p in cur.executed))
 
-# Deuxieme octroi identique : idempotent, signale comme inchange.
 cli, cur, conn = monter([
     CIBLE('admin'),
     (r"INSERT INTO permissions_admin", ROWCOUNT_ZERO),
@@ -230,26 +210,23 @@ check("accorder deux fois -> 200 'inchange'",
       r.status_code == 200 and r.get_json().get('inchange') is True, r.get_json())
 check("  pas d'audit trompeur", not any("permission_accordee" in str(p) for _, p in cur.executed))
 
-# Hors catalogue : refuse avant toute I/O.
 cli, cur, conn = monter([CIBLE('admin')], role='chef_admin')
 r = cli.post('/admin/comptes/5/permissions/gestion_inexistante', headers=H)
 check("permission hors catalogue -> 400",
       r.status_code == 400 and r.get_json()['code'] == 'permission_inconnue', r.get_json())
 
-# Les permissions n'ont de sens que sur un admin.
 for role_cible in ('player', 'chef_admin'):
     cli, cur, conn = monter([CIBLE(role_cible)], role='superadmin')
     r = cli.post('/admin/comptes/5/permissions/gestion_saisons', headers=H)
     check("cible %s -> 409 (les permissions vont aux admin)" % role_cible,
           r.status_code == 409 and r.get_json()['code'] == 'cible_non_admin', r.get_json())
 
-# Auto-octroi interdit.
 cli, cur, conn = monter([CIBLE('admin')], role='chef_admin', compte_id=5)
 r = cli.post('/admin/comptes/5/permissions/gestion_saisons', headers=H)
 check("s'accorder une permission à soi-même -> 403",
       r.status_code == 403 and r.get_json()['code'] == 'auto_modification', r.get_json())
 
-# Un admin, meme avec gestion_comptes, n'accorde rien : role_required(chef_admin).
+# Un admin n'accorde rien, meme avec gestion_comptes.
 cli, cur, conn = monter([CIBLE('admin')], role='admin')
 r = cli.post('/admin/comptes/5/permissions/gestion_saisons', headers=H)
 check("un admin ne peut accorder aucune permission -> 403", r.status_code == 403, r.status_code)
@@ -291,9 +268,7 @@ d = r.get_json()
 check("lecture -> 200", r.status_code == 200, d)
 check("  permissions accordées listées",
       d.get('permissions') == ['gestion_saisons', 'gestion_ligues'], d.get('permissions'))
-# Compare au catalogue plutot qu'a un compte en dur : le socle d'un chef_admin
-# EST le catalogue, et un nombre fige cassait ce test a chaque ajout de
-# permission sans rien reveler d'autre que sa propre obsolescence.
+# Compare au catalogue plutot qu'a un nombre fige.
 from constants import PERMISSIONS_CATALOGUE as _CATALOGUE
 check("  plafond de l'acteur exposé pour l'IHM",
       set(d.get('delegables') or []) == set(_CATALOGUE), d.get('delegables'))
@@ -307,14 +282,13 @@ check("compte inexistant -> 404",
 print("\n=== Legs du superadmin : les refus ===")
 # ===========================================================================
 
-# Seul le superadmin lègue.
 for role in ('chef_admin', 'admin', 'player'):
     cli, cur, conn = monter([], role=role)
     r = cli.post('/admin/comptes/5/leguer-superadmin',
                  json={'confirmation_pseudo': 'cible'}, headers=H)
     check("%s ne peut pas léguer -> 403" % role, r.status_code == 403, r.status_code)
 
-# Auto-legs : refuse avant toute I/O (R-57).
+# Auto-legs refuse avant toute I/O.
 cli, cur, conn = monter([], role='superadmin', compte_id=5)
 r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'chef'}, headers=H)
@@ -323,7 +297,6 @@ check("se léguer à soi-même -> 403",
 check("  aucune requête de legs partie",
       not any('WHERE id IN' in s for s in sql_de(cur)))
 
-# Cible inexistante.
 cli, cur, conn = monter([
     (r"SELECT id, role, discord_username, cgu_admin_version\s+FROM comptes WHERE id IN",
      [(1, 'superadmin', 'chef', V_ADMIN)]),
@@ -332,7 +305,7 @@ r = cli.post('/admin/comptes/5/leguer-superadmin',
              json={'confirmation_pseudo': 'x'}, headers=H)
 check("cible inexistante -> 404", r.status_code == 404, r.get_json())
 
-# Confirmation : c'est discord_username qui fait foi, pas le nom affiche.
+# Confirmation sur le handle, pas sur le nom affiche.
 cli, cur, conn = monter([
     DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
@@ -349,8 +322,7 @@ cli, cur, conn = monter([
 r = cli.post('/admin/comptes/5/leguer-superadmin', json={}, headers=H)
 check("confirmation absente -> 400", r.status_code == 400, r.get_json())
 
-# Le handle tel que la liste l'affiche (« @vraipseudo »), recopie avec une
-# espace ou une majuscule, confirme : meme regle que la suppression de compte.
+# « @handle » avec espaces ou majuscules confirme aussi.
 cli, cur, conn = monter([
     DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
@@ -359,7 +331,7 @@ r = cli.post('/admin/comptes/5/leguer-superadmin',
 check("handle recopié avec @, espaces et majuscules -> 200",
       r.status_code == 200, r.get_json())
 
-# Un prefixe du handle, ou une valeur qui n'est pas du texte : refuse, sans 500.
+# Prefixe ou valeur non textuelle : refus sans 500.
 for _saisie in ('vraipseud', 42):
     cli, cur, conn = monter([
         DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
@@ -371,7 +343,7 @@ for _saisie in ('vraipseud', 42):
           and not any('UPDATE comptes SET role' in s for s in sql_de(cur)),
           (r.status_code, r.get_json()))
 
-# Course : l'acteur n'est plus superadmin au moment du verrou.
+# L'acteur n'est plus superadmin au moment du verrou.
 cli, cur, conn = monter([
     DEUX_LIGNES((1, 'chef_admin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
@@ -396,25 +368,25 @@ check("  ancien et nouveau renvoyés",
 
 ecritures = [(s, p) for s, p in cur.executed if 'UPDATE comptes SET role' in s]
 check("  exactement deux écritures du rôle", len(ecritures) == 2, len(ecritures))
-# ORDRE IMPOSE par l'index partiel non-deferrable (3.2) : l'inverse leve 23505.
+# Retrograder avant de promouvoir (index unique non differable).
 check("  1. l'ancien est rétrogradé chef_admin D'ABORD",
       ecritures[0][1] == ('chef_admin', 1), ecritures[0][1])
 check("  2. le nouveau est promu superadmin ENSUITE",
       ecritures[1][1] == ('superadmin', 5), ecritures[1][1])
 check("  transaction validée", conn.committed)
 
-# Un seul geste, donc une seule ligne d'audit (3.4).
+# Une seule ligne d'audit.
 audits = [p for s, p in cur.executed if 'INSERT INTO audit_admin' in s]
 check("  une SEULE ligne d'audit", len(audits) == 1, len(audits))
 check("  action 'superadmin_legue'", any('superadmin_legue' in str(p) for p in audits), audits)
 
-# Verrou : une seule requete, bornes triees, pour ne pas s'interbloquer.
+# Une seule requete de verrou, ids tries.
 verrou = [(s, p) for s, p in cur.executed if 'WHERE id IN' in s]
 check("  les deux lignes verrouillées en UNE requête", len(verrou) == 1, len(verrou))
 check("  bornes triées par id (anti-interblocage)", verrou[0][1] == (1, 5), verrou[0][1])
 check("  FOR UPDATE posé", 'FOR UPDATE' in verrou[0][0])
 
-# R-53 s'applique aussi ici : une cible admin quitte le role admin.
+# Une cible admin perd ses permissions a la carte.
 cli, cur, conn = monter([
     DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
@@ -423,7 +395,6 @@ cli.post('/admin/comptes/5/leguer-superadmin',
 check("cible admin : ses permissions sont purgées (R-53)",
       any('DELETE FROM permissions_admin' in s for s in sql_de(cur)))
 
-# Une cible chef_admin n'a rien a purger.
 cli, cur, conn = monter([
     DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'chef_admin', 'vraipseudo', V_ADMIN)),
 ], role='superadmin')
@@ -437,10 +408,7 @@ check("  aucune purge inutile",
 # ===========================================================================
 print("\n=== Legs : la cible doit avoir consenti (R-68) ===")
 # ===========================================================================
-# Le plan 6bis (10/09) ouvrait le legs a tout compte, player compris -- avant
-# que le consentement a la politique administrateur existe (18/09). Leguer a un
-# player en faisait un superadmin trace sans qu'il ait rien accepte : le meme
-# contournement que la promotion directe par /role.
+# Un player ne peut pas recevoir le legs.
 
 for role_cible, version, motif in (
         ('player', None, "un player (n'a accepté aucun rôle)"),
@@ -460,8 +428,7 @@ for role_cible, version, motif in (
                   for s in sql_de(cur)))
     check("  transaction annulée", conn.rolledback)
 
-# Le blocage est dit AVANT la confirmation : sinon le superadmin retaperait le
-# pseudo pour rien, et lirait « pseudo faux » au lieu du vrai motif.
+# Ce refus passe avant la verification du handle.
 cli, cur, conn = monter([
     DEUX_LIGNES((1, 'superadmin', 'chef', V_ADMIN), (5, 'player', 'vraipseudo', None)),
 ], role='superadmin')
@@ -470,7 +437,7 @@ r = cli.post('/admin/comptes/5/leguer-superadmin',
 check("cible sans consentement ET pseudo faux : c'est le consentement qui est signalé",
       r.get_json().get('code') == 'legs_sans_consentement', r.get_json())
 
-# Le consentement est lu dans la MEME requete verrouillee que le role.
+# Consentement lu dans la meme requete verrouillee que le role.
 verrou = [s for s in sql_de(cur) if 'WHERE id IN' in s]
 check("  version de la politique lue sous le verrou du legs",
       len(verrou) == 1 and 'cgu_admin_version' in verrou[0] and 'FOR UPDATE' in verrou[0],
@@ -480,9 +447,7 @@ check("  version de la politique lue sous le verrou du legs",
 # ===========================================================================
 print("\n=== Permissions exposées à l'interface ===")
 # ===========================================================================
-# Ces deux fonctions ne donnent aucun droit -- elles decident de ce que l'IHM
-# AFFICHE. Une erreur ici ne cree pas de faille (le backend juge a chaque
-# requete), mais fait disparaitre des onglets ou en montre d'inutiles.
+# Permissions exposees a l'interface (affichage seulement).
 
 install_db([])
 recharger()
@@ -517,7 +482,6 @@ for role in ('player', ''):
     check("rôle '%s' n'a rien, même si des lignes traînent" % role, res == [], res)
     check("  sans interroger permissions_admin", c.appels == 0, c.appels)
 
-# Meme regle cote /auth/me, avec sa propre connexion.
 cur, conn = install_db([(r"SELECT permission FROM permissions_admin",
                          [('gestion_config',)])])
 recharger()
@@ -530,7 +494,7 @@ check("/auth/me : admin -> ses lignes",
 check("/auth/me : player -> rien",
       routes_auth._permissions_effectives({'id': 1, 'role': 'player'}) == set())
 
-# Base injoignable : l'affichage se degrade, il ne s'ouvre pas.
+# Base injoignable : liste vide.
 import contextlib, types
 _fake = types.ModuleType('db')
 @contextlib.contextmanager

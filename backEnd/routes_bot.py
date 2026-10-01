@@ -1,16 +1,4 @@
-"""API de service pour les bots Discord.
-
-Un bot est un TIERS, pas un administrateur :
-
-- **lecture seule** : `matchmaking` calcule, il n'enregistre rien ;
-- **donnees minimales** : classement et identite Discord. Publier le role
-  designerait les administrateurs a quiconque possede un jeton ;
-- **comptes `linked` seulement** : un compte `pending` est une identite non
-  verifiee.
-
-Ces routes ne sont pas joignables directement : nginx n'est pas sur le reseau
-`backend`, c'est le frontend qui proxifie /api/bot/.
-"""
+"""API de service pour les bots Discord (lecture seule, comptes lies uniquement)."""
 
 from __future__ import annotations
 
@@ -26,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 bot_bp = Blueprint('bot', __name__)
 
-# Plafond de la composition : au-dela, c'est une erreur d'appel, pas un tournoi.
+# Au-dela, c'est une erreur d'appel.
 MAX_JOUEURS_MATCHMAKING = 200
 
 
@@ -56,8 +44,7 @@ def bot_joueurs():
         "score_trueskill": round(float(r[2]), 3) if r[2] is not None else 0.0,
         "tier": r[3].strip() if r[3] else "?",
         "is_ranked": r[4],
-        # Chaine, jamais un entier : un snowflake depasse 2^53 et se corrompt
-        # silencieusement des qu'un client JSON le lit comme un nombre.
+        # Chaine : un snowflake depasse 2^53.
         "discord_id": r[5],
     } for r in rows])
 
@@ -65,7 +52,7 @@ def bot_joueurs():
 @bot_bp.route('/api/bot/joueur/by-discord/<discord_id>', methods=['GET'])
 @service_required('read:joueurs')
 def bot_joueur_par_discord(discord_id):
-    """« Ce membre Discord, c'est quel joueur ? » -- la question centrale du bot."""
+    """Joueur lie a un compte Discord."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -82,8 +69,7 @@ def bot_joueur_par_discord(discord_id):
         return jsonify({"error": "Erreur serveur"}), 500
 
     if row is None:
-        # Volontairement indistinct : compte inconnu, non lie ou suspendu donnent la
-        # meme reponse. Detailler renseignerait un tiers sur qui possede un compte.
+        # Meme reponse pour compte inconnu, non lie ou suspendu.
         return jsonify({"error": "Aucun joueur lié à ce compte Discord",
                         "code": "non_lie"}), 404
 
@@ -99,7 +85,7 @@ def bot_joueur_par_discord(discord_id):
 @bot_bp.route('/api/bot/classement', methods=['GET'])
 @service_required('read:classement')
 def bot_classement():
-    """Classement condense, pretr a etre affiche dans un salon."""
+    """Classement condense."""
     try:
         limite = min(max(int(request.args.get('limite', 20)), 1), 100)
     except (TypeError, ValueError):
@@ -132,11 +118,9 @@ def bot_classement():
 @bot_bp.route('/api/bot/matchmaking', methods=['POST'])
 @service_required('matchmaking')
 def bot_matchmaking():
-    """Compose les lobbies. Meme code que la page d'administration.
+    """Compose les lobbies (meme algorithme que la page d'administration).
 
-    Accepte des `discord_ids`, des `joueur_ids` ou des `noms`. Les scores sont
-    toujours relus en base : un appelant qui fournirait les siens composerait les
-    lobbies a sa guise.
+    Les scores sont toujours relus en base.
     """
     data = request.get_json(silent=True) or {}
     discord_ids = data.get('discord_ids')
@@ -182,7 +166,5 @@ def bot_matchmaking():
             "joueurs": lobby,
             "moyenne": round(sum(p['ts'] for p in lobby) / len(lobby), 3),
         } for i, lobby in enumerate(lobbies)],
-        # Renvoye et non tu : un bot qui passe un pseudo mal orthographie doit
-        # pouvoir le dire, plutot que de composer un lobby amoindri en silence.
         "introuvables": introuvables,
     })

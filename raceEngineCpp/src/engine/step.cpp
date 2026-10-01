@@ -15,58 +15,38 @@
 
 namespace engine {
 
-// ── Les fonctions VIDES ─────────────────────────────────────────────────────
+// ── A implementer ───────────────────────────────────────────────────────────
 //
-// Chacune existe avec sa vraie signature et un corps qui ne fait rien (plan
-// §2). Ce n'est pas une lacune : c'est le plan de travail. Les appeler DES
-// MAINTENANT garantit qu'elles seront branchees au bon endroit de l'ordre du
-// tick le jour ou elles feront quelque chose.
+// Signatures definitives et corps vides, deja appeles a leur place dans le tick.
 
-// La DISTRIBUTION d'un objet : quel objet ce kart recoit, selon son rang, la
-// courbe de tirage et les decotes. Rend « rien » tant qu'elle est vide — le
-// ramassage, lui, fonctionne deja (plan §3).
+// Distribution d'un objet selon le rang ; ne rend rien pour l'instant.
 std::optional<HeldItem> roll_item(const config::Config& cfg, WorldState& state,
                                   Rng& rng, double now, const Kart& kart) {
     (void)cfg; (void)state; (void)rng; (void)now; (void)kart;
     return std::nullopt;
 }
 
-// La DECISION de pilotage : quelle profondeur viser, et pourquoi. Le point
-// d'accroche de toute la prise de decision — c'est ici que viendront `laneRisk`,
-// les plans, l'esquive et `giveWay`.
-//
-// Tant qu'elle est vide, c'est l'errance qui tient `laneY` (cf. `wander`).
+// Decision de pilotage (profondeur visee). Tant qu'elle est vide, `wander`
+// tient `laneY`.
 void choose_lane(const config::Config& cfg, WorldState& state, Kart& kart, double now) {
     (void)cfg; (void)state; (void)kart; (void)now;
 }
 
 namespace {
 
-// L'errance : une profondeur cible tiree toutes les 2 a 6 s, avec une marge
-// gardee sur chaque bord — personne ne vise le rail. C'est le comportement
-// d'attente, celui que `choose_lane` remplacera.
-//
-// Elle refuse une cible qui pointe droit sur un tuyau PROCHE. Ce n'est pas de la
-// perception — un vrai evitement regarde ce qu'il a devant, mesure le temps
-// disponible et choisit un couloir (c'est le travail de `choose_lane`) — mais
-// sans ce minimum, un kart tire une profondeur alignee sur un tuyau, s'y cogne,
-// est ecarte, retire la meme, et la course ne se termine JAMAIS : elle reste en
-// `finishing` jusqu'au delai maximum, sans que rien ne dise pourquoi.
+// Errance : profondeur cible tiree toutes les 2 a 6 s, avec une marge sur
+// chaque bord. Ecarte les cibles alignees sur un tuyau proche, sinon un kart
+// peut s'y cogner sans fin et bloquer la fin de course.
 void wander(const config::Config& cfg, const WorldState& state, Kart& kart,
             Rng& rng, double now) {
     const double lo = cfg.road.minY + cfg.wander.margin;
     const double hi = cfg.road.maxY - cfg.wander.margin;
 
-    // Le degagement a tenir avec un tuyau, en profondeur : sa demi-emprise plus
-    // celle du kart, plus une marge.
+    // Degagement en profondeur : demi-emprise du tuyau + celle du kart + marge.
     const double clearY = cfg.pipe.hitbox.y + kart.body.y + cfg.wander.pipeMargin;
 
-    // Le tuyau le plus PROCHE devant, s'il barre la profondeur visee. Verifie a
-    // CHAQUE tick et non au seul tirage : une cible sure au moment ou elle est
-    // choisie cesse de l'etre des que le kart avance vers un autre tuyau. Sans
-    // ce controle continu, un kart se cognait, etait ecarte, revenait, et la
-    // course ne se terminait jamais — elle restait en `finishing` jusqu'au
-    // delai maximum sans que rien ne dise pourquoi.
+    // Tuyau le plus proche devant, s'il barre la profondeur visee (verifie a
+    // chaque tick, pas seulement au tirage).
     const Pipe* threat = nullptr;
     double threatAhead = cfg.wander.lookAhead;
     for (const Pipe& pipe : state.pipes) {
@@ -78,18 +58,9 @@ void wander(const config::Config& cfg, const WorldState& state, Kart& kart,
     }
 
     if (threat) {
-        // Ecarte du cote le plus degage, et TIENT : la profondeur visee ne se
-        // retire pas tant que le tuyau n'est pas passe.
-        //
-        // Bornee par la PISTE, pas par la marge d'errance. Rognee a `lo`/`hi`,
-        // l'esquive d'un tuyau centre (y = 17.5) plafonnait a 27, soit 9.5 de
-        // degagement pour 9 a 9.7 d'emprise cumulee : le kart s'arretait a
-        // 26.4 (tolerance du volant), frottait le tuyau, etait ecarte vers la
-        // meme borne, et recommencait. Tout le peloton finissait empile la,
-        // course bloquee. Le defaut existait avant birdo et daisy ; le tirage de
-        // 8 karts parmi 10 le faisait simplement sortir plus souvent. Quand
-        // l'esquive tient dans les marges, la comparaison et la cible sont
-        // exactement celles d'avant.
+        // Ecart du cote le plus degage, tenu jusqu'au passage du tuyau. Borne
+        // par la piste et non par la marge d'errance, sinon l'esquive d'un
+        // tuyau centre manque de degagement et le kart reste coince.
         const double up = threat->y + clearY + 1;
         const double down = threat->y - clearY - 1;
         const double roomUp = cfg.road.maxY - up;
@@ -102,7 +73,7 @@ void wander(const config::Config& cfg, const WorldState& state, Kart& kart,
 
     if (now < kart.nextWanderAt) return;
 
-    // Rien devant : une profondeur libre, tiree au hasard.
+    // Rien devant : profondeur tiree au hasard.
     double target = rng.range(lo, hi);
     for (int attempt = 0; attempt < 6; attempt++) {
         bool blocked = false;
@@ -121,15 +92,13 @@ void wander(const config::Config& cfg, const WorldState& state, Kart& kart,
 
 } // namespace
 
-// Le PILOTE, qui arbitre tout le reste : perception, decision, volant. Sans
-// `sight`, `ai[]` rend 0 pour tout le monde — exactement comme le JS
-// aujourd'hui.
+// Pilote : perception, decision, volant. Sans `sight`, `ai[]` rend 0.
 void update_ai(const config::Config& cfg, WorldState& state, Kart& kart,
                Rng& rng, double now, double deltaTime) {
     choose_lane(cfg, state, kart, now);
     wander(cfg, state, kart, rng, now);
 
-    // `steer()` est la SEULE fonction qui ecrit `vy`.
+    // `steer()` est la seule fonction qui ecrit `vy`.
     const config::SteerCfg& s = cfg.physics.steer;
     steer(cfg, kart, deltaTime, kart.laneY, s.wanderSpeed, s.wanderGain, s.wanderTolerance);
 }
@@ -138,9 +107,8 @@ void update_ai(const config::Config& cfg, WorldState& state, Kart& kart,
 
 namespace {
 
-// Le ramassage d'une boite. Il FONCTIONNE des la v0 : le cube se consomme et se
-// regenere, et le tirage est appele pour de vrai — c'est `roll_item` qui ne rend
-// rien encore.
+// Ramassage d'une boite : le cube se consomme et se regenere ; le tirage
+// (`roll_item`) ne rend encore rien.
 void update_item_boxes(const config::Config& cfg, WorldState& state, Rng& rng, double now) {
     for (ItemBox& box : state.itemBoxes) {
         if (!box.active && now > box.reactivateTime) {
@@ -156,9 +124,7 @@ void update_item_boxes(const config::Config& cfg, WorldState& state, Rng& rng, d
             if (std::abs(dist) >= cfg.hitboxes.itemBox.x) continue;
             if (dy >= cfg.hitboxes.itemBox.y) continue;
 
-            // Le passage se date en premier et SANS CONDITION : la zone se
-            // traverse qu'il y reste un cube ou non. C'est l'endroit qui rend
-            // prudent, pas le butin.
+            // Passage date meme sans cube.
             kart.boxPassedAt = now;
 
             if (!box.active) continue;
@@ -166,9 +132,7 @@ void update_item_boxes(const config::Config& cfg, WorldState& state, Rng& rng, d
             box.active = false;
             box.reactivateTime = now + cfg.delays.boxRespawn;
 
-            // DEUX emplacements (plan §3) : on ne sert que si l'un est libre.
-            // Seul le premier part dans le snapshot ; le second reste un etat
-            // moteur, invisible du rendu.
+            // Deux emplacements : on ne sert que si l'un est libre.
             const bool full = kart.heldItems[0].has_value() && kart.heldItems[1].has_value();
             if (!full) {
                 std::optional<HeldItem> rolled = roll_item(cfg, state, rng, now, kart);
@@ -181,9 +145,8 @@ void update_item_boxes(const config::Config& cfg, WorldState& state, Rng& rng, d
     }
 }
 
-// L'avance longitudinale : le regime d'ELAN. Deux etapes — l'elan derive
-// lentement vers une cible retiree toutes les 3 a 7 s, et la vitesse rejoint ce
-// que cet elan vaut, a l'acceleration du kart.
+// Avance longitudinale : l'elan derive vers une cible retiree toutes les 3 a
+// 7 s, et la vitesse rejoint cet elan a l'acceleration du kart.
 void advance_kart(const config::Config& cfg, WorldState& state, Kart& kart,
                   Rng& rng, double now, double deltaTime, std::vector<Event>& events) {
     if (kart.state != KartState::Running) return;
@@ -210,8 +173,7 @@ void advance_kart(const config::Config& cfg, WorldState& state, Kart& kart,
         kart.momentum = std::max(kart.momentumTarget, kart.momentum - mChange);
     }
 
-    // Sous objet de vitesse, la pointe visee est celle de l'objet ; hors objet,
-    // celle que l'elan vaut.
+    // Sous objet de vitesse, pointe de l'objet ; sinon, celle de l'elan.
     double targetSpeed;
     if (now < kart.boostEndTime) {
         targetSpeed = kart.stats->topSpeed;
@@ -223,8 +185,7 @@ void advance_kart(const config::Config& cfg, WorldState& state, Kart& kart,
     if (kart.absoluteVelocity < targetSpeed) {
         kart.absoluteVelocity = std::min(targetSpeed, kart.absoluteVelocity + accRate * deltaTime);
     } else if (kart.absoluteVelocity > targetSpeed) {
-        // On rend la vitesse moins vite qu'on ne la prend : lever le pied n'est
-        // pas freiner.
+        // Decelerer plus lentement qu'accelerer : lever le pied n'est pas freiner.
         kart.absoluteVelocity = std::max(targetSpeed,
                                          kart.absoluteVelocity - accRate * 0.25 * deltaTime);
     }
@@ -242,10 +203,8 @@ void advance_kart(const config::Config& cfg, WorldState& state, Kart& kart,
 
     double moveDist = effectiveSpeed * deltaTime;
 
-    // Choc contre un tuyau : arret net, puis contrecoup. Le recul entame
-    // `totalDistance` autant que l'avance — position et progression restent
-    // COUSUES, sans quoi un kart franchirait la ligne en etant encore en amont
-    // a l'ecran.
+    // Choc contre un tuyau : arret net puis recul. Le recul diminue aussi
+    // `totalDistance` pour garder position et progression coherentes.
     if (now < kart.bumpEndTime) {
         moveDist = 0;
         if (kart.bumpRecoilLeft > 0) {
@@ -258,20 +217,18 @@ void advance_kart(const config::Config& cfg, WorldState& state, Kart& kart,
     }
 
     kart.totalDistance += moveDist;
-    // L'allure REELLE du tick, celle que le volant lira : recul compris.
+    // Vitesse reelle du tick (recul compris), lue par le volant.
     kart.contactSpeed = deltaTime > 0 ? moveDist / deltaTime : 0;
 
     const double prevWorldX = kart.worldX;
     const double rawWorldX = kart.worldX + moveDist;
 
-    // Le franchissement se juge AVANT le bouclage : une fois `worldX` ramene
-    // dans [0, width), la comparaison ne dit plus rien.
+    // Franchissement juge avant le bouclage de `worldX`.
     const double finishX = cfg.world.finishLineX;
     if (moveDist >= 0) {
         if (prevWorldX < finishX && rawWorldX >= finishX) kart.lapCount++;
     } else if (prevWorldX >= finishX && rawWorldX < finishX) {
-        // Repousse a travers la ligne : le compteur se defait. Sans ce miroir,
-        // le tour serait compte une seconde fois a la prochaine traversee.
+        // Ligne repassee en arriere : le tour est decompte.
         kart.lapCount--;
     }
 
@@ -307,24 +264,20 @@ std::vector<Event> step_physics(const config::Config& cfg, WorldState& state,
     for (Kart& kart : state.karts) {
         if (kart.state == KartState::Grid) continue;
 
-        // Double la date en booleen : le protocole n'a pas d'horloge, le
-        // drapeau se lit tel quel dans le snapshot.
+        // Drapeau lu tel quel dans le snapshot.
         kart.bumped = now < kart.bumpEndTime;
 
-        // Ce que les objets de vitesse rendent au volant. Pose ICI une fois par
-        // tick : c'est ce qui permet a `steer_cap` de ne lire qu'un kart, sans
-        // horloge.
+        // Gain de volant des objets de vitesse, pose une fois par tick.
         kart.steerBoost = (now < kart.boostEndTime) ? cfg.physics.steer.boostGain : 1.0;
 
         update_ai(cfg, state, kart, rng, now, deltaTime);
         advance_kart(cfg, state, kart, rng, now, deltaTime, events);
 
-        // Apres le deplacement et le recadrage : le tuyau se juge sur la
-        // position ou le kart vient d'ARRIVER.
+        // Tuyau juge sur la position d'arrivee.
         collide_kart_with_pipes(cfg, state, kart, now, events);
     }
 
-    // Tout le monde a bouge : les carrosseries peuvent enfin se parler.
+    // Tout le monde a bouge : contacts entre karts.
     resolve_kart_contacts(cfg, state, now, deltaTime, events);
 
     update_leaderboard(cfg, state, now, events);

@@ -104,8 +104,7 @@
         const csrf = document.querySelector('meta[name="csrf-token"]').content;
         const alerte = document.getElementById('alerte');
 
-        // textContent et non innerHTML : les messages d'erreur peuvent contenir
-        // un nom de joueur, donc du texte que l'on ne contrôle pas.
+        // textContent : les messages peuvent contenir un nom de joueur.
         function afficher(type, texte) {
             alerte.innerHTML = '';
             const div = document.createElement('div');

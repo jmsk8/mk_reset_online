@@ -1,15 +1,11 @@
-// Banc de scenario : une situation posee a la main, et la trace de ce que le kart
-// en fait, tick par tick. `simulate.js` dit SI le pilotage marche ; celui-ci dit
-// POURQUOI il a fait ce qu'il a fait. Ni l'un ni l'autre n'ecrit dans le moteur.
+// Banc de scenario : une situation posee a la main, et la trace des decisions
+// du kart tick par tick (simulate.js mesure, celui-ci explique).
 //
 //     node tools/scenario.js
 //
-// Une ligne ne sort que lorsque quelque chose change. Les colonnes : profondeur,
-// vitesse laterale, manoeuvre, menace retenue et son delai, plan qui commande,
-// profondeur visee, drapeaux du plan.
-//
-// Ajouter un cas, c'est une ligne `run(...)` en bas de fichier. Les autres karts
-// restent sur la grille, pour isoler une decision.
+// Une ligne par changement : profondeur, vitesse laterale, manoeuvre, menace et
+// son delai, plan, profondeur visee, drapeaux du plan. Ajouter un cas : une
+// ligne `run(...)` en bas de fichier.
 import * as PH from '../src/engine/index.js';
 import CFG from '../src/config/index.js';
 import * as track from '../src/track.js';
@@ -29,19 +25,11 @@ function makeRng(seed) {
     };
 }
 
-// Ce que le systeme de braquage PROMET, en clair : la situation dit ou aller,
-// et seul le temps d'y arriver change d'un kart a l'autre. C'est la grandeur
-// que rien ne mesurait, et elle se lit d'un coup d'oeil ici.
-//
-// Deux allures, parce qu'elles ne se valent plus : un kart lance a moins
-// d'appui qu'un kart au ralenti (`physics.steer.pace`).
+// Temps d'esquive par kart, a deux allures (un kart lance a moins d'appui,
+// voir `physics.steer.pace`).
 function steerTable() {
     const table = PH.deriveCharacterStats(cfg);
-    // `cfg.ai.crossDodgeMargin` n'existe plus : le degagement vit desormais
-    // dans `vision.place.margin`, avec les marges des autres corps. La clef
-    // morte rendait `undefined`, et toute cette table sortait en NaN -- le
-    // banc ne mesurait donc plus rien (constat D-1).
-    const trip = cfg.hitboxes.itemVsKart.y + cfg.vision.place.margin.item;   // degager un objet
+    const trip = cfg.hitboxes.itemVsKart.y + cfg.vision.place.margin.item; // degager un objet
     const dodge = (cfg.ai.dodgeIntensityMin + cfg.ai.dodgeIntensityMax) * 0.5;
 
     console.log(`\n=== temps de manoeuvre : degager ${trip} unites, profil esquive ===`);
@@ -59,17 +47,16 @@ function steerTable() {
     }
 }
 
-// scenario : { pipeY, itemY, itemGapPx, kartY }
-// L'objet est pose `itemGapPx` AVANT le tuyau, tous deux devant le kart.
+// scenario : { pipeY, itemY, itemGapPx, kartY } ; objet pose `itemGapPx` avant
+// le tuyau, tous deux devant le kart.
 function run(name, sc, seed) {
     const rng = makeRng(seed);
     const state = PH.createWorldState(cfg, rng, 0, null, null);
     let t = 0;
 
-    // Sortir du decompte.
     while (state.phase === 'countdown') { t += DT_MS; PH.stepPhysics(cfg, state, rng, t, DT); }
 
-    // Un seul kart en piste : on isole la decision.
+    // Un seul kart en piste.
     const kart = state.karts[0];
     for (const other of state.karts) if (other !== kart) other.state = 'grid';
 
@@ -82,18 +69,16 @@ function run(name, sc, seed) {
     kart.pipeTargetIndex = -1;
     kart.sight.at = -1e9;
 
-    // Un seul tuyau, pose devant.
     state.pipes.length = 0;
     state.pipes.push({ worldX: kart.worldX + 900, y: sc.pipeY });
     state.itemBoxes.length = 0;
 
-    // Une banane, posee entre le kart et le tuyau.
     state.items.length = 0;
     PH.spawnLaunchedItem(cfg, state, rng, t, kart, 'banana', 9001,
         kart.worldX + 900 - sc.itemGapPx, sc.itemY, [], 1);
     const item = state.items[0];
     item.vx = 0;
-    // Sans ca l'objet ne peut pas toucher son lanceur (itemArmDistance).
+    // L'objet peut toucher son lanceur (itemArmDistance).
     item.ownerId = null;
 
     console.log(`\n=== ${name} ===`);
@@ -131,8 +116,7 @@ function run(name, sc, seed) {
         + `  dist=${d.toFixed(0)}  etat=${kart.state}`);
 }
 
-// Un kart devant, dans l'axe, qui porte un objet dangereux. Rien n'est lance :
-// c'est la decision de securite qu'on regarde, pas une esquive.
+// Kart devant, dans l'axe, portant un objet dangereux (decision de securite).
 function runCarrier(name, sc, seed) {
     const rng = makeRng(seed);
     const state = PH.createWorldState(cfg, rng, 0, null, null);
@@ -162,7 +146,7 @@ function runCarrier(name, sc, seed) {
     carrier.yPercent = sc.carrierY;
     carrier.absoluteVelocity = 450;
     carrier.vy = 0;
-    // Objet en main, jamais lance : on isole la seule presence de l'objet.
+    // Objet en main, jamais lance.
     carrier.heldItem = { id: 7001, type: sc.itemType, holdPosition: sc.holdPosition };
     carrier.throwTime = t + 1e6;
 

@@ -1,15 +1,6 @@
-// La place du kart suivi, en haut a gauche : le « 1st », « 2nd »... de Mario
-// Kart. Les images sont colorisees a part (scripts/colorize-positions.py) :
-// or, argent, bronze, puis orange de la 4e a la 8e.
-//
-// Elle ne dit la place que d'UN kart, celui que la camera suit — la vue
-// d'ensemble n'en suit aucun, et le classement du bas dit deja celle de tous.
-//
-// Le changement de place se VOIT : l'ancienne tourne vite vers la droite en
-// retrecissant, la nouvelle surgit en rebondissant. Un depassement qui se joue
-// a plusieurs reprises en quelques images ne doit pas pour autant empiler les
-// animations : pendant qu'une transition tourne, seule la DERNIERE place
-// demandee est retenue, et elle s'affiche a la fin de celle en cours.
+// Place du kart suivi (« 1st », « 2nd »...), images colorisees par
+// scripts/colorize-positions.py. Pendant une transition, seule la derniere
+// place demandee est retenue.
 
 const POSITION_OUT_MS = 160;
 const POSITION_IN_MS = 300;
@@ -17,9 +8,9 @@ const POSITION_IN_MS = 300;
 const positionHud = {
     el: null,
     img: null,
-    shown: 0,       // place affichee, 0 = rien
-    wanted: 0,      // place a afficher
-    busy: false     // une transition tourne
+    shown: 0, // place affichee, 0 = rien
+    wanted: 0, // place a afficher
+    busy: false // une transition tourne
 };
 
 function positionReducedMotion() {
@@ -27,8 +18,7 @@ function positionReducedMotion() {
            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-// Rend une promesse tenue a la fin de l'animation, ou tout de suite si le
-// navigateur ne sait pas animer (ou si l'utilisateur prefere s'en passer).
+// Promesse tenue a la fin de l'animation (immediate sans animation).
 function positionAnimate(frames, duration, easing) {
     const img = positionHud.img;
     if (!img.animate || positionReducedMotion()) return Promise.resolve();
@@ -52,9 +42,8 @@ function positionIn() {
     ], POSITION_IN_MS, 'ease-out');
 }
 
-// Une transition complete : sortie de l'ancienne place s'il y en a une, puis
-// entree de la place demandee A CET INSTANT — pas celle qui l'a declenchee, qui
-// a pu changer entre-temps. On boucle tant que la demande bouge.
+// Sortie de l'ancienne place puis entree de la place demandee a cet instant ;
+// on boucle tant que la demande change.
 async function positionTransition() {
     positionHud.busy = true;
     while (positionHud.shown !== positionHud.wanted) {
@@ -75,7 +64,7 @@ async function positionTransition() {
     positionHud.busy = false;
 }
 
-// Appelee a chaque image. Ne touche au DOM que quand la place change.
+// Appelee a chaque image ; ne touche au DOM que si la place change.
 function updatePositionHud() {
     if (!positionHud.el) {
         positionHud.el = document.getElementById('race-position');
@@ -84,7 +73,6 @@ function updatePositionHud() {
     }
 
     const kart = focusedKartId === null ? null : worldState.kartsById[focusedKartId];
-    // Sur la grille aussi, comme dans le jeu : on part avec sa place de depart.
     const rank = kart ? Math.max(1, Math.min(8, kart.rank | 0)) : 0;
 
     positionHud.wanted = rank;

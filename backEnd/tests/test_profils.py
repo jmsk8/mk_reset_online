@@ -18,7 +18,7 @@ H = {'X-Session-Token': 'tok'}
 
 print("\n=== Les réseaux : on stocke un handle, jamais une URL ===")
 cli, cur, conn, rc = monter([])
-# Le danger : une URL fournie par l'utilisateur atterrit dans un href.
+# Une URL fournie par l'utilisateur ne doit pas finir dans un href.
 for mauvais, quoi in [
     ('javascript:alert(1)',            'javascript:'),
     ('https://evil.example/x',         'URL complète'),
@@ -80,25 +80,18 @@ check("bio non textuelle refusée",
 
 print("\n=== Profil public : ce qui sort, et ce qui ne sort pas ===")
 cli, cur, conn, rc = monter([])
-# La requete joint desormais `joueurs` (pour ecarter les fiches anonymisees),
-# d'ou le motif elargi : l'ancien s'arretait a « FROM comptes c LEFT JOIN »,
-# qui ne correspondait plus -- le curseur rendait None et le fichier cassait.
 cur.plan = [(r"FROM comptes c\s+JOIN joueurs j.*LEFT JOIN profils p",
              ('123456789012345678', 'abc', 'ma bio', '#FF0000', {'twitch': 'j_sk8', 'monsite': 'x'},
               'player'))]
 pub = rc.profil_public(cur, 9)
 check("bio publiée", pub['bio'] == 'ma bio')
 check("réseau hors liste blanche filtré à l'affichage aussi", 'monsite' not in pub['reseaux'])
-# L'avatar est relaye : lier le CDN en direct donnerait a Discord l'IP de
-# chaque visiteur et publierait le snowflake dans la source de la page.
 check("avatar servi par le relais, pas par le CDN en direct",
       pub['avatar_url'] == '/avatar/joueur/9', pub['avatar_url'])
 check("le snowflake Discord n'apparait pas dans l'URL publique",
       '123456789012345678' not in pub['avatar_url'])
 check("ni statut ni snowflake dans la charge publique",
       'statut' not in pub and 'discord_id' not in pub)
-# Le role n'est public que s'il est un role d'administration (badge de la
-# fiche joueur, politique admin 1.1) : un simple joueur ne sort pas « player ».
 check("simple joueur -> role None, pas « player »", pub['role'] is None, pub['role'])
 for _role in ('admin', 'chef_admin', 'superadmin'):
     cur.plan = [(r"FROM comptes c\s+JOIN joueurs j.*LEFT JOIN profils p",

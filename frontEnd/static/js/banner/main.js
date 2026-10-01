@@ -1,12 +1,8 @@
-// Le demarrage du banner.
-//
-// Charge en DERNIER : c'est le seul fichier qui execute quelque chose au
-// chargement plutot que de se contenter de declarer. Tous les autres peuvent se
-// lire dans n'importe quel ordre, celui-ci suppose qu'ils sont tous la.
+// Demarrage du banner. Charge en dernier : seul fichier qui execute du code au
+// chargement.
 
-// La course continue sans nous. Il n'y a donc rien a « reprendre » : au retour,
-// on jette le tampon devenu faux, on recale l'horloge, et le serveur renvoie un
-// `hello` complet — un onglet qui revient est un arrivant comme un autre.
+// Au retour sur l'onglet, on repart comme un nouvel arrivant (tampon vide,
+// horloge recalee, nouveau `hello`).
 function handleVisibilityChange() {
     if (document.hidden) {
         if (animationId) cancelAnimationFrame(animationId);
@@ -21,20 +17,15 @@ function handleVisibilityChange() {
 }
 
 // ---------------------------------------------------------------------------
-// Outils de developpement — a retirer a la fin de la migration.
-//
-//   bannerDev.wipeDom()    efface tout le DOM du banner. La frame suivante doit
-//                          le reconstruire a partir du seul snapshot courant :
-//                          c'est le test de l'arrivant, joue en direct.
-//   bannerDev.offline()    coupe la connexion pour de bon (mode degrade).
-//   bannerDev.reconnect()  relance la connexion.
-//   bannerDev.curtain(b)   baisse (true) ou leve (false) le rideau.
-//   bannerDev.status(s)    force l'indicateur : connecting | online | offline.
-//   bannerDev.clock()      ecart d'horloge estime avec le serveur.
-//   bannerDev.realise(b)   allume (true) ou coupe (false) la realisation.
-//   bannerDev.plateau()    les notes de la realisation, du plus filmable au
-//                          moins : c'est avec ce classement qu'on regle
-//                          DIRECTOR_WEIGHTS en regardant la course.
+// Outils de developpement (console) :
+//   bannerDev.wipeDom()    efface le DOM du banner (reconstruit depuis le snapshot)
+//   bannerDev.offline()    coupe la connexion
+//   bannerDev.reconnect()  relance la connexion
+//   bannerDev.curtain(b)   baisse (true) ou leve (false) le rideau
+//   bannerDev.status(s)    force l'indicateur : connecting | online | offline
+//   bannerDev.clock()      ecart d'horloge estime avec le serveur
+//   bannerDev.realise(b)   active ou coupe la realisation automatique
+//   bannerDev.plateau()    notes de la realisation, pour regler DIRECTOR_WEIGHTS
 // ---------------------------------------------------------------------------
 const bannerDev = {
     wipeDom() {
@@ -113,9 +104,7 @@ const bannerDev = {
             derive: `${Math.round(targetClockOffset - serverClockOffset)} ms`,
             mesures: bannerNet.rttSamples.map(s => `${s.rtt} ms`),
             tampon: bannerNet.buffer.length,
-            // Ecart entre l'instant affiche et le dernier etat recu. Doit valoir
-            // a peu pres -RENDER_DELAY_MS : franchement positif, le client rend
-            // un futur qu'il n'a pas ; tres negatif, il rend un passe.
+            // Doit valoir environ -RENDER_DELAY_MS.
             retard: last ? `${Math.round(renderTime - last.ts)} ms` : 'aucun snapshot'
         };
     }
@@ -123,12 +112,10 @@ const bannerDev = {
 
 window.bannerDev = bannerDev;
 
-// Au-dela de ce delai on ouvre le verrou des assets meme s'il en manque : mieux
-// vaut un sprite qui arrive en retard qu'un banner masque.
+// Delai apres lequel le verrou des assets s'ouvre meme s'il en manque.
 const ASSETS_TIMEOUT_MS = 2500;
 
-// Filet de securite : quoi qu'il arrive — serveur muet, images bloquees — le
-// rideau se leve. Un bandeau cache est le seul echec vraiment visible.
+// Le rideau se leve quoi qu'il arrive.
 const CURTAIN_FAILSAFE_MS = 5000;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -148,12 +135,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const _bannerEl = document.getElementById('bannerSection');
     if (!_bannerEl || _bannerEl.dataset.season === 'winter') initSnow();
 
-    // La connexion part tout de suite, en parallele du chargement des images :
-    // c'est elle qui met le plus de temps a fournir une scene affichable.
+    // Connexion lancee en parallele du chargement des images.
     bannerNet.connect();
-    // Page ouverte directement en arriere-plan (clic molette) : aucun
-    // `visibilitychange` ne viendra, et l'onglet doit quand meme rendre sa
-    // connexion s'il reste cache (HIDDEN_DISCONNECT_MS, net.js).
+    // Page ouverte en arriere-plan : pas de visibilitychange a attendre.
     if (document.hidden) bannerNet.setHidden(true);
 
     animate(0);

@@ -9,23 +9,12 @@ from typing import Any
 
 from constants import CACHE_TTL_SECONDS
 
-# Borne dure du cache. Une entrée n'est purgée qu'à la LECTURE d'une clé
-# périmée : sans plafond, un jeu de clés pilotable depuis internet ferait
-# grossir le dict jusqu'à l'OOM. L'ordre d'insertion sert d'approximation LRU.
+# Plafond du cache : les entrées périmées ne sont purgées qu'à la lecture.
 CACHE_MAX_ENTRIES = 200
 
 _cache_store: OrderedDict[str, tuple[Any, float]] = OrderedDict()
 
-# Les workers gunicorn sont threadés depuis le 2026-09-17 : ce dict est désormais
-# partagé. Sans ce verrou, `get_cached` peut supprimer une clé qu'un autre thread
-# vient de purger -- et le `popitem` de `set_cached` vider un cache déjà vide.
-# Les deux lèvent KeyError, donc une 500 intermittente, sur un chemin dont
-# l'intérêt est justement d'être invisible.
-#
-# Un verrou global, et non un par clé : les sections critiques tiennent en
-# quelques opérations de dict et un `stat()` sur tmpfs (_last_invalidation), sans
-# aucun appel réseau ni requête SQL. La contention reste négligeable devant
-# l'aller-retour Postgres que ce cache évite.
+# Les workers gunicorn sont threadés : le dict est partagé entre threads.
 _verrou = threading.Lock()
 
 _INVALIDATION_MARKER = os.path.join(tempfile.gettempdir(), "mkreset_cache_invalidated_at")

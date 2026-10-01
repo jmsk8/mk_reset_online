@@ -1,23 +1,5 @@
-"""Audit auth Discord + administration, second passage (2026-09-17).
-
-Pendant executable de docs/audit-auth-admin-2026-09-17.md. Chaque section porte
-le numero du constat (B-xx), et vaut PREUVE : un constat qu'on ne sait pas faire
-echouer par execution n'est qu'une opinion.
-
-Meme convention que test_audit_auth_discord.py, dont ce fichier est la suite :
-
-  - les assertions de NON-REGRESSION decrivent ce qui est correct et doit le
-    rester ;
-  - les assertions `defaut(...)` decrivent le comportement ACTUEL, celui qui
-    pose probleme. Elles sont vertes TANT QUE le defaut est la. Le jour ou il
-    est corrige, elles virent au rouge et nomment le constat a refermer.
-
-Une ligne rouge marquee [B-xx, defaut constate] est une BONNE NOUVELLE.
-
-Aucun Postgres, aucun Discord : le curseur est scripte (harness.py). Ce que ce
-fichier ne prouve donc PAS : les verrous SQL, les contraintes et l'index
-partiel, qui sont lus et raisonnes, jamais executes.
-"""
+"""Authentification et administration, second passage : non-regressions et
+defauts encore presents marques `defaut(...)` (rouges une fois corriges)."""
 from harness import *
 from flask import Flask
 import importlib
@@ -27,15 +9,14 @@ import time as _time
 import secrets as _secrets
 from urllib.parse import urlencode, urlparse, parse_qs
 
-# Constats ouverts, pour que l'echec d'un `defaut()` dise quoi aller refermer.
+# Constats encore ouverts.
 B_STATE_CASE_UNIQUE = "B-01"
 B_SUPERADMIN_SE_VERROUILLE = "B-02"
 B_STATUT_SANS_GARDE = "B-03"
 
 
 def _leve(appel):
-    """Vrai si l'appel leve une exception. Pour verifier un refus a la
-    definition (ValueError) plutot qu'a l'execution."""
+    """Vrai si l'appel leve une exception."""
     try:
         appel()
         return False
@@ -44,11 +25,7 @@ def _leve(appel):
 
 
 def defaut(constat, nom, cond, detail=''):
-    """Assertion qui documente un defaut ENCORE PRESENT.
-
-    Verte tant que le defaut existe. Rouge quand il est corrige -- et c'est
-    alors le message qui dit ou acter la correction.
-    """
+    """Assertion sur un defaut encore present : verte tant qu'il existe."""
     check("[%s, defaut constate] %s" % (constat, nom), cond,
           detail or "corrige ? mettre a jour docs/audit-auth-admin-2026-09-17.md (%s)" % constat)
 
@@ -62,7 +39,7 @@ def monter_comptes(plan):
     importlib.reload(auth)
     import routes_comptes
     importlib.reload(routes_comptes)
-    # Le cache memoire n'a rien a faire dans un test d'autorisation.
+    # Cache neutralise.
     routes_comptes.invalidate_cache = lambda *a, **k: None
     app = Flask(__name__)
     app.register_blueprint(routes_comptes.comptes_bp)
@@ -73,27 +50,12 @@ H = {'X-Session-Token': 'tok'}
 
 
 # ===========================================================================
-# B-01 -- CORRIGE le 2026-09-17. Le `state` OAuth etait une case unique.
-#
-# Le defaut n'etait dans aucun des deux gestes pris isolement, mais dans leur
-# combinaison sur une case unique :
-#
-#     session['oauth_state'] = state        (ecrasait le precedent)
-#     attendu = session.pop('oauth_state')  (consommait MEME en cas d'echec)
-#
-# Remplace par une liste bornee de states en attente, consommes seulement en
-# cas de correspondance. Ces assertions sont devenues des NON-REGRESSIONS.
-#
-# Les helpers sont importes du frontend plutot que recopies : un test qui
-# reimplemente ce qu'il verifie ne verifie que lui-meme.
+# ===========================================================================
+# Plusieurs states OAuth en attente, consommes seulement s'ils correspondent.
 # ===========================================================================
 print("\n=== B-01 : plusieurs states OAuth en attente (CORRIGE 2026-09-17) ===")
 
-# Les helpers sont IMPORTES du frontend, plus recopies : une correction qui ne
-# serait pas dans le code livre doit faire echouer ce fichier. C'est la lecon
-# du §12.5 de l'audit 503 -- un test qui reimplemente ce qu'il verifie ne
-# verifie que lui-meme. Le frontend exige deux variables d'environnement pour
-# s'importer ; on les pose ici, aucune connexion n'est ouverte a l'import.
+# Helpers importes du frontend (variables d'environnement requises a l'import).
 _os.environ.setdefault('SECRET_KEY', 'audit')
 _os.environ.setdefault('BACKEND_URL', 'http://audit.invalid')
 _sys.path.insert(0, _os.path.abspath(
@@ -108,7 +70,7 @@ _app.secret_key = 'audit'
 def _login():
     from flask import session, redirect
     state = _secrets.token_urlsafe(24)
-    _front._deposer_state(state)        # <-- le vrai helper livre
+    _front._deposer_state(state)  # le vrai helper du frontend
     session.permanent = True
     return redirect("https://discord.test/?" + urlencode({'state': state}))
 
@@ -126,11 +88,10 @@ def _state_de(reponse):
 
 
 # --- 1) Deux connexions en parallele coexistent ---------------------------
-# C'etait le coeur de B-01.1 : le state du second onglet ecrasait celui du
-# premier, qui echouait sans que rien d'anormal n'ait eu lieu.
+# Deux onglets de connexion en parallele.
 cli = _app.test_client()
-s1 = _state_de(cli.get('/login'))        # onglet 1
-s2 = _state_de(cli.get('/login'))        # onglet 2
+s1 = _state_de(cli.get('/login'))  # onglet 1
+s2 = _state_de(cli.get('/login'))  # onglet 2
 r_onglet1 = cli.get('/callback?state=' + s1)
 
 check("deux connexions produisent bien deux states distincts", s1 != s2)
@@ -140,21 +101,18 @@ check("le SECOND onglet fonctionne aussi, independamment",
       cli.get('/callback?state=' + s2).status_code == 200)
 
 # --- 2) Un echec n'emporte plus les tentatives valides --------------------
-# C'etait B-01.2, le plus perfide : le pop() vidait la case MEME en cas
-# d'echec, si bien qu'un echec en provoquait un second avec un state pourtant
-# bon. D'ou deux echecs d'affilee, puis un succes -- incomprehensible.
+# Un echec ne consomme pas les states valides.
 cli = _app.test_client()
 s_valide = _state_de(cli.get('/login'))
 
-r_premier = cli.get('/callback?state=' + 'inconnu_' + 'x' * 16)   # echoue
-r_second = cli.get('/callback?state=' + s_valide)                 # doit marcher
+r_premier = cli.get('/callback?state=' + 'inconnu_' + 'x' * 16)  # echoue
+r_second = cli.get('/callback?state=' + s_valide)  # doit marcher
 
 check("un state inconnu est refuse", r_premier.status_code == 400)
 check("un echec ne CONSOMME rien : la tentative suivante reussit (B-01.2 corrige)",
       r_second.status_code == 200)
 
-# --- 3) Usage unique : la garantie que la correction ne devait pas echanger
-# contre le confort. Un state retire de la liste ne repasse jamais.
+# --- 3) Usage unique ---------------------------------------------------------
 cli = _app.test_client()
 s = _state_de(cli.get('/login'))
 check("premier usage du state accepte", cli.get('/callback?state=' + s).status_code == 200)
@@ -164,12 +122,7 @@ check("state absent refuse", cli.get('/callback').status_code == 400)
 check("state vide refuse", cli.get('/callback?state=').status_code == 400)
 
 # --- 3bis) Entrees hostiles : un 500 sur le chemin de connexion ------------
-# `compare_digest` LEVE un TypeError sur deux chaines dont l'une n'est pas
-# ASCII. Le state venant d'un parametre d'URL, un simple `?state=e-aigu`
-# suffisait a produire un 500 -- defaut ANTERIEUR a la correction de B-01,
-# reproduit a l'identique en la portant, puis corrige le 2026-09-18 en
-# comparant des octets. Un 500 sur une page « securite » est le pire endroit
-# pour un theoreme.
+# Un state non ASCII ne doit pas lever dans compare_digest.
 cli = _app.test_client()
 _state_de(cli.get('/login'))
 for _libelle, _q in (("non-ASCII", '%C3%A9'), ("emoji", '%F0%9F%92%A9'),
@@ -178,8 +131,7 @@ for _libelle, _q in (("non-ASCII", '%C3%A9'), ("emoji", '%F0%9F%92%A9'),
     check("state %s : refuse proprement, jamais un 500" % _libelle,
           _r.status_code == 400, _r.status_code)
 
-# Une session bricolee ne doit pas davantage faire tomber la route : horodatage
-# textuel, entree non-liste, valeur nulle.
+# Session bricolee : horodatage textuel, entree non-liste, valeur nulle.
 cli = _app.test_client()
 with cli.session_transaction() as _sess:
     _sess['oauth_states'] = [['a', 'pas_un_nombre'], ['b', None], 'brut', 42]
@@ -188,8 +140,7 @@ check("session corrompue (horodatage textuel) : refus propre, pas de 500",
 
 
 # --- 4) Bornes : taille et duree de vie -----------------------------------
-# Sans borne de taille, un robot appelant /login en boucle ferait grossir le
-# cookie de session jusqu'au refus du navigateur.
+# Nombre de states borne (taille du cookie).
 cli = _app.test_client()
 _vieux = [_state_de(cli.get('/login')) for _ in range(_front.OAUTH_STATES_MAX + 2)]
 check("au-dela de la borne, les states les PLUS ANCIENS sont evinces",
@@ -197,7 +148,7 @@ check("au-dela de la borne, les states les PLUS ANCIENS sont evinces",
 check("les states recents survivent a l'eviction",
       cli.get('/callback?state=' + _vieux[-1]).status_code == 200)
 
-# Un state perime est refuse : on recule son horodatage au-dela du TTL.
+# State perime refuse.
 cli = _app.test_client()
 s_vieux = _state_de(cli.get('/login'))
 with cli.session_transaction() as sess:
@@ -205,8 +156,7 @@ with cli.session_transaction() as sess:
 check("un state plus vieux que le TTL est refuse",
       cli.get('/callback?state=' + s_vieux).status_code == 400)
 
-# Une session corrompue (cookie bricole, format d'une version anterieure) ne
-# doit pas produire un 500 sur le chemin de connexion.
+# Session corrompue : pas de 500.
 cli = _app.test_client()
 with cli.session_transaction() as sess:
     sess['oauth_states'] = ['pas_une_paire', None, ['trop', 'court', 'non'], 42]
@@ -217,12 +167,7 @@ check("et une nouvelle connexion repart proprement apres corruption",
 
 
 # ===========================================================================
-# B-06 -- L'ecran d'autorisation Discord s'affiche a chaque connexion.
-#
-# Jusqu'au 2026-09-24, `prompt=none` le sautait pour qui avait deja autorise le
-# site : Discord renvoyait aussitot, sans laisser lire sa page ni voir avec quel
-# compte on entrait. Decide ce jour-la : on le montre toujours. Teste sur le
-# lien que la VRAIE route fabrique, pas sur la source.
+# L'ecran d'autorisation Discord est toujours affiche (pas de prompt=none).
 # ===========================================================================
 print("\n=== B-06 : l'ecran d'autorisation Discord n'est jamais saute ===")
 _front.DISCORD_CLIENT_ID, _front.DISCORD_REDIRECT_URI = 'client-test', 'https://site.test/cb'
@@ -240,11 +185,7 @@ check("  et toujours le seul scope identify",
 
 
 # ===========================================================================
-# Plusieurs URI de retour : chaque hote revient sur lui-meme (2026-09-24).
-#
-# Le cookie qui porte le state est lie a l'hote. Avec une URI unique, naviguer
-# sur un autre nom de la meme machine (127.0.0.1, nom .local, nouvelle IP DHCP)
-# faisait echouer la connexion en « demande expiree ».
+# Plusieurs URI de retour : chaque hote revient sur lui-meme (cookie lie a l'hote).
 # ===========================================================================
 print("\n=== URI de retour : choisie selon l'hote consulte ===")
 _front.DISCORD_REDIRECT_URI = (' http://localhost/cb , http://nobara-pc.local/cb,'
@@ -264,7 +205,7 @@ check("  l'IP la sienne",
 check("  un hote inconnu retombe sur la premiere, jamais sur son propre nom",
       _uri_envoyee('evil.test') == ['http://localhost/cb'], _uri_envoyee('evil.test'))
 
-# Le retour renvoie au backend l'URI de CET hote : Discord exige la meme qu'a l'aller.
+# Le retour transmet au backend l'URI de cet hote.
 _vu = {}
 def _faux_backend(methode, chemin, data=None, **kw):
     _vu['redirect_uri'] = (data or {}).get('redirect_uri')
@@ -288,17 +229,7 @@ _front.DISCORD_REDIRECT_URI = 'https://site.test/cb'
 
 
 # ===========================================================================
-# B-02a -- Le superadmin peut supprimer son propre compte.
-#
-# DELETE /me etait decoree @player_required SEUL : elle ne lisait jamais le
-# role. Resultat : plus aucun superadmin en base, donc plus aucune attribution
-# de role, plus de legs, plus de jetons de bot, plus de purge RGPD. Corrige le
-# 2026-09-17 par _refus_auto_verrouillage.
-#
-# Depuis le 2026-09-22, DELETE /me n'existe plus : la suppression se demande par
-# ecrit et le superadmin l'execute (DELETE /admin/comptes/<id>). Le chemin
-# d'origine a disparu, le risque demeure sous une autre forme -- le superadmin
-# est desormais le SEUL a pouvoir supprimer, y compris lui-meme en theorie.
+# Le superadmin ne peut pas supprimer son propre compte.
 # ===========================================================================
 print("\n=== B-02a : le superadmin supprime son propre compte ===")
 
@@ -314,7 +245,7 @@ def _plan_suppression(role_cible, compte_cible):
         (r"UPDATE sessions_joueurs SET last_seen_at", None),
     ]
 
-# Le superadmin sur SA propre ligne : refuse, avant meme la base.
+# Sur sa propre ligne : refuse avant la base.
 cli, cur, conn = monter_comptes(_plan_suppression('superadmin', 1))
 r = cli.delete('/admin/comptes/1', json={'confirmation_pseudo': 'toto'}, headers=H)
 sqls = [s for s, _ in cur.executed]
@@ -327,8 +258,7 @@ check("aucune ligne comptes n'est supprimee",
 check("l'ancien chemin DELETE /me n'existe plus",
       cli.delete('/me', headers=H).status_code in (404, 405))
 
-# NON-REGRESSION : le superadmin supprime bien le compte d'un joueur. Sans cette
-# assertion, une garde qui refuserait tout le monde passerait pour correcte.
+# Le superadmin peut supprimer le compte d'un joueur.
 cli, cur, conn = monter_comptes(_plan_suppression('player', 42))
 r = cli.delete('/admin/comptes/42', json={'confirmation_pseudo': 'toto'}, headers=H)
 sqls = [s for s, _ in cur.executed]
@@ -337,7 +267,6 @@ check("NON-REGRESSION : le superadmin supprime le compte d'un joueur",
 check("et aucun COUNT inutile n'est fait pour une cible non superadmin",
       not any('COUNT(*)' in s for s in sqls))
 
-# Contraste : la meme protection existe pourtant ailleurs, et fonctionne.
 cli, cur, conn = monter_comptes([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
@@ -353,11 +282,8 @@ check("NON-REGRESSION : changer_role refuse bien de retrograder le dernier "
 
 # ===========================================================================
 # B-02b / B-03 -- Le superadmin peut se suspendre lui-meme.
-#
-# PIRE que la suppression : le compte EXISTE toujours, donc l'amorcage par
-# DISCORD_SUPERADMIN_ID ne rattrape rien (peut_amorcer_sans_invitation n'est
-# consultee que pour un compte INEXISTANT), et login() refuse en amont sur le
-# statut 'suspended'. Seul un UPDATE SQL en production repare.
+# Le superadmin ne peut pas se suspendre (irrattrapable : login refuse un
+# compte suspendu et l'amorcage ne vaut que pour un compte inexistant).
 # ===========================================================================
 print("\n=== B-02b : le superadmin se suspend lui-meme (irrattrapable) ===")
 
@@ -382,12 +308,7 @@ check("aucun UPDATE du statut n'a lieu",
 check("changer_statut COMPTE desormais les superadmins restants (B-03 corrige)",
       any('COUNT(*)' in s for s in sqls))
 
-# Le message de la garde dit « VOUS etes le dernier superadmin » : il ne vaut
-# que si la garde ne peut se declencher que sur une AUTO-action. C'est bien le
-# cas, mais ca tient a compte_cible_protegee, qui refuse l'egalite de rang --
-# un superadmin ne peut pas viser un autre superadmin (403 avant d'arriver
-# ici). Si cette regle changeait, le message deviendrait faux : un superadmin
-# lirait « vous etes le dernier » en suspendant quelqu'un d'autre.
+# Le message suppose une auto-action (compte_cible_protegee refuse l'egalite de rang).
 cli, cur, conn = monter_comptes([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
@@ -399,7 +320,7 @@ check("un superadmin ne peut pas viser un AUTRE superadmin (403 avant la garde) 
       r.status_code == 403 and (r.get_json() or {}).get('code') == 'cible_protegee',
       r.get_json())
 
-# Reactiver n'a jamais verrouille personne : la garde ne doit pas s'y appliquer.
+# La reactivation n'est pas concernee.
 cli, cur, conn = monter_comptes([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='superadmin', statut='linked')),
@@ -417,18 +338,13 @@ check("NON-REGRESSION : REACTIVER un compte reste possible (la garde ne vise "
 check("et aucun COUNT n'est fait sur une reactivation",
       not any('COUNT(*)' in s for s in sqls))
 
-# La raison technique : compte_cible_protegee laisse passer l'auto-action.
-# C'est un choix DELIBERE et documente (« fermer ses propres sessions est
-# legitime ») -- juste pour les sessions, pas pour le statut.
+# compte_cible_protegee laisse passer l'auto-action.
 import auth as _auth
 check("compte_cible_protegee laisse deliberement passer l'auto-action "
       "(cause racine de B-02b)",
       'cible_id == acteur' in __import__('inspect').getsource(_auth.compte_cible_protegee))
 
-# Non-regression : sur une CIBLE d'un autre rang, la protection fonctionne.
-# L'acteur porte bien gestion_comptes : sans cette ligne il serait refuse un
-# cran plus tot (permission_manquante), et l'assertion ne prouverait plus la
-# regle de RANG qu'elle vise.
+# Cible d'un autre rang : protection active (l'acteur a gestion_comptes).
 cli, cur, conn = monter_comptes([
     (r"FROM sessions_joueurs s\s+JOIN comptes c",
      ligne_session(compte_id=1, role='admin', statut='linked')),
@@ -453,11 +369,7 @@ check("NON-REGRESSION : un chef_admin ne peut pas suspendre le superadmin (403)"
 
 
 # ===========================================================================
-# B-03 -- Asymetrie des gardes entre changer_role et changer_statut.
-#
-# La suspension est fonctionnellement AUSSI FORTE qu'une retrogradation (elle
-# ferme les sessions et interdit la reconnexion), mais elle est traitee comme
-# un geste mineur.
+# changer_role et changer_statut appliquent la meme garde.
 # ===========================================================================
 print("\n=== B-03 : asymetrie changer_role / changer_statut ===")
 
@@ -474,13 +386,7 @@ check("NON-REGRESSION : changer_role garde le dernier chef_admin",
 check("NON-REGRESSION : changer_role refuse l'auto-modification",
       'refuse_auto_modification' in src_role)
 
-# La garde vit dans un helper partage, pas en ligne dans chaque route : la
-# chercher par son nom dans le source de la route donnerait un vert trompeur.
-# On verifie donc qu'elle est APPELEE, et le comportement est deja prouve plus
-# haut (B-02a / B-02b) par execution.
-#
-# supprimer_compte (depuis le 2026-09-22) remplace supprimer_mon_compte : la
-# garde y reste, bien qu'inatteignable tant que le superadmin est unique.
+# La garde est un helper partage : on verifie qu'il est appele.
 src_suppr = inspect.getsource(_rc.supprimer_compte)
 
 check("changer_statut appelle la garde d'auto-verrouillage (B-03 corrige)",
@@ -490,19 +396,14 @@ check("supprimer_compte appelle la MEME garde (B-02.1 corrige)",
 check("les deux routes consultent le role du titulaire sous verrou",
       'FOR UPDATE' in src_suppr and 'FOR UPDATE' in src_statut)
 
-# La regle est ecrite UNE fois. Deux copies divergeraient, et on ne s'en
-# apercevrait qu'une fois dehors.
+# Une seule copie de la regle.
 src_garde = inspect.getsource(_rc._refus_auto_verrouillage)
 check("la garde reutilise la definition du « dernier » de changer_role",
       '_dernier_de_son_role' in src_garde)
 check("et elle repond 409 avec le meme code que changer_role",
       'dernier_superadmin' in src_garde and '409' in src_garde)
 
-# Ce qui reste DELIBEREMENT non couvert, pour que l'absence soit un choix lu et
-# non un oubli : le dernier chef_admin. changer_role lui demande une
-# confirmation nommee (R-60) ; suspendre ne demande rien. Le superadmin reste
-# souverain pour le reactiver, donc ce n'est pas un verrouillage -- c'est la
-# raison pour laquelle B-03 s'arrete ici.
+# Non couvert : suspendre le dernier chef_admin ne demande pas de confirmation.
 defaut(B_STATUT_SANS_GARDE,
        "changer_statut ne demande TOUJOURS PAS confirmation pour le dernier "
        "chef_admin (choix assume, pas un verrouillage)",
@@ -511,16 +412,13 @@ defaut(B_STATUT_SANS_GARDE,
 
 
 # ===========================================================================
-# NON-REGRESSIONS -- ce que j'ai cherche a casser sans y parvenir.
-#
-# Ces lignes ne decrivent aucun defaut : elles verrouillent ce qui tient, pour
-# qu'une correction de B-01/B-02 ne l'echange pas contre autre chose.
+# Non-regressions.
 # ===========================================================================
 print("\n=== Non-regressions : le socle qui tient ===")
 
 import auth_discord as _ad
 
-# -- Le token de session ne doit jamais exister en clair en base.
+# Token de session stocke en sha256 seulement.
 check("le token de session part en base en sha256 seul",
       _ad.hash_token('abc') == __import__('hashlib').sha256(b'abc').hexdigest())
 check("create_session insere le HASH, jamais le token",
@@ -528,7 +426,7 @@ check("create_session insere le HASH, jamais le token",
 check("entropie de session : token_urlsafe(32) = 256 bits",
       'token_urlsafe(32)' in inspect.getsource(_ad.create_session))
 
-# -- resumer_appareil : sur par CONSTRUCTION, pas par echappement.
+# resumer_appareil ne renvoie que des constantes.
 piege = '<script>alert(1)</script> Chrome/120 (Windows)'
 resume = _ad.resumer_appareil(piege)
 check("resumer_appareil ne renvoie jamais un fragment de l'entree",
@@ -540,7 +438,7 @@ check("resumer_appareil : ordre Edge avant Chrome",
 check("resumer_appareil : ordre Android avant Linux",
       _ad.resumer_appareil('Linux; Android 14; Chrome/120') == 'Chrome sur Android')
 
-# -- /auth/mes-sessions ne doit JAMAIS laisser fuir le token_hash.
+# /auth/mes-sessions ne renvoie jamais le token_hash.
 import routes_auth as _ra
 src_mes = inspect.getsource(_ra.mes_sessions)
 check("mes_sessions lit token_hash pour comparer, mais ne le renvoie pas",
@@ -551,7 +449,7 @@ src_fermer = inspect.getsource(_ra.fermer_mes_sessions)
 check("fermer_mes_sessions cloisonne bien par compte_id",
       src_fermer.count('compte_id = %s') >= 2)
 
-# -- Le role est relu en base a chaque requete : la garantie centrale.
+# Role relu en base a chaque requete.
 src_charger = inspect.getsource(_auth._charger_compte_session)
 check("le role est relu en base a chaque requete protegee (jamais en cache)",
       'c.role' in src_charger)
@@ -560,13 +458,13 @@ check("une session expiree est supprimee et refusee en 401",
 check("un compte suspendu est refuse en 403",
       'compte_suspendu' in src_charger)
 
-# -- 503 et non 403 quand la base ne repond pas (R-28 / R-55).
+# 503 et non 403 si la base ne repond pas.
 check("une panne DB donne 503, jamais 403 (sinon le front deconnecte a tort)",
       'indisponible' in src_charger and '503' in src_charger)
 check("_a_permission leve _DbIndisponible plutot que de renvoyer False",
       '_DbIndisponible' in inspect.getsource(_auth._a_permission))
 
-# -- Sous-permission sans parent = aucun droit, verifie AU BACKEND.
+# Sous-permission sans parent : aucun droit.
 from constants import permissions_effectives, SOUS_PERMISSIONS
 check("une sous-permission orpheline ne donne aucun droit",
       permissions_effectives({'joueurs_nom'}) == set())
@@ -578,7 +476,7 @@ check("permission_required exige aussi le parent",
 check("une permission hors catalogue leve a la DEFINITION (pas a l'appel)",
       _leve(lambda: _auth.permission_required('inexistante')))
 
-# -- Legs du superadmin : l'ordre et les verrous.
+# Legs : ordre et verrous.
 src_legs = inspect.getsource(_rc.leguer_superadmin)
 check("le legs retrograde l'ancien AVANT de promouvoir (index partiel)",
       src_legs.index('ROLE_CHEF_ADMIN, acteur_id') < src_legs.index('ROLE_SUPERADMIN, compte_id'))
@@ -596,7 +494,7 @@ check("un chef_admin ne peut pas designer un pair",
 check("quitter le role admin purge les permissions a la carte (R-53)",
       'DELETE FROM permissions_admin' in src_role)
 
-# -- Amorcage : entree et promotion doivent avoir les MEMES conditions.
+# Amorcage : memes conditions pour l'entree et la promotion.
 src_amorce = inspect.getsource(_ad.peut_amorcer_sans_invitation)
 src_promo = inspect.getsource(_ad.promote_bootstrap_superadmin)
 check("l'amorcage exige DISCORD_SUPERADMIN_ID des deux cotes",
@@ -606,7 +504,7 @@ check("l'amorcage se referme des qu'un superadmin existe (pas une porte derobee)
 check("la promotion pose un verrou FOR UPDATE (deux connexions simultanees)",
       'FOR UPDATE' in src_promo)
 
-# -- OAuth : les pieges classiques, tous evites.
+# OAuth.
 src_exch = inspect.getsource(_ad.exchange_code)
 check("le snowflake est valide avant de finir dans une URL",
       'RE_SNOWFLAKE' in src_exch)
@@ -621,7 +519,7 @@ check("login() fait tout en une seule transaction",
 check("un compte suspendu n'obtient pas de session a la connexion",
       'compte_suspendu' in inspect.getsource(_ad.login))
 
-# -- Le bot est un tiers : lecture seule, et le role n'est jamais publie.
+# Bot : lecture seule, role jamais publie.
 import routes_bot as _rb
 src_bot = inspect.getsource(_rb)
 check("le bot n'expose JAMAIS le role (cela designerait les administrateurs)",

@@ -1,29 +1,5 @@
-"""Phase 3 du journal d'audit : la lecture.
-
-Pendant executable de docs/audit-admin-plan.md, phase 3. Jusqu'ici la table ne
-recevait que des INSERT -- aucun SELECT nulle part. Ecrire sans jamais relire,
-c'est se donner bonne conscience.
-
-Ce que ce fichier verrouille, par ordre d'importance :
-
-  1. LA REGLE DE RANG (§6.2). Un chef_admin lit les `admin`, jamais ses pairs
-     ni le superadmin. C'est la seule chose ici qui protege quelque chose : le
-     reste est du confort d'affichage.
-
-  2. Le filtre est applique EN SQL, pas a l'affichage. Rendre les lignes puis
-     les masquer les ferait transiter, et la pagination compterait des lignes
-     invisibles -- une page de 50 en afficherait 12.
-
-  3. Les TROIS chemins de lecture (volet, onglet, export) partagent UNE seule
-     requete. Trois requetes separees finiraient par diverger, et la premiere
-     a oublier le garde de rang deviendrait le contournement de la regle.
-
-  4. Une ligne dont l'acteur a ete SUPPRIME reste attribuable, via la
-     denormalisation du §6.3.
-
-Aucun Postgres : le curseur est scripte. Ce fichier ne valide donc pas le SQL,
-mais qui lit quoi, sous quelles conditions, et ce qui sort.
-"""
+"""Lecture du journal d'audit : regle de rang appliquee en SQL, une seule
+requete pour le volet, l'onglet et l'export, et acteur supprime attribuable."""
 from harness import *
 from flask import Flask
 import csv as _csv
@@ -81,43 +57,34 @@ def params_lecture(cur):
 # ===========================================================================
 print("\n=== La regle de rang du §6.2, appliquee EN SQL ===")
 
-# Un superadmin lit tout : aucune restriction de role dans la requete.
 cli, cur, conn = monter([(LECTURE, [ligne(1)])], role='superadmin')
 r = cli.get('/admin/audit', headers=H)
 check("superadmin : 200", r.status_code == 200, r.get_json())
 check("  aucune restriction de role dans sa requete",
       'c.role = ANY' not in sql_lecture(cur), sql_lecture(cur)[:120])
 
-# Un chef_admin ne lit QUE les admin. La liste part en parametre : on verifie
-# son contenu, pas seulement la presence du filtre.
+# Un chef_admin ne lit que certains roles, passes en parametre.
 cli, cur, conn = monter([(LECTURE, [ligne(1)])], role='chef_admin')
 r = cli.get('/admin/audit', headers=H)
 _p = params_lecture(cur)
 check("chef_admin : 200", r.status_code == 200, r.get_json())
 check("  sa requete FILTRE sur le role de l'acteur",
       'c.role = ANY' in sql_lecture(cur), sql_lecture(cur)[:160])
-# La liste doit EXISTER en parametre : si le filtre saute, `_p[0]` n'est plus
-# une liste de roles mais la limite, et les trois assertions suivantes
-# passeraient sur une comparaison vide. C'est le trou qu'a revele l'injection
-# de panne : une seule assertion mordait.
+# Le parametre doit etre une liste de roles.
 _roles = _p[0] if _p and isinstance(_p[0], list) else None
 check("  une liste de roles lisibles part en parametre", _roles is not None, _p)
 check("  il lit les admin", bool(_roles) and 'admin' in _roles, _roles)
-# Arbitre le 2026-09-19 : un chef_admin lit AUSSI ses pairs. Lire n'est pas
-# agir -- et c'est precisement entre gens de meme rang que la surveillance
-# mutuelle a du sens. L'ecart avec `compte_cible_protegee` (rang strictement
-# superieur) est donc delibere.
+# Un chef_admin lit aussi ses pairs.
 check("  il lit AUSSI ses pairs chef_admin (lire n'est pas agir)",
       bool(_roles) and 'chef_admin' in _roles, _roles)
 check("  mais JAMAIS le superadmin : personne ne le surveille par ce biais",
       bool(_roles) and 'superadmin' not in _roles, _roles)
 
-# Le filtre doit etre dans le SQL, pas applique apres coup : sinon les lignes
-# transitent et la pagination compte des lignes invisibles.
+# Filtre dans le SQL, pas a l'affichage.
 check("le filtre est dans le WHERE, pas a l'affichage",
       'WHERE' in sql_lecture(cur))
 
-# Un admin simple n'a pas la route : le decorateur l'arrete avant.
+# Un admin n'a pas acces a la route.
 cli, cur, conn = monter([], role='admin')
 check("admin simple -> 403 sur le journal complet",
       cli.get('/admin/audit', headers=H).status_code == 403)
@@ -127,14 +94,8 @@ check("player -> 403", cli.get('/admin/audit', headers=H).status_code == 403)
 
 # ===========================================================================
 print("\n=== Le volet par compte porte la meme regle ===")
-# `compte_cible_protegee` l'arrete avant le corps : un chef_admin qui vise un
-# pair est refuse, exactement comme pour les autres gestes sur un compte.
-
-# ⚠️ Le volet d'une ligne ne porte PAS `compte_cible_protegee` : ce decorateur
-# refuse le rang egal, ce qui interdirait a un chef_admin de lire le journal
-# d'un pair -- exactement ce que l'arbitrage du 19/09 veut permettre. La regle
-# de lecture vit donc dans `_lire_journal`, une seule fois, pour les trois
-# chemins.
+# Le volet n'a pas compte_cible_protegee (qui refuse le rang egal) : la regle
+# vit dans _lire_journal.
 cli, cur, conn = monter([
     (r"SELECT role FROM comptes WHERE id = %s", ('chef_admin',)),
     (LECTURE, [ligne(1)]),
@@ -158,9 +119,7 @@ r = cli.get('/admin/comptes/2/audit', headers=H)
 check("chef_admin -> journal d'un ADMIN : 200", r.status_code == 200, r.get_json())
 check("  et la requete cible bien ce compte",
       'a.acteur_compte_id = %s' in sql_lecture(cur), sql_lecture(cur)[:200])
-# Le volet porte AUSSI le filtre de rang, en plus du decorateur : les deux se
-# recouvrent volontairement. Le decorateur protege la cible designee, le filtre
-# protege les lignes rendues -- si le premier sautait, le second tiendrait.
+# Le volet porte aussi le filtre de rang.
 _pv = params_lecture(cur)
 check("  et il porte lui aussi le filtre de rang",
       _pv and isinstance(_pv[0], list) and 'superadmin' not in _pv[0], _pv)
@@ -168,8 +127,6 @@ check("  et il porte lui aussi le filtre de rang",
 
 # ===========================================================================
 print("\n=== Pagination par curseur, jamais par OFFSET ===")
-# Un OFFSET saute des lignes des qu'une nouvelle s'insere pendant la
-# consultation -- et un journal s'ecrit en continu.
 
 cli, cur, conn = monter([(LECTURE, [ligne(i) for i in range(50, 0, -1)])])
 r = cli.get('/admin/audit?limite=50', headers=H)
@@ -179,7 +136,6 @@ check("une page pleine renvoie un curseur",
 check("  et le SQL n'utilise PAS d'OFFSET", 'OFFSET' not in sql_lecture(cur))
 check("  il trie par id decroissant", 'ORDER BY a.id DESC' in sql_lecture(cur))
 
-# Page incomplete : plus rien apres, donc pas de curseur.
 cli, cur, conn = monter([(LECTURE, [ligne(1), ligne(2)])])
 _d = cli.get('/admin/audit?limite=50', headers=H).get_json()
 check("une page incomplete ne renvoie pas de curseur", _d.get('avant_id') is None, _d)
@@ -188,7 +144,7 @@ cli, cur, conn = monter([(LECTURE, [ligne(1)])])
 cli.get('/admin/audit?avant_id=99', headers=H)
 check("le curseur recu est applique", 'a.id < %s' in sql_lecture(cur))
 
-# La limite est bornee : sans plafond, `?limite=999999` materialiserait tout.
+# Limite bornee.
 cli, cur, conn = monter([(LECTURE, [ligne(1)])])
 cli.get('/admin/audit?limite=999999', headers=H)
 check("la limite est plafonnee", params_lecture(cur)[-1] <= 200, params_lecture(cur))
@@ -196,8 +152,7 @@ check("la limite est plafonnee", params_lecture(cur)[-1] <= 200, params_lecture(
 
 # ===========================================================================
 print("\n=== Une ligne dont l'acteur a ete supprime reste attribuable ===")
-# C'est le §6.3, le point dur du journal. `acteur_compte_id` passe a NULL a la
-# suppression ; c'est `details.acteur` qui prend le relais.
+# details.acteur prend le relais quand acteur_compte_id est NULL.
 
 DENORME = {"acteur": {"pseudo": "Jérémy", "role": "chef_admin",
                       "discord_id_hash": "a3f1"}, "avant": {"mu": 50}}
@@ -211,18 +166,16 @@ check("  le role porte au moment de l'action est conserve",
       _l['acteur_role'] == 'chef_admin', _l)
 check("  les details metier restent lisibles",
       _l['details'].get('avant') == {"mu": 50}, _l)
-# Le bloc `acteur` est deja remonte en colonnes : le laisser ferait doublon.
 check("  et le bloc acteur ne fait pas doublon dans details",
       'acteur' not in _l['details'], _l)
 
-# Compte vivant : le pseudo vient de la JOINTURE, qui fait foi.
+# Compte existant : pseudo issu de la jointure.
 cli, cur, conn = monter([(LECTURE, [ligne(1, acteur=4, pseudo='Bob')])])
 _l = cli.get('/admin/audit', headers=H).get_json()['lignes'][0]
 check("compte vivant : le pseudo vient de la jointure", _l['acteur_pseudo'] == 'Bob', _l)
 check("  et acteur_supprime est faux", _l['acteur_supprime'] is False, _l)
 
-# Ligne ANCIENNE, ecrite avant la denormalisation : ni jointure ni bloc. Elle
-# sort anonyme, et c'est la verite -- rien ne peut le rattraper apres coup.
+# Ligne anterieure a la denormalisation : acteur anonyme.
 cli, cur, conn = monter([(LECTURE, [ligne(1, acteur=None, details={}, pseudo=None)])])
 _l = cli.get('/admin/audit', headers=H).get_json()['lignes'][0]
 check("une ligne anterieure a la denormalisation sort anonyme, sans mentir",
@@ -244,8 +197,7 @@ _lignes = list(_csv.reader(_io.StringIO(_corps.lstrip('﻿'))))
 check("  un en-tete nomme", _lignes[0][:3] == ['id', 'date', 'action'], _lignes[0])
 check("  et une ligne par entree", len(_lignes) == 3, len(_lignes))
 
-# Injection de formule : un pseudo « =cmd » est execute par Excel et
-# LibreOffice a l'ouverture. Le prefixe apostrophe force le texte.
+# Les debuts de formule sont prefixes d'une apostrophe.
 for _dangereux in ('=cmd|calc', '+1+1', '@SUM(A1)', '-2+3'):
     cli, cur, conn = monter([(LECTURE, [ligne(1, pseudo=_dangereux)])])
     _c = cli.get('/admin/audit/export', headers=H).get_data(as_text=True)
@@ -253,13 +205,10 @@ for _dangereux in ('=cmd|calc', '+1+1', '@SUM(A1)', '-2+3'):
     check("  « %s » est neutralise pour le tableur" % _dangereux,
           _row[4].startswith("'"), _row[4])
 
-# Le filtre de rang vaut AUSSI pour l'export : sinon il montrerait ce que
-# l'ecran masque, et deviendrait le contournement de la regle.
+# L'export applique aussi le filtre de rang.
 cli, cur, conn = monter([(LECTURE, [ligne(1)])], role='chef_admin')
 cli.get('/admin/audit/export', headers=H).get_data()
-# On verifie sur les PARAMETRES et non sur le texte du SQL : la liste des roles
-# lisibles y est, et c'est elle qui porte la regle. Le SQL, lui, est identique
-# dans les trois chemins -- il ne dirait pas si le filtre a ete arme.
+# Verification sur les parametres (le SQL est le meme pour les trois chemins).
 _roles_export = [p[0] for _s, p in cur.executed
                  if 'FROM audit_admin a' in _s and p and isinstance(p[0], list)]
 check("l'export applique le MEME filtre de rang",
@@ -274,15 +223,10 @@ check("et reste ferme a un admin simple",
 
 # ===========================================================================
 print("\n=== Une seule requete pour les trois chemins ===")
-# Trois requetes separees (volet, onglet, export) finiraient par diverger, et
-# la premiere a oublier le garde de rang deviendrait le contournement.
 RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 _src = open(os.path.join(RACINE, 'routes_comptes.py'), encoding='utf-8').read()
 
-# Une seule requete LIT des lignes du journal. La seconde occurrence tolérée
-# est le test d'EXISTENCE de lister_comptes (2026-09-22), qui ne rend qu'un
-# booleen et passe par _peut_lire_journal : nommee ici pour que toute autre
-# lecture continue de faire rougir ce test.
+# Une seule requete de lecture, plus le test d'existence de lister_comptes.
 _existence = 'EXISTS (SELECT 1 FROM audit_admin a'
 check("il n'existe qu'un seul SELECT qui lit audit_admin",
       _src.count('FROM audit_admin') - _src.count(_existence) == 1,
@@ -298,17 +242,14 @@ for _fn in ('def journal_du_compte', 'def journal_complet', 'def exporter_journa
     check("%s() passe par le lecteur partage" % _fn[4:],
           '_lire_journal(' in _corps, _fn)
 
-# L'export streame : un SELECT materialise sur un journal qui ne se purge
-# jamais tomberait le jour ou l'on cherche justement quelque chose.
+# L'export est en streaming.
 _exp = _src[_src.index('def exporter_journal'):]
 check("l'export streame au lieu de tout charger",
       'stream_with_context' in _exp and 'yield' in _exp)
 
 # ===========================================================================
 print("\n=== L'acces aux logs n'est PAS delegable (capacite de role) ===")
-# Demande explicite du 2026-09-19. Un droit delegable pourrait etre accorde a
-# un admin par un chef_admin ; la surveillance perdrait son sens si le
-# surveille pouvait recevoir le droit de se lire lui-meme.
+# Capacite de role, non delegable.
 _rc = open(os.path.join(RACINE, 'routes_comptes.py'), encoding='utf-8').read()
 for _fn in ('def journal_du_compte', 'def journal_complet', 'def exporter_journal'):
     _i = _rc.index(_fn)
@@ -322,17 +263,14 @@ _suspectes = [p for p in set(PERMISSIONS_CATALOGUE) | set(SOUS_PERMISSIONS)
               if 'audit' in p or 'log' in p or 'journal' in p]
 check("aucune permission delegable ne porte sur les logs", _suspectes == [], _suspectes)
 
-# Un admin porteur de TOUTES les permissions reste refuse : c'est le rang qui
-# decide, pas le catalogue.
+# Un admin avec toutes les permissions reste refuse.
 cli, cur, conn = monter([(r"SELECT 1 FROM permissions_admin", (1,))], role='admin')
 check("un admin, meme tout-permissions, reste refuse",
       cli.get('/admin/audit', headers=H).status_code == 403)
 
 
 print("\n=== La liste des comptes dit qui a un journal ===")
-# Le volet d'une ligne montre les actions dont le compte est l'ACTEUR. Un joueur
-# qui n'a jamais ete admin n'en a pas : sans cette information, son bouton Logs
-# ouvrait un volet vide (constat du 2026-09-22).
+# La liste indique si le compte a des lignes de journal.
 from datetime import datetime as _dt, timezone as _tz
 _cree = _dt(2026, 9, 1, tzinfo=_tz.utc)
 def _ligne_compte(id_, role, a_un_journal):
@@ -349,15 +287,13 @@ check("un joueur qui n'a jamais agi : a_un_journal faux",
       _d.get(2, {}).get('a_un_journal') is False, _d.get(2))
 check("un ancien admin redevenu joueur : a_un_journal vrai",
       _d.get(3, {}).get('a_un_journal') is True, _d.get(3))
-# Le legs et la suppression font retaper le handle : la liste doit le donner,
-# distinct du nom affiche (constat §13.1 du 2026-09-22).
+# La liste donne le handle, distinct du nom affiche.
 check("la liste donne le handle, à côté du nom affiché",
       _d.get(2, {}).get('handle') == 'handle2' and _d.get(2, {}).get('pseudo') == 'Nom 2',
       _d.get(2))
 _sql = ' '.join(s_ for s_, _ in cur.executed if 'FROM comptes c' in s_)
 
-# La liste est ouverte a tout porteur de gestion_comptes. Un admin simple ne
-# lit aucun journal : il n'a pas non plus a savoir qui en a un.
+# Un admin ne sait pas qui a un journal.
 cli, cur2, conn2 = monter([
     (r"FROM comptes c\s+LEFT JOIN joueurs j", [_ligne_compte(3, 'player', True)]),
     (r"FROM permissions_admin", [('gestion_comptes',)]),
@@ -378,32 +314,24 @@ _ac = open(os.path.join(_FRONT, 'templates', 'admin_comptes.html'), encoding='ut
 for _r in ("'/admin/comptes/<int:compte_id>/audit'", "'/admin/audit'", "'/admin/audit/export'"):
     check("le proxy %s existe" % _r, _r in _fp, _r)
 
-# L'export doit RELAYER le flux, pas le materialiser : `backend_request` lit
-# response.json(), ce qui chargerait tout le CSV en memoire cote frontend et
-# annulerait le streaming du backend.
+# Le proxy relaie le flux sans le charger en memoire.
 _exp = _fp[_fp.index('def proxy_journal_export'):]
 _exp = _exp[:_exp.index('\n@app.route')]
-# Sur le CORPS seul : la docstring de la fonction EXPLIQUE pourquoi elle
-# n'utilise pas `backend_request`, et la chercher dans le source brut la
-# retrouvait dans ce commentaire -- meme piege que sur admin_reglages.
+# Corps seul (la docstring mentionne backend_request).
 _exp_code = re.sub(r'(?s)""".*?"""', '', _exp)
 check("l'export frontend streame au lieu de materialiser",
       'stream_with_context' in _exp_code and 'backend_request' not in _exp_code,
       _exp_code[:160])
 
-# Le bouton ne doit pas mener a un 403 previsible (§B.0) : la regle de rang
-# est rejouee a l'affichage, et revrifiee cote backend.
+# Le bouton Logs est gate.
 check("le bouton Logs est gate, pas affiche a tous",
       'ouvrirJournal' in _ac and 'const lisible' in _ac)
-# Le gate frontend doit suivre la MEME regle que le backend : tout sauf le
-# superadmin. S'il gardait le rang strict, un chef_admin ne verrait pas le
-# bouton sur un pair alors que la route le lui rendrait.
+# Meme regle que le backend : tous sauf le superadmin.
 check("  et il exclut le superadmin, pas les pairs",
       "c.role !== 'superadmin'" in _ac)
 _lis = _ac[_ac.find('const lisible'):]
 _lis = _lis[:_lis.find(';')]
-# La route est @role_required(ROLE_CHEF_ADMIN) : un admin porteur de
-# gestion_comptes voyait le bouton, et le 403 le renvoyait a l'accueil.
+# Lecteur chef_admin ou superadmin seulement.
 check("  seulement pour un lecteur chef_admin ou superadmin",
       'PEUT_LIRE_JOURNAL' in _lis
       and "const PEUT_LIRE_JOURNAL = {{ 'true' if role_admin in ('chef_admin', 'superadmin')" in _ac,
@@ -411,25 +339,21 @@ check("  seulement pour un lecteur chef_admin ou superadmin",
 check("  et seulement sur un compte qui a un journal", 'c.a_un_journal' in _lis, _lis)
 check("l'onglet Logs existe, sous chef_admin/superadmin",
       "data-onglet=\"logs\"" in _ac and "role_admin in ('chef_admin', 'superadmin')" in _ac)
-# Meme invariant que les quatre autres onglets : onglet et panneau sous la
-# MEME condition, sinon on affiche un onglet dont le contenu n'existe pas.
+# Onglet et panneau sous la meme condition.
 check("l'onglet et son panneau portent la meme condition",
       _ac.count("role_admin in ('chef_admin', 'superadmin')") >= 2)
 
-# Le telechargement est un <a download> et non un fetch : un fetch chargerait
-# tout le fichier en memoire avant de le rendre.
+# Telechargement par lien, pas par fetch.
 check("le telechargement passe par un lien, pas un fetch",
       "dl.href = '/admin/audit/export'" in _ac and "dl.setAttribute('download'" in _ac)
 
-# Le piege du 19/09 : `fade-in` pose opacity:0 et attend `visible`, ajoutee
-# par un balayage qui ne tourne qu'au chargement de la page.
+# `fade-in` attend la classe `visible`.
 import re as _re
 for _m in _re.finditer(r"className\s*=\s*[^;]*fade-in[^;]*;", _ac):
     check("aucun element cree en JS ne porte fade-in sans visible",
           'visible' in _m.group(0), _m.group(0).strip())
 
-# Le drapeau qui repond a la question d'origine doit etre VISIBLE a l'ecran,
-# pas seulement present dans les donnees.
+# Le drapeau score_modifie est affiche.
 check("le drapeau score_modifie est montre a l'ecran",
       'score_modifie' in _ac)
 

@@ -1,12 +1,8 @@
-// Banc de la rouge : une rouge tiree sur une cible, un tuyau entre les deux. Elle
-// doit le contourner et garder sa cible (O-3, cf.
-// docs/banner/audit-decision-objets-2026-09-17.md).
+// Banc de la rouge : une rouge tiree sur une cible avec un tuyau entre les deux
+// doit le contourner et garder sa cible.
 //
 //     node tools/redshell.js                les situations, 300 graines chacune
 //     node tools/redshell.js --seeds 1000   plus d'echantillon
-//
-// Comme les autres outils il n'ecrit rien dans le moteur : il pose la scene a la
-// main, tire, et regarde ce que la rouge devient.
 import * as PH from '../src/engine/index.js';
 import CFG from '../src/config/index.js';
 import * as track from '../src/track.js';
@@ -38,7 +34,6 @@ function pct(n, total) {
     return total ? `${(100 * n / total).toFixed(1)} %` : '   -';
 }
 
-// Un kart remis en piste, lance, les mains vides.
 function put(cfg, kart, x, y) {
     kart.state = 'running';
     kart.worldX = x;
@@ -66,8 +61,8 @@ function put(cfg, kart, x, y) {
     kart.sight.at = -1e9;
 }
 
-// sc : { shooterY, targetY, gap, pipes: [{ at, y }] }. `gap` : distance de la
-// cible devant le tireur ; `at` : position du tuyau devant le tireur.
+// sc : { shooterY, targetY, gap, pipes: [{ at, y }] } ; `gap` et `at` sont
+// mesures devant le tireur.
 function fire(cfg, seed, sc) {
     const rng = makeRng(seed);
     const state = PH.createWorldState(cfg, rng, 0, null, null);
@@ -97,7 +92,7 @@ function fire(cfg, seed, sc) {
         const events = PH.stepPhysics(cfg, state, rng, t, DT);
         if (events.some(ev => ev.type === 'kartHit' && ev.kartId === target.id)) return 'touche';
         if (red.spent || red.isDead || state.items.indexOf(red) === -1) {
-            // Brisee sans toucher : sur un tuyau, si elle en est au contact.
+            // Brisee sans toucher sa cible : au contact d'un tuyau.
             for (const p of state.pipes) {
                 const dx = Math.abs(PH.getShortestDistance(cfg, red.worldX, p.worldX));
                 if (dx < cfg.pipe.hitbox.x * 1.5) return 'tuyau';

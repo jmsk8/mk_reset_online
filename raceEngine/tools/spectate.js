@@ -1,19 +1,12 @@
-// Le « test de l'arrivant ».
-//
-// Un spectateur qui se connecte en pleine course doit pouvoir reconstruire une
-// scene complete et juste a partir du seul `hello` — il n'a vu passer aucun
-// evenement. Cet outil le verifie mecaniquement :
-//
-//   1. une premiere connexion tient la course ouverte (sans elle, le service
-//      s'arrete faute de public) et laisse la course avancer ;
-//   2. une seconde connexion arrive apres coup et fait l'inventaire de ce
-//      qu'elle recoit, champ par champ.
+// Test de l'arrivant : une connexion en pleine course doit pouvoir reconstruire
+// une scene complete a partir du seul `hello`. Une premiere connexion garde la
+// course ouverte, une seconde arrive apres coup et inventorie ce qu'elle recoit.
 //
 //   node tools/spectate.js                  arrivee au bout de 5 s
 //   node tools/spectate.js --after 180      arrivee au bout de 3 minutes
 //   node tools/spectate.js --url ws://...   autre serveur
 //
-// Les points marques MANQUE sont ceux qui feraient afficher une scene fausse.
+// Les points marques MANQUE feraient afficher une scene fausse.
 
 import WebSocket from 'ws';
 
@@ -63,8 +56,6 @@ function audit(hello) {
     const takenBoxes = boxes.filter(b => b === 0);
     const items = snap.i || [];
 
-    // Les six points du §7 : chacun correspond a une lacune du protocole
-    // initial, qui aurait fait afficher une scene fausse a un arrivant.
     line(hello.karts && hello.karts.length > 0,
          'identite des karts', hello.karts ? hello.karts.map(k => k.char).join(', ') : '');
     line(hello.boxes && hello.boxes.length > 0,
@@ -105,9 +96,7 @@ function watch(ws) {
     let rtt = null;
     const started = Date.now();
 
-    // `bytes` compte le JSON une fois decompresse. Ce qui traverse vraiment le
-    // reseau se lit sur la socket : c'est le seul chiffre qui compte pour un
-    // spectateur en 4G.
+    // Octets reellement transmis, lus sur la socket (`bytes` est decompresse).
     const socket = ws._socket;
     const wireStart = socket ? socket.bytesRead : null;
 
@@ -143,15 +132,12 @@ function watch(ws) {
         console.log(`  ${events} evenements recus`);
         console.log(`  aller-retour : ${rtt === null ? 'pas de pong' : rtt + ' ms'}`);
 
-        // Onglet cache : le flux doit se taire, puis reprendre par un `hello`
-        // complet — un client qui revient est un arrivant comme un autre.
+        // Onglet cache : le flux s'arrete, puis reprend par un `hello` complet.
         console.log('\n── mise en arriere-plan ──\n');
         let afterHidden = 0;
         let helloBack = false;
 
-        // Un snapshot peut etre deja parti quand la demande arrive au serveur :
-        // a 10 Hz, la fenetre fait 100 ms. Seul ce qui arrive nettement apres
-        // compte comme un flux non coupe.
+        // Un snapshot peut etre deja parti a la demande (10 Hz) : marge de tolerance.
         const GRACE_MS = 300;
         let hiddenAt = 0;
 

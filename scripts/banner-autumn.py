@@ -1,36 +1,25 @@
 #!/usr/bin/env python3
-"""Dessine la banniere d'automne : le fond qui defile lentement et le premier
-plan qui suit la route.
+"""Dessine la banniere d'automne : fond, second plan et premier plan.
 
-    python3 scripts/banner-autumn.py                     # ecrit les deux PNG
+    python3 scripts/banner-autumn.py                     # ecrit les PNG
     python3 scripts/banner-autumn.py --preview DOSSIER   # + apercus composes
     python3 scripts/banner-autumn.py --theme desert --out assets-src/banners/automne-desert
 
-Trois themes, qui ne changent que le decor (arbres identiques) :
-    france   ciel abricot, forets lointaines, pres verts — celui du site
+Themes (seul le decor change, les arbres sont communs) :
+    france   ciel abricot, forets lointaines, pres verts (celui du site)
     bleu     le meme sous un ciel bleu, sans forets
-    desert   le premier jet, ciel orange et collines rousses, garde pour memoire.
-             Il prend les arbres actuels : le premier jet tel quel est dans
-             assets-src/banners/automne-desert/.
+    desert   premier jet, ciel orange et collines rousses (original dans
+             assets-src/banners/automne-desert/)
 
 Sortie : frontEnd/static/img/banners/autumn/
-    index-banner-autumn.png             le fond (moitie de la vitesse de la route)
-    index-banner-autumn-midground.png   le second plan (trois quarts)
-    index-banner-autumn-foreground.png  le premier plan (vitesse de la route)
+    index-banner-autumn.png             fond (moitie de la vitesse de la route)
+    index-banner-autumn-midground.png   second plan (trois quarts)
+    index-banner-autumn-foreground.png  premier plan (vitesse de la route)
 
-Les trois font 3840 x 285, comme ceux de l'ete : banner.css les etire sur la
-hauteur du ciel et les repete en X, la bande doit donc boucler sans couture.
-Tout ce qui est dessine ici est enroule modulo la largeur.
-
-Le fond part de index-banner-defaut.png : memes collines, memes ovales de
-nuages, au pixel pres. Seules les couleurs changent, et le ciel recoit de gros
-nuages. Nuages et premier plan sont dessines a 2x (un pixel « SNES » = 2 x 2
-pixels d'image) ; le premier plan porte trois arbres : un chene orange, un
-bouleau dore, un erable rouge. Le second plan, sur son propre calque, un rang
-des memes arbres plus petits, qui glissent derriere eux.
-
-Le dessin est deterministe (graines fixes) : relancer donne les memes fichiers.
-Pour retoucher, on change les tables ci-dessous et on relance.
+Images de 3840 x 285 repetees en X par banner.css : tout est dessine modulo la
+largeur. Le fond reprend index-banner-defaut.png avec d'autres couleurs et de
+gros nuages. Nuages et arbres sont dessines a 2x (pixel « SNES » = 2 x 2).
+Dessin deterministe (graines fixes).
 """
 import argparse
 import math
@@ -55,11 +44,10 @@ D_GROUND = (181, 248, 134)
 BLACK = (0, 0, 0)
 
 # ── Themes ──────────────────────────────────────────────────────────────────
-# Les couleurs du decor. Les arbres, les clotures et les feuilles n'en dependent
-# pas : ce sont eux qui disent l'automne.
+# Couleurs du decor ; arbres, clotures et feuilles sont communs a tous les themes.
 THEMES = {
     'france': {
-        # Un orange doux, abricot plutot que feu : celui du premier jet, en moins marque.
+        # Orange doux, abricot.
         'SKY_STOPS': [(0.0, (234, 150, 102)), (0.5, (244, 180, 130)),
                       (0.85, (250, 206, 160)), (1.0, (253, 222, 184))],
         'HILLS': [(118, 172, 82), (180, 102, 62), (166, 168, 72)],   # vert, roux, vert-jaune
@@ -77,7 +65,7 @@ THEMES = {
                        ('erable', 800, 0.46), ('bouleau', 1010, 0.55), ('chene', 1230, 0.50),
                        ('erable', 1335, 0.55), ('chene', 1565, 0.46), ('bouleau', 1745, 0.50)],
     },
-    'bleu': {     # le ciel bleu du 27/09 au matin, sans forets
+    'bleu': {  # ciel bleu, sans forets
 
         'SKY_STOPS': [(0.0, (62, 132, 210)), (0.5, (104, 168, 226)),
                       (0.85, (152, 200, 238)), (1.0, (188, 222, 244))],
@@ -110,7 +98,7 @@ THEMES = {
                  'leaves': 0.05},
         'HAZE': ((255, 212, 138), 0.0),
         'FOREST': False,
-        'BACK_TREES': [],       # le premier jet n'avait pas de second rang
+        'BACK_TREES': [],  # pas de second rang
     },
 }
 
@@ -132,7 +120,7 @@ def lerp(a, b, t):
 
 
 def sky_color(y, horizon=235):
-    # Paliers de 3 lignes, comme le degrade de l'ete : un degrade HDMA de SNES.
+    # Paliers de 3 lignes, comme le degrade de l'ete.
     t = min(1.0, (y // 3 * 3) / horizon)
     for (t0, c0), (t1, c1) in zip(SKY_STOPS, SKY_STOPS[1:]):
         if t <= t1:
@@ -188,12 +176,10 @@ def is_edge(mask, x, y):
 # ── Fond ────────────────────────────────────────────────────────────────────
 
 def cloud_sprite(rng, width, height):
-    """Un cumulus a fond plat, en pixels logiques -> {(x, y): couleur}.
+    """Cumulus a fond plat, en pixels logiques -> {(x, y): couleur}.
 
-    Une rangee de petites bosses posees sur la base, et par-dessus quelques
-    grosses, plus hautes au milieu. Chaque bosse de devant garde un liseré
-    clair la ou elle passe devant celle de derriere : c'est ce qui la detache,
-    comme les touffes des arbres."""
+    Petites bosses sur la base, grosses au milieu ; chaque bosse garde un
+    lisere clair devant celle de derriere."""
     base = height - 1
     blobs = []
     r0 = height * 0.36
@@ -352,10 +338,8 @@ def build_background():
     return out
 
 
-# Forets lointaines : des massifs bombes le long de l'horizon, devant les
-# collines, separes par des clairieres. Chaque massif est un tas de petites
-# couronnes rondes, plus haut en son coeur ; les couronnes du haut passent
-# derriere. Teintes d'automne melangees, voilees par la distance.
+# Forets lointaines : massifs de petites couronnes le long de l'horizon,
+# separes par des clairieres, teintes d'automne voilees par la distance.
 FOREST_FAMILIES = [   # (clair, moyen, sombre), poids
     (((236, 156, 82), (212, 118, 54), (156, 78, 42)), 3),     # orange
     (((212, 106, 66), (182, 74, 46), (128, 50, 36)), 2),      # rouille
@@ -369,7 +353,7 @@ FOREST_SCALE = 30                 # longueur du motif : plus court, des bois plu
 FOREST_THRESHOLD = 0.68           # une huitaine de petits bois bas sur la bande
 FOREST_HEIGHT = 4                 # hauteur logique du coeur d'un massif, au-dessus de 2 : plat
 FOREST_CROWN = (2.0, 3.2)         # rayon logique d'une couronne
-FOREST_MIN_WIDTH = 16             # un bois plus etroit ne serait qu'une poussiere
+FOREST_MIN_WIDTH = 16  # largeur logique minimale d'un bois
 HORIZON_L = 118                   # ligne logique de l'horizon (236 en image)
 
 
@@ -429,8 +413,7 @@ def forest_belt():
     for (x, y), i in owner.items():
         cx, cy, r, fam = crowns[i]
         nx, ny = (x + .5 - cx) / r, (y + .5 - cy) / r
-        # Une masse, pas des billes : la lumiere ne touche que le haut des
-        # couronnes qui depassent, l'ombre le dessous de celles de devant.
+        # Lumiere sur le haut des couronnes qui depassent, ombre sous celles de devant.
         up = owner.get((x, y - 1))
         below = owner.get((x, y + 1))
         if (below is not None and below > i) or ny > 0.62:
@@ -465,12 +448,8 @@ def oval_boxes(open_sky, kind):
 
 
 # ── Arbres ──────────────────────────────────────────────────────────────────
-# Un arbre se construit comme il pousse : un tronc, une charpente de branches
-# qui se ramifient, et des bouquets de feuilles au bout. C'est ce qui lui donne
-# des trouees, des branches qui se voient, une silhouette qui n'est pas une
-# boule. Le tout reste en pixels logiques (2 x 2 a l'image) et en six teintes
-# par feuillage : la palette d'une cartouche.
-#
+# Tronc, branches ramifiees et bouquets de feuilles au bout, en pixels
+# logiques (2 x 2 a l'image) et six teintes par feuillage.
 # Coordonnees du sprite : pied du tronc en bas au centre, a la ligne `BASE_Y`.
 # Les longueurs sont a l'echelle 1 ; `make_tree(nom, k)` les multiplie.
 #   trunk    (hauteur, demi-largeur au pied, au sommet, evasement)
@@ -602,9 +581,7 @@ def bark_colorer(birch, seed, marks):
 def make_tree(name, k=1.0, far=False):
     """-> (pixels {(x, y): couleur}, largeur, hauteur, ligne du pied, (centre, demi-largeur)).
 
-    `far` : l'arbre est au loin. La profondeur se lit au contraste autant qu'a
-    la taille : de pres, ombres creusees et lumieres franches, contour net ; au
-    loin, valeurs resserrees, grain effacee, contour fondu dans le feuillage."""
+    `far` : arbre lointain, contours adoucis."""
     spec = TREES[name]
     rng = random.Random(spec['seed'])
     seed = spec['seed']
@@ -633,15 +610,14 @@ def make_tree(name, k=1.0, far=False):
             ln = rng.uniform(bmin, bmax) * k * (0.6 + 0.4 * (y - y_from) / (y_to - y_from))
             grow(rng, segs, nodes, bx, by, a, ln, depth, decay, spread, thick * k)
             if y < y_to - 12:
-                # Du feuillage sur le tronc lui-meme, en quinconce : il ne
-                # doit se voir que par endroits, pas fendre la couronne.
+                # Feuillage sur le tronc, en quinconce.
                 nodes.append((bx - side * 3 * k, by - 3 * k, 0.85))
             side = -side
             y -= step
         nodes.append((x0 + lean, top_y - 2 * k, 1.0))
     else:
         for a in spec['limbs']:
-            # Les laterales partent plus bas que la centrale : pas de parapluie.
+            # Laterales plus basses que la centrale.
             ly = top_y + spec['stagger'] * k * abs(a - 90) / 70 * rng.uniform(0.7, 1.1)
             lx = x0 + lean * (base - ly) / th
             grow(rng, segs, nodes, lx, ly, a + rng.uniform(-6, 6),
@@ -767,9 +743,7 @@ def make_tree(name, k=1.0, far=False):
             img[(x, y)] = {BARK['light']: BARK['mid'], BARK['mid']: BARK['dark'],
                            BIRCH['light']: BIRCH['mid'], BIRCH['mid']: BIRCH['dark']}.get(c, c)
 
-    # Pas de feuilles en l'air : figees dans une image qui defile, elles se
-    # lisaient comme des poussieres. Des feuilles qui tombent seraient une
-    # animation, pas du decor.
+    # Au loin, contour et stries fondus dans le bois.
     if far:
         soft = {BARK['outline']: BARK['dark'], BARK['streak']: BARK['dark'],
                 BIRCH['outline']: BIRCH['dark']}
@@ -780,9 +754,8 @@ def make_tree(name, k=1.0, far=False):
 # ── Premier plan ────────────────────────────────────────────────────────────
 
 # (arbre, x logique du pied) et (debut, fin) des clotures, sur 1920 unites.
-# Les grands arbres, de gauche a droite. Leurs positions ne se reglent pas a la
-# main : `spread_front` les espace a intervalles egaux d'apres la largeur reelle
-# des couronnes, pour qu'ils ne se chevauchent jamais, quelle que soit l'echelle.
+# Grands arbres de gauche a droite ; `spread_front` les espace d'apres la
+# largeur reelle des couronnes.
 PLACEMENT = ['chene', 'bouleau', 'erable', 'bouleau', 'chene', 'erable', 'bouleau', 'erable']
 FIRST_FOOT = 150
 FENCES = [(400, 590), (1180, 1380), (1700, 1780)]
@@ -799,9 +772,8 @@ def build_foreground():
         if 0 <= y < LH:
             layer[(x % LW, y)] = c
 
-    # Le second plan : les memes arbres, plus petits, plantes plus haut dans le
-    # pre et voiles de la couleur de l'horizon. Sur leur propre calque, qui
-    # passe sous celui-ci : ils glissent derriere clotures et grands arbres.
+    # Second plan : memes arbres, plus petits, plus haut dans le pre et voiles
+    # de la couleur de l'horizon, sur leur propre calque.
     back, shadows = {}, []
     haze, amount = HAZE
     for name, foot, k in BACK_TREES:
@@ -840,8 +812,7 @@ def build_foreground():
                 if rng.random() < 0.6:
                     put(x, y, pal[rng.choice((1, 2, 2, 3, 4))])
 
-    # La bande de sol, a pleine resolution : 24 lignes, de 259 a 282, comme le
-    # sable de l'ete. Dessinee en blocs de 2 pour rester dans la grille SNES.
+    # Bande de sol : 24 lignes (259 a 282) comme le sable de l'ete, en blocs de 2.
     fg = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     fp = fg.load()
     for ly in range(12):
@@ -875,9 +846,7 @@ def build_foreground():
     paint2x(layer, fp)
     mid = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     mp = mid.load()
-    # Celle du second rang tombe sur le pre du fond, qui defile a une autre
-    # vitesse : on la peint de la couleur du pre assombrie, rangee par rangee.
-    # Ses bandes etant horizontales, l'ombre ne glisse pas sur lui.
+    # Ombre du second rang sur le pre du fond, en couleur du pre assombrie.
     for cx, rx in shadows:
         cast_shadow(mp, cx * 2 + rx * 0.5, BACK_FOOT * 2 + 1, rx * 1.6, 5,
                     lambda x, y, c: tuple(round(v * 0.88) for v in FIELD[field_band(y)]) + (255,))
@@ -907,15 +876,11 @@ def spread_front(sprites):
 
 
 def cast_shadow(px, cx, cy, rx, ry, shade):
-    """Ellipse d'ombre au sol, en blocs de 2, bord trame.
-
-    Decidee bloc par bloc, pas pixel par pixel : un pixel seul au bord de
-    l'ellipse flottait hors de la grille SNES."""
+    """Ellipse d'ombre au sol, en blocs de 2 (grille SNES), bord trame."""
     for by in range(int(cy - ry) // 2, int(cy + ry) // 2 + 1):
         for bx in range(int(cx - rx) // 2, int(cx + rx) // 2 + 1):
             d = ((bx * 2 + 1 - cx) / rx) ** 2 + ((by * 2 + 1 - cy) / ry) ** 2
-            # Trame au bord seulement si l'ombre est assez haute pour la porter :
-            # sur trois blocs, elle ne laisse que des pixels detaches.
+            # Trame au bord seulement pour les ombres assez hautes.
             if d > 1 or (ry >= 8 and d > 0.62 and (bx + by) % 2):
                 continue
             for y in (by * 2, by * 2 + 1):

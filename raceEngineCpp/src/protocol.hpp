@@ -1,13 +1,8 @@
-// Le contrat serveur -> client.
-// <- raceEngine/src/protocol.js, dont docs/banner/protocole.md donne la carte.
+// Contrat serveur -> client.
+// <- raceEngine/src/protocol.js
 //
-// LA REGLE QUI GOUVERNE TOUT CE FICHIER : LE SNAPSHOT FAIT FOI. Un spectateur
-// qui se connecte a la 187e seconde n'a vu passer aucun evenement et doit
-// pourtant afficher une scene complete et juste.
-//
-// Un champ manquant ne produit pas une erreur cote client : il produit un rendu
-// FAUX et SILENCIEUX (plan §5). C'est la partie qui ne souffre aucune
-// approximation.
+// Le snapshot fait foi : un spectateur qui arrive en cours de course doit
+// pouvoir afficher une scene complete sans avoir recu d'evenement.
 
 #pragma once
 
@@ -20,36 +15,29 @@
 
 namespace protocol {
 
-// Monter cette version impose de la monter des DEUX COTES a la fois
-// (`raceEngine/src/protocol.js` et `frontEnd/.../interpolate.js`). Un decalage
-// et le client appelle `giveUp()` : decor seul, pastille rouge, et plus aucune
-// tentative de reconnexion (piege P-1).
+// A changer en meme temps que `raceEngine/src/protocol.js` et
+// `frontEnd/.../interpolate.js` : en cas d'ecart, le client abandonne.
 inline constexpr int PROTOCOL_VERSION = 11;
 
-// Le vote de redemarrage : [voix posees, spectateurs]. Vient du service, seul a
-// connaitre les connexions — l'etat du monde ne les voit pas.
+// Vote de redemarrage : [voix posees, spectateurs], fourni par le service.
 struct VoteTally {
     int votes = 0;
     int watchers = 0;
 };
 
-// Le snapshot, dix fois par seconde. Serialise UNE FOIS pour tout le monde :
-// c'est pourquoi il ne peut porter que le total des votes, jamais celui d'un
-// spectateur en particulier.
+// Snapshot, dix fois par seconde, serialise une fois pour tous : il ne porte
+// que le total des votes.
 std::string build_snapshot(const config::Config& cfg, const engine::WorldState& state,
                            double simTime, VoteTally vote,
                            const std::vector<engine::Event>& events);
 
-// Une fois par connexion. Porte toute la geometrie et les constantes dont le
-// rendu a besoin : le client n'en garde AUCUNE copie, c'est ce qui evite qu'un
-// reglage de gameplay change d'un cote sans l'autre.
+// Une fois par connexion : geometrie et constantes du rendu (le client n'en
+// garde aucune copie).
 std::string build_hello(const config::Config& cfg, const engine::WorldState& state,
                         double simTime, double t0, double serverTime, VoteTally vote,
                         const std::vector<engine::Event>& events);
 
-// Reponse a un `ping` : l'horodatage client renvoye TEL QUEL, et l'heure
-// serveur. C'est ce qui cale l'horloge partagee — aucune date locale n'entre
-// dans un calcul commun, celles des visiteurs sont fausses.
+// Reponse a un `ping` : horodatage client renvoye tel quel et heure serveur.
 std::string build_pong(const std::string& clientToken, double serverTime);
 
 } // namespace protocol

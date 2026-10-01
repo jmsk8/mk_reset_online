@@ -1,23 +1,12 @@
-// La camera de rendu : ou le monde se trouve a l'ecran.
-//
-// Le serveur envoie SA camera ; celle-ci la suit en douceur, ou s'en detache
-// quand le spectateur a choisi de suivre un kart en particulier.
+// Camera de rendu : suit celle du serveur, ou le kart choisi par le spectateur.
 
-// Kart suivi par la camera, ou null pour la camera par defaut. Purement local :
-// deux spectateurs peuvent regarder des karts differents, ils voient la meme
-// course sous un autre angle. Cet etat ne part jamais au serveur.
+// Kart suivi, ou null pour la camera par defaut (local au spectateur).
 let focusedKartId = null;
 
-// Course figee. Aussi local que la camera : le serveur continue de courir et
-// de diffuser, c'est notre rendu seul qui s'arrete sur l'image. Rien ne part
-// donc au serveur — un spectateur qui met en pause ne fige la course de
-// personne d'autre, et la reprise le remet sur le direct, pas la ou il l'avait
-// laissee. C'est le meme parti que l'onglet endormi : « la course continue sans
-// nous, il n'y a rien a reprendre ».
+// Course figee, localement seulement : la reprise revient au direct.
 let racePaused = false;
 
-// Camera effectivement utilisee pour le rendu. Elle vaut celle du serveur en
-// mode par defaut, et la position du kart suivi sinon.
+// Camera utilisee pour le rendu.
 let renderCameraX = 0;
 let renderBgCameraX = 0;
 let lastFocusCameraX = null;
@@ -37,19 +26,12 @@ function shortestDelta(from, to) {
     return delta;
 }
 
-// Le cadrage du depart, sur un ecran etroit.
-//
-// Le serveur gare sa camera face a la ligne, et une seule camera pour tous : un
-// PC voit la grille entiere de part et d'autre, un telephone (~650 unites
-// visibles) n'en voit que la moitie avant. Le recadrage est donc local : la vue
-// recule, juste assez pour la grille, sans jamais laisser la ligne sortir — elle
-// reste a `START_LINE_MARGIN` du bord droit, bande a damier et Lakitu compris.
-// Sur un ecran assez large, le decalage vaut zero et rien ne change.
+// Cadrage du depart sur ecran etroit : la vue recule pour montrer la grille,
+// en gardant la ligne a START_LINE_MARGIN du bord droit.
 const START_LINE_MARGIN = 70;
 const START_BACK_PAD = 10;
 
-// Au feu vert, le decalage fond au lieu de sauter : la camera du serveur part
-// en defilement, et un saut de plusieurs centaines d'unites se verrait.
+// Au feu vert, le decalage s'annule progressivement.
 const START_SHIFT_RELEASE_MS = 3000;
 
 let startShift = 0;
@@ -59,8 +41,7 @@ function measureStartShift(screenWidth) {
     const half = screenWidth / 2;
     const camX = worldState.cameraX;
 
-    // Le fond de grille lu sur les karts eux-memes : sa profondeur est un
-    // reglage du serveur, que le client ne recopie pas.
+    // Fond de grille lu sur les karts.
     let back = 0;
     for (const kart of worldState.karts) {
         const behind = shortestDelta(kart.worldX, camX) + kartDrawHalfWidth(kart);
@@ -73,7 +54,7 @@ function measureStartShift(screenWidth) {
     return Math.max(0, Math.min(needed, allowed));
 }
 
-// Ce qu'il faut retrancher a la camera du serveur, maintenant.
+// Decalage a retrancher a la camera du serveur.
 function startFrameShift(gameNow, screenWidth) {
     const phase = worldState.phase;
 
@@ -89,7 +70,7 @@ function startFrameShift(gameNow, screenWidth) {
     }
 
     if (startShiftReleasedAt === null) startShiftReleasedAt = gameNow;
-    // Horloge recalee en arriere (cf. `stepClock`) : on repart de la.
+    // Horloge recalee en arriere (voir stepClock).
     if (startShiftReleasedAt > gameNow) startShiftReleasedAt = gameNow;
 
     const t = (gameNow - startShiftReleasedAt) / START_SHIFT_RELEASE_MS;
@@ -102,21 +83,18 @@ function startFrameShift(gameNow, screenWidth) {
 
 function updateRenderCamera(gameNow, screenWidth) {
     const kart = focusedKartId === null ? null : worldState.kartsById[focusedKartId];
-    // Mesure meme quand un kart est suivi : le fondu part du feu vert, pas du
-    // retour a la vue par defaut.
+    // Calcule meme quand un kart est suivi : le fondu part du feu vert.
     const shift = startFrameShift(gameNow, screenWidth);
 
     if (!kart) {
         renderCameraX = wrapWorld(worldState.cameraX - shift);
-        // Le fond recule de moitie, comme il avance de moitie.
+        // Le fond se deplace a mi-vitesse.
         renderBgCameraX = wrapWorld(worldState.bgCameraX - shift / 2);
         lastFocusCameraX = null;
         return;
     }
 
-    // Le fond ne peut pas garder sa propre vitesse : il avance de la moitie du
-    // deplacement de la camera, sinon decor et route se desolidarisent des que
-    // celle-ci change d'allure.
+    // Le fond avance de la moitie du deplacement de la camera.
     if (lastFocusCameraX === null) {
         renderBgCameraX = worldState.bgCameraX;
         lastFocusCameraX = worldState.cameraX;

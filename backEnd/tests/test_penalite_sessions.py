@@ -1,37 +1,13 @@
-"""Penalite d'absence comptee en SESSIONS et non plus en jours.
+"""Penalite d'absence comptee en sessions loupees.
 
-Phase 3 de docs/plan-sessions-tournois.md (2026-09-15), decisions 7 et 8.
-
-Trois bascules verifiees ici :
-
-1. **La presence se mesure par session.** Jouer un seul tournoi d'une session
-   suffit a compter present pour toute la session. Remplace la reconstruction
-   « qui etait la le meme jour » par comparaison de dates.
-
-2. **Le declenchement se mesure en sessions loupees.** `consecutive_missed`
-   decide seul : plus de lecture de dates ni de `ghost_log`. Consequence VOULUE
-   -- une periode sans session ne penalise personne.
-
-3. **Le comptage des awards lit `session_id`.** Deux lobbies lies comptent pour
-   une occasion de jeu dans le denominateur des ratios de participation.
-
-**F-4, le point que le plan exigeait de couvrir AVANT de coder** : la penalite
-et le compteur sont desormais COUPLES (le compteur decide de la penalite).
-Decrementer le compteur sans restaurer le sigma correspondant ferait franchir
-deux fois le meme palier et appliquerait la penalite en double. Le cycle
-ajout -> penalite -> annulation -> re-ajout doit donc etre neutre. La section
-« Cycle d'annulation » verifie l'ordre qui garantit cette neutralite.
-
-Limite du banc d'essai : psycopg2 et trueskill sont neutralises, le SQL n'est
-pas valide contre Postgres. `penalite_due` est en revanche une fonction pure,
-donc testee exhaustivement et sans approximation.
+Presence par session, declenchement par consecutive_missed, denominateur des
+awards par session, et cycle ajout -> penalite -> annulation neutre.
 """
 from harness import *
 
 RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
-# install_db pose le faux module `db` dont services.py a besoin a l'import
-# (sans lui, psycopg2.pool est introuvable puisque psycopg2 est neutralise).
+# Faux module `db` requis a l'import de services.py.
 install_db([])
 recharger()
 for _m in ('services', 'cache'):
@@ -42,8 +18,7 @@ from services import penalite_due
 # ───────────────────────────────────────────────────────────────────────────
 print("\n=== penalite_due : le palier de declenchement (decision 8) ===")
 
-# Reglages par defaut : seuil 4, intervalle 1. Conversion des anciens 28j / 7j
-# au rythme observe d'une session par semaine.
+# Reglages par defaut : seuil 4, intervalle 1.
 attendu_4_1 = {1: False, 2: False, 3: False, 4: True, 5: True, 6: True, 7: True}
 for loupees, doit in attendu_4_1.items():
     check("seuil=4 int=1 : %d session(s) loupee(s) -> %s"
@@ -59,8 +34,7 @@ for loupees, doit in attendu_2_3.items():
 check("0 session loupee ne penalise jamais", penalite_due(0, 1, 1) is False, None)
 check("le palier exact declenche (seuil=1)", penalite_due(1, 1, 1) is True, None)
 
-# La configuration est modifiable depuis l'interface : un intervalle a 0 ne doit
-# pas lever ZeroDivisionError sur le chemin chaud d'ajout de tournoi.
+# Intervalle modifiable depuis l'admin : pas de division par zero.
 check("intervalle 0 ne divise pas par zero", penalite_due(5, 2, 0) is True,
       "doit se comporter comme intervalle=1")
 check("intervalle negatif ne leve pas", penalite_due(5, 2, -3) is True, None)
@@ -70,7 +44,6 @@ print("\n=== Aucune notion de temps ne subsiste dans le declenchement ===")
 
 src_admin = open(os.path.join(RACINE, 'routes_admin.py'), encoding='utf-8').read()
 
-# C'est la bascule de fond : le calendrier ne doit plus intervenir.
 check("plus de calcul d'ecart de dates (date_tournoi - ref)",
       '(date_tournoi - ref).days' not in src_admin, None)
 check("plus de lecture de la derniere date de jeu (last_played)",
@@ -83,8 +56,7 @@ check("les constantes en jours ne sont plus importees",
 check("le declenchement passe par penalite_due",
       'penalite_due(new_missed, seuil_sessions, intervalle_sessions)' in src_admin, None)
 
-# La ligue de derniere apparition reste lue : elle determine QUI est concerne
-# en mode ligue, ce qui n'a rien a voir avec un delai.
+# La ligue de derniere apparition reste lue (mode ligue).
 check("le filtrage par ligue est conserve",
       'last_played_ligue' in src_admin, None)
 
@@ -101,13 +73,11 @@ check("les presents sont cherches par session_id",
       'WHERE t.session_id = %s AND t.id <> %s' in src_admin, None)
 check("la variable dit ce qu'elle contient (deja_presents)",
       'deja_presents = {r[0] for r in cur.fetchall()}' in src_admin, None)
-# Un present dans la session ne prend pas d'absence : c'est la regle 5 du plan.
 check("un present dans la session n'est pas incremente",
       'compte_absent = not (present_dans_session or session_deja_comptee)' in src_admin
       and 'new_missed = (missed or 0) + 1 if compte_absent else (missed or 0)' in src_admin,
       None)
-# Un absent de tous les lobbies ne prend qu'UNE absence pour la session : le
-# premier tournoi la compte, les lobbies lies ensuite n'y touchent plus (27/09).
+# Un absent de tous les lobbies ne prend qu'une absence par session.
 check("un second tournoi de la session ne recompte pas les absents",
       'session_deja_comptee = session_a_un_autre_tournoi(' in src_admin, None)
 check("la penalite de sigma suit la meme regle que le compteur",
@@ -116,10 +86,7 @@ check("les annulations ne retirent l'absence que si la session disparait",
       src_admin.count('if not session_a_un_autre_tournoi(cur, tsession') == 2, None)
 
 
-# Le gain de la decision 10 : la session est connue AVANT le calcul, donc la
-# penalite est juste du premier coup. Si le calcul des presences passait avant
-# la fusion, il lirait la session provisoire (ce tournoi seul) et compterait
-# absents les joueurs de l'autre lobby -- qu'il faudrait ensuite rembourser.
+# La session est connue avant le calcul des presences.
 bloc_ajout = src_admin[src_admin.index('def add_tournament'):
                        src_admin.index('def verifier_session_tournoi')]
 i_fusion = bloc_ajout.find('session_id = fusionner_sessions(cur')
@@ -161,8 +128,7 @@ check("session_id est bien selectionne par la requete de saison",
 check("les sessions sont collectees depuis les lignes",
       'sessions_vues.add(row[12])' in src_services, None)
 
-# Le denominateur nourrit les seuils d'eligibilite aux awards : si la colonne
-# ajoutee decalait un index existant, les stats seraient silencieusement fausses.
+# Le denominateur des awards ne doit pas decaler les index existants.
 requete = src_services[src_services.index('def _aggregate_season_stats'):]
 requete = requete[:requete.index('params = [d_debut, d_fin]')]
 check("session_id est ajoutee EN FIN de SELECT (aucun index decale)",
@@ -171,33 +137,22 @@ check("session_id est ajoutee EN FIN de SELECT (aucun index decale)",
 
 print("\n=== Le compteur n'est modifiable que par le superadmin (decision 8) ===")
 
-# Tant que tout detenteur de `gestion_joueurs` pouvait le saisir, le compteur ne
-# pouvait pas servir de declencheur fiable : une edition de fiche l'ecrasait par
-# la valeur du formulaire (28 compteurs perimes constates le 15/09).
-#
-# Le superadmin garde la main : il faut une porte de sortie pour rattraper un
-# compteur faux. Capacite de role, jamais une permission delegable.
+# consecutive_missed n'est modifiable que par le superadmin.
 bloc_edit = src_admin[src_admin.index('def api_update_joueur'):]
 bloc_edit = bloc_edit[:bloc_edit.index('\n@')]
 
 check("la modification est reservee au superadmin",
       "g.compte['role'] == ROLE_SUPERADMIN" in bloc_edit, None)
-# `in data` : ne pas ecraser le compteur quand le payload ne le porte pas.
 check("le compteur n'est touche que s'il est explicitement fourni",
       "'consecutive_missed' in data" in bloc_edit, None)
 check("deux UPDATE distincts selon le droit, pas de colonne conditionnelle en SQL",
       bloc_edit.count('UPDATE Joueurs SET nom=%s') == 2, None)
 check("un compteur negatif est impossible",
       "max(0, int(data['consecutive_missed']))" in bloc_edit, None)
-check("la raison est documentee dans le code",
-      'decision 8' in bloc_edit and 'recompter_absences' in bloc_edit, None)
 
 gestion_js = open(os.path.join(RACINE, '..', 'frontEnd', 'static', 'js', 'gestion.js'),
                   encoding='utf-8').read()
-# Envoyer un champ que le serveur ignore donnerait l'illusion d'une modification.
-# Depuis le 2026-09-17 la regle vaut pour TOUS les champs de la fiche (un droit
-# par geste) : `siActif` porte la verification, et le compteur passe par lui
-# comme les autres au lieu d'avoir son propre `if`.
+# Le JS n'envoie que les champs actifs.
 check("le JS n'envoie le compteur que si le champ est actif",
       "if (champ && !champ.disabled) data[cle]" in gestion_js
       and "siActif('editMissed', 'consecutive_missed'" in gestion_js, None)
@@ -215,9 +170,7 @@ check("le superadmin est averti de l'effet sur la penalite",
 
 print("\n=== Les courbes d'evolution comptent aussi des sessions (R-session-6) ===")
 
-# Ces deux fonctions appliquaient MIN_PARTICIPATION_RATIO a un compte de
-# tournois BRUTS, quand _aggregate_season_stats l'applique a des sessions :
-# deux seuils de participation divergents sur la meme saison.
+# Seuil de participation compte en sessions, comme _aggregate_season_stats.
 for fn in ('compute_ip_evolution', 'compute_position_evolution'):
     bloc = src_services[src_services.index('def %s' % fn):]
     bloc = bloc[:bloc.index('\ndef ')]
@@ -225,8 +178,7 @@ for fn in ('compute_ip_evolution', 'compute_position_evolution'):
           'total_tournois = len({sid for' in bloc, None)
     check("%s : session_id est selectionnee" % fn.split('_')[1],
           't.session_id' in bloc, None)
-    # Les courbes ont un point par TOURNOI : les indexer sur un compte de
-    # sessions les decalerait silencieusement.
+    # Les courbes restent indexees par tournoi.
     check("%s : les courbes restent indexees sur les tournois" % fn.split('_')[1],
           'for idx in range(len(tournoi_ids)):' in bloc
           and 'for idx in range(total_tournois):' not in bloc, None)
@@ -234,9 +186,7 @@ for fn in ('compute_ip_evolution', 'compute_position_evolution'):
 
 print("\n=== F-4 : le cycle d'annulation reste coherent ===")
 
-# Le couplage compteur/penalite rend l'ordre critique. Si annuler_absences
-# decrementait le compteur AVANT que le sigma soit restaure, le palier pourrait
-# etre refranchi au tournoi suivant et la penalite appliquee deux fois.
+# Le compteur ne doit pas etre decremente avant la restauration du sigma.
 def corps(fn):
     d = src_admin.find('def %s' % fn)
     if d == -1:
@@ -245,9 +195,7 @@ def corps(fn):
     return src_admin[d:f if f != -1 else len(src_admin)]
 
 
-# revert annule le DERNIER tournoi : restaurer old_sigma y est exact. delete
-# peut viser un tournoi ancien : il retire penalty_applied, pour ne pas effacer
-# ce qui a bouge depuis (27/09).
+# revert restaure old_sigma (dernier tournoi) ; delete retire penalty_applied.
 for fn, motif_sigma, source in (
         ('revert_last_tournament', 'SET sigma = data.sigma', 'old_sigma FROM ghost_log'),
         ('delete_tournament', 'SET sigma = GREATEST(j.sigma - data.retrait',
@@ -261,16 +209,14 @@ for fn, motif_sigma, source in (
     check("%s : le sigma vient de ghost_log (%s)" % (fn.split('_')[0], source),
           source in c, None)
 
-# La regle de decrement ne doit vivre qu'a un seul endroit : c'est la lecon de
-# la Phase 0, ou les deux routes avaient diverge.
+# Une seule implementation du decrement.
 check("les deux routes partagent annuler_absences",
       src_admin.count('annuler_absences(cur') == 2,
       src_admin.count('annuler_absences(cur'))
 check("aucun UPDATE global de consecutive_missed n'est revenu",
       'UPDATE Joueurs SET consecutive_missed = GREATEST' not in src_admin, None)
 
-# annuler_absences decremente de 1 : exactement ce que l'ajout avait incremente.
-# Une penalite annulee ne doit donc pas laisser le compteur au-dessus du palier.
+# Le decrement compense exactement l'increment de l'ajout.
 corps_annuler = src_services[src_services.index('def annuler_absences('):]
 corps_annuler = corps_annuler[:corps_annuler.index('\ndef ')]
 check("annuler_absences decremente de 1 exactement",
@@ -283,14 +229,11 @@ check("elle recalcule is_ranked par rapport au seuil",
 
 print("\n=== Le script de recomptage des absences ===")
 
-# Ajoute apres avoir constate (15/09) que 28 joueurs portaient un compteur
-# perime : des joueurs inactifs depuis des mois etaient a zero, sequelle du
-# defaut de revert_last_tournament (decrement global sans WHERE).
+# Script de recalcul des compteurs d'absence.
 SCRIPT = os.path.join(RACINE, '..', 'scripts', 'recompter_absences.py')
 script = open(SCRIPT, encoding='utf-8').read()
 
-# L'exigence centrale : remettre un compteur d'aplomb, pas rejouer l'historique.
-# Hors docstring : aucune ecriture de sigma nulle part dans le code.
+# Le script ne doit jamais ecrire de sigma (docstring exclue).
 corps_script = script.split('"""', 2)[-1]
 check("le script ne contient aucune ecriture de sigma",
       'SET sigma' not in corps_script and 'sigma =' not in corps_script, None)
@@ -299,7 +242,6 @@ check("le script n'ecrit jamais dans ghost_log",
 check("il n'ecrit que consecutive_missed et is_ranked",
       'SET consecutive_missed = data.missed, is_ranked = data.ranked' in script, None)
 
-# La regle de ligue donnee par l'utilisateur.
 check("une session sans ligue concerne tout le monde",
       'ligue_session is None or ligue_session in mes_ligues' in script, None)
 check("un joueur sans ligue compte sur la ligue la plus faible",
@@ -307,8 +249,7 @@ check("un joueur sans ligue compte sur la ligue la plus faible",
 check("l'appartenance est deduite des participations, pas de joueurs.ligue_id",
       'ligues_jouees' in script and 'j.ligue_id' not in script, None)
 
-# Comparer les dates ne suffit pas : deux sessions distinctes peuvent tomber le
-# meme jour (lobbies non lies), et « date > derniere » les exclurait toutes.
+# Deux sessions distinctes peuvent tomber le meme jour.
 check("le script compare les sessions, pas seulement les dates",
       'sid not in mes_sessions' in script, None)
 check("les joueurs sans aucune participation sont ignores",
@@ -316,7 +257,6 @@ check("les joueurs sans aucune participation sont ignores",
 check("is_ranked est recalcule par rapport au seuil",
       'manquees < seuil' in script, None)
 
-# Un script qui ecrit dans le classement doit pouvoir etre simule d'abord.
 check("un mode simulation existe",
       "'--dry-run' in sys.argv" in script, None)
 check("le mode simulation n'ecrit rien",
@@ -341,7 +281,7 @@ check("elle cree les deux nouvelles cles",
 check("elle supprime les anciennes cles (sinon un admin les reglerait en vain)",
       "DELETE FROM public.Configuration" in mig
       and "'ghost_threshold_days', 'ghost_interval_days'" in mig, None)
-# Une base ou l'admin avait regle 56 jours doit arriver a 8 sessions, pas a 4.
+# La conversion part de la valeur existante.
 check("elle convertit la valeur existante plutot que d'imposer une constante",
       "/ 7 FROM public.Configuration" in mig, None)
 check("elle plancher a 1 (un seuil nul penaliserait un joueur present)",
@@ -375,7 +315,6 @@ check("les anciens champs en jours ont disparu",
       and 'configGhostIntervalDays' not in reglages, None)
 check("le libelle dit « sessions loupees »",
       'sessions loupées' in reglages, None)
-# Sans explication, un admin reglerait « 4 » en croyant compter des jours.
 check("une note explique ce qu'est une session",
       'occasion de jeu' in reglages, None)
 check("la note previent qu'une periode sans session ne penalise pas",

@@ -1,20 +1,5 @@
-"""Tiers dynamiques (Partie B, docs/tableau-seuils-tiers-plan.md), 2026-09-13.
-
-Historique : les seuils S/A/B ont d'abord ete rendus reglables via 3
-coefficients (tier_k_s/a/b) dans `configuration` (Partie A). Ce fichier
-couvrait cette version -- desormais obsolete : les seuils S/A/B/C fixes sont
-remplaces par une liste de tiers geree par l'admin (nom libre, couleur, seuil
-en ecart-type, rang), stockee dans une table dediee `tiers`. Avec le seed par
-defaut (S/A/B/C, memes coefficients qu'avant), le comportement reste
-identique -- aucune regression tant que personne ne touche au panneau.
-
-Ces tests verifient : la non-regression des defauts au niveau de
-tier_for_score/tier_thresholds/load_tiers, le CRUD complet (creation,
-renommage, changement de seuil, suppression, reordonnancement, reset),
-les invariants du plancher (toujours le tier de plus petit rang, sans
-seuil bas), le nom 'U' reserve, la permission gestion_config, le recalcul
-immediat des tiers apres chaque ecriture, et la route de preview.
-"""
+"""Tiers dynamiques : defauts, CRUD, invariants du plancher, nom 'U' reserve,
+permission gestion_config, recalcul apres ecriture et route de preview."""
 from harness import *
 from flask import Flask
 
@@ -22,8 +7,7 @@ RACINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 
 
 def monter(plan, role='admin', permissions=()):
-    """Meme montage que test_scission_permissions.py : voir ce fichier pour
-    le detail de la mecanique (permissions_admin scriptee par callable)."""
+    """Meme montage que test_scission_permissions.py."""
     accordees = set(permissions)
     plan = list(plan) + [
         (r"SELECT 1 FROM permissions_admin",
@@ -59,7 +43,7 @@ TIERS_DEFAUT = [
 print("\n=== Non-regression : le seed par defaut reproduit l'ancien comportement ===")
 sys.modules.pop('services', None)
 sys.modules.pop('constants', None)
-install_db([])  # services.py importe db au chargement : le faux module d'abord
+install_db([])  # services.py importe db au chargement
 import services
 
 mean, stdev = 10.0, 2.0
@@ -118,9 +102,7 @@ check("200 pour un simple joueur connecte (pas un secret)", r.status_code == 200
 check("renvoie la liste triee par rang decroissant",
       [t['nom'] for t in r.get_json()] == ['S', 'A'], r.get_json())
 
-# Regression du 13/09 : load_tiers() omettait `id`, donc le panneau admin
-# voyait tous les tiers avec id === undefined -- le drag ne deplacait que le
-# premier, et l'enregistrement postait sur /admin/tiers/undefined.
+# Chaque tier doit exposer son id.
 check("CHAQUE tier expose son id (le panneau admin en depend)",
       all(isinstance(t.get('id'), int) for t in r.get_json()), r.get_json())
 check("  et les ids sont ceux de la base, pas des indices",
@@ -187,11 +169,7 @@ check("nom deja existant -> 400", r.status_code == 400, (r.status_code, r.get_js
 
 
 print("\n=== PUT /admin/tiers/<id> : donner un seuil a l'actuel plancher est ACCEPTE ===")
-# Regression du 13/09 (capture utilisateur) : ajouter un tier « D » sous le
-# plancher « C » echouait avec « Le tier plancher n'a pas de seuil bas ».
-# Le panneau envoie ses PUT AVANT le /reorder, donc au moment du PUT sur C,
-# la base le voit encore comme plancher alors qu'il ne l'est deja plus dans
-# l'intention de l'admin. Le refus bloquait tout le scenario.
+# Ajouter un tier sous le plancher : le PUT precede le /reorder.
 cli, cur, conn = monter([
     SESSION('admin'),
     (r"SELECT id, rang FROM tiers WHERE id = %s", (4, 0)),
@@ -241,10 +219,7 @@ _ra._appliquer_plancher(_c)
 check("  plancher deja correct -> aucune ecriture",
       not any('UPDATE' in s for s, _ in _c.executed), _c.executed)
 
-# c) LE point de la regression du 14/09 : un tier sans seuil qui n'est pas le
-#    plancher ne doit PAS se voir attribuer une valeur fabriquee. L'ancienne
-#    version lui posait `voisin + 1.0`, ce qui le propulsait au milieu du
-#    classement (observe : un tier a 1.0 au-dessus de tiers superieurs).
+# c) un tier sans seuil qui n'est pas le plancher ne recoit pas de valeur inventee.
 _c = FakeCursor([(r"SELECT id, seuil_k FROM tiers ORDER BY rang ASC LIMIT 1", (9, None))])
 _ra._appliquer_plancher(_c)
 check("aucune valeur de seuil n'est inventee pour les autres tiers",
@@ -310,8 +285,7 @@ check("ordre avec id inconnu refuse (400)", r.status_code == 400, (r.status_code
 
 
 def etats(*listes):
-    """La table `tiers` lue avant, puis apres le geste (la derniere se repete) :
-    les routes ne journalisent et ne recalculent que si les deux different."""
+    """La table `tiers` lue avant puis apres le geste (la derniere se repete)."""
     restantes = list(listes)
     def lire(params):
         return restantes.pop(0) if len(restantes) > 1 else restantes[0]
@@ -360,7 +334,6 @@ print("\n=== PUT /admin/tiers/<id> : on journalise un changement, pas un envoi =
 PUT_S = [SESSION('admin'),
          (r"SELECT id, rang FROM tiers WHERE id = %s", (1, 2)),
          (r"SELECT COUNT\(\*\) FROM tiers WHERE UPPER\(nom\) = UPPER\(%s\) AND id", (0,))]
-# Ce que le panneau envoie pour chaque tier : les trois champs, toujours.
 TOUT_S = {'nom': 'S', 'couleur': '#334155', 'seuil_k': 1.0}
 
 cli, cur, conn = monter(PUT_S + [etats(SAB, [(1, 'S', '#334155', 1.0, 2)] + SAB[1:])],
@@ -459,9 +432,7 @@ body = r.get_json()
 check("la courbe est presente", len(body.get('curve', [])) > 0, body.get('curve'))
 noms = {p['nom'] for p in body.get('players', [])}
 check("seuls les joueurs rankes (sigma <= seuil) apparaissent", noms == {'Alice', 'Bob'}, noms)
-# mean/stdev exacts renvoyes tels quels (et non reconstruits par le front
-# depuis min/max de la courbe, ce qui les decalait legerement -- bug du
-# 14/09, cf tier_thresholds.js).
+# mean/stdev exacts, pour que le front place les seuils.
 check("mean est present et exact", body.get('mean') is not None, body.get('mean'))
 check("stdev est present et exact", body.get('stdev') is not None, body.get('stdev'))
 

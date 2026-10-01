@@ -1,9 +1,4 @@
-"""Non-regressions issues de la revue du 2026-09-02.
-
-Chaque assertion ici correspond a un defaut qui EXISTAIT et a ete corrige. Le
-but n'est pas de decrire le comportement voulu -- les autres fichiers s'en
-chargent -- mais d'empecher ces defauts precis de revenir.
-"""
+"""Non-regressions issues de la revue du 2026-09-02."""
 from harness import *
 from flask import Flask
 import re as _re
@@ -19,17 +14,14 @@ def io_open(chemin):
         return f.read()
 
 print("\n=== F1 : un joueur déconnecté doit pouvoir revenir ===")
-# Le seul lien vers la connexion Discord était la page d'invitation. Or
-# l'invitation est consommée : après une déconnexion ou l'expiration de la
-# session (30 j), plus personne ne pouvait se reconnecter.
+# Un lien de connexion doit exister hors de la page d'invitation.
 navbar = io_open(os.path.join(FRONT, 'templates', 'navbar.html'))
 check("la navbar propose une connexion Discord", 'discord_login' in navbar or '/auth/discord/login' in navbar)
 check("elle n'est proposée qu'aux visiteurs non connectés", 'not compte_joueur' in navbar)
 check("et seulement si Discord est configuré", 'discord_configure' in navbar)
 
 print("\n--- sur mobile, la connexion est hors du burger (13.7, 2026-09-23) ---")
-# Rendu reel du gabarit : c'est l'emplacement qui compte, un `in navbar`
-# passerait quel que soit le bloc ou le lien atterrit.
+# Rendu reel du gabarit pour verifier l'emplacement du lien.
 import jinja2
 _env = jinja2.Environment(loader=jinja2.FileSystemLoader(os.path.join(FRONT, 'templates')))
 def _rendre_navbar(compte):
@@ -80,9 +72,7 @@ except ad.DiscordAuthError as e:
     check("sans compte et sans invitation -> refusé", e.code == 'invitation_requise', e.code)
 
 print("\n=== F2 : l'anonymisation doit être atteignable ===")
-# La suppression d'un joueur avec historique renvoie 409 en orientant vers
-# l'anonymisation, et la politique de confidentialité la promet. Sans proxy
-# frontend ni bouton, elle était injoignable.
+# L'anonymisation doit etre joignable depuis le frontend.
 front = io_open(os.path.join(FRONT, 'frontend.py'))
 check("un proxy frontend expose l'anonymisation", '/anonymiser' in front)
 gestion = io_open(os.path.join(FRONT, 'static', 'js', 'gestion.js'))
@@ -131,14 +121,8 @@ r = cli.post('/admin/matchmaking', json={'noms': ['A'], 'joueur_ids': [7]},
 check("deux listes à la fois -> 400", r.status_code in (400, 403), r.status_code)
 
 print("\n=== F9 : aucun bouton visible ne doit être mort ===")
-# Hypothèse d'origine (caduque) : « la page s'ouvre aux DEUX voies d'auth, toute
-# action qu'elle affiche doit accepter les deux ». La hiérarchie admin convertit
-# ces routes en @permission_required, qui n'accepte QUE la session Discord --
-# le mot de passe partagé disparaît route par route (R-54), c'est acté.
-#
-# Ce qui reste vrai et vérifié ici : une action affichée sans condition ne doit
-# pas être réservée à un palier que la page n'affiche pas. Les actions de gestion
-# de compte relèvent de gestion_comptes ; celles du superadmin sont masquées.
+# Une action affichee sans condition ne doit pas exiger un rang que la page
+# n'affiche pas.
 comptes_src = io_open(os.path.join(RACINE, 'routes_comptes.py'))
 admin_html = io_open(os.path.join(FRONT, 'templates', 'admin_comptes.html'))
 lignes = comptes_src.split("\n")
@@ -156,8 +140,6 @@ for i, l in enumerate(lignes):
 check("la fermeture des sessions relève de gestion_comptes",
       '/admin/comptes/<int:compte_id>/sessions' in routes_gestion_comptes,
       routes_gestion_comptes)
-# Les routes réservées au superadmin sont légitimes : l'interface masque leurs
-# commandes derrière `est_superadmin`, elles ne sont donc jamais mortes.
 check("les routes superadmin sont bien masquées côté interface",
       'est_superadmin' in admin_html and 'EST_SUPERADMIN' in admin_html,
       routes_superadmin)
