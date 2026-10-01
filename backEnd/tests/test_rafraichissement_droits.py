@@ -295,7 +295,7 @@ for _nom, _rel, _ancre in _HELPERS:
           "'Accept': 'application/json'" in _zone, _zone[:160])
 
 check("  et les fetch de la navbar aussi",
-      'HEADERS_JSON' in open(os.path.join(FRONT, 'templates', 'navbar.html'),
+      'HEADERS_JSON' in open(os.path.join(FRONT, 'static', 'js', 'navbar.js'),
                              encoding='utf-8').read())
 
 

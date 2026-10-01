@@ -2171,13 +2171,15 @@ def _avatar_distant(url):
     return type_mime, octets
 
 
-def _servir_avatar(discord_id, avatar_hash):
+def _servir_avatar(discord_id, avatar_hash, prive=False):
+    """`prive` pour une route authentifiee : aucun cache partage ne la garde."""
     type_mime, octets = _avatar_distant(avatar_url(discord_id, avatar_hash))
     if octets is None:
         return jsonify({"error": "Avatar indisponible"}), 404
     reponse = make_response(octets)
     reponse.headers['Content-Type'] = type_mime
-    reponse.headers['Cache-Control'] = 'public, max-age=%d' % AVATAR_CACHE_TTL
+    reponse.headers['Cache-Control'] = '%s, max-age=%d' % (
+        'private' if prive else 'public', AVATAR_CACHE_TTL)
     return reponse
 
 
@@ -2206,7 +2208,7 @@ def avatar_joueur(joueur_id):
 @comptes_bp.route('/avatar/moi', methods=['GET'])
 @player_required_sans_cgu
 def avatar_moi():
-    return _servir_avatar(g.compte['discord_id'], g.compte['discord_avatar_hash'])
+    return _servir_avatar(g.compte['discord_id'], g.compte['discord_avatar_hash'], prive=True)
 
 
 @comptes_bp.route('/avatar/compte/<int:compte_id>', methods=['GET'])
@@ -2226,7 +2228,7 @@ def avatar_compte(compte_id):
         return jsonify({"error": "Erreur serveur"}), 500
     if row is None:
         return jsonify({"error": "Compte introuvable"}), 404
-    return _servir_avatar(row[0], row[1])
+    return _servir_avatar(row[0], row[1], prive=True)
 
 
 # ---------------------------------------------------------------------------

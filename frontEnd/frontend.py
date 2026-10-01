@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import sys
@@ -7,6 +8,7 @@ import requests
 import time
 from urllib.parse import urlencode, urlparse
 import json
+from pathlib import Path
 from flask import (Flask, g, render_template, request, redirect, url_for, session,
                    flash, jsonify, Response, stream_with_context)
 from datetime import timedelta, date
@@ -46,9 +48,22 @@ csrf = CSRFProtect(app)
 
 APP_VERSION = "2.0.0"
 
+
+def _empreinte_statiques():
+    """Change des qu'un fichier statique change : sert de `?v=` aux liens."""
+    racine = Path(app.static_folder)
+    h = hashlib.sha1()
+    for f in sorted(p for p in racine.rglob('*') if p.is_file()):
+        h.update(f.relative_to(racine).as_posix().encode())
+        h.update(f.read_bytes())
+    return h.hexdigest()[:10]
+
+
+STATIC_VERSION = _empreinte_statiques()
+
 @app.context_processor
 def inject_version():
-    return dict(app_version=APP_VERSION)
+    return dict(app_version=APP_VERSION, static_version=STATIC_VERSION)
 
 
 def _sonde_session(endpoint, headers, sur_reponse=None):
@@ -84,7 +99,7 @@ def _est_navigation(chemin):
     Lu sur l'en-tete Accept ; un Accept absent ou inconnu compte comme une
     navigation. Permet de ne sonder la session qu'une fois par page.
     """
-    if chemin.startswith('/static'):
+    if chemin.startswith(('/static', '/avatar/')):
         return False
     return 'application/json' not in request.headers.get('Accept', '')
 

@@ -5,11 +5,15 @@ env/
 .envdev
 pglogfile
 data/
-result/
+result
 certbot/
 dumps/
 docker-compose.override.yml
 node_modules/
+raceEngineCpp/build/
+
+# Moteur de course choisi par `make engine-js` / `make engine-cpp`, propre a chaque poste.
+.engine
 
 # Interrupteur du mode maintenance : contient la clé de passe du moment.
 nginx/maintenance/actif.conf

@@ -6,11 +6,11 @@
     <title>Gestion des Ligues - Admin</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ app_version }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}?v={{ static_version }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <style>
         .league-column {
@@ -186,6 +186,7 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}?v={{ static_version }}">
 </head>
 <body>
     {% include 'decor.html' %}
@@ -331,7 +332,7 @@
     </div>
 
     {% include 'footer.html' %}
-    <script src="{{ url_for('static', filename='js/gestion.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/gestion.js') }}?v={{ static_version }}"></script>
     
     <script>
         function escapeHtml(str) {

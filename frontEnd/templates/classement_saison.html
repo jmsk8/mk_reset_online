@@ -286,7 +286,7 @@
         document.addEventListener("DOMContentLoaded", applySaisonPodium);
 
         {% if evo.datasets and evo.datasets|length > 0 %}
-        (function initIpEvolutionChart() {
+        document.addEventListener('DOMContentLoaded', function initIpEvolutionChart() {
             function sanitizeColor(c) {
                 if (c == null) return '#FFFFFF';
                 const s = String(c);
@@ -399,7 +399,7 @@
                 }
             });
             ChartZoom.brancher(chart);
-        })();
+        });
         {% endif %}
     </script>
 {% endif %}

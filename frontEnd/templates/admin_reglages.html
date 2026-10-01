@@ -6,17 +6,17 @@
     <title>Réglages TrueSkill - Admin</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
-    <link rel="stylesheet" href="../static/css/styles.css">
-    <link rel="stylesheet" href="../static/css/dark-mode.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ app_version }}">
-    <link rel="stylesheet" href="../static/css/animations.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}?v={{ static_version }}">
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <script src="{{ url_for('static', filename='vendor/chartjs-4.5.1/chart.umd.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/chart_zoom.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='vendor/chartjs-4.5.1/chart.umd.min.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/chart_zoom.js') }}?v={{ static_version }}" defer></script>
     <style>
         /* Meme mise en page que le graphique du classement. */
         .chart-container-wrapper { display: flex; align-items: stretch; height: 380px; }
@@ -133,6 +133,7 @@
             .tier-palette { gap: 5px; }
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}?v={{ static_version }}">
 </head>
 <body>
     {% include 'decor.html' %}
@@ -388,8 +389,7 @@
     </section>
 
     {% include 'footer.html' %}
-    <script src="../static/js/gestion.js"></script>
-    {# ?v= : contourne le cache nginx des .js. #}
-    <script src="../static/js/tier_thresholds.js?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/gestion.js') }}?v={{ static_version }}"></script>
+    <script src="{{ url_for('static', filename='js/tier_thresholds.js') }}?v={{ static_version }}"></script>
 </body>
 </html>

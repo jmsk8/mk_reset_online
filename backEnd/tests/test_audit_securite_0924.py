@@ -1103,9 +1103,9 @@ _static = os.path.join(_RACINE, 'frontEnd', 'static')
 _references = set()
 for chemin in _sources:
     _references.update(re.findall(r"filename='(vendor/[^']+)'", open(chemin, encoding='utf-8').read()))
-check("gabarits : les 4 librairies locales sont referencees",
+check("gabarits : les 3 librairies locales sont referencees",
       {'vendor/bulma-0.9.4/bulma.min.css', 'vendor/fontawesome-6.4.0/css/all.min.css',
-       'vendor/jquery-3.6.0/jquery.min.js', 'vendor/chartjs-4.5.1/chart.umd.min.js'} <= _references,
+       'vendor/chartjs-4.5.1/chart.umd.min.js'} <= _references,
       sorted(_references))
 _manquants = [p for p in _references if not os.path.isfile(os.path.join(_static, p))]
 _fa = os.path.join(_static, 'vendor', 'fontawesome-6.4.0')

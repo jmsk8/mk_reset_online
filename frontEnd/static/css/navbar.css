@@ -1,0 +1,324 @@
+@media screen and (max-width: 1023px) {
+    .navbar-menu {
+        background-color: #1e293b !important;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+        padding: 0.75rem;
+    }
+
+    .navbar-item, .navbar-link {
+        color: #e2e8f0 !important;
+    }
+
+    /* Fond opaque des dropdowns sous 1024px (Bulma n'en pose pas). */
+    .navbar-item.has-dropdown .navbar-dropdown {
+        background-color: #18212f !important;
+        border: none !important;
+    }
+    
+    .navbar-link:not(.is-arrowless)::after {
+        border-color: #e2e8f0 !important;
+    }
+
+    /* Sous-menus replies par defaut sous 1024px, deplies au clic (hors
+       cloche et compte, qui ont leur propre mecanique). */
+    #navbarMenu .navbar-item.has-dropdown:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
+        display: none;
+    }
+
+    #navbarMenu .navbar-item.has-dropdown.est-ouverte:not(.zone-cloche):not(.zone-compte) > .navbar-dropdown {
+        display: block;
+    }
+
+    /* Chevron reaffiche en mobile : il indique le sens du prochain clic. */
+    #navbarMenu .has-dropdown:not(.zone-cloche):not(.zone-compte) > .navbar-link:not(.is-arrowless)::after {
+        display: block;
+        transition: transform 0.2s ease;
+    }
+
+    /* Meme rotation que .has-dropdown-up de Bulma. */
+    #navbarMenu .has-dropdown.est-ouverte > .navbar-link:not(.is-arrowless)::after {
+        transform: rotate(135deg) translate(0.25em, -0.25em);
+    }
+
+    /* Retrait des entrees de sous-menu. */
+    #navbarMenu .navbar-dropdown .navbar-item {
+        padding-left: 2.5rem !important;
+    }
+}
+
+/* Ecran large : les menus s'ouvrent au clic, jamais au survol. */
+@media screen and (min-width: 1024px) {
+    #navbarMenu .navbar-item.has-dropdown > .navbar-dropdown {
+        display: none;
+    }
+
+    #navbarMenu .navbar-item.has-dropdown.est-ouverte > .navbar-dropdown {
+        display: block;
+    }
+
+    /* Annule le decalage et la transparence que Bulma anime au survol. */
+    #navbarMenu .navbar-item.has-dropdown.est-ouverte > .navbar-dropdown {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+    }
+
+    #navbarMenu .has-dropdown.est-ouverte > .navbar-link:not(.is-arrowless)::after {
+        transform: rotate(135deg) translate(0.25em, -0.25em);
+    }
+}
+
+/* Position fixe, au-dessus de la navbar (z-index 1000). */
+#messages-flash {
+    position: fixed;
+    top: 4.25rem;
+    right: 1rem;
+    z-index: 1100;
+    width: 22rem;
+    max-width: calc(100vw - 2rem);
+    pointer-events: none; /* la zone vide laisse passer les clics */
+}
+
+#messages-flash .notification {
+    pointer-events: auto;
+    margin-bottom: .75rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    animation: flash-entree .25s ease-out;
+}
+
+#messages-flash .notification.sortant {
+    animation: flash-sortie .3s ease-in forwards;
+}
+
+@keyframes flash-entree {
+    from { opacity: 0; transform: translateX(1.5rem); }
+    to   { opacity: 1; transform: none; }
+}
+
+@keyframes flash-sortie {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: translateX(1.5rem); }
+}
+
+@media screen and (max-width: 768px) {
+    #messages-flash {
+        top: 4.75rem;
+        left: 1rem;
+        right: 1rem;
+        width: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #messages-flash .notification,
+    #messages-flash .notification.sortant {
+        animation: none;
+    }
+}
+
+/* Pilule de connexion Discord (mobile et bureau). */
+.pilule-discord {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    height: 2rem;
+    padding: 0 0.9rem 0 0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(226, 232, 240, 0.45);
+    background-color: #5865f2;
+    color: #fff !important;
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pilule-discord .fab {
+    font-size: 1.05rem;
+}
+
+@media screen and (max-width: 1023px) {
+    /* Avec la cloche, le burger perd sa marge auto et sa largeur excessive. */
+    .cloche-mobile ~ .navbar-burger,
+    .connexion-mobile ~ .navbar-burger {
+        margin-left: 0;
+        width: 2.75rem !important;
+    }
+
+    /* Visiteur : la pilule de connexion remplace cloche et avatar. */
+    .connexion-mobile {
+        margin-left: auto;
+        display: flex !important;
+        align-items: center;
+        height: 2.5rem;
+        padding: 0 !important;
+        background: transparent;
+    }
+
+    /* Taille mobile de la pilule, calee sur l'avatar. */
+    .connexion-mobile .pilule-discord {
+        height: 1.75rem;
+        padding: 0 0.7rem 0 0.55rem;
+        font-size: 0.85rem;
+    }
+
+    /* Meme ecart entre logo, cloche, avatar et burger. */
+    .navbar-brand {
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    /* Seule la cloche pousse vers la droite. */
+    .compte-mobile {
+        margin-left: 0;
+        display: flex !important;
+        align-items: center;
+        padding: 0 !important;
+    }
+
+    /* Meme taille pour la cloche et l'avatar. */
+    .cloche-mobile > .navbar-link,
+    .compte-mobile > .navbar-link {
+        position: relative; /* ancre la pastille du compteur */
+        height: 2.5rem;
+        width: 2.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 !important;
+        background: transparent;
+        border-radius: 6px;
+        font-size: 0.95rem !important;
+    }
+
+    /* Bordure sur l'avatar pour montrer qu'il est cliquable. */
+    .compte-mobile figure.image {
+        height: 1.75rem;
+        width: 1.75rem;
+    }
+
+    .compte-mobile figure.image img {
+        height: 100%;
+        width: 100%;
+        object-fit: cover;
+        border: 1px solid rgba(226, 232, 240, 0.45);
+    }
+
+    .compte-mobile .icon {
+        height: 1.75rem;
+        width: 1.75rem;
+        font-size: 1.5rem;
+    }
+
+    .cloche-mobile {
+        margin-left: auto;
+        display: flex !important;
+        align-items: center;
+        /* !important contre le padding vertical de .navbar-item en mobile. */
+        padding: 0 !important;
+    }
+
+    .cloche-mobile .icon {
+        height: 1.5rem;
+        width: 1.5rem;
+    }
+
+    .cloche-mobile .badge-notifs {
+        font-size: 0.65rem;
+        height: 1.1rem;
+        min-width: 1.1rem;
+        padding: 0 0.3rem;
+        margin-left: 0 !important;
+        /* Pastille dans le coin du lien. */
+        position: absolute;
+        top: 0.15rem;
+        right: 0.05rem;
+        pointer-events: none;
+    }
+
+    /* Panneau flottant (Bulma l'affiche dans le flux en mobile). */
+    .cloche-mobile .navbar-dropdown,
+    .compte-mobile .navbar-dropdown {
+        display: none;
+        position: fixed;
+        /* fixed : ancre sur la cloche, le panneau serait trop etroit. */
+        top: 4rem;
+        right: 0.5rem;
+        left: auto;
+        width: 22rem;
+        max-width: calc(100vw - 1rem);
+        background-color: #1e293b !important;
+        border-top: 2px solid #3b82f6;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+        border-radius: 0 0 6px 6px;
+        z-index: 30;
+    }
+
+    .compte-mobile .navbar-dropdown {
+        width: auto;
+        min-width: 13rem;
+    }
+
+    .cloche-mobile.est-ouverte .navbar-dropdown,
+    .compte-mobile.est-ouverte .navbar-dropdown {
+        display: block;
+    }
+
+    .cloche-mobile .navbar-dropdown .navbar-item,
+    .compte-mobile .navbar-dropdown .navbar-item {
+        padding-top: 0.5rem !important;
+        padding-bottom: 0.5rem !important;
+        font-size: 0.95rem;
+    }
+}
+
+@media screen and (max-width: 768px) {
+    .navbar-brand {
+        min-height: 4rem;
+    }
+    
+    .navbar-burger {
+        height: 4rem;
+        width: 4rem;
+        font-size: 1.2rem;
+        color: #e2e8f0;
+    }
+    
+    .navbar-item.brand-item {
+        font-size: 1.4rem;
+        padding-left: 1rem;
+    }
+    
+    .navbar-item, .navbar-link {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        font-size: 1.1rem;
+    }
+}
+
+/* Liste des notifications : environ 4 entrees visibles, bornee par la
+   hauteur de l'ecran ; overscroll-behavior evite de faire defiler la page. */
+.liste-notifs {
+    max-height: min(21rem, 60vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* Barre de defilement visible (Firefox et WebKit). */
+.liste-notifs {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+}
+.liste-notifs::-webkit-scrollbar {
+    width: 8px;
+}
+.liste-notifs::-webkit-scrollbar-track {
+    background: transparent;
+}
+.liste-notifs::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.5);
+    border-radius: 4px;
+}
+.liste-notifs::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(148, 163, 184, 0.8);
+}

@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 import requests
-from flask import Blueprint, jsonify, request, abort, render_template
+from flask import Blueprint, jsonify, request, abort
 
 from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, DEFAULT_SIGMA_THRESHOLD, DEFAULT_PAGE_SIZE, IP_VERSION_DEFAULT,
@@ -90,27 +90,6 @@ def get_public_saisons():
         return jsonify(saisons)
     except Exception:
         return jsonify([])
-
-
-@public_bp.route('/recap')
-def recap_list():
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT nom, date_debut, date_fin, slug, victory_condition, is_yearly,
-                       ligue_nom, ligue_couleur, is_league_recap
-                FROM saisons
-                WHERE is_active = true
-                ORDER BY date_fin DESC
-            """)
-            rows = cur.fetchall()
-            saisons = [{
-                "nom": r[0], "date_debut": r[1].strftime("%d/%m/%Y"), "date_fin": r[2].strftime("%d/%m/%Y"),
-                "slug": r[3], "victory_condition": r[4], "is_yearly": r[5],
-                "ligue_nom": r[6], "ligue_couleur": r[7],
-                "is_league_recap": r[8] if r[8] else False
-            } for r in rows]
-    return render_template('recap_list.html', saisons=saisons)
 
 
 @public_bp.route('/stats/recap/<slug>')

@@ -2,6 +2,7 @@
 """Colorise les chiffres de position (1st a 8th) du banner.
 
     python3 scripts/colorize-positions.py
+    python3 scripts/palettiser-png.py
 
 Source et sortie
     assets-src/positions/<n>.png       originaux en gris, jamais modifies

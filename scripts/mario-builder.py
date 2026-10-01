@@ -3,6 +3,7 @@
 maintenance (nginx/maintenance/page.html).
 
     python3 scripts/mario-builder.py
+    python3 scripts/palettiser-png.py
 
 Source et sortie
     assets-src/mario-builder/1-3.png        originaux, jamais modifiés

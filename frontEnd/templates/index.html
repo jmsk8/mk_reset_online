@@ -8,13 +8,13 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
     
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ app_version }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/form-readability.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/banner.css') }}?v={{ app_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/form-readability.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/banner.css') }}?v={{ static_version }}">
     
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
     <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
@@ -110,6 +110,7 @@
         .status-dot { height: 8px; width: 8px; background-color: #3ba55c; border-radius: 50%; display: inline-block; box-shadow: 0 0 5px #3ba55c; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}?v={{ static_version }}">
 </head>
 <body>
     {# Écran de démarrage : voile noir, logo, puis fondu sur la scène. #}
@@ -389,8 +390,6 @@
     </section>
 
     {% include 'footer.html' %}
-    <script src="{{ url_for('static', filename='vendor/jquery-3.6.0/jquery.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
     {# Scripts du banner, chargés dans cet ordre (scripts classiques plutôt que
        modules ES, pour que `?v=` invalide le cache). main.js, qui démarre le
        tout, vient en dernier. #}
@@ -400,7 +399,7 @@
         'effects', 'results', 'render', 'interpolate', 'net', 'loop', 'debug',
         'snow', 'main'
     ] %}
-    <script src="{{ url_for('static', filename='js/banner/' ~ module ~ '.js') }}?v={{ app_version }}"></script>
+    <script src="{{ url_for('static', filename='js/banner/' ~ module ~ '.js') }}?v={{ static_version }}"></script>
     {% endfor %}
 
     <script>

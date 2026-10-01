@@ -27,7 +27,8 @@ _env = jinja2.Environment(loader=jinja2.FileSystemLoader(os.path.join(FRONT, 'te
 def _rendre_navbar(compte):
     html = _env.get_template('navbar.html').render(
         csrf_token=lambda: 'x', compte_joueur=compte, discord_configure=True,
-        est_admin=False, peut=lambda p: False, get_flashed_messages=lambda **k: [])
+        est_admin=False, peut=lambda p: False, get_flashed_messages=lambda **k: [],
+        url_for=lambda *a, **k: '', static_version='')
     brand = html[html.index('class="navbar-brand"'):html.index('id="navbarMenu"')]
     menu = html[html.index('id="navbarMenu"'):html.index('</nav>')]
     return brand, menu

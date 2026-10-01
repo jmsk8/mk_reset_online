@@ -2,6 +2,7 @@
 """Redimensionne les sprites de course des karts au gabarit Mario Kart 8 Deluxe.
 
     python3 scripts/resize-karts.py
+    python3 scripts/palettiser-png.py
     python3 scripts/sprite-metrics.py      # puis recopier le bloc imprime
 
 Le moteur mesure les PNG (sprite-metrics.py -> `bodies.sprite` de
