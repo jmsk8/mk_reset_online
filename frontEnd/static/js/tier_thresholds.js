@@ -431,261 +431,45 @@
     }
 
     // --- Choix des couleurs -------------------------------------------------
-    // Fond du badge et couleur du texte, l'un ou l'autre edite par la palette,
-    // les curseurs et le code hexadecimal ; applique a « Confirmer ».
+    // Fenetre partagee (choix_couleur.js) : fond du badge et couleur du texte.
 
-    const HEX6 = /^#[0-9a-fA-F]{6}$/;
+    const { couleurSure, versHex6, texteSur } = ChoixCouleur;
+    const peindrePastille = ChoixCouleur.peindre;
 
-    function couleurSure(c) {
-        return /^#[0-9a-fA-F]{3,8}$/.test(c || '') ? c : '#FFFFFF';
-    }
+    const CHOIX_U = 'U'; // idx de la pastille U
 
-    // Le backend accepte #RGB a #RRGGBBAA ; la fenetre travaille en #RRGGBB.
-    function versHex6(c) {
-        c = couleurSure(c);
-        if (c.length === 4 || c.length === 5) {
-            return ('#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3]).toUpperCase();
+    // N'ecrase une couleur que si elle a change (evite un envoi pour une casse).
+    function appliquerChoix(cible, choix) {
+        if (versHex6(cible.couleur) !== choix.couleur) cible.couleur = choix.couleur;
+        if (!cible.couleur_texte || versHex6(cible.couleur_texte) !== choix.couleurTexte) {
+            cible.couleur_texte = choix.couleurTexte;
         }
-        return c.slice(0, 7).toUpperCase();
-    }
-
-    function hslVersHex(h, s, l) {
-        s /= 100; l /= 100;
-        const a = s * Math.min(l, 1 - l);
-        const f = n => {
-            const k = (n + h / 30) % 12;
-            const v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-            return Math.round(v * 255).toString(16).padStart(2, '0');
-        };
-        return ('#' + f(0) + f(8) + f(4)).toUpperCase();
-    }
-
-    function hexVersHsl(hex) {
-        const n = parseInt(versHex6(hex).slice(1), 16);
-        const r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
-        const max = Math.max(r, g, b), min = Math.min(r, g, b);
-        const l = (max + min) / 2;
-        let h = 0, s = 0;
-        if (max !== min) {
-            const d = max - min;
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-            if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-            else if (max === g) h = (b - r) / d + 2;
-            else h = (r - g) / d + 4;
-            h *= 60;
-        }
-        return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
-    }
-
-    // Noir sur fond clair, blanc sur fond fonce.
-    function texteSur(hex) {
-        const n = parseInt(versHex6(hex).slice(1), 16);
-        const r = n >> 16, g = (n >> 8) & 255, b = n & 255;
-        return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0f172a' : '#ffffff';
-    }
-
-    // Fond et icone aux couleurs du badge (texte lisible si non regle).
-    function peindrePastille(el, couleur, texte) {
-        el.style.backgroundColor = couleurSure(couleur);
-        el.style.color = texte ? couleurSure(texte) : texteSur(couleur);
-    }
-
-    // Palette : 8 teintes en nuances, puis neutres et metaux (avec les couleurs
-    // par defaut S/A/B/C).
-    const PALETTE = (() => {
-        const teintes = [0, 28, 48, 125, 172, 205, 265, 320];
-        const nuances = [[90, 82], [85, 70], [80, 58], [75, 46], [70, 34]];
-        const couleurs = [];
-        nuances.forEach(([s, l]) => teintes.forEach(h => couleurs.push(hslVersHex(h, s, l))));
-        couleurs.push('#F77B7B', '#9CDA74', '#7FE6EE', '#AE6CE4', // S/A/B/C par defaut
-                      '#FFD700', '#C0C0C0', '#CD7F32', '#FFFFFF', // or, argent, bronze, blanc
-                      '#F1F5F9', '#CBD5E1', '#94A3B8', '#64748B', // gris, du clair...
-                      '#475569', '#334155', '#1E293B', '#000000'); // ...au noir
-        return couleurs;
-    })();
-
-    const CHOIX_U = 'U'; // choixIdx de la pastille U
-    let choixIdx = -1; // tier dont on choisit les couleurs
-    let choixFond = '#FFFFFF';
-    let choixTexte = '#FFFFFF';
-    let choixCible = 'fond'; // couleur editee : 'fond' ou 'texte'
-    let choixDeclencheur = null; // pastille a qui rendre le focus
-
-    function elChoix(id) { return document.getElementById(id); }
-
-    function cibleChoix(idx) {
-        return idx === CHOIX_U
-            ? { nom: 'U', couleur: couleurU, couleur_texte: couleurTexteU }
-            : tiersState[idx];
-    }
-
-    function couleurEditee() {
-        return choixCible === 'texte' ? choixTexte : choixFond;
-    }
-
-    function poserCouleur(c) {
-        if (choixCible === 'texte') choixTexte = c; else choixFond = c;
-    }
-
-    // Met a jour la fenetre depuis la couleur editee (`source` : champ a ne pas reecrire).
-    function afficherChoix(source) {
-        const c = couleurEditee();
-        const apercu = elChoix('tierCouleurApercu');
-        apercu.style.backgroundColor = choixFond;
-        apercu.style.color = choixTexte;
-
-        elChoix('tierCouleurCible').querySelectorAll('button[data-cible]').forEach(b => {
-            const oui = b.dataset.cible === choixCible;
-            b.classList.toggle('is-info', oui);
-            b.classList.toggle('is-selected', oui);
-            b.setAttribute('aria-pressed', oui ? 'true' : 'false');
-        });
-
-        elChoix('tierPalette').querySelectorAll('button').forEach(b => {
-            const oui = b.dataset.couleur === c;
-            b.classList.toggle('choisie', oui);
-            b.setAttribute('aria-selected', oui ? 'true' : 'false');
-        });
-
-        const hex = elChoix('tierCouleurHex');
-        if (source !== 'hex') { hex.value = c; hex.classList.remove('is-danger'); }
-
-        if (source !== 'curseurs') {
-            const { h, s, l } = hexVersHsl(c);
-            elChoix('tierCurseurTeinte').value = h;
-            elChoix('tierCurseurSaturation').value = s;
-            elChoix('tierCurseurClarte').value = l;
-        }
-        const h = +elChoix('tierCurseurTeinte').value;
-        const s = +elChoix('tierCurseurSaturation').value;
-        const l = +elChoix('tierCurseurClarte').value;
-        elChoix('tierCurseurSaturation').style.background =
-            `linear-gradient(to right, ${hslVersHex(h, 0, l)}, ${hslVersHex(h, 100, l)})`;
-        elChoix('tierCurseurClarte').style.background =
-            `linear-gradient(to right, #000, ${hslVersHex(h, s, 50)}, #fff)`;
     }
 
     function ouvrirChoixCouleur(idx) {
-        const t = cibleChoix(idx);
-        const modal = elChoix('tierCouleurModal');
-        if (!t || !modal) return;
-        choixIdx = idx;
-        choixFond = versHex6(t.couleur);
-        choixTexte = t.couleur_texte ? versHex6(t.couleur_texte) : texteSur(t.couleur).toUpperCase();
-        choixCible = 'fond';
-        choixDeclencheur = document.activeElement;
-        elChoix('tierCouleurTitre').textContent = `Couleurs du tier ${t.nom.trim() || ''}`.trim();
-        elChoix('tierCouleurApercu').textContent = t.nom.trim() || '?';
-        const avant = elChoix('tierCouleurAvant');
-        avant.textContent = t.nom.trim() || '?';
-        peindrePastille(avant, t.couleur, t.couleur_texte);
-        afficherChoix();
-        modal.classList.add('is-active');
-        document.documentElement.classList.add('is-clipped');
-        elChoix('tierCouleurConfirmer').focus();
-    }
-
-    function fermerChoixCouleur() {
-        const modal = elChoix('tierCouleurModal');
-        if (!modal || !modal.classList.contains('is-active')) return;
-        modal.classList.remove('is-active');
-        document.documentElement.classList.remove('is-clipped');
-        choixIdx = -1;
-        if (choixDeclencheur && document.contains(choixDeclencheur)) choixDeclencheur.focus();
-        choixDeclencheur = null;
-    }
-
-    // N'ecrase une couleur que si elle a change (evite un envoi pour une casse).
-    function appliquerChoix(cible) {
-        if (versHex6(cible.couleur) !== choixFond) cible.couleur = choixFond;
-        if (!cible.couleur_texte || versHex6(cible.couleur_texte) !== choixTexte) {
-            cible.couleur_texte = choixTexte;
-        }
-    }
-
-    function confirmerChoixCouleur() {
-        if (choixIdx === CHOIX_U) {
-            const u = cibleChoix(CHOIX_U);
-            appliquerChoix(u);
-            couleurU = u.couleur;
-            couleurTexteU = u.couleur_texte;
-            fermerChoixCouleur();
-            renderTiersPanel(); // U n'est pas sur le graphique
-            const p = document.querySelector('#tiersListBody .tier-ligne-u .tier-pastille');
-            if (p) p.focus();
-            return;
-        }
-        const t = tiersState[choixIdx];
-        if (t) {
-            appliquerChoix(t);
-            // Panneau reconstruit : le focus revient a la nouvelle pastille.
-            const idx = choixIdx;
-            fermerChoixCouleur();
-            redraw();
-            const p = document.querySelector(`#tiersListBody .tier-ligne[data-idx="${idx}"] .tier-pastille`);
-            if (p) p.focus();
-            return;
-        }
-        fermerChoixCouleur();
-    }
-
-    function attachChoixCouleur() {
-        const modal = elChoix('tierCouleurModal');
-        if (!modal) return;
-
-        const palette = elChoix('tierPalette');
-        PALETTE.forEach(c => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.dataset.couleur = c;
-            b.style.backgroundColor = c;
-            b.title = c;
-            b.setAttribute('role', 'option');
-            b.setAttribute('aria-label', c);
-            palette.appendChild(b);
-        });
-        // Un clic dans la palette choisit seulement.
-        palette.addEventListener('click', e => {
-            const b = e.target.closest('button[data-couleur]');
-            if (!b) return;
-            poserCouleur(b.dataset.couleur);
-            afficherChoix();
-        });
-
-        // Bascule fond / texte : les reglages suivants s'appliquent a la cible.
-        elChoix('tierCouleurCible').addEventListener('click', e => {
-            const b = e.target.closest('button[data-cible]');
-            if (!b) return;
-            choixCible = b.dataset.cible;
-            afficherChoix();
-        });
-
-        ['tierCurseurTeinte', 'tierCurseurSaturation', 'tierCurseurClarte'].forEach(id => {
-            elChoix(id).addEventListener('input', () => {
-                poserCouleur(hslVersHex(+elChoix('tierCurseurTeinte').value,
-                                        +elChoix('tierCurseurSaturation').value,
-                                        +elChoix('tierCurseurClarte').value));
-                afficherChoix('curseurs');
-            });
-        });
-
-        const hex = elChoix('tierCouleurHex');
-        hex.addEventListener('input', () => {
-            let v = hex.value.trim();
-            if (v && v[0] !== '#') v = '#' + v;
-            const ok = HEX6.test(v);
-            hex.classList.toggle('is-danger', !ok && v.length >= 7);
-            if (ok) { poserCouleur(v.toUpperCase()); afficherChoix('hex'); }
-        });
-        // Entree dans le champ code = Confirmer.
-        hex.addEventListener('keydown', e => {
-            if (e.key === 'Enter') { e.preventDefault(); confirmerChoixCouleur(); }
-        });
-
-        elChoix('tierCouleurConfirmer').addEventListener('click', confirmerChoixCouleur);
-        modal.querySelectorAll('[data-fermer]').forEach(el => el.addEventListener('click', fermerChoixCouleur));
-        document.addEventListener('keydown', e => {
-            if (e.key === 'Escape') fermerChoixCouleur();
+        const t = idx === CHOIX_U
+            ? { nom: 'U', couleur: couleurU, couleur_texte: couleurTexteU }
+            : tiersState[idx];
+        if (!t) return;
+        ChoixCouleur.ouvrir({
+            titre: `Couleurs du tier ${t.nom.trim() || ''}`.trim(),
+            libelle: t.nom.trim() || '?',
+            couleur: t.couleur,
+            couleurTexte: t.couleur_texte || null,
+            surConfirmer: choix => {
+                appliquerChoix(t, choix);
+                if (idx === CHOIX_U) {
+                    couleurU = t.couleur;
+                    couleurTexteU = t.couleur_texte;
+                    renderTiersPanel(); // U n'est pas sur le graphique
+                } else {
+                    redraw();
+                }
+                // Panneau reconstruit : le focus revient a la nouvelle pastille.
+                const ligne = idx === CHOIX_U ? '.tier-ligne-u' : `.tier-ligne[data-idx="${idx}"]`;
+                const p = document.querySelector(`#tiersListBody ${ligne} .tier-pastille`);
+                if (p) p.focus();
+            },
         });
     }
 
@@ -996,7 +780,6 @@
     document.addEventListener('DOMContentLoaded', () => {
         if (!document.getElementById('tierChart')) return;
         attachPanelHandlers();
-        attachChoixCouleur();
         initTierChart();
     });
 })();

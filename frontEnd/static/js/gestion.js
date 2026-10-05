@@ -160,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const addForm = document.getElementById('addPlayerForm');
     if (addForm) {
+        peindreBoutonCouleur(document.getElementById('newColor'), '#FFFFFF');
         addForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -186,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('newNom').value = "";
                 document.getElementById('newMu').value = "50"; 
                 document.getElementById('newSigma').value = "8.333";
-                document.getElementById('newColor').value = "#ffffff";
+                peindreBoutonCouleur(document.getElementById('newColor'), '#FFFFFF');
                 loadPlayers();
             }
         });
@@ -531,6 +532,25 @@ function interdireChamp(idChamp, permission) {
     champ.title = "Vous n'avez pas la permission « " + permission + " ».";
 }
 
+// Bouton de couleur d'une fiche : sa valeur est la couleur, son fond la montre.
+function peindreBoutonCouleur(btn, couleur) {
+    if (!btn || typeof ChoixCouleur === 'undefined') return;
+    btn.value = ChoixCouleur.versHex6(couleur);
+    ChoixCouleur.peindre(btn, btn.value);
+    btn.setAttribute('aria-label', 'Couleur ' + btn.value);
+}
+
+// Ouvre la fenetre de choix (apercu : la couleur seule).
+function choisirCouleurJoueur(idBouton) {
+    const btn = document.getElementById(idBouton);
+    if (!btn || btn.disabled) return;
+    ChoixCouleur.ouvrir({
+        titre: 'Couleur du joueur',
+        couleur: btn.value,
+        surConfirmer: ({ couleur }) => peindreBoutonCouleur(btn, couleur),
+    });
+}
+
 // Seul l'identifiant passe dans l'onclick ; le reste est relu dans joueursCharges.
 function openEditModal(id) {
     const joueur = joueursCharges[id];
@@ -546,7 +566,7 @@ function openEditModal(id) {
     document.getElementById('editMu').value = parseFloat(mu).toFixed(3);
     document.getElementById('editSigma').value = parseFloat(sigma).toFixed(3);
     document.getElementById('editMissed').value = missed !== undefined ? missed : 0;
-    document.getElementById('editColor').value = color || '#ffffff';
+    peindreBoutonCouleur(document.getElementById('editColor'), color || '#FFFFFF');
 
     // Chaque champ est réactivé avant d'être éventuellement interdit (modale réutilisée).
     const btnRanked = document.getElementById('rankedToggleBtn');
