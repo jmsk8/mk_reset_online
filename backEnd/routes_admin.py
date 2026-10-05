@@ -16,7 +16,7 @@ import audit
 from constants import (
     DEFAULT_MU, DEFAULT_SIGMA, TRUESKILL_BETA, TRUESKILL_DRAW_PROBABILITY,
     DEFAULT_TAU, DEFAULT_GHOST_PENALTY, DEFAULT_UNRANKED_THRESHOLD, DEFAULT_SIGMA_THRESHOLD,
-    DEFAULT_TIERS,
+    DEFAULT_TIERS, DEFAULT_TIER_COULEUR_TEXTE,
     DEFAULT_GHOST_THRESHOLD_SESSIONS, DEFAULT_GHOST_INTERVAL_SESSIONS,
     GHOST_SIGMA_CAP, IP_VERSION_DEFAULT,
     ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN,
@@ -38,6 +38,7 @@ from services import (
     _aggregate_season_stats, _determine_winners, _save_awards_to_db,
     _apply_inter_league_moves,
     build_distribution, trueskill_score, has_tier, load_tiers, load_couleur_u,
+    load_couleur_texte_u,
     nom_creable, empreinte_nom,
 )
 
@@ -532,6 +533,7 @@ def _appliquer_plancher(cur) -> None:
 def _etat_tiers(cur):
     """Etat complet des tiers pour le journal, du meilleur au pire."""
     return [{"id": t["id"], "nom": t["nom"], "couleur": t["couleur"],
+             "couleur_texte": t["couleur_texte"],
              "seuil_k": t["seuil_k"]} for t in load_tiers(cur)]
 
 
@@ -560,6 +562,11 @@ def create_tier():
     couleur = _couleur_valide(data.get('couleur'))
     if couleur is None:
         return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
+    couleur_texte = DEFAULT_TIER_COULEUR_TEXTE
+    if data.get('couleur_texte') is not None:
+        couleur_texte = _couleur_valide(data['couleur_texte'])
+        if couleur_texte is None:
+            return jsonify({"error": "Couleur du texte invalide (format hex, ex: #ffffff)"}), 400
     seuil_k = data.get('seuil_k')
     try:
         seuil_k = float(seuil_k) if seuil_k is not None else None
@@ -588,8 +595,9 @@ def create_tier():
                     nouveau_rang = apres_rang + 1
 
                 cur.execute(
-                    "INSERT INTO tiers (nom, couleur, seuil_k, rang) VALUES (%s, %s, %s, %s) RETURNING id",
-                    (nom, couleur, seuil_k, nouveau_rang),
+                    "INSERT INTO tiers (nom, couleur, couleur_texte, seuil_k, rang)"
+                    " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                    (nom, couleur, couleur_texte, seuil_k, nouveau_rang),
                 )
                 nouvel_id = cur.fetchone()[0]
                 _appliquer_plancher(cur)
@@ -608,7 +616,7 @@ def create_tier():
 @admin_bp.route('/admin/tiers/<int:tier_id>', methods=['PUT'])
 @permission_required('gestion_config')
 def update_tier(tier_id):
-    """Modifie nom, couleur ou seuil d'un tier (le rang passe par /reorder)."""
+    """Modifie nom, couleurs ou seuil d'un tier (le rang passe par /reorder)."""
     data = request.get_json() or {}
     try:
         with get_db_connection() as conn:
@@ -636,6 +644,11 @@ def update_tier(tier_id):
                     if couleur is None:
                         return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
                     champs.append("couleur = %s"); valeurs.append(couleur)
+                if 'couleur_texte' in data:
+                    couleur_texte = _couleur_valide(data['couleur_texte'])
+                    if couleur_texte is None:
+                        return jsonify({"error": "Couleur du texte invalide (format hex, ex: #ffffff)"}), 400
+                    champs.append("couleur_texte = %s"); valeurs.append(couleur_texte)
                 # seuil_k accepte meme sur le plancher actuel : le panneau envoie
                 # ses PUT avant le /reorder, qui retablit l'invariant.
                 if 'seuil_k' in data:
@@ -658,7 +671,7 @@ def update_tier(tier_id):
                 t_avant = next((t for t in avant if t["id"] == tier_id), {})
                 t_apres = next((t for t in apres if t["id"] == tier_id), {})
                 changements = {c: [t_avant.get(c), t_apres.get(c)]
-                               for c in ('nom', 'couleur', 'seuil_k')
+                               for c in ('nom', 'couleur', 'couleur_texte', 'seuil_k')
                                if t_avant.get(c) != t_apres.get(c)}
                 if changements:
                     audit.ecrire(cur, 'tier_modifie', 'systeme', tier_id, {
@@ -682,30 +695,43 @@ def update_tier(tier_id):
 @admin_bp.route('/admin/tiers/unranked', methods=['PUT'])
 @permission_required('gestion_config')
 def update_tier_u():
-    """Couleur de la pastille U (non classe). Pas de recalcul necessaire."""
+    """Couleurs de la pastille U (non classe) : fond et texte, chacun facultatif.
+
+    Pas de recalcul necessaire."""
     data = request.get_json(silent=True) or {}
-    couleur = _couleur_valide(data.get('couleur'))
-    if couleur is None:
+    nouvelles = {}
+    for champ, clef in (('couleur', 'tier_u_couleur'), ('couleur_texte', 'tier_u_couleur_texte')):
+        if champ in data:
+            valeur = _couleur_valide(data[champ])
+            if valeur is None:
+                return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
+            nouvelles[champ] = (clef, valeur)
+    if not nouvelles:
         return jsonify({"error": "Couleur invalide (format hex, ex: #f77b7b)"}), 400
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                avant = load_couleur_u(cur)
-                cur.execute("""
-                    INSERT INTO Configuration (key, value)
-                    VALUES ('tier_u_couleur', %s)
-                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                """, (couleur,))
+                fond = load_couleur_u(cur)
+                avant = {"couleur": fond, "couleur_texte": load_couleur_texte_u(cur, fond)}
+                for champ, (clef, valeur) in nouvelles.items():
+                    cur.execute("""
+                        INSERT INTO Configuration (key, value)
+                        VALUES (%s, %s)
+                        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                    """, (clef, valeur))
+                apres = dict(avant, **{c: v for c, (_, v) in nouvelles.items()})
                 # On ne journalise que ce qui a change.
-                if couleur.upper() != avant.upper():
+                changements = {c: [avant[c], apres[c]] for c in nouvelles
+                               if apres[c].upper() != avant[c].upper()}
+                if changements:
                     audit.ecrire(cur, 'tier_modifie', 'systeme', None, {
-                        "nom": "U", "champs": ["couleur"],
-                        "changements": {"couleur": [avant, couleur]},
-                        "avant": avant, "apres": couleur,
+                        "nom": "U", "champs": list(changements),
+                        "changements": changements,
+                        "avant": avant, "apres": apres,
                     })
             conn.commit()
             invalidate_cache()
-        return jsonify({"status": "success", "couleur": couleur})
+        return jsonify({"status": "success", **apres})
     except Exception as e:
         logger.error(f"Erreur update_tier_u: {e}")
         return jsonify({"error": "Requête invalide"}), 400
@@ -805,8 +831,9 @@ def reset_tiers():
                 cur.execute("DELETE FROM tiers")
                 for t in DEFAULT_TIERS:
                     cur.execute(
-                        "INSERT INTO tiers (nom, couleur, seuil_k, rang) VALUES (%s, %s, %s, %s)",
-                        (t["nom"], t["couleur"], t["seuil_k"], t["rang"]),
+                        "INSERT INTO tiers (nom, couleur, couleur_texte, seuil_k, rang)"
+                        " VALUES (%s, %s, %s, %s, %s)",
+                        (t["nom"], t["couleur"], t["couleur_texte"], t["seuil_k"], t["rang"]),
                     )
                 audit.ecrire(cur, 'tiers_reinitialises', 'systeme', None,
                              {"avant": avant, "apres": _etat_tiers(cur)})

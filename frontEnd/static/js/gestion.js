@@ -66,8 +66,9 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     }
 }
 
-// Couleurs des tiers (nom -> couleur), chargées une fois depuis /admin/tiers.
+// Couleurs des tiers (nom -> fond, nom -> texte), chargées une fois depuis /admin/tiers.
 let tiersColorCache = null;
+let tiersTexteCache = null;
 // Promesse partagée : loadPlayers() et loadTierLegend() démarrent en parallèle.
 let tiersPromesse = null;
 
@@ -77,6 +78,7 @@ async function loadTiers() {
     tiersPromesse = apiCall('/admin/tiers', 'GET').then(res => {
         const liste = Array.isArray(res) ? res : [];
         tiersColorCache = Object.fromEntries(liste.map(t => [t.nom, t.couleur]));
+        tiersTexteCache = Object.fromEntries(liste.map(t => [t.nom, t.couleur_texte || '#FFFFFF']));
         return liste;
     }).catch(e => {
         // Un échec permet de réessayer.
@@ -86,13 +88,17 @@ async function loadTiers() {
     return tiersPromesse;
 }
 
-// Couleur de la pastille U (non classé), promesse partagée.
+// Couleurs de la pastille U (non classé) : {couleur, couleur_texte}, promesse partagée.
 let couleurUPromesse = null;
 
 async function loadCouleurU() {
     if (couleurUPromesse) return couleurUPromesse;
-    couleurUPromesse = apiCall('/admin/tiers/unranked', 'GET').then(res =>
-        (res && /^#[0-9a-fA-F]{3,8}$/.test(res.couleur || '')) ? res.couleur : '#FFFFFF');
+    const hex = v => /^#[0-9a-fA-F]{3,8}$/.test(v || '');
+    couleurUPromesse = apiCall('/admin/tiers/unranked', 'GET').then(res => {
+        const couleur = (res && hex(res.couleur)) ? res.couleur : '#FFFFFF';
+        const couleur_texte = (res && hex(res.couleur_texte)) ? res.couleur_texte : texteLisible(couleur);
+        return { couleur, couleur_texte };
+    });
     return couleurUPromesse;
 }
 
@@ -103,8 +109,9 @@ function oublierTiers() {
 }
 
 async function loadTiersColorCache() {
-    const [, couleurU] = await Promise.all([loadTiers(), loadCouleurU()]);
-    tiersColorCache.U = couleurU;
+    const [, u] = await Promise.all([loadTiers(), loadCouleurU()]);
+    tiersColorCache.U = u.couleur;
+    tiersTexteCache.U = u.couleur_texte;
     return tiersColorCache;
 }
 
@@ -124,10 +131,12 @@ function getTierColor(rank) {
     const cleanedRank = rank.trim();
     if (cleanedRank === 'U') {
         const c = (tiersColorCache && tiersColorCache.U) || '#FFFFFF';
-        return { class: '', style: `background:${c}; color:${texteLisible(c)};` };
+        const t = (tiersTexteCache && tiersTexteCache.U) || texteLisible(c);
+        return { class: '', style: `background:${c}; color:${t};` };
     }
     const couleur = tiersColorCache && tiersColorCache[cleanedRank];
-    if (couleur) return { class: '', style: `background:${couleur}; color:#fff;` };
+    const texte = (tiersTexteCache && tiersTexteCache[cleanedRank]) || '#fff';
+    if (couleur) return { class: '', style: `background:${couleur}; color:${texte};` };
     return { class: 'is-light', style: '' };
 }
 
@@ -428,22 +437,22 @@ async function loadTierLegend() {
     if (!list) return; // page sans ce bloc
 
     // Cache partagé avec loadPlayers().
-    const [res, couleurU] = await Promise.all([loadTiers(), loadCouleurU()]);
+    const [res, u] = await Promise.all([loadTiers(), loadCouleurU()]);
     if (!Array.isArray(res)) return;
 
     const uLi = list.querySelector('li');
     const uTag = uLi && uLi.querySelector('.tag');
     if (uTag) {
         uTag.classList.remove('is-white');
-        uTag.style.background = couleurU;
-        uTag.style.color = texteLisible(couleurU);
+        uTag.style.background = u.couleur;
+        uTag.style.color = u.couleur_texte;
     }
     res.slice().sort((a, b) => b.rang - a.rang).forEach((t, idx, arr) => {
         const li = document.createElement('li');
         const tag = document.createElement('span');
         tag.className = 'tag is-light';
         tag.style.background = t.couleur;
-        tag.style.color = '#fff';
+        tag.style.color = t.couleur_texte || '#fff';
         tag.textContent = t.nom;
         const isPlancher = idx === arr.length - 1;
         li.appendChild(tag);

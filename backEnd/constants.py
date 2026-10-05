@@ -19,13 +19,17 @@ DEFAULT_SIGMA_THRESHOLD = 4.0
 # Tiers par defaut (seuil en multiples d'ecart-type), utilises si la table
 # `tiers` est vide et par le bouton de reinitialisation. seuil_k None = plancher.
 DEFAULT_TIERS = [
-    {"nom": "S", "couleur": "#f77b7b", "seuil_k": 1.0, "rang": 3},
-    {"nom": "A", "couleur": "#9cda74", "seuil_k": 0.0, "rang": 2},
-    {"nom": "B", "couleur": "#7fe6ee", "seuil_k": -1.0, "rang": 1},
-    {"nom": "C", "couleur": "#ae6ce4", "seuil_k": None, "rang": 0},
+    {"nom": "S", "couleur": "#f77b7b", "couleur_texte": "#FFFFFF", "seuil_k": 1.0, "rang": 3},
+    {"nom": "A", "couleur": "#9cda74", "couleur_texte": "#FFFFFF", "seuil_k": 0.0, "rang": 2},
+    {"nom": "B", "couleur": "#7fe6ee", "couleur_texte": "#FFFFFF", "seuil_k": -1.0, "rang": 1},
+    {"nom": "C", "couleur": "#ae6ce4", "couleur_texte": "#FFFFFF", "seuil_k": None, "rang": 0},
 ]
 
-# U (non classe) n'est pas un tier en base : sa couleur est dans `configuration`.
+# Couleur du texte d'un badge de tier quand rien n'est regle (l'apparence d'avant).
+DEFAULT_TIER_COULEUR_TEXTE = "#FFFFFF"
+
+# U (non classe) n'est pas un tier en base : ses couleurs sont dans `configuration`.
+# Sans reglage, le texte de U est noir ou blanc selon le fond (texte_lisible).
 DEFAULT_TIER_U_COULEUR = "#FFFFFF"
 
 RANKED_SIGMA_LIMIT = 2.5

@@ -44,6 +44,15 @@ BEGIN
             USING HINT = 'Le seed par defaut de 2026-09-13_add_tiers_table.sql n''a pas eu lieu.';
     END IF;
 
+    -- Colonne ajoutee a une table existante ; load_tiers() la lit.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tiers' AND column_name = 'couleur_texte'
+    ) THEN
+        RAISE EXCEPTION 'Rattrapage incomplet : tiers.couleur_texte absente.'
+            USING HINT = '2026-10-05_tier_couleur_texte.sql n''a pas abouti.';
+    END IF;
+
     -- Colonne ajoutee a une table existante ; le calcul de session suppose
     -- NOT NULL.
     IF NOT EXISTS (

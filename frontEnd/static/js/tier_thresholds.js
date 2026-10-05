@@ -7,11 +7,14 @@
 (function () {
     let chart = null;
     let mean = 0, stdev = 1;
-    // [{id, nom, couleur, seuil_k, rang}], trie rang DESC ; seuil_k null pour le plancher.
+    // [{id, nom, couleur, couleur_texte, seuil_k, rang}], trie rang DESC ;
+    // seuil_k null pour le plancher.
     let tiersState = [];
-    // U (non classe) : seule sa couleur se regle, envoyee si elle a change.
+    // U (non classe) : seules ses couleurs se reglent, envoyees si elles ont change.
     let couleurU = '#FFFFFF';
     let couleurUServeur = '#FFFFFF';
+    let couleurTexteU = '#0A0A0A';
+    let couleurTexteUServeur = '#0A0A0A';
     let playersRaw = []; // points {nom,x,y,color} venus du backend
     // Index (pas id) du tier en cours de glisse, -1 si aucun : un tier non
     // enregistre n'a pas d'id.
@@ -332,11 +335,11 @@
             ligne.dataset.idx = String(idx);
             ligne.style.setProperty('--tier-couleur', couleurSure(t.couleur));
 
-            // Pastille : ouvre la fenetre de choix de couleur.
+            // Pastille : ouvre la fenetre de choix des couleurs.
             const zCouleur = zone('couleur');
             const pastille = bouton('tier-pastille', 'fa-palette',
-                `Changer la couleur de ${t.nom || 'ce tier'}`, () => ouvrirChoixCouleur(idx));
-            peindrePastille(pastille, t.couleur);
+                `Changer les couleurs de ${t.nom || 'ce tier'}`, () => ouvrirChoixCouleur(idx));
+            peindrePastille(pastille, t.couleur, t.couleur_texte);
             zCouleur.appendChild(pastille);
 
             const zNom = zone('nom');
@@ -407,8 +410,8 @@
 
         const zCouleurU = zone('couleur');
         const pastilleU = bouton('tier-pastille', 'fa-palette',
-            'Changer la couleur de U (non classé)', () => ouvrirChoixCouleur(CHOIX_U));
-        peindrePastille(pastilleU, couleurU);
+            'Changer les couleurs de U (non classé)', () => ouvrirChoixCouleur(CHOIX_U));
+        peindrePastille(pastilleU, couleurU, couleurTexteU);
         zCouleurU.appendChild(pastilleU);
 
         const zNomU = zone('nom');
@@ -427,8 +430,9 @@
         body.appendChild(ligneU);
     }
 
-    // --- Choix de la couleur ------------------------------------------------
-    // Palette, curseurs et code hexadecimal ; applique a « Confirmer ».
+    // --- Choix des couleurs -------------------------------------------------
+    // Fond du badge et couleur du texte, l'un ou l'autre edite par la palette,
+    // les curseurs et le code hexadecimal ; applique a « Confirmer ».
 
     const HEX6 = /^#[0-9a-fA-F]{6}$/;
 
@@ -480,9 +484,10 @@
         return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0f172a' : '#ffffff';
     }
 
-    function peindrePastille(el, couleur) {
+    // Fond et icone aux couleurs du badge (texte lisible si non regle).
+    function peindrePastille(el, couleur, texte) {
         el.style.backgroundColor = couleurSure(couleur);
-        el.style.color = texteSur(couleur);
+        el.style.color = texte ? couleurSure(texte) : texteSur(couleur);
     }
 
     // Palette : 8 teintes en nuances, puis neutres et metaux (avec les couleurs
@@ -500,22 +505,41 @@
     })();
 
     const CHOIX_U = 'U'; // choixIdx de la pastille U
-    let choixIdx = -1; // tier dont on choisit la couleur
-    let choixCouleur = '#FFFFFF';
+    let choixIdx = -1; // tier dont on choisit les couleurs
+    let choixFond = '#FFFFFF';
+    let choixTexte = '#FFFFFF';
+    let choixCible = 'fond'; // couleur editee : 'fond' ou 'texte'
     let choixDeclencheur = null; // pastille a qui rendre le focus
 
     function elChoix(id) { return document.getElementById(id); }
 
     function cibleChoix(idx) {
-        return idx === CHOIX_U ? { nom: 'U', couleur: couleurU } : tiersState[idx];
+        return idx === CHOIX_U
+            ? { nom: 'U', couleur: couleurU, couleur_texte: couleurTexteU }
+            : tiersState[idx];
     }
 
-    // Met a jour la fenetre depuis `choixCouleur` (`source` : champ a ne pas reecrire).
+    function couleurEditee() {
+        return choixCible === 'texte' ? choixTexte : choixFond;
+    }
+
+    function poserCouleur(c) {
+        if (choixCible === 'texte') choixTexte = c; else choixFond = c;
+    }
+
+    // Met a jour la fenetre depuis la couleur editee (`source` : champ a ne pas reecrire).
     function afficherChoix(source) {
-        const c = choixCouleur;
+        const c = couleurEditee();
         const apercu = elChoix('tierCouleurApercu');
-        apercu.style.backgroundColor = c;
-        apercu.style.color = texteSur(c);
+        apercu.style.backgroundColor = choixFond;
+        apercu.style.color = choixTexte;
+
+        elChoix('tierCouleurCible').querySelectorAll('button[data-cible]').forEach(b => {
+            const oui = b.dataset.cible === choixCible;
+            b.classList.toggle('is-info', oui);
+            b.classList.toggle('is-selected', oui);
+            b.setAttribute('aria-pressed', oui ? 'true' : 'false');
+        });
 
         elChoix('tierPalette').querySelectorAll('button').forEach(b => {
             const oui = b.dataset.couleur === c;
@@ -546,11 +570,15 @@
         const modal = elChoix('tierCouleurModal');
         if (!t || !modal) return;
         choixIdx = idx;
-        choixCouleur = versHex6(t.couleur);
+        choixFond = versHex6(t.couleur);
+        choixTexte = t.couleur_texte ? versHex6(t.couleur_texte) : texteSur(t.couleur).toUpperCase();
+        choixCible = 'fond';
         choixDeclencheur = document.activeElement;
-        elChoix('tierCouleurTitre').textContent = `Couleur du tier ${t.nom.trim() || ''}`.trim();
+        elChoix('tierCouleurTitre').textContent = `Couleurs du tier ${t.nom.trim() || ''}`.trim();
         elChoix('tierCouleurApercu').textContent = t.nom.trim() || '?';
-        elChoix('tierCouleurAvant').style.backgroundColor = couleurSure(t.couleur);
+        const avant = elChoix('tierCouleurAvant');
+        avant.textContent = t.nom.trim() || '?';
+        peindrePastille(avant, t.couleur, t.couleur_texte);
         afficherChoix();
         modal.classList.add('is-active');
         document.documentElement.classList.add('is-clipped');
@@ -567,9 +595,20 @@
         choixDeclencheur = null;
     }
 
+    // N'ecrase une couleur que si elle a change (evite un envoi pour une casse).
+    function appliquerChoix(cible) {
+        if (versHex6(cible.couleur) !== choixFond) cible.couleur = choixFond;
+        if (!cible.couleur_texte || versHex6(cible.couleur_texte) !== choixTexte) {
+            cible.couleur_texte = choixTexte;
+        }
+    }
+
     function confirmerChoixCouleur() {
         if (choixIdx === CHOIX_U) {
-            couleurU = choixCouleur;
+            const u = cibleChoix(CHOIX_U);
+            appliquerChoix(u);
+            couleurU = u.couleur;
+            couleurTexteU = u.couleur_texte;
             fermerChoixCouleur();
             renderTiersPanel(); // U n'est pas sur le graphique
             const p = document.querySelector('#tiersListBody .tier-ligne-u .tier-pastille');
@@ -578,7 +617,7 @@
         }
         const t = tiersState[choixIdx];
         if (t) {
-            t.couleur = choixCouleur;
+            appliquerChoix(t);
             // Panneau reconstruit : le focus revient a la nouvelle pastille.
             const idx = choixIdx;
             fermerChoixCouleur();
@@ -609,15 +648,23 @@
         palette.addEventListener('click', e => {
             const b = e.target.closest('button[data-couleur]');
             if (!b) return;
-            choixCouleur = b.dataset.couleur;
+            poserCouleur(b.dataset.couleur);
+            afficherChoix();
+        });
+
+        // Bascule fond / texte : les reglages suivants s'appliquent a la cible.
+        elChoix('tierCouleurCible').addEventListener('click', e => {
+            const b = e.target.closest('button[data-cible]');
+            if (!b) return;
+            choixCible = b.dataset.cible;
             afficherChoix();
         });
 
         ['tierCurseurTeinte', 'tierCurseurSaturation', 'tierCurseurClarte'].forEach(id => {
             elChoix(id).addEventListener('input', () => {
-                choixCouleur = hslVersHex(+elChoix('tierCurseurTeinte').value,
-                                          +elChoix('tierCurseurSaturation').value,
-                                          +elChoix('tierCurseurClarte').value);
+                poserCouleur(hslVersHex(+elChoix('tierCurseurTeinte').value,
+                                        +elChoix('tierCurseurSaturation').value,
+                                        +elChoix('tierCurseurClarte').value));
                 afficherChoix('curseurs');
             });
         });
@@ -628,7 +675,7 @@
             if (v && v[0] !== '#') v = '#' + v;
             const ok = HEX6.test(v);
             hex.classList.toggle('is-danger', !ok && v.length >= 7);
-            if (ok) { choixCouleur = v.toUpperCase(); afficherChoix('hex'); }
+            if (ok) { poserCouleur(v.toUpperCase()); afficherChoix('hex'); }
         });
         // Entree dans le champ code = Confirmer.
         hex.addEventListener('keydown', e => {
@@ -677,7 +724,10 @@
         const top = tiersState[0];
         const nouveauK = top && top.seuil_k !== null && top.seuil_k !== undefined ? top.seuil_k + 1 : 1;
         // id null : tier a creer par saveTiers.
-        tiersState.unshift({ id: null, nom: 'Nouveau', couleur: '#cccccc', seuil_k: nouveauK, rang: 0 });
+        tiersState.unshift({
+            id: null, nom: 'Nouveau', couleur: '#cccccc', couleur_texte: texteSur('#cccccc'),
+            seuil_k: nouveauK, rang: 0,
+        });
         appliquerPlancherLocal();
         redraw();
     }
@@ -761,7 +811,8 @@
             for (const t of tiersState) {
                 if (!estIdServeur(t.id)) {
                     const res = await apiCall('/admin/tiers', 'POST', {
-                        nom: t.nom.trim(), couleur: t.couleur, seuil_k: t.seuil_k,
+                        nom: t.nom.trim(), couleur: t.couleur, couleur_texte: t.couleur_texte,
+                        seuil_k: t.seuil_k,
                     });
                     if (res.error) throw new Error(res.error);
                     if (typeof res.id !== 'number') throw new Error("Le serveur n'a pas renvoyé l'id du tier créé");
@@ -774,24 +825,27 @@
             const resOrdre = await apiCall('/admin/tiers/reorder', 'PUT', { ordre });
             if (resOrdre.error) throw new Error(resOrdre.error);
 
-            // 4. Nom, couleur et seuil des tiers crees ou modifies (seuil_k null
+            // 4. Nom, couleurs et seuil des tiers crees ou modifies (seuil_k null
             //    pour le plancher).
             const lus = new Map(original.map(t => [t.id, t]));
             for (const t of tiersState) {
                 const o = lus.get(t.id);
                 const seuil = t.seuil_k === undefined ? null : t.seuil_k;
                 if (o && o.nom === t.nom.trim() && o.couleur === t.couleur
+                        && o.couleur_texte === t.couleur_texte
                         && (o.seuil_k === undefined ? null : o.seuil_k) === seuil) continue;
                 const res = await apiCall(`/admin/tiers/${t.id}`, 'PUT', {
-                    nom: t.nom.trim(), couleur: t.couleur,
+                    nom: t.nom.trim(), couleur: t.couleur, couleur_texte: t.couleur_texte,
                     seuil_k: (t.seuil_k === undefined ? null : t.seuil_k),
                 });
                 if (res.error) throw new Error(res.error);
             }
 
-            // 5. Couleur de U.
-            if (couleurU !== couleurUServeur) {
-                const res = await apiCall('/admin/tiers/unranked', 'PUT', { couleur: couleurU });
+            // 5. Couleurs de U, envoyees ensemble : ce qui s'affiche est ce qui est garde.
+            if (couleurU !== couleurUServeur || couleurTexteU !== couleurTexteUServeur) {
+                const res = await apiCall('/admin/tiers/unranked', 'PUT', {
+                    couleur: couleurU, couleur_texte: couleurTexteU,
+                });
                 if (res.error) throw new Error(res.error);
             }
 
@@ -818,16 +872,19 @@
 
         // loadTiers() (gestion.js) mutualise la requete ; repli sur un appel
         // direct si gestion.js n'est pas charge.
-        const [dist, tiersData, couleurUData] = await Promise.all([
+        const [dist, tiersData, couleursUData] = await Promise.all([
             apiCall('/admin/config/tier-distribution', 'GET'),
             (typeof loadTiers === 'function')
                 ? loadTiers()
                 : apiCall('/admin/tiers', 'GET'),
             (typeof loadCouleurU === 'function')
                 ? loadCouleurU()
-                : apiCall('/admin/tiers/unranked', 'GET').then(r => r && r.couleur),
+                : apiCall('/admin/tiers/unranked', 'GET'),
         ]);
-        couleurU = couleurUServeur = couleurSure(couleurUData);
+        const u = couleursUData || {};
+        couleurU = couleurUServeur = couleurSure(u.couleur);
+        couleurTexteU = couleurTexteUServeur =
+            u.couleur_texte ? couleurSure(u.couleur_texte) : texteSur(couleurU);
 
         loading.style.display = 'none';
 
@@ -848,7 +905,10 @@
         const xMin = mean - CURVE_SPREAD * stdev, xMax = mean + CURVE_SPREAD * stdev;
 
         tiersState = (Array.isArray(tiersData) ? tiersData : [])
-            .map(t => ({ id: t.id, nom: t.nom, couleur: t.couleur, seuil_k: t.seuil_k, rang: t.rang }))
+            .map(t => ({
+                id: t.id, nom: t.nom, couleur: t.couleur,
+                couleur_texte: t.couleur_texte || '#FFFFFF', seuil_k: t.seuil_k, rang: t.rang,
+            }))
             .sort((a, b) => b.rang - a.rang);
         if (tiersState.length === 0) {
             empty.style.display = '';

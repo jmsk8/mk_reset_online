@@ -882,7 +882,7 @@
             return JSON.stringify(v);
         }
 
-        const CHAMPS_TIER = {nom: 'nom', couleur: 'couleur', seuil_k: 'seuil'};
+        const CHAMPS_TIER = {nom: 'nom', couleur: 'couleur', couleur_texte: 'couleur du texte', seuil_k: 'seuil'};
         function valeurTier(champ, v) {
             if (champ === 'seuil_k') return v === null ? 'aucun (plancher)' : (+v).toFixed(2) + 'σ';
             return String(v);

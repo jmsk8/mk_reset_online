@@ -216,9 +216,9 @@
                                             <p class="title is-4 has-text-light mb-1 is-flex is-align-items-center">
                                                 <span class="mr-2">{{ joueur.nom }}</span>
                                                 {% if tiers_couleurs.get(joueur.tier) %}
-                                                    <span class="tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: white;">{{ joueur.tier }}</span>
+                                                    <span class="tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: {{ tiers_textes[joueur.tier] }};">{{ joueur.tier }}</span>
                                                 {% else %}
-                                                    <span class="tag" style="background: {{ couleur_u }}; color: {{ couleur_u|texte_lisible }};">U</span>
+                                                    <span class="tag" style="background: {{ couleur_u }}; color: {{ couleur_texte_u }};">U</span>
                                                 {% endif %}
                                             </p>
                                             <div class="tags">

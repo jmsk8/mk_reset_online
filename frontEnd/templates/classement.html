@@ -185,7 +185,7 @@
                                 <div class="columns is-mobile is-multiline is-centered has-text-centered" style="margin-bottom: 1rem;">
                                     {% for t in tiers %}
                                     <div class="column is-narrow">
-                                        <span class="tag tier-tag is-small" style="background: {{ t.couleur }}; color: white;">{{ t.nom }}</span>
+                                        <span class="tag tier-tag is-small" style="background: {{ t.couleur }}; color: {{ t.couleur_texte or '#FFFFFF' }} !important;">{{ t.nom }}</span>
                                         {% if t.seuil is not none %}
                                         <span class="has-text-grey-light is-size-7">&ge; {{ t.seuil }}</span>
                                         {% else %}
@@ -249,10 +249,10 @@
                                                     </td>
                                                     <td>
                                                         {% if joueur.tier in ['U', '?', 'Unranked'] %}
-                                                            {# Texte noir ou blanc selon la couleur reglee ; !important passe devant .tier-tag. #}
-                                                            <span class="tag tier-tag" style="background: {{ couleur_u }}; color: {{ couleur_u|texte_lisible }} !important;">U</span>
+                                                            {# !important passe devant .tier-tag. #}
+                                                            <span class="tag tier-tag" style="background: {{ couleur_u }}; color: {{ couleur_texte_u }} !important;">U</span>
                                                         {% elif tiers_couleurs.get(joueur.tier) %}
-                                                            <span class="tag tier-tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: white;">{{ joueur.tier }}</span>
+                                                            <span class="tag tier-tag" style="background: {{ tiers_couleurs[joueur.tier] }}; color: {{ tiers_textes[joueur.tier] }} !important;">{{ joueur.tier }}</span>
                                                         {% else %}
                                                             <span class="tag is-light tier-tag">{{ joueur.tier }}</span>
                                                         {% endif %}

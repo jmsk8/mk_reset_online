@@ -408,9 +408,10 @@ def classement():
     tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
     if tiers_status == 200 and isinstance(tiers_data, list):
         tiers = tiers_data
-    # Couleur de chaque tier pour les badges.
+    # Couleurs de chaque tier pour les badges.
     tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers if t.get('nom')}
-    couleur_u = _couleur_u()
+    tiers_textes = _textes_tiers(tiers)
+    couleur_u, couleur_texte_u = _couleurs_u()
 
     saison = None
     if vue == 'saison':
@@ -421,21 +422,30 @@ def classement():
         if s_status == 200 and isinstance(s_data, dict):
             saison = s_data
 
-    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, tiers=tiers, tiers_couleurs=tiers_couleurs, couleur_u=couleur_u, distribution_data=distribution_data, vue=vue, saison=saison)
+    return render_template("classement.html", joueurs=joueurs, tier_actif=tier, ligue_active=ligue_id, ligues=ligues, tiers=tiers, tiers_couleurs=tiers_couleurs, tiers_textes=tiers_textes, couleur_u=couleur_u, couleur_texte_u=couleur_texte_u, distribution_data=distribution_data, vue=vue, saison=saison)
 
 
 _RE_COULEUR_HEX = re.compile(r'#[0-9a-fA-F]{3,8}')
 
 
-def _couleur_u():
-    """Couleur de la pastille U, blanc si le backend ne repond pas (revalidee :
-    elle finit dans un attribut style)."""
+def _couleurs_u():
+    """(fond, texte) de la pastille U ; fond blanc si le backend ne repond pas,
+    texte lisible sur le fond s'il manque (revalidees : elles finissent dans un
+    attribut style)."""
     data, status = backend_request('GET', '/tiers/unranked')
-    couleur = data.get('couleur') if status == 200 and isinstance(data, dict) else None
-    return couleur if isinstance(couleur, str) and _RE_COULEUR_HEX.fullmatch(couleur) else '#FFFFFF'
+    data = data if status == 200 and isinstance(data, dict) else {}
+    fond = data.get('couleur')
+    fond = fond if isinstance(fond, str) and _RE_COULEUR_HEX.fullmatch(fond) else '#FFFFFF'
+    texte = data.get('couleur_texte')
+    texte = texte if isinstance(texte, str) and _RE_COULEUR_HEX.fullmatch(texte) else texte_lisible(fond)
+    return fond, texte
 
 
-@app.template_filter('texte_lisible')
+def _textes_tiers(tiers):
+    """Couleur du texte de chaque badge de tier (blanc si absente)."""
+    return {t.get('nom'): t.get('couleur_texte') or '#FFFFFF' for t in tiers if t.get('nom')}
+
+
 def texte_lisible(couleur):
     """Noir ou blanc selon le contraste avec `couleur` (meme calcul que texteSur()
     de tier_thresholds.js)."""
@@ -448,13 +458,14 @@ def texte_lisible(couleur):
 
 
 def _rendre_fiche_joueur(nom, data):
-    # Couleur de chaque tier.
-    tiers_couleurs = {}
+    # Couleurs de chaque tier.
+    tiers_couleurs, tiers_textes = {}, {}
     tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
     if tiers_status == 200 and isinstance(tiers_data, list):
         tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers_data if t.get('nom')}
+        tiers_textes = _textes_tiers(tiers_data)
     stats = data.get('stats') or {}
-    couleur_u = _couleur_u() if stats.get('tier') == 'U' else None
+    couleur_u, couleur_texte_u = _couleurs_u() if stats.get('tier') == 'U' else (None, None)
 
     return render_template(
         "stats_joueur.html",
@@ -468,7 +479,9 @@ def _rendre_fiche_joueur(nom, data):
         profil=data.get('profil'),
         url_canonique=data.get('url_canonique'),
         tiers_couleurs=tiers_couleurs,
+        tiers_textes=tiers_textes,
         couleur_u=couleur_u,
+        couleur_texte_u=couleur_texte_u,
     )
 
 
@@ -524,14 +537,17 @@ def stats_joueurs():
         joueurs = []
         dist = {}
 
-    # Couleur de chaque tier.
-    tiers_couleurs = {}
+    # Couleurs de chaque tier.
+    tiers_couleurs, tiers_textes = {}, {}
     tiers_data, tiers_status = backend_request('GET', '/tier-seuils')
     if tiers_status == 200 and isinstance(tiers_data, list):
         tiers_couleurs = {t.get('nom'): t.get('couleur') for t in tiers_data if t.get('nom')}
+        tiers_textes = _textes_tiers(tiers_data)
+    couleur_u, couleur_texte_u = _couleurs_u()
 
     return render_template("stats_joueurs.html", joueurs=joueurs, distribution_tiers=dist,
-                           tiers_couleurs=tiers_couleurs, couleur_u=_couleur_u())
+                           tiers_couleurs=tiers_couleurs, tiers_textes=tiers_textes,
+                           couleur_u=couleur_u, couleur_texte_u=couleur_texte_u)
 
 @app.route('/stats/tournois')
 def stats_tournois():

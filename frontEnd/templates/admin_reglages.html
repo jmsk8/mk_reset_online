@@ -84,9 +84,12 @@
             transition: background-color 0.1s, color 0.1s;
         }
         .tier-couleur-avant {
-            width: 1.6rem; height: 1.6rem; border-radius: 50%;
+            min-width: 1.6rem; height: 1.6rem; padding: 0 0.5rem; border-radius: 0.8rem;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; font-weight: 700;
             border: 2px solid rgba(255,255,255,0.35);
         }
+        .tier-couleur-cible { justify-content: center; margin-bottom: 0.75rem !important; }
         .tier-palette { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
         .tier-palette button {
             aspect-ratio: 1; width: 100%; padding: 0; cursor: pointer;
@@ -303,8 +306,8 @@
 
                                 {# Lignes construites par tier_thresholds.js, du meilleur tier au plancher. #}
                                 <p class="has-text-grey-light is-size-7 mt-4 mb-2">
-                                    Du meilleur tier au plus bas, puis U (non classés), dont seule la couleur se règle.
-                                    Touchez la pastille pour changer la couleur.
+                                    Du meilleur tier au plus bas, puis U (non classés), dont seules les couleurs se règlent.
+                                    Touchez la pastille pour changer la couleur du badge et celle de son texte.
                                 </p>
                                 <div id="tiersListBody" class="tiers-liste"></div>
 
@@ -327,18 +330,28 @@
                         </div>
                     </div>
 
-                    {# Choix de couleur d'un tier, applique a « Confirmer ». #}
+                    {# Choix des couleurs d'un tier (fond et texte), applique a « Confirmer ». #}
                     <div class="modal" id="tierCouleurModal" role="dialog" aria-modal="true" aria-labelledby="tierCouleurTitre">
                         <div class="modal-background" data-fermer></div>
                         <div class="modal-card tier-couleur-carte">
                             <header class="modal-card-head">
-                                <p class="modal-card-title" id="tierCouleurTitre">Couleur du tier</p>
+                                <p class="modal-card-title" id="tierCouleurTitre">Couleurs du tier</p>
                                 <button type="button" class="delete" aria-label="Fermer" data-fermer></button>
                             </header>
                             <section class="modal-card-body">
                                 <div class="tier-couleur-apercu">
                                     <span class="tier-couleur-badge" id="tierCouleurApercu"></span>
-                                    <span class="tier-couleur-avant" id="tierCouleurAvant" title="Couleur actuelle"></span>
+                                    <span class="tier-couleur-avant" id="tierCouleurAvant" title="Couleurs actuelles"></span>
+                                </div>
+
+                                <div class="buttons has-addons tier-couleur-cible" id="tierCouleurCible"
+                                     role="group" aria-label="Couleur à modifier">
+                                    <button type="button" class="button is-small" data-cible="fond" aria-pressed="true">
+                                        <i class="fas fa-fill-drip mr-1"></i> Badge
+                                    </button>
+                                    <button type="button" class="button is-small" data-cible="texte" aria-pressed="false">
+                                        <i class="fas fa-font mr-1"></i> Texte
+                                    </button>
                                 </div>
 
                                 <div class="tier-palette" id="tierPalette" role="listbox" aria-label="Palette"></div>

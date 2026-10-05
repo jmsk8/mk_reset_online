@@ -20,6 +20,7 @@ from services import (
     _aggregate_season_stats, _determine_winners,
     trueskill_score, has_tier, compute_distribution_stats,
     tier_thresholds, normal_top_percent, build_distribution, load_tiers, load_couleur_u,
+    load_couleur_texte_u,
     compute_ip_evolution, compute_position_evolution, compute_position_breakdown,
 )
 
@@ -858,7 +859,8 @@ def tier_seuils():
                 seuils = tier_thresholds(valid_scores, tiers)
                 return jsonify([
                     {
-                        "nom": t["nom"], "couleur": t["couleur"], "rang": t["rang"],
+                        "nom": t["nom"], "couleur": t["couleur"],
+                        "couleur_texte": t["couleur_texte"], "rang": t["rang"],
                         "seuil": seuils.get(t["nom"]) if t["seuil_k"] is not None else None,
                     }
                     for t in tiers
@@ -869,11 +871,12 @@ def tier_seuils():
 
 @public_bp.route('/tiers/unranked')
 def couleur_tier_u():
-    """Couleur de la pastille U (non classe)."""
+    """Couleurs de la pastille U (non classe) : fond et texte."""
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                return jsonify({"couleur": load_couleur_u(cur)})
+                fond = load_couleur_u(cur)
+                return jsonify({"couleur": fond, "couleur_texte": load_couleur_texte_u(cur, fond)})
     except Exception:
         return jsonify({"error": "Erreur serveur"}), 500
 

@@ -46,12 +46,14 @@ INSERT INTO public.configuration (key, value) VALUES
 ('inter_league_moves', '0'),
 ('ip_version_live', 'v1');
 
--- TIERS : nom, couleur, seuil en ecart-type, rang (decroissant du meilleur au
--- pire). seuil_k NULL uniquement pour le plancher. 'U' n'est pas un tier.
+-- TIERS : nom, couleur du badge et de son texte, seuil en ecart-type, rang
+-- (decroissant du meilleur au pire). seuil_k NULL uniquement pour le plancher.
+-- 'U' n'est pas un tier.
 CREATE TABLE public.tiers (
     id SERIAL PRIMARY KEY,
     nom VARCHAR(10) NOT NULL,
     couleur VARCHAR(20) NOT NULL,
+    couleur_texte VARCHAR(20) NOT NULL DEFAULT '#FFFFFF',
     seuil_k DOUBLE PRECISION,
     rang INTEGER NOT NULL UNIQUE
 );

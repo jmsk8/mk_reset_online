@@ -160,14 +160,14 @@ def compute_distribution_stats(scores: Iterable[float]) -> tuple[float, float] |
 
 def load_tiers(cur) -> list[dict]:
     """Tiers tries par rang decroissant, ou DEFAULT_TIERS si la table est vide."""
-    cur.execute("SELECT id, nom, couleur, seuil_k, rang FROM tiers ORDER BY rang DESC")
+    cur.execute("SELECT id, nom, couleur, seuil_k, rang, couleur_texte FROM tiers ORDER BY rang DESC")
     rows = cur.fetchall()
     if not rows:
         # id None : defaut non persiste.
         return [dict(t, id=None) for t in DEFAULT_TIERS]
     return [
-        {"id": i, "nom": n, "couleur": c, "seuil_k": k, "rang": r}
-        for i, n, c, k, r in rows
+        {"id": i, "nom": n, "couleur": c, "couleur_texte": ct, "seuil_k": k, "rang": r}
+        for i, n, c, k, r, ct in rows
     ]
 
 
@@ -176,6 +176,24 @@ def load_couleur_u(cur) -> str:
     cur.execute("SELECT value FROM Configuration WHERE key = 'tier_u_couleur'")
     row = cur.fetchone()
     return row[0] if row and row[0] else DEFAULT_TIER_U_COULEUR
+
+
+def texte_lisible(couleur: str) -> str:
+    """Noir ou blanc selon le contraste avec `couleur` (meme calcul que le front)."""
+    h = (couleur or '').lstrip('#')
+    h = ''.join(c * 2 for c in h[:3]) if len(h) in (3, 4) else h[:6]
+    try:
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return '#0A0A0A'
+    return '#0A0A0A' if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else '#FFFFFF'
+
+
+def load_couleur_texte_u(cur, fond: str) -> str:
+    """Couleur du texte de la pastille U ; sans reglage, lisible sur `fond`."""
+    cur.execute("SELECT value FROM Configuration WHERE key = 'tier_u_couleur_texte'")
+    row = cur.fetchone()
+    return row[0] if row and row[0] else texte_lisible(fond)
 
 
 def tier_thresholds(scores: Iterable[float], tiers: list[dict]) -> dict[str, float]:

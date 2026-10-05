@@ -76,7 +76,7 @@ check("le plancher renomme (Bronze) sert de secours",
       services.tier_for_score(mean - 10 * stdev, mean, stdev, cinq_tiers) == 'Bronze')
 check("tiers vide -> 'U' plutot que de lever",
       services.tier_for_score(0, 0, 1, []) == 'U')
-_vide = services.load_tiers(FakeCursor([(r"SELECT id, nom, couleur, seuil_k, rang FROM tiers", [])]))
+_vide = services.load_tiers(FakeCursor([(r"SELECT id, nom, couleur, seuil_k, rang, couleur_texte FROM tiers", [])]))
 check("load_tiers retombe sur DEFAULT_TIERS si la table est vide",
       [t["nom"] for t in _vide] == ['S', 'A', 'B', 'C'], _vide)
 check("  le fallback porte un id explicite (None) et non un champ absent",
@@ -85,8 +85,8 @@ check("  et il ne modifie pas DEFAULT_TIERS en place",
       all('id' not in t for t in services.DEFAULT_TIERS), services.DEFAULT_TIERS)
 
 _avec_ids = services.load_tiers(FakeCursor([
-    (r"SELECT id, nom, couleur, seuil_k, rang FROM tiers",
-     [(5, 'S', '#f77b7b', 1.0, 3), (6, 'C', '#ae6ce4', None, 0)])]))
+    (r"SELECT id, nom, couleur, seuil_k, rang, couleur_texte FROM tiers",
+     [(5, 'S', '#f77b7b', 1.0, 3, '#FFFFFF'), (6, 'C', '#ae6ce4', None, 0, '#FFFFFF')])]))
 check("load_tiers remonte l'id de chaque ligne",
       [t["id"] for t in _avec_ids] == [5, 6], _avec_ids)
 
@@ -94,8 +94,8 @@ check("load_tiers remonte l'id de chaque ligne",
 print("\n=== GET /admin/tiers : lecture ouverte a toute session authentifiee ===")
 cli, cur, conn = monter([
     SESSION('player'),
-    (r"SELECT id, nom, couleur, seuil_k, rang FROM tiers",
-     [(7, 'S', '#f77b7b', 1.0, 3), (8, 'A', '#9cda74', 0.0, 2)]),
+    (r"SELECT id, nom, couleur, seuil_k, rang, couleur_texte FROM tiers",
+     [(7, 'S', '#f77b7b', 1.0, 3, '#FFFFFF'), (8, 'A', '#9cda74', 0.0, 2, '#FFFFFF')]),
 ])
 r = cli.get('/admin/tiers', headers=H)
 check("200 pour un simple joueur connecte (pas un secret)", r.status_code == 200, r.status_code)
@@ -107,8 +107,8 @@ check("CHAQUE tier expose son id (le panneau admin en depend)",
       all(isinstance(t.get('id'), int) for t in r.get_json()), r.get_json())
 check("  et les ids sont ceux de la base, pas des indices",
       [t['id'] for t in r.get_json()] == [7, 8], r.get_json())
-check("  le tier porte aussi couleur, seuil_k et rang",
-      all({'id', 'nom', 'couleur', 'seuil_k', 'rang'} <= set(t) for t in r.get_json()),
+check("  le tier porte aussi couleur, couleur_texte, seuil_k et rang",
+      all({'id', 'nom', 'couleur', 'couleur_texte', 'seuil_k', 'rang'} <= set(t) for t in r.get_json()),
       r.get_json())
 
 
@@ -133,6 +133,10 @@ check("couleur invalide refusee (400)", r.status_code == 400, (r.status_code, r.
 r = cli.post('/admin/tiers', headers=H, json={'nom': 'GM', 'couleur': '#123456', 'seuil_k': 'abc'})
 check("seuil_k non numerique refuse (400)", r.status_code == 400, (r.status_code, r.get_json()))
 
+r = cli.post('/admin/tiers', headers=H,
+             json={'nom': 'GM', 'couleur': '#123456', 'couleur_texte': 'red; x', 'seuil_k': 1.0})
+check("couleur du texte invalide refusee (400)", r.status_code == 400, (r.status_code, r.get_json()))
+
 
 print("\n=== POST /admin/tiers : creation acceptee, gate gestion_config, recalcule ===")
 cli, cur, conn = monter([SESSION('admin')], permissions={'gestion_ligues'})
@@ -156,7 +160,22 @@ check("l'id du tier cree est renvoye (le panneau admin en depend pour le reordon
 check("recalculate_tiers() appele immediatement", appels == [True], appels)
 inserts = [p for s, p in cur.executed if s.startswith('INSERT INTO tiers')]
 check("le nouveau tier prend le rang max+1 (sommet) par defaut",
-      inserts and inserts[0][3] == 4, inserts)
+      inserts and inserts[0][4] == 4, inserts)
+check("  et un texte blanc par defaut (l'apparence d'avant)",
+      inserts and inserts[0][2] == '#FFFFFF', inserts)
+
+cli, cur, conn = monter([
+    SESSION('admin'),
+    (r"SELECT COUNT\(\*\) FROM tiers WHERE UPPER\(nom\)", (0,)),
+    (r"SELECT rang FROM tiers ORDER BY rang DESC", (3,)),
+    (r"INSERT INTO tiers .* RETURNING id", (1,)),
+    (r"SELECT id, seuil_k FROM tiers ORDER BY rang ASC LIMIT 1", (1, 2.0)),
+], permissions={'gestion_config'})
+r = cli.post('/admin/tiers', headers=H,
+             json={'nom': 'GM', 'couleur': '#123456', 'couleur_texte': '#0f172a', 'seuil_k': 2.0})
+inserts = [p for s, p in cur.executed if s.startswith('INSERT INTO tiers')]
+check("couleur du texte fournie -> enregistree telle quelle",
+      r.status_code == 200 and inserts and inserts[0][2] == '#0f172a', (r.status_code, inserts))
 
 
 print("\n=== POST /admin/tiers : nom deja pris refuse ===")
@@ -289,9 +308,9 @@ def etats(*listes):
     restantes = list(listes)
     def lire(params):
         return restantes.pop(0) if len(restantes) > 1 else restantes[0]
-    return (r"SELECT id, nom, couleur, seuil_k, rang FROM tiers", lire)
+    return (r"SELECT id, nom, couleur, seuil_k, rang, couleur_texte FROM tiers", lire)
 
-SAB = [(1, 'S', '#f77b7b', 1.0, 2), (2, 'A', '#9cda74', 0.0, 1), (3, 'B', '#7fe6ee', None, 0)]
+SAB = [(1, 'S', '#f77b7b', 1.0, 2, '#FFFFFF'), (2, 'A', '#9cda74', 0.0, 1, '#FFFFFF'), (3, 'B', '#7fe6ee', None, 0, '#FFFFFF')]
 audits = lambda cur: [p for s, p in cur.executed if 'audit_admin' in s]
 
 
@@ -300,7 +319,7 @@ cli, cur, conn = monter([
     SESSION('admin'),
     (r"SELECT id FROM tiers$", [(1,), (2,), (3,)]),
     (r"SELECT id, seuil_k FROM tiers ORDER BY rang ASC LIMIT 1", (3, None)),
-    etats(SAB, [(3, 'B', '#7fe6ee', 1.0, 2), (1, 'S', '#f77b7b', 0.0, 1), (2, 'A', '#9cda74', None, 0)]),
+    etats(SAB, [(3, 'B', '#7fe6ee', 1.0, 2, '#FFFFFF'), (1, 'S', '#f77b7b', 0.0, 1, '#FFFFFF'), (2, 'A', '#9cda74', None, 0, '#FFFFFF')]),
 ], permissions={'gestion_config'})
 appels = []
 import routes_admin
@@ -336,7 +355,7 @@ PUT_S = [SESSION('admin'),
          (r"SELECT COUNT\(\*\) FROM tiers WHERE UPPER\(nom\) = UPPER\(%s\) AND id", (0,))]
 TOUT_S = {'nom': 'S', 'couleur': '#334155', 'seuil_k': 1.0}
 
-cli, cur, conn = monter(PUT_S + [etats(SAB, [(1, 'S', '#334155', 1.0, 2)] + SAB[1:])],
+cli, cur, conn = monter(PUT_S + [etats(SAB, [(1, 'S', '#334155', 1.0, 2, '#FFFFFF')] + SAB[1:])],
                         permissions={'gestion_config'})
 appels = []
 import routes_admin
@@ -360,6 +379,23 @@ check("tier renvoye a l'identique -> 200", r.status_code == 200, (r.status_code,
 check("  sans ligne au journal", audits(cur) == [], audits(cur))
 check("  ni recalcul", appels == [], appels)
 
+cli, cur, conn = monter(PUT_S + [etats(SAB, [(1, 'S', '#f77b7b', 1.0, 2, '#0F172A')] + SAB[1:])],
+                        permissions={'gestion_config'})
+r = cli.put('/admin/tiers/1', headers=H, json=dict(TOUT_S, couleur='#f77b7b', couleur_texte='#0F172A'))
+check("couleur du texte changee -> 200", r.status_code == 200, (r.status_code, r.get_json()))
+check("  ecrite dans la colonne couleur_texte",
+      any('couleur_texte = %s' in s and '#0F172A' in p for s, p in cur.executed
+          if s.startswith('UPDATE tiers')), cur.executed)
+check("  le journal ne cite qu'elle, avec l'avant et l'apres",
+      audits(cur) and '"champs": ["couleur_texte"]' in str(audits(cur)[0])
+      and '"couleur_texte": ["#FFFFFF", "#0F172A"]' in str(audits(cur)[0]), audits(cur))
+
+cli, cur, conn = monter(PUT_S + [etats(SAB)], permissions={'gestion_config'})
+r = cli.put('/admin/tiers/1', headers=H, json={'couleur_texte': 'blanc'})
+check("couleur du texte invalide -> 400, rien d'ecrit",
+      r.status_code == 400 and not any(s.startswith('UPDATE tiers') for s, _ in cur.executed),
+      (r.status_code, cur.executed))
+
 
 print("\n=== POST /admin/tiers/reset : restaure S/A/B/C, recalcule ===")
 cli, cur, conn = monter([SESSION('admin')], permissions={'gestion_config'})
@@ -374,6 +410,7 @@ check("la table est videe avant reinsertion",
 inserts = [p for s, p in cur.executed if s.startswith('INSERT INTO tiers')]
 check("les 4 tiers par defaut sont reinseres",
       sorted(p[0] for p in inserts) == ['A', 'B', 'C', 'S'], inserts)
+check("  avec leur texte blanc par defaut", all(p[2] == '#FFFFFF' for p in inserts), inserts)
 
 cli, cur, conn = monter([SESSION('admin')], permissions={'gestion_ligues'})
 r = cli.post('/admin/tiers/reset', headers=H)
@@ -398,9 +435,9 @@ print("\n=== recalculate_tiers() charge les tiers via load_tiers ===")
 sys.modules.pop('services', None)
 plan = [
     (r"key = 'sigma_threshold'", ('4.0',)),
-    (r"SELECT id, nom, couleur, seuil_k, rang FROM tiers",
-     [(1, 'S', '#f77b7b', 2.0, 3), (2, 'A', '#9cda74', 0.5, 2),
-      (3, 'B', '#7fe6ee', -2.0, 1), (4, 'C', '#ae6ce4', None, 0)]),
+    (r"SELECT id, nom, couleur, seuil_k, rang, couleur_texte FROM tiers",
+     [(1, 'S', '#f77b7b', 2.0, 3, '#FFFFFF'), (2, 'A', '#9cda74', 0.5, 2, '#FFFFFF'),
+      (3, 'B', '#7fe6ee', -2.0, 1, '#FFFFFF'), (4, 'C', '#ae6ce4', None, 0, '#FFFFFF')]),
     (r"SELECT id, mu, sigma, is_ranked FROM Joueurs",
      [(1, 15.0, 1.0, True), (2, 11.0, 1.0, True), (3, 19.0, 1.0, True), (4, 7.0, 1.0, True)]),
 ]
@@ -414,7 +451,7 @@ try:
 except Exception as e:
     ok = False
 check("recalculate_tiers s'execute et commit avec des tiers non-defaut", ok)
-lu = [s for s, _ in cur.executed if 'SELECT id, nom, couleur, seuil_k, rang FROM tiers' in s]
+lu = [s for s, _ in cur.executed if 'SELECT id, nom, couleur, seuil_k, rang, couleur_texte FROM tiers' in s]
 check("load_tiers est bien appele pendant le recalcul", len(lu) == 1, cur.executed)
 
 
@@ -464,9 +501,9 @@ import routes_admin
 routes_admin.recalculate_tiers = lambda: appels.append(True)
 r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur': '#334155'})
 check("200 pour un compte gestion_config", r.status_code == 200, (r.status_code, r.get_json()))
-ecrit = [p for s, p in cur.executed
-         if s.startswith('INSERT INTO Configuration') and 'tier_u_couleur' in s]
-check("la couleur part dans configuration, clef tier_u_couleur", ecrit == [('#334155',)], cur.executed)
+ecrit = [p for s, p in cur.executed if s.startswith('INSERT INTO Configuration')]
+check("la couleur part dans configuration, clef tier_u_couleur",
+      ecrit == [('tier_u_couleur', '#334155')], cur.executed)
 check("rien n'est ecrit dans la table tiers : U n'en est pas un",
       not any('tiers' in s.split('INTO')[-1].split()[0].lower()
               for s, _ in cur.executed if s.startswith(('INSERT', 'UPDATE', 'DELETE'))
@@ -484,7 +521,8 @@ for mauvaise in ('rouge', '#12', '', None, 'red; background: url(x)'):
     r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur': mauvaise})
     check("couleur invalide %r -> 400, rien d'ecrit" % (mauvaise,),
           r.status_code == 400
-          and not any('tier_u_couleur' in s or 'audit_admin' in s for s, _ in cur.executed),
+          and not any(s.startswith('INSERT INTO Configuration') or 'audit_admin' in s
+                      for s, _ in cur.executed),
           (r.status_code, r.get_json(), cur.executed))
 
 cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_config'})
@@ -496,6 +534,38 @@ check("meme couleur (casse comprise) -> 200 sans ligne au journal",
 cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_ligues'})
 r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur': '#334155'})
 check("403 sans gestion_config", r.status_code == 403, r.status_code)
+
+
+print("\n=== Couleur du texte de U ===")
+sys.modules.pop('services', None)
+install_db([])
+import services
+_t = services.load_couleur_texte_u(FakeCursor([]), '#FFFFFF')
+check("sans reglage, texte fonce sur fond clair", _t == '#0A0A0A', _t)
+_t = services.load_couleur_texte_u(FakeCursor([]), '#1E293B')
+check("sans reglage, texte blanc sur fond fonce", _t == '#FFFFFF', _t)
+_t = services.load_couleur_texte_u(FakeCursor([(r"key = 'tier_u_couleur_texte'", ('#FF0000',))]), '#FFFFFF')
+check("avec un reglage, sa valeur", _t == '#FF0000', _t)
+
+cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_config'})
+r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur': '#FFFFFF', 'couleur_texte': '#FF0000'})
+check("fond et texte envoyes ensemble -> 200", r.status_code == 200, (r.status_code, r.get_json()))
+ecrit = [p for s, p in cur.executed if s.startswith('INSERT INTO Configuration')]
+check("  le texte part dans configuration, clef tier_u_couleur_texte",
+      ('tier_u_couleur_texte', '#FF0000') in ecrit, ecrit)
+audit_u = [p for s, p in cur.executed if 'audit_admin' in s]
+check("  le journal ne cite que le texte (le fond n'a pas change)",
+      len(audit_u) == 1 and '"champs": ["couleur_texte"]' in str(audit_u[0]), audit_u)
+
+cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_config'})
+r = cli.put('/admin/tiers/unranked', headers=H, json={'couleur_texte': 'noir'})
+check("couleur du texte invalide -> 400, rien d'ecrit",
+      r.status_code == 400 and not any(s.startswith('INSERT INTO Configuration') for s, _ in cur.executed),
+      (r.status_code, cur.executed))
+
+cli, cur, conn = monter([SESSION('admin'), U_AVANT], permissions={'gestion_config'})
+r = cli.put('/admin/tiers/unranked', headers=H, json={})
+check("aucune couleur envoyee -> 400", r.status_code == 400, (r.status_code, r.get_json()))
 
 
 print("\n" + "=" * 60)
