@@ -184,8 +184,11 @@
                         </div>
                     </div>
 
-                    {% set ranked = joueurs|selectattr('tier', 'in', ['S','A','B','C'])|list %}
-                    {% set unranked = joueurs|rejectattr('tier', 'in', ['S','A','B','C'])|list %}
+                    {# Les tiers sont definis en base (nombre et noms libres) : on ecarte
+                       les non classes plutot que de lister les tiers. #}
+                    {% set non_classes = ['U', 'Unranked', '?', '', none] %}
+                    {% set ranked = joueurs|rejectattr('tier', 'in', non_classes)|list %}
+                    {% set unranked = joueurs|selectattr('tier', 'in', non_classes)|list %}
 
                     {% macro joueur_card(joueur) %}
                         <div class="column is-6-tablet is-4-widescreen joueur-card fade-in"
