@@ -34,6 +34,8 @@ ACTIONS = frozenset({
     'tiers_reordonnes', 'tiers_reinitialises',
     # Recaps de saison
     'recap_cree', 'recap_publie', 'recap_supprime',
+    # Annonces (notes de mise a jour)
+    'annonce_publiee', 'annonce_supprimee',
     # RGPD
     'purge_rgpd',
 })

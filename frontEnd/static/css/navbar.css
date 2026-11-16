@@ -322,3 +322,20 @@
 .liste-notifs::-webkit-scrollbar-thumb:hover {
     background-color: rgba(148, 163, 184, 0.8);
 }
+
+/* Annonces en mini-Markdown (navbar.js, MKNotifs.miniMarkdown). Espacements
+   serres : le texte vit dans le panneau de la cloche. */
+.md-annonce { overflow-wrap: anywhere; }
+.md-annonce p,
+.md-annonce ul { margin: 0.2rem 0 0; }
+.md-annonce ul { list-style: disc; padding-left: 1.1rem; }
+.md-annonce li + li { margin-top: 0.1rem; }
+.md-annonce .md-titre { font-weight: 700; margin-top: 0.4rem; }
+.md-annonce code {
+    font-size: 0.95em;
+    padding: 0 0.25em;
+    border-radius: 3px;
+    color: inherit;
+    background: rgba(148, 163, 184, 0.18);
+}
+.md-annonce a { text-decoration: underline; }

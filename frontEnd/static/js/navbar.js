@@ -1,3 +1,139 @@
+// Rendu d'une notification, partagé par la cloche et par l'aperçu des
+// annonces (/admin/annonces). Tout passe par textContent ou des nœuds créés à
+// la main : les textes sont saisis par des humains, aucun HTML n'est interprété.
+const MKNotifs = (() => {
+  const ICONES = {
+    liaison_approuvee:  'fa-circle-check has-text-success',
+    liaison_refusee:    'fa-circle-xmark has-text-danger',
+    liaison_annulee:    'fa-link-slash has-text-warning',
+    fiche_supprimee:    'fa-trash has-text-danger',
+    tournoi_ajoute:     'fa-flag-checkered has-text-info',
+    recap_publie:       'fa-scroll has-text-warning',
+    promotion_proposee: 'fa-user-shield has-text-link',
+    promotion_acceptee: 'fa-user-check has-text-success',
+    promotion_refusee:  'fa-user-xmark has-text-grey',
+    reset_global:        'fa-rotate-left has-text-danger',
+    reset_global_annule: 'fa-rotate-right has-text-grey',
+    annonce:             'fa-bullhorn has-text-primary'
+  };
+
+  // Lien interne (« /x », pas « //x ») ou https. Le reste reste du texte.
+  function lienSur(url) {
+    if (url.startsWith('/')) return !url.startsWith('//');
+    return /^https:\/\/[^\s/]+/i.test(url);
+  }
+
+  // Mini-Markdown en ligne : `code`, **gras**, *italique*, [texte](lien).
+  const MOTIF_EN_LIGNE = String.raw`(\x60[^\x60\n]+\x60)|(\*\*[^*\n]+\*\*)|(\*[^*\s][^*\n]*\*)|\[([^\]\n]+)\]\(([^)\s]+)\)`;
+  function enLigne(parent, texte) {
+    const re = new RegExp(MOTIF_EN_LIGNE, 'g');
+    let i = 0, m;
+    while ((m = re.exec(texte))) {
+      if (m.index > i) parent.appendChild(document.createTextNode(texte.slice(i, m.index)));
+      if (m[1]) {
+        const code = document.createElement('code');
+        code.textContent = m[1].slice(1, -1);
+        parent.appendChild(code);
+      } else if (m[2] || m[3]) {
+        const el = document.createElement(m[2] ? 'strong' : 'em');
+        enLigne(el, m[2] ? m[2].slice(2, -2) : m[3].slice(1, -1));
+        parent.appendChild(el);
+      } else if (lienSur(m[5])) {
+        const a = document.createElement('a');
+        a.href = m[5];
+        if (!m[5].startsWith('/')) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+        enLigne(a, m[4]);
+        parent.appendChild(a);
+      } else {
+        parent.appendChild(document.createTextNode(m[4]));
+      }
+      i = m.index + m[0].length;
+    }
+    if (i < texte.length) parent.appendChild(document.createTextNode(texte.slice(i)));
+  }
+
+  // Blocs : paragraphes (ligne vide entre deux), listes « - », titres « # ».
+  function miniMarkdown(source) {
+    const racine = document.createElement('div');
+    racine.className = 'md-annonce';
+    String(source || '').replace(/\r\n?/g, '\n').split(/\n[ \t]*\n/).forEach(bloc => {
+      let courant = null;
+      bloc.split('\n').forEach(brute => {
+        const l = brute.trim();
+        if (!l) return;
+        const puce = l.match(/^[-*]\s+(.*)$/);
+        const titre = l.match(/^#{1,3}\s+(.*)$/);
+        if (puce) {
+          if (!courant || courant.tagName !== 'UL') {
+            courant = racine.appendChild(document.createElement('ul'));
+          }
+          enLigne(courant.appendChild(document.createElement('li')), puce[1]);
+        } else if (titre) {
+          courant = null;
+          const p = racine.appendChild(document.createElement('p'));
+          p.className = 'md-titre';
+          enLigne(p, titre[1]);
+        } else {
+          if (!courant || courant.tagName !== 'P' || courant.className) {
+            courant = racine.appendChild(document.createElement('p'));
+          } else {
+            courant.appendChild(document.createElement('br'));
+          }
+          enLigne(courant, l);
+        }
+      });
+    });
+    return racine;
+  }
+
+  function ligne(n) {
+    // Lien seulement si la notification en a un, et seulement interne.
+    const cliquable = typeof n.lien === 'string'
+                      && n.lien.startsWith('/') && !n.lien.startsWith('//');
+    const item = document.createElement(cliquable ? 'a' : 'div');
+    item.className = 'navbar-item is-flex' + (n.lue ? ' has-text-grey' : '');
+    item.style.whiteSpace = 'normal';
+    item.style.alignItems = 'flex-start';
+    if (cliquable) {
+      item.href = n.lien;
+    }
+
+    const ico = document.createElement('span');
+    ico.className = 'icon mr-2 mt-1';
+    ico.innerHTML = '<i class="fas ' + (ICONES[n.type] || 'fa-circle-info') + '"></i>';
+    item.appendChild(ico);
+
+    const bloc = document.createElement('div');
+    bloc.style.minWidth = '0';
+    const t = document.createElement('strong');
+    t.textContent = n.titre;
+    bloc.appendChild(t);
+    if (n.corps) {
+      // Seules les annonces sont en Markdown : les autres textes gardent
+      // leurs astérisques tels quels.
+      if (n.type === 'annonce') {
+        const c = miniMarkdown(n.corps);
+        c.classList.add('is-size-7');
+        bloc.appendChild(c);
+      } else {
+        const c = document.createElement('p');
+        c.className = 'is-size-7';
+        c.textContent = n.corps;
+        bloc.appendChild(c);
+      }
+    }
+    const d = document.createElement('p');
+    d.className = 'is-size-7 has-text-grey';
+    d.textContent = new Date(n.created_at).toLocaleString('fr-FR');
+    bloc.appendChild(d);
+    item.appendChild(bloc);
+    return item;
+  }
+
+  return { ligne, miniMarkdown };
+})();
+window.MKNotifs = MKNotifs;
+
 document.addEventListener('DOMContentLoaded', () => {
   // Accept explicite pour les appels de données de la navbar (pas de
   // revalidation de session).
@@ -137,20 +273,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const listes = document.querySelectorAll('.liste-notifs');
     if (!badges.length || !listes.length) return;
 
-    const ICONES = {
-      liaison_approuvee:  'fa-circle-check has-text-success',
-      liaison_refusee:    'fa-circle-xmark has-text-danger',
-      liaison_annulee:    'fa-link-slash has-text-warning',
-      fiche_supprimee:    'fa-trash has-text-danger',
-      tournoi_ajoute:     'fa-flag-checkered has-text-info',
-      recap_publie:       'fa-scroll has-text-warning',
-      promotion_proposee: 'fa-user-shield has-text-link',
-      promotion_acceptee: 'fa-user-check has-text-success',
-      promotion_refusee:  'fa-user-xmark has-text-grey',
-      reset_global:        'fa-rotate-left has-text-danger',
-      reset_global_annule: 'fa-rotate-right has-text-grey'
-    };
-
     // Marque tout comme lu a l'ouverture de la cloche (une seule fois).
     let deja = false;
     async function toutMarquerLu() {
@@ -179,40 +301,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    function ligne(n) {
-      // Lien seulement si la notification en a un, et seulement interne.
-      const cliquable = typeof n.lien === 'string'
-                        && n.lien.startsWith('/') && !n.lien.startsWith('//');
-      const item = document.createElement(cliquable ? 'a' : 'div');
-      item.className = 'navbar-item is-flex' + (n.lue ? ' has-text-grey' : '');
-      item.style.whiteSpace = 'normal';
-      item.style.alignItems = 'flex-start';
-      if (cliquable) {
-        item.href = n.lien;
-      }
-
-      const ico = document.createElement('span');
-      ico.className = 'icon mr-2 mt-1';
-      ico.innerHTML = '<i class="fas ' + (ICONES[n.type] || 'fa-circle-info') + '"></i>';
-      item.appendChild(ico);
-
-      const bloc = document.createElement('div');
-      const t = document.createElement('strong');
-      t.textContent = n.titre;
-      bloc.appendChild(t);
-      if (n.corps) {
-        const c = document.createElement('p');
-        c.className = 'is-size-7';
-        c.textContent = n.corps;
-        bloc.appendChild(c);
-      }
-      const d = document.createElement('p');
-      d.className = 'is-size-7 has-text-grey';
-      d.textContent = new Date(n.created_at).toLocaleString('fr-FR');
-      bloc.appendChild(d);
-      item.appendChild(bloc);
-      return item;
-    }
 
     let res;
     try {
@@ -236,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
         liste.appendChild(vide);
         return;
       }
-      res.notifications.forEach(n => liste.appendChild(ligne(n)));
+      res.notifications.forEach(n => liste.appendChild(MKNotifs.ligne(n)));
 
     });
 

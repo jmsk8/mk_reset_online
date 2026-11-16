@@ -1,4 +1,4 @@
-# 🏁 Mario Kart Reset Online `v2.0.0`
+# 🏁 Mario Kart Reset Online `v2.0.1`
 
 > Plateforme de compétition Mario Kart avec classement basé sur l'algorithme TrueSkill.
 
@@ -10,7 +10,9 @@ Mario Kart Reset Online est une application web de gestion de tournois et de cla
 
 ### 📈 Classement et Tiers
 
-Les joueurs sont classés via le moteur TrueSkill qui attribue à chacun un score calculé à partir de deux variables : la performance estimée (mu) et l'incertitude (sigma). Le score final est `R = mu - 3 * sigma`. Les joueurs sont automatiquement répartis en tiers (S, A, B, C, U) selon la distribution statistique de la population active. Les seuils de chaque tier (S ≥ mean+σ, A ≥ mean, B ≥ mean−σ) sont affichés directement sur la page de classement.
+Les joueurs sont classés via le moteur TrueSkill qui attribue à chacun un score calculé à partir de deux variables : la performance estimée (mu) et l'incertitude (sigma). Le score final est `R = mu - 3 * sigma`. Pour deux joueurs à égalité dans un tournoi, le résultat ne dépend pas de l'ordre dans lequel ils ont été saisis.
+
+Les joueurs classés sont répartis en tiers selon la distribution statistique de la population active : chaque frontière se place à un nombre d'écarts-types de la moyenne des scores (`score ≥ moyenne + k × σ`). Le nombre de tiers, leurs noms, leurs couleurs (fond et texte du badge) et leurs seuils se règlent dans l'administration — S, A, B et C par défaut. Les joueurs non classés forment le tier U. Les seuils de chaque tier sont affichés directement sur la page de classement.
 
 Un mécanisme de **ghost** pénalise automatiquement le sigma des joueurs absents pour éviter la stagnation du classement.
 
@@ -28,7 +30,8 @@ Chaque joueur dispose d'une page de statistiques personnelle avec :
 
 - Saisie rapide de tournois jusqu'à 12 joueurs avec auto-complétion
 - Historique consultable avec détail de chaque tournoi (positions, scores, variations TrueSkill)
-- Possibilité d'annuler les derniers tournois enregistrés
+- Possibilité d'annuler le dernier tournoi enregistré
+- **DNF** : un joueur peut être écarté de l'IP et/ou du TrueSkill d'un tournoi, à la saisie ou après coup. Hors IP, tout se passe comme s'il n'avait pas joué : son score ne compte ni pour lui ni dans la moyenne de son lobby. Un badge DNF le signale sur la page du tournoi
 - **Mode Mixte** : tournois jouables entre toutes les ligues sans restriction (en mode ligue)
 
 ### ⚔️ Ligues et saisons
@@ -62,6 +65,12 @@ Chaque saison attribue des distinctions aux joueurs :
 - Dates affichées au format français (JJ/MM/AAAA)
 - Matchmaking accessible à tous : répartition des joueurs présents en lobbies équilibrés par niveau TrueSkill (10 joueurs max par lobby)
 
+### 🔔 Comptes et notifications
+
+- Connexion avec Discord, sur invitation ; chaque compte se relie à sa fiche du classement
+- Cloche de notifications : demandes de liaison, promotions, nouveaux tournois, récaps publiés, resets
+- Annonces (notes de mise à jour) envoyées à tous les comptes, écrites en mini-Markdown
+
 ### 🛡️ Administration
 
 - Création, modification et suppression de joueurs
@@ -71,7 +80,11 @@ Chaque saison attribue des distinctions aux joueurs :
 - Mise en place des ligues avec simulation de draft
 - Reset global du sigma pour les nouvelles saisons (avec possibilité de revert)
 - Configuration du moteur TrueSkill (tau, seuil sigma, activation du ghost)
+- Tiers configurables : nombre, noms, couleurs du badge et de son texte, seuils réglés sur un graphique de la distribution
 - Bascule de version de l'Indice de Performance (v1 / v2) pour le classement live et par saison
+- DNF après coup depuis la gestion des tournois, avec aperçu avant de rejouer le TrueSkill
+- Hiérarchie à trois niveaux (administrateur, chef administrateur, super-administrateur), droits accordés à la carte et journal de toutes les actions d'administration
+- Réservé au super-administrateur : recalcul du TrueSkill depuis une date avec un tau par période, et publication ou retrait des annonces
 
 
 
@@ -93,14 +106,15 @@ Chaque saison attribue des distinctions aux joueurs :
 Le projet suit une architecture frontend/backend découplée, orchestrée via Docker Compose :
 
 ```
-nginx (port 80) ─┬─ /        -> frontend Flask (5000) -> backend API (8080) -> PostgreSQL
-                 └─ /ws/race -> service race (3000, Node)
+nginx (port 80) ─┬─ /         -> frontend Flask (5000) -> backend API (8080) -> PostgreSQL
+                 ├─ /static/  -> fichiers de frontEnd/static, servis par nginx lui-même
+                 └─ /ws/race  -> service race (3000, Node)
 ```
 
 - **Backend** : API REST qui gère toute la logique métier (TrueSkill, awards, ligues, administration). Point d'entrée `backEnd/backend.py`, logique répartie en modules dédiés (`routes_public.py`, `routes_admin.py`, `services.py`).
 - **Frontend** : Serveur Flask qui consomme l'API backend et rend les templates Jinja2. Code principal dans `frontEnd/frontend.py`.
-- **Race** : moteur de course du bandeau d'accueil, en Node. Une seule course tourne, tous les navigateurs la regardent — le client n'affiche, il ne simule pas. Volontairement isolé du réseau de la base : ni session, ni cookie, ni Postgres. Voir [docs/banner/](docs/banner/).
-- **Nginx** : Reverse proxy qui route les requêtes vers le frontend.
+- **Race** : moteur de course du bandeau d'accueil, en Node. Une seule course tourne, tous les navigateurs la regardent — le client n'affiche, il ne simule pas. Volontairement isolé du réseau de la base : ni session, ni cookie, ni Postgres.
+- **Nginx** : Reverse proxy qui route les requêtes vers le frontend. Il sert lui-même les fichiers statiques, avec un cache long : leurs adresses portent une empreinte (`?v=`) qui change avec leur contenu, si bien qu'une mise à jour est vue tout de suite.
 - **PostgreSQL** : Base relationnelle initialisée via `schema.sql` et `seed.sql`.
 
 ### 📁 Structure du projet
@@ -122,7 +136,6 @@ mk_reset_online/
 ├── nginx/                 # Configuration Nginx
 ├── nix/                   # Environnement Nix Flakes
 ├── scripts/               # Utilitaires (dumps, données d'exemple, sprites)
-├── docs/                  # Documentation technique
 ├── dumps/                 # Sauvegardes locales de la base (non versionné)
 └── docker-compose.yml
 ```
@@ -159,10 +172,19 @@ POSTGRES_DB=...
 SECRET_KEY=...
 ```
 
+Connexion des comptes et administration, par une application Discord. Sans
+elles, le site s'affiche mais personne ne peut se connecter, ni l'administrer :
+
+```
+DISCORD_CLIENT_ID=...
+DISCORD_CLIENT_SECRET=...
+DISCORD_REDIRECT_URI=...   # https://<domaine>/auth/discord/callback (plusieurs : séparées par des virgules)
+DISCORD_SUPERADMIN_ID=...  # Identifiant Discord du premier super-administrateur
+```
+
 > `ADMIN_PASSWORD_HASH` n'est plus utilisée depuis le 2026-09-23 : l'administration
 > passe uniquement par Discord. La ligne peut rester dans un `.env` existant, elle
-> n'est plus lue. Voir [docs/runbook-admin.md](docs/runbook-admin.md) pour l'accès
-> de secours.
+> n'est plus lue.
 
 Variables optionnelles, utilisées uniquement pour un déploiement en ligne :
 
@@ -170,6 +192,11 @@ Variables optionnelles, utilisées uniquement pour un déploiement en ligne :
 DOMAIN=...                 # Nom d'hôte servi par nginx (défaut : localhost)
 TLS_MODE=http|https        # Mode de service nginx (défaut : http)
 COMPOSE_PROFILES=ssl       # Active le conteneur certbot (renouvellement auto)
+SITE_EDITEUR=...           # Mentions légales : éditeur, contact, hébergeur et
+SITE_CONTACT=...           #   durée de conservation des journaux
+SITE_HEBERGEUR=...         #   (défaut : « à renseigner »)
+SITE_RETENTION_LOGS=...
+WS_ALLOWED_ORIGINS=...     # Origines autorisées pour le flux de la course (vide : toutes)
 ```
 
 ### 🚀 Lancement
@@ -191,6 +218,19 @@ frontend_start  # lance le frontend
 Nix Flakes garantit un environnement de développement identique à la production.
 
 Le site est accessible sur `http://localhost`.
+
+### 🔄 Mettre à jour une installation
+
+Les changements de schéma sont des migrations datées, dans `backEnd/migrations/`.
+Chaque entrée du [CHANGELOG](CHANGELOG.md) liste celles de sa version : on les
+applique dans l'ordre de leur nom, puis on reconstruit les images.
+
+```bash
+make maintenance-on                                              # page de travaux pour le public
+make db-migrate FILE=backEnd/migrations/2026-11-16_annonces.sql  # une commande par migration
+docker compose up -d --build
+make maintenance-off
+```
 
 ### 🔒 HTTPS (déploiement en ligne)
 

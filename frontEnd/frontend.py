@@ -46,7 +46,7 @@ app.config['WTF_CSRF_TIME_LIMIT'] = None
 
 csrf = CSRFProtect(app)
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 
 
 def _empreinte_statiques():
@@ -1564,6 +1564,32 @@ def admin_reglages():
     if _acces_admin_revoque():
         return _session_admin_expiree()
     return render_template('admin_reglages.html')
+
+@app.route('/admin/annonces')
+def admin_annonces():
+    """Annonces (notes de mise a jour) : redaction, apercu, publication, retrait.
+
+    Reserve au superadmin ; le backend reverifie a chaque appel.
+    """
+    if _role_session() != 'superadmin':
+        flash('Accès réservé au superadmin.', 'warning')
+        return redirect(url_for('index'))
+    if _acces_admin_revoque():
+        return _session_admin_expiree()
+    return render_template('admin_annonces.html')
+
+
+@app.route('/admin/api/annonces', methods=['GET', 'POST'])
+def proxy_annonces():
+    if request.method == 'POST':
+        return _proxy_admin('POST', '/admin/annonces', json_body=True)
+    return _proxy_admin('GET', '/admin/annonces')
+
+
+@app.route('/admin/api/annonces/<int:annonce_id>', methods=['DELETE'])
+def proxy_annonce_suppression(annonce_id):
+    return _proxy_admin('DELETE', f'/admin/annonces/{annonce_id}')
+
 
 @app.route('/admin/saisons-gestion')
 def admin_saisons_page():

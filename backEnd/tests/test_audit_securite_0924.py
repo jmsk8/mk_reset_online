@@ -1053,9 +1053,12 @@ for gabarit in ('navbar.html', 'consentement.html', 'mon_compte.html'):
           'href="/logout"' not in src and "href=\"{{ url_for('player_logout') }}\"" not in src
           and 'method="post"' in bloc and 'csrf_token' in bloc)
 
-check("etat-avancement ne dit plus que debugMode est a true",
-      'encore à `true`' not in _lire('docs', 'etat-avancement-global.md')
-      and 'debugMode: false' in _lire('frontEnd', 'static', 'js', 'banner', 'config.js'))
+check("le bandeau est livré avec debugMode à false",
+      'debugMode: false' in _lire('frontEnd', 'static', 'js', 'banner', 'config.js'))
+# docs/ n'est plus versionne (notes locales) : la note n'est relue que si elle est la.
+if os.path.exists(os.path.join(_RACINE, 'docs', 'etat-avancement-global.md')):
+    check("etat-avancement ne dit plus que debugMode est a true",
+          'encore à `true`' not in _lire('docs', 'etat-avancement-global.md'))
 
 
 # ===========================================================================

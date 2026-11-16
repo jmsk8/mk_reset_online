@@ -10,6 +10,7 @@ DROP TABLE IF EXISTS public.audit_admin CASCADE;
 DROP TABLE IF EXISTS public.sessions_joueurs CASCADE;
 DROP TABLE IF EXISTS public.profils CASCADE;
 DROP TABLE IF EXISTS public.notifications CASCADE;
+DROP TABLE IF EXISTS public.annonces CASCADE;
 DROP TABLE IF EXISTS public.promotions_proposees CASCADE;
 DROP TABLE IF EXISTS public.liaisons_demandes CASCADE;
 DROP TABLE IF EXISTS public.comptes CASCADE;
@@ -404,6 +405,14 @@ CREATE TRIGGER consentements_ajout_seul
     BEFORE UPDATE ON public.consentements
     FOR EACH ROW EXECUTE FUNCTION public.consentements_sans_modification();
 
+-- ANNONCES du superadmin (notes de mise a jour, corps en mini-Markdown)
+CREATE TABLE public.annonces (
+    id          SERIAL PRIMARY KEY,
+    titre       character varying(160) NOT NULL,
+    corps       text,
+    created_at  timestamp with time zone NOT NULL DEFAULT now()
+);
+
 -- NOTIFICATIONS (texte et lien figes a l'emission)
 CREATE TABLE public.notifications (
     id          SERIAL PRIMARY KEY,
@@ -413,9 +422,12 @@ CREATE TABLE public.notifications (
     corps       text,
     -- NULL si la notification n'appelle aucune action.
     lien        character varying(255),
+    -- Annonce d'origine : la supprimer retire la notification de chez tous.
+    annonce_id  integer REFERENCES public.annonces(id) ON DELETE CASCADE,
     created_at  timestamp with time zone NOT NULL DEFAULT now(),
     lu_at       timestamp with time zone
 );
+CREATE INDEX idx_notifications_annonce ON public.notifications(annonce_id) WHERE annonce_id IS NOT NULL;
 CREATE INDEX idx_notifications_non_lues ON public.notifications(compte_id) WHERE lu_at IS NULL;
 CREATE INDEX idx_notifications_compte_date ON public.notifications(compte_id, created_at DESC);
 

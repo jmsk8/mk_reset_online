@@ -201,6 +201,13 @@
                 </a>
               {% endif %}
 
+              {# 8. Annonces (notes de mise a jour), superadmin seulement #}
+              {% if role_admin == 'superadmin' %}
+                <a class="navbar-item" href="/admin/annonces">
+                  <i class="fas fa-bullhorn mr-2"></i> Annonces
+                </a>
+              {% endif %}
+
             </div>
           </div>
         {% endif %}

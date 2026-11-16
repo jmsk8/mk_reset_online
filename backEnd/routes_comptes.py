@@ -90,12 +90,16 @@ def _nom_creable(cur, nom):
 # Cote joueur : revendiquer une fiche
 # ---------------------------------------------------------------------------
 
-def notifier_tous(cur, type_notif, titre, corps=None, lien=None):
-    """Notifie tous les comptes non suspendus. Renvoie leur nombre."""
+def notifier_tous(cur, type_notif, titre, corps=None, lien=None, annonce_id=None):
+    """Notifie tous les comptes non suspendus. Renvoie leur nombre.
+
+    `annonce_id` rattache les notifications a une annonce : la supprimer les
+    retire toutes.
+    """
     cur.execute(
-        """INSERT INTO notifications (compte_id, type, titre, corps, lien)
-           SELECT id, %s, %s, %s, %s FROM comptes WHERE statut <> 'suspended'""",
-        (type_notif[:40], titre[:160], corps, lien[:255] if lien else None),
+        """INSERT INTO notifications (compte_id, annonce_id, type, titre, corps, lien)
+           SELECT id, %s, %s, %s, %s, %s FROM comptes WHERE statut <> 'suspended'""",
+        (annonce_id, type_notif[:40], titre[:160], corps, lien[:255] if lien else None),
     )
     return cur.rowcount
 
@@ -2484,6 +2488,122 @@ def compteur_admin():
         logger.error("Compteur admin impossible: %s", e)
         return jsonify({"error": "Erreur serveur"}), 500
     return jsonify({"liaisons_en_attente": liaisons, "total": liaisons})
+
+
+# ---------------------------------------------------------------------------
+# Annonces du superadmin (notes de mise a jour)
+# ---------------------------------------------------------------------------
+
+ANNONCE_TITRE_MAX = 160
+ANNONCE_CORPS_MAX = 2000
+
+
+def _saisie_annonce(data):
+    """(titre, corps, None) depuis le JSON, ou (None, None, reponse 400)."""
+    titre, corps = data.get('titre'), data.get('corps')
+    if not isinstance(titre, str) or not titre.strip():
+        return None, None, (jsonify({"error": "Le titre est obligatoire."}), 400)
+    titre = ' '.join(titre.split())
+    if len(titre) > ANNONCE_TITRE_MAX:
+        return None, None, (jsonify({
+            "error": "Titre trop long (%d caractères au plus)." % ANNONCE_TITRE_MAX}), 400)
+    if corps is None:
+        corps = ''
+    if not isinstance(corps, str):
+        return None, None, (jsonify({"error": "Le texte doit être une chaîne."}), 400)
+    corps = corps.replace('\r\n', '\n').replace('\r', '\n').strip()
+    if len(corps) > ANNONCE_CORPS_MAX:
+        return None, None, (jsonify({
+            "error": "Texte trop long (%d caractères au plus)." % ANNONCE_CORPS_MAX}), 400)
+    return titre, corps or None, None
+
+
+@comptes_bp.route('/admin/annonces', methods=['GET'])
+@role_required(ROLE_SUPERADMIN)
+def lister_annonces():
+    """Annonces en ligne, avec leurs destinataires et leurs lectures."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """SELECT a.id, a.titre, a.corps, a.created_at,
+                              COUNT(n.id), COUNT(n.lu_at)
+                       FROM annonces a
+                       LEFT JOIN notifications n ON n.annonce_id = a.id
+                       GROUP BY a.id
+                       ORDER BY a.created_at DESC"""
+                )
+                rows = cur.fetchall()
+    except Exception as e:
+        logger.error("Lecture des annonces impossible: %s", e)
+        return jsonify({"error": "Erreur serveur"}), 500
+    return jsonify({
+        "titre_max": ANNONCE_TITRE_MAX, "corps_max": ANNONCE_CORPS_MAX,
+        "annonces": [{
+            "id": r[0], "titre": r[1], "corps": r[2], "created_at": r[3].isoformat(),
+            "destinataires": r[4], "lues": r[5],
+        } for r in rows],
+    })
+
+
+@comptes_bp.route('/admin/annonces', methods=['POST'])
+@role_required(ROLE_SUPERADMIN)
+def publier_annonce():
+    """Publie une annonce : une notification chez chaque compte non suspendu."""
+    titre, corps, erreur = _saisie_annonce(request.get_json(silent=True) or {})
+    if erreur is not None:
+        return erreur
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO annonces (titre, corps) VALUES (%s, %s) RETURNING id",
+                    (titre, corps),
+                )
+                annonce_id = cur.fetchone()[0]
+                nb = notifier_tous(cur, 'annonce', titre, corps, annonce_id=annonce_id)
+                audit.ecrire(cur, 'annonce_publiee', 'annonce', annonce_id,
+                             {"titre": titre, "destinataires": nb})
+            conn.commit()
+    except Exception as e:
+        logger.error("Publication de l'annonce impossible: %s", e)
+        return jsonify({"error": "Erreur serveur"}), 500
+    return jsonify({
+        "status": "success", "id": annonce_id, "destinataires": nb,
+        "message": "Annonce publiée chez %d compte%s." % (nb, 's' if nb > 1 else ''),
+    }), 201
+
+
+@comptes_bp.route('/admin/annonces/<int:annonce_id>', methods=['DELETE'])
+@role_required(ROLE_SUPERADMIN)
+def supprimer_annonce(annonce_id):
+    """Supprime une annonce et la retire de chez tout le monde.
+
+    Seul le journal d'audit garde la publication et la suppression.
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT titre FROM annonces WHERE id = %s FOR UPDATE",
+                            (annonce_id,))
+                row = cur.fetchone()
+                if row is None:
+                    return jsonify({"error": "Annonce introuvable."}), 404
+                # Explicite plutot que de compter sur la cascade : on veut le nombre.
+                cur.execute("DELETE FROM notifications WHERE annonce_id = %s", (annonce_id,))
+                retirees = cur.rowcount
+                cur.execute("DELETE FROM annonces WHERE id = %s", (annonce_id,))
+                audit.ecrire(cur, 'annonce_supprimee', 'annonce', annonce_id,
+                             {"titre": row[0], "retirees": retirees})
+            conn.commit()
+    except Exception as e:
+        logger.error("Suppression de l'annonce impossible: %s", e)
+        return jsonify({"error": "Erreur serveur"}), 500
+    return jsonify({
+        "status": "success", "retirees": retirees,
+        "message": "Annonce supprimée et retirée de %d compte%s."
+                   % (retirees, 's' if retirees > 1 else ''),
+    })
 
 
 @comptes_bp.route('/me/export', methods=['GET'])

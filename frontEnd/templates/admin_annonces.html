@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annonces - Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bulma-0.9.4/bulma.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome-6.4.0/css/all.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dark-mode.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/interactions.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/decor-mk.css') }}?v={{ static_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/animations.css') }}?v={{ static_version }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/mario/mario-static.png') }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <style>
+        /* Meme habillage que le panneau de la cloche. */
+        .apercu-cloche {
+            max-width: 22rem;
+            max-height: min(21rem, 60vh);
+            overflow-y: auto;
+            padding: 0.5rem 0;
+            border-radius: 6px;
+            background-color: var(--secondary-background, #18212f);
+            border-top: 2px solid var(--primary-color, #3b82f6);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.35);
+        }
+        .aide-format code { font-size: 0.8rem; }
+        .aide-format li { margin-bottom: 0.15rem; }
+        .compteur { font-variant-numeric: tabular-nums; }
+        .annonce-ligne {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.75rem;
+            align-items: start;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.04);
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}?v={{ static_version }}">
+</head>
+<body>
+    {% include 'decor.html' %}
+    {% include 'navbar.html' %}
+
+    <section class="section">
+        <div class="container">
+            <h1 class="title has-text-centered glow-text mb-2">Annonces</h1>
+            <p class="has-text-centered has-text-grey-light mb-6">
+                Une annonce arrive dans la cloche de <strong>tous les comptes</strong>.
+            </p>
+
+            <div class="columns is-centered">
+                <div class="column is-10">
+
+                    <div class="card glass-card mb-6" id="bloc-annonce">
+                        <div class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-bullhorn mr-2"></i> Nouvelle annonce
+                            </p>
+                            <span class="tag is-danger is-light is-uppercase mt-3 mr-4" style="height: 1.75em;">
+                                Superadmin
+                            </span>
+                        </div>
+                        <div class="card-content">
+                            <div class="columns">
+                                <div class="column is-7">
+                                    <div class="field">
+                                        <label class="label has-text-white" for="annonceTitre">Titre</label>
+                                        <div class="control">
+                                            <input class="input" type="text" id="annonceTitre" maxlength="160"
+                                                   placeholder="Mise à jour du 16 novembre" autocomplete="off">
+                                        </div>
+                                        <p class="help has-text-grey-light compteur" id="annonceTitreCompteur"></p>
+                                    </div>
+                                    <div class="field">
+                                        <label class="label has-text-white" for="annonceCorps">Texte</label>
+                                        <div class="control">
+                                            <textarea class="textarea" id="annonceCorps" rows="9" maxlength="2000"
+                                                      placeholder="### Nouveautés&#10;- **DNF** : un joueur peut sortir de l'IP d'un tournoi&#10;- Voir [le classement](/classement)"></textarea>
+                                        </div>
+                                        <p class="help has-text-grey-light compteur" id="annonceCorpsCompteur"></p>
+                                    </div>
+                                    <details class="aide-format has-text-grey-light is-size-7">
+                                        <summary class="mb-1" style="cursor: pointer;">Format du texte</summary>
+                                        <ul>
+                                            <li><code>**gras**</code>, <code>*italique*</code>, <code>`code`</code></li>
+                                            <li><code>- élément</code> : liste à puces</li>
+                                            <li><code># Titre</code> : intertitre</li>
+                                            <li><code>[texte](/page)</code> : lien interne ou <code>https://…</code></li>
+                                            <li>Une ligne vide sépare deux paragraphes.</li>
+                                        </ul>
+                                    </details>
+                                </div>
+                                <div class="column is-5">
+                                    <p class="label has-text-white">Aperçu dans la cloche</p>
+                                    <div class="apercu-cloche" id="annonceApercu" aria-live="polite"></div>
+                                </div>
+                            </div>
+
+                            <div class="buttons is-right mt-4">
+                                <button type="button" class="button is-primary" id="annoncePublier" disabled>
+                                    <i class="fas fa-paper-plane mr-2"></i> Publier chez tout le monde
+                                </button>
+                            </div>
+                            <div id="annonceMessage" aria-live="polite"></div>
+                        </div>
+                    </div>
+
+                    <div class="card glass-card mb-6">
+                        <div class="card-header">
+                            <p class="card-header-title"><i class="fas fa-list mr-2"></i> Annonces en ligne</p>
+                        </div>
+                        <div class="card-content">
+                            <p class="has-text-grey-light is-size-7 mb-4">
+                                Supprimer une annonce la retire de la cloche de tout le monde.
+                            </p>
+                            <div id="annoncesListe"><div class="has-text-grey">Chargement…</div></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include 'footer.html' %}
+    <script src="{{ url_for('static', filename='js/admin_annonces.js') }}?v={{ static_version }}" defer></script>
+</body>
+</html>

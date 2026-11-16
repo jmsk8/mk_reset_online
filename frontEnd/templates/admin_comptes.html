@@ -864,6 +864,7 @@
             recap_supprime: 'Récap supprimé', tournoi_lie: 'Tournois liés',
             tier_cree: 'Tier créé', tier_modifie: 'Tier modifié', tier_supprime: 'Tier supprimé',
             tiers_reordonnes: 'Tiers réordonnés', tiers_reinitialises: 'Tiers réinitialisés',
+            annonce_publiee: 'Annonce publiée', annonce_supprimee: 'Annonce supprimée',
         };
 
         function libelleAction(a) { return LIBELLES_ACTION[a] || a; }
@@ -912,6 +913,9 @@
                         .filter(Boolean).join(', ')
                 ).join(' ; ');
             }
+            // Annonce : son titre et le nombre de comptes touchés.
+            if (l.action === 'annonce_publiee') return d.titre + ' — ' + d.destinataires + ' compte(s)';
+            if (l.action === 'annonce_supprimee') return d.titre + ' — retirée de ' + d.retirees + ' compte(s)';
             if (d.ancien && d.nouveau) return sujet + d.ancien + ' → ' + d.nouveau;
             if (d.nom) return d.nom;
             if (d.permission) return d.permission;

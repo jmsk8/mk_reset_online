@@ -8,7 +8,7 @@ DECLARE
     -- Tables absentes d'un dump de production, a tenir a jour avec
     -- docker-compose.dump.yml.
     attendues TEXT[] := ARRAY[
-        'audit_admin', 'comptes', 'consentements', 'global_reset_details', 'invitations',
+        'annonces', 'audit_admin', 'comptes', 'consentements', 'global_reset_details', 'invitations',
         'liaisons_demandes', 'noms_interdits', 'notifications',
         'permissions_admin', 'profils', 'promotions_proposees', 'service_tokens',
         'sessions_joueurs', 'sessions_tournois', 'tiers'
@@ -107,6 +107,15 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Rattrapage incomplet : participations.exclude_from_ip absente.'
             USING HINT = '2026-11-16_participation_hors_ip.sql n''a pas abouti.';
+    END IF;
+
+    -- Colonne ajoutee a une table existante ; la publication d'une annonce l'ecrit.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'notifications' AND column_name = 'annonce_id'
+    ) THEN
+        RAISE EXCEPTION 'Rattrapage incomplet : notifications.annonce_id absente.'
+            USING HINT = '2026-11-16_annonces.sql n''a pas abouti.';
     END IF;
 
     RAISE NOTICE 'Schema verifie : les % tables attendues sont presentes.', array_length(attendues, 1);

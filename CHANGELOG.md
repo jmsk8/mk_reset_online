@@ -4,6 +4,38 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 
 ---
 
+## [2.0.1] - 2026-11-16
+
+### ⚠️ Pour qui déploie
+
+- **Trois migrations**, à appliquer dans cet ordre : `2026-10-05_tier_couleur_texte.sql`, `2026-11-16_annonces.sql` puis `2026-11-16_participation_hors_ip.sql` (`make db-migrate FILE=…` pour chacune). Les images se reconstruisent (`docker compose up -d --build`), et le conteneur nginx doit être recréé une fois, puisqu'il sert désormais lui-même les fichiers statiques depuis un nouveau montage (`docker compose up -d --force-recreate nginx`)
+
+### Nouvelles fonctionnalités
+- **DNF par tournoi** : un joueur qui n'a pas fini un tournoi peut en être écarté, de l'Indice de Performance, du TrueSkill ou des deux. À la saisie, une case « No IP » rejoint la case « No TS » ; après coup, un bouton drapeau sur chaque ligne de la gestion des tournois fait la même chose. Hors IP, tout se passe comme s'il n'avait pas joué : son score ne compte ni dans son IP, ni dans la moyenne de son lobby pour les autres, ni dans ses moyennes de points et de places, ni dans son nombre de tournois pour l'IP. Ses points cumulés, ses participations, ses victoires et ses places réelles ne bougent pas. Jusqu'ici, un joueur saisi « No TS » comptait quand même dans l'IP : c'était le cas de deux joueurs du tournoi du 5 octobre, ce qui faussait le classement de la saison en cours. Sortir un joueur du TrueSkill après coup passe par un aperçu, puis rejoue le TrueSkill depuis la date du tournoi. Le geste demande la gestion des tournois et un droit sur le TrueSkill (réglages ou correction du score), et il est journalisé. Un badge **DNF** le signale sur la page du tournoi et dans la gestion des tournois, mais pas dans le classement de saison ni dans les récaps
+- **Annonces** : le super-administrateur publie des notes de mise à jour dans la cloche de tous les comptes, depuis le menu Admin → Annonces. Le texte s'écrit en mini-Markdown — gras, italique, code, listes, intertitres et liens, internes ou en `https` — et un aperçu montre l'annonce telle qu'elle apparaîtra dans la cloche. Le HTML saisi reste du texte. La liste des annonces en ligne indique combien de comptes les ont lues ; en supprimer une la retire de la cloche de tout le monde, seul le journal d'administration garde la trace de sa publication et de son retrait. Une annonce atteint les comptes existants au moment de sa publication, hors comptes suspendus
+- **Recalcul du TrueSkill par période** : le super-administrateur peut rejouer tous les tournois depuis une date choisie, avec un tau différent par période — par exemple 0,083 pour 2025 puis 0,2, les valeurs en vigueur à l'époque. Pénalités d'absence et resets sont réappliqués, et le tau des réglages n'est pas modifié. Un aperçu montre l'effet joueur par joueur avant d'appliquer, et l'application est refusée si un tournoi, un reset ou une fiche a changé entre-temps
+- **Couleur du texte des badges de tier** : chaque tier, U compris, règle la couleur du texte de son badge en plus de sa couleur de fond, pour qu'il reste lisible sur un fond clair
+
+### Corrections
+- **Ex-aequo dépendants de l'ordre de saisie** : la librairie TrueSkill ne compare que des voisins dans la liste des résultats, si bien qu'un même tournoi ressaisi en intervertissant deux joueurs à égalité ne donnait pas les mêmes scores. Le calcul fait désormais la moyenne sur tous les ordres possibles des ex-aequo, pour les nouveaux tournois comme pour tout rejeu
+- **Joueurs classés affichés comme non classés** : la page des joueurs ne reconnaissait que les tiers S, A, B et C. Avec des tiers renommés ou ajoutés, leurs joueurs tombaient dans les non classés
+- **Tableau de détail de la fiche joueur** : les valeurs s'alignaient à gauche sous des en-têtes alignés à droite. La dernière ligne, « Total », s'appelle désormais « Toutes tailles » : sa colonne Meilleur est un maximum et ses colonnes « moy. » des moyennes, pas des sommes des lignes du dessus
+
+### Améliorations
+
+#### Performances
+- **Fichiers statiques servis par nginx** : scripts, feuilles de style et images ne passent plus par l'application, nginx les lit directement. Leurs adresses portent une empreinte de leur contenu (`?v=`), ce qui permet de les garder un an en cache sans risque : une mise à jour change l'adresse et se voit aussitôt
+- **jQuery retiré** : les cinq pages qui chargeaient encore cette bibliothèque de 87 Ko s'en passent, et l'ancien `script.js` disparaît. Le style et le script du menu vivent dans leurs propres fichiers, mis en cache, au lieu d'être répétés dans chaque page
+- **Images plus légères** : 40 PNG passent en palette de 256 couleurs, de 746 Ko à 311 Ko, transparence intacte. `scripts/palettiser-png.py` refait l'opération et ne remplace un fichier que si le résultat est plus léger et que l'écart de couleur reste sous un seuil fixé
+
+#### Administration
+- **Sélecteur de couleur commun** : la couleur d'un joueur et celles des tiers se choisissent avec le même outil
+
+#### Dépôt
+- **Dépôt allégé** : les fichiers de compilation du moteur C++ et des fichiers inutilisés sortent du suivi, les commentaires du code sont resserrés, et les notes de travail (`docs/`) ne sont plus publiées
+
+---
+
 ## [2.0.0] - 2026-09-27
 
 ### ⚠️ Changements incompatibles
