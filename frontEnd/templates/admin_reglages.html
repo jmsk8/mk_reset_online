@@ -105,6 +105,10 @@
                         {% include 'partiels/reset_global.html' %}
                     {% endif %}
 
+                    {% if role_admin == 'superadmin' %}
+                        {% include 'partiels/recalcul_ts.html' %}
+                    {% endif %}
+
                     {% if peut('gestion_config') %}
                     <div class="card glass-card mb-6 fade-in">
                         <div class="card-header">
@@ -295,5 +299,8 @@
     <script src="{{ url_for('static', filename='js/gestion.js') }}?v={{ static_version }}"></script>
     <script src="{{ url_for('static', filename='js/choix_couleur.js') }}?v={{ static_version }}"></script>
     <script src="{{ url_for('static', filename='js/tier_thresholds.js') }}?v={{ static_version }}"></script>
+    {% if role_admin == 'superadmin' %}
+    <script src="{{ url_for('static', filename='js/recalcul_ts.js') }}?v={{ static_version }}"></script>
+    {% endif %}
 </body>
 </html>

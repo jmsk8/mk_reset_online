@@ -60,6 +60,7 @@ services:
       - ./backEnd/routes_comptes.py:/app/routes_comptes.py
       - ./backEnd/routes_bot.py:/app/routes_bot.py
       - ./backEnd/textes_ip.py:/app/textes_ip.py
+      - ./backEnd/recalcul_ts.py:/app/recalcul_ts.py
 
     environment:
       - PYTHONUNBUFFERED=1

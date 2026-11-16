@@ -1714,6 +1714,32 @@ def proxy_revert_global_reset():
     data, status = backend_request('POST', '/api/admin/revert-global-reset', headers=headers)
     return jsonify(data), status
 
+# Recalcul TrueSkill (superadmin, reverifie par le backend). Delai allonge :
+# tout l'historique depuis la date de depart est rejoue.
+RECALCUL_TS_TIMEOUT = 60
+
+
+def _proxy_recalcul_ts(etape):
+    if not _est_admin():
+        return jsonify({'error': 'Non autorisé'}), 403
+    headers = admin_headers()
+    if headers is None:
+        return jsonify({'error': 'Non autorisé'}), 401
+    data, status = backend_request('POST', f'/api/admin/recalcul-ts/{etape}',
+                                   data=request.get_json(silent=True) or {},
+                                   headers=headers, timeout=RECALCUL_TS_TIMEOUT)
+    return jsonify(data if data is not None else {'error': 'Service indisponible'}), status
+
+
+@app.route('/admin/recalcul-ts/apercu', methods=['POST'])
+def proxy_recalcul_ts_apercu():
+    return _proxy_recalcul_ts('apercu')
+
+
+@app.route('/admin/recalcul-ts/appliquer', methods=['POST'])
+def proxy_recalcul_ts_appliquer():
+    return _proxy_recalcul_ts('appliquer')
+
 @app.route('/api/ligues', methods=['GET'])
 def proxy_get_ligues_public():
     data, status = backend_request('GET', '/ligues')

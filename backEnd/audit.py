@@ -27,7 +27,7 @@ ACTIONS = frozenset({
     # Dossier sportif
     'joueur_cree', 'joueur_modifie', 'joueur_supprime', 'joueur_anonymise',
     'tournoi_ajoute', 'tournoi_supprime', 'tournoi_annule', 'tournoi_lie',
-    'reset_global_applique', 'reset_global_annule',
+    'reset_global_applique', 'reset_global_annule', 'ts_recalcule',
     # Configuration
     'config_modifiee', 'ligues_configurees',
     'tier_cree', 'tier_modifie', 'tier_supprime',

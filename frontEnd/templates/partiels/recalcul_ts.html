@@ -1,0 +1,49 @@
+{# Recalcul TrueSkill depuis une date, inclus par admin_reglages.html (superadmin). #}
+<div class="card glass-card mb-6 fade-in" id="bloc-recalcul-ts"
+     style="border: 1px solid rgba(239, 68, 68, 0.45);">
+    <div class="card-header" style="background: rgba(239, 68, 68, 0.08);">
+        <p class="card-header-title">
+            <span class="icon is-medium mr-2"><i class="fas fa-rotate has-text-danger"></i></span>
+            Recalcul du TrueSkill
+        </p>
+        <span class="tag is-danger is-light is-uppercase mt-3 mr-4" style="height: 1.75em;">
+            Superadmin
+        </span>
+    </div>
+    <div class="card-content">
+        <div class="content has-text-grey-light is-small mb-4">
+            <p>
+                <i class="fas fa-info-circle"></i>
+                Rejoue tous les tournois depuis la date choisie jusqu'à aujourd'hui, avec le tau de
+                chaque période. Les pénalités et resets sont réappliqués. Le tau des réglages
+                n'est pas modifié. Faites un dump avant d'appliquer si vous n'êtes pas sûr
+                de ce que vous faites.
+            </p>
+        </div>
+
+        <div class="field" style="max-width: 16rem;">
+            <label class="label has-text-white" for="recalculDebut">Date de départ</label>
+            <div class="control has-icons-left">
+                <input class="input" type="date" id="recalculDebut">
+                <span class="icon is-small is-left"><i class="fas fa-calendar"></i></span>
+            </div>
+        </div>
+
+        <label class="label has-text-white">Tau par période</label>
+        <div id="recalculPeriodes" class="mb-2"></div>
+        <button type="button" class="button is-small is-dark mb-4" id="recalculAjoutPeriode">
+            <i class="fas fa-plus mr-2"></i> Ajouter une période
+        </button>
+
+        <div class="buttons is-right">
+            <button type="button" class="button is-info" id="recalculApercu">
+                <i class="fas fa-eye mr-2"></i> Aperçu
+            </button>
+            <button type="button" class="button is-danger" id="recalculAppliquer" disabled>
+                <i class="fas fa-check mr-2"></i> Appliquer
+            </button>
+        </div>
+
+        <div id="recalculResultat" class="mt-4" aria-live="polite"></div>
+    </div>
+</div>

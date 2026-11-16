@@ -34,6 +34,7 @@ def tables_ecrites(fn):
 EXEMPTEES = {
     'verifier_session_tournoi': ("POST pour porter une liste de noms ; lecture seule", set()),
     'matchmaking_admin': ("POST pour porter une liste de joueurs ; calcule des lobbies", set()),
+    'apercu_recalcul_ts': ("POST pour porter les periodes de tau ; calcule sans ecrire", set()),
 }
 
 

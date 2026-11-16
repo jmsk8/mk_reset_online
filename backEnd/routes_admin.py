@@ -27,6 +27,8 @@ from auth import (permission_required, role_required, player_required,
                   compte_a_permission, fiche_cible_protegee, hors_de_portee)
 from cache import invalidate_cache
 from textes_ip import textes_ip, VERSIONS as IP_VERSIONS
+import recalcul_ts
+from recalcul_ts import noter
 from utils import generate_unique_slug, extract_league_number, nombre_fini, couleur_valide
 from services import (
     recalculate_tiers, snapshot_grille, drop_grille_snapshot_if_orphan,
@@ -296,6 +298,107 @@ def revert_global_reset():
         return jsonify({"status": "success", "message": "Dernier reset annulé."})
     except Exception as e:
         logger.error(f"Erreur serveur: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+
+# ---------------------------------------------------------------------------
+# Recalcul TrueSkill a partir d'une date, tau par periode (superadmin)
+# ---------------------------------------------------------------------------
+
+def _saisie_recalcul(data):
+    """(date_debut, periodes, None) ou (None, None, reponse d'erreur)."""
+    def erreur(message):
+        return None, None, (jsonify({"error": message, "code": "saisie_invalide"}), 400)
+
+    try:
+        date_debut = datetime.strptime(str(data.get('date_debut')), '%Y-%m-%d').date()
+    except ValueError:
+        return erreur("Date de départ invalide.")
+    if date_debut > datetime.now().date():
+        return erreur("La date de départ ne peut pas être dans le futur.")
+    periodes, message = recalcul_ts.valider_periodes(date_debut, data.get('periodes'))
+    if message is not None:
+        return erreur(message)
+    if periodes[-1][0] > datetime.now().date():
+        return erreur("Une période de tau commence dans le futur.")
+    return date_debut, periodes, None
+
+
+def _empreinte_dossier(cur) -> str:
+    """Change des qu'un tournoi, une penalite, un reset, une fiche ou un reglage
+    lu par le rejeu (penalite fantome, seuil sigma) bouge."""
+    cur.execute("""
+        SELECT md5(concat_ws('|',
+            (SELECT COUNT(*) FROM Tournois), (SELECT COALESCE(MAX(id), 0) FROM Tournois),
+            (SELECT COUNT(*) FROM Participations),
+            (SELECT COUNT(*) FROM ghost_log), (SELECT COALESCE(MAX(id), 0) FROM ghost_log),
+            (SELECT COUNT(*) FROM global_resets), (SELECT COALESCE(MAX(id), 0) FROM global_resets),
+            (SELECT string_agg(id || ':' || mu || ':' || sigma, ',' ORDER BY id) FROM Joueurs),
+            (SELECT string_agg(key || ':' || value, ',' ORDER BY key) FROM Configuration
+             WHERE key IN ('ghost_penalty', 'sigma_threshold'))))
+    """)
+    return cur.fetchone()[0]
+
+
+@admin_bp.route('/api/admin/recalcul-ts/apercu', methods=['POST'])
+@role_required(ROLE_SUPERADMIN)
+def apercu_recalcul_ts():
+    """Calcule le recalcul sans rien ecrire, et renvoie le comparatif."""
+    data = request.get_json(silent=True) or {}
+    date_debut, periodes, erreur = _saisie_recalcul(data)
+    if erreur is not None:
+        return erreur
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                empreinte = _empreinte_dossier(cur)
+                donnees = recalcul_ts.charger(cur, date_debut)
+            conn.rollback()
+        resultat = recalcul_ts.rejouer(donnees, date_debut, periodes)
+        return jsonify(dict(recalcul_ts.resume(donnees, resultat), empreinte=empreinte))
+    except Exception as e:
+        logger.error(f"Erreur apercu recalcul TS: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+
+@admin_bp.route('/api/admin/recalcul-ts/appliquer', methods=['POST'])
+@role_required(ROLE_SUPERADMIN)
+def appliquer_recalcul_ts():
+    """Applique le recalcul, a condition que rien n'ait bouge depuis l'apercu."""
+    data = request.get_json(silent=True) or {}
+    date_debut, periodes, erreur = _saisie_recalcul(data)
+    if erreur is not None:
+        return erreur
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                verrou_tournois(cur)
+                if _empreinte_dossier(cur) != data.get('empreinte'):
+                    return jsonify({
+                        "error": "Les données ont changé depuis l'aperçu (tournoi, reset ou "
+                                 "fiche modifiée). Relancez l'aperçu avant d'appliquer.",
+                        "code": "apercu_perime",
+                    }), 409
+                donnees = recalcul_ts.charger(cur, date_debut)
+                resultat = recalcul_ts.rejouer(donnees, date_debut, periodes)
+                recalcul_ts.appliquer(cur, resultat, psycopg2.extras.execute_values)
+                audit.ecrire(cur, 'ts_recalcule', 'systeme', None, {
+                    "date_debut": str(date_debut),
+                    "periodes": [{"debut": str(d), "tau": t} for d, t in periodes],
+                    "tournois": resultat['nb_tournois'],
+                    "participations": len(resultat['participations']),
+                    "ecarts_reportes": len(resultat['ecarts']),
+                })
+            conn.commit()
+        recalculate_tiers()
+        invalidate_cache()
+        return jsonify({
+            "status": "success",
+            "message": "TrueSkill recalculé depuis le %s : %d tournois rejoués."
+                       % (date_debut.strftime('%d/%m/%Y'), resultat['nb_tournois']),
+        })
+    except Exception as e:
+        logger.error(f"Erreur application recalcul TS: {e}")
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 
@@ -1922,12 +2025,6 @@ def add_tournament():
                 sorted_joueurs = sorted(joueurs_data, key=lambda x: x['score'], reverse=True)
 
                 ts_joueurs = [j for j in sorted_joueurs if not joueurs_exclude_ts.get(j['nom'], False)]
-                ts_ranks = []
-                last_s, rank = -1, 1
-                for i, j in enumerate(ts_joueurs):
-                    if j['score'] < last_s: rank = i + 1
-                    ts_ranks.append(rank)
-                    last_s = j['score']
 
                 cur.execute("SELECT value FROM Configuration WHERE key = 'tau'")
                 tau_val = float(cur.fetchone()[0])
@@ -1939,9 +2036,9 @@ def add_tournament():
                     joueurs_exclude_ts.update({j['nom']: True for j in ts_joueurs})
                     ts_joueurs = []
                 if ts_joueurs:
-                    new_ratings = ts_env.rate([[joueurs_ratings[j['nom']]] for j in ts_joueurs], ranks=ts_ranks)
-                    for i, j in enumerate(ts_joueurs):
-                        new_ratings_map[j['nom']] = new_ratings[i][0]
+                    # Les ex-aequo ne dependent pas de l'ordre de saisie (recalcul_ts.noter).
+                    new_ratings_map = noter(ts_env, [
+                        (j['nom'], joueurs_ratings[j['nom']], j['score']) for j in ts_joueurs])
 
                 present_pids = []
                 all_ranks = []
