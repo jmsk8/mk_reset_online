@@ -26,7 +26,7 @@ ACTIONS = frozenset({
     'service_token_cree', 'service_token_revoque',
     # Dossier sportif
     'joueur_cree', 'joueur_modifie', 'joueur_supprime', 'joueur_anonymise',
-    'tournoi_ajoute', 'tournoi_supprime', 'tournoi_annule', 'tournoi_lie',
+    'tournoi_ajoute', 'tournoi_supprime', 'tournoi_annule', 'tournoi_lie', 'dnf_modifie',
     'reset_global_applique', 'reset_global_annule', 'ts_recalcule',
     # Configuration
     'config_modifiee', 'ligues_configurees',

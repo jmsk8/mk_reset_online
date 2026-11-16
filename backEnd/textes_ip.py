@@ -85,6 +85,8 @@ def _explication(version: str, total_tournois: int, contexte: str) -> list[dict]
     plafond = _fr(GM_MAX_RATIO_CAP * 100)
     facteur = _facteur_lobby(version)
     exemple = _fr(_SAISON_EXEMPLE * MIN_PARTICIPATION_RATIO)
+    dnf = (" Un tournoi marqué DNF n'y entre pas : il ne compte ni pour vous, ni dans "
+           "la moyenne de vos adversaires, ni dans vos tournois joués.")
 
     assiduite = (
         f" — Pour être classé, il faut avoir joué au moins "
@@ -118,7 +120,7 @@ def _explication(version: str, total_tournois: int, contexte: str) -> list[dict]
              "texte": ", votre IP est la moyenne de vos tournois. Les lobbies bien "
                       "remplis pèsent un peu plus lourd : un tournoi à "
                       f"{_LOBBY_EXEMPLE_GRAND} joueurs compte environ {facteur} fois "
-                      f"plus qu'un tournoi à {_LOBBY_EXEMPLE_PETIT}."},
+                      f"plus qu'un tournoi à {_LOBBY_EXEMPLE_PETIT}." + dnf},
             {"titre": "Assiduité", "texte": assiduite},
             {"titre": None,
              "texte": "Ici, 100 correspond à une performance moyenne face à des "
@@ -140,7 +142,7 @@ def _explication(version: str, total_tournois: int, contexte: str) -> list[dict]
          "texte": ", votre IP est la moyenne de vos tournois. Les lobbies bien "
                   f"remplis pèsent plus lourd : un tournoi à {_LOBBY_EXEMPLE_GRAND} "
                   f"joueurs compte environ {facteur} fois plus qu'un tournoi à "
-                  f"{_LOBBY_EXEMPLE_PETIT}."},
+                  f"{_LOBBY_EXEMPLE_PETIT}." + dnf},
         {"titre": "Assiduité", "texte": assiduite},
         {"titre": None,
          "texte": "Dans cette version, seuls les points comptent : le niveau de vos "

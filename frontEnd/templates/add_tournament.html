@@ -132,6 +132,7 @@
                                             <th class="has-text-light">Joueur</th>
                                             <th class="has-text-light" style="width: 150px;">Score</th>
                                             <th class="has-text-light has-text-centered" style="width: 80px;" title="Exclure du calcul TrueSkill">No TS</th>
+                                            <th class="has-text-light has-text-centered" style="width: 80px;" title="Exclure de l'Indice de Performance (DNF)">No IP</th>
                                             <th style="width: 50px;"></th>
                                         </tr>
                                     </thead>
@@ -185,7 +186,9 @@
             {% endif %}
 
             {# ---- Liste des tournois enregistrés --------------------------- #}
-            <div class="card glass-card mb-6">
+            {# DNF après coup : réservé aux droits sur le TrueSkill (le backend revérifie). #}
+            {% set peut_dnf = peut('gestion_config') or peut('edition_mu_sigma') %}
+            <div class="card glass-card mb-6 carte-liste-tournois">
                 <div class="card-header">
                     <p class="card-header-title">
                         <span class="icon is-medium mr-2"><i class="fas fa-list has-text-info"></i></span>
@@ -198,13 +201,12 @@
                 <div class="card-content">
                     {% if tournois %}
                     <div style="max-height: 26rem; overflow-y: auto;">
-                        <table class="table is-fullwidth is-striped is-hoverable">
+                        <table class="table is-fullwidth is-striped is-hoverable liste-tournois">
                             <thead>
                                 <tr>
                                     <th>Date</th>
                                     <th>Ligue</th>
-                                    <th class="has-text-centered">Joueurs</th>
-                                    <th>Vainqueur</th>
+                                    <th class="has-text-centered" title="Nombre de joueurs"><span class="is-hidden-mobile">Joueurs</span><span class="is-hidden-tablet"><i class="fas fa-users"></i></span></th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -212,7 +214,7 @@
                                 {# Le plus récent en tête. #}
                                 {% for t in tournois %}
                                 <tr>
-                                    <td>{{ t.date }}</td>
+                                    <td style="white-space: nowrap;">{{ t.date }}</td>
                                     <td>
                                         {% if t.ligue_couleur %}
                                             <span class="tag" style="background-color: {{ t.ligue_couleur }}; color: #fff;">
@@ -223,13 +225,23 @@
                                         {% endif %}
                                     </td>
                                     <td class="has-text-centered">{{ t.nb_joueurs }}</td>
-                                    <td>{{ t.vainqueur or '—' }}</td>
-                                    <td class="has-text-right">
+                                    <td class="has-text-right" style="white-space: nowrap;">
+                                        {% if t.nb_dnf %}
+                                        <span class="badge-dnf mr-1"
+                                              title="{{ t.nb_dnf }} joueur{{ 's' if t.nb_dnf > 1 }} DNF (hors TS et/ou hors IP)">DNF</span>
+                                        {% endif %}
+                                        {% if peut_dnf %}
+                                        <button class="button is-small is-danger is-outlined mr-1"
+                                                onclick="ouvrirDnf({{ t.id }})"
+                                                title="Déclarer un joueur DNF : hors TS et/ou hors IP">
+                                            <i class="fas fa-flag-checkered"></i>
+                                        </button>
+                                        {% endif %}
                                         {# Liaison après coup avec un tournoi déjà enregistré. #}
                                         {% if t.nb_dans_session and t.nb_dans_session > 1 %}
                                         <span class="tag is-link is-light mr-1"
                                               title="Ce tournoi partage sa session avec {{ t.nb_dans_session - 1 }} autre(s)">
-                                            <i class="fas fa-link mr-1"></i> session
+                                            <i class="fas fa-link"></i><span class="ml-1 is-hidden-mobile">session</span>
                                         </span>
                                         {% else %}
                                         <button class="button is-small is-link is-outlined mr-1"
@@ -239,7 +251,7 @@
                                         </button>
                                         {% endif %}
                                         <a class="button is-small is-light" href="/stats/tournoi/{{ t.id }}">
-                                            <i class="fas fa-eye mr-1"></i> Détail
+                                            <i class="fas fa-eye"></i><span class="ml-1 is-hidden-mobile">Détail</span>
                                         </a>
                                     </td>
                                 </tr>
@@ -317,6 +329,58 @@
             </footer>
         </div>
     </div>
+
+    {# ---- DNF d'un tournoi déjà enregistré (static/js/dnf_tournoi.js) ----- #}
+    {% if peut_dnf %}
+    <div class="modal" id="dnfModal">
+        <div class="modal-background" data-fermer-dnf></div>
+        <div class="modal-card dnf-carte">
+            <header class="modal-card-head" style="background-color: #1e293b; border-bottom: 1px solid #e10600;">
+                <p class="modal-card-title has-text-white">
+                    <span class="badge-dnf mr-2">DNF</span> Tournoi du <span id="dnfDate">—</span>
+                </p>
+                <button class="delete" aria-label="Fermer" data-fermer-dnf></button>
+            </header>
+            <section class="modal-card-body" style="background-color: #0f172a;">
+                <p class="has-text-grey-light is-size-7 mb-3">
+                    Pour un joueur qui n'a pas fini le tournoi. <strong>No IP</strong> : son score
+                    sort de l'IP, pour lui comme pour la moyenne du lobby. <strong>No TS</strong> :
+                    le TrueSkill est recalculé depuis ce tournoi, après un aperçu.
+                </p>
+                <div id="dnfRecaps" class="notification is-warning is-light is-size-7 py-2 px-3"
+                     style="display: none;"></div>
+                <p id="dnfChargement" class="has-text-grey has-text-centered py-4">
+                    <span class="icon"><i class="fas fa-spinner fa-pulse"></i></span> Chargement…
+                </p>
+                <div class="table-container" id="dnfTableau" style="display: none;">
+                    <table class="table is-fullwidth is-narrow is-hoverable is-size-7"
+                           style="background: transparent;">
+                        <thead>
+                            <tr>
+                                <th class="has-text-light">Pos.</th>
+                                <th class="has-text-light">Joueur</th>
+                                <th class="has-text-light has-text-right">Score</th>
+                                <th class="has-text-light has-text-centered" title="Exclure du calcul TrueSkill">No TS</th>
+                                <th class="has-text-light has-text-centered" title="Exclure de l'Indice de Performance">No IP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dnfJoueurs"></tbody>
+                    </table>
+                </div>
+                <div id="dnfResultat" aria-live="polite"></div>
+            </section>
+            <footer class="modal-card-foot" style="background-color: #1e293b; border-top: 1px solid #e10600;">
+                <button class="button is-info" id="dnfApercu" disabled>
+                    <i class="fas fa-eye mr-2"></i> Aperçu du TS
+                </button>
+                <button class="button is-danger" id="dnfAppliquer" disabled>
+                    <i class="fas fa-check mr-2"></i> Enregistrer
+                </button>
+                <button class="button" data-fermer-dnf>Annuler</button>
+            </footer>
+        </div>
+    </div>
+    {% endif %}
 
 <script>
         {% if role_admin in ('chef_admin', 'superadmin') %}
@@ -483,8 +547,13 @@
                         <input class="input is-small has-background-dark has-text-light score-input" type="number" placeholder="Score" required>
                     </td>
                     <td class="has-text-centered is-vcentered">
-                        <label class="checkbox">
-                            <input type="checkbox" class="exclude-ts-checkbox" title="Exclure ce joueur du calcul TrueSkill">
+                        <label class="checkbox case-centree">
+                            <input type="checkbox" class="exclude-ts-checkbox case-centree" title="Exclure ce joueur du calcul TrueSkill">
+                        </label>
+                    </td>
+                    <td class="has-text-centered is-vcentered">
+                        <label class="checkbox case-centree">
+                            <input type="checkbox" class="exclude-ip-checkbox case-centree" title="Exclure ce joueur de l'Indice de Performance (DNF)">
                         </label>
                     </td>
                     <td class="is-vcentered">
@@ -558,15 +627,18 @@
                     const nom = row.getAttribute('data-nom');
                     const scoreInput = row.querySelector('.score-input');
                     const excludeTsCheckbox = row.querySelector('.exclude-ts-checkbox');
+                    const excludeIpCheckbox = row.querySelector('.exclude-ip-checkbox');
                     const score = parseInt(scoreInput.value);
                     const excludeFromTs = excludeTsCheckbox ? excludeTsCheckbox.checked : false;
+                    const excludeFromIp = excludeIpCheckbox ? excludeIpCheckbox.checked : false;
 
                     if (isNaN(score)) {
                         scoreInput.classList.add('is-danger');
                         error = true;
                     } else {
                         scoreInput.classList.remove('is-danger');
-                        joueursData.push({ nom: nom, score: score, exclude_from_ts: excludeFromTs });
+                        joueursData.push({ nom: nom, score: score, exclude_from_ts: excludeFromTs,
+                                           exclude_from_ip: excludeFromIp });
                     }
                 });
 
@@ -789,3 +861,6 @@
             });
         }
     </script>
+    {% if peut_dnf %}
+    <script src="{{ url_for('static', filename='js/dnf_tournoi.js') }}?v={{ static_version }}"></script>
+    {% endif %}

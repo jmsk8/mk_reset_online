@@ -312,6 +312,30 @@ def proxy_lier_session(tournoi_id):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+# DNF d'un tournoi enregistre (droits reverifies par le backend). Delai allonge :
+# un changement hors TS rejoue le TrueSkill depuis la date du tournoi.
+def _proxy_dnf(method, endpoint):
+    if not _est_admin():
+        return jsonify({'error': 'Non autorisé'}), 403
+    headers = admin_headers()
+    if headers is None:
+        return jsonify({'error': 'Non autorisé'}), 401
+    data = (request.get_json(silent=True) or {}) if method == 'POST' else None
+    resultat, status = backend_request(method, endpoint, data=data, headers=headers,
+                                       timeout=RECALCUL_TS_TIMEOUT)
+    return jsonify(resultat if resultat is not None else {'error': 'Service indisponible'}), status
+
+
+@app.route('/admin/tournois/<int:tournoi_id>/dnf', methods=['GET', 'POST'])
+def proxy_dnf_tournoi(tournoi_id):
+    return _proxy_dnf(request.method, f'/admin/tournois/{tournoi_id}/dnf')
+
+
+@app.route('/admin/tournois/<int:tournoi_id>/dnf/apercu', methods=['POST'])
+def proxy_dnf_apercu(tournoi_id):
+    return _proxy_dnf('POST', f'/admin/tournois/{tournoi_id}/dnf/apercu')
+
+
 def get_banner_season():
     today = date.today()
     md = (today.month, today.day)

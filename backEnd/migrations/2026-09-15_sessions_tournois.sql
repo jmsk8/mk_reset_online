@@ -33,11 +33,15 @@ CREATE INDEX IF NOT EXISTS idx_tournois_session
     ON public.tournois(session_id);
 
 -- 3. Backfill : une session par groupe (date, ligue_id), avec l'id du tournoi
---    le plus ancien du groupe.
+--    le plus ancien du groupe (celui que l'etape 4 attribue). Seulement pour les
+--    groupes qui ont encore un tournoi sans session : rejouee sur une base deja
+--    migree, elle creait sinon des sessions vides (le plus petit id d'un groupe
+--    n'est pas toujours celui de sa session).
 INSERT INTO public.sessions_tournois (id, created_at)
 SELECT MIN(t.id), now()
 FROM public.tournois t
 GROUP BY t.date, t.ligue_id
+HAVING bool_or(t.session_id IS NULL)
 ON CONFLICT (id) DO NOTHING;
 
 -- 4. Chaque tournoi rejoint la session de son groupe. ligue_id NULL est traite

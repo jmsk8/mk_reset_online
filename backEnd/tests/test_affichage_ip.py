@@ -98,9 +98,10 @@ for live in ('v1', 'v2'):
 print("\n--- Graphe d'evolution : la version de la page, et elle seule ---")
 # Seule la version demandee doit etre calculee.
 tournois = [(1, date(2026, 6, 1), None, 10), (2, date(2026, 6, 8), None, 11)]
-parts = [(1, 1, 'A', '#fff', 80, 1, 60.0), (1, 2, 'B', '#fff', 40, 2, 45.0),
-         (1, 3, 'C', '#fff', 30, 3, 40.0), (2, 1, 'A', '#fff', 70, 1, 61.0),
-         (2, 2, 'B', '#fff', 50, 2, 44.0), (2, 3, 'C', '#fff', 20, 3, 41.0)]
+# Derniere colonne : hors IP (DNF).
+parts = [(1, 1, 'A', '#fff', 80, 1, 60.0, False), (1, 2, 'B', '#fff', 40, 2, 45.0, False),
+         (1, 3, 'C', '#fff', 30, 3, 40.0, False), (2, 1, 'A', '#fff', 70, 1, 61.0, False),
+         (2, 2, 'B', '#fff', 50, 2, 44.0, False), (2, 3, 'C', '#fff', 20, 3, 41.0, False)]
 install_db([(r"SELECT t.id, t.date, t.ligue_id, t.session_id", tournois),
             (r"SELECT p.tournoi_id, p.joueur_id", parts),
             (r"FROM grille_snapshots", []),

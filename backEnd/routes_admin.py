@@ -20,7 +20,7 @@ from constants import (
     DEFAULT_GHOST_THRESHOLD_SESSIONS, DEFAULT_GHOST_INTERVAL_SESSIONS,
     GHOST_SIGMA_CAP, IP_VERSION_DEFAULT,
     ROLE_ADMIN, ROLE_CHEF_ADMIN, ROLE_SUPERADMIN,
-    PERMISSIONS_CHAMPS_JOUEUR, MU_MIN, MU_MAX, SIGMA_MAX,
+    PERMISSIONS_CHAMPS_JOUEUR, PERMISSIONS_TS, MU_MIN, MU_MAX, SIGMA_MAX,
 )
 from db import get_db_connection
 from auth import (permission_required, role_required, player_required,
@@ -326,7 +326,7 @@ def _saisie_recalcul(data):
 
 def _empreinte_dossier(cur) -> str:
     """Change des qu'un tournoi, une penalite, un reset, une fiche ou un reglage
-    lu par le rejeu (penalite fantome, seuil sigma) bouge."""
+    lu par le rejeu (penalite fantome, seuil sigma, tau du DNF) bouge."""
     cur.execute("""
         SELECT md5(concat_ws('|',
             (SELECT COUNT(*) FROM Tournois), (SELECT COALESCE(MAX(id), 0) FROM Tournois),
@@ -335,7 +335,7 @@ def _empreinte_dossier(cur) -> str:
             (SELECT COUNT(*) FROM global_resets), (SELECT COALESCE(MAX(id), 0) FROM global_resets),
             (SELECT string_agg(id || ':' || mu || ':' || sigma, ',' ORDER BY id) FROM Joueurs),
             (SELECT string_agg(key || ':' || value, ',' ORDER BY key) FROM Configuration
-             WHERE key IN ('ghost_penalty', 'sigma_threshold'))))
+             WHERE key IN ('ghost_penalty', 'sigma_threshold', 'tau'))))
     """)
     return cur.fetchone()[0]
 
@@ -1831,6 +1831,8 @@ def _joueurs_tournoi_invalides(joueurs_data):
             return "Score invalide pour « %s » : un nombre entier est attendu." % nom.strip()
         if not isinstance(j.get('exclude_from_ts', False), bool):
             return "Option « hors TrueSkill » invalide pour « %s »." % nom.strip()
+        if not isinstance(j.get('exclude_from_ip', False), bool):
+            return "Option « hors IP » invalide pour « %s »." % nom.strip()
     return None
 
 
@@ -1923,6 +1925,7 @@ def add_tournament():
                 for joueur in joueurs_data:
                     nom, score = joueur['nom'], joueur['score']
                     exclude_ts = joueur.get('exclude_from_ts', False)
+                    exclude_ip = joueur.get('exclude_from_ip', False)
                     if not isinstance(nom, str):
                         conn.rollback()
                         return jsonify({"error": "Nom de joueur invalide."}), 400
@@ -1969,7 +1972,7 @@ def add_tournament():
                     joueurs_ratings[nom] = trueskill.Rating(mu=float(mu), sigma=float(sigma))
                     joueurs_ids_map[nom] = jid
                     joueurs_exclude_ts[nom] = exclude_ts
-                    cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma, exclude_from_ts) VALUES (%s, %s, %s, %s, %s, %s)", (tournoi_id, jid, score, float(mu), float(sigma), exclude_ts))
+                    cur.execute("INSERT INTO Participations (tournoi_id, joueur_id, score, old_mu, old_sigma, exclude_from_ts, exclude_from_ip) VALUES (%s, %s, %s, %s, %s, %s, %s)", (tournoi_id, jid, score, float(mu), float(sigma), exclude_ts, exclude_ip))
 
                 # Doublon : meme date, memes joueurs, memes scores (second envoi).
                 cur.execute("""
@@ -2317,6 +2320,234 @@ def lier_session_tournoi(tournoi_id):
         })
     except Exception as e:
         logger.error(f"Erreur lier_session_tournoi: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+
+# ---------------------------------------------------------------------------
+# DNF : joueurs hors TrueSkill et/ou hors IP sur un tournoi deja enregistre
+# ---------------------------------------------------------------------------
+# Hors IP : seul le drapeau change, l'IP etant recalculee a l'affichage. Hors
+# TS : le TrueSkill est rejoue depuis la date du tournoi avec le tau actuel,
+# apres un apercu dont l'empreinte garantit que rien n'a bouge entre-temps.
+
+def _droit_ts(compte):
+    """(accordee, reponse d'erreur | None) : l'un des droits sur le TrueSkill."""
+    for permission in PERMISSIONS_TS:
+        accordee, erreur = compte_a_permission(compte, permission)
+        if erreur is not None or accordee:
+            return accordee, erreur
+    return False, None
+
+
+def _refus_droit_ts():
+    return jsonify({
+        "error": "Déclarer un DNF demande un droit sur le TrueSkill "
+                 "(« Réglage TS » ou « Corriger le score »).",
+        "code": "permission_manquante",
+    }), 403
+
+
+def _participants_dnf(cur, tournoi_id):
+    """(date, {joueur_id: participant}) du tournoi, par place ; None s'il n'existe pas."""
+    cur.execute("SELECT date FROM Tournois WHERE id = %s", (tournoi_id,))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    cur.execute("""
+        SELECT p.joueur_id, j.nom, p.score, p.position,
+               COALESCE(p.exclude_from_ts, false), COALESCE(p.exclude_from_ip, false)
+        FROM Participations p JOIN Joueurs j ON j.id = p.joueur_id
+        WHERE p.tournoi_id = %s
+        ORDER BY p.position ASC NULLS LAST, p.score DESC
+    """, (tournoi_id,))
+    joueurs = {jid: {"joueur_id": jid, "nom": nom, "score": score, "position": position,
+                     "exclu_ts": bool(ts), "exclu_ip": bool(ip)}
+               for jid, nom, score, position, ts, ip in cur.fetchall()}
+    return row[0], joueurs
+
+
+def _changements_dnf(joueurs, data):
+    """([{joueur_id, nom, ts?: [avant, apres], ip?: [avant, apres]}], None)
+    pour les seuls joueurs qui changent, ou (None, message)."""
+    lignes = data.get('joueurs')
+    if not isinstance(lignes, list) or not lignes:
+        return None, "Aucun joueur indiqué."
+    vus, changements = set(), []
+    for ligne in lignes:
+        if not isinstance(ligne, dict):
+            return None, "Ligne de joueur invalide."
+        jid = ligne.get('joueur_id')
+        if isinstance(jid, bool) or not isinstance(jid, int) or jid not in joueurs:
+            return None, "Ce joueur n'a pas participé à ce tournoi."
+        if jid in vus:
+            return None, "Joueur indiqué deux fois."
+        vus.add(jid)
+        actuel = joueurs[jid]
+        changement = {"joueur_id": jid, "nom": actuel["nom"]}
+        for cle, court in (('exclu_ts', 'ts'), ('exclu_ip', 'ip')):
+            valeur = ligne.get(cle, actuel[cle])
+            if not isinstance(valeur, bool):
+                return None, "Les cases No TS et No IP valent vrai ou faux."
+            if valeur != actuel[cle]:
+                changement[court] = [actuel[cle], valeur]
+        if 'ts' in changement or 'ip' in changement:
+            changements.append(changement)
+    if not changements:
+        return None, "Rien ne change."
+    return changements, None
+
+
+def _tau_actuel(cur) -> float:
+    cur.execute("SELECT value FROM Configuration WHERE key = 'tau'")
+    row = cur.fetchone()
+    return float(row[0]) if row else DEFAULT_TAU
+
+
+@admin_bp.route('/admin/tournois/<int:tournoi_id>/dnf', methods=['GET'])
+@permission_required('gestion_tournois')
+def lire_dnf_tournoi(tournoi_id):
+    """Joueurs du tournoi avec leurs drapeaux DNF, et le contexte du geste."""
+    accordee, erreur = _droit_ts(g.compte)
+    if erreur is not None:
+        return erreur
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                lu = _participants_dnf(cur, tournoi_id)
+                if lu is None:
+                    return jsonify({"error": "Tournoi introuvable."}), 404
+                date_tournoi, joueurs = lu
+                tau = _tau_actuel(cur)
+                # Recaps deja crees sur cette date : leur classement suivra,
+                # pas les awards deja distribues.
+                cur.execute("""
+                    SELECT s.nom, EXISTS (SELECT 1 FROM awards_obtenus a WHERE a.saison_id = s.id)
+                    FROM saisons s
+                    WHERE %s BETWEEN s.date_debut AND s.date_fin
+                    ORDER BY s.date_fin, s.id
+                """, (date_tournoi,))
+                recaps = [{"nom": nom, "awards": bool(a)} for nom, a in cur.fetchall()]
+            conn.rollback()
+        return jsonify({
+            "tournoi": {"id": tournoi_id, "date": date_tournoi.strftime('%d/%m/%Y')},
+            "joueurs": list(joueurs.values()),
+            "tau": tau,
+            "recaps": recaps,
+            "peut_modifier": bool(accordee),
+        })
+    except Exception as e:
+        logger.error(f"Erreur lecture DNF: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+
+@admin_bp.route('/admin/tournois/<int:tournoi_id>/dnf/apercu', methods=['POST'])
+@permission_required('gestion_tournois')
+def apercu_dnf_tournoi(tournoi_id):
+    """Effet d'un changement hors TS sur le TrueSkill, calcule sans rien ecrire."""
+    accordee, erreur = _droit_ts(g.compte)
+    if erreur is not None:
+        return erreur
+    if not accordee:
+        return _refus_droit_ts()
+    data = request.get_json(silent=True) or {}
+    try:
+        donnees, empreinte, tau = None, None, None
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                lu = _participants_dnf(cur, tournoi_id)
+                if lu is None:
+                    return jsonify({"error": "Tournoi introuvable."}), 404
+                date_tournoi, joueurs = lu
+                changements, message = _changements_dnf(joueurs, data)
+                if message is not None:
+                    return jsonify({"error": message, "code": "saisie_invalide"}), 400
+                hors_ts = {c['joueur_id']: c['ts'][1] for c in changements if 'ts' in c}
+                if hors_ts:
+                    empreinte = _empreinte_dossier(cur)
+                    tau = _tau_actuel(cur)
+                    donnees = recalcul_ts.charger(cur, date_tournoi)
+            conn.rollback()
+        recalcul = None
+        if donnees is not None:
+            recalcul_ts.marquer_hors_ts(donnees, tournoi_id, hors_ts)
+            resultat = recalcul_ts.rejouer(donnees, date_tournoi, [(date_tournoi, tau)])
+            recalcul = dict(recalcul_ts.resume(donnees, resultat),
+                            date_debut=date_tournoi.strftime('%d/%m/%Y'), tau=tau)
+        return jsonify({"changements": changements, "recalcul_ts": recalcul,
+                        "empreinte": empreinte})
+    except Exception as e:
+        logger.error(f"Erreur apercu DNF: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+
+@admin_bp.route('/admin/tournois/<int:tournoi_id>/dnf', methods=['POST'])
+@permission_required('gestion_tournois')
+def appliquer_dnf_tournoi(tournoi_id):
+    """Pose les drapeaux DNF. Un changement hors TS rejoue le TrueSkill depuis la
+    date du tournoi, a condition que rien n'ait bouge depuis l'apercu."""
+    accordee, erreur = _droit_ts(g.compte)
+    if erreur is not None:
+        return erreur
+    if not accordee:
+        return _refus_droit_ts()
+    data = request.get_json(silent=True) or {}
+    try:
+        recalcul = None
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                verrou_tournois(cur)
+                lu = _participants_dnf(cur, tournoi_id)
+                if lu is None:
+                    return jsonify({"error": "Tournoi introuvable."}), 404
+                date_tournoi, joueurs = lu
+                changements, message = _changements_dnf(joueurs, data)
+                if message is not None:
+                    return jsonify({"error": message, "code": "saisie_invalide"}), 400
+                touche_ts = any('ts' in c for c in changements)
+                if touche_ts and _empreinte_dossier(cur) != data.get('empreinte'):
+                    return jsonify({
+                        "error": "Les données ont changé depuis l'aperçu (tournoi, reset ou "
+                                 "fiche modifiée). Relancez l'aperçu avant d'appliquer.",
+                        "code": "apercu_perime",
+                    }), 409
+
+                psycopg2.extras.execute_values(cur, """
+                    UPDATE Participations AS p
+                    SET exclude_from_ts = d.ts, exclude_from_ip = d.ip
+                    FROM (VALUES %s) AS d(tid, jid, ts, ip)
+                    WHERE p.tournoi_id = d.tid AND p.joueur_id = d.jid
+                """, [(tournoi_id, c['joueur_id'],
+                       c['ts'][1] if 'ts' in c else joueurs[c['joueur_id']]['exclu_ts'],
+                       c['ip'][1] if 'ip' in c else joueurs[c['joueur_id']]['exclu_ip'])
+                      for c in changements])
+
+                if touche_ts:
+                    # Relu apres la mise a jour : le rejeu voit les nouveaux drapeaux.
+                    tau = _tau_actuel(cur)
+                    donnees = recalcul_ts.charger(cur, date_tournoi)
+                    resultat = recalcul_ts.rejouer(donnees, date_tournoi, [(date_tournoi, tau)])
+                    recalcul_ts.appliquer(cur, resultat, psycopg2.extras.execute_values)
+                    recalcul = {"date_debut": str(date_tournoi), "tau": tau,
+                                "tournois": resultat['nb_tournois'],
+                                "participations": len(resultat['participations'])}
+
+                audit.ecrire(cur, 'dnf_modifie', 'tournoi', tournoi_id, {
+                    "date": str(date_tournoi),
+                    "changements": changements,
+                    "recalcul_ts": recalcul,
+                    "score_modifie": recalcul is not None,
+                })
+            conn.commit()
+        if recalcul is not None:
+            recalculate_tiers()
+        invalidate_cache()
+        message = "DNF enregistré."
+        if recalcul is not None:
+            message += " TrueSkill recalculé depuis le %s (%d tournois rejoués)." % (
+                date_tournoi.strftime('%d/%m/%Y'), recalcul['tournois'])
+        return jsonify({"status": "success", "message": message, "recalcul_ts": recalcul})
+    except Exception as e:
+        logger.error(f"Erreur application DNF: {e}")
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
 

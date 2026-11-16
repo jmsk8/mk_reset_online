@@ -137,6 +137,8 @@ CREATE TABLE public.participations (
     old_mu double precision,
     old_sigma double precision,
     exclude_from_ts boolean DEFAULT false,
+    -- DNF : score ecarte de l'IP (du joueur et de la moyenne de son lobby).
+    exclude_from_ip boolean NOT NULL DEFAULT false,
     CONSTRAINT participations_pkey PRIMARY KEY (joueur_id, tournoi_id)
 );
 ALTER TABLE public.participations OWNER TO CURRENT_USER;

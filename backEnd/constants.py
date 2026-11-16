@@ -161,6 +161,11 @@ PERMISSIONS_CHAMPS_JOUEUR = {
 }
 
 
+# Droits qui touchent au TrueSkill : chacun suffit pour declarer un DNF sur un
+# tournoi deja enregistre (en plus de gestion_tournois, qui ouvre la page).
+PERMISSIONS_TS = ("gestion_config", "edition_mu_sigma")
+
+
 def permissions_effectives(accordees) -> set:
     """Retire les sous-permissions dont le parent manque. Renvoie un set."""
     accordees = set(accordees)

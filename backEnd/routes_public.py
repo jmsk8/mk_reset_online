@@ -923,7 +923,8 @@ def get_joueur_stats(nom):
                 cur.execute("""
                     SELECT t.id, t.date, p.score, p.position, p.new_score_trueskill, p.mu, p.sigma,
                            COALESCE(t.ligue_nom, l.nom),
-                           COALESCE(t.ligue_couleur, l.couleur)
+                           COALESCE(t.ligue_couleur, l.couleur),
+                           COALESCE(p.exclude_from_ip, false)
                     FROM Participations p
                     JOIN Tournois t ON p.tournoi_id = t.id
                     JOIN Joueurs j ON p.joueur_id = j.id
@@ -969,12 +970,16 @@ def get_joueur_stats(nom):
                 positions = []
                 victoires = 0
 
-                for tid, date, score, position, hist_ts, h_mu, h_sigma, hist_ligue_nom, hist_ligue_couleur in raw_history:
+                nb_tournois = 0
+                for tid, date, score, position, hist_ts, h_mu, h_sigma, hist_ligue_nom, hist_ligue_couleur, hors_ip in raw_history:
                     s_val = float(score) if score is not None else 0.0
                     p_val = int(position) if position is not None else 0
                     ts_val = float(hist_ts) if hist_ts is not None else 0.0
-                    scores_bruts.append(s_val)
-                    positions.append(p_val)
+                    nb_tournois += 1
+                    # DNF (hors IP) : hors des moyennes de score et de place.
+                    if not hors_ip:
+                        scores_bruts.append(s_val)
+                        positions.append(p_val)
                     if p_val == 1: victoires += 1
 
                     historique_data.append({
@@ -1030,16 +1035,16 @@ def get_joueur_stats(nom):
                     else:
                         historique_data[i]['ts_diff'] = None
 
-                nb_tournois = len(scores_bruts)
-                if nb_tournois > 0:
-                    score_moyen = sum(scores_bruts) / nb_tournois
+                ratio_victoires = (victoires / nb_tournois) * 100 if nb_tournois > 0 else 0
+                nb_moyenne = len(scores_bruts)
+                if nb_moyenne > 0:
+                    score_moyen = sum(scores_bruts) / nb_moyenne
                     meilleur_score = max(scores_bruts)
-                    position_moyenne = sum(positions) / nb_tournois
-                    ratio_victoires = (victoires / nb_tournois) * 100
-                    variance = sum((x - score_moyen) ** 2 for x in scores_bruts) / nb_tournois
+                    position_moyenne = sum(positions) / nb_moyenne
+                    variance = sum((x - score_moyen) ** 2 for x in scores_bruts) / nb_moyenne
                     ecart_type_scores = math.sqrt(variance)
                 else:
-                    score_moyen = 0; meilleur_score = 0; position_moyenne = 0; ratio_victoires = 0; ecart_type_scores = 0
+                    score_moyen = 0; meilleur_score = 0; position_moyenne = 0; ecart_type_scores = 0
 
                 progression_recente = 0
                 if nb_tournois >= 2:
@@ -1154,7 +1159,8 @@ def get_joueur_stats(nom):
                            COALESCE(l2.niveau, 999) AS ligue_niveau,
                            cnt.nb_joueurs,
                            p.position,
-                           p.score
+                           p.score,
+                           COALESCE(p.exclude_from_ip, false)
                     FROM Participations p
                     JOIN Tournois t ON p.tournoi_id = t.id
                     LEFT JOIN Ligues l ON t.ligue_id = l.id
@@ -1170,14 +1176,17 @@ def get_joueur_stats(nom):
                 def _new_bucket():
                     return {"nb_tournois": 0, "victoires": 0, "gold": 0, "silver": 0, "bronze": 0,
                             "podiums": 0, "somme_score": 0.0, "somme_position": 0,
-                            "meilleur_score": None, "pos_counts": {}}
+                            "nb_moyenne": 0, "meilleur_score": None, "pos_counts": {}}
 
-                def _accumulate(bucket, position, score):
+                def _accumulate(bucket, position, score, hors_ip=False):
                     bucket["nb_tournois"] += 1
-                    bucket["somme_score"] += score
-                    bucket["somme_position"] += position
-                    if bucket["meilleur_score"] is None or score > bucket["meilleur_score"]:
-                        bucket["meilleur_score"] = score
+                    # DNF (hors IP) : hors des moyennes de score et de place.
+                    if not hors_ip:
+                        bucket["nb_moyenne"] += 1
+                        bucket["somme_score"] += score
+                        bucket["somme_position"] += position
+                        if bucket["meilleur_score"] is None or score > bucket["meilleur_score"]:
+                            bucket["meilleur_score"] = score
                     if position > 0:
                         bucket["pos_counts"][position] = bucket["pos_counts"].get(position, 0) + 1
                     if position == 1:
@@ -1190,7 +1199,7 @@ def get_joueur_stats(nom):
                         bucket["podiums"] += 1
 
                 ligues_detail = {}
-                for d_nom, d_coul, d_niv, d_nb, d_pos, d_score in detail_rows:
+                for d_nom, d_coul, d_niv, d_nb, d_pos, d_score, d_hors_ip in detail_rows:
                     is_real_league = bool(d_nom)
                     key = d_nom if is_real_league else "__classique__"
                     pos_v = int(d_pos) if d_pos is not None else 0
@@ -1206,13 +1215,14 @@ def get_joueur_stats(nom):
                             "_tailles": {}
                         }
                     entry = ligues_detail[key]
-                    _accumulate(entry["total"], pos_v, score_v)
+                    _accumulate(entry["total"], pos_v, score_v, d_hors_ip)
                     if nb_v not in entry["_tailles"]:
                         entry["_tailles"][nb_v] = _new_bucket()
-                    _accumulate(entry["_tailles"][nb_v], pos_v, score_v)
+                    _accumulate(entry["_tailles"][nb_v], pos_v, score_v, d_hors_ip)
 
                 def _finalize(bucket):
                     n = bucket["nb_tournois"]
+                    n_moy = bucket["nb_moyenne"]
                     defaites = n - bucket["victoires"]
                     return {
                         "nb_tournois": n,
@@ -1224,8 +1234,8 @@ def get_joueur_stats(nom):
                         "pos_counts": [[p, bucket["pos_counts"][p]] for p in sorted(bucket["pos_counts"])],
                         "ratio_vd": round((bucket["victoires"] / defaites), 2) if defaites > 0 else None,
                         "ratio_victoires": round((bucket["victoires"] / n) * 100, 1) if n > 0 else 0,
-                        "score_moyen": round(bucket["somme_score"] / n, 1) if n > 0 else 0,
-                        "position_moyenne": round(bucket["somme_position"] / n, 2) if n > 0 else 0,
+                        "score_moyen": round(bucket["somme_score"] / n_moy, 1) if n_moy > 0 else 0,
+                        "position_moyenne": round(bucket["somme_position"] / n_moy, 2) if n_moy > 0 else 0,
                         "meilleur_score": bucket["meilleur_score"] if bucket["meilleur_score"] is not None else 0,
                     }
 
@@ -1366,7 +1376,8 @@ def stats_joueurs():
                         j.id,
                         COUNT(p.tournoi_id) as nb_tournois,
                         COALESCE(SUM(CASE WHEN p.position = 1 THEN 1 ELSE 0 END), 0) as victoires,
-                        AVG(p.score) as score_moyen,
+                        -- DNF (hors IP) exclus de la moyenne.
+                        AVG(p.score) FILTER (WHERE NOT COALESCE(p.exclude_from_ip, false)) as score_moyen,
                         j.color,
                         c.discord_id, c.discord_avatar_hash
                     FROM joueurs j
@@ -1416,7 +1427,9 @@ def get_tournois_list():
                             ORDER BY p2.score DESC LIMIT 1) as vainqueur,
                            t.session_id,
                            (SELECT count(*) FROM Tournois t2
-                            WHERE t2.session_id = t.session_id) as nb_dans_session
+                            WHERE t2.session_id = t.session_id) as nb_dans_session,
+                           COUNT(*) FILTER (WHERE COALESCE(p.exclude_from_ts, false)
+                                               OR COALESCE(p.exclude_from_ip, false)) as nb_dnf
                     FROM Tournois t
                     JOIN Participations p ON t.id = p.tournoi_id
                     LEFT JOIN Ligues l ON t.ligue_id = l.id
@@ -1435,6 +1448,8 @@ def get_tournois_list():
                     # Pour le bouton « Lier » de la page Gestion tournois.
                     "session_id": r[6],
                     "nb_dans_session": r[7],
+                    # Joueurs DNF (hors TS et/ou hors IP).
+                    "nb_dnf": r[8],
                 } for r in cur.fetchall()]
         return jsonify(tournois)
     except Exception:
@@ -1451,7 +1466,8 @@ def get_tournoi_details(tournoi_id):
                 if not td: abort(404)
                 cur.execute("""
                     SELECT j.nom, p.score, p.new_score_trueskill, p.new_tier, p.position, j.color,
-                           p.old_mu, p.old_sigma
+                           p.old_mu, p.old_sigma,
+                           COALESCE(p.exclude_from_ts, false), COALESCE(p.exclude_from_ip, false)
                     FROM Participations p JOIN Joueurs j ON p.joueur_id = j.id
                     WHERE p.tournoi_id = %s ORDER BY p.position ASC
                 """, (tournoi_id,))
@@ -1465,7 +1481,10 @@ def get_tournoi_details(tournoi_id):
                         "score_trueskill": new_ts,
                         "tier": r[3].strip() if r[3] else "?", "position": r[4],
                         "color": r[5] if r[5] else "#FFFFFF",
-                        "ts_diff": ts_diff
+                        "ts_diff": ts_diff,
+                        # DNF : resultat ecarte du TrueSkill et/ou de l'IP.
+                        "exclu_ts": bool(r[8]),
+                        "exclu_ip": bool(r[9]),
                     })
         return jsonify({"date": td[0].strftime("%d/%m/%Y"), "resultats": res})
     except Exception:

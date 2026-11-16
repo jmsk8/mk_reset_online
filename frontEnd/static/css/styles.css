@@ -213,3 +213,64 @@ input[type="submit"]:hover {
 .card-footer-item.bouton-lien {
     text-align: center;
 }
+
+/* DNF (« did not finish ») : résultat écarté du TrueSkill et/ou de l'IP. Même
+   code que les écrans de course : texte blanc sur fond sombre, liseré rouge. */
+.badge-dnf {
+    display: inline-block;
+    padding: 0.05em 0.45em;
+    border-radius: 3px;
+    border-left: 3px solid #e10600;
+    background: #15151e;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.5;
+    vertical-align: middle;
+    white-space: nowrap;
+    cursor: help;
+}
+
+/* Case à cocher centrée dans sa cellule (No TS / No IP) : annule la règle
+   globale `label, input { display: block }` qui la colle à gauche. */
+.case-centree {
+    display: inline-block;
+    margin: 0;
+    vertical-align: middle;
+}
+
+/* Fenêtre DNF : tient dans un écran de téléphone, boutons à la ligne si besoin. */
+.dnf-carte {
+    width: 760px;
+    max-width: calc(100vw - 40px);
+}
+.dnf-carte .modal-card-foot {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.dnf-carte .modal-card-foot .button {
+    margin: 0;
+}
+.dnf-carte td,
+.dnf-carte th {
+    vertical-align: middle !important;
+}
+@media screen and (max-width: 768px) {
+    .dnf-carte .modal-card-title { font-size: 1.15rem; }
+    .dnf-carte .modal-card-head,
+    .dnf-carte .modal-card-body,
+    .dnf-carte .modal-card-foot { padding: 0.9rem; }
+}
+
+/* Liste « Tournois enregistrés » (Gestion tournois) : compacte sur téléphone. */
+@media screen and (max-width: 768px) {
+    .carte-liste-tournois .card-content { padding: 0.75rem 0.5rem; }
+    .liste-tournois { font-size: 0.75rem; }
+    .liste-tournois td, .liste-tournois th { padding: 0.35em 0.3em; vertical-align: middle; }
+    .liste-tournois .button.is-small,
+    .liste-tournois .tag { font-size: 0.7rem; height: 2em; padding-left: 0.5em; padding-right: 0.5em; }
+    .liste-tournois .badge-dnf { font-size: 0.6rem; }
+    .liste-tournois .button.is-small { padding-left: 0.4em; padding-right: 0.4em; }
+    .liste-tournois .mr-1 { margin-right: 0.15rem !important; }
+}

@@ -843,7 +843,7 @@
             joueur_modifie: 'Fiche modifiée', joueur_cree: 'Fiche créée',
             joueur_supprime: 'Fiche supprimée', joueur_anonymise: 'Fiche anonymisée',
             tournoi_ajoute: 'Tournoi enregistré', tournoi_supprime: 'Tournoi supprimé',
-            tournoi_annule: 'Tournoi annulé',
+            tournoi_annule: 'Tournoi annulé', dnf_modifie: 'DNF modifié',
             reset_global_applique: 'Reset global', reset_global_annule: 'Reset annulé',
             ts_recalcule: 'TrueSkill recalculé',
             config_modifiee: 'Réglages modifiés', ligues_configurees: 'Ligues configurées',
@@ -903,6 +903,14 @@
                 return d.nom + ' — ' + Object.entries(d.changements).map(([c, [a, b]]) =>
                     (CHAMPS_TIER[c] || c) + ' : ' + valeurTier(c, a) + ' → ' + valeurTier(c, b)
                 ).join(', ');
+            }
+            // DNF : « Oleas : hors TS, IP rétabli », par joueur.
+            if (l.action === 'dnf_modifie' && Array.isArray(d.changements)) {
+                const etat = (c, cle, lib) => c[cle] ? (c[cle][1] ? 'hors ' + lib : lib + ' rétabli') : null;
+                return 'Tournoi du ' + d.date + ' — ' + d.changements.map(c =>
+                    c.nom + ' : ' + [etat(c, 'ts', 'TS'), etat(c, 'ip', 'IP')]
+                        .filter(Boolean).join(', ')
+                ).join(' ; ');
             }
             if (d.ancien && d.nouveau) return sujet + d.ancien + ' → ' + d.nouveau;
             if (d.nom) return d.nom;

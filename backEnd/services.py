@@ -668,7 +668,9 @@ def _compute_grand_master(stats_dict: dict, total_tournois: int, ip_version: str
     for pid, d in stats_dict.items():
         num_total = 0.0
         denom_total = 0.0
-        matches = d.get("gm_history", [])
+        # Sans les tournois hors IP (DNF) : ni dans la moyenne, ni dans la
+        # participation.
+        matches = d.get("ip_history", d.get("gm_history", []))
 
         for m in matches:
             S_i = float(m['score'])
@@ -691,7 +693,7 @@ def _compute_grand_master(stats_dict: dict, total_tournois: int, ip_version: str
 
         ip_base = (num_total / denom_total) * 100 if denom_total > 0 else 0
 
-        nb_matchs_joueur = d.get("matchs", 0)
+        nb_matchs_joueur = d.get("matchs_ip", d.get("matchs", 0))
         matchs_extra = max(0, nb_matchs_joueur - seuil_participation)
         bonus = matchs_extra * GM_EXTRA_MATCH_BONUS
 
@@ -742,9 +744,11 @@ def _compute_borderline_scores(stats: dict) -> dict[Any, float]:
     scores: dict[Any, float] = {}
     for pid, d in stats.items():
         points: list[tuple[Any, float, float]] = []
-        for m in d["gm_history"]:
+        # Un tournoi hors IP (DNF) n'a pas d'IP : il ne fait pas de point. La
+        # place se lit sur le lobby complet (taille_lobby).
+        for m in d.get("ip_history", d["gm_history"]):
             position = m.get('position')
-            nb_joueurs = m.get('count')
+            nb_joueurs = m.get('taille_lobby', m.get('count'))
             score = m.get('score')
             avg_score = m.get('avg_score')
             if position is None or nb_joueurs is None or score is None or avg_score is None:
@@ -800,7 +804,8 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             tournois = cur.fetchall()
 
             cur.execute(f"""
-                SELECT p.tournoi_id, p.joueur_id, j.nom, j.color, p.score, p.position, p.old_mu
+                SELECT p.tournoi_id, p.joueur_id, j.nom, j.color, p.score, p.position, p.old_mu,
+                       COALESCE(p.exclude_from_ip, false)
                 FROM participations p
                 JOIN tournois t ON p.tournoi_id = t.id
                 JOIN joueurs j ON p.joueur_id = j.id
@@ -811,12 +816,14 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
             # Reference IP v2 : grille du jour, toutes ligues confondues.
             ref_grids = _load_reference_grids(cur, d_debut, d_fin)
 
-            # Repli pour les journees sans grille figee : mu moyen de la periode.
+            # Repli pour les journees sans grille figee : mu moyen de la periode
+            # (hors DNF, comme la moyenne des lobbies).
             cur.execute("""
                 SELECT p.old_mu
                 FROM participations p
                 JOIN tournois t ON p.tournoi_id = t.id
                 WHERE t.date >= %s AND t.date <= %s
+                  AND NOT COALESCE(p.exclude_from_ip, false)
             """, [d_debut, d_fin])
             period_sum_mu = 0.0
             period_count_mu = 0
@@ -835,9 +842,12 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
 
     seuil_participation = total_tournois * MIN_PARTICIPATION_RATIO
 
+    # Lobbies vus par l'IP : sans les joueurs hors IP (DNF).
     meta: dict[int, dict] = {}
-    for tid, _jid, _nom, _col, score, _pos, old_mu in parts:
+    for tid, _jid, _nom, _col, score, _pos, old_mu, hors_ip in parts:
         m = meta.setdefault(tid, {"sum": 0.0, "count": 0, "sum_mu": 0.0, "count_mu": 0})
+        if hors_ip:
+            continue
         m["sum"] += float(score)
         m["count"] += 1
         if old_mu is not None:
@@ -847,11 +857,11 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
         m["avg"] = m["sum"] / m["count"] if m["count"] > 0 else 1.0
 
     players: dict[int, dict] = {}
-    for tid, jid, nom, color, score, position, old_mu in parts:
+    for tid, jid, nom, color, score, position, old_mu, hors_ip in parts:
         p = players.setdefault(jid, {"nom": nom, "color": color or "#FFFFFF", "by_idx": {}})
         idx = tid_index.get(tid)
         if idx is not None:
-            p["by_idx"][idx] = (float(score), position, old_mu)
+            p["by_idx"][idx] = (float(score), position, old_mu, bool(hors_ip))
 
     base_poids = _gm_base_weight(ip_version)
 
@@ -866,8 +876,18 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
         for idx in range(len(tournoi_ids)):
             entry = p["by_idx"].get(idx)
             point_detail = None
-            if entry is not None:
-                score, position, own_old_mu = entry
+            if entry is not None and entry[3]:
+                # DNF : le tournoi ne compte pas dans l'IP, qui reste inchange.
+                score, position = entry[0], entry[1]
+                point_detail = {
+                    "date": tournoi_dates[tournoi_ids[idx]].strftime("%d/%m/%Y"),
+                    "position": int(position) if position is not None else None,
+                    "score": int(score),
+                    "ip_pur": None,
+                    "dnf": True,
+                }
+            elif entry is not None:
+                score, position, own_old_mu, _ = entry
                 seen_first = True
                 matchs += 1
                 t = meta[tournoi_ids[idx]]
@@ -910,6 +930,9 @@ def compute_ip_evolution(d_debut: str, d_fin: str, recap_mode: str | None = None
                 point_detail["ip_total"] = ip_total
             points.append(point_detail)
 
+        # Que des tournois hors IP : pas de courbe.
+        if matchs == 0:
+            continue
         final_ip = next((v for v in reversed(data) if v is not None), 0.0)
         datasets.append({
             "joueur_id": jid,
@@ -1086,7 +1109,7 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                     j.id, j.nom, p.score, p.position,
                     p.new_score_trueskill, p.mu, p.sigma,
                     t.date, p.tournoi_id, j.sigma, t.ligue_id, p.old_mu,
-                    t.session_id
+                    t.session_id, COALESCE(p.exclude_from_ip, false)
                 FROM Participations p
                 JOIN Tournois t ON p.tournoi_id = t.id
                 JOIN Joueurs j ON p.joueur_id = j.id
@@ -1109,12 +1132,14 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             # Reference IP v2 : grille du jour, toutes ligues confondues.
             ref_grids = _load_reference_grids(cur, d_debut, d_fin)
 
-            # Repli pour les journees sans grille figee : mu moyen de la periode.
+            # Repli pour les journees sans grille figee : mu moyen de la periode
+            # (hors DNF, comme la moyenne des lobbies).
             cur.execute("""
                 SELECT p.old_mu
                 FROM Participations p
                 JOIN Tournois t ON p.tournoi_id = t.id
                 WHERE t.date >= %s AND t.date <= %s
+                  AND NOT COALESCE(p.exclude_from_ip, false)
             """, [d_debut, d_fin])
             period_sum_mu = 0.0
             period_count_mu = 0
@@ -1123,24 +1148,29 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                     period_sum_mu += float(old_mu)
                     period_count_mu += 1
 
-        tournoi_meta = {}
+        # Deux vues de chaque lobby : complet (points, places) et vu par l'IP,
+        # sans les joueurs hors IP (DNF).
+        tournoi_meta: dict = {}
+        ip_meta: dict = {}
+
+        def cumuler(metas, tid, score, old_mu):
+            meta = metas.setdefault(tid, {"sum_score": 0.0, "count": 0, "sum_mu": 0.0, "count_mu": 0})
+            meta["count"] += 1
+            meta["sum_score"] += score
+            if old_mu is not None:
+                meta["sum_mu"] += float(old_mu)
+                meta["count_mu"] += 1
+
         # Denominateur compte en sessions (deux lobbies lies = une occasion de
         # jeu), affiche comme un nombre de tournois.
         sessions_vues = set()
         for row in rows:
-            tid = row[8]
-            score = float(row[2])
-            old_mu = row[11]
             sessions_vues.add(row[12])
-            if tid not in tournoi_meta:
-                tournoi_meta[tid] = {"sum_score": 0.0, "count": 0, "sum_mu": 0.0, "count_mu": 0}
-            tournoi_meta[tid]["count"] += 1
-            tournoi_meta[tid]["sum_score"] += score
-            if old_mu is not None:
-                tournoi_meta[tid]["sum_mu"] += float(old_mu)
-                tournoi_meta[tid]["count_mu"] += 1
+            cumuler(tournoi_meta, row[8], float(row[2]), row[11])
+            if not row[13]:
+                cumuler(ip_meta, row[8], float(row[2]), row[11])
 
-        for tid, meta in tournoi_meta.items():
+        for meta in (*tournoi_meta.values(), *ip_meta.values()):
             meta["avg_score"] = meta["sum_score"] / meta["count"] if meta["count"] > 0 else 1.0
 
         total_tournois = len(sessions_vues)
@@ -1158,18 +1188,28 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
             current_sigma = row[9]
             ligue_id = row[10]
             own_old_mu = row[11]
+            hors_ip = bool(row[13])
 
             if pid not in stats:
                 stats[pid] = {
                     "id": pid, "nom": nom,
                     "matchs": 0,
+                    # Tournois comptes par l'IP (participation et bonus).
+                    "matchs_ip": 0,
+                    "matchs_hors_ip": 0,
                     "raw_total_points": 0.0,
+                    # Points des seuls tournois comptes par l'IP (moyenne de points).
+                    "points_ip": 0.0,
+                    "places_ip": 0,
                     "total_points": 0.0,
                     "total_position": 0,
                     "victoires": 0, "second_places": 0,
                     "final_ts": 0.0,
                     "sigma_actuel": float(current_sigma),
-                    "gm_history": []
+                    # Tous les tournois, lobby complet (points ajustes).
+                    "gm_history": [],
+                    # Tournois comptes par l'IP, lobby vu par l'IP.
+                    "ip_history": [],
                 }
 
             p = stats[pid]
@@ -1195,12 +1235,35 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
                 "ref_avg_mu": ref_avg_mu,
                 "ligue_id": ligue_id
             })
+            if hors_ip:
+                p["matchs_hors_ip"] += 1
+            else:
+                p["matchs_ip"] += 1
+                p["points_ip"] += score
+                p["places_ip"] += position
+                ti = ip_meta[tid]
+                p["ip_history"].append({
+                    "tid": tid,
+                    "date": t_date,
+                    "score": score,
+                    "position": position,
+                    "avg_score": ti["avg_score"],
+                    "avg_score_excl_self": _leave_one_out(ti["sum_score"], ti["count"], score),
+                    "count": ti["count"],
+                    # Lobby complet, pour lire la place (borderline).
+                    "taille_lobby": t["count"],
+                    "avg_old_mu": _leave_one_out(ti["sum_mu"], ti["count_mu"], own_old_mu),
+                    "ref_avg_mu": ref_avg_mu,
+                    "ligue_id": ligue_id
+                })
             p["final_ts"] = float(new_ts) if new_ts else 0.0
 
         for pid, d in stats.items():
             d["total_points"] = _calculate_adjusted_total_points(d["gm_history"])
 
-        winner_gm, list_gm = _compute_grand_master(stats, total_tournois, ip_version)
+        # Un joueur qui n'a que des tournois hors IP (DNF) n'a pas d'IP.
+        winner_gm, list_gm = _compute_grand_master(
+            {pid: d for pid, d in stats.items() if d["matchs_ip"] > 0}, total_tournois, ip_version)
         advanced_stonks_list = _compute_advanced_stonks(conn, d_debut, d_fin, recap_mode, specific_ligue_id)
         borderline_scores = _compute_borderline_scores(stats)
 
@@ -1229,17 +1292,20 @@ def _aggregate_season_stats(d_debut: str, d_fin: str, recap_mode: str | None = N
         classement_moyenne = []
 
         for pid, d in stats.items():
-            moyenne_pts = d["raw_total_points"] / d["matchs"] if d["matchs"] > 0 else 0.0
-            moyenne_pos = d["total_position"] / d["matchs"] if d["matchs"] > 0 else 0.0
+            # Sans les tournois DNF (hors IP), comme l'IP.
+            moyenne_pts = d["points_ip"] / d["matchs_ip"] if d["matchs_ip"] > 0 else 0.0
+            moyenne_pos = d["places_ip"] / d["matchs_ip"] if d["matchs_ip"] > 0 else 0.0
 
             score_gm_val = gm_score_map.get(pid)
-            is_eligible_val = (d["matchs"] >= min_participation_req)
+            # Les tournois hors IP ne comptent pas pour le minimum.
+            is_eligible_val = (d["matchs_ip"] >= min_participation_req)
 
             bl_val = borderline_scores.get(pid)
 
             entry = {
                 "nom": d["nom"],
                 "matchs": d["matchs"],
+                "matchs_hors_ip": d["matchs_hors_ip"],
                 "total_points": int(round(d["total_points"])),
                 "victoires": d["victoires"],
                 "final_trueskill": round(d["final_ts"], 3),

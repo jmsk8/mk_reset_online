@@ -63,7 +63,15 @@
 <body>
     {% include 'decor.html' %}
     {% include 'navbar.html' %}
-    
+
+    {# DNF : résultat écarté du TrueSkill et/ou de l'IP. #}
+    {% macro badge_dnf(j) -%}
+        {%- if j.exclu_ts or j.exclu_ip -%}
+        <span class="badge-dnf ml-1"
+              title="{% if j.exclu_ts and j.exclu_ip %}Hors TrueSkill et hors IP{% elif j.exclu_ts %}Hors TrueSkill{% else %}Hors IP{% endif %}">DNF</span>
+        {%- endif -%}
+    {%- endmacro %}
+
     <section class="hero is-primary is-small animated-gradient">
         <div class="hero-body">
             <div class="container">
@@ -119,7 +127,7 @@
                                             <div class="podium-player">
                                                 <i class="fas fa-user-circle fa-3x"></i>
                                                 <div class="podium-name">
-                                                    <a href="/stats/joueur/{{ p2.nom }}" class="has-text-primary">{{ p2.nom }}</a>
+                                                    <a href="/stats/joueur/{{ p2.nom }}" class="has-text-primary">{{ p2.nom }}</a>{{ badge_dnf(p2) }}
                                                 </div>
                                                 <div class="podium-score">{{ p2.score_tournoi }} pts</div>
                                                 <div class="podium-medal {{ get_medal_class(r2) }}">
@@ -134,7 +142,7 @@
                                             <div class="podium-player">
                                                 <i class="fas fa-user-circle fa-4x"></i>
                                                 <div class="podium-name">
-                                                    <a href="/stats/joueur/{{ p1.nom }}" class="has-text-primary">{{ p1.nom }}</a>
+                                                    <a href="/stats/joueur/{{ p1.nom }}" class="has-text-primary">{{ p1.nom }}</a>{{ badge_dnf(p1) }}
                                                 </div>
                                                 <div class="podium-score">{{ p1.score_tournoi }} pts</div>
                                                 <div class="podium-medal {{ get_medal_class(r1) }}">
@@ -149,7 +157,7 @@
                                             <div class="podium-player">
                                                 <i class="fas fa-user-circle fa-3x"></i>
                                                 <div class="podium-name">
-                                                    <a href="/stats/joueur/{{ p3.nom }}" class="has-text-primary">{{ p3.nom }}</a>
+                                                    <a href="/stats/joueur/{{ p3.nom }}" class="has-text-primary">{{ p3.nom }}</a>{{ badge_dnf(p3) }}
                                                 </div>
                                                 <div class="podium-score">{{ p3.score_tournoi }} pts</div>
                                                 <div class="podium-medal {{ get_medal_class(r3) }}">
@@ -216,11 +224,13 @@
                                             {{ ns.display_rank }} {{ icon_html|safe }}
                                         </td>
                                         <td data-label="Joueur">
-                                            <a href="/stats/joueur/{{ joueur.nom }}" class="has-text-primary font-weight-bold">{{ joueur.nom }}</a>
+                                            <a href="/stats/joueur/{{ joueur.nom }}" class="has-text-primary font-weight-bold">{{ joueur.nom }}</a>{{ badge_dnf(joueur) }}
                                         </td>
                                         <td data-label="Score">{{ joueur.score_tournoi }} pts</td>
                                         <td class="has-text-centered" style="vertical-align: middle;" data-label="+/-">
-                                            {% if joueur.ts_diff is not none %}
+                                            {% if joueur.exclu_ts %}
+                                                <span class="has-text-grey-light" title="Hors TrueSkill : score inchangé">—</span>
+                                            {% elif joueur.ts_diff is not none %}
                                                 <span class="tag is-small" style="font-weight:bold; {% if joueur.ts_diff > 0 %}background-color:#e6ffed;color:#22863a;{% elif joueur.ts_diff < 0 %}background-color:#ffeef0;color:#cb2431;{% else %}color:#6a737d;{% endif %}">
                                                     {{ '%+.3f'|format(joueur.ts_diff) }}
                                                 </span>
@@ -231,6 +241,12 @@
                                 </tbody>
                             </table>
                             </div>
+                            {% if resultats|selectattr('exclu_ts')|list or resultats|selectattr('exclu_ip')|list %}
+                            <p class="is-size-7 has-text-grey-light mt-3">
+                                <span class="badge-dnf mr-1">DNF</span> résultat écarté du TrueSkill
+                                et/ou de l'IP. Survolez le badge pour le détail.
+                            </p>
+                            {% endif %}
                         </div>
                         <div class="card-footer">
                             <a href="/stats/tournois" class="card-footer-item">

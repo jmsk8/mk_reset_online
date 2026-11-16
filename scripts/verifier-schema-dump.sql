@@ -100,6 +100,15 @@ BEGIN
             USING HINT = '2026-09-20_notifications_lien.sql n''a pas abouti.';
     END IF;
 
+    -- Colonne ajoutee a une table existante ; le calcul de l'IP la lit.
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'participations' AND column_name = 'exclude_from_ip'
+    ) THEN
+        RAISE EXCEPTION 'Rattrapage incomplet : participations.exclude_from_ip absente.'
+            USING HINT = '2026-11-16_participation_hors_ip.sql n''a pas abouti.';
+    END IF;
+
     RAISE NOTICE 'Schema verifie : les % tables attendues sont presentes.', array_length(attendues, 1);
 END
 $$;

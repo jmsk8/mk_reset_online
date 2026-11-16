@@ -453,6 +453,16 @@ def charger(cur, date_debut: _date) -> dict:
     }
 
 
+def marquer_hors_ts(donnees: dict, tournoi_id, hors_ts: dict) -> None:
+    """Pose dans `donnees` (lu par `charger`) les drapeaux hors TrueSkill d'un
+    tournoi, {joueur_id: bool}, pour en calculer l'effet sans rien ecrire."""
+    for t in donnees['tournois']:
+        if t['id'] == tournoi_id:
+            for p in t['participations']:
+                if p['joueur_id'] in hors_ts:
+                    p['exclude'] = bool(hors_ts[p['joueur_id']])
+
+
 def resume(donnees: dict, resultat: dict, tiers_avant: dict | None = None) -> dict:
     """Comparatif par joueur (valeurs actuelles contre recalculees)."""
     lignes = []
